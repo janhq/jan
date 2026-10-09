@@ -33,6 +33,16 @@ ln -s "$LINUXDEPLOY" "$SYMLINK"
 # the documented fallback and costs a little disk on a host that has FUSE.
 export APPIMAGE_EXTRACT_AND_RUN=1
 
+# Libraries that must come from the user's system, never the AppImage. linuxdeploy
+# splits this on ';' and matches each entry as a glob (src/core/appdir.cpp).
+#
+# libggml-vulkan.so needs the Vulkan loader, which reads the host's ICD manifests
+# and loads the host's GPU drivers. A loader copied from the build host can crash
+# against a newer driver stack: on Arch, 0.8.5's bundled libvulkan.so.1 segfaulted
+# on every model load (#9173). Nothing else links it, and ggml loads the Vulkan
+# backend at runtime, so a host without a loader only loses that one backend.
+EXCLUDED_LIBRARIES="libvulkan.so*"
+
 # libggml-cuda.so needs libcuda.so.1, which comes with the NVIDIA driver, not the
 # toolkit, and linuxdeploy fails on any dependency it cannot resolve. Resolve it
 # to the toolkit's stub, and exclude it so the stub never lands in the AppImage:
@@ -42,7 +52,9 @@ if [ -f "$CUDA_STUB" ]; then
   mkdir -p "$XDG_CACHE_HOME/cuda-stubs"
   cp "$CUDA_STUB" "$XDG_CACHE_HOME/cuda-stubs/libcuda.so.1"
   export LD_LIBRARY_PATH="$XDG_CACHE_HOME/cuda-stubs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  export LINUXDEPLOY_EXCLUDED_LIBRARIES="libcuda.so.1"
+  EXCLUDED_LIBRARIES="$EXCLUDED_LIBRARIES;libcuda.so.1"
 fi
+
+export LINUXDEPLOY_EXCLUDED_LIBRARIES="${LINUXDEPLOY_EXCLUDED_LIBRARIES:+$LINUXDEPLOY_EXCLUDED_LIBRARIES;}$EXCLUDED_LIBRARIES"
 
 "$@"

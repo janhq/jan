@@ -8,6 +8,7 @@ import {
   deriveToolOutputCap,
   type ContextManagerConfig,
 } from '../context-manager'
+import { encodeToolImageSentinel } from '../tool-image-sentinel'
 
 function makeMessage(
   id: string,
@@ -69,6 +70,72 @@ describe('estimateMessageTokens', () => {
     }
     const tokens = estimateMessageTokens(msg)
     expect(tokens).toBe(4) // just overhead
+  })
+
+  // An image is a fixed, small cost to the model however many base64
+  // characters carry it; counting those characters would evict the user's
+  // question from a local model's window as soon as a tool returned a picture.
+  describe('tool images', () => {
+    const b64 = 'A'.repeat(1_500_000)
+    const toolMessage = (output: unknown): UIMessage =>
+      ({
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-read_media_file',
+            toolCallId: 'c1',
+            state: 'output-available',
+            input: { path: '/a.png' },
+            output,
+          },
+        ],
+      }) as unknown as UIMessage
+
+    it('does not count the base64 of an MCP image result', () => {
+      const tokens = estimateMessageTokens(
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }])
+      )
+      expect(tokens).toBeLessThan(10_000)
+      expect(tokens).toBeGreaterThan(0)
+    })
+
+    it('does not count the base64 of a tool image sentinel', () => {
+      const tokens = estimateMessageTokens(
+        toolMessage(
+          `Screenshot${encodeToolImageSentinel(`data:image/png;base64,${b64}`)}`
+        )
+      )
+      expect(tokens).toBeLessThan(10_000)
+    })
+
+    it('still counts the text that rides with an image', () => {
+      const text = 'caption '.repeat(2_000)
+      const withImage = estimateMessageTokens(
+        toolMessage([
+          { type: 'text', text },
+          { type: 'image', data: b64, mimeType: 'image/png' },
+        ])
+      )
+      const imageOnly = estimateMessageTokens(
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }])
+      )
+      expect(withImage - imageOnly).toBeGreaterThanOrEqual(estimateTokens(text))
+    })
+
+    it('keeps the question that led to an image result in the window', () => {
+      const messages = [
+        makeMessage('u1', 'user', 'what is in the frame?'),
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }]),
+      ]
+      const { messages: kept, trimmedCount } = trimMessages(messages, {
+        maxContextTokens: 16_384,
+        maxOutputTokens: 2_048,
+        autoCompact: false,
+      })
+      expect(trimmedCount).toBe(0)
+      expect(kept).toHaveLength(2)
+    })
   })
 })
 

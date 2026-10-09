@@ -335,9 +335,10 @@ endif
 # cuda12 and cuda13 cannot be combined: the CUDA major is whichever nvcc is on
 # PATH, one toolkit per configure, and both emit libggml-cuda.so.
 #
-# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
-# llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
-# CMakeLists only adds the 50/61/70 virtual archs below CUDA 13). They are still
+# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found ($CUDACXX,
+# else PATH). On x86_64, build.rs passes ggml-cuda's default arch list for that
+# version with Turing as native code (#9185); it only adds the 50/61/70 virtual
+# archs below CUDA 13. They are still
 # separate variants because the resulting binaries cover different GPUs, so
 # check-engine-toolchain asserts the toolkit matches the variant name rather
 # than letting a cuda13 build ship labelled cuda12.

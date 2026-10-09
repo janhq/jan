@@ -13,12 +13,15 @@ import {
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
 import {
+  encodeMcpToolImages,
   hasToolImageSentinel,
   stripToolImageSentinels,
+  toContentToolOutputs,
 } from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
+import { buildsOwnToolImageRequest } from './providerCaps'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
@@ -1526,13 +1529,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
-    const baseMessages = await convertToModelMessages(
+    const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
           this.encodeVideoAttachments(
             this.encodeAudioAttachments(
               stripUnsupportedImageParts(
-                this.mapUserInlineAttachments(effectiveMessages),
+                encodeMcpToolImages(
+                  this.mapUserInlineAttachments(effectiveMessages)
+                ),
                 modelSupportsVision
               )
             )
@@ -1540,6 +1545,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         )
       )
     )
+    // Anthropic, Gemini and OpenAI Responses build their own request, so a tool
+    // image sentinel would reach them as text; the others decode it in the fetch.
+    const baseMessages = buildsOwnToolImageRequest(provider)
+      ? toContentToolOutputs(convertedMessages)
+      : convertedMessages
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.

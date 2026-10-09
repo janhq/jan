@@ -7,6 +7,10 @@ import type { EngineVersionInfo } from '@/services/models/types'
 
 const UPSTREAM_REPO = 'https://github.com/ggml-org/llama.cpp'
 const SHORT_SHA = 8
+// The escape hatch for a regression in the bundled version: any llama.cpp
+// build, served by the user's own llama-server and added as a custom provider.
+const OTHER_VERSION_DOCS =
+  'https://jan.ai/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -71,6 +75,18 @@ export function LlamacppEngineInfo() {
       </div>
       <p className="mt-1.5 text-xs leading-normal text-muted-foreground">
         {t('providers:engineBundled')}
+      </p>
+      <p className="mt-1 text-xs leading-normal text-muted-foreground">
+        {t('providers:engineOtherVersion')}{' '}
+        <a
+          href={OTHER_VERSION_DOCS}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-0.5 underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {t('providers:engineOtherVersionLink')}
+          <IconExternalLink size={12} />
+        </a>
       </p>
       <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1">
         <Fact label={t('providers:engineBuild')} value={engine.tag} />
