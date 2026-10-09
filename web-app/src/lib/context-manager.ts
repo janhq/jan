@@ -1,5 +1,6 @@
 import type { UIMessage } from '@ai-sdk/react'
 import { generateText, type LanguageModel } from 'ai'
+import { stripToolImageSentinels } from './tool-image-sentinel'
 
 /**
  * Approximate token count using a character-based heuristic.
@@ -41,13 +42,33 @@ export function deriveToolOutputCap(
   )
 }
 
+/**
+ * What one tool-result image costs the model. Vision encoders turn an image
+ * into a roughly fixed number of tokens, not one per base64 character, so
+ * counting the characters would put a 1 MB screenshot at hundreds of thousands
+ * of tokens and evict the user's question from the window.
+ */
+const TOOL_IMAGE_TOKENS = 2_000
+const TOOL_IMAGE_STAND_IN = 'x'.repeat(
+  Math.ceil(TOOL_IMAGE_TOKENS * CHARS_PER_TOKEN)
+)
+
 function messageToText(message: UIMessage): string {
   const parts: string[] = []
   for (const part of message.parts) {
     if (part.type === 'text') {
       parts.push(part.text)
     } else if (part.type === 'dynamic-tool' || part.type.startsWith('tool-')) {
-      parts.push(JSON.stringify(part))
+      // Swap each image's base64 for a stand-in of `TOOL_IMAGE_TOKENS`. An
+      // image takes two forms in a tool output: an MCP `{ type: 'image',
+      // data }` item and an inline tool image sentinel inside a string.
+      parts.push(
+        JSON.stringify(part, function (this: { type?: unknown }, key, value) {
+          if (typeof value !== 'string') return value
+          if (key === 'data' && this.type === 'image') return TOOL_IMAGE_STAND_IN
+          return stripToolImageSentinels(value, TOOL_IMAGE_STAND_IN)
+        })
+      )
     }
   }
 
