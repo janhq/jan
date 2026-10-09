@@ -31,6 +31,69 @@ pub enum SubagentScope {
     /// Claude Code convention). Read-only: managed via plugin install/remove,
     /// never via `create_subagent`.
     Plugin,
+    /// A subagent shipped inside Jan itself (`builtin_subagents/*.toml`).
+    /// Read-only and the lowest precedence: any saved definition of the same
+    /// name replaces it, and `[subagents.<name>]` in agent.toml retargets its
+    /// model.
+    Builtin,
+}
+
+impl SubagentScope {
+    /// The scope's name in listings (`name [scope]: ...`).
+    pub fn label(self) -> &'static str {
+        match self {
+            SubagentScope::User => "user",
+            SubagentScope::Project => "project",
+            SubagentScope::Plugin => "plugin",
+            SubagentScope::Builtin => "builtin",
+        }
+    }
+
+    /// Whether definitions in this scope are managed outside `create_subagent`.
+    fn read_only_reason(self) -> Option<&'static str> {
+        match self {
+            SubagentScope::User | SubagentScope::Project => None,
+            SubagentScope::Plugin => Some(
+                "plugin scope is read-only: plugin agents are managed via plugin install/remove",
+            ),
+            SubagentScope::Builtin => Some(
+                "builtin scope is read-only: a project or user subagent of the same name \
+                 replaces a builtin one",
+            ),
+        }
+    }
+}
+
+/// The subagents shipped with Jan, in the order they load. Sorted by name and
+/// embedded at compile time, so the dispatch description that lists them is
+/// byte-identical across runs (it sits in the cached prompt prefix).
+const BUILTIN_SUBAGENTS: &[&str] = &[
+    include_str!("builtin_subagents/debug.toml"),
+    include_str!("builtin_subagents/explore.toml"),
+    include_str!("builtin_subagents/research.toml"),
+    include_str!("builtin_subagents/review.toml"),
+];
+
+/// Parse [`BUILTIN_SUBAGENTS`]. A file that fails to parse is a build defect a
+/// test pins, so it is skipped with a warning rather than failing every run.
+fn builtin_definitions() -> Vec<SubagentDefinition> {
+    BUILTIN_SUBAGENTS
+        .iter()
+        .filter_map(|raw| match toml::from_str::<SubagentFile>(raw) {
+            Ok(file) => Some(SubagentDefinition {
+                name: file.name,
+                description: file.description,
+                system_prompt: file.system_prompt,
+                allowed_tools: file.allowed_tools,
+                model: file.model,
+                scope: SubagentScope::Builtin,
+            }),
+            Err(e) => {
+                log::warn!("subagent: skipping a builtin definition: {e}");
+                None
+            }
+        })
+        .collect()
 }
 
 /// A dispatchable subagent definition, resolved from a `<name>.toml` file plus
@@ -43,6 +106,18 @@ pub struct SubagentDefinition {
     pub allowed_tools: Option<Vec<String>>,
     pub model: Option<String>,
     pub scope: SubagentScope,
+}
+
+impl SubagentDefinition {
+    /// The model as listings show it: the role or id the definition names, or
+    /// `inherit` when it names none.
+    pub fn model_label(&self) -> &str {
+        self.model
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or(INHERIT_ROLE)
+    }
 }
 
 /// On-disk shape of a subagent `.toml`; `scope` is derived from the directory,
@@ -129,7 +204,17 @@ impl SubagentRegistry {
     /// agent of the same name. Malformed files are skipped with a warning
     /// rather than failing the whole run.
     pub fn load(project_root: &Path) -> Self {
-        let mut defs = Vec::new();
+        let mut registry = Self::load_definitions(project_root);
+        apply_model_overrides(project_root, &mut registry.defs);
+        registry
+    }
+
+    /// [`load`](Self::load) without the project's `[subagents.<name>]`
+    /// overrides: each definition's model as its own file states it. The
+    /// `/settings` screen shows that next to the override, so a user can see
+    /// what clearing the override falls back to.
+    pub fn load_definitions(project_root: &Path) -> Self {
+        let mut defs = builtin_definitions();
         load_plugin_agents(project_root, &mut defs);
         if let Some(dir) = user_subagents_dir() {
             load_dir(&dir, SubagentScope::User, &mut defs);
@@ -163,6 +248,14 @@ impl SubagentRegistry {
         self.defs.iter().collect()
     }
 
+    /// Each distinct name, sorted: the values `agent` may take.
+    fn dispatchable_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self.defs.iter().map(|d| d.name.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
     /// Write `def` to the directory for `scope`, refusing to clobber an existing
     /// definition of the same name in that same scope unless `overwrite`. Returns
     /// `true` when a project-scope write shadows a user-scope definition (so the
@@ -184,10 +277,10 @@ impl SubagentRegistry {
                     "project scope requires create_in; use create_in".to_string(),
                 ))
             }
-            SubagentScope::Plugin => return Err(SubagentError::Upstream(
-                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                    .to_string(),
-            )),
+            SubagentScope::Plugin | SubagentScope::Builtin => {
+                let reason = scope.read_only_reason().unwrap_or_default();
+                return Err(SubagentError::Upstream(reason.to_string()));
+            }
         };
         self.create_in(&dir, def, scope, overwrite)
     }
@@ -203,11 +296,8 @@ impl SubagentRegistry {
         overwrite: bool,
     ) -> Result<bool, SubagentError> {
         validate_name(&def.name)?;
-        if scope == SubagentScope::Plugin {
-            return Err(SubagentError::Upstream(
-                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                    .to_string(),
-            ));
+        if let Some(reason) = scope.read_only_reason() {
+            return Err(SubagentError::Upstream(reason.to_string()));
         }
         let collides = self
             .defs
@@ -221,6 +311,21 @@ impl SubagentRegistry {
         }
         std::fs::create_dir_all(dir)
             .map_err(|e| SubagentError::Upstream(format!("failed to create {}: {e}", dir.display())))?;
+        let path = dir.join(format!("{}.toml", def.name));
+        // An overwrite through `create_subagent` carries no model (the agent may
+        // not choose one), so keep the one the replaced file named. Read from
+        // the file rather than `self.defs`: those carry agent.toml overrides,
+        // which must stay in agent.toml and not be baked into the definition.
+        let def = match def.model {
+            Some(_) => def,
+            None => SubagentDefinition {
+                model: std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|raw| toml::from_str::<SubagentFile>(&raw).ok())
+                    .and_then(|file| file.model),
+                ..def
+            },
+        };
         let file = SubagentFile {
             name: def.name.clone(),
             description: def.description.clone(),
@@ -230,7 +335,6 @@ impl SubagentRegistry {
         };
         let body = toml::to_string_pretty(&file)
             .map_err(|e| SubagentError::Upstream(format!("failed to serialize subagent: {e}")))?;
-        let path = dir.join(format!("{}.toml", def.name));
         std::fs::write(&path, body)
             .map_err(|e| SubagentError::Upstream(format!("failed to write {}: {e}", path.display())))?;
 
@@ -247,12 +351,35 @@ impl SubagentRegistry {
     }
 }
 
+/// Apply the project's `[subagents.<name>] model` overrides from agent.toml.
+/// Every same-name entry is overridden, shadowed ones too, so `list` and `get`
+/// agree on the model a name dispatches on. An unreadable agent.toml
+/// overrides nothing: the run reports a malformed file on its own load, and a
+/// dispatch should not fail over a knob.
+fn apply_model_overrides(project_root: &Path, defs: &mut [SubagentDefinition]) {
+    let Ok(cfg) = crate::core::agent::project::load_agent_config(project_root) else {
+        return;
+    };
+    for def in defs.iter_mut() {
+        let model = cfg
+            .subagents
+            .get(&def.name)
+            .and_then(|o| o.model.as_deref())
+            .map(str::trim)
+            .filter(|m| !m.is_empty());
+        if let Some(model) = model {
+            def.model = Some(model.to_string());
+        }
+    }
+}
+
 /// Load subagent definitions shipped by installed plugins as Markdown agent
 /// files (`<plugin>/agents/**/*.md`, the Claude Code convention). Loaded
 /// first so user/project TOML definitions shadow them by name. Frontmatter
-/// `name` and `description` are used; `model` and `color` are Claude-runtime
-/// metadata and ignored (the parent's model runs the child); `tools` maps
-/// Claude tool names onto Jan tool names, dropping names with no equivalent.
+/// `name` and `description` are used; `model` names a Claude tier and is
+/// mapped onto a role (see [`map_claude_model`]); `color` is Claude-runtime
+/// metadata and ignored; `tools` maps Claude tool names onto Jan tool names,
+/// dropping names with no equivalent.
 fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
     crate::core::agent::skills::for_each_plugin_dir(project_root, |_, path| {
         scan_agent_dir(&path.join("agents"), out);
@@ -284,19 +411,12 @@ fn scan_agent_files(dir: &Path, visit: &mut dyn FnMut(&Path, &str)) {
 
 fn scan_agent_dir(dir: &Path, out: &mut Vec<SubagentDefinition>) {
     scan_agent_files(dir, &mut |path, raw| match parse_plugin_agent(raw) {
-        Some((name, description, tools, system_prompt)) => {
-            if validate_name(&name).is_err() {
-                log::warn!("subagent: skipping plugin agent '{name}' (invalid name)");
+        Some(def) => {
+            if validate_name(&def.name).is_err() {
+                log::warn!("subagent: skipping plugin agent '{}' (invalid name)", def.name);
                 return;
             }
-            out.push(SubagentDefinition {
-                name,
-                description,
-                system_prompt,
-                allowed_tools: tools,
-                model: None,
-                scope: SubagentScope::Plugin,
-            });
+            out.push(def);
         }
         None => log::warn!(
             "subagent: skipping plugin agent {} (missing frontmatter name)",
@@ -313,12 +433,24 @@ struct PluginAgentFrontmatter {
     description: Option<String>,
     #[serde(default)]
     tools: Vec<String>,
+    model: Option<String>,
 }
 
-/// Parse a Claude Code agent markdown file into `(name, description, tools,
-/// system_prompt)`. `None` when the file has no `---` frontmatter or no
-/// `name` — such files are not dispatchable.
-fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>, String)> {
+/// A Claude Code agent's `model:` tier as a Jan model role. `haiku` is the
+/// cheap tier, which is what `smol` means here; any other tier, or none, runs
+/// on the session's model. A Claude tier is never passed through as a model
+/// id: no Jan provider is guaranteed to serve a model by that name.
+fn map_claude_model(model: Option<&str>) -> Option<String> {
+    model
+        .map(str::trim)
+        .filter(|m| m.eq_ignore_ascii_case("haiku"))
+        .map(|_| SMOL_ROLE.to_string())
+}
+
+/// Parse a Claude Code agent markdown file into a plugin-scope definition.
+/// `None` when the file has no `---` frontmatter or no `name`, since such files
+/// are not dispatchable. The name is not validated here; the loader does that.
+fn parse_plugin_agent(raw: &str) -> Option<SubagentDefinition> {
     let (yaml, body) = crate::core::agent::skills::split_frontmatter(raw);
     let yaml = yaml?;
     let fm: PluginAgentFrontmatter = serde_yaml::from_str(&yaml).unwrap_or_default();
@@ -326,8 +458,14 @@ fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>,
         .name
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())?;
-    let description = fm.description.unwrap_or_default();
-    Some((name, description, map_claude_tools(&fm.tools), body))
+    Some(SubagentDefinition {
+        name,
+        description: fm.description.unwrap_or_default(),
+        system_prompt: body,
+        allowed_tools: map_claude_tools(&fm.tools),
+        model: map_claude_model(fm.model.as_deref()),
+        scope: SubagentScope::Plugin,
+    })
 }
 
 /// Claude Code tool names with a Jan equivalent, 1:1 where one exists. Unknown
@@ -372,8 +510,8 @@ pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, Stri
     };
     let base = base.join("agents");
     scan_agent_files(&base, &mut |_, raw| {
-        if let Some((name, description, _, _)) = parse_plugin_agent(raw) {
-            out.push((name, description));
+        if let Some(def) = parse_plugin_agent(raw) {
+            out.push((def.name, def.description));
         }
     });
     out
@@ -590,16 +728,21 @@ fn qualify_host_names(
     tools
 }
 
-/// One subagent within a phased dispatch. When `name` matches a saved definition
-/// that definition's role and tools are used (and `allowed_tools` further narrows
-/// it); otherwise the subagent runs as a focused general-purpose agent defined by
-/// its `description` (the task) alone. `name` is also the blackboard filename its
-/// answer is written to (`blackboard/<name>.md`).
+/// One subagent within a phased dispatch. `agent` names the definition to run
+/// (any scope, built-ins included); without it, a `name` matching a saved user,
+/// project or plugin definition uses that one, as before. Either way the
+/// definition's role and tools are used, and `allowed_tools` further narrows
+/// them. Otherwise the subagent runs as a focused general-purpose agent defined
+/// by its `description` (the task) alone. `name` is the worker's own identity
+/// and the blackboard filename its answer is written to
+/// (`blackboard/<name>.md`), so it stays unique even when several workers run
+/// one definition.
 #[derive(Debug, Clone)]
 pub struct SubagentRequest {
     pub name: String,
     pub description: String,
     pub allowed_tools: Option<Vec<String>>,
+    pub agent: Option<String>,
 }
 
 /// A group of subagents that run concurrently. The next phase starts only once
@@ -640,8 +783,28 @@ fn resolve_dispatch(
     qualify: impl Fn(Vec<String>) -> Vec<String>,
 ) -> Result<ResolvedDispatch, SubagentError> {
     let requested = req.allowed_tools.clone().map(&qualify);
-    match registry.get(&req.name).cloned() {
+    // A built-in is reached only through `agent`: matching it by the worker's
+    // `name` would hand an ad-hoc worker that happens to be called `research`
+    // a prompt and allowlist it never asked for. Saved definitions keep the
+    // match by name, which is how they have always been dispatched.
+    let definition = match req.agent.as_deref() {
+        Some(agent) => Some(registry.get(agent).cloned().ok_or_else(|| {
+            SubagentError::Upstream(format!(
+                "no subagent definition named '{agent}' for agent; available: {}. Omit \
+                 agent to run a one-off general-purpose subagent.",
+                registry.dispatchable_names().join(", ")
+            ))
+        })?),
+        None => registry
+            .get(&req.name)
+            .filter(|d| d.scope != SubagentScope::Builtin)
+            .cloned(),
+    };
+    match definition {
         Some(mut definition) => {
+            // The worker keeps its own identity: its run id, blackboard file
+            // and transcript rows name the instance, not the definition.
+            definition.name = req.name.clone();
             definition.allowed_tools = definition.allowed_tools.map(&qualify);
             // Registered definition: the call-site allowlist further narrows it.
             let allowed_tools = intersect_allowed_tools(
@@ -1434,6 +1597,10 @@ impl Drop for AbortOnDrop {
 #[derive(Clone)]
 pub(crate) struct ParentRun {
     pub(crate) model: String,
+    /// The configured `smol` role model a definition's `model = "smol"`
+    /// resolves to, or `None` when none is configured (the role then falls
+    /// back to `model`).
+    pub(crate) smol_model: Option<String>,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
     /// The parent's remaining money ceiling, or `None` when it meters none.
@@ -1460,15 +1627,42 @@ pub(crate) struct ParentRun {
     pub(crate) known_tools: Vec<String>,
 }
 
-/// The model a dispatch will actually be billed for: the definition's own when
-/// it names one, else the dispatching run's. Resolved in one place because the
-/// request body and the ceiling priced against it must not disagree.
+/// Definition `model` value naming the configured cheap model (`smol_model`).
+pub(crate) const SMOL_ROLE: &str = "smol";
+/// Definition `model` value naming the dispatching run's model, the same as
+/// leaving `model` unset.
+pub(crate) const INHERIT_ROLE: &str = "inherit";
+
+/// The model a dispatch will actually be billed for. A definition's `model` is
+/// either a role (`smol`, `inherit`) or a literal model id; no model, or a
+/// blank one, is the dispatching run's. Roles let a definition ask for "the
+/// cheap model" without naming one provider's id for it. Resolved in one place
+/// because the request body, the ceiling priced against it and the compaction
+/// window must not disagree.
 fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
-    resolved
-        .definition
-        .model
-        .clone()
-        .unwrap_or_else(|| parent.model.clone())
+    match resolved.definition.model.as_deref().map(str::trim) {
+        None | Some("") | Some(INHERIT_ROLE) => parent.model.clone(),
+        Some(SMOL_ROLE) => parent
+            .smol_model
+            .clone()
+            .unwrap_or_else(|| parent.model.clone()),
+        Some(model) => model.to_string(),
+    }
+}
+
+/// The configured `smol` role model, read when a dispatch is made so a
+/// `/settings` change reaches the next dispatch without a restart. A malformed
+/// config reads as unset: the role then falls back to the parent's model, the
+/// same answer `/goal` evaluation gives.
+#[cfg(feature = "cli")]
+pub(crate) fn configured_smol_model() -> Option<String> {
+    crate::core::agent::global_config::smol_model().ok().flatten()
+}
+
+/// The desktop has no `~/.jan/config.toml`, so `smol` is the parent's model.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn configured_smol_model() -> Option<String> {
+    None
 }
 
 /// The context window `model` resolves to, the way the CLI resolves a run's
@@ -2545,12 +2739,13 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
     }
     let mut lines = Vec::with_capacity(defs.len());
     for d in defs {
-        let scope = match d.scope {
-            SubagentScope::User => "user",
-            SubagentScope::Project => "project",
-            SubagentScope::Plugin => "plugin",
-        };
-        lines.push(format!("{} [{}]: {}", d.name, scope, d.description));
+        lines.push(format!(
+            "{} [{}, model: {}]: {}",
+            d.name,
+            d.scope.label(),
+            d.model_label(),
+            d.description
+        ));
     }
     lines.join("\n")
 }
@@ -2563,11 +2758,15 @@ pub fn subagent_tool_schemas(
     max_parallel: u32,
 ) -> Vec<serde_json::Value> {
     use serde_json::json;
-    let available: Vec<&str> = {
-        let mut names: Vec<&str> = registry.list().iter().map(|d| d.name.as_str()).collect();
-        names.sort_unstable();
-        names.dedup();
-        names
+    // Each name with the model its winning definition dispatches on, so the
+    // agent can send cheap work to a cheap agent without a list call.
+    let available: Vec<String> = {
+        registry
+            .dispatchable_names()
+            .into_iter()
+            .filter_map(|name| registry.get(name))
+            .map(|d| format!("{} ({})", d.name, d.model_label()))
+            .collect()
     };
     let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by the name you gave it here.");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
@@ -2575,7 +2774,7 @@ pub fn subagent_tool_schemas(
         format!("Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} No saved subagents yet; each runs as a focused general-purpose agent defined by its task.")
     } else {
         format!(
-            "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} A subagent whose name matches a saved one uses that role and tools; otherwise it runs as a focused general-purpose agent. Saved subagents: {}.",
+            "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Set `agent` to run one of these as a subagent, using its role, tools and model (several entries may run the same agent under different names); omit it for a focused general-purpose subagent. Available agents, each with the model it runs on: {}.",
             available.join(", ")
         )
     };
@@ -2594,7 +2793,8 @@ pub fn subagent_tool_schemas(
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": { "type": "string", "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent." },
+                                    "name": { "type": "string", "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md)." },
+                                    "agent": { "type": "string", "description": "Optional saved or built-in subagent to run as (one of the names listed in this tool's description); its role, tools and model are used. Several entries may share one agent under different names. Omit it for a focused general-purpose subagent defined by its task." },
                                     "task": { "type": "string", "description": "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them." },
                                     "phase": { "type": "integer", "minimum": 0, "description": "Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out." },
                                     "allowed_tools": {
@@ -2745,10 +2945,17 @@ pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, Sub
                     ))
                 })?,
         };
+        let agent = sub
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|a| !a.is_empty())
+            .map(String::from);
         by_phase.entry(phase).or_default().push(SubagentRequest {
             name,
             description,
             allowed_tools: optional_tool_list(sub),
+            agent,
         });
     }
     let phases = by_phase
@@ -2795,10 +3002,10 @@ pub fn parse_create_args(
             description,
             system_prompt,
             allowed_tools: optional_tool_list(args),
-            model: args
-                .get("model")
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            // Not read from the call: which model an agent runs on is the
+            // user's choice (definition files, `[subagents.<name>]`,
+            // `/settings`), so the agent cannot route work to a pricier model.
+            model: None,
             scope,
         },
         scope,
@@ -2817,9 +3024,8 @@ pub fn subagent_dir_for(
         SubagentScope::User => user_subagents_dir().ok_or_else(|| {
             SubagentError::Upstream("cannot resolve home directory for user scope".to_string())
         }),
-        SubagentScope::Plugin => Err(SubagentError::Upstream(
-            "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                .to_string(),
+        SubagentScope::Plugin | SubagentScope::Builtin => Err(SubagentError::Upstream(
+            scope.read_only_reason().unwrap_or_default().to_string(),
         )),
     }
 }
@@ -2910,12 +3116,134 @@ pub(crate) mod tests {
         assert!(spilled_text(&failed).starts_with("ERROR: "));
     }
 
+    /// `[subagents.<name>] model` in the project's agent.toml outranks the
+    /// definition's own model, so a user can move a shipped or shared agent to
+    /// a cheaper model without editing its file. Unnamed agents are untouched.
     #[test]
-    fn empty_directories_yield_empty_registry() {
+    fn agent_toml_overrides_a_definitions_model() {
+        let root = unique_root("model_override");
+        let dir = project_subagents_dir(&root);
+        write_def(&dir, "explorer", "model = \"big\"\n");
+        write_def(&dir, "reviewer", "model = \"big\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explorer]\nmodel = \"smol\"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("smol"));
+        assert_eq!(reg.get("reviewer").unwrap().model.as_deref(), Some("big"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A blank override is no override: the definition's own model stands.
+    #[test]
+    fn a_blank_override_keeps_the_definitions_model() {
+        let root = unique_root("blank_override");
+        write_def(&project_subagents_dir(&root), "explorer", "model = \"big\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explorer]\nmodel = \" \"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With nothing saved anywhere, only the shipped catalog loads.
+    #[test]
+    fn empty_directories_yield_only_the_builtin_catalog() {
         let root = unique_root("empty");
         let reg = SubagentRegistry::load(&root);
-        assert!(reg.list().is_empty());
+        assert!(reg.list().iter().all(|d| d.scope == SubagentScope::Builtin));
         assert!(reg.get("nope").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shipped catalog parses, in a fixed order: the dispatch tool's
+    /// description names it, and that description sits in the cached prompt
+    /// prefix, so the bytes must not move between runs.
+    #[test]
+    fn the_builtin_catalog_parses_in_a_stable_order() {
+        let defs = builtin_definitions();
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["debug", "explore", "research", "review"]);
+        for def in &defs {
+            assert_eq!(def.scope, SubagentScope::Builtin);
+            assert!(!def.description.is_empty() && !def.system_prompt.is_empty());
+            assert!(validate_name(&def.name).is_ok());
+            // Every tool named is one a child can actually be offered.
+            for tool in def.allowed_tools.as_deref().unwrap_or_default() {
+                assert!(
+                    tauri_plugin_agent_tools::tools::lookup(tool).is_some(),
+                    "{}: unknown tool {tool}",
+                    def.name
+                );
+            }
+        }
+        // `explore` is read-only by construction: no shell, no write tools,
+        // so a cheap model under an auto-approving parent still cannot write.
+        let explore = &defs[1];
+        assert_eq!(explore.model.as_deref(), Some(SMOL_ROLE));
+        let tools: Vec<&str> = explore
+            .allowed_tools
+            .as_deref()
+            .unwrap()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(tools, ["read", "ls", "find", "grep"]);
+        for tool in &tools {
+            let cap = tauri_plugin_agent_tools::tools::lookup(tool).unwrap().capability;
+            assert_eq!(cap, tauri_plugin_agent_tools::tools::Capability::Read, "{tool}");
+        }
+        // `review` keeps the shell for `git diff`, so it must not claim to be
+        // read-only; it is told not to edit instead.
+        let review = &defs[3];
+        assert!(!review.description.contains("read-only"), "{}", review.description);
+        // `debug` has to edit and run tests, so it keeps the full toolset
+        // (narrowed only by the parent's policy) on the session's model.
+        let debug = &defs[0];
+        assert_eq!(debug.model.as_deref(), Some(INHERIT_ROLE));
+        assert_eq!(debug.allowed_tools, None);
+        assert_eq!(builtin_definitions(), defs, "deterministic");
+    }
+
+    /// Built-ins are the lowest precedence: a plugin, user or project agent of
+    /// the same name replaces one, and the agent.toml override still applies.
+    #[test]
+    fn saved_definitions_shadow_builtins_and_overrides_apply_to_them() {
+        let root = unique_root("builtin_shadow");
+        write_def(&project_subagents_dir(&root), "review", "model = \"mine\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explore]\nmodel = \"inherit\"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        let review = reg.get("review").unwrap();
+        assert_eq!(review.scope, SubagentScope::Project);
+        assert_eq!(review.model.as_deref(), Some("mine"));
+        let explore = reg.get("explore").unwrap();
+        assert_eq!(explore.scope, SubagentScope::Builtin);
+        assert_eq!(explore.model.as_deref(), Some(INHERIT_ROLE));
+        let listed = format_subagent_list(&reg);
+        assert!(listed.contains("explore [builtin, model: inherit]"), "{listed}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The built-in scope is read-only, like the plugin scope: it ships with
+    /// Jan, so there is no file to write. A same-name project definition is
+    /// how a user replaces one.
+    #[test]
+    fn the_builtin_scope_is_not_a_create_target() {
+        let root = unique_root("builtin_ro");
+        let mut reg = SubagentRegistry::load(&root);
+        let def = builtin_definitions().remove(0);
+        assert!(reg
+            .create_in(&root, def.clone(), SubagentScope::Builtin, true)
+            .is_err());
+        assert!(reg.create(def, SubagentScope::Builtin, true).is_err());
+        assert!(subagent_dir_for(&root, SubagentScope::Builtin).is_err());
+        assert!(parse_create_args(&serde_json::json!({
+            "name": "x", "description": "d", "system_prompt": "sp", "scope": "builtin"
+        }))
+        .is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2989,7 +3317,8 @@ pub(crate) mod tests {
         write_def(&dir, "good", "");
         let reg = SubagentRegistry::load(&root);
         assert!(reg.get("good").is_some());
-        assert_eq!(reg.list().len(), 1);
+        let saved = reg.list().into_iter().filter(|d| d.scope == SubagentScope::Project);
+        assert_eq!(saved.count(), 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3288,6 +3617,7 @@ pub(crate) mod tests {
             name: name.to_string(),
             description: "do the thing".to_string(),
             allowed_tools: allowed,
+            agent: None,
         }
     }
 
@@ -3296,6 +3626,7 @@ pub(crate) mod tests {
     fn parent_run() -> ParentRun {
         ParentRun {
             model: "m".to_string(),
+            smol_model: None,
             budget_remaining: None,
             send_reasoning: true,
             cost_remaining: None,
@@ -3399,6 +3730,74 @@ pub(crate) mod tests {
         );
     }
 
+    /// `reviewer` resolved against a registry whose definition names `model`.
+    fn resolved_on(model: Option<&str>) -> ResolvedDispatch {
+        let mut reg = registry_with("reviewer", None);
+        reg.defs[0].model = model.map(String::from);
+        resolve_dispatch_plain(&reg, &req("reviewer", None), &ToolPermissions::allow_all())
+            .expect("resolves")
+    }
+
+    /// `model = "smol"` names the user's cheap model without naming a provider's
+    /// id for it, so one definition keeps working across a provider switch.
+    #[test]
+    fn the_smol_role_runs_the_child_on_the_configured_smol_model() {
+        let parent = ParentRun {
+            smol_model: Some("cheap".to_string()),
+            ..parent_run()
+        };
+        let resolved = resolved_on(Some("smol"));
+        assert_eq!(child_model(&resolved, &parent), "cheap");
+        // The body is built from the same answer, so the request, its price and
+        // its compaction window all describe the model that actually runs.
+        assert_eq!(child_body(&resolved, "task", &parent)["model"], "cheap");
+    }
+
+    /// With no smol model configured the role falls back to the dispatching
+    /// run's model, the same fallback `/goal` evaluation uses, rather than
+    /// sending the literal `smol` upstream as a model id.
+    #[test]
+    fn the_smol_role_falls_back_to_the_parents_model_when_unset() {
+        assert_eq!(child_model(&resolved_on(Some("smol")), &parent_run()), "m");
+    }
+
+    /// `inherit` (or no model at all) is the parent's model; a literal id is
+    /// used as written.
+    #[test]
+    fn inherit_and_literal_models_resolve_as_named() {
+        let parent = ParentRun {
+            smol_model: Some("cheap".to_string()),
+            ..parent_run()
+        };
+        assert_eq!(child_model(&resolved_on(Some("inherit")), &parent), "m");
+        assert_eq!(child_model(&resolved_on(None), &parent), "m");
+        assert_eq!(child_model(&resolved_on(Some("  ")), &parent), "m");
+        assert_eq!(child_model(&resolved_on(Some("gpt-x")), &parent), "gpt-x");
+    }
+
+    /// A smol child under a cost ceiling is priced at the smol model's rates:
+    /// the alias resolves before pricing, so an unpriced smol model is refused
+    /// by name instead of being metered as the parent.
+    #[test]
+    fn a_smol_child_is_priced_as_the_resolved_model() {
+        let parent = ParentRun {
+            smol_model: Some("no-such-model-jan-test".to_string()),
+            cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                rates: crate::core::agent::session::TokenRates {
+                    prompt_usd: 1e-6,
+                    completion_usd: 2e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.25,
+            }),
+            ..parent_run()
+        };
+        let model = child_model(&resolved_on(Some("smol")), &parent);
+        let err = child_cost_ceiling(&model, &parent).expect_err("unpriced smol refused");
+        assert!(err.to_string().contains("no-such-model-jan-test"), "{err}");
+    }
+
     /// `[agent].send_reasoning = false` has to reach the child body: a child
     /// resends the `reasoning_content` of its own tool-call turns, so an opt-out
     /// that stopped at the parent would still break a strict provider on the
@@ -3434,6 +3833,7 @@ pub(crate) mod tests {
             name: "one-off".to_string(),
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
+            agent: None,
         };
         let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.name, "one-off");
@@ -5049,6 +5449,68 @@ pub(crate) mod tests {
         assert!(dispatch.contains("BACKGROUND"), "explains the background model: {dispatch}");
     }
 
+    /// Which model an agent runs on is the user's choice (the shipped catalog,
+    /// a definition file, `/settings`), never the model's: `create_subagent`
+    /// does not offer the field. The dispatch description does name each
+    /// agent's model, so the main agent can send cheap work to a cheap agent.
+    #[test]
+    fn schemas_keep_model_choice_out_of_create_but_name_it_on_dispatch() {
+        let mut reg = registry_with("reviewer", None);
+        reg.defs[0].model = Some(SMOL_ROLE.to_string());
+        reg.defs.push(SubagentDefinition {
+            name: "writer".to_string(),
+            model: None,
+            ..reg.defs[0].clone()
+        });
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let create = schemas
+            .iter()
+            .find(|s| s["function"]["name"] == "create_subagent")
+            .unwrap();
+        assert!(
+            create["function"]["parameters"]["properties"].get("model").is_none(),
+            "create_subagent must not let the model choose a model"
+        );
+
+        let dispatch = schemas[0]["function"]["description"].as_str().unwrap();
+        assert!(dispatch.contains("reviewer (smol)"), "{dispatch}");
+        assert!(dispatch.contains("writer (inherit)"), "{dispatch}");
+    }
+
+    /// `list_subagents` reports the model a name dispatches on next to its
+    /// scope, `inherit` when the definition names none.
+    #[test]
+    fn format_list_reports_each_model() {
+        let mut reg = registry_with("reviewer", None);
+        assert!(format_subagent_list(&reg).contains("reviewer [project, model: inherit]: d"));
+        reg.defs[0].model = Some("gpt-x".to_string());
+        assert!(format_subagent_list(&reg).contains("reviewer [project, model: gpt-x]: d"));
+    }
+
+    /// A Claude Code agent file's `model:` names a Claude tier, not an id any
+    /// Jan provider serves. `haiku` is the cheap tier, so it maps to the smol
+    /// role; every other value (`sonnet`, `opus`, `inherit`) runs on the
+    /// session's model, as before.
+    #[test]
+    fn plugin_agent_model_maps_haiku_to_smol_and_the_rest_to_inherit() {
+        let root = unique_root("plugin-model");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        for (name, model) in [("fast", "haiku"), ("Loud", "HAIKU"), ("big", "opus"), ("none", "")] {
+            let line = if model.is_empty() { String::new() } else { format!("model: {model}\n") };
+            std::fs::write(
+                plugin_agents_dir(&root).join(format!("{name}.md")),
+                format!("---\nname: {}\ndescription: d\n{line}---\nGo.", name.to_lowercase()),
+            )
+            .unwrap();
+        }
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("fast").unwrap().model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(reg.get("loud").unwrap().model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(reg.get("big").unwrap().model, None);
+        assert_eq!(reg.get("none").unwrap().model, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn parse_await_requires_run_id() {
         assert_eq!(
@@ -5064,7 +5526,114 @@ pub(crate) mod tests {
         assert!(format_subagent_list(&empty).contains("No subagents"));
         let reg = registry_with("reviewer", None);
         let listed = format_subagent_list(&reg);
-        assert!(listed.contains("reviewer [project]: d"));
+        assert!(listed.contains("reviewer [project, model: inherit]: d"));
+    }
+
+    /// A `model` the agent slips into `create_subagent` anyway is dropped: the
+    /// saved definition runs on the session's model until the user picks one.
+    #[test]
+    fn parse_create_ignores_a_model_argument() {
+        let (def, _, _) = parse_create_args(&serde_json::json!({
+            "name": "helper",
+            "description": "d",
+            "system_prompt": "sp",
+            "model": "most-expensive-model"
+        }))
+        .unwrap();
+        assert_eq!(def.model, None);
+    }
+
+    /// Overwriting a saved definition (say, to change its prompt) keeps the
+    /// model the user chose for it: `create_subagent` carries no model, so
+    /// writing its `None` over the file would move the agent onto the session's
+    /// pricier model, which is exactly what the agent must not be able to do.
+    #[test]
+    fn an_overwrite_keeps_the_existing_definitions_model() {
+        let root = unique_root("overwrite_model");
+        let dir = project_subagents_dir(&root);
+        write_def(&dir, "helper", "model = \"smol\"\n");
+        let mut reg = SubagentRegistry::load(&root);
+        let (def, scope, _) = parse_create_args(&serde_json::json!({
+            "name": "helper", "description": "d", "system_prompt": "new prompt"
+        }))
+        .unwrap();
+        reg.create_in(&dir, def, scope, true).expect("overwrite");
+        let reloaded = SubagentRegistry::load_definitions(&root);
+        let helper = reloaded.get("helper").unwrap();
+        assert_eq!(helper.system_prompt, "new prompt");
+        assert_eq!(helper.model.as_deref(), Some(SMOL_ROLE));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The model kept is the file's own, never a project override: an
+    /// override lives in agent.toml and must not be baked into the definition.
+    #[test]
+    fn an_overwrite_does_not_bake_in_an_agent_toml_override() {
+        let root = unique_root("overwrite_override");
+        let dir = project_subagents_dir(&root);
+        write_def(&dir, "helper", "");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.helper]\nmodel = \"smol\"\n").unwrap();
+        let mut reg = SubagentRegistry::load(&root);
+        let (def, scope, _) = parse_create_args(&serde_json::json!({
+            "name": "helper", "description": "d", "system_prompt": "p2"
+        }))
+        .unwrap();
+        reg.create_in(&dir, def, scope, true).expect("overwrite");
+        let own = SubagentRegistry::load_definitions(&root);
+        assert_eq!(own.get("helper").unwrap().model, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `agent` names the definition a worker runs, separately from the
+    /// worker's own `name`, so one plan can fan out several `explore` workers
+    /// (names must be unique: each is a blackboard file) and an ad-hoc worker
+    /// that happens to be called `research` is not hijacked by the built-in.
+    #[test]
+    fn agent_names_the_definition_and_name_the_worker() {
+        let root = unique_root("agent_field");
+        let reg = SubagentRegistry::load(&root);
+        let p = ToolPermissions::allow_all();
+        let plan = parse_dispatch_plan(&serde_json::json!({ "subagents": [
+            { "name": "explore-api", "agent": "explore", "task": "a" },
+            { "name": "explore-db", "agent": "explore", "task": "b" },
+            { "name": "research", "task": "look into the build", "allowed_tools": ["shell"] }
+        ]}))
+        .expect("two explore workers in one plan");
+        let subs = &plan.phases[0].subagents;
+        assert_eq!(subs[0].agent.as_deref(), Some("explore"));
+
+        let api = resolve_dispatch_plain(&reg, &subs[0], &p).unwrap();
+        assert_eq!(api.definition.name, "explore-api", "the worker keeps its own name");
+        assert_eq!(api.definition.scope, SubagentScope::Builtin);
+        assert_eq!(api.definition.model.as_deref(), Some(SMOL_ROLE));
+        assert!(api.definition.system_prompt.contains("read-only"));
+
+        // No `agent`: a one-off, whatever its name, with its own tools.
+        let adhoc = resolve_dispatch_plain(&reg, &subs[2], &p).expect("not hijacked");
+        assert_ne!(adhoc.definition.scope, SubagentScope::Builtin);
+        assert_eq!(adhoc.definition.model, None);
+
+        // An `agent` that names nothing is an error the model can fix, not a
+        // silent fallback to a general-purpose agent on the main model.
+        let bad = SubagentRequest { agent: Some("nope".into()), ..req("w", None) };
+        let err = resolve_dispatch_plain(&reg, &bad, &p).unwrap_err().to_string();
+        assert!(err.contains("nope") && err.contains("explore"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The dispatch schema documents `agent` and lists what it may name.
+    #[test]
+    fn the_dispatch_schema_offers_agent() {
+        let reg = SubagentRegistry::load(&unique_root("agent_schema"));
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        let agent = &item["properties"]["agent"];
+        assert_eq!(agent["type"], "string");
+        let required = item["required"].as_array().unwrap();
+        assert!(!required.iter().any(|r| r == "agent"));
+        let dispatch = schemas[0]["function"]["description"].as_str().unwrap();
+        assert!(dispatch.contains("explore (smol)"), "{dispatch}");
     }
 
     #[test]
@@ -5129,11 +5698,11 @@ pub(crate) mod tests {
         let def = reg.get("code-explorer").expect("loaded");
         assert_eq!(def.description, "Explores code");
         assert_eq!(def.system_prompt, "You are an explorer.");
-        // Claude runtime metadata is ignored: the parent model runs the child.
+        // `sonnet` is not the cheap tier: the parent model runs the child.
         assert_eq!(def.model, None);
         assert_eq!(def.scope, SubagentScope::Plugin);
         let list = format_subagent_list(&reg);
-        assert!(list.contains("code-explorer [plugin]"));
+        assert!(list.contains("code-explorer [plugin, model: inherit]"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -1459,6 +1459,7 @@ impl CompositeToolInvoker {
                     plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
+                        smol_model: crate::core::agent::subagent::configured_smol_model(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
                         cost_remaining: ctx.cost_ceiling,
@@ -1527,13 +1528,7 @@ impl CompositeToolInvoker {
                     Ok(d) => d,
                     Err(e) => return format!("ERROR: {e}"),
                 };
-                let scope_label = match scope {
-                    SubagentScope::User => "user",
-                    SubagentScope::Project => "project",
-                    // Unreachable: create_subagent rejects the plugin scope
-                    // before this point.
-                    SubagentScope::Plugin => "plugin",
-                };
+                let scope_label = scope.label();
                 let mut registry = SubagentRegistry::load(&self.project_root);
                 match registry.create_in(&dir, def.clone(), scope, overwrite) {
                     Ok(shadows) => {
@@ -2776,6 +2771,18 @@ fn advertise_local_tools(
                 }
             }
             openai_tools.push(schema);
+        }
+        // `ls`/`find`/`grep` stay out of the default array (the shell covers
+        // them), but a run whose allowlist names them is offered them: a
+        // read-only subagent with no shell (the `explore` built-in) has no
+        // other way to search. They are Read-capability, so plan mode keeps them.
+        if let Some(allow) = allowed_names {
+            for schema in tauri_plugin_agent_tools::tools::schema::search_tool_schemas() {
+                let name = schema["function"]["name"].as_str().unwrap_or_default();
+                if allow.contains(name) && !permissions.is_denied(name) {
+                    openai_tools.push(schema);
+                }
+            }
         }
         // Subagent tools are advertised only when this run may dispatch them
         // (never for a child run, capping recursion depth at one) and the run
@@ -11184,6 +11191,44 @@ mod tests {
         let names = advertised_for(false);
         assert!(!names.iter().any(|n| n == "message_subagent"));
         assert!(!names.iter().any(|n| n == "dispatch_subagent"));
+    }
+
+    /// `ls`/`find`/`grep` are left out of the default array (the shell covers
+    /// them), but a run whose allowlist names them -- the read-only `explore`
+    /// built-in, which has no shell -- must be offered them, or it could not
+    /// search at all. Without an allowlist they stay out.
+    #[test]
+    fn search_tools_are_advertised_only_when_an_allowlist_names_them() {
+        let root = std::env::temp_dir().join(format!("jan-advertise-search-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let advertised = |allowed: Option<&std::collections::HashSet<String>>| {
+            let mut tools = Vec::new();
+            advertise_local_tools(
+                &mut tools,
+                allowed,
+                &tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
+                Some(root.as_path()),
+                crate::core::agent::plan::RunMode::Normal,
+                false,
+                crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+                false,
+                false,
+                #[cfg(feature = "cli")]
+                &crate::core::agent::host_tools::HostToolSet::new(),
+            );
+            tools
+                .iter()
+                .map(|t| t["function"]["name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        let none = advertised(None);
+        assert!(!none.iter().any(|n| n == "grep" || n == "ls" || n == "find"), "{none:?}");
+        let allow: std::collections::HashSet<String> =
+            ["read", "ls", "find", "grep"].iter().map(|s| s.to_string()).collect();
+        let mut named = advertised(Some(&allow));
+        named.sort();
+        assert_eq!(named, ["find", "grep", "ls", "read"]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Plan mode is read-only: a dispatched child could mutate, so neither the
