@@ -2,18 +2,25 @@ import { useEffect, useState } from 'react'
 
 import axios from 'axios'
 
+import { isWindowsArm } from '@/utils/platform'
+
 // The releases page — used as the initial value and as the fallback when the
 // latest-release lookup fails, so the button always works.
 const RELEASES_PAGE = 'https://github.com/janhq/jan/releases/latest'
 
 // Mirrors DropdownDownload's per-OS asset mapping: Mac gets the universal dmg,
-// Windows the x64 installer, Linux goes to Flathub (same default as the hero).
-const assetHref = (userAgent: string, tagName: string): string => {
+// Windows the x64 or ARM64 installer, Linux goes to Flathub (same default as
+// the hero).
+const assetHref = (
+  userAgent: string,
+  tagName: string,
+  windowsArm: boolean
+): string => {
   const version = tagName.startsWith('v') ? tagName.slice(1) : tagName
   const base = `https://github.com/janhq/jan/releases/download/${tagName}`
 
   if (userAgent.includes('Windows')) {
-    return `${base}/Jan_${version}_x64-setup.exe`
+    return `${base}/Jan_${version}_${windowsArm ? 'arm64' : 'x64'}-setup.exe`
   }
   if (userAgent.includes('Mac')) {
     return `${base}/Jan_${version}_universal.dmg`
@@ -38,13 +45,16 @@ export const useDownloadLink = (): string => {
   useEffect(() => {
     let cancelled = false
 
-    const resolve = (tag: string) => {
-      if (!cancelled) setHref(assetHref(navigator.userAgent, tag))
+    const resolve = async (tag: string) => {
+      const windowsArm = await isWindowsArm()
+      if (!cancelled) setHref(assetHref(navigator.userAgent, tag, windowsArm))
     }
 
     if (cachedTag) {
       resolve(cachedTag)
-      return
+      return () => {
+        cancelled = true
+      }
     }
 
     axios

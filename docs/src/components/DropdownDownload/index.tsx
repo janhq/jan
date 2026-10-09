@@ -5,6 +5,7 @@ import { IoChevronDownOutline } from 'react-icons/io5'
 import { useClickOutside } from '@/hooks/useClickOutside'
 import { twMerge } from 'tailwind-merge'
 import { formatFileSize } from '@/utils/format'
+import { isWindowsArm } from '@/utils/platform'
 
 type Props = {
   lastRelease: any
@@ -31,9 +32,14 @@ const systemsTemplate: SystemType[] = [
     fileFormat: 'Jan_{tag}_universal.dmg',
   },
   {
-    name: 'Download for Windows',
+    name: 'Download for Windows (x64)',
     logo: FaWindows,
     fileFormat: 'Jan_{tag}_x64-setup.exe',
+  },
+  {
+    name: 'Download for Windows (ARM64)',
+    logo: FaWindows,
+    fileFormat: 'Jan_{tag}_arm64-setup.exe',
   },
   {
     name: 'Download for Linux (Flatpak)',
@@ -70,7 +76,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       setDefaultSystem(systems[1])
     } else if (userAgent.includes('Linux')) {
       // linux user - prefer Flatpak (Flathub)
-      setDefaultSystem(systems[2])
+      setDefaultSystem(systems[3])
     } else if (userAgent.includes('Mac OS')) {
       setDefaultSystem(systems[0])
     } else {
@@ -129,6 +135,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
   }
 
   useEffect(() => {
+    let cancelled = false
     const updateDownloadLinks = async () => {
       try {
         const tag = lastRelease.tag_name.startsWith('v')
@@ -154,6 +161,12 @@ const DropdownDownload = ({ lastRelease }: Props) => {
         })
         setSystems(updatedSystems)
         changeDefaultSystem(updatedSystems)
+
+        // The user agent can't tell Windows on ARM apart, so upgrade the
+        // Windows default to ARM64 only once Client Hints confirm it.
+        if ((await isWindowsArm()) && !cancelled) {
+          setDefaultSystem(updatedSystems[2])
+        }
       } catch (error) {
         console.error('Failed to update download links:', error)
       }
@@ -163,6 +176,9 @@ const DropdownDownload = ({ lastRelease }: Props) => {
       detectGPU()
     }
     updateDownloadLinks()
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpuInfo])
 

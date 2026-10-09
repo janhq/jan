@@ -3,6 +3,7 @@ import { Button } from './button'
 import { cn } from '@/lib/utils'
 import { FaApple, FaWindows, FaLinux } from 'react-icons/fa'
 import { formatFileSize } from '@/utils/format'
+import { isWindowsArm } from '@/utils/platform'
 
 interface DownloadOption {
   id: string
@@ -24,7 +25,14 @@ const downloadOptionsTemplate: DownloadOption[] = [
   },
   {
     id: 'windows',
-    name: 'Download for Windows',
+    name: 'Download for Windows (x64)',
+    icon: <FaWindows className="size-5" />,
+    size: '',
+    href: '#',
+  },
+  {
+    id: 'windows-arm64',
+    name: 'Download for Windows (ARM64)',
     icon: <FaWindows className="size-5" />,
     size: '',
     href: '#',
@@ -55,6 +63,7 @@ const downloadOptionsTemplate: DownloadOption[] = [
 const fileFormatMap: { [key: string]: string } = {
   'mac': 'Jan_{tag}_universal.dmg',
   'windows': 'Jan_{tag}_x64-setup.exe',
+  'windows-arm64': 'Jan_{tag}_arm64-setup.exe',
   'linux-appimage': 'Jan_{tag}_amd64.AppImage',
   'linux-deb': 'Jan_{tag}_amd64.deb',
 }
@@ -112,6 +121,7 @@ export function DropdownButton({
   }, [])
 
   React.useEffect(() => {
+    let cancelled = false
     if (lastRelease) {
       try {
         const tag = lastRelease.tag_name.startsWith('v')
@@ -139,9 +149,21 @@ export function DropdownButton({
 
         setDownloadOptions(updatedOptions)
         changeDefaultSystem(updatedOptions)
+
+        // The user agent can't tell Windows on ARM apart, so upgrade the
+        // Windows default to ARM64 only once Client Hints confirm it.
+        isWindowsArm().then((windowsArm) => {
+          const armOption = updatedOptions.find(
+            (opt) => opt.id === 'windows-arm64'
+          )
+          if (windowsArm && !cancelled && armOption) setCurrentOption(armOption)
+        })
       } catch (error) {
         console.error('Failed to update download links:', error)
       }
+    }
+    return () => {
+      cancelled = true
     }
   }, [lastRelease, changeDefaultSystem])
 
