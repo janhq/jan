@@ -96,30 +96,61 @@ function isMcpImage(
   return item?.type === 'image' && typeof item.data === 'string' && !!item.data
 }
 
-function mcpImageDataUrl(item: McpContentItem & { data: string }): string {
+// What vision providers and llama.cpp's image loader accept. Anything else
+// (svg, bmp, tiff) is rejected upstream, and since the stored result is
+// re-sent on every turn it would break the thread for good.
+const SENDABLE_IMAGE_TYPES: Record<string, true> = {
+  'image/png': true,
+  'image/jpeg': true,
+  'image/gif': true,
+  'image/webp': true,
+}
+
+/** The image as a data URL, or null when its media type is not sendable. */
+function mcpImageDataUrl(item: McpContentItem & { data: string }): string | null {
   // The sentinel regex takes a lowercase media type and an unbroken base64
   // run, so normalise both: some servers wrap long base64 across lines.
   const data = item.data.replace(/\s+/g, '')
-  if (data.startsWith('data:')) return data
-  const mime = item.mimeType?.toLowerCase().startsWith('image/')
-    ? item.mimeType.toLowerCase()
-    : 'image/png'
-  return `data:${mime};base64,${data}`
+  const mime = data.startsWith('data:')
+    ? /^data:([^;,]*)/i.exec(data)?.[1]?.toLowerCase()
+    : item.mimeType?.toLowerCase().startsWith('image/')
+      ? item.mimeType.toLowerCase()
+      : 'image/png'
+  if (!mime || SENDABLE_IMAGE_TYPES[mime] !== true) return null
+  return data.startsWith('data:') ? data : `data:${mime};base64,${data}`
 }
 
 function mcpOutputWithSentinels(items: McpContentItem[]): string {
-  const text: string[] = []
-  const images: string[] = []
+  // Items keep their original order so a caption stays next to its image.
+  const pieces: Array<{ text: boolean; value: string }> = []
+  let images = 0
   for (const item of items) {
-    if (isMcpImage(item)) images.push(mcpImageDataUrl(item))
-    else if (item?.type === 'text' && typeof item.text === 'string')
-      text.push(item.text)
-    else text.push(JSON.stringify(item))
+    if (isMcpImage(item)) {
+      const url = mcpImageDataUrl(item)
+      if (url) {
+        images++
+        pieces.push({ text: false, value: encodeToolImageSentinel(url) })
+      } else {
+        const mime = item.mimeType ?? 'unknown type'
+        pieces.push({ text: true, value: `(image omitted: ${mime} is not supported)` })
+      }
+    } else if (item?.type === 'text' && typeof item.text === 'string') {
+      pieces.push({ text: true, value: item.text })
+    } else {
+      pieces.push({ text: true, value: JSON.stringify(item) })
+    }
   }
-  const head =
-    text.join('\n') ||
-    `The tool returned ${images.length} image${images.length === 1 ? '' : 's'}.`
-  return head + images.map(encodeToolImageSentinel).join('')
+  let out = ''
+  let prevText = false
+  for (const piece of pieces) {
+    if (piece.text && prevText) out += '\n'
+    out += piece.value
+    prevText = piece.text
+  }
+  const hasText = pieces.some((piece) => piece.text)
+  return hasText || images === 0
+    ? out
+    : `The tool returned ${images} image${images === 1 ? '' : 's'}.${out}`
 }
 
 /**
