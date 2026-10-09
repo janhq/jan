@@ -129,6 +129,16 @@ impl SubagentRegistry {
     /// agent of the same name. Malformed files are skipped with a warning
     /// rather than failing the whole run.
     pub fn load(project_root: &Path) -> Self {
+        let mut registry = Self::load_definitions(project_root);
+        apply_model_overrides(project_root, &mut registry.defs);
+        registry
+    }
+
+    /// [`load`](Self::load) without the project's `[subagents.<name>]`
+    /// overrides: each definition's model as its own file states it. The
+    /// `/settings` screen shows that next to the override, so a user can see
+    /// what clearing the override falls back to.
+    pub fn load_definitions(project_root: &Path) -> Self {
         let mut defs = Vec::new();
         load_plugin_agents(project_root, &mut defs);
         if let Some(dir) = user_subagents_dir() {
@@ -244,6 +254,28 @@ impl SubagentRegistry {
             .retain(|d| !(d.name == def.name && d.scope == scope));
         self.defs.push(SubagentDefinition { scope, ..def });
         Ok(shadows_user)
+    }
+}
+
+/// Apply the project's `[subagents.<name>] model` overrides from agent.toml.
+/// Every same-name entry is overridden, shadowed ones too, so `list` and `get`
+/// agree on the model a name dispatches on. An unreadable agent.toml
+/// overrides nothing: the run reports a malformed file on its own load, and a
+/// dispatch should not fail over a knob.
+fn apply_model_overrides(project_root: &Path, defs: &mut [SubagentDefinition]) {
+    let Ok(cfg) = crate::core::agent::project::load_agent_config(project_root) else {
+        return;
+    };
+    for def in defs.iter_mut() {
+        let model = cfg
+            .subagents
+            .get(&def.name)
+            .and_then(|o| o.model.as_deref())
+            .map(str::trim)
+            .filter(|m| !m.is_empty());
+        if let Some(model) = model {
+            def.model = Some(model.to_string());
+        }
     }
 }
 
@@ -1434,6 +1466,10 @@ impl Drop for AbortOnDrop {
 #[derive(Clone)]
 pub(crate) struct ParentRun {
     pub(crate) model: String,
+    /// The configured `smol` role model a definition's `model = "smol"`
+    /// resolves to, or `None` when none is configured (the role then falls
+    /// back to `model`).
+    pub(crate) smol_model: Option<String>,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
     /// The parent's remaining money ceiling, or `None` when it meters none.
@@ -1460,15 +1496,42 @@ pub(crate) struct ParentRun {
     pub(crate) known_tools: Vec<String>,
 }
 
-/// The model a dispatch will actually be billed for: the definition's own when
-/// it names one, else the dispatching run's. Resolved in one place because the
-/// request body and the ceiling priced against it must not disagree.
+/// Definition `model` value naming the configured cheap model (`smol_model`).
+pub(crate) const SMOL_ROLE: &str = "smol";
+/// Definition `model` value naming the dispatching run's model, the same as
+/// leaving `model` unset.
+pub(crate) const INHERIT_ROLE: &str = "inherit";
+
+/// The model a dispatch will actually be billed for. A definition's `model` is
+/// either a role (`smol`, `inherit`) or a literal model id; no model, or a
+/// blank one, is the dispatching run's. Roles let a definition ask for "the
+/// cheap model" without naming one provider's id for it. Resolved in one place
+/// because the request body, the ceiling priced against it and the compaction
+/// window must not disagree.
 fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
-    resolved
-        .definition
-        .model
-        .clone()
-        .unwrap_or_else(|| parent.model.clone())
+    match resolved.definition.model.as_deref().map(str::trim) {
+        None | Some("") | Some(INHERIT_ROLE) => parent.model.clone(),
+        Some(SMOL_ROLE) => parent
+            .smol_model
+            .clone()
+            .unwrap_or_else(|| parent.model.clone()),
+        Some(model) => model.to_string(),
+    }
+}
+
+/// The configured `smol` role model, read when a dispatch is made so a
+/// `/settings` change reaches the next dispatch without a restart. A malformed
+/// config reads as unset: the role then falls back to the parent's model, the
+/// same answer `/goal` evaluation gives.
+#[cfg(feature = "cli")]
+pub(crate) fn configured_smol_model() -> Option<String> {
+    crate::core::agent::global_config::smol_model().ok().flatten()
+}
+
+/// The desktop has no `~/.jan/config.toml`, so `smol` is the parent's model.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn configured_smol_model() -> Option<String> {
+    None
 }
 
 /// The context window `model` resolves to, the way the CLI resolves a run's
@@ -2910,6 +2973,37 @@ pub(crate) mod tests {
         assert!(spilled_text(&failed).starts_with("ERROR: "));
     }
 
+    /// `[subagents.<name>] model` in the project's agent.toml outranks the
+    /// definition's own model, so a user can move a shipped or shared agent to
+    /// a cheaper model without editing its file. Unnamed agents are untouched.
+    #[test]
+    fn agent_toml_overrides_a_definitions_model() {
+        let root = unique_root("model_override");
+        let dir = project_subagents_dir(&root);
+        write_def(&dir, "explorer", "model = \"big\"\n");
+        write_def(&dir, "reviewer", "model = \"big\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explorer]\nmodel = \"smol\"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("smol"));
+        assert_eq!(reg.get("reviewer").unwrap().model.as_deref(), Some("big"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A blank override is no override: the definition's own model stands.
+    #[test]
+    fn a_blank_override_keeps_the_definitions_model() {
+        let root = unique_root("blank_override");
+        write_def(&project_subagents_dir(&root), "explorer", "model = \"big\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explorer]\nmodel = \" \"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn empty_directories_yield_empty_registry() {
         let root = unique_root("empty");
@@ -3296,6 +3390,7 @@ pub(crate) mod tests {
     fn parent_run() -> ParentRun {
         ParentRun {
             model: "m".to_string(),
+            smol_model: None,
             budget_remaining: None,
             send_reasoning: true,
             cost_remaining: None,
@@ -3397,6 +3492,74 @@ pub(crate) mod tests {
             child_cost_ceiling("no-such-model-jan-test", &parent_run()).expect("unmetered"),
             None
         );
+    }
+
+    /// `reviewer` resolved against a registry whose definition names `model`.
+    fn resolved_on(model: Option<&str>) -> ResolvedDispatch {
+        let mut reg = registry_with("reviewer", None);
+        reg.defs[0].model = model.map(String::from);
+        resolve_dispatch_plain(&reg, &req("reviewer", None), &ToolPermissions::allow_all())
+            .expect("resolves")
+    }
+
+    /// `model = "smol"` names the user's cheap model without naming a provider's
+    /// id for it, so one definition keeps working across a provider switch.
+    #[test]
+    fn the_smol_role_runs_the_child_on_the_configured_smol_model() {
+        let parent = ParentRun {
+            smol_model: Some("cheap".to_string()),
+            ..parent_run()
+        };
+        let resolved = resolved_on(Some("smol"));
+        assert_eq!(child_model(&resolved, &parent), "cheap");
+        // The body is built from the same answer, so the request, its price and
+        // its compaction window all describe the model that actually runs.
+        assert_eq!(child_body(&resolved, "task", &parent)["model"], "cheap");
+    }
+
+    /// With no smol model configured the role falls back to the dispatching
+    /// run's model, the same fallback `/goal` evaluation uses, rather than
+    /// sending the literal `smol` upstream as a model id.
+    #[test]
+    fn the_smol_role_falls_back_to_the_parents_model_when_unset() {
+        assert_eq!(child_model(&resolved_on(Some("smol")), &parent_run()), "m");
+    }
+
+    /// `inherit` (or no model at all) is the parent's model; a literal id is
+    /// used as written.
+    #[test]
+    fn inherit_and_literal_models_resolve_as_named() {
+        let parent = ParentRun {
+            smol_model: Some("cheap".to_string()),
+            ..parent_run()
+        };
+        assert_eq!(child_model(&resolved_on(Some("inherit")), &parent), "m");
+        assert_eq!(child_model(&resolved_on(None), &parent), "m");
+        assert_eq!(child_model(&resolved_on(Some("  ")), &parent), "m");
+        assert_eq!(child_model(&resolved_on(Some("gpt-x")), &parent), "gpt-x");
+    }
+
+    /// A smol child under a cost ceiling is priced at the smol model's rates:
+    /// the alias resolves before pricing, so an unpriced smol model is refused
+    /// by name instead of being metered as the parent.
+    #[test]
+    fn a_smol_child_is_priced_as_the_resolved_model() {
+        let parent = ParentRun {
+            smol_model: Some("no-such-model-jan-test".to_string()),
+            cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                rates: crate::core::agent::session::TokenRates {
+                    prompt_usd: 1e-6,
+                    completion_usd: 2e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.25,
+            }),
+            ..parent_run()
+        };
+        let model = child_model(&resolved_on(Some("smol")), &parent);
+        let err = child_cost_ceiling(&model, &parent).expect_err("unpriced smol refused");
+        assert!(err.to_string().contains("no-such-model-jan-test"), "{err}");
     }
 
     /// `[agent].send_reasoning = false` has to reach the child body: a child

@@ -753,6 +753,9 @@ enum PickerKind {
     /// `/settings > providers`: manage `~/.jan/config.toml` providers via a
     /// docked add/edit wizard (`a`/`e`) or deletion (`d`).
     ProviderSettings,
+    /// `/settings > subagents`: every saved subagent with the model it
+    /// dispatches on. Enter picks a model override, `x` clears it.
+    SubagentModels,
     /// `/todo` editor: browse the phased list and mutate the selected task
     /// (done/drop/rm) through the same canonical `TodoList` the model uses.
     Todo,
@@ -831,6 +834,7 @@ impl Picker {
             PickerKind::ViewConfig => " provider config ",
             PickerKind::AgentSettings => " agent settings ",
             PickerKind::ProviderSettings => " providers ",
+            PickerKind::SubagentModels => " subagent models ",
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
             PickerKind::PluginSetup => " set up plugin ",
@@ -856,6 +860,9 @@ impl Picker {
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
+            PickerKind::SubagentModels => {
+                " ↑/↓ select   Enter choose model   x clear override   Esc back"
+            }
             PickerKind::ProviderSettings => {
                 " ↑/↓ select   Enter edit   a add   dd delete   x logout   Esc close"
             }
@@ -893,6 +900,23 @@ struct ModelItem {
     value: String,
 }
 
+/// What a model picker's choice is written to. One picker serves the session's
+/// `/model` and the `/settings` model rows, so choosing a model reads the same
+/// everywhere and a settings choice can never be a typo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ModelTarget {
+    /// The session's own model (`/model`), saved to `[agent].model`.
+    Session,
+    /// `smol_model` in `~/.jan/config.toml`.
+    SmolModel,
+    /// `[subagents.<name>] model` in the project's agent.toml.
+    Subagent(String),
+}
+
+/// Scope label of the model-role rows (`smol`, `inherit`) in a subagent's
+/// model picker; also their `provider`, so search matches the word "role".
+const ROLE_SCOPE: &str = "role";
+
 struct ModelPicker {
     scopes: Vec<ModelScope>,
     active_scope: usize,
@@ -901,16 +925,34 @@ struct ModelPicker {
     items: Vec<ModelItem>,
     query: String,
     selected: usize,
+    target: ModelTarget,
+    /// The value the target holds now, marked "current" in the detail line.
+    current: String,
 }
 
 impl ModelPicker {
-    fn from_pairs(mut pairs: Vec<(String, String)>, current_model: &str) -> Option<Self> {
+    fn from_pairs(pairs: Vec<(String, String)>, current_model: &str) -> Option<Self> {
+        Self::with_roles(pairs, &[], current_model)
+    }
+
+    /// [`from_pairs`](Self::from_pairs) with model `roles` offered first, in
+    /// their own `role` scope. Roles are not provider models, so a picker that
+    /// offers them opens even when no provider lists a model.
+    fn with_roles(
+        mut pairs: Vec<(String, String)>,
+        roles: &[&str],
+        current_model: &str,
+    ) -> Option<Self> {
         pairs.sort_by(|a, b| match (a.0 == "tokamak", b.0 == "tokamak") {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => a.cmp(b),
         });
         pairs.dedup();
+        let roles = roles
+            .iter()
+            .map(|role| (ROLE_SCOPE.to_string(), (*role).to_string()));
+        let pairs: Vec<(String, String)> = roles.chain(pairs).collect();
         if pairs.is_empty() {
             return None;
         }
@@ -954,6 +996,8 @@ impl ModelPicker {
             all_items,
             query: String::new(),
             selected,
+            target: ModelTarget::Session,
+            current: current_model.to_string(),
         })
     }
 
@@ -13985,8 +14029,32 @@ async fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         }
     }
     if let Some(value) = chosen {
-        app.set_model(value);
-        app.model_picker = None;
+        let target = app
+            .model_picker
+            .take()
+            .map(|picker| picker.target)
+            .unwrap_or(ModelTarget::Session);
+        match target {
+            ModelTarget::Session => app.set_model(value),
+            ModelTarget::SmolModel => {
+                let written = crate::core::agent::global_config::set_global_key(
+                    "smol_model",
+                    Some(toml_edit::value(value.as_str())),
+                );
+                match written {
+                    Ok(_) => app.note(&format!(
+                        "smol_model = {value} written; subagents on the smol role use it from \
+                         their next dispatch, /goal from the next session"
+                    )),
+                    Err(e) => app.note(&format!("failed to write smol_model: {e}")),
+                }
+                open_settings_screen(app);
+            }
+            ModelTarget::Subagent(name) => {
+                set_subagent_model_override(app, &name, Some(&value));
+                open_subagent_settings(app, Some(&name));
+            }
+        }
     }
 }
 /// The copyable continuation command shown when a session closes, mirroring
@@ -14429,6 +14497,15 @@ async fn handle_key(
                     }
                 }
             }
+            // `/settings > subagents`: `x` removes the selected agent's model
+            // override, so the definition's own model applies again.
+            KeyCode::Char('x') if picker.kind == PickerKind::SubagentModels => {
+                let name = picker.items[picker.selected].value.clone();
+                if !name.is_empty() {
+                    set_subagent_model_override(app, &name, None);
+                    open_subagent_settings(app, Some(&name));
+                }
+            }
             // `/settings` picker: `x` restores the selected key to its default
             // by removing it from the file its scope names - same write as
             // clearing the field in the edit dock, one keypress instead of two.
@@ -14583,6 +14660,16 @@ async fn handle_key(
                     PickerKind::AgentSettings => {
                         if value == PROVIDERS_SETTINGS_ROW {
                             open_provider_settings(app);
+                        } else if value == SUBAGENTS_SETTINGS_ROW {
+                            open_subagent_settings(app, None);
+                        } else if value == SMOL_MODEL_KEY {
+                            let current =
+                                crate::core::agent::global_config::global_value(SMOL_MODEL_KEY);
+                            open_settings_model_picker(
+                                app,
+                                ModelTarget::SmolModel,
+                                current.as_deref(),
+                            );
                         } else if let Some(def) =
                             AGENT_SETTINGS.iter().find(|d| d.key == value)
                         {
@@ -14616,6 +14703,22 @@ async fn handle_key(
                     // Agents Enter is handled by the guarded arm above; the
                     // detail has no Enter action of its own. Background shells are
                     // acted on with `x` (stop), not Enter.
+                    PickerKind::SubagentModels => {
+                        // The watermark row (no subagents saved) has no name.
+                        if !value.is_empty() {
+                            let current =
+                                crate::core::agent::subagent::SubagentRegistry::load(
+                                    &app.project_root,
+                                )
+                                .get(&value)
+                                .and_then(|d| d.model.clone());
+                            open_settings_model_picker(
+                                app,
+                                ModelTarget::Subagent(value),
+                                current.as_deref(),
+                            );
+                        }
+                    }
                     PickerKind::Agents
                     | PickerKind::AgentDetail
                     | PickerKind::BackgroundShells
@@ -16192,6 +16295,14 @@ enum AgentSettingKind {
 /// management screen instead of an `[agent]` edit dock.
 const PROVIDERS_SETTINGS_ROW: &str = "__providers__";
 
+/// Sentinel row value in the `/settings` picker that opens the per-subagent
+/// model screen (`open_subagent_settings`).
+const SUBAGENTS_SETTINGS_ROW: &str = "__subagents__";
+
+/// The `/settings` row whose Enter opens the model picker instead of a text
+/// dock. Still an [`AGENT_SETTINGS`] def, so `x` and `/vibe-setting` reach it.
+const SMOL_MODEL_KEY: &str = "smol_model";
+
 const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "context_window",
@@ -16308,6 +16419,16 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "ask_timeout_secs",
         desc: "auto-answer an unanswered ask after N seconds with the recommended option (0 = wait forever)",
         kind: AgentSettingKind::Int { default: Some(0), min: 0 },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
+        key: SMOL_MODEL_KEY,
+        label: "smol_model",
+        desc: "cheap model for subagents with model = \"smol\" and /goal checks",
+        // Unset falls back to the session's model; there is no fixed id to show.
+        kind: AgentSettingKind::Text {
+            default: "the main model",
+        },
         scope: SettingScope::Global,
     },
 ];
@@ -16993,6 +17114,13 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
         checkbox: None,
         spans: None,
     }];
+    items.push(PickerItem {
+        value: SUBAGENTS_SETTINGS_ROW.to_string(),
+        label: "subagents".to_string(),
+        hint: Some("choose the model each saved subagent runs on".to_string()),
+        checkbox: None,
+        spans: None,
+    });
     items.extend(
         AGENT_SETTINGS
             .iter()
@@ -17026,6 +17154,81 @@ fn open_settings_screen(app: &mut App) {
         selected: 0,
         armed_delete: None,
     });
+}
+
+/// Open the `/settings > subagents` screen: one row per saved subagent name
+/// (the winning definition) with the model it dispatches on. An override in
+/// agent.toml is labelled with the definition's own model beside it, so the
+/// user can see what `x` falls back to. `select` re-aims the cursor at a name
+/// after a write rebuilds the list.
+fn open_subagent_settings(app: &mut App, select: Option<&str>) {
+    use crate::core::agent::subagent::{SubagentRegistry, INHERIT_ROLE};
+    let effective = SubagentRegistry::load(&app.project_root);
+    let own = SubagentRegistry::load_definitions(&app.project_root);
+    let mut names: Vec<&str> = effective.list().iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+
+    let model_of = |reg: &SubagentRegistry, name: &str| {
+        reg.get(name)
+            .and_then(|d| d.model.as_deref())
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or(INHERIT_ROLE)
+            .to_string()
+    };
+    let items: Vec<PickerItem> = if names.is_empty() {
+        vec![PickerItem {
+            label: "no saved subagents - create one with create_subagent or a plugin".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+            spans: None,
+        }]
+    } else {
+        names
+            .iter()
+            .map(|name| {
+                let now = model_of(&effective, name);
+                let base = model_of(&own, name);
+                PickerItem {
+                    value: (*name).to_string(),
+                    label: (*name).to_string(),
+                    hint: Some(if now == base {
+                        now
+                    } else {
+                        format!("{now} (override; own: {base})")
+                    }),
+                    checkbox: None,
+                    spans: None,
+                }
+            })
+            .collect()
+    };
+    let selected = select
+        .and_then(|name| items.iter().position(|i| i.value == name))
+        .unwrap_or(0);
+    app.picker = Some(Picker {
+        kind: PickerKind::SubagentModels,
+        search: None,
+        items,
+        selected,
+        armed_delete: None,
+    });
+}
+
+/// Write or clear (`None`) one subagent's `[subagents.<name>] model` in the
+/// project's agent.toml and report it. Read at each dispatch, so it applies to
+/// the next one, mid-session included.
+fn set_subagent_model_override(app: &mut App, name: &str, model: Option<&str>) {
+    let path = app.agent_dir.join("agent.toml");
+    match crate::core::agent::project::set_subagent_model(&path, name, model) {
+        Ok(()) => app.note(&match model {
+            Some(model) => format!("subagent {name} now runs on {model} from its next dispatch"),
+            None => format!("subagent {name} model override cleared"),
+        }),
+        Err(e) => app.note(&format!("failed to write {}: {e}", path.display())),
+    }
 }
 
 /// Open the `/settings > providers` screen: a picker row per provider in
@@ -18316,10 +18519,27 @@ async fn open_model_picker(app: &mut App) {
 /// automatic probe cheap), then rebuild the picker in place.
 async fn refresh_model_picker(app: &mut App) {
     let project_root = app.project_root.clone();
+    let target = app
+        .model_picker
+        .as_ref()
+        .map(|picker| picker.target.clone())
+        .unwrap_or(ModelTarget::Session);
     app.probed_models.clear();
     let refreshed = super::providers::refresh_models(Some(&project_root), None).await;
     apply_model_refresh(app, refreshed, true).await;
-    show_model_picker(app);
+    match target {
+        ModelTarget::Session => show_model_picker(app),
+        ModelTarget::SmolModel => {
+            let current = crate::core::agent::global_config::global_value("smol_model");
+            open_settings_model_picker(app, ModelTarget::SmolModel, current.as_deref());
+        }
+        ModelTarget::Subagent(name) => {
+            let current = crate::core::agent::subagent::SubagentRegistry::load(&app.project_root)
+                .get(&name)
+                .and_then(|d| d.model.clone());
+            open_settings_model_picker(app, ModelTarget::Subagent(name), current.as_deref());
+        }
+    }
 }
 
 /// Report a probe and reload the session's provider snapshot when it changed
@@ -18358,6 +18578,31 @@ async fn apply_model_refresh(
             }
         }
         Err(e) => app.note(&format!("could not fetch models: {e}")),
+    }
+}
+
+/// Open the model picker aimed at a `/settings` row instead of the session.
+/// `current` is pre-highlighted. A subagent target also offers the `smol` and
+/// `inherit` roles; `smol_model` cannot be a role (`smol` would name itself).
+fn open_settings_model_picker(app: &mut App, target: ModelTarget, current: Option<&str>) {
+    let pairs = super::providers::list_provider_models(Some(&app.project_root));
+    let current = current.unwrap_or_default();
+    let roles: &[&str] = match &target {
+        ModelTarget::Subagent(_) => &[
+            crate::core::agent::subagent::SMOL_ROLE,
+            crate::core::agent::subagent::INHERIT_ROLE,
+        ],
+        _ => &[],
+    };
+    let picker = ModelPicker::with_roles(pairs, roles, current);
+    match picker {
+        Some(picker) => {
+            app.picker = None;
+            app.model_picker = Some(ModelPicker { target, ..picker });
+        }
+        None => app.note(
+            "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
+        ),
     }
 }
 
@@ -21016,7 +21261,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // the full frame width (its border is top-only).
     app.transcript.view_width = f.area().width.max(1);
     if let Some(picker) = app.model_picker.as_ref() {
-        draw_model_picker(f, f.area(), picker, &app.model);
+        draw_model_picker(f, f.area(), picker);
         return;
     }
     // Every frame, so a finished plan hides on wall-clock time even with the
@@ -22301,14 +22546,18 @@ fn count_label(label: &str, count: usize, width: u16) -> String {
     format!("{label}{}{}", " ".repeat(width - used), count)
 }
 
-fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_model: &str) {
+fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
+    // Named for what the choice is written to, so a settings pick is never
+    // mistaken for switching the session's model.
+    let title = match &picker.target {
+        ModelTarget::Session => " Models ".to_string(),
+        ModelTarget::SmolModel => " Models for smol_model ".to_string(),
+        ModelTarget::Subagent(name) => format!(" Models for subagent {name} "),
+    };
     let block = panel_block(theme::border_active())
-        .title(Span::styled(
-            " Models ",
-            title_style(theme::border_active()),
-        ));
+        .title(Span::styled(title, title_style(theme::border_active())));
     f.render_widget(Clear, area);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -22452,7 +22701,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         .items
         .get(picker.selected)
         .map(|item| {
-            let state = if item.value == current_model {
+            let state = if item.value == picker.current {
                 "current"
             } else {
                 "default"
@@ -30692,8 +30941,8 @@ mod tests {
         super::settings_command(&mut app, "");
         let picker = app.picker.as_ref().expect("bare /settings opens picker");
         assert_eq!(picker.kind, PickerKind::AgentSettings);
-        // One leading "providers" row plus a row per `[agent]` def.
-        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 1);
+        // The leading "providers" and "subagents" rows plus a row per def.
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 2);
         assert_eq!(picker.items[0].value, PROVIDERS_SETTINGS_ROW);
         let row = picker
             .items
@@ -30994,6 +31243,169 @@ mod tests {
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("instructions_file = \"PROMPT.md\""), "{doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// A project with an `explorer` (own model `big`) and a `reviewer`, plus an
+    /// app pointed at it. Returns the project root.
+    fn app_with_subagents(app: &mut App) -> std::path::PathBuf {
+        let root = app.agent_dir.join("project");
+        std::fs::create_dir_all(&root).unwrap();
+        app.project_root = root.clone();
+        let dir = crate::core::agent::subagent::project_subagents_dir(&root);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, model) in [("explorer", "model = \"big\"\n"), ("reviewer", "")] {
+            std::fs::write(
+                dir.join(format!("{name}.toml")),
+                format!("name = \"{name}\"\ndescription = \"d\"\nsystem_prompt = \"p\"\n{model}"),
+            )
+            .unwrap();
+        }
+        app.agent_dir = crate::core::agent::project::store_root(&root);
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+        root
+    }
+
+    /// `/settings > subagents` lists every saved subagent with the model it
+    /// dispatches on, and Enter opens the model picker aimed at that agent,
+    /// with the `smol`/`inherit` roles offered beside the provider models.
+    /// Choosing one writes `[subagents.<name>] model` to the project's
+    /// agent.toml, which the registry then reports; `x` removes it again.
+    #[tokio::test]
+    async fn settings_subagents_screen_sets_and_clears_a_model_override() {
+        let mut app = test_app();
+        let root = app_with_subagents(&mut app);
+
+        super::settings_command(&mut app, "");
+        let picker = app.picker.as_mut().expect("settings open");
+        let row = picker
+            .items
+            .iter()
+            .position(|i| i.value == super::SUBAGENTS_SETTINGS_ROW)
+            .expect("/settings has a subagents row");
+        picker.selected = row;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        let picker = app.picker.as_ref().expect("subagents screen open");
+        assert_eq!(picker.kind, PickerKind::SubagentModels);
+        let labels: Vec<_> = picker.items.iter().map(|i| i.value.as_str()).collect();
+        assert_eq!(labels, ["explorer", "reviewer"]);
+        assert_eq!(picker.items[0].hint.as_deref(), Some("big"));
+        assert_eq!(picker.items[1].hint.as_deref(), Some("inherit"));
+
+        // Enter on explorer: the model picker, aimed at it, offering roles.
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let mp = app.model_picker.as_mut().expect("model picker opened");
+        assert_eq!(mp.target, super::ModelTarget::Subagent("explorer".into()));
+        let smol = mp
+            .items
+            .iter()
+            .position(|i| i.value == "smol")
+            .expect("the smol role is offered");
+        assert!(mp.items.iter().any(|i| i.value == "inherit"));
+        mp.selected = smol;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.model_picker.is_none());
+        assert_eq!(app.model, "m", "the session's own model is untouched");
+        let reg = crate::core::agent::subagent::SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("smol"));
+        // Back on the refreshed list, which shows the override and its source.
+        let picker = app.picker.as_ref().expect("returns to the subagents list");
+        assert_eq!(picker.kind, PickerKind::SubagentModels);
+        assert_eq!(picker.items[0].hint.as_deref(), Some("smol (override; own: big)"));
+
+        // `x` clears the override: the definition's own model applies again.
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        let reg = crate::core::agent::subagent::SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"));
+        assert_eq!(app.picker.as_ref().unwrap().items[0].hint.as_deref(), Some("big"));
+    }
+
+    /// Enter on the `smol_model` row picks from the configured models rather
+    /// than a free-text field, so a typo cannot reach a dispatch.
+    #[test]
+    fn settings_smol_model_row_opens_the_model_picker() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec!["gpt-big".into(), "gpt-mini".into()]),
+                    ..Default::default()
+                },
+            )
+            .expect("seed provider");
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                super::settings_command(&mut app, "");
+                let picker = app.picker.as_mut().unwrap();
+                picker.selected =
+                    picker.items.iter().position(|i| i.value == "smol_model").unwrap();
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+                let mp = app.model_picker.as_mut().expect("model picker opened");
+                assert_eq!(mp.target, super::ModelTarget::SmolModel);
+                assert!(
+                    !mp.items.iter().any(|i| i.value == "smol"),
+                    "smol cannot point at itself"
+                );
+                mp.selected = mp.items.iter().position(|i| i.value == "gpt-mini").unwrap();
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            });
+
+            assert_eq!(
+                crate::core::agent::global_config::smol_model(),
+                Ok(Some("gpt-mini".to_string()))
+            );
+            assert_eq!(app.model, "m", "the session's own model is untouched");
+            let picker = app.picker.as_ref().expect("returns to /settings");
+            assert_eq!(picker.kind, PickerKind::AgentSettings);
+        });
+    }
+
+    /// `smol_model` is the cheap model behind the `smol` subagent role and
+    /// `/goal` evaluation. It is user-wide, so the row writes the global config
+    /// as a string, and a cleared field unsets it so the main model applies.
+    #[test]
+    fn settings_prompt_writes_smol_model_globally() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            std::fs::create_dir_all(&app.agent_dir).unwrap();
+            let toml_path = app.agent_dir.join("agent.toml");
+            std::fs::write(&toml_path, "[agent]\n").unwrap();
+
+            let def = AGENT_SETTINGS
+                .iter()
+                .find(|d| d.key == "smol_model")
+                .expect("/settings lists smol_model");
+            assert!(def.scope == super::SettingScope::Global);
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+            for c in "cheap-1".chars() {
+                super::handle_settings_key(&mut app, key(KeyCode::Char(c)), false);
+            }
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+            assert_eq!(
+                crate::core::agent::global_config::smol_model(),
+                Ok(Some("cheap-1".to_string()))
+            );
+            let project = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(!project.contains("smol_model"), "{project}");
+
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("cheap-1")));
+            for _ in 0.."cheap-1".len() {
+                super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
+            }
+            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+            assert_eq!(crate::core::agent::global_config::smol_model(), Ok(None));
+
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
     }
 
     /// `ask_timeout_secs` lives in the user-wide config, not the project's

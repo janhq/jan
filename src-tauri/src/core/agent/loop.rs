@@ -1459,6 +1459,7 @@ impl CompositeToolInvoker {
                     plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
+                        smol_model: crate::core::agent::subagent::configured_smol_model(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
                         cost_remaining: ctx.cost_ceiling,

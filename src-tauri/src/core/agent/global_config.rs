@@ -16,8 +16,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
 #
 # default_model = "my-model"        # used when no --model / agent.toml model is set
-# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
-#                                     # defaults to `default_model` when unset
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation and
+#                                     # subagents with model = "smol"); defaults to the
+#                                     # session's model when unset
 # mouse = false                      # disable TUI mouse tracking (scroll wheel,
 #                                     # click-to-expand); on by default
 # sandbox = true                      # run `shell` under OS confinement (same as

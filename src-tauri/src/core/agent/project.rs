@@ -42,6 +42,21 @@ pub(crate) struct AgentToml {
     /// `[hooks]` map because several hooks may share one event.
     #[serde(default)]
     pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[subagents.<name>]` -- per-project overrides of saved subagent
+    /// definitions, keyed by definition name.
+    #[serde(default)]
+    pub subagents: BTreeMap<String, SubagentOverride>,
+}
+
+/// One `[subagents.<name>]` table. Lets a project move a definition it does
+/// not own (a user-wide or plugin agent) to another model without editing the
+/// definition's file.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct SubagentOverride {
+    /// Replaces the definition's `model`: a role (`smol`, `inherit`) or a
+    /// literal model id. Blank is ignored.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// `[prompt]` — where each contributor to the system prompt may sit. Deny-wins,
@@ -370,6 +385,12 @@ allow_write = []
 [skills]
 enabled = []
 
+# Per-project model for a saved subagent, overriding its definition's own.
+# A model id, "smol" (smol_model in ~/.jan/config.toml) or "inherit" (this
+# session's model). /settings > subagents edits these.
+# [subagents.explorer]
+# model = "smol"
+
 # Where each contributor to the system prompt may sit, deny-wins like [tools].
 # Above the cache line ("prefix") a contributor must be constant for the whole
 # session: a provider only reuses a prefix whose bytes are identical to the
@@ -669,6 +690,70 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
     let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
     agent["model"] = toml_edit::value(model);
 
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist `[subagents.<name>].model` into the agent.toml at `path`,
+/// format-preserving. `None` removes the key, and the table with it once
+/// empty, so the definition's own model applies again. A dedicated writer
+/// rather than [`set_agent_key`]: a definition name may itself be any
+/// `[A-Za-z0-9_-]` string, so `subagents.<name>.model` cannot be split on dots.
+#[cfg(feature = "cli")]
+pub(crate) fn set_subagent_model(
+    path: &Path,
+    name: &str,
+    model: Option<&str>,
+) -> Result<(), String> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("Failed to read {}: {e}", path.display())),
+    };
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    match model.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(model) => {
+            let subagents = doc["subagents"].or_insert(toml_edit::table());
+            // Dotted headers (`[subagents.explorer]`) rather than an empty
+            // `[subagents]` header above them. A hand-written inline table is
+            // edited in place instead, in whatever shape the user chose.
+            if let Some(table) = subagents.as_table_mut() {
+                table.set_implicit(true);
+            }
+            let subagents = subagents
+                .as_table_like_mut()
+                .ok_or_else(|| format!("{}: `subagents` is not a table", path.display()))?;
+            if subagents.get(name).is_none() {
+                subagents.insert(name, toml_edit::table());
+            }
+            let entry = subagents
+                .get_mut(name)
+                .and_then(|e| e.as_table_like_mut())
+                .ok_or_else(|| format!("{}: `subagents.{name}` is not a table", path.display()))?;
+            entry.insert("model", toml_edit::value(model));
+        }
+        None => {
+            if let Some(subagents) = doc.get_mut("subagents").and_then(|t| t.as_table_like_mut()) {
+                if let Some(entry) = subagents.get_mut(name).and_then(|t| t.as_table_like_mut()) {
+                    entry.remove("model");
+                    if entry.is_empty() {
+                        subagents.remove(name);
+                    }
+                }
+                if subagents.is_empty() {
+                    doc.remove("subagents");
+                }
+            }
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+    }
     std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
@@ -1016,6 +1101,44 @@ mod tests {
         assert_eq!(provider.name, "openai");
         assert_eq!(provider.api_key.as_deref(), Some("sk-test"));
         assert_eq!(provider.models, vec!["gpt-4o".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The `/settings` subagent-model writer round-trips through the parser,
+    /// keeps the rest of the file, and unsetting the last override removes the
+    /// table rather than leaving an empty `[subagents]` header behind.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_model_override_round_trips_and_unsets_cleanly() {
+        let root = unique_root("subagent_model");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_subagent_model(&path, "explorer", Some("smol")).expect("write");
+        set_subagent_model(&path, "code-reviewer", Some("gpt-x")).expect("write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("[subagents.explorer]"), "{raw}");
+        assert!(raw.contains("[agent]"), "the rest of the file is kept: {raw}");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.subagents["explorer"].model.as_deref(), Some("smol"));
+        assert_eq!(cfg.subagents["code-reviewer"].model.as_deref(), Some("gpt-x"));
+
+        set_subagent_model(&path, "explorer", None).expect("unset");
+        set_subagent_model(&path, "code-reviewer", Some(" ")).expect("blank unsets");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !raw.lines().any(|l| l.starts_with("[subagents")),
+            "no live [subagents] header left: {raw}"
+        );
+        assert!(load_agent_config(&root).expect("load").subagents.is_empty());
+
+        // A hand-written inline entry is edited in place, not refused.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{raw}\n[subagents]\nexplorer = {{ model = \"a\" }}\n"))
+            .unwrap();
+        set_subagent_model(&path, "explorer", Some("b")).expect("inline write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.subagents["explorer"].model.as_deref(), Some("b"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
