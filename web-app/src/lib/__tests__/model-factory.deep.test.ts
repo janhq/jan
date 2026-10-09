@@ -88,7 +88,7 @@ vi.mock('@/lib/provider-api-keys', () => ({
   }),
 }))
 
-import { ModelFactory } from '../model-factory'
+import { ModelFactory, LOOPBACK_DIRECT_PROXY } from '../model-factory'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
@@ -251,6 +251,22 @@ describe('model-factory deep coverage', () => {
       expect(body.auto_compact).toBeUndefined()
     })
 
+    // The engine is on loopback; a system or env proxy must never see the
+    // request, or a VPN or corporate proxy breaks local chat.
+    it('sends to the engine with every loopback host exempt from proxies', async () => {
+      vi.mocked(invoke).mockResolvedValue({ port: 8080, api_key: 'k' })
+      await ModelFactory.createModel('m', mkProvider('llamacpp'), {})
+      await getOpts().fetch('http://localhost:8080/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ messages: [] }),
+      })
+      const init = vi.mocked(httpFetch).mock.calls[0][1] as any
+      expect(init.proxy).toEqual(LOOPBACK_DIRECT_PROXY)
+      for (const host of ['localhost', '127.0.0.1', '::1']) {
+        expect(init.proxy.all.noProxy.split(',')).toContain(host)
+      }
+    })
+
     it('throws when startModel fails with Error', async () => {
       mockStartModel.mockRejectedValueOnce(new Error('GPU fail'))
       await expect(ModelFactory.createModel('m', mkProvider('llamacpp'), {})).rejects.toThrow('Failed to start model: GPU fail')
@@ -305,6 +321,7 @@ describe('model-factory deep coverage', () => {
       await new Promise((r) => setTimeout(r, 20))
       expect(vi.mocked(httpFetch)).toHaveBeenCalledTimes(2)
       expect(vi.mocked(httpFetch).mock.calls[1][0]).toBe('http://localhost:9090/v1/cancel')
+      expect((vi.mocked(httpFetch).mock.calls[1][1] as any).proxy).toEqual(LOOPBACK_DIRECT_PROXY)
     })
 
     it('throws when startModel fails', async () => {
