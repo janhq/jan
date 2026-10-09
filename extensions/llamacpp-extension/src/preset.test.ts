@@ -319,10 +319,32 @@ describe('generatePreset parallel with speculative decoding', () => {
     expect(section(ini, 'qwen')).not.toContain('parallel =')
   })
 
-  it('does not override a legacy string parallel for an MTP model', async () => {
+  // The gate and the [*] emission must read the string the same way: if only
+  // the gate accepted it, nothing would be emitted and auto's 4 slots return.
+  it('emits a legacy string parallel and does not pin the MTP model', async () => {
     setupModel('qwen', { mtp: true, mtp_layers: 1 })
     await generatePreset('/p', '/jan', { parallel: '2' } as any)
-    expect(writtenFiles['/p/router.preset.ini']).not.toContain('parallel = 1')
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
+    expect(section(ini, 'qwen')).not.toContain('parallel =')
+  })
+
+  it('treats a zero or non-numeric string parallel as auto and pins', async () => {
+    for (const parallel of ['0', '', 'auto']) {
+      setupModel('qwen', { mtp: true, mtp_layers: 1 })
+      await generatePreset('/p', '/jan', { parallel } as any)
+      const ini = writtenFiles['/p/router.preset.ini']
+      expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
+      expect(section(ini, 'qwen')).toContain('parallel = 1')
+    }
+  })
+
+  it('keeps a legacy string per-model parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: '2' })
+    await generatePreset('/p', '/jan', {} as any)
+    const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
+    expect(qwen).toContain('parallel = 2')
+    expect(qwen).not.toContain('parallel = 1')
   })
 
   it('keeps an explicit per-model parallel for an MTP model', async () => {
