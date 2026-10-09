@@ -68,9 +68,10 @@ impl SubagentScope {
 /// embedded at compile time, so the dispatch description that lists them is
 /// byte-identical across runs (it sits in the cached prompt prefix).
 const BUILTIN_SUBAGENTS: &[&str] = &[
-    include_str!("builtin_subagents/explorer.toml"),
-    include_str!("builtin_subagents/researcher.toml"),
-    include_str!("builtin_subagents/reviewer.toml"),
+    include_str!("builtin_subagents/debug.toml"),
+    include_str!("builtin_subagents/explore.toml"),
+    include_str!("builtin_subagents/research.toml"),
+    include_str!("builtin_subagents/review.toml"),
 ];
 
 /// Parse [`BUILTIN_SUBAGENTS`]. A file that fails to parse is a build defect a
@@ -105,6 +106,18 @@ pub struct SubagentDefinition {
     pub allowed_tools: Option<Vec<String>>,
     pub model: Option<String>,
     pub scope: SubagentScope,
+}
+
+impl SubagentDefinition {
+    /// The model as listings show it: the role or id the definition names, or
+    /// `inherit` when it names none.
+    pub fn model_label(&self) -> &str {
+        self.model
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or(INHERIT_ROLE)
+    }
 }
 
 /// On-disk shape of a subagent `.toml`; `scope` is derived from the directory,
@@ -341,9 +354,10 @@ fn apply_model_overrides(project_root: &Path, defs: &mut [SubagentDefinition]) {
 /// Load subagent definitions shipped by installed plugins as Markdown agent
 /// files (`<plugin>/agents/**/*.md`, the Claude Code convention). Loaded
 /// first so user/project TOML definitions shadow them by name. Frontmatter
-/// `name` and `description` are used; `model` and `color` are Claude-runtime
-/// metadata and ignored (the parent's model runs the child); `tools` maps
-/// Claude tool names onto Jan tool names, dropping names with no equivalent.
+/// `name` and `description` are used; `model` names a Claude tier and is
+/// mapped onto a role (see [`map_claude_model`]); `color` is Claude-runtime
+/// metadata and ignored; `tools` maps Claude tool names onto Jan tool names,
+/// dropping names with no equivalent.
 fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
     crate::core::agent::skills::for_each_plugin_dir(project_root, |_, path| {
         scan_agent_dir(&path.join("agents"), out);
@@ -375,19 +389,12 @@ fn scan_agent_files(dir: &Path, visit: &mut dyn FnMut(&Path, &str)) {
 
 fn scan_agent_dir(dir: &Path, out: &mut Vec<SubagentDefinition>) {
     scan_agent_files(dir, &mut |path, raw| match parse_plugin_agent(raw) {
-        Some((name, description, tools, system_prompt)) => {
-            if validate_name(&name).is_err() {
-                log::warn!("subagent: skipping plugin agent '{name}' (invalid name)");
+        Some(def) => {
+            if validate_name(&def.name).is_err() {
+                log::warn!("subagent: skipping plugin agent '{}' (invalid name)", def.name);
                 return;
             }
-            out.push(SubagentDefinition {
-                name,
-                description,
-                system_prompt,
-                allowed_tools: tools,
-                model: None,
-                scope: SubagentScope::Plugin,
-            });
+            out.push(def);
         }
         None => log::warn!(
             "subagent: skipping plugin agent {} (missing frontmatter name)",
@@ -404,12 +411,24 @@ struct PluginAgentFrontmatter {
     description: Option<String>,
     #[serde(default)]
     tools: Vec<String>,
+    model: Option<String>,
 }
 
-/// Parse a Claude Code agent markdown file into `(name, description, tools,
-/// system_prompt)`. `None` when the file has no `---` frontmatter or no
-/// `name` — such files are not dispatchable.
-fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>, String)> {
+/// A Claude Code agent's `model:` tier as a Jan model role. `haiku` is the
+/// cheap tier, which is what `smol` means here; any other tier, or none, runs
+/// on the session's model. A Claude tier is never passed through as a model
+/// id: no Jan provider is guaranteed to serve a model by that name.
+fn map_claude_model(model: Option<&str>) -> Option<String> {
+    model
+        .map(str::trim)
+        .filter(|m| m.eq_ignore_ascii_case("haiku"))
+        .map(|_| SMOL_ROLE.to_string())
+}
+
+/// Parse a Claude Code agent markdown file into a plugin-scope definition.
+/// `None` when the file has no `---` frontmatter or no `name`, since such files
+/// are not dispatchable. The name is not validated here; the loader does that.
+fn parse_plugin_agent(raw: &str) -> Option<SubagentDefinition> {
     let (yaml, body) = crate::core::agent::skills::split_frontmatter(raw);
     let yaml = yaml?;
     let fm: PluginAgentFrontmatter = serde_yaml::from_str(&yaml).unwrap_or_default();
@@ -417,8 +436,14 @@ fn parse_plugin_agent(raw: &str) -> Option<(String, String, Option<Vec<String>>,
         .name
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())?;
-    let description = fm.description.unwrap_or_default();
-    Some((name, description, map_claude_tools(&fm.tools), body))
+    Some(SubagentDefinition {
+        name,
+        description: fm.description.unwrap_or_default(),
+        system_prompt: body,
+        allowed_tools: map_claude_tools(&fm.tools),
+        model: map_claude_model(fm.model.as_deref()),
+        scope: SubagentScope::Plugin,
+    })
 }
 
 /// Claude Code tool names with a Jan equivalent, 1:1 where one exists. Unknown
@@ -463,8 +488,8 @@ pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, Stri
     };
     let base = base.join("agents");
     scan_agent_files(&base, &mut |_, raw| {
-        if let Some((name, description, _, _)) = parse_plugin_agent(raw) {
-            out.push((name, description));
+        if let Some(def) = parse_plugin_agent(raw) {
+            out.push((def.name, def.description));
         }
     });
     out
@@ -2667,7 +2692,13 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
     }
     let mut lines = Vec::with_capacity(defs.len());
     for d in defs {
-        lines.push(format!("{} [{}]: {}", d.name, d.scope.label(), d.description));
+        lines.push(format!(
+            "{} [{}, model: {}]: {}",
+            d.name,
+            d.scope.label(),
+            d.model_label(),
+            d.description
+        ));
     }
     lines.join("\n")
 }
@@ -2680,11 +2711,17 @@ pub fn subagent_tool_schemas(
     max_parallel: u32,
 ) -> Vec<serde_json::Value> {
     use serde_json::json;
-    let available: Vec<&str> = {
+    // Each name with the model its winning definition dispatches on, so the
+    // agent can send cheap work to a cheap agent without a list call.
+    let available: Vec<String> = {
         let mut names: Vec<&str> = registry.list().iter().map(|d| d.name.as_str()).collect();
         names.sort_unstable();
         names.dedup();
         names
+            .into_iter()
+            .filter_map(|name| registry.get(name))
+            .map(|d| format!("{} ({})", d.name, d.model_label()))
+            .collect()
     };
     let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by the name you gave it here.");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
@@ -2912,10 +2949,10 @@ pub fn parse_create_args(
             description,
             system_prompt,
             allowed_tools: optional_tool_list(args),
-            model: args
-                .get("model")
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            // Not read from the call: which model an agent runs on is the
+            // user's choice (definition files, `[subagents.<name>]`,
+            // `/settings`), so the agent cannot route work to a pricier model.
+            model: None,
             scope,
         },
         scope,
@@ -3074,7 +3111,7 @@ pub(crate) mod tests {
     fn the_builtin_catalog_parses_in_a_stable_order() {
         let defs = builtin_definitions();
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, ["explorer", "researcher", "reviewer"]);
+        assert_eq!(names, ["debug", "explore", "research", "review"]);
         for def in &defs {
             assert_eq!(def.scope, SubagentScope::Builtin);
             assert!(!def.description.is_empty() && !def.system_prompt.is_empty());
@@ -3088,12 +3125,17 @@ pub(crate) mod tests {
                 );
             }
         }
-        let explorer = &defs[0];
-        assert_eq!(explorer.model.as_deref(), Some(SMOL_ROLE));
+        let explore = &defs[1];
+        assert_eq!(explore.model.as_deref(), Some(SMOL_ROLE));
         assert_eq!(
-            explorer.allowed_tools.as_deref(),
+            explore.allowed_tools.as_deref(),
             Some(&["read".to_string(), "shell".to_string()][..])
         );
+        // `debug` has to edit and run tests, so it keeps the full toolset
+        // (narrowed only by the parent's policy) on the session's model.
+        let debug = &defs[0];
+        assert_eq!(debug.model.as_deref(), Some(INHERIT_ROLE));
+        assert_eq!(debug.allowed_tools, None);
         assert_eq!(builtin_definitions(), defs, "deterministic");
     }
 
@@ -3102,19 +3144,19 @@ pub(crate) mod tests {
     #[test]
     fn saved_definitions_shadow_builtins_and_overrides_apply_to_them() {
         let root = unique_root("builtin_shadow");
-        write_def(&project_subagents_dir(&root), "reviewer", "model = \"mine\"\n");
+        write_def(&project_subagents_dir(&root), "review", "model = \"mine\"\n");
         let toml = crate::core::agent::project::agent_toml_path(&root);
-        std::fs::write(&toml, "[subagents.explorer]\nmodel = \"inherit\"\n").unwrap();
+        std::fs::write(&toml, "[subagents.explore]\nmodel = \"inherit\"\n").unwrap();
 
         let reg = SubagentRegistry::load(&root);
-        let reviewer = reg.get("reviewer").unwrap();
-        assert_eq!(reviewer.scope, SubagentScope::Project);
-        assert_eq!(reviewer.model.as_deref(), Some("mine"));
-        let explorer = reg.get("explorer").unwrap();
-        assert_eq!(explorer.scope, SubagentScope::Builtin);
-        assert_eq!(explorer.model.as_deref(), Some(INHERIT_ROLE));
+        let review = reg.get("review").unwrap();
+        assert_eq!(review.scope, SubagentScope::Project);
+        assert_eq!(review.model.as_deref(), Some("mine"));
+        let explore = reg.get("explore").unwrap();
+        assert_eq!(explore.scope, SubagentScope::Builtin);
+        assert_eq!(explore.model.as_deref(), Some(INHERIT_ROLE));
         let listed = format_subagent_list(&reg);
-        assert!(listed.contains("explorer [builtin]"), "{listed}");
+        assert!(listed.contains("explore [builtin, model: inherit]"), "{listed}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -5338,6 +5380,68 @@ pub(crate) mod tests {
         assert!(dispatch.contains("BACKGROUND"), "explains the background model: {dispatch}");
     }
 
+    /// Which model an agent runs on is the user's choice (the shipped catalog,
+    /// a definition file, `/settings`), never the model's: `create_subagent`
+    /// does not offer the field. The dispatch description does name each
+    /// agent's model, so the main agent can send cheap work to a cheap agent.
+    #[test]
+    fn schemas_keep_model_choice_out_of_create_but_name_it_on_dispatch() {
+        let mut reg = registry_with("reviewer", None);
+        reg.defs[0].model = Some(SMOL_ROLE.to_string());
+        reg.defs.push(SubagentDefinition {
+            name: "writer".to_string(),
+            model: None,
+            ..reg.defs[0].clone()
+        });
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let create = schemas
+            .iter()
+            .find(|s| s["function"]["name"] == "create_subagent")
+            .unwrap();
+        assert!(
+            create["function"]["parameters"]["properties"].get("model").is_none(),
+            "create_subagent must not let the model choose a model"
+        );
+
+        let dispatch = schemas[0]["function"]["description"].as_str().unwrap();
+        assert!(dispatch.contains("reviewer (smol)"), "{dispatch}");
+        assert!(dispatch.contains("writer (inherit)"), "{dispatch}");
+    }
+
+    /// `list_subagents` reports the model a name dispatches on next to its
+    /// scope, `inherit` when the definition names none.
+    #[test]
+    fn format_list_reports_each_model() {
+        let mut reg = registry_with("reviewer", None);
+        assert!(format_subagent_list(&reg).contains("reviewer [project, model: inherit]: d"));
+        reg.defs[0].model = Some("gpt-x".to_string());
+        assert!(format_subagent_list(&reg).contains("reviewer [project, model: gpt-x]: d"));
+    }
+
+    /// A Claude Code agent file's `model:` names a Claude tier, not an id any
+    /// Jan provider serves. `haiku` is the cheap tier, so it maps to the smol
+    /// role; every other value (`sonnet`, `opus`, `inherit`) runs on the
+    /// session's model, as before.
+    #[test]
+    fn plugin_agent_model_maps_haiku_to_smol_and_the_rest_to_inherit() {
+        let root = unique_root("plugin-model");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        for (name, model) in [("fast", "haiku"), ("Loud", "HAIKU"), ("big", "opus"), ("none", "")] {
+            let line = if model.is_empty() { String::new() } else { format!("model: {model}\n") };
+            std::fs::write(
+                plugin_agents_dir(&root).join(format!("{name}.md")),
+                format!("---\nname: {}\ndescription: d\n{line}---\nGo.", name.to_lowercase()),
+            )
+            .unwrap();
+        }
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("fast").unwrap().model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(reg.get("loud").unwrap().model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(reg.get("big").unwrap().model, None);
+        assert_eq!(reg.get("none").unwrap().model, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn parse_await_requires_run_id() {
         assert_eq!(
@@ -5353,7 +5457,21 @@ pub(crate) mod tests {
         assert!(format_subagent_list(&empty).contains("No subagents"));
         let reg = registry_with("reviewer", None);
         let listed = format_subagent_list(&reg);
-        assert!(listed.contains("reviewer [project]: d"));
+        assert!(listed.contains("reviewer [project, model: inherit]: d"));
+    }
+
+    /// A `model` the agent slips into `create_subagent` anyway is dropped: the
+    /// saved definition runs on the session's model until the user picks one.
+    #[test]
+    fn parse_create_ignores_a_model_argument() {
+        let (def, _, _) = parse_create_args(&serde_json::json!({
+            "name": "helper",
+            "description": "d",
+            "system_prompt": "sp",
+            "model": "most-expensive-model"
+        }))
+        .unwrap();
+        assert_eq!(def.model, None);
     }
 
     #[test]
@@ -5418,11 +5536,11 @@ pub(crate) mod tests {
         let def = reg.get("code-explorer").expect("loaded");
         assert_eq!(def.description, "Explores code");
         assert_eq!(def.system_prompt, "You are an explorer.");
-        // Claude runtime metadata is ignored: the parent model runs the child.
+        // `sonnet` is not the cheap tier: the parent model runs the child.
         assert_eq!(def.model, None);
         assert_eq!(def.scope, SubagentScope::Plugin);
         let list = format_subagent_list(&reg);
-        assert!(list.contains("code-explorer [plugin]"));
+        assert!(list.contains("code-explorer [plugin, model: inherit]"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

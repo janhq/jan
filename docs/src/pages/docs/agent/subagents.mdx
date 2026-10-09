@@ -160,6 +160,55 @@ Because a subagent's context is separate, a long research task that would have c
 costs you only its final answer.
 </Callout>
 
+## Built-in subagents
+
+Jan ships four subagents, ready to dispatch with no setup:
+
+| Name | Model | Tools | What it does |
+| --- | --- | --- | --- |
+| `explore` | `smol` | `read`, `shell` | Read-only codebase exploration: finds where things are and reports `path:line` evidence |
+| `research` | `smol` | `web_search`, `web_fetch`, `read` | Answers a question from current web sources, with citations |
+| `review` | `inherit` | `read`, `shell` | Read-only review of a change for correctness, risk and missing tests |
+| `debug` | `inherit` | all | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
+
+The main agent sees each name with its model in the `dispatch_subagent` description, so it can send
+lookups to `explore` and keep your main model for the work that needs it.
+
+A saved subagent with the same name replaces a built-in one (see below), and the model of any of them
+can be changed per project.
+
+## Choosing a subagent's model
+
+A subagent definition's `model` is one of:
+
+- `smol`: the cheap model set as `smol_model` in `~/.jan/config.toml`. When `smol_model` is unset,
+  the session's model is used.
+- `inherit` (or no `model`): the session's model.
+- A model id, such as `gpt-5-mini`. This ties the definition to one provider's naming, so prefer a
+  role.
+
+To change it without editing the definition, set an override in the project's `agent.toml`:
+
+```toml
+[subagents.review]
+model = "smol"
+```
+
+Or do it from the console. `/settings` has two rows for this:
+
+- **`smol_model`** opens the model picker and sets the cheap model for every `smol` subagent (and for
+  `/goal` checks).
+- **`subagents`** lists every subagent with the model it runs on. Enter opens the model picker, with
+  the `smol` and `inherit` roles at the top. `x` clears the override, so the definition's own model
+  applies again.
+
+The model is read each time a subagent is dispatched, so a change applies to the next one without a
+restart. A cost ceiling is enforced at the subagent's own model's prices; a model with no published
+price is refused under a ceiling rather than metered at the wrong rate.
+
+The agent cannot pick a model itself: `create_subagent` saves a definition without one, so it runs
+on the session's model until you choose otherwise.
+
 ## Reusable subagents
 
 Definitions are TOML files, merged from two scopes:
@@ -170,7 +219,8 @@ Definitions are TOML files, merged from two scopes:
 ```
 
 The two are merged, and the project scope shadows the user scope by name - so a project can
-override one of your personal subagents without renaming it.
+override one of your personal subagents without renaming it. Either scope also shadows a built-in
+subagent of the same name.
 
 Plugins can also ship subagents as markdown agent files (`agents/*.md` in an installed plugin, the
 Claude Code convention). They load as a third, read-only scope:
@@ -179,16 +229,16 @@ Claude Code convention). They load as a third, read-only scope:
   same name.
 - Plugin agents cannot be created or edited through `create_subagent` - they are managed by
   installing or removing the plugin.
-- Claude-runtime frontmatter is translated: `model` and `color` are ignored (the agent runs on the
-  session's model), and `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`,
+- Claude-runtime frontmatter is translated: `model: haiku` runs the agent on the `smol` role and any
+  other `model` on the session's model, `color` is ignored, and `tools` is mapped onto Jan's tool names (`Read` -> `read`, `Glob` -> `glob`,
   `Grep` -> `grep`, `WebSearch` -> `web_search`, `WebFetch` -> `web_fetch`, `TodoWrite` -> `todo`).
   Names with no Jan equivalent are dropped; an agent listing only unknown tools inherits the
   parent's full tool policy.
 
 See [Plugins](/docs/agent/plugins#plugin-agents) for how plugin agents are discovered.
 
-Each definition carries a name, a one-line description, a system prompt, and an optional default
-tool allowlist. The agent can write one for you:
+Each definition carries a name, a one-line description, a system prompt, an optional default tool
+allowlist, and an optional `model` (see above). The agent can write one for you:
 
 ```
 Create a subagent called "reviewer" that reviews diffs for correctness

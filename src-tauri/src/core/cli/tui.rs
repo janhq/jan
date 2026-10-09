@@ -31289,11 +31289,17 @@ mod tests {
         let picker = app.picker.as_ref().expect("subagents screen open");
         assert_eq!(picker.kind, PickerKind::SubagentModels);
         let labels: Vec<_> = picker.items.iter().map(|i| i.value.as_str()).collect();
-        // The saved explorer and reviewer shadow the built-ins of the same
-        // name; the built-in researcher is listed beside them.
-        assert_eq!(labels, ["explorer", "researcher", "reviewer"]);
-        assert_eq!(picker.items[0].hint.as_deref(), Some("big"));
-        assert_eq!(picker.items[2].hint.as_deref(), Some("inherit"));
+        // The saved explorer and reviewer sit beside the built-in catalog.
+        assert_eq!(labels, ["debug", "explore", "explorer", "research", "review", "reviewer"]);
+        let hint = |name: &str| {
+            let item = picker.items.iter().find(|i| i.value == name).unwrap();
+            item.hint.clone().unwrap_or_default()
+        };
+        assert_eq!(hint("explorer"), "big");
+        assert_eq!(hint("reviewer"), "inherit");
+        assert_eq!(hint("explore"), "smol");
+        let row = picker.items.iter().position(|i| i.value == "explorer").unwrap();
+        app.picker.as_mut().unwrap().selected = row;
 
         // Enter on explorer: the model picker, aimed at it, offering roles.
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -31315,13 +31321,16 @@ mod tests {
         // Back on the refreshed list, which shows the override and its source.
         let picker = app.picker.as_ref().expect("returns to the subagents list");
         assert_eq!(picker.kind, PickerKind::SubagentModels);
-        assert_eq!(picker.items[0].hint.as_deref(), Some("smol (override; own: big)"));
+        let row = &picker.items[picker.selected];
+        assert_eq!(row.value, "explorer", "the cursor stays on the edited agent");
+        assert_eq!(row.hint.as_deref(), Some("smol (override; own: big)"));
 
         // `x` clears the override: the definition's own model applies again.
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
         let reg = crate::core::agent::subagent::SubagentRegistry::load(&root);
         assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"));
-        assert_eq!(app.picker.as_ref().unwrap().items[0].hint.as_deref(), Some("big"));
+        let picker = app.picker.as_ref().unwrap();
+        assert_eq!(picker.items[picker.selected].hint.as_deref(), Some("big"));
     }
 
     /// Enter on the `smol_model` row picks from the configured models rather

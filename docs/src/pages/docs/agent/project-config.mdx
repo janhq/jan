@@ -269,6 +269,19 @@ Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `r
 
 See [Skills](/docs/agent/skills#controlling-which-are-active).
 
+### `[subagents.<name>]`
+
+Per-project model for a subagent, replacing the one its definition names. `model` is a model id,
+`"smol"` (`smol_model` in `~/.jan/config.toml`) or `"inherit"` (the session's model). Works for
+built-in, plugin, user and project subagents alike, and is what `/settings > subagents` writes.
+
+```toml
+[subagents.review]
+model = "smol"
+```
+
+See [Subagents](/docs/agent/subagents#choosing-a-subagents-model).
+
 ## Updating
 
 ```bash
