@@ -185,6 +185,29 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://global.api-route.com/v1',
+    explore_models_url: 'https://www.api-route.com/pricing',
+    provider: 'api-route',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'API Route uses API keys for authentication. Create or copy a key from the [API Keys](https://www.api-route.com/api-keys) page.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
