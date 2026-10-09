@@ -149,6 +149,7 @@ export const modelSettings = {
       placeholder: 'e.g., root ::= "yes" | "no" or /path/to/grammar.gbnf',
       type: 'text',
       textAlign: 'right',
+      rows: 10,
     },
   },
   cpu_moe: {
