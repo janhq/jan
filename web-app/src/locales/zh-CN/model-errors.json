@@ -3,5 +3,30 @@
   "description": "此对话已接近 AI 的记忆上限，就像白板快被填满一样。我们可以扩展记忆窗口（称为上下文大小），这样它能记住更多内容，但可能会占用你电脑更多内存。我们也可以截断输入，这意味着它会遗忘部分聊天记录，为新消息腾出空间。",
   "increaseContextSizeDescription": "你想要增加上下文大小吗？",
   "truncateInput": "截断输入",
-  "increaseContextSize": "增加上下文大小"
+  "increaseContextSize": "增加上下文大小",
+  "lastRequestOverflowed": "上次请求超出了上下文窗口。",
+  "contextOverflowDetail": "此请求需要 {{request}} tokens，但模型的上下文窗口仅能容纳 {{context}}。",
+  "contextOverflowGeneric": "请求超出了可用的上下文大小。",
+  "engine": {
+    "unknown": "模型引擎报告了一个意外错误。",
+    "MODEL_LOAD_FAILED": "无法加载模型。",
+    "MODEL_ARCH_NOT_SUPPORTED": "当前引擎不支持此模型的架构。从设置中更新引擎可能会增加支持。",
+    "MODEL_LOAD_TIMED_OUT": "模型加载时间过长，已被停止。使用较小的模型或较小的上下文大小通常可以解决。",
+    "MISSING_SHARED_LIBRARY": "引擎所需的某个库缺失，因此无法启动。",
+    "GPU_DRIVER_TOO_OLD": "您的 GPU 驱动程序对于此引擎来说太旧了。更新驱动程序，或在设置中切换到 CPU 引擎，即可解决此问题。",
+    "OUT_OF_MEMORY": "内存不足，无法运行此模型。使用较小的模型或较小的上下文大小通常可以解决。",
+    "INVALID_ARGUMENT": "模型的某项设置无效。",
+    "IO_ERROR": "启动模型时无法读取或写入某个文件。",
+    "INTERNAL_ERROR": "Jan 在启动模型时内部出现了错误。"
+  },
+  "engineMissingLibraries": "缺失：{{libraries}}",
+  "engineReportedDetail": "引擎报告：{{detail}}",
+  "startModelFailed": "启动模型失败：{{reason}}",
+  "createModelFailed": "创建模型失败：{{reason}}",
+  "noRunningSession": "未找到模型 {{model}} 的运行会话",
+  "serverPortOccupied": "端口已被占用",
+  "serverPortOccupiedDescription": "端口 {{port}} 已被占用。请尝试其他端口。",
+  "serverInvalidModelPath": "模型路径无效或无法访问",
+  "serverStartModelFailed": "启动模型失败",
+  "serverStartFailed": "启动服务器失败"
 }
