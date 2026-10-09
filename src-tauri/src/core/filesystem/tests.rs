@@ -34,6 +34,79 @@ fn test_mkdir() {
 }
 
 #[test]
+fn test_mkdir_rejects_path_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside = unique_test_dir("mkdir-outside");
+    let args = vec![outside.to_string_lossy().to_string()];
+    let result = mkdir(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(!outside.exists());
+}
+
+#[test]
+fn test_mv_rejects_source_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside_dir = unique_test_dir("mv-outside-src");
+    fs::create_dir_all(&outside_dir).unwrap();
+    let outside_file = outside_dir.join("source.txt");
+    File::create(&outside_file).unwrap();
+
+    let destination = get_jan_data_folder_path(app.handle().clone()).join("moved.txt");
+    let args = vec![
+        outside_file.to_string_lossy().to_string(),
+        destination.to_string_lossy().to_string(),
+    ];
+    let result = mv(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(outside_file.exists());
+    assert!(!destination.exists());
+
+    let _ = fs::remove_dir_all(&outside_dir);
+}
+
+#[test]
+fn test_mv_rejects_destination_outside_jan_data_folder() {
+    let app = mock_app();
+    let source = get_jan_data_folder_path(app.handle().clone()).join("mv_src.txt");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    File::create(&source).unwrap();
+
+    let outside_dir = unique_test_dir("mv-outside-dest");
+    fs::create_dir_all(&outside_dir).unwrap();
+    let outside_dest = outside_dir.join("moved.txt");
+
+    let args = vec![
+        source.to_string_lossy().to_string(),
+        outside_dest.to_string_lossy().to_string(),
+    ];
+    let result = mv(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(source.exists());
+    assert!(!outside_dest.exists());
+
+    let _ = fs::remove_file(&source);
+    let _ = fs::remove_dir_all(&outside_dir);
+}
+
+#[test]
+fn test_write_file_sync_rejects_path_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside = unique_test_dir("write-outside");
+    fs::create_dir_all(&outside).unwrap();
+    let outside_file = outside.join("forbidden.txt");
+
+    let args = vec![
+        outside_file.to_string_lossy().to_string(),
+        "malicious content".to_string(),
+    ];
+    let result = write_file_sync(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(!outside_file.exists());
+
+    let _ = fs::remove_dir_all(&outside);
+}
+
+#[test]
 fn test_join_path() {
     let app = mock_app();
     let path = "file://test_dir";
