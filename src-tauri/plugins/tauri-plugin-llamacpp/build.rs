@@ -551,10 +551,23 @@ mod engine {
             }
             let (nvcc, v) = nvcc_version().unwrap_or_else(|| {
                 let tried = match env::var("CUDACXX") {
-                    Ok(cxx) if !cxx.trim().is_empty() => format!(
-                        "$CUDACXX={cxx:?}, which CMake will compile with, so nothing \
-                         else is tried"
-                    ),
+                    Ok(cxx) if !cxx.trim().is_empty() => {
+                        let on_path = |name: &Path| -> Vec<PathBuf> {
+                            env::var_os("PATH")
+                                .map(|p| env::split_paths(&p).map(|d| d.join(name)).collect())
+                                .unwrap_or_default()
+                        };
+                        let probed: Vec<String> = cudacxx_candidates(&cxx, &on_path)
+                            .iter()
+                            .filter(|c| c.is_file())
+                            .map(|c| c.display().to_string())
+                            .collect();
+                        format!(
+                            "CUDACXX='{cxx}', which CMake will compile with, so nothing \
+                             else is tried; existing files it resolved to: {}",
+                            if probed.is_empty() { "none".to_string() } else { probed.join(", ") }
+                        )
+                    }
                     _ => "nvcc on PATH, then $CUDA_PATH, $CUDA_HOME, \
                           $CUDAToolkit_ROOT and /usr/local/cuda"
                         .to_string(),
@@ -799,24 +812,7 @@ mod engine {
         };
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Some(cxx) = env::var("CUDACXX").ok().filter(|v| !v.trim().is_empty()) {
-            // "ccache nvcc -allow-unsupported-compiler" -> nvcc
-            let word = cxx
-                .split_whitespace()
-                .find(|w| Path::new(w).file_stem().and_then(|s| s.to_str()) == Some("nvcc"))
-                .or_else(|| cxx.split_whitespace().next())
-                .unwrap_or_default();
-            // As CMake does on Windows, accept the name without its .exe.
-            let mut names = vec![PathBuf::from(word)];
-            if cfg!(windows) && Path::new(word).extension().is_none() {
-                names.push(PathBuf::from(format!("{word}.exe")));
-            }
-            for name in names {
-                if name.components().count() > 1 {
-                    candidates.push(name);
-                } else {
-                    candidates.extend(on_path(&name));
-                }
-            }
+            candidates = cudacxx_candidates(&cxx, &on_path);
         } else {
             candidates.extend(on_path(Path::new(exe)));
             for var in ["CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
@@ -838,6 +834,86 @@ mod engine {
             let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
             Some((nvcc, (major.trim().parse().ok()?, minor.parse().ok()?)))
         })
+    }
+
+    /// The nvcc paths a set CUDACXX can mean, in CMake's order: the whole
+    /// value as one program first (so an unquoted "C:\Program Files\...\nvcc.exe"
+    /// works), then, split like a command line, the word naming nvcc (past
+    /// any launcher such as ccache), else the first word. Each is taken as a
+    /// path when it has a directory part, else looked up on PATH; on Windows
+    /// the name without .exe is accepted, as CMake accepts it.
+    fn cudacxx_candidates(cxx: &str, on_path: &dyn Fn(&Path) -> Vec<PathBuf>) -> Vec<PathBuf> {
+        let whole = cxx.trim().trim_matches(|c| c == '"' || c == '\'');
+        let words = split_command_line(cxx);
+        let is_nvcc = |w: &&String| {
+            let p = Path::new(w.as_str());
+            !w.starts_with('-')
+                && p.file_stem().and_then(|s| s.to_str()) == Some("nvcc")
+                && p.extension().map_or(true, |e| e.eq_ignore_ascii_case("exe"))
+        };
+        let word = words.iter().find(is_nvcc).or_else(|| words.first());
+        let mut names: Vec<String> = vec![whole.to_string()];
+        if let Some(w) = word {
+            if w != whole {
+                names.push(w.clone());
+            }
+        }
+        let mut out = Vec::new();
+        for name in names {
+            let mut forms = vec![PathBuf::from(&name)];
+            if cfg!(windows) && Path::new(&name).extension().is_none() {
+                forms.push(PathBuf::from(format!("{name}.exe")));
+            }
+            for f in forms {
+                if f.components().count() > 1 {
+                    out.push(f);
+                } else {
+                    out.extend(on_path(&f));
+                }
+            }
+        }
+        out
+    }
+
+    /// A command line split the way CMake splits CUDACXX: whitespace
+    /// separates words, "..." and '...' group them, and a backslash escapes
+    /// the next character except on Windows, where it is a path separator.
+    fn split_command_line(s: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut cur = String::new();
+        let mut in_word = false;
+        let mut quote: Option<char> = None;
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            match (quote, c) {
+                (Some(q), c) if c == q => quote = None,
+                (Some(_), c) => cur.push(c),
+                (None, '"' | '\'') => {
+                    quote = Some(c);
+                    in_word = true;
+                }
+                (None, '\\') if !cfg!(windows) => {
+                    if let Some(n) = chars.next() {
+                        cur.push(n);
+                    }
+                    in_word = true;
+                }
+                (None, c) if c.is_whitespace() => {
+                    if in_word {
+                        words.push(std::mem::take(&mut cur));
+                        in_word = false;
+                    }
+                }
+                (None, c) => {
+                    cur.push(c);
+                    in_word = true;
+                }
+            }
+        }
+        if in_word {
+            words.push(cur);
+        }
+        words
     }
 
     /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b11146,
