@@ -1065,8 +1065,10 @@ function ThreadDetail() {
             for (const toolName of ragTools) {
               toolApproval.approveToolForThread(threadId, toolName)
             }
+            // Merge into the existing metadata: a wholesale replacement drops
+            // `metadata.project` and silently detaches the thread from its project.
             useThreads.getState().updateThread(threadId, {
-              metadata: { hasDocuments: true },
+              metadata: { ...(thread?.metadata ?? {}), hasDocuments: true },
             })
           }
         } catch (error) {
