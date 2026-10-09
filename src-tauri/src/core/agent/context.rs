@@ -31,7 +31,11 @@ its absence means you have everything. A command's `[exit N]` line is the author
 dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
 notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \
 stopping. Do not idle, poll a file in a loop, or narrate waiting: say what you started, then either \
-get on with unrelated work or finish the turn.";
+get on with unrelated work or finish the turn.\n\
+- Never detach a shell command yourself with `nohup`, a trailing `&`, `setsid` or `disown`. For a \
+long-running command (a server, a build, a watcher), run it normally with a smaller `timeout`: when \
+the timeout passes the command keeps running in the background, its output is captured, and you are \
+notified when it exits. A command you detach yourself is invisible to that: no output, no notice.";
 
 /// The instructions file Jan reads first in every directory of the walk from
 /// the project root up to the filesystem root. When a directory has a
@@ -717,6 +721,19 @@ mod tests {
             !without_subagents.contains("dispatch_subagent"),
             "the subagent block must still be gated off"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A command detached by hand (`nohup`, `&`, `setsid`) escapes the shell
+    /// tool's own backgrounding, so no completion notice ever comes back and
+    /// the agent is left polling. The guideline steers it to a short `timeout`
+    /// instead, which backgrounds the command and keeps the doorbell.
+    #[test]
+    fn guidelines_steer_long_commands_to_the_timeout_not_nohup() {
+        let root = scratch_project("nohup");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
+        assert!(out.contains("`nohup`"), "names nohup: {out}");
+        assert!(out.contains("smaller `timeout`"), "points at the timeout: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

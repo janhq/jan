@@ -94,6 +94,9 @@ Cancelling stops the turn, not the session. See [rewinding](/docs/agent/sessions
 | --- | --- |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Recall sent messages, or scroll the transcript once the input has text |
 | <kbd>PgUp</kbd> / <kbd>PgDn</kbd> | Scroll the transcript, always |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Search the transcript: starts `/find ` in an empty input (with text typed, it still moves the caret) |
+| <kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd> | Next / previous search match, wrapping. Only while a search is on and the input is empty, so typing is never hijacked |
+| <kbd>Esc</kbd> | Clear the search and its highlight (before it would cancel a run or clear input) |
 | <kbd>Ctrl</kbd>+<kbd>O</kbd> | Expand or collapse all tool calls and reasoning blocks |
 | Drag | Select text, copied on release (<kbd>Alt</kbd>+drag selects a block) |
 | Click | Expand or collapse the row under the pointer |
@@ -121,3 +124,4 @@ See [Tool permissions](/docs/agent/permissions).
 | Key | Action |
 | --- | --- |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>D</kbd> | Quit (press twice) |
+| <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Suspend to the shell; resume with `fg`. Unix only. Refused (with a note) when no job-control shell sits above `jan`, such as `ssh -t host jan` or `docker exec -it`, because nothing could resume it |

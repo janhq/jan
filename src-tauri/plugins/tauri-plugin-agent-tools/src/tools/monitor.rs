@@ -445,7 +445,7 @@ async fn run_monitor(
             set.push_update(MonitorUpdate {
                 monitor_id: monitor_id.to_string(),
                 name: spec.name.clone(),
-                headline: format!("Monitor {monitor_id}: '{}' timed out", spec.name),
+                headline: headline(monitor_id, &spec.name, false),
                 text: format!(
                     "Monitor '{monitor_id}' ('{}') timed out after {}s and {} without a match. \
                      It has stopped.",
@@ -461,6 +461,24 @@ async fn run_monitor(
     }
 }
 
+/// Last word of a matched monitor's headline; a display classifies the
+/// headline by it, so it is shared rather than repeated as a literal.
+pub const MATCHED_OUTCOME: &str = "matched";
+
+/// Last words of a timed-out monitor's headline (see [`MATCHED_OUTCOME`]).
+pub const TIMED_OUT_OUTCOME: &str = "timed out";
+
+/// `Monitor mon-1: 'build' matched` (or `timed out`): the one producer of a
+/// monitor headline, so the display that styles it by outcome cannot drift.
+pub fn headline(monitor_id: &str, name: &str, matched: bool) -> String {
+    let outcome = if matched {
+        MATCHED_OUTCOME
+    } else {
+        TIMED_OUT_OUTCOME
+    };
+    format!("Monitor {monitor_id}: '{name}' {outcome}")
+}
+
 fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     let body = if content.is_empty() {
         " (the script exited 0 with no output)".to_string()
@@ -470,7 +488,7 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
     MonitorUpdate {
         monitor_id: monitor_id.to_string(),
         name: name.to_string(),
-        headline: format!("Monitor {monitor_id}: '{name}' matched"),
+        headline: headline(monitor_id, name, true),
         text: format!("Monitor '{monitor_id}' ('{name}') matched{body}\n\nIt has stopped."),
         matched: true,
     }

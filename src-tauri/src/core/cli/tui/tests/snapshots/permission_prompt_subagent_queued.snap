@@ -1,0 +1,62 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]      |
+|────────────────────────────────────────────────────────────────────────|
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|╭ permission required (1 of 2) ────────────────────────────────────────╮|
+|│ subagent scout is asking:                                            │|
+|│ write wants write                                                    │|
+|│ on notes.md                                                          │|
+|│ ▶ Allow once                                                         │|
+|│   Deny                                                               │|
+|╰──────────────────────────────────────────────────────────────────────╯|
+|>   working…       (Esc to cancel, type to steer the agent)             |
+|                                                                        |
+| ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                  |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..57 fg=#56B6C2
+ 0 57..66 fg=#56B6C2 mod=BOLD
+ 8 0..1 fg=#E5C07B
+ 8 1..31 fg=Black bg=#E5C07B mod=BOLD
+ 8 31..72 fg=#E5C07B
+ 9 0..1 fg=#E5C07B
+ 9 2..11 fg=DarkGray
+ 9 11..16 fg=#56B6C2 mod=BOLD
+ 9 16..27 fg=DarkGray
+ 9 71..72 fg=#E5C07B
+10 0..1 fg=#E5C07B
+10 2..7 fg=Cyan mod=BOLD
+10 7..14 fg=DarkGray
+10 14..19 fg=Yellow mod=BOLD
+10 71..72 fg=#E5C07B
+11 0..1 fg=#E5C07B
+11 2..5 fg=DarkGray
+11 71..72 fg=#E5C07B
+12 0..1 fg=#E5C07B
+12 2..70 fg=Cyan mod=BOLD
+12 71..72 fg=#E5C07B
+13 0..1 fg=#E5C07B
+13 71..72 fg=#E5C07B
+14 0..72 fg=#E5C07B
+15 0..2 fg=#56B6C2 mod=BOLD
+15 2..3 mod=REVERSED
+15 4..12 mod=DIM | ITALIC
+15 18..59 mod=DIM | ITALIC
+17 1..4 fg=#E5C07B mod=BOLD
+17 4..11 mod=DIM
+17 14..19 fg=#E5C07B mod=BOLD
+17 19..27 mod=DIM
+17 30..33 fg=#E5C07B mod=BOLD
+17 33..38 mod=DIM
+17 41..47 fg=#E5C07B mod=BOLD
+17 47..54 mod=DIM

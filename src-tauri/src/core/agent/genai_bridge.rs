@@ -203,10 +203,9 @@ fn options_from_body(body: &serde_json::Value) -> ChatOptions {
         capture_content: Some(true),
         capture_tool_calls: Some(true),
         capture_reasoning_content: Some(true),
-        // Providers that inline `<think>` tags in `content` instead of exposing a
-        // reasoning field get normalized into reasoning events too, so consumers
-        // see one shape regardless of provider.
-        normalize_reasoning_content: Some(true),
+        // `normalize_reasoning_content` is deliberately unset: genai only honours
+        // it on non-streaming OpenAI calls, and this bridge streams. Inline
+        // `<think>` tags are split by the TUI, per provider (`think_tags`).
         ..Default::default()
     }
 }

@@ -1,0 +1,34 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› how do I build the cli?                                                       |
+|                                                                                |
+|                                                                                |
+|• Building                                                                      |
+|                                                                                |
+|  Run these from src-tauri:                                                     |
+|                                                                                |
+|  - stub the resources with node ../scripts/stub-tauri-resources.mjs            |
+|  - then cargo build --features cli                                             |
+|                                                                                |
+|  The binary lands in target/debug.                                             |
+|                                                                                |
+|  Worked for 2s • 03:04 • ↑ 12K ↓ 120 • 60.0/s                                  |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..25 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 25..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 mod=DIM
+ 4 2..10 fg=Cyan mod=BOLD
+ 6 17..26 fg=Cyan
+ 8 2..4 fg=Cyan
+ 8 28..68 fg=Cyan
+ 9 2..4 fg=Cyan
+ 9 9..35 fg=Cyan
+11 22..34 fg=#FFA500 mod=BOLD
+13 0..46 fg=#808080

@@ -25,14 +25,18 @@ jan --task "..."    # with a first message already sent
 ─────────────────────────────────────────────────────────────────────────────────────
  MCP ready: sequential-thinking, serper
 
- > add a --version flag
 
- │ ✓ Read 3 files
- │ ✓ Edited src/cli.rs
+ › add a --version flag
 
- Done - the flag is wired up and documented.
 
- 2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+ • Explored
+   └ Read cli.rs, main.rs
+     Search version in src
+ • Edited src/cli.rs
+
+ • Done - the flag is wired up and documented.
+
+   Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ─────────────────────────────────────────────────────────────────────────────────────
  > Type here to chat with agent
 
@@ -43,12 +47,49 @@ jan --task "..."    # with a first message already sent
 | --- | --- |
 | Header | Model, reasoning effort, clock, turn count, context usage, prompt-cache hit rate, throughput, state |
 | Transcript | The conversation, with tool calls folded into summary rows |
-| Receipt | Per turn: context sent, tokens produced, elapsed, rate |
+| Receipt | Per turn: how long it took, when it finished, context sent, tokens produced, rate |
 | Input | Where you type |
 | Footer | Working directory and git branch |
 
-Tool rows fold to one line each. <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to
-expand just that one.
+Your own messages are the one filled block in the transcript: a full-width tinted bubble with a
+row of padding above and below, the text behind a `›`. A `/command` or skill you invoke shows in
+the same bubble. The agent's answer starts with a dim `•` and the rest of it - code boxes and
+tables included - is indented under it. When the turn ends, a dim receipt lines up under the
+answer: `Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s` - the duration, the time it finished
+(with the date when it was not today, `Oct 7 14:02`), context sent, tokens produced, and
+throughput when there was output to measure.
+
+Notes from Jan itself carry a glyph in the left column: `•` for information, a yellow `⚠` for a
+warning, and a red `■` for an error, so a failure stands out even without colour.
+
+Tool rows fold to one line each: a `•` bullet, then the verb and what it acted on (`Ran cargo
+test`, `Edited src/cli.rs`). The bullet's colour is the call's state: it pulses while the call
+runs, then turns green when it succeeds, red when it fails, and yellow when the turn was cancelled
+before it finished. A result or diff hangs off the row beneath a dim `└`.
+<kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to expand just that one. Once the
+answer arrives, the tool calls before it fold into a single `• Worked · N steps` row.
+
+Calls that only look around - reading files, listing directories, searching, reading memory notes
+or skills - share one row, `• Exploring` while any is in flight and `• Explored` once they finish,
+with one line per action beneath it: `Read cli.rs, main.rs` (consecutive reads merge, and a file
+gets its full path only when another one shares its name), `Search version in src`, `List docs`.
+A search that matched nothing says `(no matches)`; a call that failed adds a red `(failed)` and the
+row's header counts them: `• Explored · 1 failed`. Past four actions the rest fold into
+`… +N more`, which <kbd>Ctrl</kbd>+<kbd>O</kbd> opens up along with each call's output. A run that
+mixes in anything else (a command, a web search) keeps a counted summary such as
+`• Read 2 files; ran 1 command`.
+
+A shell command shows as `• Running cargo test (12s)`, with its output streaming in beneath it as
+it prints - the newest five lines, under a dim `… +N earlier lines` count once there are more. A
+command of several lines shows its next two on a dim `│` rail, then a count of the rest. When it
+finishes the row reads `• Ran cargo test`, followed by the first three lines of output and
+`… +N lines (Ctrl-O to expand)`; a silent command shows `(no output)`, and a failed one adds
+its exit code: `• Ran cargo test (exit 101)`.
+
+An edit names its size on the row - `• Edited src/cli.rs (+3 -1)`, or `Created` and `Wrote` for a
+new or rewritten file - and the diff follows it, indented, with each line's number in a dim
+column on the left. Added and removed lines are tinted green and red; on a 16-colour terminal the
+text takes the colour instead. A dim `⋮` separates hunks that are not adjacent.
 
 ## A turn
 
@@ -62,26 +103,69 @@ Type while it's working and your message queues rather than being dropped - see
 
 ### The working row
 
-While a turn runs, the input row shows an action word that turns over every few seconds, with a 👋
-sweeping back and forth along it, so a long turn does not read as a hung UI.
+While a turn runs, the input row shows an action word that turns over every few seconds, with a
+brightness sweep crossing it, so a long turn does not read as a hung UI. After the word comes the
+key that cancels it, <kbd>Esc</kbd>; the turn's elapsed time (`12s`, `1m 05s`, `1h 02m`) is in the
+header. On a narrow terminal the row drops the long hint first, then the short one, so it always
+stays one line.
 
-Pick a different glyph from `/settings > wave`, or set it in `~/.jan/config.toml` directly:
+### Waiting on background work
 
-```toml
-wave = "👋"
+When the agent has answered but a subagent it dispatched or a monitor it started is still going,
+the turn stays open and waits for it. The header badge reads `○ [waiting]` (`[watching]` while a
+monitor is up), and the input row says what the turn is waiting on, with each item under it:
+
+```
+• Waiting for 2 agents · 1 monitor (Esc to stop, type to steer)
+  └ kv-review
+  └ perf-scan
+  └ mon-1 build
 ```
 
-Any string of up to three characters works - `"🍌"`, `"~"`, `"<o>"`, `"👁️👄👁️"`. The limit counts
-what you see, so a single emoji built from several code points still counts as one. The glyph
-replaces the Braille throbber rather than joining it, and covers the characters it passes over
-instead of pushing them along, so the row never changes width no matter how wide the glyph is.
+A single subagent is named on the row itself (`• Waiting for kv-review`). At most three items are
+listed, the last ending in `…` when there are more. The row does not animate, since nothing is being
+generated, and it shows no elapsed time: that stays in the header. The footer reads `Esc stop`:
+<kbd>Esc</kbd> stops the background work and ends the turn. Anything you type steers the agent.
 
-Unlike most settings, this one applies the moment you save it, with no restart.
+A subagent that finishes during the wait leaves its `• Finished NAME` row below the answer, and the
+agent picks up from there.
 
-To go back to the plain Braille throbber - if your terminal lacks the font and draws a
-missing-character box - clear the field in `/settings` and save. That writes `wave = ""`, which is
-the off switch. Pressing <kbd>x</kbd> on the row is the other direction: it removes the key, so the
-default 👋 comes back.
+### Monitors and background shells
+
+A monitor that matches leaves a `◔ Monitor mon-1: 'build' matched` row; one that times out leaves a
+`⚠` warning instead. When a command the agent sent to the background ends, it leaves a tool row
+(`• Background command finished after 12s: make build`), or a `⚠` warning if it failed. If the dock
+has no room for every monitor, its last row reads `+N more · /monitors`. `/monitors` lists all of
+them, and <kbd>x</kbd> stops the selected one.
+
+While commands run in the background, a dim row sits above the input:
+
+```
+2 background shells running · /shells to view · /stop to close
+```
+
+During a turn the row is hidden so the input area keeps its height, and the working row ends with
+`· 2 bg shells` instead. `/shells` lists the commands; <kbd>x</kbd> stops one, and `/stop` stops
+all of them.
+
+### Motion
+
+The working row and the `[thinking]` badge animate: a brightness sweep crosses the label. A
+running tool row pulses its bullet the same way. The sweep changes colour only, never width, so
+nothing beside it moves. It is skipped on a 16-colour terminal, which has no shades in between to sweep through.
+
+To hold everything still, set this in `~/.jan/config.toml`:
+
+```toml
+[tui]
+animations = false
+```
+
+Throbbers then show a static `•`, a running tool's bullet stays dim, and every label keeps its
+resting colour. Jan also turns animations off at launch when the OS asks for reduced motion: on macOS
+(System Settings > Accessibility > Display > Reduce motion) and on GNOME-family Linux desktops
+(animations off). Windows is not detected yet, so use the key there. Restart Jan after changing
+either.
 
 ### The prompt-cache hit rate
 
@@ -117,7 +201,8 @@ Two knobs in `agent.toml` and two in `~/.jan/config.toml` tune this:
 | --- | --- | --- | --- |
 | `[agent].show_reasoning` | `agent.toml` | `false` | Unfold every reasoning block in the transcript by default. Still folds when off; <kbd>Ctrl</kbd>+<kbd>O</kbd> or a click expands a block either way |
 | `[agent].send_reasoning` | `agent.toml` | `true` | Resend a prior turn's reasoning to the model with the conversation. Turn off for an upstream that rejects the field (Groq), or to keep chains of thought out of the context budget |
-| `think_tags` | `~/.jan/config.toml` | `true` | Treat `<thinking>` tags in model content as reasoning (folded and resendable). Off renders them as ordinary prose |
+| `think_tags` | `~/.jan/config.toml` | per provider | Treat `<think>` tags in model content as reasoning (folded and resendable), for every provider. Unset, it is on for a custom OpenAI-compatible provider and off for `openai`, `anthropic` and `tokamak` on their own endpoints (`api.openai.com`, `api.anthropic.com`, `api.tokamak.sh`), which send reasoning in its own field; an entry with one of those names but another `base_url` (vLLM, OpenRouter, a local server) is treated as custom and stays on. Also off for the Anthropic, Google and Responses wire APIs. Off renders tags as ordinary prose |
+| `parse_think_tags` | `[providers.<name>]` in `~/.jan/config.toml` | inherits `think_tags` | The same switch for one provider; it beats `think_tags` |
 | `stream_reasoning` | `~/.jan/config.toml` | `true` | Stream an open reasoning block's last lines into the live tail. Off shows only the `[thinking]` badge |
 
 See [Project config](/docs/agent/project-config) for the `agent.toml` keys.

@@ -44,6 +44,32 @@ yarn tauri build
 cargo test
 ```
 
+### Snapshot tests (agent TUI)
+
+A few TUI surfaces (permission prompt, diff preview, header badges, todo and
+subagent panels, `/agents`, model picker) are pinned by
+[insta](https://insta.rs) snapshots in
+`src/core/cli/tui/tests/snapshot.rs`, with baselines in `tui/tests/snapshots/`.
+Each `.snap` holds the rendered text and the colour/modifier runs per row. The
+module doc says when to add a snapshot rather than a substring test.
+
+```bash
+# Run them (they are part of the normal cli test run)
+cargo test --locked --no-default-features --features cli --lib -- core::cli::tui::tests::snapshot
+
+# A mismatch fails the test and writes a pending `<name>.snap.new` beside the
+# baseline. Review and accept or reject each one interactively:
+cargo install cargo-insta   # once
+cargo insta review
+
+# Or accept everything the run produces, without the review tool:
+INSTA_UPDATE=always cargo test --locked --no-default-features --features cli --lib -- core::cli::tui::tests::snapshot
+```
+
+Commit the updated `.snap` files with the change that caused them, and never a
+leftover `.snap.new`. With `CI=true` (set on GitHub Actions) and
+`INSTA_UPDATE` unset, insta writes nothing and a mismatch only fails the test.
+
 ### State Management
 
 ```rust

@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|• Waiting for 2 agents · 1 monitor (Esc to stop, type to steer)                 |
+|  └ kv-review                                                                   |
+|  └ perf-scan                                                                   |
+|  └ mon-1 build                                                                 |
+|                                                                                |
+
+ 0 0..2 fg=#808080
+ 0 34..63 mod=DIM | ITALIC
+ 1 0..4 fg=#808080
+ 1 4..13 fg=#56B6C2 mod=BOLD
+ 2 0..4 fg=#808080
+ 2 4..13 fg=#56B6C2 mod=BOLD
+ 3 0..4 fg=#808080
+ 3 4..15 fg=#56B6C2

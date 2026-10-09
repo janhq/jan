@@ -1,0 +1,64 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|+line 00 of a long generated block tha… |
+|+line 01 of a long generated block tha… |
+|+line 02 of a long generated block tha… |
+|+line 03 of a long generated block tha… |
+|+line 04 of a long generated block tha… |
+|+line 05 of a long generated block tha… |
+|+line 06 of a long generated block tha… |
+|+line 07 of a long generated block tha… |
+|+line 08 of a long generated block tha… |
+|+line 09 of a long generated block tha… |
+|+line 10 of a long generated block tha… |
+|+line 11 of a long generated block tha… |
+|+line 12 of a long generated block tha… |
+|+line 13 of a long generated block tha… |
+|+line 14 of a long generated block tha… |
+|+line 15 of a long generated block tha… |
+|+line 16 of a long generated block tha… |
+|+line 17 of a long generated block tha… |
+|+line 18 of a long generated block tha… |
+|… +11 lines                             |
+
+ 0 0..1 fg=Green bg=#163420 mod=BOLD
+ 0 1..39 bg=#163420
+ 1 0..1 fg=Green bg=#163420 mod=BOLD
+ 1 1..39 bg=#163420
+ 2 0..1 fg=Green bg=#163420 mod=BOLD
+ 2 1..39 bg=#163420
+ 3 0..1 fg=Green bg=#163420 mod=BOLD
+ 3 1..39 bg=#163420
+ 4 0..1 fg=Green bg=#163420 mod=BOLD
+ 4 1..39 bg=#163420
+ 5 0..1 fg=Green bg=#163420 mod=BOLD
+ 5 1..39 bg=#163420
+ 6 0..1 fg=Green bg=#163420 mod=BOLD
+ 6 1..39 bg=#163420
+ 7 0..1 fg=Green bg=#163420 mod=BOLD
+ 7 1..39 bg=#163420
+ 8 0..1 fg=Green bg=#163420 mod=BOLD
+ 8 1..39 bg=#163420
+ 9 0..1 fg=Green bg=#163420 mod=BOLD
+ 9 1..39 bg=#163420
+10 0..1 fg=Green bg=#163420 mod=BOLD
+10 1..39 bg=#163420
+11 0..1 fg=Green bg=#163420 mod=BOLD
+11 1..39 bg=#163420
+12 0..1 fg=Green bg=#163420 mod=BOLD
+12 1..39 bg=#163420
+13 0..1 fg=Green bg=#163420 mod=BOLD
+13 1..39 bg=#163420
+14 0..1 fg=Green bg=#163420 mod=BOLD
+14 1..39 bg=#163420
+15 0..1 fg=Green bg=#163420 mod=BOLD
+15 1..39 bg=#163420
+16 0..1 fg=Green bg=#163420 mod=BOLD
+16 1..39 bg=#163420
+17 0..1 fg=Green bg=#163420 mod=BOLD
+17 1..39 bg=#163420
+18 0..1 fg=Green bg=#163420 mod=BOLD
+18 1..39 bg=#163420
+19 0..11 fg=DarkGray

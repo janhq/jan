@@ -1819,6 +1819,18 @@ fn prepare_agent_session(
     let serving_provider =
         crate::core::cli::providers::provider_for_model(&model, &provider_configs);
 
+    // The tag gate is process-wide and read by free rendering functions, and a
+    // headless run strips reasoning through it too, so every surface seeds it
+    // here. The TUI re-applies it when the serving provider changes.
+    let serving_config = serving_provider
+        .as_deref()
+        .and_then(|name| provider_configs.get(name));
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled_for(
+        serving_provider.as_deref(),
+        serving_config.and_then(|config| config.api_type.as_deref()),
+        serving_config.and_then(|config| config.base_url.as_deref()),
+    ));
+
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
     // before the first turn (tools are collected once per run), so a race with
@@ -1835,10 +1847,6 @@ fn prepare_agent_session(
     } else {
         None
     };
-
-    // `think_tags` is user-wide and read from free rendering functions, so it is
-    // applied to the process here, the one path every agent surface takes.
-    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled());
 
     let permission_requests: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let max_parallel_subagents = cfg

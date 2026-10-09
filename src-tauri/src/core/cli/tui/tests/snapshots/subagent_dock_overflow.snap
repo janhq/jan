@@ -1,0 +1,20 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|≡ 5 agents                                                              |
+|• kv-review  4t · 4r · 50% ctx · 75% cached                             |
+|• perf-scan  3t · 3r · 16% ctx · 0% cached                              |
+|  +3 more · /agents                                                     |
+
+ 0 0..2 fg=#56B6C2
+ 0 2..10 fg=#56B6C2 mod=BOLD
+ 1 0..2 fg=#56B6C2
+ 1 2..11 fg=#56B6C2 mod=BOLD
+ 1 13..43 fg=#808080
+ 2 0..2 fg=#56B6C2
+ 2 2..11 fg=#56B6C2 mod=BOLD
+ 2 13..33 fg=#808080
+ 2 33..42 fg=#E5C07B
+ 3 0..12 fg=#808080
+ 3 12..19 fg=#56B6C2
