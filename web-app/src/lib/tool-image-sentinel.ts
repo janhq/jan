@@ -7,12 +7,19 @@
 // decodes it back into content parts.
 
 import type { UIMessage } from '@ai-sdk/react'
+import type { ModelMessage } from 'ai'
 
 const PREFIX = ' __JAN_TOOL_IMAGE__'
 const SUFFIX = ' '
 
 const SENTINEL_REGEX =
   / __JAN_TOOL_IMAGE__(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+) /g
+
+const DATA_URL_REGEX = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/
+
+type ToolResultContentItem =
+  | { type: 'text'; text: string }
+  | { type: 'image-data'; mediaType: string; data: string }
 
 export function encodeToolImageSentinel(dataUrl: string): string {
   return `${PREFIX}${dataUrl}${SUFFIX}`
@@ -143,5 +150,40 @@ export function encodeMcpToolImages(messages: UIMessage[]): UIMessage[] {
       return { ...part, output: mcpOutputWithSentinels(items) } as typeof part
     })
     return touched ? ({ ...message, parts } as UIMessage) : message
+  })
+}
+
+/**
+ * For providers whose SDK builds its own request shape (Anthropic, Gemini,
+ * OpenAI Responses), where the request fetch cannot decode a sentinel: hands
+ * the SDK each tool image as a structured `content` output, which it maps to
+ * the provider's native image block. Run on model messages, after
+ * `convertToModelMessages` has stringified the UI tool output.
+ */
+export function toContentToolOutputs(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'tool') return message
+    let touched = false
+    const content = message.content.map((part) => {
+      if (
+        part.type !== 'tool-result' ||
+        part.output.type !== 'text' ||
+        !hasToolImageSentinel(part.output.value)
+      ) {
+        return part
+      }
+      const value = (splitToolImageSentinels(part.output.value) ?? []).flatMap(
+        (item): ToolResultContentItem[] => {
+          if (item.type === 'text') return [item]
+          const match = DATA_URL_REGEX.exec(item.image_url.url)
+          return match
+            ? [{ type: 'image-data', mediaType: match[1], data: match[2] }]
+            : []
+        }
+      )
+      touched = true
+      return { ...part, output: { type: 'content', value } } as typeof part
+    })
+    return touched ? { ...message, content } : message
   })
 }

@@ -182,6 +182,21 @@ export function getProviderApiType(
   return provider.provider === 'anthropic' ? 'anthropic' : 'openai'
 }
 
+/**
+ * True when the provider's AI SDK builds its own request shape (Anthropic,
+ * Gemini, OpenAI Responses), so the request fetch cannot decode a tool image
+ * sentinel and the SDK must be handed the image as structured tool output.
+ * Mirrors the dispatch in `ModelFactory.createModel`.
+ */
+export function buildsOwnToolImageRequest(
+  provider: Pick<ProviderObject, 'provider' | 'api_type'>
+): boolean {
+  if (getProviderApiType(provider) === 'anthropic') return true
+  return ['anthropic', 'openai', 'google', 'gemini'].includes(
+    provider.provider.toLowerCase()
+  )
+}
+
 const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx'])
 
 /**
