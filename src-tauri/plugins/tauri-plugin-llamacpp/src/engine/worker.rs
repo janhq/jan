@@ -146,6 +146,27 @@ const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15)
 
 
 
+/// A client for the worker's loopback port, with proxies switched off.
+///
+/// reqwest picks up `HTTP(S)_PROXY`/`ALL_PROXY` from the environment, and on
+/// Windows and macOS the system proxy too, and neither exempts 127.0.0.1
+/// unless `NO_PROXY` says so. A VPN client, a proxy tool or a corporate PAC
+/// setup then captures the request meant for the worker, and every model load
+/// fails with a bare "error sending request for url (http://127.0.0.1:...)"
+/// even though the worker is up and listening. The worker is on this machine
+/// by construction, so there is never a proxy worth going through.
+///
+/// Internet-facing clients (model downloads, remote gguf reads) deliberately
+/// do not use this: they must keep honouring the user's proxy.
+pub fn loopback_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().no_proxy()
+}
+
+/// [`loopback_client_builder`] with reqwest's defaults otherwise.
+pub fn loopback_client() -> reqwest::Client {
+    loopback_client_builder().build().unwrap_or_default()
+}
+
 /// How long to wait for the handshake. Generous because a cold page-cache read
 /// of the preset plus binding a port can be slow on a loaded machine, but far
 /// short of a model load -- the worker answers before loading anything.
