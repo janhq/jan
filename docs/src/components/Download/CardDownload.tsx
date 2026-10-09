@@ -26,10 +26,16 @@ const systemsTemplate: SystemType[] = [
     fileFormat: 'Jan_{tag}_universal.dmg',
   },
   {
-    name: 'Windows',
-    label: 'Standard (64-bit)',
+    name: 'Windows (x64)',
+    label: 'x64',
     logo: FaWindows,
     fileFormat: 'Jan_{tag}_x64-setup.exe',
+  },
+  {
+    name: 'Windows (ARM64)',
+    label: 'ARM64',
+    logo: FaWindows,
+    fileFormat: 'Jan_{tag}_arm64-setup.exe',
   },
   {
     name: 'Linux (Flatpak)',
