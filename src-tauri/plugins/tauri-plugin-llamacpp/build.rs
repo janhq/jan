@@ -245,7 +245,9 @@ mod engine {
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_PREBUILT_DIR");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
-        println!("cargo:rerun-if-env-changed=CUDACXX");
+        for var in ["CUDACXX", "CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
+            println!("cargo:rerun-if-env-changed={var}");
+        }
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_HIP_TARGETS");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_LOG");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_DIR");
@@ -533,8 +535,8 @@ mod engine {
         // share of users and had only the PTX. 80 and 90 stay PTX-only, as
         // upstream ships them: datacenter parts, on datacenter drivers.
         // Mirrored per toolkit version rather than hardcoded, because a cuda12
-        // build must keep 50/61/70 and cannot emit 121a before 12.9. arm64 has
-        // no Turing hardware and keeps upstream's default.
+        // build must keep 50/61/70 and cannot emit 121a before 12.9. arm64
+        // keeps upstream's default: no arm64 leg Jan ships runs on Turing.
         let archs = env::var("JAN_ENGINE_CUDA_ARCHS").unwrap_or_default();
         let archs = archs.trim();
         if !archs.is_empty() {
@@ -542,13 +544,18 @@ mod engine {
         } else if feature_enabled("engine-cuda")
             && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
         {
-            check_upstream_cuda_archs(src);
+            // A foreign JAN_LLAMA_CPP_DIR tree is not the b11146 the list was
+            // copied from, so only the vendored pin is held to it.
+            if env::var_os("JAN_LLAMA_CPP_DIR").is_none() {
+                check_upstream_cuda_archs(src);
+            }
             let (nvcc, v) = nvcc_version().unwrap_or_else(|| {
                 panic!(
                     "could not read the CUDA version from `nvcc --version` (tried \
-                     $CUDACXX, nvcc on PATH, $CUDA_PATH/bin/nvcc). Without it the \
-                     engine falls back to upstream's arch list, which has no Turing \
-                     SASS (#9185). Point CUDACXX at the nvcc CMake should use, or set \
+                     $CUDACXX, nvcc on PATH, then $CUDA_PATH, $CUDA_HOME, \
+                     $CUDAToolkit_ROOT and /usr/local/cuda). Without it the engine \
+                     would fall back to upstream's arch list, which has no Turing \
+                     SASS (#9185). Put nvcc on PATH or set CUDACXX, or set \
                      JAN_ENGINE_CUDA_ARCHS explicitly."
                 )
             });
@@ -559,9 +566,14 @@ mod engine {
                 v.1,
                 nvcc.display()
             );
-            // Hand CMake the same compiler the list was derived from, so a
-            // second toolkit elsewhere on the machine cannot be paired with it.
-            cfg.arg(format!("-DCMAKE_CUDA_COMPILER={}", cmake_path(&nvcc)));
+            // Hand CMake the compiler the list was derived from, so a second
+            // toolkit elsewhere on the machine cannot be paired with it. A set
+            // CUDACXX is left to CMake: it may carry a launcher or flags
+            // ("ccache nvcc", "nvcc -allow-unsupported-compiler") that a bare
+            // path here would drop, and CMake already prefers it.
+            if env::var_os("CUDACXX").map_or(true, |v| v.is_empty()) {
+                cfg.arg(format!("-DCMAKE_CUDA_COMPILER={}", cmake_path(&nvcc)));
+            }
             cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
         }
         if feature_enabled("engine-hip") {
@@ -766,22 +778,41 @@ mod engine {
         }
     }
 
-    /// The nvcc to build with and its (major, minor). Looked up in the order
-    /// CMake uses to pick its CUDA compiler -- $CUDACXX, then nvcc on PATH --
-    /// with $CUDA_PATH as a last resort; the caller then passes the result to
-    /// CMake as CMAKE_CUDA_COMPILER, so the arch list and the compiler that
-    /// receives it cannot come from different toolkits.
+    /// The nvcc to build with and its (major, minor), looked up the way CMake
+    /// picks its CUDA compiler: $CUDACXX first (its compiler word, without any
+    /// launcher or flags), then nvcc on PATH, then the usual toolkit roots.
     fn nvcc_version() -> Option<(PathBuf, (u32, u32))> {
         let exe = if cfg!(windows) { "nvcc.exe" } else { "nvcc" };
+        let on_path = |name: &std::ffi::OsStr| -> Vec<PathBuf> {
+            env::var_os("PATH")
+                .map(|p| env::split_paths(&p).map(|d| d.join(name)).collect())
+                .unwrap_or_default()
+        };
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Some(cxx) = env::var_os("CUDACXX").filter(|v| !v.is_empty()) {
-            candidates.push(PathBuf::from(cxx));
+        if let Some(cxx) = env::var("CUDACXX").ok().filter(|v| !v.trim().is_empty()) {
+            // "ccache nvcc -allow-unsupported-compiler" -> nvcc
+            let word = cxx
+                .split_whitespace()
+                .find(|w| Path::new(w).file_stem().and_then(|s| s.to_str()) == Some("nvcc"))
+                .or_else(|| cxx.split_whitespace().next())
+                .unwrap_or_default();
+            let word = PathBuf::from(word);
+            if word.components().count() > 1 {
+                candidates.push(word);
+            } else {
+                candidates.extend(on_path(word.as_os_str()));
+            }
         }
-        if let Some(path) = env::var_os("PATH") {
-            candidates.extend(env::split_paths(&path).map(|d| d.join(exe)));
+        candidates.extend(on_path(exe.as_ref()));
+        for var in ["CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
+            if let Some(root) = env::var_os(var).filter(|v| !v.is_empty()) {
+                let root = PathBuf::from(root);
+                candidates.push(root.join("bin").join(exe));
+                candidates.push(root.join("bin").join("x64").join(exe));
+            }
         }
-        if let Some(root) = env::var_os("CUDA_PATH").filter(|v| !v.is_empty()) {
-            candidates.push(PathBuf::from(root).join("bin").join(exe));
+        if !cfg!(windows) {
+            candidates.push(PathBuf::from("/usr/local/cuda/bin/nvcc"));
         }
         candidates.into_iter().filter(|c| c.is_file()).find_map(|nvcc| {
             let out = Command::new(&nvcc).arg("--version").output().ok()?;
@@ -854,7 +885,7 @@ mod engine {
             upstream == ours,
             "{} names CUDA archs {upstream:?}, but default_cuda_archs (copied from \
              b11146) covers {ours:?}. Update default_cuda_archs to the new list, \
-             keeping 75 as -real (#9185).",
+             keeping 75 as -real (#9185), or set JAN_ENGINE_CUDA_ARCHS.",
             cml.display()
         );
     }

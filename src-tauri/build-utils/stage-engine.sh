@@ -112,12 +112,21 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 # #9185: build.rs gives x86_64 native Turing code, so GTX 16xx/RTX 20xx never
 # depend on the driver JIT-compiling PTX from a newer toolkit. An explicit
 # JAN_ENGINE_CUDA_ARCHS and arm64 keep their own lists and are not checked.
-host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
+host="$(rustc -vV 2>/dev/null | tr -d '\r' | sed -n 's/^host: //p' || true)"
 # Whitespace-only counts as unset, as build.rs trims it.
 cuda_archs="${JAN_ENGINE_CUDA_ARCHS:-}"
 cuda_archs="${cuda_archs//[[:space:]]/}"
 if [ -z "$cuda_archs" ] && [[ "$host" == x86_64-* ]]; then
-  objdump_cuda="$(command -v cuobjdump 2>/dev/null || true)" # beside nvcc
+  objdump_cuda="$(command -v cuobjdump 2>/dev/null || true)"
+  if [ -z "$objdump_cuda" ]; then
+    # Not on PATH: look beside nvcc (bin, or bin/x64 on newer Windows toolkits).
+    nvcc_dir="$(dirname "$(command -v nvcc 2>/dev/null || echo /nonexistent/nvcc)")"
+    for d in "$nvcc_dir" "$nvcc_dir/.." "$nvcc_dir/x64" "${CUDA_PATH:-/nonexistent}/bin"; do
+      for exe in cuobjdump cuobjdump.exe; do
+        [ -x "$d/$exe" ] && { objdump_cuda="$d/$exe"; break 2; }
+      done
+    done
+  fi
   if [ -n "$objdump_cuda" ]; then
     # A module cuobjdump cannot read is a failure too, but say why.
     elfs="$("$objdump_cuda" --list-elf "$cuda_module" 2>&1)" || {
@@ -131,7 +140,9 @@ if [ -z "$cuda_archs" ] && [[ "$host" == x86_64-* ]]; then
     }
     echo "stage-engine: $(basename "$cuda_module") carries sm_75 SASS"
   else
-    echo "stage-engine: no cuobjdump; sm_75 SASS not checked"
+    msg="stage-engine: no cuobjdump; sm_75 SASS in $(basename "$cuda_module") not checked (#9185)"
+    echo "$msg"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; fi
   fi
 fi
 
