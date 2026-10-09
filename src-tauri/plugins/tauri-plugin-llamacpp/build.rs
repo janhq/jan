@@ -550,13 +550,20 @@ mod engine {
                 check_upstream_cuda_archs(src);
             }
             let (nvcc, v) = nvcc_version().unwrap_or_else(|| {
+                let tried = match env::var("CUDACXX") {
+                    Ok(cxx) if !cxx.trim().is_empty() => format!(
+                        "$CUDACXX={cxx:?}, which CMake will compile with, so nothing \
+                         else is tried"
+                    ),
+                    _ => "nvcc on PATH, then $CUDA_PATH, $CUDA_HOME, \
+                          $CUDAToolkit_ROOT and /usr/local/cuda"
+                        .to_string(),
+                };
                 panic!(
                     "could not read the CUDA version from `nvcc --version` (tried \
-                     $CUDACXX, nvcc on PATH, then $CUDA_PATH, $CUDA_HOME, \
-                     $CUDAToolkit_ROOT and /usr/local/cuda). Without it the engine \
-                     would fall back to upstream's arch list, which has no Turing \
-                     SASS (#9185). Put nvcc on PATH or set CUDACXX, or set \
-                     JAN_ENGINE_CUDA_ARCHS explicitly."
+                     {tried}). Without it the engine would fall back to upstream's \
+                     arch list, which has no Turing SASS (#9185). Point CUDACXX or \
+                     PATH at a working nvcc, or set JAN_ENGINE_CUDA_ARCHS explicitly."
                 )
             });
             let archs = default_cuda_archs(v);
@@ -779,11 +786,13 @@ mod engine {
     }
 
     /// The nvcc to build with and its (major, minor), looked up the way CMake
-    /// picks its CUDA compiler: $CUDACXX first (its compiler word, without any
-    /// launcher or flags), then nvcc on PATH, then the usual toolkit roots.
+    /// picks its CUDA compiler: $CUDACXX if set (its compiler word, without
+    /// any launcher or flags), else nvcc on PATH, then the usual toolkit roots.
+    /// A set CUDACXX is final: CMake compiles with it, so falling back to
+    /// another nvcc here would take the arch list from a different toolkit.
     fn nvcc_version() -> Option<(PathBuf, (u32, u32))> {
         let exe = if cfg!(windows) { "nvcc.exe" } else { "nvcc" };
-        let on_path = |name: &std::ffi::OsStr| -> Vec<PathBuf> {
+        let on_path = |name: &Path| -> Vec<PathBuf> {
             env::var_os("PATH")
                 .map(|p| env::split_paths(&p).map(|d| d.join(name)).collect())
                 .unwrap_or_default()
@@ -796,23 +805,30 @@ mod engine {
                 .find(|w| Path::new(w).file_stem().and_then(|s| s.to_str()) == Some("nvcc"))
                 .or_else(|| cxx.split_whitespace().next())
                 .unwrap_or_default();
-            let word = PathBuf::from(word);
-            if word.components().count() > 1 {
-                candidates.push(word);
-            } else {
-                candidates.extend(on_path(word.as_os_str()));
+            // As CMake does on Windows, accept the name without its .exe.
+            let mut names = vec![PathBuf::from(word)];
+            if cfg!(windows) && Path::new(word).extension().is_none() {
+                names.push(PathBuf::from(format!("{word}.exe")));
             }
-        }
-        candidates.extend(on_path(exe.as_ref()));
-        for var in ["CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
-            if let Some(root) = env::var_os(var).filter(|v| !v.is_empty()) {
-                let root = PathBuf::from(root);
-                candidates.push(root.join("bin").join(exe));
-                candidates.push(root.join("bin").join("x64").join(exe));
+            for name in names {
+                if name.components().count() > 1 {
+                    candidates.push(name);
+                } else {
+                    candidates.extend(on_path(&name));
+                }
             }
-        }
-        if !cfg!(windows) {
-            candidates.push(PathBuf::from("/usr/local/cuda/bin/nvcc"));
+        } else {
+            candidates.extend(on_path(Path::new(exe)));
+            for var in ["CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
+                if let Some(root) = env::var_os(var).filter(|v| !v.is_empty()) {
+                    let root = PathBuf::from(root);
+                    candidates.push(root.join("bin").join(exe));
+                    candidates.push(root.join("bin").join("x64").join(exe));
+                }
+            }
+            if !cfg!(windows) {
+                candidates.push(PathBuf::from("/usr/local/cuda/bin/nvcc"));
+            }
         }
         candidates.into_iter().filter(|c| c.is_file()).find_map(|nvcc| {
             let out = Command::new(&nvcc).arg("--version").output().ok()?;
