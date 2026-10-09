@@ -610,8 +610,29 @@ export async function generatePreset(
     ) {
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
+    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
+    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
+    const hasMtpModel =
+      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
+    const hasMtpLayers =
+      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
+    const specDecoding = mc.mtp === true && (hasMtpLayers || hasMtpModel)
+
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
       lines.push(`parallel = ${mc.parallel}`)
+      if (kvUnifiedIsAuto) lines.push('kv-unified = true')
+    } else if (specDecoding && !(Number(config.parallel) > 0)) {
+      // A model with speculative decoding gets one slot when parallel is auto.
+      // Every slot of a hybrid model (qwen35) carries (1 + spec-draft-n-max)
+      // rows of recurrent state for draft rollback -- about 600 MiB each on a
+      // 27B -- so llama.cpp's auto resolution to 4 slots costs ~1.2 GB more
+      // VRAM than the 2 Jan used before 0.8.5. On Windows the NVIDIA driver
+      // then spills into shared system RAM instead of failing, and decode
+      // drops 4x (59 -> 14 tok/s on a 12 GB card). Jan's own surfaces share
+      // slot 0 anyway. Only a positive value, global or per-model, counts as
+      // the user's: auto (0) is also what the 0.8.5 migration wrote, so the
+      // two cannot be told apart. A legacy numeric string still counts.
+      lines.push('parallel = 1')
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     }
     if (mc.cont_batching === false) {
@@ -653,13 +674,7 @@ export async function generatePreset(
       lines.push('mmproj-offload = false')
     }
 
-    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
-    const hasMtpModel =
-      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
-    const hasMtpLayers =
-      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    if (mc.mtp === true && (hasMtpLayers || hasMtpModel)) {
+    if (specDecoding) {
       const specType =
         typeof mc.spec_type === 'string' && SPEC_TYPES.has(mc.spec_type)
           ? mc.spec_type
