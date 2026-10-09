@@ -113,10 +113,18 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 # depend on the driver JIT-compiling PTX from a newer toolkit. An explicit
 # JAN_ENGINE_CUDA_ARCHS and arm64 keep their own lists and are not checked.
 host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
-if [ -z "${JAN_ENGINE_CUDA_ARCHS:-}" ] && [[ "$host" == x86_64-* ]]; then
+# Whitespace-only counts as unset, as build.rs trims it.
+cuda_archs="${JAN_ENGINE_CUDA_ARCHS:-}"
+cuda_archs="${cuda_archs//[[:space:]]/}"
+if [ -z "$cuda_archs" ] && [[ "$host" == x86_64-* ]]; then
   objdump_cuda="$(command -v cuobjdump 2>/dev/null || true)" # beside nvcc
   if [ -n "$objdump_cuda" ]; then
-    elfs="$("$objdump_cuda" --list-elf "$cuda_module")"
+    # A module cuobjdump cannot read is a failure too, but say why.
+    elfs="$("$objdump_cuda" --list-elf "$cuda_module" 2>&1)" || {
+      echo "stage-engine: cuobjdump could not list $(basename "$cuda_module") to check for sm_75 SASS (#9185):" >&2
+      echo "$elfs" >&2
+      exit 1
+    }
     grep -q 'sm_75' <<<"$elfs" || {
       echo "stage-engine: $(basename "$cuda_module") has no sm_75 SASS (#9185)" >&2
       exit 1
