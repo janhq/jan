@@ -13969,7 +13969,17 @@ async fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
     {
-        app.model_picker = None;
+        // A settings-aimed picker steps back to the screen that opened it,
+        // writing nothing; the session's `/model` picker just closes.
+        let target = app.model_picker.take().map(|picker| picker.target);
+        match target {
+            Some(ModelTarget::SmolModel) => {
+                open_settings_screen(app);
+                select_settings_row(app, SMOL_MODEL_KEY);
+            }
+            Some(ModelTarget::Subagent(name)) => open_subagent_settings(app, Some(&name)),
+            Some(ModelTarget::Session) | None => {}
+        }
         return;
     }
 
@@ -14749,6 +14759,14 @@ async fn handle_key(
             KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::AgentDetail => {
                 picker.kind = PickerKind::Agents;
                 app.agent_detail = None;
+            }
+            // The subagents list sits one level inside `/settings`: Esc steps
+            // back to the menu, on the row that opened it.
+            KeyCode::Esc | KeyCode::Char('q')
+                if !ctrl && picker.kind == PickerKind::SubagentModels =>
+            {
+                open_settings_screen(app);
+                select_settings_row(app, SUBAGENTS_SETTINGS_ROW);
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.plugin_setup_queue.clear();
@@ -17231,6 +17249,16 @@ fn set_subagent_model_override(app: &mut App, name: &str, model: Option<&str>) {
     }
 }
 
+/// Put the open `/settings` menu's cursor on the row whose value is `value`,
+/// so stepping back from a sub-screen lands where the user left.
+fn select_settings_row(app: &mut App, value: &str) {
+    if let Some(picker) = app.picker.as_mut() {
+        if let Some(idx) = picker.items.iter().position(|i| i.value == value) {
+            picker.selected = idx;
+        }
+    }
+}
+
 /// Open the `/settings > providers` screen: a picker row per provider in
 /// `~/.jan/config.toml` (the standalone-agent credential store), with `a` to
 /// add, Enter to edit the selected row, and `d` pressed twice to delete it
@@ -18586,7 +18614,16 @@ async fn apply_model_refresh(
 /// `inherit` roles; `smol_model` cannot be a role (`smol` would name itself).
 fn open_settings_model_picker(app: &mut App, target: ModelTarget, current: Option<&str>) {
     let pairs = super::providers::list_provider_models(Some(&app.project_root));
-    let current = current.unwrap_or_default();
+    let current = current.map(str::trim).filter(|m| !m.is_empty());
+    // A subagent that names no model runs on `inherit`, so that is the row to
+    // open on, the same label the subagents list shows. Falling through to
+    // index 0 would land on `smol`, and Enter would write an override the
+    // user never chose.
+    let current = match (&target, current) {
+        (_, Some(model)) => model,
+        (ModelTarget::Subagent(_), None) => crate::core::agent::subagent::INHERIT_ROLE,
+        (_, None) => "",
+    };
     let roles: &[&str] = match &target {
         ModelTarget::Subagent(_) => &[
             crate::core::agent::subagent::SMOL_ROLE,
@@ -31331,6 +31368,46 @@ mod tests {
         assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"));
         let picker = app.picker.as_ref().unwrap();
         assert_eq!(picker.items[picker.selected].hint.as_deref(), Some("big"));
+    }
+
+    /// Both settings-aimed screens are one level inside `/settings`, so Esc
+    /// steps back a level instead of closing the menu: the subagents list
+    /// returns to `/settings`, and its model picker returns to the list with
+    /// the agent still selected and nothing written.
+    #[tokio::test]
+    async fn esc_steps_back_out_of_the_subagent_settings_screens() {
+        let mut app = test_app();
+        let root = app_with_subagents(&mut app);
+
+        super::open_subagent_settings(&mut app, Some("explorer"));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.model_picker.is_some(), "model picker opened");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.model_picker.is_none());
+        let picker = app.picker.as_ref().expect("back on the subagents list");
+        assert_eq!(picker.kind, PickerKind::SubagentModels);
+        assert_eq!(picker.items[picker.selected].value, "explorer");
+        let reg = crate::core::agent::subagent::SubagentRegistry::load(&root);
+        assert_eq!(reg.get("explorer").unwrap().model.as_deref(), Some("big"), "nothing written");
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        let picker = app.picker.as_ref().expect("back on /settings");
+        assert_eq!(picker.kind, PickerKind::AgentSettings);
+        assert_eq!(picker.items[picker.selected].value, super::SUBAGENTS_SETTINGS_ROW);
+    }
+
+    /// A subagent that names no model runs on `inherit`, so its picker opens
+    /// on the `inherit` row. Opening on index 0 (`smol`) made Enter-Enter on a
+    /// row labelled `inherit` silently write a `smol` override.
+    #[tokio::test]
+    async fn the_picker_for_a_model_less_subagent_opens_on_inherit() {
+        let mut app = test_app();
+        app_with_subagents(&mut app);
+        super::open_subagent_settings(&mut app, Some("reviewer"));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let mp = app.model_picker.as_ref().expect("model picker opened");
+        assert_eq!(mp.items[mp.selected].value, "inherit");
+        assert_eq!(mp.current, "inherit");
     }
 
     /// Enter on the `smol_model` row picks from the configured models rather
