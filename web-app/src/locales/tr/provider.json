@@ -1,0 +1,18 @@
+{
+  "addProvider": "Sağlayıcı Ekle",
+  "addOpenAIProvider": "Özel Sağlayıcı Ekle",
+  "enterNameForProvider": "Sağlayıcı ismi (örn. llm-sunucum)",
+  "apiTypeLabel": "API biçimi",
+  "apiTypeOpenAI": "OpenAI-uyumlu",
+  "apiTypeAnthropic": "Anthropic-uyumlu",
+  "baseUrlLabel": "Temel (Base) URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API anahtarı",
+  "apiKeyPlaceholder": "API anahtarınızı yapıştırın",
+  "invalidBaseUrl": "Base URL geçerli bir http(s) URL'si olmalıdır",
+  "globalSettings": "Genel ayarlar",
+  "stripReasoning": "Akıl yürütmeyi bağlamdan çıkar",
+  "stripReasoningDesc": "Geçmişi yeniden göndermeden önce, tüm sağlayıcılar genelinde önceki turların düşünme/akıl yürütme içeriğini kaldırır. Yerel modeller için KV-cache yeniden kullanımını iyileştirir, ancak bazı modeller (örn. yeni Qwen sürümleri) çok turlu akıl yürütmeyi geliştirmek için bunun tutulmasını önerir.",
+  "providerAlreadyExists": "{{name}} adlı sağlayıcı zaten mevcut."
+}

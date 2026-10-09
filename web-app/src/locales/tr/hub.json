@@ -1,0 +1,19 @@
+{
+  "sortNewest": "En yeni",
+  "sortMostDownloaded": "En çok indirilen",
+  "newChat": "Yeni sohbet",
+  "download": "İndir",
+  "downloadFailed": "İndirme başlatılamadı",
+  "downloaded": "İndirildi",
+  "loadingModels": "Modeller yükleniyor...",
+  "noModels": "Model bulunamadı",
+  "by": "Geliştiren", 
+  "downloads": "İndirmeler",
+  "variants": "Varyantlar",
+  "showVariants": "Varyantları göster",
+  "useModel": "Bu modeli kullan",
+  "downloadModel": "Modeli indir",
+  "tools": "Araçlar",
+  "searchPlaceholder": "Hugging Face'te model ara...",
+  "resumeUnavailable": "Bu indirme sürdürülemiyor. Lütfen yeniden başlatın."
+}
