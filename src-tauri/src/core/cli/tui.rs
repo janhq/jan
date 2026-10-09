@@ -31289,9 +31289,11 @@ mod tests {
         let picker = app.picker.as_ref().expect("subagents screen open");
         assert_eq!(picker.kind, PickerKind::SubagentModels);
         let labels: Vec<_> = picker.items.iter().map(|i| i.value.as_str()).collect();
-        assert_eq!(labels, ["explorer", "reviewer"]);
+        // The saved explorer and reviewer shadow the built-ins of the same
+        // name; the built-in researcher is listed beside them.
+        assert_eq!(labels, ["explorer", "researcher", "reviewer"]);
         assert_eq!(picker.items[0].hint.as_deref(), Some("big"));
-        assert_eq!(picker.items[1].hint.as_deref(), Some("inherit"));
+        assert_eq!(picker.items[2].hint.as_deref(), Some("inherit"));
 
         // Enter on explorer: the model picker, aimed at it, offering roles.
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;

@@ -31,6 +31,68 @@ pub enum SubagentScope {
     /// Claude Code convention). Read-only: managed via plugin install/remove,
     /// never via `create_subagent`.
     Plugin,
+    /// A subagent shipped inside Jan itself (`builtin_subagents/*.toml`).
+    /// Read-only and the lowest precedence: any saved definition of the same
+    /// name replaces it, and `[subagents.<name>]` in agent.toml retargets its
+    /// model.
+    Builtin,
+}
+
+impl SubagentScope {
+    /// The scope's name in listings (`name [scope]: ...`).
+    pub fn label(self) -> &'static str {
+        match self {
+            SubagentScope::User => "user",
+            SubagentScope::Project => "project",
+            SubagentScope::Plugin => "plugin",
+            SubagentScope::Builtin => "builtin",
+        }
+    }
+
+    /// Whether definitions in this scope are managed outside `create_subagent`.
+    fn read_only_reason(self) -> Option<&'static str> {
+        match self {
+            SubagentScope::User | SubagentScope::Project => None,
+            SubagentScope::Plugin => Some(
+                "plugin scope is read-only: plugin agents are managed via plugin install/remove",
+            ),
+            SubagentScope::Builtin => Some(
+                "builtin scope is read-only: a project or user subagent of the same name \
+                 replaces a builtin one",
+            ),
+        }
+    }
+}
+
+/// The subagents shipped with Jan, in the order they load. Sorted by name and
+/// embedded at compile time, so the dispatch description that lists them is
+/// byte-identical across runs (it sits in the cached prompt prefix).
+const BUILTIN_SUBAGENTS: &[&str] = &[
+    include_str!("builtin_subagents/explorer.toml"),
+    include_str!("builtin_subagents/researcher.toml"),
+    include_str!("builtin_subagents/reviewer.toml"),
+];
+
+/// Parse [`BUILTIN_SUBAGENTS`]. A file that fails to parse is a build defect a
+/// test pins, so it is skipped with a warning rather than failing every run.
+fn builtin_definitions() -> Vec<SubagentDefinition> {
+    BUILTIN_SUBAGENTS
+        .iter()
+        .filter_map(|raw| match toml::from_str::<SubagentFile>(raw) {
+            Ok(file) => Some(SubagentDefinition {
+                name: file.name,
+                description: file.description,
+                system_prompt: file.system_prompt,
+                allowed_tools: file.allowed_tools,
+                model: file.model,
+                scope: SubagentScope::Builtin,
+            }),
+            Err(e) => {
+                log::warn!("subagent: skipping a builtin definition: {e}");
+                None
+            }
+        })
+        .collect()
 }
 
 /// A dispatchable subagent definition, resolved from a `<name>.toml` file plus
@@ -139,7 +201,7 @@ impl SubagentRegistry {
     /// `/settings` screen shows that next to the override, so a user can see
     /// what clearing the override falls back to.
     pub fn load_definitions(project_root: &Path) -> Self {
-        let mut defs = Vec::new();
+        let mut defs = builtin_definitions();
         load_plugin_agents(project_root, &mut defs);
         if let Some(dir) = user_subagents_dir() {
             load_dir(&dir, SubagentScope::User, &mut defs);
@@ -194,10 +256,10 @@ impl SubagentRegistry {
                     "project scope requires create_in; use create_in".to_string(),
                 ))
             }
-            SubagentScope::Plugin => return Err(SubagentError::Upstream(
-                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                    .to_string(),
-            )),
+            SubagentScope::Plugin | SubagentScope::Builtin => {
+                let reason = scope.read_only_reason().unwrap_or_default();
+                return Err(SubagentError::Upstream(reason.to_string()));
+            }
         };
         self.create_in(&dir, def, scope, overwrite)
     }
@@ -213,11 +275,8 @@ impl SubagentRegistry {
         overwrite: bool,
     ) -> Result<bool, SubagentError> {
         validate_name(&def.name)?;
-        if scope == SubagentScope::Plugin {
-            return Err(SubagentError::Upstream(
-                "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                    .to_string(),
-            ));
+        if let Some(reason) = scope.read_only_reason() {
+            return Err(SubagentError::Upstream(reason.to_string()));
         }
         let collides = self
             .defs
@@ -2608,12 +2667,7 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
     }
     let mut lines = Vec::with_capacity(defs.len());
     for d in defs {
-        let scope = match d.scope {
-            SubagentScope::User => "user",
-            SubagentScope::Project => "project",
-            SubagentScope::Plugin => "plugin",
-        };
-        lines.push(format!("{} [{}]: {}", d.name, scope, d.description));
+        lines.push(format!("{} [{}]: {}", d.name, d.scope.label(), d.description));
     }
     lines.join("\n")
 }
@@ -2880,9 +2934,8 @@ pub fn subagent_dir_for(
         SubagentScope::User => user_subagents_dir().ok_or_else(|| {
             SubagentError::Upstream("cannot resolve home directory for user scope".to_string())
         }),
-        SubagentScope::Plugin => Err(SubagentError::Upstream(
-            "plugin scope is read-only: plugin agents are managed via plugin install/remove"
-                .to_string(),
+        SubagentScope::Plugin | SubagentScope::Builtin => Err(SubagentError::Upstream(
+            scope.read_only_reason().unwrap_or_default().to_string(),
         )),
     }
 }
@@ -3004,12 +3057,84 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// With nothing saved anywhere, only the shipped catalog loads.
     #[test]
-    fn empty_directories_yield_empty_registry() {
+    fn empty_directories_yield_only_the_builtin_catalog() {
         let root = unique_root("empty");
         let reg = SubagentRegistry::load(&root);
-        assert!(reg.list().is_empty());
+        assert!(reg.list().iter().all(|d| d.scope == SubagentScope::Builtin));
         assert!(reg.get("nope").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shipped catalog parses, in a fixed order: the dispatch tool's
+    /// description names it, and that description sits in the cached prompt
+    /// prefix, so the bytes must not move between runs.
+    #[test]
+    fn the_builtin_catalog_parses_in_a_stable_order() {
+        let defs = builtin_definitions();
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["explorer", "researcher", "reviewer"]);
+        for def in &defs {
+            assert_eq!(def.scope, SubagentScope::Builtin);
+            assert!(!def.description.is_empty() && !def.system_prompt.is_empty());
+            assert!(validate_name(&def.name).is_ok());
+            // Every tool named is one a child can actually be offered.
+            for tool in def.allowed_tools.as_deref().unwrap_or_default() {
+                assert!(
+                    tauri_plugin_agent_tools::tools::lookup(tool).is_some(),
+                    "{}: unknown tool {tool}",
+                    def.name
+                );
+            }
+        }
+        let explorer = &defs[0];
+        assert_eq!(explorer.model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(
+            explorer.allowed_tools.as_deref(),
+            Some(&["read".to_string(), "shell".to_string()][..])
+        );
+        assert_eq!(builtin_definitions(), defs, "deterministic");
+    }
+
+    /// Built-ins are the lowest precedence: a plugin, user or project agent of
+    /// the same name replaces one, and the agent.toml override still applies.
+    #[test]
+    fn saved_definitions_shadow_builtins_and_overrides_apply_to_them() {
+        let root = unique_root("builtin_shadow");
+        write_def(&project_subagents_dir(&root), "reviewer", "model = \"mine\"\n");
+        let toml = crate::core::agent::project::agent_toml_path(&root);
+        std::fs::write(&toml, "[subagents.explorer]\nmodel = \"inherit\"\n").unwrap();
+
+        let reg = SubagentRegistry::load(&root);
+        let reviewer = reg.get("reviewer").unwrap();
+        assert_eq!(reviewer.scope, SubagentScope::Project);
+        assert_eq!(reviewer.model.as_deref(), Some("mine"));
+        let explorer = reg.get("explorer").unwrap();
+        assert_eq!(explorer.scope, SubagentScope::Builtin);
+        assert_eq!(explorer.model.as_deref(), Some(INHERIT_ROLE));
+        let listed = format_subagent_list(&reg);
+        assert!(listed.contains("explorer [builtin]"), "{listed}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The built-in scope is read-only, like the plugin scope: it ships with
+    /// Jan, so there is no file to write. A same-name project definition is
+    /// how a user replaces one.
+    #[test]
+    fn the_builtin_scope_is_not_a_create_target() {
+        let root = unique_root("builtin_ro");
+        let mut reg = SubagentRegistry::load(&root);
+        let def = builtin_definitions().remove(0);
+        assert!(reg
+            .create_in(&root, def.clone(), SubagentScope::Builtin, true)
+            .is_err());
+        assert!(reg.create(def, SubagentScope::Builtin, true).is_err());
+        assert!(subagent_dir_for(&root, SubagentScope::Builtin).is_err());
+        assert!(parse_create_args(&serde_json::json!({
+            "name": "x", "description": "d", "system_prompt": "sp", "scope": "builtin"
+        }))
+        .is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3083,7 +3208,8 @@ pub(crate) mod tests {
         write_def(&dir, "good", "");
         let reg = SubagentRegistry::load(&root);
         assert!(reg.get("good").is_some());
-        assert_eq!(reg.list().len(), 1);
+        let saved = reg.list().into_iter().filter(|d| d.scope == SubagentScope::Project);
+        assert_eq!(saved.count(), 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 
