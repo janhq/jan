@@ -232,20 +232,62 @@ fn suspend_to_shell(mouse: bool) -> io::Result<()> {
 /// group of the same session, so no job-control shell is there to `fg` it. The
 /// kernel discards SIGTSTP for such a group (which is why vim's Ctrl-Z does
 /// nothing there), but SIGSTOP always stops, and nobody would send SIGCONT.
-/// Only our own parent is inspected: the other members of the group are not
-/// enumerable without `/proc`, and a false "orphaned" only refuses a suspend,
-/// where a false "not orphaned" hangs the terminal.
+/// A parent in jan's own group (`cargo run`, a launcher that does not `exec`)
+/// proves nothing, so the walk goes up through ancestors sharing the group to
+/// the first one outside it; that one decides. Anything that cannot be read
+/// counts as orphaned: a false "orphaned" only refuses a suspend, where a
+/// false "not orphaned" hangs the terminal.
 #[cfg(unix)]
 fn group_is_orphaned() -> bool {
-    use nix::unistd::{getpgid, getpgrp, getppid, getsid};
-    let parent = getppid();
-    let (Ok(parent_group), Ok(parent_session), Ok(session)) =
-        (getpgid(Some(parent)), getsid(Some(parent)), getsid(None))
-    else {
-        // The parent is gone: reparented to init, which is in another session.
+    use nix::unistd::{getpgid, getpgrp, getppid, getsid, Pid};
+    use sysinfo::{ProcessesToUpdate, System};
+    let Ok(session) = getsid(None) else {
         return true;
     };
-    parent_session != session || parent_group == getpgrp()
+    let mut table = System::new();
+    table.refresh_processes(ProcessesToUpdate::All, true);
+    orphaned_via(
+        getpgrp().as_raw(),
+        session.as_raw(),
+        getppid().as_raw(),
+        |pid| {
+            let parent = table.process(sysinfo::Pid::from_u32(u32::try_from(pid).ok()?))?;
+            i32::try_from(parent.parent()?.as_u32()).ok()
+        },
+        |pid| getpgid(Some(Pid::from_raw(pid))).ok().map(Pid::as_raw),
+        |pid| getsid(Some(Pid::from_raw(pid))).ok().map(Pid::as_raw),
+    )
+}
+
+/// The decision behind `group_is_orphaned`, over the process table as three
+/// lookups so it is tested without one. `ancestor` starts at jan's parent.
+#[cfg(unix)]
+fn orphaned_via(
+    group: i32,
+    session: i32,
+    mut ancestor: i32,
+    parent_of: impl Fn(i32) -> Option<i32>,
+    group_of: impl Fn(i32) -> Option<i32>,
+    session_of: impl Fn(i32) -> Option<i32>,
+) -> bool {
+    // Bounded so a cycle in a racing process table cannot spin.
+    for _ in 0..64 {
+        let (Some(g), Some(s)) = (group_of(ancestor), session_of(ancestor)) else {
+            // Gone: reparented to init, which is in another session.
+            return true;
+        };
+        if s != session {
+            return true;
+        }
+        if g != group {
+            return false;
+        }
+        match parent_of(ancestor) {
+            Some(next) if next != ancestor => ancestor = next,
+            _ => return true,
+        }
+    }
+    true
 }
 
 /// Suspend from the render loop, noting a failure in the transcript rather
@@ -36191,6 +36233,53 @@ mod tests {
         assert!(!other, "a job thread must not release the terminal");
         assert!(super::release_terminal(), "the owner releases it");
         assert!(!super::release_terminal(), "and only once");
+    }
+
+    /// Process table for `orphaned_via`: (pid, parent, group, session).
+    #[cfg(unix)]
+    fn orphaned(table: &[(i32, i32, i32, i32)], group: i32, session: i32, start: i32) -> bool {
+        let row = |pid: i32| table.iter().find(|r| r.0 == pid);
+        super::orphaned_via(
+            group,
+            session,
+            start,
+            |p| row(p).map(|r| r.1),
+            |p| row(p).map(|r| r.2),
+            |p| row(p).map(|r| r.3),
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn orphaned_group_walks_past_same_group_wrappers() {
+        // jan (group 20, session 10) under a shell (group 10, session 10).
+        let shell = (10, 1, 10, 10);
+        assert!(!orphaned(&[shell], 20, 10, 10), "a shell above jan can fg it");
+        // `cargo run`: jan's parent shares jan's group, its parent is the shell.
+        let cargo = (30, 10, 20, 10);
+        assert!(
+            !orphaned(&[shell, cargo], 20, 10, 30),
+            "a wrapper in jan's group is not the end of the chain"
+        );
+        // Two wrappers deep.
+        let inner = (31, 30, 20, 10);
+        assert!(!orphaned(&[shell, cargo, inner], 20, 10, 31));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn orphaned_group_is_refused_when_nothing_above_can_resume_it() {
+        // The parent is in another session (ssh -t, docker exec).
+        assert!(orphaned(&[(10, 1, 10, 99)], 20, 10, 10));
+        // Every ancestor is in jan's own group, up to init.
+        let wrapper = (30, 1, 20, 10);
+        assert!(orphaned(&[wrapper], 20, 10, 30), "the chain ends in the group");
+        // The parent has gone.
+        assert!(orphaned(&[], 20, 10, 10));
+        // A cycle in a racing table terminates.
+        let a = (30, 31, 20, 10);
+        let b = (31, 30, 20, 10);
+        assert!(orphaned(&[a, b], 20, 10, 30));
     }
 
     /// Startup, resume-after-suspend and every restore (clean exit, startup
