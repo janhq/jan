@@ -163,9 +163,15 @@ const DropdownDownload = ({ lastRelease }: Props) => {
         changeDefaultSystem(updatedSystems)
 
         // The user agent can't tell Windows on ARM apart, so upgrade the
-        // Windows default to ARM64 only once Client Hints confirm it.
-        if ((await isWindowsArm()) && !cancelled) {
-          setDefaultSystem(updatedSystems[2])
+        // Windows default to ARM64 only once Client Hints confirm it, and only
+        // when this release ships the ARM64 installer (else x64 still works).
+        const armSystem = updatedSystems[2]
+        const hasArmAsset = lastRelease.assets.some(
+          (asset: any) =>
+            asset.name === armSystem.fileFormat.replace('{tag}', tag)
+        )
+        if (hasArmAsset && (await isWindowsArm()) && !cancelled) {
+          setDefaultSystem(armSystem)
         }
       } catch (error) {
         console.error('Failed to update download links:', error)

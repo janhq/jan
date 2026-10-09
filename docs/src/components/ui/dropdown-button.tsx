@@ -151,12 +151,18 @@ export function DropdownButton({
         changeDefaultSystem(updatedOptions)
 
         // The user agent can't tell Windows on ARM apart, so upgrade the
-        // Windows default to ARM64 only once Client Hints confirm it.
+        // Windows default to ARM64 only once Client Hints confirm it, and only
+        // when this release ships the ARM64 installer (else x64 still works).
+        const armFile = fileFormatMap['windows-arm64'].replace('{tag}', tag)
+        const hasArmAsset = lastRelease.assets.some(
+          (asset: any) => asset.name === armFile
+        )
         isWindowsArm().then((windowsArm) => {
           const armOption = updatedOptions.find(
             (opt) => opt.id === 'windows-arm64'
           )
-          if (windowsArm && !cancelled && armOption) setCurrentOption(armOption)
+          if (windowsArm && hasArmAsset && !cancelled && armOption)
+            setCurrentOption(armOption)
         })
       } catch (error) {
         console.error('Failed to update download links:', error)
