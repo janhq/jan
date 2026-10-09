@@ -141,6 +141,41 @@ describe('encodeMcpToolImages', () => {
     })
   })
 
+  it('keeps each caption next to its image', () => {
+    const out = encodeMcpToolImages([
+      mcpTool([
+        { type: 'text', text: 'frame 1' },
+        { type: 'image', data: b64, mimeType: 'image/png' },
+        { type: 'text', text: 'frame 2' },
+        { type: 'image', data: b64, mimeType: 'image/jpeg' },
+      ]),
+    ])
+    expect(splitToolImageSentinels(outputOf(out) as string)).toEqual([
+      { type: 'text', text: 'frame 1' },
+      { type: 'image_url', image_url: { url: png, detail: 'auto' } },
+      { type: 'text', text: 'frame 2' },
+      {
+        type: 'image_url',
+        image_url: { url: png.replace('png', 'jpeg'), detail: 'auto' },
+      },
+    ])
+  })
+
+  // Vision endpoints and llama.cpp reject svg/bmp/tiff image parts, and the
+  // stored result is re-sent every turn, so one would break the thread for good.
+  it.each(['image/svg+xml', 'image/bmp', 'image/tiff'])(
+    'does not forward %s as an image part',
+    (mimeType) => {
+      const out = encodeMcpToolImages([
+        mcpTool([{ type: 'image', data: b64, mimeType }]),
+      ])
+      const sent = outputOf(out) as string
+      expect(hasToolImageSentinel(sent)).toBe(false)
+      expect(sent).not.toContain(b64)
+      expect(sent).toContain(mimeType)
+    }
+  )
+
   it('leaves text-only results and other messages untouched', () => {
     const textOnly = mcpTool([{ type: 'text', text: 'file contents' }])
     const user = {
