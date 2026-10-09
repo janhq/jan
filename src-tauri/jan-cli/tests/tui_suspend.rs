@@ -12,6 +12,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -131,9 +132,18 @@ fn spawn_with(new_session: bool) -> Session {
     let mut reader = File::from(pty.master);
     let master = reader.try_clone().expect("clone PTY master");
     let slave = File::from(pty.slave);
-    let home = std::env::temp_dir().join(format!("jan-tui-suspend-{}", std::process::id()));
+    // Tests run on parallel threads of one process, and each Session removes
+    // its HOME on drop, so the directory needs more than the process id.
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let home = std::env::temp_dir().join(format!(
+        "jan-tui-suspend-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&home).unwrap();
     let mut command = if new_session {
+        // util-linux `setsid --ctty`, since a session leader cannot be made
+        // without `unsafe`; the caller checks it exists.
         let mut c = Command::new("setsid");
         c.arg("--ctty").arg(env!("CARGO_BIN_EXE_jan"));
         c
@@ -199,7 +209,12 @@ fn ctrl_z_and_sigtstp_suspend_and_resume_cleanly() {
 /// With no job-control shell above it nothing would ever send SIGCONT, so
 /// Ctrl-Z must refuse (and say so) rather than stop and hang the terminal.
 #[test]
+#[cfg(target_os = "linux")]
 fn ctrl_z_in_an_orphaned_group_refuses_instead_of_stopping() {
+    if Command::new("setsid").arg("--version").output().is_err() {
+        eprintln!("skipped: setsid (util-linux) is not installed");
+        return;
+    }
     let session = spawn_with(true);
     session.wait_for(0, &ENTER, "the TUI to start");
     let mut master = session.master.try_clone().expect("clone PTY master");
