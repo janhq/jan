@@ -109,6 +109,43 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 
 [ -n "$cuda_module" ] || exit 0
 
+# #9185: build.rs gives x86_64 native Turing code, so GTX 16xx/RTX 20xx never
+# depend on the driver JIT-compiling PTX from a newer toolkit. An explicit
+# JAN_ENGINE_CUDA_ARCHS and arm64 keep their own lists and are not checked.
+host="$(rustc -vV 2>/dev/null | tr -d '\r' | sed -n 's/^host: //p' || true)"
+# Whitespace-only counts as unset, as build.rs trims it.
+cuda_archs="${JAN_ENGINE_CUDA_ARCHS:-}"
+cuda_archs="${cuda_archs//[[:space:]]/}"
+if [ -z "$cuda_archs" ] && [[ "$host" == x86_64-* ]]; then
+  objdump_cuda="$(command -v cuobjdump 2>/dev/null || true)"
+  if [ -z "$objdump_cuda" ]; then
+    # Not on PATH: look beside nvcc (bin, or bin/x64 on newer Windows toolkits).
+    nvcc_dir="$(dirname "$(command -v nvcc 2>/dev/null || echo /nonexistent/nvcc)")"
+    for d in "$nvcc_dir" "$nvcc_dir/.." "$nvcc_dir/x64" "${CUDA_PATH:-/nonexistent}/bin"; do
+      for exe in cuobjdump cuobjdump.exe; do
+        [ -x "$d/$exe" ] && { objdump_cuda="$d/$exe"; break 2; }
+      done
+    done
+  fi
+  if [ -n "$objdump_cuda" ]; then
+    # A module cuobjdump cannot read is a failure too, but say why.
+    elfs="$("$objdump_cuda" --list-elf "$cuda_module" 2>&1)" || {
+      echo "stage-engine: cuobjdump could not list $(basename "$cuda_module") to check for sm_75 SASS (#9185):" >&2
+      echo "$elfs" >&2
+      exit 1
+    }
+    grep -q 'sm_75' <<<"$elfs" || {
+      echo "stage-engine: $(basename "$cuda_module") has no sm_75 SASS (#9185)" >&2
+      exit 1
+    }
+    echo "stage-engine: $(basename "$cuda_module") carries sm_75 SASS"
+  else
+    msg="stage-engine: no cuobjdump; sm_75 SASS in $(basename "$cuda_module") not checked (#9185)"
+    echo "$msg"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; fi
+  fi
+fi
+
 # The module's own import names say which runtime it needs and with which
 # major; they are plain strings in the binary (ELF .dynstr, PE import table),
 # so no objdump/dumpbin is needed. cublasLt is reached through cublas, hence
