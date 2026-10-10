@@ -218,6 +218,14 @@ export const useModelProvider = create<ModelProviderState>()(
                 existingProvider?.api_key_fallbacks ?? provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
+              // A user choice, and what was last read from Azure, that the
+              // provider definitions don't carry.
+              ...(existingProvider?.deployed_models_only !== undefined
+                ? { deployed_models_only: existingProvider.deployed_models_only }
+                : {}),
+              ...(existingProvider?.deployments !== undefined
+                ? { deployments: existingProvider.deployments }
+                : {}),
             }
           })
           const nextProviders = [
