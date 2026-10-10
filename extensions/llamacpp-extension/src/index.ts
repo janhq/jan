@@ -46,8 +46,17 @@ import {
   detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
+  loadModelConfig,
   type EmbedBatchResult,
 } from './util'
+import {
+  type SpecConfig,
+  type SpecConfigPatch,
+  isSpecConfig,
+  isSpecType,
+  isSpecDraftType,
+  setSpecConfig,
+} from '@janhq/core'
 import {
   generatePreset,
   threadCacheDir,
@@ -2031,7 +2040,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
-    let specKind: SpecDraftKind = 'mtp'
+    let specKind: SpecDraftKind = null
     let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
@@ -2069,7 +2078,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // its head count (the main gguf usually lacks nextn_predict_layers when
       // MTP ships as a separate file).
       if (draftModelPath) {
-        const fullDraftPath = await joinPath([janDataFolderPath, draftModelPath])
+        const fullDraftPath = await joinPath([
+          janDataFolderPath,
+          draftModelPath,
+        ])
         const draftMetadata = await readGgufMetadata(fullDraftPath)
         // Only asked for a DFlash-architecture draft, since that is the one
         // case a tensor decides (DSpark = DFlash + Markov head).
@@ -2078,14 +2090,21 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
             ? (await findGgufTensors(fullDraftPath, [MARKOV_HEAD_TENSOR]))
                 .length > 0
             : undefined
-        specKind = resolveSpecDraftKind(draftMetadata.metadata, {
-          hasMarkovHead,
-          hint: opts.specDraftKind,
-        })
         const draftLayers = detectMtpLayersFromGgufMeta(draftMetadata.metadata)
         // Only an MTP head reports nextn layers; the other flavours have none,
         // and the count is what makes the settings panel offer the toggle.
-        mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
+        mtpLayers = draftLayers > 0 ? draftLayers : 0 
+        specKind = resolveSpecDraftKind(draftMetadata.metadata, { 
+          hasMarkovHead,
+          hint: opts.specDraftKind,
+          mtpLayers,
+        })
+      }
+      else{
+        // MTP headers can live in main gguf without a draft model.
+        if (mtpLayers > 0){
+          specKind = 'mtp'
+        }
       }
     } catch (error) {
       logger.error('GGUF validation failed:', error)
@@ -2133,13 +2152,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // A separate draft gguf is downloaded only to be used, so enable it by
       // default. Embedded-MTP models stay opt-in (no flag written here) and
       // need no spec_type: their flavour is always draft-mtp.
-      ...(draftModelPath
-        ? {
-            mtp_model_path: draftModelPath,
-            mtp: true,
-            spec_type: `draft-${specKind}`,
-          }
-        : {}),
+      ...(specKind ? { spec_draft_type: `draft-${specKind}`, spec_type: `draft-${specKind}` } : {}),
+      ...(draftModelPath ? {spec_draft_model: draftModelPath,} : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -2610,13 +2624,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     }
   }
 
-  async getMtpInfo(modelId: string): Promise<{
-    mtp_layers: number
-    mtp: boolean
-    spec_draft_n_max?: number
-    spec_draft_n_min?: number
-    spec_draft_p_min?: number
-  }> {
+  async getSpecDecodingSettings(modelId: string): Promise<SpecConfig> {
     const path = await joinPath([
       await this.getProviderPath(),
       'models',
@@ -2624,32 +2632,26 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       'model.yml',
     ])
     if (!(await fs.existsSync(path))) {
-      return { mtp_layers: 0, mtp: false }
+      return { mtp_layers: 0}
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
-      mtp_layers?: number
-      mtp?: boolean
-      spec_draft_n_max?: number
-      spec_draft_n_min?: number
-      spec_draft_p_min?: number
+    const cfg = (await loadModelConfig(path))
+    const specConfig: Partial<SpecConfig> = {};
+    
+    for (const key of Object.keys(cfg)){
+      if ( isSpecConfig(key) && cfg[key] !== undefined){
+        Object.assign(specConfig, { [key]: cfg[key] })
+      }
+    } 
+
+    if (typeof cfg.mtp_layers !== 'number'){
+      Object.assign(specConfig, { ['mtp_layers']: 0 })
     }
-    return {
-      mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
-      mtp: cfg.mtp === true,
-      spec_draft_n_max: cfg.spec_draft_n_max,
-      spec_draft_n_min: cfg.spec_draft_n_min,
-      spec_draft_p_min: cfg.spec_draft_p_min,
-    }
+    return specConfig as SpecConfig;
   }
 
-  async updateMtpSettings(
+  async updateSpecDecodingSettings(
     modelId: string,
-    patch: {
-      mtp?: boolean
-      spec_draft_n_max?: number | null
-      spec_draft_n_min?: number | null
-      spec_draft_p_min?: number | null
-    }
+    patch: SpecConfigPatch
   ): Promise<void> {
     const configPath = await joinPath([
       await this.getProviderPath(),
@@ -2660,27 +2662,31 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!(await fs.existsSync(configPath))) {
       throw new Error(`model.yml not found for ${modelId}`)
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
-      mtp?: boolean
-      spec_draft_n_max?: number
-      spec_draft_n_min?: number
-      spec_draft_p_min?: number
-    }
 
-    if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
-    const assignNumeric = (
-      key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
-      value: number | null | undefined
-    ) => {
-      if (value === null) {
-        delete cfg[key]
-      } else if (typeof value === 'number' && Number.isFinite(value)) {
-        cfg[key] = value
+    const cfg = (await loadModelConfig(configPath))
+
+    for (const key of Object.keys(patch)){
+      if (!isSpecConfig(key)){
+        continue
       }
+
+      const value = patch[key]
+      if (value === null){
+          delete cfg[key]
+          continue
+      }
+
+      if (key === 'spec_type'){
+          if (isSpecType(patch.spec_type)) cfg.spec_type = patch.spec_type
+          continue
+      }
+      
+      if (key === 'spec_draft_type'){
+          if (isSpecDraftType(patch.spec_draft_type)) cfg.spec_draft_type = patch.spec_draft_type
+          continue
+      }
+      setSpecConfig(cfg, key, value)
     }
-    if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
-    if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
-    if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
 
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 

@@ -81,6 +81,7 @@ describe('generatePreset MTP emission', () => {
     expect(ini).toContain('spec-draft-p-min = 0.8')
   })
 
+  // DEBUG edit this to contain spec-type simple
   it('omits MTP lines when model has no MTP heads (mtp_layers = 0)', async () => {
     setupModel('llama', { mtp: true, mtp_layers: 0 })
     await generatePreset('/p', '/jan', CONFIG)

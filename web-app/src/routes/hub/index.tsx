@@ -199,7 +199,7 @@ function HubContent() {
   }, [searchValue])
 
   const filteredModels = useMemo(() => {
-    // Speculative draft companions (mtp/eagle3/dflash/dspark) are draft models,
+    // Speculative draft companions (mtp/eagle3/dflash/dspark/simple) are draft models,
     // not standalone variants — move them out of `quants` (so they don't show
     // as downloadable) into `specQuants`, where DownloadButton resolves them
     // against the chosen quant.

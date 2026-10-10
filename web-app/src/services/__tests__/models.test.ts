@@ -38,8 +38,8 @@ describe('DefaultModelsService', () => {
     isModelSupported: vi.fn(),
     isToolSupported: vi.fn(),
     checkMmprojExists: vi.fn(),
-    getMtpInfo: vi.fn(),
-    updateMtpSettings: vi.fn(),
+    getSpecDecodingSettings: vi.fn(),
+    updateSpecDecodingSettings: vi.fn(),
   }
 
   const mockEngineManager = { get: vi.fn().mockReturnValue(mockEngine) }

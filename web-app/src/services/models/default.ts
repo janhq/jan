@@ -16,7 +16,11 @@ import {
   UnloadResult,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
-import type { SpecDraftKind } from '@janhq/core'
+import type { 
+  SpecDraftKind, 
+  SpecConfig,
+  SpecConfigPatch, 
+} from '@janhq/core'
 import type {
   ModelsService,
   ModelCatalog,
@@ -27,6 +31,7 @@ import type {
   GpuOffloadReport,
   EngineVersionInfo,
 } from './types'
+
 import {
   extractToolContextFromContent,
   extractToolContextFromMetadata,
@@ -596,54 +601,32 @@ export class DefaultModelsService implements ModelsService {
     return false
   }
 
-  async getMtpInfo(modelId: string): Promise<{
-    mtp_layers: number
-    mtp: boolean
-    spec_draft_n_max?: number
-    spec_draft_n_min?: number
-    spec_draft_p_min?: number
-  }> {
+  async getSpecDecodingSettings(modelId: string): Promise<SpecConfig>{
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
-        getMtpInfo?: (id: string) => Promise<{
-          mtp_layers: number
-          mtp: boolean
-          spec_draft_n_max?: number
-          spec_draft_n_min?: number
-          spec_draft_p_min?: number
-        }>
+        getSpecDecodingSettings?: (id: string) => Promise<SpecConfig>
       }
-      if (engine && typeof engine.getMtpInfo === 'function') {
-        return await engine.getMtpInfo(modelId)
+      if (engine && typeof engine.getSpecDecodingSettings === 'function') {
+        return await engine.getSpecDecodingSettings(modelId)
       }
     } catch (error) {
       console.error(`Error reading MTP info for ${modelId}:`, error)
     }
-    return { mtp_layers: 0, mtp: false }
+    return { mtp_layers: 0}
   }
 
-  async updateMtpSettings(
+  async updateSpecDecodingSettings(
     modelId: string,
-    patch: {
-      mtp?: boolean
-      spec_draft_n_max?: number | null
-      spec_draft_n_min?: number | null
-      spec_draft_p_min?: number | null
-    }
+    patch: SpecConfigPatch
   ): Promise<void> {
     const engine = this.getEngine('llamacpp') as AIEngine & {
-      updateMtpSettings?: (
+      updateSpecDecodingSettings?: (
         id: string,
-        patch: {
-          mtp?: boolean
-          spec_draft_n_max?: number | null
-          spec_draft_n_min?: number | null
-          spec_draft_p_min?: number | null
-        }
+        patch: SpecConfigPatch
       ) => Promise<void>
     }
-    if (engine && typeof engine.updateMtpSettings === 'function') {
-      await engine.updateMtpSettings(modelId, patch)
+    if (engine && typeof engine.updateSpecDecodingSettings === 'function') {
+      await engine.updateSpecDecodingSettings(modelId, patch)
     }
   }
 

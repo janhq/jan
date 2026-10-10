@@ -220,7 +220,7 @@ export interface chatOptions {
  * values minus their `draft-` prefix (common/speculative.cpp). `dspark` is
  * `dflash` plus a Markov head.
  */
-export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark'
+export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark' | 'simple'
 
 // 7. /import
 export interface ImportOptions {

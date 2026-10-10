@@ -677,8 +677,8 @@ describe('detectTemplateKwargsFromChatTemplate', () => {
 
 describe('resolveSpecDraftKind', () => {
   // general.architecture is what llama.cpp itself keys on: `eagle3` and
-  // `dflash` are distinct architectures, and anything else carrying draft
-  // weights is an MTP head.
+  // `dflash` are distinct architectures. 
+  // If mtp layers exist it is interpreted as mtp, anything else is type simple.
   it('reads eagle3 straight off the architecture', () => {
     expect(resolveSpecDraftKind({ 'general.architecture': 'eagle3' })).toBe(
       'eagle3'
@@ -722,12 +722,27 @@ describe('resolveSpecDraftKind', () => {
     ).toBe('dspark')
   })
 
-  it('treats any other architecture as an MTP head', () => {
-    expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
+  it('seperates mtp from simple by the mtp layer count', () => {
+    expect(resolveSpecDraftKind({ 
+      'general.architecture': 'mtp',
+      'mtpLayers': 0
+    })).toBe(
+      'simple'
+    )
+    expect(resolveSpecDraftKind({ 
+      'general.architecture': 'simple',
+      'mtpLayers': 1
+    })).toBe(
       'mtp'
     )
-    expect(resolveSpecDraftKind({})).toBe('mtp')
-    expect(resolveSpecDraftKind(undefined)).toBe('mtp')
+  })
+
+  it('treats any other architecture as simple', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
+      'simple'
+    )
+    expect(resolveSpecDraftKind({})).toBe('simple')
+    expect(resolveSpecDraftKind(undefined)).toBe('simple')
   })
 
   // The architecture wins: a misnamed file must not select a type the draft
@@ -735,7 +750,7 @@ describe('resolveSpecDraftKind', () => {
   it('ignores a hint the architecture contradicts', () => {
     expect(
       resolveSpecDraftKind({ 'general.architecture': 'glm4moe' }, { hint: 'dflash' })
-    ).toBe('mtp')
+    ).toBe('simple')
     expect(
       resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
     ).toBe('dflash')

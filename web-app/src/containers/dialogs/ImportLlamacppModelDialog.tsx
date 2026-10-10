@@ -533,9 +533,10 @@ export const ImportLlamacppModelDialog = ({
               <div className="flex-1">
                 <h3 className="font-medium">Draft Model Support</h3>
                 <p className="text-sm text-muted-foreground leading-normal">
-                  Attach a smaller draft model (including MTP draft heads) for
+                  Attach a smaller draft model for
                   speculative decoding. The draft model must share the main
-                  model&apos;s tokenizer and vocabulary.
+                  model&apos;s tokenizer and vocabulary. 
+                  (Supports draft-simple, draft-mtp, draft-eagle3, draft-dflash and draft-dspark.)
                 </p>
               </div>
               <Switch

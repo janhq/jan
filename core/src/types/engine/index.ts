@@ -1,3 +1,5 @@
+export * from './specDecoding'
+
 export type Engines = {
   [key: string]: (EngineVariant & EngineConfig)[]
 }

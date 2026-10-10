@@ -13,13 +13,23 @@
  * `common/common.h` at the pinned build.
  */
 
-import { fs, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
-import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { fs, 
+  joinPath, 
+  type SpecConfigKey,
+  isSpecType,
+  isSpecDraftType,
+  specTypeParameters,
+  specConfig,
+} from '@janhq/core'
+import type { LlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { 
+  type LlamaCppModelConfig,
+  loadModelConfig,
+} from './util'
 
 // ModelConfig is intentionally widened — model.yml may carry extra fields like
 // `chat_template` that aren't yet in the strict typing.
-type ModelYaml = ModelConfig & {
+type ModelYaml = LlamaCppModelConfig & {
   chat_template?: string
   grammar?: string
   ctx_size?: number
@@ -32,10 +42,6 @@ type ModelYaml = ModelConfig & {
   pooling?: 'none' | 'mean' | 'cls' | 'last' | 'rank'
   ubatch_size?: number
   batch_size?: number
-  mtp_layers?: number
-  mtp?: boolean
-  mtp_model_path?: string
-  spec_type?: string
   temperature?: number
   top_k?: number
   top_p?: number
@@ -44,9 +50,6 @@ type ModelYaml = ModelConfig & {
   repeat_penalty?: number
   presence_penalty?: number
   frequency_penalty?: number
-  spec_draft_n_max?: number
-  spec_draft_n_min?: number
-  spec_draft_p_min?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
   n_cpu_ffn?: number
@@ -95,20 +98,6 @@ function isWindowsPath(p: string): boolean {
 // Fallback context size when the user hasn't set one, to avoid loading a
 // model's full trained context (which can OOM on large-context models).
 const DEFAULT_CTX_SIZE = 8192
-
-/**
- * The `--spec-type` values llama.cpp accepts for a draft model
- * (common/speculative.cpp). A model.yml records one at import; anything else
- * -- an older install with no record, or a value we do not recognise -- falls
- * back to MTP, which is what every embedded-head model is.
- */
-const SPEC_TYPES = new Set([
-  'draft-mtp',
-  'draft-eagle3',
-  'draft-dflash',
-  'draft-dspark',
-])
-const DEFAULT_SPEC_TYPE = 'draft-mtp'
 
 /**
  * A built-in template name (`chatml`, `llama3`, ...) as opposed to a template
@@ -508,7 +497,7 @@ export async function generatePreset(
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
     try {
-      mc = await invoke<ModelYaml>('read_yaml', { path: configPath })
+      mc = await loadModelConfig(configPath)
     } catch {
       // Skip unreadable model entries rather than aborting the whole preset.
       continue
@@ -653,40 +642,43 @@ export async function generatePreset(
       lines.push('mmproj-offload = false')
     }
 
+    function isValidString(value: String): value is string{
+      return (typeof value === 'string' && value.trim().length > 0)
+    }
+    function isValidNumber(value: Number): value is number{
+      return (typeof value === 'number' && Number.isFinite(value))
+    }
+
     // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
-    const hasMtpModel =
-      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
-    const hasMtpLayers =
-      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    if (mc.mtp === true && (hasMtpLayers || hasMtpModel)) {
-      const specType =
-        typeof mc.spec_type === 'string' && SPEC_TYPES.has(mc.spec_type)
-          ? mc.spec_type
-          : DEFAULT_SPEC_TYPE
-      lines.push(`spec-type = ${specType}`)
-      if (hasMtpModel) {
-        const mtpAbs = await joinPath([janDataFolderPath, mc.mtp_model_path!])
-        lines.push(`spec-draft-model = ${escapeIniValue(mtpAbs)}`)
+    // draft gguf (spec_draft_model), which is passed to the engine as the draft.
+    if (isSpecType(mc.spec_type)){
+      lines.push(`spec-type = ${mc.spec_type}`)
+      
+      if (isValidString(mc.spec_draft_model) && isSpecDraftType(mc.spec_type)) {
+        const specDraftModelPath = await joinPath([janDataFolderPath, mc.spec_draft_model!])
+        lines.push(`spec-draft-model = ${escapeIniValue(specDraftModelPath)}`)
       }
-      if (
-        typeof mc.spec_draft_n_max === 'number' &&
-        mc.spec_draft_n_max > 0
-      ) {
-        lines.push(`spec-draft-n-max = ${Math.floor(mc.spec_draft_n_max)}`)
+
+      function getLlamaCppParam(configKey: SpecConfigKey) {
+        return configKey.replace(/_/g, '-')
       }
-      if (
-        typeof mc.spec_draft_n_min === 'number' &&
-        mc.spec_draft_n_min >= 0
-      ) {
-        lines.push(`spec-draft-n-min = ${Math.floor(mc.spec_draft_n_min)}`)
-      }
-      if (
-        typeof mc.spec_draft_p_min === 'number' &&
-        mc.spec_draft_p_min >= 0 &&
-        mc.spec_draft_p_min <= 1
-      ) {
-        lines.push(`spec-draft-p-min = ${mc.spec_draft_p_min}`)
+      for (const param of specTypeParameters[mc.spec_type]){
+        const type = specConfig[param.key]
+        const value = mc[param.key.toString()]
+
+        if (type === Number && (isValidNumber(value))) {
+          const step = param.step
+          const validValue = Math.floor(value / step) * step
+          
+          if (validValue >= param.min && validValue !== param.default){
+            if (param.max === undefined || validValue <= param.max) {
+              lines.push(`${getLlamaCppParam(param.key)} = ${validValue}`)
+            }
+          }
+        
+        } else if (type === String && isValidString(value)) {
+          lines.push(`${getLlamaCppParam(param.key)} = ${value}`)
+        }
       }
     }
 
