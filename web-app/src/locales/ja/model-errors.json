@@ -6,5 +6,6 @@
   "increaseContextSize": "コンテキストサイズを増やす",
   "lastRequestOverflowed": "前回のリクエストがコンテキストウィンドウを超過しました。",
   "contextOverflowDetail": "このリクエストには {{request}} token が必要でしたが、モデルのコンテキストウィンドウは {{context}} token しか保持できません。",
-  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。"
+  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。",
+  "azureEndpointMissing": "{{provider}} のエンドポイントが設定されていません。設定 > モデルプロバイダ でベース URL を設定してください。"
 }

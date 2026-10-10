@@ -887,6 +887,20 @@ function requireRemoteApiKey(
   return key
 }
 
+// Azure endpoints are per resource and have no safe default: the
+// OpenAI-compatible route would fall back to api.openai.com and a relative URL
+// would post to the app's own origin, either way carrying the Azure key. Fail
+// before any request is built.
+function requireAzureEndpoint(provider: ProviderObject): void {
+  if (!provider.base_url?.trim()) {
+    throw new Error(
+      i18n.t('model-errors:azureEndpointMissing', {
+        provider: provider.provider,
+      })
+    )
+  }
+}
+
 function getRuntimeFetch(): typeof globalThis.fetch {
   const maybeWindow = globalThis as typeof globalThis & {
     __TAURI__?: unknown
@@ -942,6 +956,7 @@ export class ModelFactory {
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
+    if (providerName === 'azure') requireAzureEndpoint(provider)
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
 
     // Wire-format dispatch wins over name-based dispatch — custom providers
