@@ -38,11 +38,21 @@ function mkGeminiProvider(extra: Record<string, unknown> = {}) {
   } as any
 }
 
+function mkTokenLabProvider(extra: Record<string, unknown> = {}) {
+  return {
+    provider: 'tokenlab',
+    base_url: 'https://api.tokenlab.sh/v1',
+    api_key: 'tl-test',
+    ...extra,
+  } as any
+}
+
 describe('supportsRemoteCatalog', () => {
-  it('supports openai, anthropic and gemini', () => {
+  it('supports openai, anthropic, gemini and tokenlab', () => {
     expect(supportsRemoteCatalog('openai')).toBe(true)
     expect(supportsRemoteCatalog('anthropic')).toBe(true)
     expect(supportsRemoteCatalog('gemini')).toBe(true)
+    expect(supportsRemoteCatalog('tokenlab')).toBe(true)
     expect(supportsRemoteCatalog('groq')).toBe(false)
     expect(supportsRemoteCatalog('mistral')).toBe(false)
   })
@@ -52,6 +62,45 @@ describe('supportsRemoteCatalog', () => {
       supportsRemoteCatalog({ provider: 'my-gateway', api_type: 'anthropic' })
     ).toBe(true)
     expect(supportsRemoteCatalog({ provider: 'my-gateway' })).toBe(false)
+  })
+})
+
+describe('fetchTopRemoteModels tokenlab', () => {
+  it('keeps TokenLab chat models and filters non-chat models', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      mkResponse({
+        data: [
+          { id: 'gpt-5.4-mini', created: 10 },
+          { id: 'claude-sonnet-5', created: 9 },
+          { id: 'deepseek-v4-pro', created: 8 },
+          { id: 'qwen3.7-max', created: 7 },
+          { id: 'gemini-3.5-flash', created: 6 },
+          { id: 'text-embedding-3-small', created: 5 },
+          { id: 'unknown-model', created: 4 },
+        ],
+      })
+    )
+
+    const result = await fetchTopRemoteModels(mkTokenLabProvider(), fetchImpl)
+    const ids = result.map((m) => m.id)
+
+    expect(ids).toContain('gpt-5.4-mini')
+    expect(ids).toContain('claude-sonnet-5')
+    expect(ids).toContain('deepseek-v4-pro')
+    expect(ids).toContain('qwen3.7-max')
+    expect(ids).toContain('gemini-3.5-flash')
+    expect(ids).not.toContain('text-embedding-3-small')
+    expect(ids).not.toContain('unknown-model')
+
+    expect(result.find((m) => m.id === 'gpt-5.4-mini')?.capabilities).toEqual([
+      'completion',
+      'tools',
+      'vision',
+    ])
+    expect(result.find((m) => m.id === 'deepseek-v4-pro')?.capabilities).toEqual([
+      'completion',
+      'tools',
+    ])
   })
 })
 

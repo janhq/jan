@@ -47,6 +47,7 @@ describe('defaultModel', () => {
   it('returns first model for known providers', () => {
     expect(defaultModel('anthropic')).toBe('claude-sonnet-4-5')
     expect(defaultModel('mistral')).toBe('mistral-large-2411')
+    expect(defaultModel('tokenlab')).toBe('gpt-5.5')
   })
 
   it('handles empty string provider', () => {
@@ -380,5 +381,17 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)
     expect(capabilities).toContain(ModelCapabilities.TOOLS)
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  })
+
+  it('detects TokenLab tool and vision capabilities', () => {
+    const multimodal = getModelCapabilities('tokenlab', 'gpt-5.4-mini')
+    expect(multimodal).toContain(ModelCapabilities.COMPLETION)
+    expect(multimodal).toContain(ModelCapabilities.TOOLS)
+    expect(multimodal).toContain(ModelCapabilities.VISION)
+
+    const textOnly = getModelCapabilities('tokenlab', 'deepseek-v4-pro')
+    expect(textOnly).toContain(ModelCapabilities.COMPLETION)
+    expect(textOnly).toContain(ModelCapabilities.TOOLS)
+    expect(textOnly).not.toContain(ModelCapabilities.VISION)
   })
 })
