@@ -113,21 +113,15 @@ on:
           the vulkan feature -- and the SDK requirement -- to any vendor build
           whether or not the variant named it. Set to 1 with cuda13-vulkan.
 
-  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
-  # default branch, so until this merges a push is the only way to exercise it.
-  # Drop this once it lands there.
-  push:
-    branches: ['feat/windows-arm64']
-
 # Don't spend 3h of ARM runner on a superseded commit, and concurrent CUDA pulls
 # get throttled. Keyed on the caller's ref so nightly and a feature branch don't
-# evict each other. x64 needs none of this; only this one takes pushes.
+# evict each other.
 concurrency:
   group: tauri-win-arm64-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # `||` defaults because a push carries no inputs at all.
+  # `||` defaults for a run that carries no inputs.
   CHANNEL: ${{ inputs.channel || 'nightly' }}
   NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
@@ -470,6 +464,22 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn config set -H enableImmutableInstalls false
 
+      # Links a cached build of the pinned llama.cpp instead of compiling it
+      # (~88 of the ~115 minutes below). No credentials, or a missing,
+      # truncated or incomplete object, means the full cmake build. Key and
+      # layout: src-tauri/build-utils/engine-prebuilt.sh
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Build app
         shell: bash
         run: make build
@@ -485,6 +495,26 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the engine is kept when signing
+      # or bundling fails later;
+      # the script itself refuses unless the worker was built and every output
+      # is present.
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && (inputs.ref || github.ref) == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       - name: Upload the engine build log
         if: failure()

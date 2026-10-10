@@ -8,6 +8,7 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  blackboardWrite,
   attachmentImport,
   startMonitor,
   stopMonitor,
@@ -29,7 +30,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
  *
  * `write` and `edit` are included: they can only touch the thread's ephemeral
  * sandbox, which is deleted with the conversation, so `execute_tool` allows them
- * without a prompt. Withholding them while `bash` can write the same files would
+ * without a prompt. Withholding them while `shell` can write the same files would
  * be a restriction a sibling tool trivially bypasses.
  *
  * `web_search`/`web_fetch` are also built-ins but are already advertised through
@@ -42,7 +43,7 @@ export const AGENT_TOOL_NAMES = new Set([
   'grep',
   'write',
   'edit',
-  'bash',
+  'shell',
   'memory_list',
   'memory_read',
   'memory_write',
@@ -55,25 +56,34 @@ export const AGENT_TOOL_NAMES = new Set([
 ])
 
 /**
+ * Whether a recorded tool call ran the shell, for *displaying saved history*
+ * only. Turns saved before the tool was renamed carry its old name `bash`; they
+ * keep their terminal view and artifacts. Nothing dispatches or allows `bash`:
+ * the sets above and below name only `shell`.
+ */
+export const isRecordedShellCall = (toolName: string): boolean =>
+  toolName === 'shell' || toolName === 'bash'
+
+/**
  * The subset the main chat surface advertises and dispatches: the sandboxed
  * shell alone, with no network. The full toolset above is Cowork's — chat is a
  * conversation that occasionally runs a command, not an agent surface.
  */
-export const CHAT_AGENT_TOOL_NAMES = new Set(['bash'])
+export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in
  * `AGENT_TOOL_NAMES` -- the desktop still owns dispatching them -- but are held
  * back from the advertised schemas when no backend can confine them.
  */
-const SANDBOX_REQUIRED_TOOLS = new Set(['bash'])
+const SANDBOX_REQUIRED_TOOLS = new Set(['shell'])
 
 let schemaCache: ToolSchema[] | null = null
 let statusCache: Promise<SandboxStatus> | null = null
 
 /**
  * The sandbox backend for this machine, fetched once. A failure is treated as
- * "no sandbox", which withholds `bash` rather than offering something that
+ * "no sandbox", which withholds `shell` rather than offering something that
  * cannot run.
  */
 export function getSandboxStatus(): Promise<SandboxStatus> {
@@ -94,7 +104,7 @@ let enforcesNow = false
 /**
  * Re-probe the sandbox, dropping both caches. Installing a backend (bubblewrap
  * on Linux) cannot take effect otherwise: `statusCache` is module-level, and
- * leaving `schemaCache` behind would keep `bash` withheld even once a backend
+ * leaving `schemaCache` behind would keep `shell` withheld even once a backend
  * enforces.
  */
 export function refreshSandboxStatus(): Promise<SandboxStatus> {
@@ -114,7 +124,7 @@ export function sandboxEnforces(): boolean {
 
 /**
  * Schemas for the advertised subset. Rust's `schema.rs` is the only source, and
- * the sandbox decides whether `bash` is among them.
+ * the sandbox decides whether `shell` is among them.
  */
 export async function getAgentToolSchemas(): Promise<ToolSchema[]> {
   if (schemaCache) return schemaCache
@@ -238,7 +248,7 @@ const messageOf = (e: unknown): string =>
  * the desktop has no project picker yet, so the plugin uses the permanent store
  * in the Jan data folder.
  *
- * `bash` additionally runs under an OS sandbox whose network access is closed
+ * `shell` additionally runs under an OS sandbox whose network access is closed
  * unless the caller opens it. Chat never does; Cowork passes its own setting.
  */
 export async function executeAgentTool(
@@ -264,7 +274,7 @@ export async function executeAgentTool(
    * folder). Off by default, so chat's attachment stays read-only. */
   projectWritable = false,
   /**
-   * A project folder whose co-located skills (`<folder>/.jan/agent/skills`)
+   * A project folder whose project-store skills (`~/.jan/projects/<slug>/skills`)
    * layer on top of the permanent store for `skill_list`/`skill_read`, so an
    * attached folder's skills reach the agent alongside the global ones (#8879).
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
@@ -387,7 +397,7 @@ export async function stopAgentSessionMonitors(sessionId: string): Promise<void>
 }
 
 /**
- * Kill every `bash` tree this session started when the user presses Stop.
+ * Kill every `shell` tree this session started when the user presses Stop.
  * Best-effort: aborting the JS run already unwinds the turn, so a failure here
  * only means a shell keeps running, not user-visible damage.
  */
@@ -395,7 +405,7 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   try {
     await cancelThreadBash(sessionId)
   } catch (e) {
-    console.warn('[agentTools] Failed to cancel session bash:', messageOf(e))
+    console.warn('[agentTools] Failed to cancel session shells:', messageOf(e))
   }
 }
 
@@ -436,6 +446,36 @@ export async function fillSubagentResult(
   } catch (e) {
     console.warn('[agentTools] Failed to save subagent result:', messageOf(e))
     return false
+  }
+}
+
+/**
+ * The model-visible blackboard directory on Linux only, where the session
+ * scratch is bound over `/tmp` (see `scratch_display_path`, whose `/tmp`
+ * mapping is gated on `target_os = "linux"`), so a finished child's answer is
+ * read from `/tmp/blackboard/<name>.md`. On macOS/Windows the scratch is a real
+ * host path, so callers must not advertise this constant there. Reported up
+ * front by the plan summary; each child's completion notice always carries the
+ * exact path `writeBlackboard` returns.
+ */
+export const BLACKBOARD_DIR_DISPLAY = '/tmp/blackboard'
+
+/**
+ * Write a finished subagent's answer to `blackboard/<name>.md` in the session
+ * scratch -- the name-keyed coordination file a phased dispatch's next phase
+ * reads. Returns the model-visible path, or `null` when no scratch is reachable
+ * (the web build), so the caller can fall back to delivering the answer inline.
+ */
+export async function writeBlackboard(
+  sessionId: string,
+  name: string,
+  content: string
+): Promise<string | null> {
+  try {
+    return await blackboardWrite(sessionId, name, content)
+  } catch (e) {
+    console.warn('[agentTools] Failed to write the blackboard:', messageOf(e))
+    return null
   }
 }
 

@@ -61,9 +61,9 @@ describe('dispatchCoworkTool', () => {
   // Cowork's shell network follows the Cowork setting (on by default), read
   // per call so a Settings toggle applies to the next command.
   it('passes the cowork network setting through per call', async () => {
-    await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+    await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
     expect(executeAgentTool).toHaveBeenCalledWith(
-      'bash',
+      'shell',
       { command: 'curl x' },
       's1',
       null,
@@ -74,9 +74,9 @@ describe('dispatchCoworkTool', () => {
     )
     coworkConfig.networkEnabled = false
     try {
-      await dispatchCoworkTool(call('bash', { command: 'curl x' }), ctx())
+      await dispatchCoworkTool(call('shell', { command: 'curl x' }), ctx())
       expect(executeAgentTool).toHaveBeenLastCalledWith(
-        'bash',
+        'shell',
         { command: 'curl x' },
         's1',
         null,

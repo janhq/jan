@@ -1,0 +1,14 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|◔ 4 monitors                            |
+|◔ mon-1 build  1 poll                   |
+|  +3 more · /monitors                   |
+
+ 0 0..2 fg=#56B6C2
+ 0 2..12 fg=#56B6C2 mod=BOLD
+ 1 0..13 fg=#56B6C2
+ 1 13..21 fg=#808080
+ 2 0..12 fg=#808080
+ 2 12..21 fg=#56B6C2

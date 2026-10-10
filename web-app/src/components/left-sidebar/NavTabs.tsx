@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Handshake, HomeIcon, type LucideIcon } from 'lucide-react'
 import { route, isCoworkRoute } from '@/constants/routes'
+import { isCoworkEnabled } from '@/lib/version'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from '@/hooks/useThreads'
@@ -66,6 +67,10 @@ export function NavTabs({ surfacePath }: { surfacePath: string }) {
   const threadExists = useThreads(
     (s) => !threadId || Boolean(s.threads[threadId])
   )
+
+  // Home is the only surface outside the channels that ship Cowork, so there is
+  // no switcher to render - a lone Home pill is not a choice.
+  if (!isCoworkEnabled()) return null
 
   const tabs: TabItem[] = [
     {

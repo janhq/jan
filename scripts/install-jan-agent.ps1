@@ -38,15 +38,59 @@ $BinaryName = 'jan.exe'
 $NativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 # Native first, then x86_64 under emulation: it is all that pre-ARM64 versions,
 # or a nightly whose ARM leg failed, have to offer.
-$PlatformKeys = if ($NativeArch -eq 'ARM64') { @('windows-aarch64', 'windows-x86_64') }
-                else { @('windows-x86_64') }
+# @() outside the `if`: PowerShell unrolls a one-element array returned from it,
+# which made $PlatformKeys[0] the character 'w' and warned about emulation on x64.
+$PlatformKeys = @(if ($NativeArch -eq 'ARM64') { 'windows-aarch64', 'windows-x86_64' }
+                  else { 'windows-x86_64' })
 
 if (-not $Dir) {
   if ($env:JAN_INSTALL_DIR) {
     $Dir = $env:JAN_INSTALL_DIR
   } else {
-    $Dir = Join-Path $env:LOCALAPPDATA 'Programs\Jan'
+    # Same place as install-jan-agent.sh (and uv's Windows installer). Never the
+    # desktop app's %LOCALAPPDATA%\Programs\Jan: its updater runs the old
+    # uninstaller, which deletes that whole directory, and up to 0.8.4 the
+    # desktop executable there was Jan.exe, which jan.exe would overwrite.
+    $Dir = Join-Path $env:USERPROFILE '.local\bin'
   }
+}
+function ConvertTo-FullPath {
+  param([string]$Path)
+  try {
+    # Resolves against PowerShell's location, not the process directory, and
+    # works for paths that do not exist yet.
+    $p = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    return [IO.Path]::GetFullPath($p).TrimEnd('\')
+  } catch {
+    return $Path.TrimEnd('\')
+  }
+}
+
+# The desktop uninstaller, which every app update runs, ends with
+# `RMDir /r "$INSTDIR"`, so nothing at or under the app's directory survives,
+# and that directory may not exist yet. The app installs as Jan or Jan-<channel>
+# (Jan-nightly, Jan-beta); matching that segment rather than a bare `Jan*`
+# keeps unrelated folders such as Programs\Janus usable.
+function Test-DesktopAppDir {
+  param([string]$Path)
+  $full = ConvertTo-FullPath $Path
+  $roots = @($env:ProgramFiles, $env:ProgramW6432)
+  if ($env:LOCALAPPDATA) { $roots += Join-Path $env:LOCALAPPDATA 'Programs' }
+  foreach ($root in $roots) {
+    if (-not $root) { continue }
+    $prefix = (ConvertTo-FullPath $root) + '\'
+    if ($full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+      $segment = $full.Substring($prefix.Length).Split('\')[0]
+      if ($segment -eq 'Jan' -or $segment -like 'Jan-*') { return $true }
+    }
+  }
+  # Catches a desktop install in a custom location.
+  return (Test-Path -LiteralPath (Join-Path $Path 'uninstall.exe')) -and
+         (Test-Path -LiteralPath (Join-Path $Path 'resources'))
+}
+
+if (Test-DesktopAppDir $Dir) {
+  throw "$Dir is (or is inside) the Jan desktop app's install directory, which is deleted on every app update; choose another -Dir"
 }
 
 if ([Environment]::Is64BitOperatingSystem -eq $false) {
@@ -88,18 +132,108 @@ function Install-Binary {
   }
 
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $onPath = ($env:Path -split ';') -contains $Dir
   if ($AddToPath) {
     if (($userPath -split ';') -notcontains $Dir) {
-      $updated = if ([string]::IsNullOrEmpty($userPath)) { $Dir } else { "$userPath;$Dir" }
-      [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
-      Write-Host "added $Dir to your user PATH; open a new terminal to pick it up"
+      if (Add-ToUserPath -Key ([Microsoft.Win32.Registry]::CurrentUser) -Entry $Dir) {
+        Write-Host "added $Dir to your user PATH; open a new terminal to pick it up"
+      }
     } else {
       Write-Host "$Dir is already on your user PATH"
     }
-  } elseif (-not $onPath) {
-    Write-Host "note: $Dir is not on your PATH; re-run with -AddToPath or add it yourself"
   }
+
+  # The binary can be in place and still not be what `jan` runs: a directory
+  # earlier on PATH may hold another jan.exe (see Get-PathWarning).
+  $warning = Get-PathWarning -Dir $Dir -Dest $dest -AddToPathRequested:$AddToPath `
+    -MachinePath ([Environment]::GetEnvironmentVariable('Path', 'Machine')) `
+    -UserPath ([Environment]::GetEnvironmentVariable('Path', 'User'))
+  if ($warning) { Write-Warning $warning }
+}
+
+# Returns $true once Entry is appended to <Key>\Environment\Path, or $false,
+# with a warning, when the value cannot be edited safely. The binary is
+# already installed by then, so failing here must not abort the script.
+function Add-ToUserPath {
+  param([Parameter(Mandatory)][Microsoft.Win32.RegistryKey]$Key, [Parameter(Mandatory)][string]$Entry)
+  $manual = "add $Entry to your user PATH yourself (System Properties > Advanced > Environment Variables)"
+  try {
+    # Edit the raw registry value rather than SetEnvironmentVariable, which
+    # rewrites Path as REG_SZ with every %VAR% expanded (janhq/jan#9096).
+    $envKey = $Key.CreateSubKey('Environment')
+    try {
+      $raw = $envKey.GetValue('Path', $null, 'DoNotExpandEnvironmentNames')
+      $kind = if ($null -ne $raw) { $envKey.GetValueKind('Path') } else { 'ExpandString' }
+      # A REG_MULTI_SZ or REG_BINARY Path is already damaged; rewriting it as a
+      # string could lose whatever it holds, so leave it for the user.
+      if (($kind -ne 'String' -and $kind -ne 'ExpandString') -or
+          ($null -ne $raw -and $raw -isnot [string])) {
+        Write-Warning "your user Path is stored as $kind rather than a string, so it was left alone; $manual"
+        return $false
+      }
+      $updated = if ([string]::IsNullOrEmpty($raw)) { $Entry } else { "$($raw.TrimEnd(';'));$Entry" }
+      $envKey.SetValue('Path', $updated, $kind)
+    } finally {
+      $envKey.Close()
+    }
+  } catch {
+    Write-Warning "could not update your user Path ($($_.Exception.Message)); $manual"
+    return $false
+  }
+  # Deleting a variable that does not exist leaves the registry alone but makes
+  # .NET broadcast WM_SETTINGCHANGE, so new terminals see the new Path. It has
+  # to be [NullString]::Value: PowerShell passes $null to a string parameter
+  # as "", which .NET Framework treats as a delete but .NET 10 (PowerShell 7.6)
+  # stores as an empty variable.
+  [Environment]::SetEnvironmentVariable('JAN_INSTALL_PATH_REFRESH', [NullString]::Value, 'User')
+  return $true
+}
+
+# The directory a new terminal runs `jan` from: the machine Path, then the
+# user Path, each entry expanded, PATHEXT order within a directory.
+function Find-JanOnPath {
+  param([string]$MachinePath, [string]$UserPath)
+  $exts = @(if ($env:PATHEXT) { $env:PATHEXT -split ';' | Where-Object { $_ } } else { '.COM', '.EXE', '.BAT', '.CMD' })
+  $scopes = @(@{ Name = 'system'; Value = $MachinePath }, @{ Name = 'user'; Value = $UserPath })
+  foreach ($scope in $scopes) {
+    foreach ($entry in ("$($scope.Value)" -split ';')) {
+      $d = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+      if (-not $d) { continue }
+      foreach ($ext in $exts) {
+        # [IO.File]::Exists rather than Test-Path/Join-Path, which throw on a
+        # missing drive or a malformed entry.
+        $file = "jan$($ext.ToLowerInvariant())"
+        try { $hit = [IO.File]::Exists([IO.Path]::Combine($d, $file)) } catch { $hit = $false }
+        if ($hit) { return [pscustomobject]@{ Dir = $d; File = [IO.Path]::Combine($d, $file); Scope = $scope.Name } }
+      }
+    }
+  }
+  return $null
+}
+
+# A warning for when a new terminal would not run Dest as `jan`, or $null.
+function Get-PathWarning {
+  param([string]$Dir, [string]$Dest, [string]$MachinePath, [string]$UserPath, [switch]$AddToPathRequested)
+  $target = ConvertTo-FullPath $Dir
+  $listed = @("$MachinePath;$UserPath" -split ';' | Where-Object { $_.Trim() } |
+    ForEach-Object { ConvertTo-FullPath ([Environment]::ExpandEnvironmentVariables($_.Trim().Trim('"'))) })
+  if ($listed -notcontains $target) {
+    # With -AddToPath, Add-ToUserPath has already said why it is missing.
+    if ($AddToPathRequested) { return $null }
+    return "$Dir is not on your PATH, so ``jan`` will not be found; re-run with -AddToPath or add it yourself"
+  }
+  $winner = Find-JanOnPath -MachinePath $MachinePath -UserPath $UserPath
+  if (-not $winner -or (ConvertTo-FullPath $winner.Dir) -eq $target) { return $null }
+
+  $msg = "``jan`` in a new terminal will run $($winner.File), not $Dest, because $($winner.Dir) comes earlier on your $($winner.Scope) PATH. "
+  if ($winner.Dir -match '\\Programs\\Jan[^\\]*\\resources\\bin$') {
+    $msg += "Jan desktop 0.8.0-0.8.4 added that entry; remove it from your PATH as described at https://jan.ai/docs/desktop/troubleshooting#jan-is-not-recognized-after-updating-the-desktop-app"
+  } elseif ($winner.Dir -match '\\Programs\\Jan[^\\]*$') {
+    $msg += 'An earlier version of this installer added that entry; remove it from your PATH. The jan.exe there may be the 0.8.4 desktop app itself, so do not delete files from it.'
+  } else {
+    $msg += 'Remove that entry from your PATH'
+    $msg += if ($winner.Scope -eq 'user') { ", or move it after $Dir." } else { ' (the system PATH needs an administrator).' }
+  }
+  return $msg
 }
 
 function Install-FromSource {
@@ -111,11 +245,11 @@ function Install-FromSource {
     throw 'cargo not found; install Rust first'
   }
   Write-Host "building the CLI from $RepoRoot (release)"
-  Push-Location (Join-Path $RepoRoot 'src-tauri')
+  Push-Location (Join-Path $RepoRoot 'src-tauri\jan-cli')
   try {
     # The CLI and the desktop app are mutually exclusive feature configs, so
     # the default features must stay off.
-    cargo build --no-default-features --features cli --bin jan --release
+    cargo build --no-default-features --features cli --release
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
   } finally {
     Pop-Location

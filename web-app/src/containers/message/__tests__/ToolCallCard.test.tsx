@@ -83,7 +83,9 @@ describe('ToolCallCard', () => {
     const part = {
       type: 'tool-task',
       toolCallId: 'tc1',
-      input: { subagent_name: 'researcher', description: 'Research MCP' },
+      input: {
+        subagents: [{ name: 'researcher', task: 'Research MCP' }],
+      },
     }
     const { rerender } = render(
       <ToolCallCard

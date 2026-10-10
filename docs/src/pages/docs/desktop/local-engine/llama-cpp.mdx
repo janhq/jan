@@ -42,6 +42,10 @@ Originally created by Georgi Gerganov and now maintained by the [ggml-org/llama.
 **Speed**: No internet required once models are downloaded
 **Control**: Choose exactly which models to run and how they behave
 
+## Engine version
+
+The llama.cpp engine is built into Jan and updates together with the app, so there is no separate backend to download or pick. **Settings** > **Llama.cpp** shows the version, build and commit; quote them when you report a model that fails to load. To run a model on a different llama.cpp version, run your own `llama-server` and connect it as a [custom endpoint](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
+
 ## Accessing Engine Settings
 
 Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Llama.cpp** under Model Providers:

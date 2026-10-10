@@ -1,7 +1,9 @@
 name: Manual release dependency tarballs (flatpak)
 
 # Builds offline dependency tarballs for reproducible/offline Flatpak builds:
-#   - cargo-vendor: vendored Rust crates + .cargo/config.toml
+#   - cargo-vendor: vendored Rust crates + .cargo/config.toml, covering both
+#     the app lockfile and the standalone llamacpp plugin lockfile (the
+#     engine worker is built from the plugin crate on its own)
 #   - yarn-cache: populated Yarn caches for both yarn projects (repo root and
 #     src-tauri/plugins), enabling offline `yarn install` in the Flatpak sandbox
 # Both are attached to the given release tag as downloadable assets.
@@ -52,8 +54,13 @@ jobs:
       - name: Vendor Rust crates
         working-directory: src-tauri
         run: |
+          # Appended, not overwritten: the committed config carries settings the
+          # build still needs. The plugin lives under src-tauri, so cargo finds
+          # this config (and the source replacement) when building it too.
           mkdir -p .cargo
-          cargo vendor --locked vendor > .cargo/config.toml
+          cargo vendor --locked \
+            --sync plugins/tauri-plugin-llamacpp/Cargo.toml \
+            vendor >> .cargo/config.toml
           cat .cargo/config.toml
 
       - name: Pack cargo-vendor tarball
@@ -61,8 +68,7 @@ jobs:
           tar -czf "jan-cargo-vendor-${TAG}.tar.gz" \
             -C src-tauri \
             .cargo/config.toml \
-            vendor \
-            Cargo.lock
+            vendor
           ls -lh "jan-cargo-vendor-${TAG}.tar.gz"
 
       # Populate each yarn project's local cache. ENABLE_GLOBAL_CACHE=false

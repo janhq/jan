@@ -97,8 +97,9 @@ Inside the data folder you will typically find:
 ```
 
 ### `agent-workspace/`
-The [Cowork](/docs/desktop/cowork) agent's home. Memories (`memory/`), skills
-(`skills/`), and saved subagent definitions (`subagents/`) live here
+The agent workspace, shared by the [Cowork](/docs/desktop/cowork) surface
+(`nightly` channel only) and the [Jan Agent](/docs/agent). Memories (`memory/`),
+skills (`skills/`), and saved subagent definitions (`subagents/`) live here
 permanently. Each Cowork session gets an ephemeral sandbox under
 `sessions/<session_id>/`, and chat threads that use agent tools get one under
 `threads/<thread_id>/` — the agent can only write inside its own sandbox.

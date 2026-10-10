@@ -170,6 +170,49 @@ describe('useCoworkRun - subagent lanes', () => {
   })
 })
 
+describe('useCoworkRun - phased subagents', () => {
+  beforeEach(() => useCoworkRun.setState({ subagents: {} }))
+
+  it('registers later-phase subagents as waiting with their phase', () => {
+    useCoworkRun.getState().planSubagents('p1', [
+      { runId: 'c1-collector', name: 'collector', phase: 2 },
+    ])
+    expect(useCoworkRun.getState().subagents.p1).toEqual([
+      expect.objectContaining({
+        runId: 'c1-collector',
+        name: 'collector',
+        status: 'waiting',
+        phase: 2,
+      }),
+    ])
+  })
+
+  it('does not duplicate a subagent already registered', () => {
+    const s = useCoworkRun.getState()
+    s.planSubagents('p1', [{ runId: 'c1-a', name: 'a', phase: 2 }])
+    s.planSubagents('p1', [{ runId: 'c1-a', name: 'a', phase: 2 }])
+    expect(useCoworkRun.getState().subagents.p1).toHaveLength(1)
+  })
+
+  it('promotes a waiting subagent to running in place, keeping its phase', () => {
+    const s = useCoworkRun.getState()
+    s.planSubagents('p1', [{ runId: 'c1-a', name: 'a', phase: 2 }])
+    s.startSubagent('p1', 'c1-a', 'a')
+    const runs = useCoworkRun.getState().subagents.p1
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ runId: 'c1-a', status: 'running', phase: 2 })
+  })
+
+  it('promotes a waiting subagent to queued in place, keeping its phase', () => {
+    const s = useCoworkRun.getState()
+    s.planSubagents('p1', [{ runId: 'c1-a', name: 'a', phase: 2 }])
+    s.queueSubagent('p1', 'c1-a', 'a', 1)
+    const runs = useCoworkRun.getState().subagents.p1
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({ status: 'queued', waiting: 1, phase: 2 })
+  })
+})
+
 describe('useCoworkRun - monitors and parking', () => {
   beforeEach(() => {
     useCoworkRun.setState({ monitors: {}, parked: {}, runId: {}, liveTurns: {}, subagents: {} })

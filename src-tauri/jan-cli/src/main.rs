@@ -11,13 +11,15 @@ use console::Style;
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
+use app_lib::core::cli::mcp_serve::{cli_mcp_serve, ServeFlags, ServeTransport};
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
+use app_lib::core::cli::stream_input::InputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
-    cli_plugin_remove, cli_plugin_search, ResumeTarget, SessionFlags,
+    cli_plugin_remove, cli_plugin_search, ResumeRequest, SessionFlags,
 };
 use std::fmt::Write as _;
 
@@ -42,8 +44,11 @@ to opt out of both.",
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan -c                                                 # resume the most recent session\n  \
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
+  jan -c --fork-session                                  # branch the most recent session into a new one\n  \
+  jan --worktree                                         # work in a dedicated git worktree, not your checkout\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
+  jan cli models refresh                                 # re-read every provider's model list\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
   jan cli mcp list                                      # list configured MCP servers\n  \
   jan cli mcp add my-server --command npx --arg -y --arg my-mcp \n  \
@@ -52,7 +57,7 @@ to opt out of both.",
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Project root containing .jan/agent/agent.toml (bare TUI only)
+    /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/) (bare TUI only)
     #[arg(long, default_value = ".")]
     project: String,
     /// Optional first message to seed the chat with (bare TUI only)
@@ -78,6 +83,8 @@ struct Cli {
     plan: bool,
     #[command(flatten)]
     sandbox: SandboxArgs,
+    #[command(flatten)]
+    worktree: WorktreeArgs,
 }
 
 /// Whether this invocation confines the shell, shared by every surface that
@@ -97,6 +104,32 @@ struct SandboxArgs {
     no_sandbox: bool,
 }
 
+/// Whether this invocation works in its own git worktree.
+///
+/// Two flags for the same reason `SandboxArgs` has two: the setting is also
+/// persistent (`[agent].worktree` in agent.toml, `worktree` in
+/// `~/.jan/config.toml`), so there has to be a way out of it for one run.
+#[derive(Args, Clone, Copy)]
+struct WorktreeArgs {
+    /// Work in a dedicated git worktree instead of the project directory
+    #[arg(long)]
+    worktree: bool,
+    /// Work in the project directory, overriding a persistent worktree setting
+    #[arg(long, conflicts_with = "worktree")]
+    no_worktree: bool,
+}
+
+impl WorktreeArgs {
+    /// `None` when neither flag was passed, so the config files decide.
+    fn into_flag(self) -> Option<bool> {
+        match (self.worktree, self.no_worktree) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        }
+    }
+}
+
 impl SandboxArgs {
     /// `None` when neither flag was passed, so the config files decide.
     fn into_flag(self) -> Option<bool> {
@@ -109,7 +142,7 @@ impl SandboxArgs {
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
-/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
+/// Threads are per-project (`~/.jan/projects/<slug>/threads`), so resuming from a
 /// different working directory simply finds nothing there.
 #[derive(Args)]
 struct ResumeArgs {
@@ -119,12 +152,43 @@ struct ResumeArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
+}
+
+/// Per-invocation cost limits for `jan cli agent run`. All three mirror the
+/// engine's own semantics: an unpassed flag leaves the config files (or, for
+/// turns, nothing at all) in charge.
+///
+/// Two of them stop a run and one does not. `--max-turns` bounds how many turns
+/// it may take, `--max-budget-usd` bounds what it may spend; the token ceiling
+/// is advisory, compacting the conversation and recording a note before the run
+/// continues. A money ceiling is the one a user reaching for a limit usually
+/// means: turns and tokens are both proxies for the number they actually care
+/// about.
+#[derive(Args, Clone, Copy)]
+struct BudgetArgs {
+    /// Fail the run after at most N agentic turns; bounds this run only, not
+    /// its subagents (0 = unbounded, the default)
+    #[arg(long, value_name = "N")]
+    max_turns: Option<u64>,
+    /// Advisory token ceiling overriding [budget].max_tokens (default: the
+    /// model's context window): triggers compaction and a note, but does not
+    /// stop the run (0 = no ceiling)
+    #[arg(long, value_name = "N")]
+    max_session_tokens: Option<u64>,
+    /// Stop the run once it has spent this much in USD, overriding
+    /// [budget].max_usd. Priced from the provider's published rates, so a
+    /// model with no published price is refused rather than run uncapped
+    #[arg(long, value_name = "USD")]
+    max_budget_usd: Option<f64>,
 }
 
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
@@ -138,11 +202,14 @@ struct ResumeRunArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeRunArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
 }
 
@@ -169,20 +236,52 @@ enum Commands {
         #[command(subcommand)]
         cmd: AuthCommands,
     },
-    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    /// Read recorded usage and spend from the provider's usage API
     #[command(display_order = 4)]
+    Usage {
+        // Optional so bare `jan usage` answers "what have I spent" with the
+        // account summary. Unlike the TUI's bare `/usage` there is no session
+        // to estimate here -- a one-shot command has run no requests -- so the
+        // overview's local half does not exist and the account total is the
+        // whole answer.
+        #[command(subcommand)]
+        cmd: Option<UsageCommands>,
+        /// Print the provider's response body verbatim instead of a table.
+        /// Reshaping it would mean re-serializing money fields, which is how a
+        /// figure loses digits, so this forwards the bytes as received.
+        #[arg(long, global = true)]
+        json: bool,
+    },
+    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    #[command(display_order = 5)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
     /// Manage project-local plugins and their skills
-    #[command(display_order = 5)]
+    #[command(display_order = 6)]
     Plugin {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
+    /// Serve Jan's built-in tools to another agent over MCP
+    #[command(display_order = 7)]
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpServeCommands,
+    },
+    /// Experimental: serve the agent over the Agent Client Protocol (ACP) on
+    /// stdio, for Zed, JetBrains and other ACP clients. Hidden until it
+    /// graduates; needs JAN_EXPERIMENTAL_ACP=1 or `[experimental] acp = true`
+    #[command(hide = true)]
+    Acp {
+        /// Sign in interactively and exit: what an ACP client runs for the
+        /// terminal auth method `initialize` offers
+        #[arg(long)]
+        login: bool,
+    },
     /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 6)]
+    #[command(display_order = 8)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -190,6 +289,66 @@ enum Commands {
         /// Reinstall even when already on the latest version
         #[arg(long, conflicts_with = "check")]
         force: bool,
+    },
+}
+
+/// The server direction of MCP: Jan offered as a tool provider. The client
+/// direction (managing the servers Jan *connects to*) stays under
+/// `jan cli mcp`.
+#[derive(Subcommand)]
+enum McpServeCommands {
+    /// Run an MCP server exposing Jan's built-in tools for one project
+    Serve {
+        /// Project root the served tools are confined to
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Transport: stdio for a spawned child process, http for loopback Streamable HTTP
+        #[arg(long, value_enum, default_value_t = ServeTransport::Stdio)]
+        transport: ServeTransport,
+        /// Also serve the mutating filesystem tools (write, edit), confined to the project root
+        #[arg(long)]
+        allow_write: bool,
+        /// Also serve the shell tool (runs under the same OS sandbox as the agent)
+        #[arg(long)]
+        allow_exec: bool,
+        /// Serve only these tools, repeatable; never widens what the allow flags permit
+        #[arg(long = "tool")]
+        tools: Vec<String>,
+        /// Port for --transport http; 0 picks a free one
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Bearer token for --transport http; a random one is generated and printed if omitted
+        #[arg(long)]
+        token: Option<String>,
+    },
+}
+
+/// Reads against the provider's usage API.
+///
+/// Deliberately a sibling of `jan auth` rather than a mode of the agent: these
+/// are account-level questions about money, answered by the server, and none of
+/// them runs a model or touches a project. Every one of them reports figures
+/// the provider recorded -- not the local per-session estimate the TUI's bare
+/// `/usage` prints, which is an estimate and says so.
+#[derive(Subcommand)]
+enum UsageCommands {
+    /// Usage across this account's credentials, not only the key in use
+    Account,
+    /// Daily usage totals
+    Daily,
+    /// Recently recorded requests
+    Requests,
+    /// Current usage-limit status (separate from wallet credit)
+    Limits,
+    /// Inspect one execution by its X-Tokamak-Execution-Id
+    Generation {
+        /// The execution id, from the response header of an inference request
+        id: String,
+    },
+    /// Find every execution tagged with an X-Client-Request-Id
+    Correlate {
+        /// The correlation id sent on the original request
+        client_request_id: String,
     },
 }
 
@@ -274,28 +433,51 @@ struct ProviderArgs {
     /// API key for the target provider (else JAN_API_KEY / <PROVIDER>_API_KEY)
     #[arg(long)]
     api_key: Option<String>,
+    /// Base URL for the --provider named, e.g. a gateway (else JAN_BASE_URL)
+    #[arg(
+        long,
+        value_name = "URL",
+        requires = "provider",
+        value_parser = app_lib::core::cli::providers::parse_base_url
+    )]
+    base_url: Option<String>,
 }
 
 impl ProviderArgs {
+    /// Resolve the flags and their environment fallbacks, and record the result
+    /// as this process's session overrides, so every later rebuild of the
+    /// provider map (a TUI reload, the `/model` probe) keeps them.
     fn into_overrides(self) -> ProviderOverrides {
         // Default the target provider to the desktop app's current selection so
         // env-key fallback (<PROVIDER>_API_KEY) works without an explicit flag.
+        // Only an explicit --provider scopes a base URL or headers, though:
+        // redirecting whatever Desktop last had selected would be a surprise.
+        let explicit_provider = self.provider.is_some();
         let provider = self
             .provider
             .or_else(|| app_lib::core::cli::providers::desktop_selection().provider);
+        let base_url_source = self
+            .base_url
+            .is_some()
+            .then_some(app_lib::core::cli::providers::OverrideSource::Flag);
         ProviderOverrides {
             provider,
             api_key: self.api_key,
+            base_url: self.base_url,
+            explicit_provider,
+            base_url_source,
+            ..Default::default()
         }
         .with_env()
+        .install()
     }
 }
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the session token budget
+    /// Run the agent loop to completion, or to a --max-turns cap
     Run {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -311,15 +493,40 @@ enum AgentCommands {
         #[command(flatten)]
         sandbox: SandboxArgs,
         #[command(flatten)]
+        worktree: WorktreeArgs,
+        #[command(flatten)]
         resume: ResumeRunArgs,
+        #[command(flatten)]
+        budget: BudgetArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
-        /// object on stdout when the run finishes
+        /// object on stdout when the run finishes; `stream-json` prints one
+        /// JSON event per line as the run proceeds, ending with that object
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// `stream-json` reads newline-delimited `user`, `permission`,
+        /// `abort` and `tool_result` messages on stdin while the run is in
+        /// flight, and requires `--output-format stream-json`; `text` (the
+        /// default) does not read stdin at all
+        #[arg(long, value_enum, default_value_t = InputFormat::Text)]
+        input_format: InputFormat,
+        /// JSON file declaring tools this host executes: a list of
+        /// `{"name", "description", "parameters", "capability"}`. The model
+        /// calls them as `host__<name>` (a name outside `[A-Za-z0-9_-]` is
+        /// mapped to a safe one); each call arrives as a `tool_request` on stdout and
+        /// must be answered with a `tool_result` on stdin, so this requires
+        /// `--input-format stream-json`
+        #[arg(long, value_name = "FILE")]
+        host_tools: Option<String>,
+        /// The host approves its own tool calls: Jan raises no
+        /// `permission_request` for any host tool (built-ins are unaffected).
+        /// For a host whose `tool_request` handler is itself the approval
+        /// step; requires `--host-tools`
+        #[arg(long, requires = "host_tools")]
+        host_gate: bool,
     },
     /// Run a single turn (debugging)
     Step {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -337,11 +544,27 @@ enum AgentCommands {
     },
     /// Print resolved project config and available providers as JSON
     Status {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         #[command(flatten)]
         providers: ProviderArgs,
+    },
+    /// Print the protocol's JSON Schema, generated from the types that define
+    /// the channel (see `protocol/schema.json`)
+    Schema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
+    /// Serve addressable sessions over JSON-RPC on stdin/stdout
+    Rpc,
+    /// Print the RPC request and event schemas, generated from the types that
+    /// define the envelope (see `protocol/rpc-schema.json`)
+    RpcSchema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
     },
 }
 
@@ -410,6 +633,15 @@ enum ModelsCommands {
     /// Print every configured provider's models as JSON (API keys redacted)
     List {
         /// Only show models from this provider (e.g. anthropic)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Project root whose agent.toml [provider] override is applied
+        #[arg(long, default_value = ".")]
+        project: String,
+    },
+    /// Re-read every provider's /models endpoint, replacing the stored list
+    Refresh {
+        /// Only refresh this provider (e.g. tokamak)
         #[arg(long)]
         provider: Option<String>,
         /// Project root whose agent.toml [provider] override is applied
@@ -511,6 +743,12 @@ async fn main() {
     }))
     .init();
 
+    // Inference requests name this client, so a gateway can tell Jan Agent's
+    // traffic from the desktop's, which sends none. Set before anything sends.
+    app_lib::core::agent::request_headers::set_user_agent(app_lib::core::cli::telemetry::user_agent(
+        app_lib::core::cli::updater::build_version(),
+    ));
+
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
     let matches = Cli::command()
@@ -526,7 +764,7 @@ async fn main() {
         // TUI runs the same check itself and notes it in the transcript.
         // The usage ping is likewise deferred to the TUI's own background task.
         let overrides = cli.providers.into_overrides();
-        if let Err(e) = cli_agent_ui(
+        let result = cli_agent_ui(
             &cli.project,
             cli.task,
             cli.model,
@@ -536,12 +774,16 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
-            cli.resume.into_target(),
+            cli.resume.into_request(),
         )
-        .await
-        {
+        .await;
+        // `process::exit` skips destructors, so the bounded final export runs
+        // before it. A no-op unless telemetry is on.
+        app_lib::core::agent::otel::shutdown().await;
+        if let Err(e) = result {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -551,7 +793,21 @@ async fn main() {
     // `jan update` reports the same thing itself, in more detail. The check
     // doubles as the usage record (see `updater::fetch_manifest`), so there is
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
-    if !matches!(command, Commands::Update { .. }) {
+    // `jan mcp serve` is driven by another program, not a person: nobody reads
+    // the notice, and an update fetch on every spawn is a cost the peer pays.
+    // `jan cli agent rpc` is the same deal - the peer owns the process, and a
+    // notice on stdout would land inside the protocol channel.
+    if !matches!(
+        command,
+        Commands::Update { .. }
+            | Commands::Mcp { .. }
+            | Commands::Acp { .. }
+            | Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            }
+    ) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -569,6 +825,12 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Usage { cmd, json } => {
+            if let Err(e) = handle_usage(cmd, json).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Config { cmd } => {
             if let Err(e) = handle_agent_config(cmd) {
                 eprintln!("Error: {e}");
@@ -576,7 +838,60 @@ async fn main() {
             }
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
+        Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
+        Commands::Acp { login } => handle_acp(login).await,
         Commands::Update { check, force } => handle_update(check, force).await,
+    }
+    app_lib::core::agent::otel::shutdown().await;
+}
+
+// ── ACP server handler ─────────────────────────────────────────────────────
+
+/// `jan acp`. Refused before anything reads stdin unless the experimental
+/// opt-in is on, so a client pointed at it by mistake gets a clear error on
+/// stderr and an exit rather than a half-open protocol channel.
+async fn handle_acp(login: bool) {
+    use app_lib::core::cli::acp;
+    if !acp::enabled() {
+        eprintln!("Error: {}", acp::DISABLED_MESSAGE);
+        std::process::exit(2);
+    }
+    // The terminal auth method: the client relaunches `jan acp --login` in a
+    // terminal it shows the user, and a zero exit means signed in.
+    let result = if login {
+        app_lib::core::cli::login::run_login(false).await
+    } else {
+        acp::serve().await
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        app_lib::core::agent::otel::shutdown().await;
+        std::process::exit(1);
+    }
+}
+
+// ── MCP server handler ─────────────────────────────────────────────────────
+
+async fn handle_mcp_serve(cmd: McpServeCommands) {
+    let McpServeCommands::Serve {
+        project,
+        transport,
+        allow_write,
+        allow_exec,
+        tools,
+        port,
+        token,
+    } = cmd;
+    let flags = ServeFlags {
+        allow_write,
+        allow_exec,
+        only: tools,
+        port,
+        token,
+    };
+    if let Err(e) = cli_mcp_serve(&project, transport, flags).await {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -684,19 +999,37 @@ fn format_plugin_list(plugins: &[InstalledPlugin]) -> String {
         .max()
         .unwrap_or(0)
         .max("AGENTS".len());
+    let tools_width = plugins
+        .iter()
+        .map(|plugin| plugin.tools.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("TOOLS".len());
+    let hooks_width = plugins
+        .iter()
+        .map(|plugin| plugin.hooks.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("HOOKS".len());
 
     let mut output = String::new();
     writeln!(
         output,
-        "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
-        "PLUGIN", "VERSION", "SKILLS", "COMMANDS", "AGENTS"
+        "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}  {:>tools_width$}  {:>hooks_width$}",
+        "PLUGIN", "VERSION", "SKILLS", "COMMANDS", "AGENTS", "TOOLS", "HOOKS"
     )
     .unwrap();
     for plugin in plugins {
         writeln!(
             output,
-            "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
-            plugin.name, plugin.version, plugin.skills, plugin.commands, plugin.agents
+            "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}  {:>tools_width$}  {:>hooks_width$}",
+            plugin.name,
+            plugin.version,
+            plugin.skills,
+            plugin.commands,
+            plugin.agents,
+            plugin.tools,
+            plugin.hooks
         )
         .unwrap();
     }
@@ -722,7 +1055,20 @@ async fn handle_cli(cmd: CliCommands) {
 // ── Agent handlers ───────────────────────────────────────────────────────
 
 async fn handle_agent(cmd: AgentCommands) {
-    let result = match cmd {
+    // A Ctrl-C or SIGTERM would otherwise end the process with the run's last
+    // records still in the exporter's queue.
+    let result = app_lib::core::agent::otel::flush_on_termination(run_agent(cmd)).await;
+    // Before the exit below, which would skip it: the last run's records are
+    // still in the exporter's queue. Bounded, and a no-op unless telemetry is on.
+    app_lib::core::agent::otel::shutdown().await;
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(exit_code(&e));
+    }
+}
+
+async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
+    match cmd {
         AgentCommands::Run {
             project,
             task,
@@ -730,8 +1076,13 @@ async fn handle_agent(cmd: AgentCommands) {
             safe,
             providers,
             sandbox,
+            worktree,
             resume,
+            budget,
             output_format,
+            input_format,
+            host_tools,
+            host_gate,
         } => {
             cli_agent_run(
                 &project,
@@ -741,10 +1092,17 @@ async fn handle_agent(cmd: AgentCommands) {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    worktree: worktree.into_flag(),
+                    max_turns: budget.max_turns,
+                    max_session_tokens: budget.max_session_tokens,
+                    max_budget_usd: budget.max_budget_usd,
                     ..Default::default()
                 },
-                resume.into_target(),
+                resume.into_request(),
                 output_format,
+                input_format,
+                host_tools.as_deref(),
+                host_gate,
             )
             .await
         }
@@ -778,11 +1136,84 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
-    };
-    if let Err(e) = result {
-        eprintln!("Error: {e}");
-        std::process::exit(1);
+        // No project and no provider: the schema comes from the types alone, so
+        // it is the same document on any machine and in any directory.
+        AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
+        AgentCommands::Rpc => app_lib::core::cli::rpc::serve().await,
+        // Like `schema`: no project root and no provider are involved, so the
+        // artifact is the same one on any machine. `--out` is what CI and
+        // `make protocol-rpc-schema` use.
+        AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
     }
+}
+
+/// Classify a failed one-shot run for the shell.
+///
+/// Running out of turns with the model still calling tools is not the same
+/// outcome as a crash or a usage error: the run stopped where the caller asked
+/// it to stop, but it has no final answer, so a pipeline that only reads the
+/// exit code would take an unfinished task for a finished one. `--output-format
+/// json` carries the same distinction as `stop_reason: "error"` with this
+/// message, for consumers that never look at the code.
+fn exit_code(error: &str) -> i32 {
+    const TURN_LIMIT: &str = "-turn limit while the model was still calling tools";
+    if error.starts_with("reached the ") && error.ends_with(TURN_LIMIT) {
+        53
+    } else {
+        1
+    }
+}
+
+/// `jan usage` handler: read recorded spend from the provider's usage API.
+///
+/// Every view goes through one fetch so failures, timeouts and the not-signed-in
+/// case are reported identically regardless of which endpoint was asked for. A
+/// generation lookup is then rendered field by field, because its schema is
+/// documented; the rest are printed as flattened `path  value` pairs, so a
+/// field the server added since this build still shows up instead of being
+/// silently dropped by a struct that does not know about it.
+async fn handle_usage(cmd: Option<UsageCommands>, json: bool) -> Result<(), String> {
+    use app_lib::core::cli::tokamak::usage::{self, Query, UsageError};
+
+    let query = match &cmd {
+        None | Some(UsageCommands::Account) => Query::Summary,
+        Some(UsageCommands::Daily) => Query::Daily,
+        Some(UsageCommands::Requests) => Query::Requests,
+        Some(UsageCommands::Limits) => Query::Limits,
+        Some(UsageCommands::Generation { id }) => Query::Generation(id.clone()),
+        Some(UsageCommands::Correlate { client_request_id }) => {
+            Query::Correlated(client_request_id.clone())
+        }
+    };
+
+    let payload = match usage::fetch(&query).await {
+        Ok(payload) => payload,
+        // A not-found is a real answer to "what did this execution cost", not a
+        // crash, but it is still a failed lookup: exit non-zero so a script
+        // cannot read it as a zero charge.
+        Err(e @ UsageError::NotFound) => return Err(e.to_string()),
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if json {
+        println!("{}", payload.as_str());
+        return Ok(());
+    }
+
+    // The same renderer the TUI readout draws, so the two surfaces cannot
+    // drift: one place decides how a reported charge is displayed. `Fixed`
+    // because nothing is folded here -- a fold is an interactive affordance,
+    // and a piped view that silently dropped rows would be wrong for the
+    // scripts reading it -- and because there is no `m` to press in a pipe, so
+    // the keybinding hint must not print either.
+    for line in app_lib::core::cli::usage_view::reported_usage_lines(
+        &query,
+        &payload,
+        app_lib::core::cli::usage_view::Fold::Fixed,
+    ) {
+        println!("{line}");
+    }
+    Ok(())
 }
 
 /// `jan auth` handler: report sign-in state or sign out.
@@ -831,7 +1262,7 @@ async fn handle_auth(cmd: AuthCommands) -> Result<(), String> {
                 tokamak::Logout::ClearedOnly => println!(
                     "Signed out of Tokamak locally. The key could not be revoked upstream - \
                      remove it at {}",
-                    tokamak::API_KEYS_URL
+                    tokamak::api_keys_url()
                 ),
                 tokamak::Logout::NothingToDo => println!("Not signed in to Tokamak."),
             }
@@ -931,7 +1362,7 @@ async fn handle_models(cmd: ModelsCommands) {
         ModelsCommands::List { provider, project } => {
             let configs = match load_provider_configs(
                 Some(std::path::Path::new(&project)),
-                &ProviderOverrides::default().with_env(),
+                &ProviderOverrides::session(),
             ) {
                 Ok(c) => c,
                 Err(e) => {
@@ -939,19 +1370,28 @@ async fn handle_models(cmd: ModelsCommands) {
                     std::process::exit(1);
                 }
             };
+            let catalog = app_lib::core::cli::model_catalog::effective();
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
                 .filter(|c| provider.as_ref().is_none_or(|p| &c.provider == p))
                 .flat_map(|c| {
+                    let catalog = &catalog;
                     c.models.iter().map(move |m| {
-                        serde_json::json!({
+                        let mut entry = serde_json::json!({
                             "id": m,
                             "provider": c.provider,
                             "base_url": c.base_url,
                             "api_type": c.api_type,
                             "has_api_key": app_lib::core::cli::providers::has_credential(c),
-                        })
+                        });
+                        // Whatever the provider's own listing reported, when a
+                        // refresh (or a sign-in) has cached it. Absent for a
+                        // plain endpoint that lists ids and nothing else.
+                        if let Some(info) = catalog.get(Some(&c.provider), m) {
+                            entry["info"] = serde_json::to_value(info).unwrap_or_default();
+                        }
+                        entry
                     })
                 })
                 .collect();
@@ -960,6 +1400,28 @@ async fn handle_models(cmd: ModelsCommands) {
                     .cmp(&(b["provider"].as_str(), b["id"].as_str()))
             });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        ModelsCommands::Refresh { provider, project } => {
+            match app_lib::core::cli::providers::refresh_models(
+                Some(std::path::Path::new(&project)),
+                provider.as_deref(),
+            )
+            .await
+            {
+                Ok(refreshed) => {
+                    println!("{}", refreshed.summary());
+                    // A provider that could not be listed leaves its stored list
+                    // in place, so the exit code has to say the refresh was
+                    // partial or a script would read it as complete.
+                    if !refreshed.failed.is_empty() {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
@@ -1111,6 +1573,114 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its budget args.
+    fn parsed_budget(extra: &[&str]) -> BudgetArgs {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { budget, .. },
+                    },
+            }) => budget,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// An unpassed limit is `None` so the config files (or nothing, for turns)
+    /// decide; `0` must survive parsing as the engine's unbounded marker rather
+    /// than collapsing into the same `None`.
+    #[test]
+    fn run_limits_parse_and_default_to_unset() {
+        let none = parsed_budget(&[]);
+        assert_eq!(none.max_turns, None);
+        assert_eq!(none.max_session_tokens, None);
+
+        let set = parsed_budget(&["--max-turns", "5", "--max-session-tokens", "20000"]);
+        assert_eq!(set.max_turns, Some(5));
+        assert_eq!(set.max_session_tokens, Some(20_000));
+
+        let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
+        assert_eq!(zero.max_turns, Some(0));
+        assert_eq!(zero.max_session_tokens, Some(0));
+
+        // The money ceiling parses as a decimal amount, not a token count: a
+        // budget users write as "$2.50" must not be truncated to 2 on the way
+        // in, which is the failure an integer type here would produce.
+        assert_eq!(parsed_budget(&[]).max_budget_usd, None);
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "2.50"]).max_budget_usd,
+            Some(2.50)
+        );
+        // `0` is a real ceiling (stop at the first billed request), so it must
+        // survive as `Some(0.0)` rather than collapsing into "unset".
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "0"]).max_budget_usd,
+            Some(0.0)
+        );
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
+    fn parsed_input_format(extra: &[&str]) -> InputFormat {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { input_format, .. },
+                    },
+            }) => input_format,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// Reading stdin is opt-in: a run with no `--input-format` must not consume
+    /// a pipe the caller is using for something else.
+    #[test]
+    fn input_format_parses_and_defaults_to_text() {
+        assert_eq!(parsed_input_format(&[]), InputFormat::Text);
+        assert_eq!(
+            parsed_input_format(&["--input-format", "stream-json"]),
+            InputFormat::StreamJson
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "run",
+            "task",
+            "--input-format",
+            "yaml"
+        ])
+        .is_err());
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its host gate.
+    fn parsed_host_gate(extra: &[&str]) -> bool {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { host_gate, .. },
+                    },
+            }) => host_gate,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// The gate is only the host's when the host has tools to gate: without
+    /// `--host-tools` the flag would silently do nothing, so clap refuses it.
+    #[test]
+    fn host_gate_is_off_by_default_and_requires_host_tools() {
+        assert!(!parsed_host_gate(&["--host-tools", "tools.json"]));
+        assert!(parsed_host_gate(&["--host-tools", "tools.json", "--host-gate"]));
+        assert!(Cli::try_parse_from(["jan", "cli", "agent", "run", "task", "--host-gate"]).is_err());
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
     fn parsed_output_format(extra: &[&str]) -> OutputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1134,6 +1704,10 @@ mod tests {
             OutputFormat::Json
         );
         assert_eq!(
+            parsed_output_format(&["--output-format", "stream-json"]),
+            OutputFormat::StreamJson
+        );
+        assert_eq!(
             parsed_output_format(&["--output-format=text"]),
             OutputFormat::Text
         );
@@ -1147,6 +1721,107 @@ mod tests {
             "yaml"
         ])
         .is_err());
+    }
+
+    /// `schema` is the one `cli agent` subcommand with no project and no
+    /// provider: it prints a document derived from the types alone.
+    #[test]
+    fn schema_parses_with_and_without_an_output_path() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema", "--out", "protocol/schema.json"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema --out`");
+        };
+        assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
+    }
+
+    #[test]
+    fn acp_parses_and_stays_out_of_help() {
+        let cli = Cli::parse_from(["jan", "acp"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: false })));
+        let cli = Cli::parse_from(["jan", "acp", "--login"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: true })));
+        // Experimental: callable, but not offered in `--help` until it graduates.
+        let help = Cli::command().render_help().to_string();
+        assert!(!help.contains("Agent Client Protocol"), "{help}");
+    }
+
+    /// `rpc` and `rpc-schema` are the long-lived session transport and its
+    /// generated artifact: neither involves a project or a provider, and
+    /// `rpc-schema --out` is the only flag between them.
+    #[test]
+    fn rpc_subcommands_parse() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            })
+        ));
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc-schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "rpc-schema",
+            "--out",
+            "protocol/rpc-schema.json",
+        ]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema --out`");
+        };
+        assert_eq!(
+            out.as_deref(),
+            Some(std::path::Path::new("protocol/rpc-schema.json"))
+        );
+    }
+
+    /// Running out of turns while the model is still calling tools is the one
+    /// failure the shell can read as a limit rather than a crash. The message is
+    /// the only marker it has, so the classifier must match that message and not
+    /// some phrase inside a different one.
+    #[test]
+    fn turn_limit_exhaustion_has_its_own_exit_code() {
+        assert_eq!(exit_code("reached the 8-turn limit while the model was still calling tools"), 53);
+        assert_eq!(exit_code("reached the end of the response stream"), 1);
+        assert_eq!(exit_code("upstream returned 500"), 1);
     }
 
     #[test]
@@ -1165,6 +1840,87 @@ mod tests {
             Some(Commands::Update { check: true, .. })
         ));
         assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
+    }
+
+    #[test]
+    fn mcp_serve_parses_and_defaults_to_read_only_stdio() {
+        let cli = Cli::parse_from(["jan", "mcp", "serve"]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                project,
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(project, ".");
+        assert_eq!(transport, ServeTransport::Stdio);
+        assert!(!allow_write);
+        assert!(!allow_exec);
+        assert!(tools.is_empty());
+        assert_eq!(port, 0);
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn mcp_serve_http_flags_parse() {
+        let cli = Cli::parse_from([
+            "jan",
+            "mcp",
+            "serve",
+            "--transport",
+            "http",
+            "--port",
+            "7331",
+            "--token",
+            "abc",
+            "--allow-write",
+            "--allow-exec",
+            "--tool",
+            "read",
+            "--tool",
+            "grep",
+        ]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+                ..
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(transport, ServeTransport::Http);
+        assert!(allow_write);
+        assert!(allow_exec);
+        assert_eq!(tools, vec!["read".to_string(), "grep".to_string()]);
+        assert_eq!(port, 7331);
+        assert_eq!(token.as_deref(), Some("abc"));
+    }
+
+    /// The client direction keeps its own place; `jan mcp` must not shadow it.
+    #[test]
+    fn mcp_client_subcommand_still_lives_under_cli() {
+        let cli = Cli::parse_from(["jan", "cli", "mcp", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Mcp {
+                    cmd: McpCommands::List { .. }
+                }
+            })
+        ));
     }
 
     #[test]
@@ -1200,6 +1956,63 @@ mod tests {
             cli.command,
             Some(Commands::Auth {
                 cmd: AuthCommands::Logout
+            })
+        ));
+    }
+
+    #[test]
+    fn usage_subcommands_parse() {
+        let view = |argv: &[&str]| {
+            let mut full = vec!["jan", "usage"];
+            full.extend_from_slice(argv);
+            match Cli::parse_from(full).command {
+                Some(Commands::Usage { cmd, .. }) => cmd,
+                other => panic!("expected a usage command, got {:?}", other.is_some()),
+            }
+        };
+        assert!(matches!(view(&["account"]), Some(UsageCommands::Account)));
+        assert!(matches!(view(&["daily"]), Some(UsageCommands::Daily)));
+        assert!(matches!(view(&["requests"]), Some(UsageCommands::Requests)));
+        assert!(matches!(view(&["limits"]), Some(UsageCommands::Limits)));
+        match view(&["generation", "exec-1"]) {
+            Some(UsageCommands::Generation { id }) => assert_eq!(id, "exec-1"),
+            _ => panic!("expected a generation lookup"),
+        }
+        match view(&["correlate", "my-app-request-001"]) {
+            Some(UsageCommands::Correlate { client_request_id }) => {
+                assert_eq!(client_request_id, "my-app-request-001");
+            }
+            _ => panic!("expected a correlation lookup"),
+        }
+        // Bare `jan usage` is the account summary: with no session to
+        // estimate, the recorded total is the only answer there is.
+        assert!(view(&[]).is_none(), "the subcommand is optional");
+    }
+
+    /// An id is required, not optional: a bare `jan usage generation` would
+    /// otherwise have to invent one.
+    #[test]
+    fn a_generation_lookup_requires_an_id() {
+        assert!(Cli::try_parse_from(["jan", "usage", "generation"]).is_err());
+        assert!(Cli::try_parse_from(["jan", "usage", "correlate"]).is_err());
+    }
+
+    #[test]
+    fn usage_json_flag_parses_after_the_subcommand() {
+        let cli = Cli::parse_from(["jan", "usage", "account", "--json"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: Some(UsageCommands::Account),
+                json: true
+            })
+        ));
+        let cli = Cli::parse_from(["jan", "usage", "account"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: Some(UsageCommands::Account),
+                json: false
             })
         ));
     }
@@ -1334,6 +2147,8 @@ mod tests {
                 skills: 2,
                 commands: 1,
                 agents: 3,
+                tools: 4,
+                hooks: 5,
             },
             InstalledPlugin {
                 name: "beta".into(),
@@ -1343,6 +2158,8 @@ mod tests {
                 skills: 0,
                 commands: 0,
                 agents: 0,
+                tools: 0,
+                hooks: 0,
             },
         ];
 
@@ -1351,12 +2168,73 @@ mod tests {
         assert!(output.lines().next().unwrap().contains("PLUGIN"));
         assert!(output.lines().next().unwrap().contains("COMMANDS"));
         assert!(output.lines().next().unwrap().contains("AGENTS"));
+        assert!(output.lines().next().unwrap().contains("TOOLS"));
+        assert!(output.lines().next().unwrap().contains("HOOKS"));
         assert!(output.contains("alpha"));
         assert!(output.contains("1.2.3"));
-        assert!(output.contains("2"));
-        assert!(output.contains("1"));
-        assert!(output.contains("3"));
+        // Every count alpha declares, in column order.
+        let alpha = output.lines().nth(1).unwrap();
+        assert_eq!(
+            alpha.split_whitespace().collect::<Vec<_>>(),
+            ["alpha", "1.2.3", "2", "1", "3", "4", "5"]
+        );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
+    }
+
+    /// `--base-url` sits beside `--provider` / `--api-key` on the TUI and on
+    /// `run` / `step`, scopes to an explicitly named provider only (so it
+    /// requires one), and never takes a plaintext remote URL.
+    #[test]
+    fn base_url_parses_beside_provider_and_requires_it() {
+        let cli = Cli::parse_from([
+            "jan",
+            "--provider",
+            "tokamak",
+            "--base-url",
+            "https://api-stag.tokamak.sh/v1/",
+        ]);
+        assert_eq!(
+            cli.providers.base_url.as_deref(),
+            Some("https://api-stag.tokamak.sh/v1"),
+            "normalized: the trailing slash is dropped"
+        );
+        for sub in ["run", "step"] {
+            let cli = Cli::parse_from([
+                "jan",
+                "cli",
+                "agent",
+                sub,
+                "task",
+                "--provider",
+                "gw",
+                "--base-url",
+                "http://localhost:8080/v1",
+            ]);
+            let providers = match cli.command {
+                Some(Commands::Cli {
+                    cmd:
+                        CliCommands::Agent {
+                            cmd:
+                                AgentCommands::Run { providers, .. }
+                                | AgentCommands::Step { providers, .. },
+                        },
+                }) => providers,
+                _ => panic!("expected `cli agent {sub}`"),
+            };
+            assert_eq!(providers.base_url.as_deref(), Some("http://localhost:8080/v1"));
+        }
+        assert!(
+            Cli::try_parse_from(["jan", "--base-url", "https://gw.example/v1"]).is_err(),
+            "no --provider to scope it to"
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "--provider",
+            "gw",
+            "--base-url",
+            "http://gw.example/v1"
+        ])
+        .is_err());
     }
 }

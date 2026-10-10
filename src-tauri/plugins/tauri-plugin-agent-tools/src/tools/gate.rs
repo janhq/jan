@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    command_touches_hidden_jan_path, escapes_read_roots, escapes_write_roots, is_hidden_jan_path,
+    command_touches_hidden_root, escapes_read_roots, escapes_write_roots, in_hidden_root,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -113,7 +113,7 @@ impl SessionGrants {
 pub enum DenyReason {
     /// `[tools] deny` in agent.toml names this tool.
     Policy,
-    /// The call reaches `<project>/.jan`, which is hidden from every tool.
+    /// The call reaches the Jan home (`~/.jan`), hidden from every tool.
     Hidden,
 }
 
@@ -124,7 +124,7 @@ pub enum Decision {
     Prompt(PromptKind),
 }
 
-/// Filesystem roots and hiding policy used when gating a tool call.
+/// Filesystem roots used when gating a tool call.
 #[derive(Debug, Clone, Copy)]
 pub struct GateContext<'a> {
     /// The project root: paths inside it are the agent's own workspace.
@@ -136,8 +136,12 @@ pub struct GateContext<'a> {
     /// The subset of `read_roots` the caller marked writable: writes inside one
     /// are ordinary in-project writes rather than escapes.
     pub write_roots: &'a [PathBuf],
-    /// Hide the agent's own `.jan` state (skills/memory/config) from general tools.
-    pub hide_jan: bool,
+    /// The Jan home (`~/.jan`: `config.toml` with keys and hooks, every
+    /// project's store). Set while the shell is sandboxed; paths and commands
+    /// reaching it are refused outright, wherever it sits relative to the
+    /// project (running in `$HOME` puts it inside). See
+    /// [`crate::tools::sandbox::in_hidden_root`] for the worktree exception.
+    pub hidden_root: Option<&'a Path>,
 }
 
 /// Decide how a built-in tool call should be gated, combining the static
@@ -157,27 +161,23 @@ pub fn resolve_decision(
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
     }
-    // Nothing under .jan is reachable while hidden: skills/memory only through
-    // their dedicated tools, config, threads and the dir listing not at all.
-    // Checked ahead of allow rules so an allowed tool name cannot bypass it.
-    // The whole check is skipped when not hiding, so an unconfined CLI run can
-    // read and edit its own `.jan` like any other project state.
-    let hits_hidden = ctx.hide_jan
-        && tool.path_args.iter().any(|key| {
+    // Ahead of allow rules and session grants, so neither an allowed tool name
+    // nor a routine "allow writes" approval reaches keys, hooks or the agent's
+    // own permissions.
+    if let Some(hidden) = ctx.hidden_root {
+        let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
-                .map(|p| is_hidden_jan_path(ctx.project_root, p))
-                .unwrap_or(false)
+                .is_some_and(|p| in_hidden_root(ctx.project_root, ctx.scratch, hidden, p))
         });
-    let exec_hits_hidden = ctx.hide_jan
-        && tool.capability == Capability::Exec
-        && args
-            .get("command")
-            .and_then(|v| v.as_str())
-            .map(|c| command_touches_hidden_jan_path(ctx.project_root, c))
-            .unwrap_or(false);
-    if hits_hidden || exec_hits_hidden {
-        return Decision::HardDeny(DenyReason::Hidden);
+        let hits_command = tool.capability == Capability::Exec
+            && args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|c| command_touches_hidden_root(ctx.project_root, ctx.scratch, hidden, c));
+        if hits_path || hits_command {
+            return Decision::HardDeny(DenyReason::Hidden);
+        }
     }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
@@ -241,18 +241,6 @@ pub fn resolve_decision(
         }
         Capability::Exec => {
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            // Polling a previously backgrounded command (job_id, no new
-            // command) never prompts: the exec permission was already
-            // granted (or denied above) when the command was started. A real
-            // command wins over a stray model-supplied job_id.
-            if command.trim().is_empty()
-                && args
-                    .get("job_id")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|job_id| !job_id.trim().is_empty())
-            {
-                return Decision::Allow;
-            }
             if grants.covers_command(command) {
                 Decision::Allow
             } else {
@@ -306,7 +294,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -328,7 +316,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -351,7 +339,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: true,
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -375,7 +363,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -388,114 +376,92 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Regression for the #9065 review: with `$HOME` as the project, the Jan
+    /// home is inside it, and neither default permissions, a session Write
+    /// grant nor an allow-all policy may reach its keys, hooks or the agent's
+    /// own permissions.
     #[test]
-    fn agent_config_is_off_limits_to_every_tool() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
-        let perms = ToolPermissions::allow_all();
-        let grants = SessionGrants::default();
-        // Read/ls/find/grep and write/edit all hard-deny on agent.toml.
-        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
-            let d = resolve_decision(
-                lookup(tool).unwrap(),
-                &json!({ "path": ".jan/agent/agent.toml" }),
-                &GateContext {
-                    project_root: &root,
-                    scratch: None,
-                    read_roots: &[],
-                    write_roots: &[],
-                    hide_jan: true,
-                },
-                &perms,
-                &grants,
-            );
-            assert_eq!(
-                d,
-                Decision::HardDeny(DenyReason::Hidden),
-                "{tool} on agent.toml must be denied"
-            );
+    fn the_jan_home_is_refused_when_the_project_is_home() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(jan.join("projects/home-1")).unwrap();
+        std::fs::write(jan.join("config.toml"), b"[providers]\n").unwrap();
+        std::fs::write(jan.join("projects/home-1/agent.toml"), b"[tools]\n").unwrap();
+        let ctx = GateContext {
+            project_root: &home,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let mut granted = SessionGrants::default();
+        granted.grant(PromptKind::Write);
+        granted.grant_command("cat ~/.jan/config.toml");
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let cases = [
+            ("read", json!({"path": ".jan/config.toml"})),
+            ("write", json!({"path": ".jan/projects/home-1/agent.toml", "content": ""})),
+            ("edit", json!({"path": ".jan/config.toml"})),
+            ("ls", json!({"path": ".jan"})),
+            ("grep", json!({"pattern": "key", "path": ".jan"})),
+            ("shell", json!({"command": "cat ~/.jan/config.toml"})),
+        ];
+        for perms in [ToolPermissions::default(), ToolPermissions::allow_all()] {
+            for (tool, args) in &cases {
+                let d = resolve_decision(lookup(tool).unwrap(), args, &ctx, &perms, &granted);
+                assert_eq!(d, hidden, "{tool} {args}");
+            }
         }
-        // bash referencing it is denied too.
-        let d = resolve_decision(
-            lookup("bash").unwrap(),
-            &json!({"command": "cat .jan/agent/agent.toml"}),
-            &GateContext {
-                project_root: &root,
-                scratch: None,
-                read_roots: &[],
-                write_roots: &[],
-                hide_jan: true,
-            },
-            &perms,
-            &grants,
-        );
-        assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
-        // The instructions file is an ordinary project file at the root.
-        std::fs::write(root.join("JAN.md"), b"x").unwrap();
+        // The rest of the home is an ordinary project.
+        std::fs::write(home.join("notes.txt"), b"x").unwrap();
         let d = resolve_decision(
             lookup("read").unwrap(),
-            &json!({"path": "JAN.md"}),
-            &GateContext {
-                project_root: &root,
-                scratch: None,
-                read_roots: &[],
-                write_roots: &[],
-                hide_jan: true,
-            },
-            &perms,
-            &grants,
+            &json!({"path": "notes.txt"}),
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
         );
         assert_eq!(d, Decision::Allow);
-        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// The Jan home is refused from any project, not only when it is inside:
+    /// an escaping read of `~/.jan/config.toml` must not reach a prompt.
     #[test]
-    fn hidden_jan_is_reachable_when_not_hiding() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
-        let perms = ToolPermissions::allow_all();
-        let grants = SessionGrants::default();
-        // With hiding off, paths and commands under `.jan` take the ordinary
-        // capability path instead of the hard deny (here an in-project read
-        // allows; the write prompts like any in-project write).
-        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
-            let d = resolve_decision(
-                lookup(tool).unwrap(),
-                &json!({ "path": ".jan/agent/agent.toml" }),
-                &GateContext {
-                    project_root: &root,
-                    scratch: None,
-                    read_roots: &[],
-                    write_roots: &[],
-                    hide_jan: false,
-                },
-                &perms,
-                &grants,
-            );
-            assert_ne!(
-                d,
-                Decision::HardDeny(DenyReason::Hidden),
-                "{tool} must not hard-deny .jan when not hiding"
-            );
-        }
-        // bash referencing it is a normal exec prompt, not a hidden deny.
+    fn the_jan_home_is_refused_from_an_ordinary_project() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let config = jan.join("config.toml");
         let d = resolve_decision(
-            lookup("bash").unwrap(),
-            &json!({"command": "cat .jan/agent/agent.toml"}),
-            &GateContext {
-                project_root: &root,
-                scratch: None,
-                read_roots: &[],
-                write_roots: &[],
-                hide_jan: false,
-            },
-            &perms,
-            &grants,
+            lookup("read").unwrap(),
+            &json!({"path": config.to_str().unwrap()}),
+            &ctx,
+            &ToolPermissions::allow_all(),
+            &SessionGrants::default(),
         );
-        assert_ne!(d, Decision::HardDeny(DenyReason::Hidden));
-        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
+        // Unset (sandbox off) leaves the ordinary escape rules in charge.
+        let open = GateContext { hidden_root: None, ..ctx };
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": config.to_str().unwrap()}),
+            &open,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -511,7 +477,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -526,65 +492,19 @@ mod tests {
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
         let grants = SessionGrants::default();
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "ls"}),
             &GateContext {
                 project_root: &root,
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn bash_command_with_spurious_job_id_still_prompts_exec() {
-        let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        let grants = SessionGrants::default();
-        for job_id in ["", " ", "x"] {
-            let d = resolve_decision(
-                lookup("bash").unwrap(),
-                &json!({"command": "ls", "job_id": job_id}),
-                &GateContext {
-                    project_root: &root,
-                    scratch: None,
-                    read_roots: &[],
-                    write_roots: &[],
-                    hide_jan: true,
-                },
-                &perms,
-                &grants,
-            );
-            assert_eq!(d, Decision::Prompt(PromptKind::Exec), "job_id {job_id:?}");
-        }
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn bash_job_id_poll_never_prompts() {
-        let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        let grants = SessionGrants::default();
-        let d = resolve_decision(
-            lookup("bash").unwrap(),
-            &json!({"job_id": "bash-0"}),
-            &GateContext {
-                project_root: &root,
-                scratch: None,
-                read_roots: &[],
-                write_roots: &[],
-                hide_jan: true,
-            },
-            &perms,
-            &grants,
-        );
-        assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -606,14 +526,14 @@ mod tests {
 
         // Same base command -> allowed without prompting.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "git push"}),
             &GateContext {
                 project_root: &root,
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -622,14 +542,14 @@ mod tests {
 
         // A different command still prompts.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "rm -rf /"}),
             &GateContext {
                 project_root: &root,
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -652,14 +572,14 @@ mod tests {
             "git status $(rm x)",
         ] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: true,
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -682,14 +602,14 @@ mod tests {
         grants.grant_command("git status && rm foo");
         for cmd in ["git push", "rm bar", "rm baz && git pull"] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: true,
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -708,14 +628,14 @@ mod tests {
 
         // Whitespace-normalized identical command is covered.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo   systemctl restart nginx"}),
             &GateContext {
                 project_root: &root,
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -724,56 +644,19 @@ mod tests {
 
         // A different sudo command still prompts (no blanket `sudo` grant).
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo rm -rf /"}),
             &GateContext {
                 project_root: &root,
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn general_tools_cannot_reach_skills_memory_or_config() {
-        let root = unique_root();
-        let perms = ToolPermissions::allow_all();
-        let grants = SessionGrants::default();
-        // skills/ and memory/ are reachable only via the dedicated tools; general
-        // read/write/edit/ls/find/grep hard-deny there, same as agent.toml.
-        let paths = [
-            ".jan/agent/skills/deploy.md",
-            ".jan/agent/memory/notes.md",
-            ".jan/agent/agent.toml",
-        ];
-        for tool in ["read", "ls", "find", "grep", "write", "edit"] {
-            for path in paths {
-                let d = resolve_decision(
-                    lookup(tool).unwrap(),
-                    &json!({ "path": path }),
-                    &GateContext {
-                        project_root: &root,
-                        scratch: None,
-                        read_roots: &[],
-                        write_roots: &[],
-                        hide_jan: true,
-                    },
-                    &perms,
-                    &grants,
-                );
-                assert_eq!(
-                    d,
-                    Decision::HardDeny(DenyReason::Hidden),
-                    "{tool} on {path} must be denied"
-                );
-            }
-        }
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -791,7 +674,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: true,
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -809,7 +692,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &denied,
             &grants,
@@ -831,7 +714,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -853,7 +736,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -876,7 +759,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -899,7 +782,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -921,7 +804,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -945,7 +828,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: true,
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -969,7 +852,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -991,7 +874,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -1019,7 +902,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -1034,7 +917,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &grants,
@@ -1065,7 +948,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &roots,
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -1080,7 +963,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &roots,
-                hide_jan: true,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -1106,7 +989,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
-                hide_jan: true,
+                hidden_root: None,
             },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &SessionGrants::default(),

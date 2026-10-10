@@ -21,7 +21,7 @@ Reads are free. Writes and shell commands stop and ask:
    n  no
 ```
 
-For `write` and `edit` you see a diff first. For `bash` you see the exact command.
+For `write` and `edit` you see a diff first. For `shell` you see the exact command.
 
 `a` grants that capability for the rest of the session. Nothing is written to disk, so a new session
 starts cautious again - a grant can't leak into tomorrow.
@@ -34,7 +34,7 @@ Every tool maps to one capability, and approval applies at that level rather tha
 | --- | --- | --- |
 | Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
 | Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
-| Exec | `bash` | Prompts |
+| Exec | `shell` | Prompts |
 
 So approving `a` on a shell command allows further shell commands, not just that one. That's the
 trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
@@ -43,7 +43,7 @@ only meant one.
 ## Path checks
 
 Tools that take a path have it checked against the project root, so a write outside the project is
-refused before it happens. `bash` has no path argument and runs in the project root; a command you
+refused before it happens. `shell` has no path argument and runs in the project root; a command you
 approve can still reach outside, which is why plan mode exists as the hard boundary.
 
 A symbolic link is followed only while it stays inside the project (or the session scratch). Links
@@ -53,7 +53,7 @@ above.
 
 ## Project policy
 
-`.jan/agent/agent.toml` sets what a project exposes:
+The project's `agent.toml` (in `~/.jan/projects/<slug>/`) sets what a project exposes:
 
 ```toml
 [tools]
@@ -82,6 +82,13 @@ allow_write = []
 
 `deny` always wins over `allow`. A tool in both lists is denied.
 
+The shell tool is named `shell`; it used to be `bash`, and that name is no longer recognised.
+Rename `bash` to `shell` wherever you name the tool: `allow`, `deny`, hook matchers and a
+subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing. The `jan` CLI warns about
+each such `[tools]` entry when a run starts (the desktop app does not read `[tools]`), and every
+surface refuses a subagent whose `allowed_tools` still says `bash`. `jan mcp serve --tool bash`
+says so too.
+
 ## The shell sandbox
 
 Jan can run shell commands under OS confinement - bubblewrap on Linux, Seatbelt on macOS,
@@ -90,11 +97,18 @@ directory, and reaches the network only if allowed. Reads are looser: the CLI ke
 so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
 that), while the desktop masks it entirely.
 
+While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
+even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)
+and each project's `agent.toml`, memory and threads, so no approval can open it: file tools refuse
+the path, `ls`, `find` and `grep` leave it out, and the shell sees an empty directory. The agent
+still reaches memory and skills through its `memory_*` and `skill_*` tools. A git worktree Jan
+created under `~/.jan/worktrees/` stays reachable, because it is the project being worked on.
+
 Whether it is on depends on the surface:
 
 | Surface | Sandbox | Can it be changed? |
 | --- | --- | --- |
-| Desktop chat agent | Always on | No. If no sandbox can be established, `bash` is withheld rather than run unconfined |
+| Desktop chat agent | Always on | No. If no sandbox can be established, `shell` is withheld rather than run unconfined |
 | `jan` CLI and console | **Off by default** | Yes, see below |
 
 The CLI runs unconfined because it is a coding agent in your own project, started from your own
@@ -118,7 +132,7 @@ jan --no-sandbox                 # this session only, overriding a setting below
 ```
 
 ```toml
-# .jan/agent/agent.toml - for everyone who checks this project out
+# ~/.jan/projects/<slug>/agent.toml - every session in this project
 [tools]
 sandbox = true
 ```
@@ -139,7 +153,23 @@ permanently would leave no way to run a single command without it.
 ```
 
 `backend` is the confinement that *would* be used. `none` means none is available on this machine -
-with `enabled: true` that combination is what withholds `bash` entirely.
+with `enabled: true` that combination is what withholds `shell` entirely.
+
+### Which shell runs commands
+
+On macOS and Linux the `shell` tool runs `bash` (or `sh` where there is none). On Windows it runs
+PowerShell, never a bash: the sandbox is an AppContainer, and Git Bash's MSYS runtime cannot start
+inside one. Jan uses the first of these that it finds:
+
+1. PowerShell 7 (`pwsh`), when it is installed under Program Files. The sandbox can only start
+   programs from folders all apps may read, so a `pwsh` from the Microsoft Store, scoop, a zip in
+   your profile or a dotnet tool is skipped in favor of 5.1.
+2. Windows PowerShell 5.1, which ships with Windows.
+3. `cmd.exe`.
+
+The model is told which shell it has, so it writes PowerShell or cmd syntax when that is what
+runs. Hooks and plugin tools use the same shell. To force a specific shell, set
+`JAN_AGENT_SHELL` to its full path.
 
 ### The shell environment
 
@@ -152,7 +182,7 @@ rely on (a proxy setting, `git` config, a toolchain home) will not see it.
 Two keys widen it, without giving up the default:
 
 ```toml
-# .jan/agent/agent.toml (per project) or ~/.jan/config.toml (all projects)
+# ~/.jan/projects/<slug>/agent.toml (per project) or ~/.jan/config.toml (all projects)
 [tools]
 # Host variables the shell may inherit. Exact names or a "*" wildcard.
 env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
@@ -164,9 +194,11 @@ RUST_LOG = "info"
 
 - `env_passthrough` copies the named host variables in if they are set. The two scopes merge: the
   global list and the project list both apply.
-- A **secret-looking** name (containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, or
-  `CREDENTIAL`, case-insensitive) is never copied by a wildcard - so a broad `GIT_*` cannot leak a
-  `GIT_TOKEN`. To pass one deliberately, name it in `env_set`, which is not filtered.
+- A **secret-looking** name (containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
+  `CREDENTIAL`, `HEADERS` or `AUTHORIZATION`, case-insensitive) is never copied by a wildcard - so a
+  broad `GIT_*` cannot leak a `GIT_TOKEN`, and `OTEL_*` cannot copy `OTEL_EXPORTER_OTLP_HEADERS`,
+  which holds an API key when a launcher configures telemetry. To pass one deliberately, name it in
+  `env_set`, which is not filtered.
 - `env_set` wins over `env_passthrough` and over the global value for the same key. Under the
   sandbox, `TMPDIR`/`TMP`/`TEMP` are always pointed at the run's scratch directory regardless.
 
@@ -178,7 +210,7 @@ command has whatever network access you do. The two surfaces default differently
 | Surface | How to set network access | Default |
 | --- | --- | --- |
 | Desktop chat agent | The chat-screen tools toggle (`agent_tools`). Per session, in the UI | Off |
-| `jan cli` code-screen agent | `[tools].allow_network` in `.jan/agent/agent.toml` | On |
+| `jan cli` code-screen agent | `[tools].allow_network` in the project's `agent.toml` | On |
 
 The split is deliberate. The desktop chat agent is ephemeral, so it stays offline unless you opt in.
 The CLI is a coding agent in your own project, where one that cannot `curl`, `git fetch`, or install
@@ -202,7 +234,7 @@ Approval prompts are opt-in: by default every call above is auto-approved. Start
 `jan --safe` to be asked instead. See [run modes](/docs/agent/run-modes).
 
 <Callout type="info">
-Auto-approval only removes the prompt. The `.jan/agent/` restriction, the path checks, and
-`[tools] deny` all still apply, as does the shell sandbox where it is on - but on the CLI it is off
-by default, so auto-approved shell commands run with your own access unless you turn it on.
+Auto-approval only removes the prompt. The path checks and `[tools] deny` all still apply, as does
+the shell sandbox where it is on - but on the CLI it is off by default, so auto-approved shell
+commands run with your own access unless you turn it on.
 </Callout>

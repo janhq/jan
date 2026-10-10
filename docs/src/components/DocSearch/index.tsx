@@ -21,8 +21,9 @@ type IndexState =
 let cachedIndex: NextraIndex | null = null
 
 type DocSearchProps = {
-  /** `navbar` is the inline desktop field; `panel` is the full-width mobile one. */
-  variant?: 'navbar' | 'panel'
+  /** `navbar` is the inline desktop field; `panel` is the full-width mobile
+   * one; `hero` is the large field on the docs landing page. */
+  variant?: 'navbar' | 'panel' | 'hero'
   className?: string
   /** Called after a result is picked, so the mobile menu can close itself. */
   onNavigate?: () => void
@@ -84,8 +85,15 @@ const DocSearch = ({
       )
         return
       if (e.key === '/' || (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey))) {
+        // Several fields can be mounted at once (the navbar's is only CSS-hidden
+        // on small screens), and every one listens: only the first visible one
+        // takes the shortcut, so focus never lands in a hidden field.
+        const target = Array.from(
+          document.querySelectorAll<HTMLInputElement>('input[data-doc-search]')
+        ).find((input) => input.offsetParent !== null)
+        if (!target || target !== inputRef.current) return
         e.preventDefault()
-        inputRef.current?.focus()
+        target.focus()
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -145,6 +153,7 @@ const DocSearch = ({
         <SearchIcon className="absolute left-3 size-4 text-gray-400 pointer-events-none" />
         <input
           ref={inputRef}
+          data-doc-search=""
           type="search"
           value={query}
           spellCheck={false}
@@ -161,7 +170,8 @@ const DocSearch = ({
           }}
           onKeyDown={onInputKeyDown}
           className={cn(
-            'w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-12',
+            'w-full border border-gray-200 bg-gray-50 pl-9 pr-12',
+            variant === 'hero' ? 'rounded-2xl py-3.5' : 'rounded-lg py-2',
             'text-sm text-black placeholder:text-gray-400',
             'transition-colors focus:border-gray-300 focus:bg-white focus:outline-none',
             '[&::-webkit-search-cancel-button]:appearance-none'

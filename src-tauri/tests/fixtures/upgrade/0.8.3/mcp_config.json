@@ -1,0 +1,66 @@
+{
+  "mcpServers": {
+    "Jan Browser MCP": {
+      "command": "npx",
+      "args": ["-y", "search-mcp-server@latest"],
+      "env": {
+        "BRIDGE_HOST": "127.0.0.1",
+        "BRIDGE_PORT": "17389"
+      },
+      "active": false,
+      "official": true
+    },
+    "exa": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp",
+      "command": "",
+      "args": [],
+      "env": {},
+      "active": true
+    },
+    "browsermcp": {
+      "command": "npx",
+      "args": ["@browsermcp/mcp"],
+      "env": {},
+      "active": false
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "env": {},
+      "active": false
+    },
+    "serper": {
+      "command": "npx",
+      "args": ["-y", "serper-search-scrape-mcp-server"],
+      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
+      "active": false
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/other/allowed/dir"
+      ],
+      "env": {},
+      "active": false
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "env": {},
+      "active": false
+    }
+  },
+  "mcpSettings": {
+    "toolCallTimeoutSeconds": 30,
+    "baseRestartDelayMs": 1000,
+    "maxRestartDelayMs": 30000,
+    "backoffMultiplier": 2.0,
+    "enableSmartToolRouting": true,
+    "useLightweightRouterModel": false,
+    "routerModelProvider": "",
+    "routerModelId": ""
+  }
+}

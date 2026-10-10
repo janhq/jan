@@ -5,7 +5,8 @@ keywords:
   [Jan, Cowork, agent, sandbox, workspace, plan mode, subagents, artifacts, tasks]
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Callout, Steps, Tabs } from 'nextra/components'
+import { DownloadButton } from '@/components/DownloadButton'
 
 # Cowork
 
@@ -15,8 +16,38 @@ when it needs your input. You can review its progress and open the files it
 creates without leaving the conversation.
 
 <Callout type="warning">
-Cowork is in preview. Features and controls may change between releases.
+Cowork is a preview. It ships only in Jan's `nightly` channel, not in stable releases -
+expect nightly-quality builds.
 </Callout>
+
+Download the nightly build for your platform:
+
+<Tabs items={['macOS', 'Windows', 'Linux']}>
+<Tabs.Tab>
+
+<DownloadButton href="https://app.jan.ai/download/nightly/mac-universal">Download Jan Nightly for Mac</DownloadButton>
+
+Open the `.dmg` and drag Jan to **Applications**.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+<DownloadButton href="https://app.jan.ai/download/nightly/win-x64">Download Jan Nightly for Windows</DownloadButton>
+
+Run the installer, then launch Jan.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+<div className="flex flex-wrap gap-3">
+  <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-deb">Download .deb</DownloadButton>
+  <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-appimage">Download AppImage</DownloadButton>
+</div>
+
+See [Linux installation](/docs/desktop/install/linux) for the install commands.
+
+</Tabs.Tab>
+</Tabs>
 
 ## Starting a Session
 

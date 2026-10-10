@@ -3,10 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 #[cfg(not(feature = "cli"))]
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Runtime, State};
 
 use super::constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER};
 use super::models::AppConfiguration;
+use super::paths;
 #[cfg(not(feature = "cli"))]
 use super::helpers::copy_dir_recursive;
 #[cfg(not(feature = "cli"))]
@@ -14,12 +15,12 @@ use crate::core::state::AppState;
 
 /// Canonical Jan app support directory (`%APPDATA%/Jan` on Windows).
 fn resolve_human_readable_app_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join(env!("CARGO_PKG_NAME")))
+    paths::data_dir().map(|d| d.join(env!("CARGO_PKG_NAME")))
 }
 
 /// Tauri bundle-id app support directory (e.g. `%APPDATA%/jan.ai.app` on Windows).
 fn resolve_bundle_app_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
+    paths::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
 }
 
 /// Keep `%APPDATA%/Jan/settings.json` as canonical, but recover from legacy or
@@ -82,9 +83,7 @@ fn legacy_app_config_candidate_paths(_app_data_dir: &Path) -> Vec<PathBuf> {
 #[cfg(not(feature = "cli"))]
 fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
     let package_name = env!("CARGO_PKG_NAME");
-    app_handle
-        .path()
-        .data_dir()
+    paths::data_dir_for(app_handle)
         .unwrap_or_else(|err| {
             log::error!("Failed to get data directory: {err}. Using home directory instead.");
 
@@ -166,7 +165,7 @@ pub fn resolve_jan_data_folder() -> PathBuf {
 
     // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
-    if let Some(data_dir) = dirs::data_dir() {
+    if let Some(data_dir) = paths::data_dir() {
         return data_dir.join(&app_name).join("data");
     }
     let home = std::env::var("HOME")
@@ -291,7 +290,7 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
+    let mut path = paths::data_dir_for(&app_handle).unwrap_or_else(|err| {
         log::error!("Failed to get data directory: {err}. Falling back to home directory.");
         let home = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"

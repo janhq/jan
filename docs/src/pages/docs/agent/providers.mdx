@@ -37,6 +37,20 @@ jan config set \
 | `--model` | Model to expose. Repeatable, and replaces any existing list |
 | `--api-type` | Wire protocol, `openai` or `anthropic`. Defaults to OpenAI-compatible |
 
+Extra request headers for a provider go in `~/.jan/config.toml` directly. They are sent with every
+request to that provider, both inference and the `/models` listing:
+
+```toml
+[providers.my-gateway]
+base_url = "https://gateway.example.com/v1"
+headers = { "X-Team" = "infra" }
+```
+
+A few names are reserved and never sent from here: `Authorization`, `Content-Type`, `Accept`,
+`Accept-Encoding`, `x-api-key`, `x-goog-api-key` and `anthropic-version`. Jan sets those itself.
+Jan also owns `User-Agent`, `X-Client-Request-Id` and `X-Session-Id`, so a custom header with one
+of those names loses to Jan's value.
+
 ## Inspecting
 
 ```bash
@@ -69,8 +83,21 @@ move between fields and <kbd>k</kbd>/<kbd>j</kbd> type as ordinary characters (A
 them). The base URL must be `https://`, or `http://` for a localhost endpoint, so a key is never
 sent over a plaintext remote connection.
 
-A provider saved with no models is queried for its `GET /models` the next time you open `/model`,
-and the discovered ids are persisted - so a bare provider becomes selectable immediately.
+Providers with an entry in `~/.jan/config.toml` are queried for their `GET /models` the first time
+you open `/model` in a session, and newly discovered ids are persisted - so a provider saved with no
+models becomes selectable immediately, and one whose endpoint has gained models since you signed in
+picks them up. That automatic pass only ever *adds*: an id you configured by hand stays even if the
+endpoint stops listing it, since a permission-scoped key can answer with a subset. To take the
+endpoint's list as the truth and drop what it omits, ask for it - <kbd>Ctrl</kbd>+<kbd>R</kbd> in the
+picker, or `jan cli models refresh` headlessly. A refresh that retires the model `default_model`
+names says so in its summary.
+
+Providers inherited from Jan Desktop are never refreshed: there is no entry here to rewrite.
+
+Whatever the listing says about each model is cached in `~/.jan/model_catalog.json`. The context
+window drives the header gauge and compaction, and the per-token prices drive the cost lines in
+`/context` and `/usage`; the output cap is cached and echoed back by `jan cli models list`, but
+nothing reads it yet. That file is only a cache: delete it and the next refresh rebuilds it.
 
 ## Tokamak
 
@@ -91,11 +118,107 @@ Four sources, each beating the ones above it:
 | 1 | `~/.jan/config.toml` | The base, and the only file `jan config set` writes |
 | 2 | Jan Desktop's `settings.json` | Inherit-only. Adds providers you haven't configured here, never overwrites one you have, and is never written back to |
 | 3 | `[provider]` in a project's `agent.toml` | An explicit per-project choice, so it wins over both |
-| 4 | `--provider` / `--api-key`, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` | The most explicit and most ephemeral signal |
+| 4 | `--provider` / `--api-key` / `--base-url`, or `JAN_API_KEY` / `<PROVIDER>_API_KEY` / `JAN_BASE_URL` / `JAN_CUSTOM_HEADERS` | The most explicit and most ephemeral signal. See [Using a gateway](#using-a-gateway) |
 
 The useful consequence: Jan Desktop fills in providers for free without ever clobbering something
 you set deliberately, a project can pin its own provider without touching your global setup, and a
 single run can override everything.
+
+## Using a gateway
+
+A gateway is an OpenAI-compatible endpoint that sits in front of other providers. Tokamak is one;
+so are OpenRouter-style routers and a company proxy that adds its own headers. You can point one
+run at a gateway without touching `~/.jan/config.toml`, the same way `ANTHROPIC_BASE_URL` works
+for Claude Code:
+
+```bash
+export TOKAMAK_API_KEY="sk_live_..."
+export JAN_BASE_URL="https://api-stag.tokamak.sh/v1"
+export JAN_CUSTOM_HEADERS=$'X-Client-Name: my-launcher\nX-Team: infra'
+
+jan --provider tokamak --model tokamak/auto
+jan cli agent run --provider tokamak "fix the failing test"
+```
+
+| Setting | Flag | Environment | Notes |
+| --- | --- | --- | --- |
+| Base URL | `--base-url <URL>` | `JAN_BASE_URL` | `https://`, or `http://` for localhost only. The flag wins |
+| Key | `--api-key <KEY>` | `<PROVIDER>_API_KEY`, e.g. `TOKAMAK_API_KEY` | `JAN_API_KEY` still works as before |
+| Headers | none | `JAN_CUSTOM_HEADERS` | One `Name: Value` per line, the format of Claude Code's `ANTHROPIC_CUSTOM_HEADERS`. Beats a configured header of the same name |
+
+These apply **only to the provider named with `--provider`**. If you leave `--provider` out, Jan
+falls back to the model Jan Desktop has selected, and redirecting that choice to a gateway would be
+a surprise. So `JAN_BASE_URL` and `JAN_CUSTOM_HEADERS` are then ignored, and Jan warns once.
+`JAN_API_KEY` keeps its old behaviour: it applies to the provider you name, or to every provider if
+you name none.
+
+The overrides last for the whole session: a reload after `/login` and the `/model` refresh keep
+the same key and base URL. They cover the console, `jan cli agent run` and `jan cli agent step`.
+`jan cli agent rpc` takes none, because an ADK host sets up its own providers.
+
+### What stays in memory
+
+A provider is *session-scoped* when you name it with `--provider` and its base URL or key comes
+from a flag or the environment. Its models and prices describe the gateway, not whatever your
+config was written for, so Jan keeps them in memory and never writes them to disk:
+
+- At startup Jan lists the gateway's models once with `GET {base}/models`. The console waits about
+  5 seconds for that, or 20 if a spend cap is set; `run` and `step` wait 20 seconds. The list
+  replaces the provider's configured models and prices for this session only. `/model` and
+  <kbd>Ctrl</kbd>+<kbd>R</kbd> refresh it.
+- If the listing fails, the session has no models and no prices for that provider. A
+  `provider/model` id still routes by its prefix, but a spend cap cannot be priced.
+- `~/.jan/config.toml`, `~/.jan/model_catalog.json` and the project's `agent.toml` are left alone.
+  Picking a model the gateway serves applies to this session only.
+- Signing in to another provider inside the session works as usual, and does not move the session
+  off the gateway.
+
+If that provider is `tokamak`, account commands (`/usage`, the key check) use the session's
+endpoint and key. The console also refuses any change to the Tokamak sign-in, because the key in use
+belongs to whoever started the session. That covers `/login` (including `--paste-token`),
+`/logout tokamak`, and the `tokamak` row of the `/login` picker and of `/settings` > `providers`.
+Other providers are unaffected.
+
+### What the gateway sees
+
+Every inference request from the CLI carries:
+
+| Header | Value |
+| --- | --- |
+| `User-Agent` | `Jan-Agent/<version> (<os>; <arch>)`. Jan Desktop sends none |
+| `X-Client-Request-Id` | `jan-<session id>`, searchable in Tokamak's usage records |
+| `X-Session-Id` | `<session id>`, the same id without the prefix |
+
+Your custom headers are sent too, and the `/models` listing carries them as well, since a proxy that
+needs a header for inference usually needs it for the listing.
+
+### Checking what a build supports
+
+`jan cli agent status --provider <id>` reports what this build can do, so a launcher can check
+before it relies on anything:
+
+```json
+{
+  "capabilities": ["provider-overrides", "session-overrides", "custom-headers",
+                   "user-agent", "session-header", "session-scoped-providers"],
+  "providers": [
+    { "provider": "tokamak", "base_url": "https://api-stag.tokamak.sh/v1",
+      "base_url_source": "env", "has_api_key": true, "models": 0,
+      "header_names": ["X-Client-Name", "X-Team"] }
+  ]
+}
+```
+
+`base_url_source` is one of `flag`, `env`, `project`, `config` or `desktop`. `header_names` lists
+names only, never values.
+
+### Tokamak on another deployment
+
+A native `jan login` (not a gateway session) follows `TOKAMAK_BASE_URL` for a dev or self-hosted
+deployment. A bare origin such as `https://api-stag.tokamak.sh` gets `/v1` appended. The sign-in and
+API-keys pages open on the matching web app: `api.` maps to the bare host and `api-<band>.` to
+`<band>.`. Set `TOKAMAK_WEB_URL` when the web app can't be derived that way, for example a local
+stack on `http://localhost:3001`.
 
 ## Your own hardware
 
@@ -121,11 +244,15 @@ name = "openai"
 api_key = "sk-..."
 base_url = "https://api.openai.com/v1"
 models = ["gpt-4o"]
+# Optional: when this route's runs compact, as a share of the window. See
+# [Context and compaction](/docs/agent/context).
+# compaction_ratio = 0.6
 ```
 
-<Callout type="warning">
-That file usually gets committed. Prefer leaving `api_key` out of it and keeping the key in
-`~/.jan/config.toml` or the environment.
+<Callout type="info">
+`agent.toml` lives in the project's store under `~/.jan/projects/`, outside the repository, so it is
+never committed. Keeping `api_key` in `~/.jan/config.toml` or the environment still leaves one
+place to rotate it.
 </Callout>
 
 ## Removing one

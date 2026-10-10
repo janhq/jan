@@ -1,6 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronDown, Eye, Loader2, Sparkles } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronDown,
+  Clock,
+  Eye,
+  Loader2,
+  Sparkles,
+} from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
 import type {
@@ -17,15 +24,17 @@ import {
 } from '@/components/ai-elements/conversation'
 import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
 
-/** One row in the running/queued/finished lists. */
+/** One row in the running/queued/waiting/finished lists. */
 function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) {
   const { t } = useTranslation()
   const running = run.status === 'running'
-  // Only rendered for finished rows below — skip the scan while running (it
-  // would just be recomputed and discarded on every tick/stream re-render).
-  const toolUses = running
-    ? 0
-    : run.turns.filter((tn) => tn.role === 'tool').length
+  const waiting = run.status === 'waiting'
+  // Only rendered for finished rows below — skip the scan while running/waiting
+  // (it would just be recomputed and discarded on every tick/stream re-render).
+  const toolUses =
+    running || waiting
+      ? 0
+      : run.turns.filter((tn) => tn.role === 'tool').length
   return (
     <button
       type="button"
@@ -35,15 +44,34 @@ function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) 
       <div className="flex items-center gap-2">
         {running ? (
           <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
+        ) : waiting ? (
+          <Clock size={14} className="shrink-0 text-main-view-fg/50" />
         ) : (
           <Sparkles size={14} className="shrink-0 text-main-view-fg/50" />
         )}
         <span className="truncate text-sm font-medium">{run.name}</span>
+        {run.phase != null && (running || waiting) && (
+          <span className="ml-auto shrink-0 rounded bg-main-view-fg/5 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-main-view-fg/50">
+            {t('common:subagentPhase', { phase: run.phase })}
+          </span>
+        )}
       </div>
-      <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
-        {formatDuration(run.startedAt, run.endedAt)}
-      </span>
-      {!running && run.status === 'done' && (
+      {waiting ? (
+        <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
+          {run.phase != null && (
+            <>
+              {t('common:subagentPhase', { phase: run.phase })}
+              {' · '}
+            </>
+          )}
+          {t('common:subagentWaiting')}
+        </span>
+      ) : (
+        <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
+          {formatDuration(run.startedAt, run.endedAt)}
+        </span>
+      )}
+      {!running && !waiting && run.status === 'done' && (
         <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
           {run.usage?.total_tokens
             ? `${formatTokenCount(run.usage.total_tokens)} · `
@@ -236,6 +264,7 @@ export function CoworkTasksPanel({
     : null
   const runningRuns = subagents.filter((s) => s.status === 'running')
   const queuedRuns = subagents.filter((s) => s.status === 'queued')
+  const waitingRuns = subagents.filter((s) => s.status === 'waiting')
   const finishedRuns = subagents.filter((s) => s.status === 'done')
 
   return (
@@ -286,6 +315,17 @@ export function CoworkTasksPanel({
               {queuedRuns.length > 0 && (
                 <Section label={t('common:queued')} count={queuedRuns.length}>
                   {queuedRuns.map((run) => (
+                    <TaskRow
+                      key={run.runId}
+                      run={run}
+                      onSelect={() => setSelectedRunId(run.runId)}
+                    />
+                  ))}
+                </Section>
+              )}
+              {waitingRuns.length > 0 && (
+                <Section label={t('common:waiting')} count={waitingRuns.length}>
+                  {waitingRuns.map((run) => (
                     <TaskRow
                       key={run.runId}
                       run={run}

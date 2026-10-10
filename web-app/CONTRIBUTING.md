@@ -66,7 +66,7 @@ export const useAppState = create<AppState>((set) => ({
 ### Tauri Integration
 
 ```tsx
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 
 const result = await invoke('command_name', { param: 'value' })
 ```
@@ -95,8 +95,8 @@ import { VariableSizeList } from 'react-window'
 # - Debug hooks and state
 # - Profile performance
 
-# Debug Tauri commands
-console.log(await window.__TAURI__.invoke('command_name'))
+# Debug Tauri commands using the same imported API the app does
+console.log(await invoke('command_name'))
 
 # Check for console errors
 # Press F12 → Console tab

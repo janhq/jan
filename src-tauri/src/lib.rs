@@ -6,7 +6,7 @@
 #[cfg(all(feature = "cli", feature = "tauri-app"))]
 compile_error!(
     "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
-     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+     build the CLI from the standalone crate: `cd src-tauri/jan-cli && cargo build --features cli`"
 );
 
 pub mod core;
@@ -69,6 +69,7 @@ macro_rules! invoke_commands_with_extras {
         core::server::provider_secrets::get_secret,
         // System commands
         core::system::commands::relaunch,
+        core::system::shutdown::shutdown_for_update,
         core::system::commands::open_app_directory,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
@@ -257,14 +258,30 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     tauri::mobile_entry_point
 )]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
-          println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
-          // when defining deep link schemes at runtime, you must also check `argv` here
-        }));
-    }
+    // Installed before any plugin: the toolset crate owns no config format, so
+    // the `execute_tool` IPC command can only reach a user's `[[hooks]]`
+    // through a resolver the app hands it. Without this the desktop is the one
+    // surface where a configured hook silently never fires, since the webview
+    // drives its own tool loop and never builds the CLI's invoker.
+    tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
+        crate::core::agent::hooks_config::resolve_hooks_for(project)
+    }));
+
+    let builder = tauri::Builder::default();
+    // Shadowed rather than mutated: under `e2e` the plugin below is the only
+    // thing that touched `builder`, and a `mut` binding would then be unused --
+    // which CI's `clippy -D warnings` treats as an error.
+    //
+    // Not in e2e builds: single-instance keys off a hardcoded /tmp socket on
+    // macOS (a D-Bus name on Linux, a named mutex on Windows), none of which the
+    // test harness's HOME/XDG/TMPDIR overrides isolate. With a real Jan already running, the
+    // test binary would hand over its argv and exit before the embedded
+    // WebDriver server ever bound.
+    #[cfg(all(desktop, not(feature = "e2e")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
+        println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+        // when defining deep link schemes at runtime, you must also check `argv` here
+    }));
 
     let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
@@ -273,7 +290,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
-        .plugin(tauri_plugin_vector_db::init())
+        .plugin(tauri_plugin_vector_db::init(
+            crate::core::app::paths::vector_db_dir(),
+        ))
         .plugin(tauri_plugin_rag::init())
         .plugin(tauri_plugin_websearch::init())
         .plugin(tauri_plugin_agent_tools::init());
@@ -281,6 +300,13 @@ pub fn run() {
     #[cfg(feature = "deep-link")]
     {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
+    }
+
+    // e2e builds only: the embedded WebDriver server @wdio/tauri-service drives.
+    // Gated behind the `e2e` feature so no release binary exposes it.
+    #[cfg(feature = "e2e")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
 
     #[cfg(target_os = "macos")]
@@ -347,6 +373,19 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
+            // A Jan up to 0.8.4 leaves its llama-server router running across an
+            // in-app update; that version cannot be fixed, so reap it here.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let data_folder = get_jan_data_folder_path(app.handle().clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    let killed = core::system::orphans::sweep_orphaned_engines(&data_folder);
+                    if killed > 0 {
+                        log::warn!("Reaped {killed} engine process(es) left by a previous Jan");
+                    }
+                });
+            }
+
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
             store_path.push("store.json");
@@ -372,7 +411,18 @@ pub fn run() {
                 let _ = setup::setup_tray(app.handle());
             }
 
-            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
+            // Not in e2e builds: on Windows `register_all` writes HKCU
+            // Software\Classes\jan\shell\open\command and points it at the
+            // running exe, so every run would repoint the developer's real
+            // `jan://` handler at target/debug/Jan-Desktop.exe. The registry is
+            // outside everything the harness's env overrides can reach. (On
+            // Linux it writes into `data_dir()/applications`, which XDG_DATA_HOME
+            // does redirect -- but no spec opens a deep link, so skip both.)
+            #[cfg(all(
+                feature = "deep-link",
+                not(feature = "e2e"),
+                any(windows, target_os = "linux")
+            ))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
@@ -463,10 +513,6 @@ pub fn run() {
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 
-            // Drain any debounced settings writes before the process dies so
-            // jan CLI never reads a stale settings.json.
-            core::app::settings_store::flush_settings();
-
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 if let Some(window) = app_handle.get_webview_window("main") {
@@ -491,39 +537,9 @@ pub fn run() {
 
             // Run cleanup synchronously and WAIT for it to complete
             tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-                    use tauri_plugin_llamacpp::cleanup_llama_processes;
-
-                    let state = app_handle.state::<AppState>();
-
-                    // Increase timeout to 10 seconds and log if it times out
-                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
-                        .await
-                    {
-                        Ok(_) => log::info!("MCP cleanup completed successfully"),
-                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                    }
-
-                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to shut down the llama.cpp engine: {}", e);
-                    } else {
-                        log::info!("llama.cpp engine shut down successfully");
-                    }
-
-                    #[cfg(target_os = "macos")]
-                    {
-                        use tauri_plugin_mlx::cleanup_mlx_processes;
-                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                            log::warn!("Failed to cleanup MLX processes: {}", e);
-                        } else {
-                            log::info!("MLX processes cleaned up successfully");
-                        }
-                    }
-
-                    log::info!("App cleanup completed");
-                });
+                tauri::async_runtime::block_on(core::system::shutdown::shutdown_cleanup(
+                    &app_handle,
+                ))
             });
         }
     });

@@ -25,7 +25,6 @@ tokio = { version = "1", features = ["full"] }
 log = "0.4"
 rusqlite = { version = "0.32", features = ["bundled", "load_extension"] }
 uuid = { version = "1.7", features = ["v4", "serde"] }
-dirs = "6.0.0"
 
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }

@@ -74,6 +74,11 @@
 
   footer {
     background-color: transparent !important;
+
+    // Nextra renders an <hr> divider above the footer content; drop that top stroke.
+    hr {
+      display: none !important;
+    }
   }
 
   .nextra-wrap-container {
@@ -94,4 +99,12 @@
       margin-right: auto !important;
     }
   }
+}
+
+// Trim Nextra's footer wrapper bottom padding (its inner div uses nx-py-12 = 3rem)
+// so the credit line isn't floating far above the bottom of the page. Kept OUTSIDE
+// @layer base on purpose: the selector references Nextra's runtime `.nx-bg-gray-100`
+// class (not present in our source), so inside @layer base Tailwind tree-shakes it out.
+footer.nx-bg-gray-100 > div {
+  padding-bottom: 1rem !important;
 }

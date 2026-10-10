@@ -16,16 +16,36 @@ task calls for it, so a large library of skills doesn't crowd the context window
 
 ## Where they live
 
+Skills come from three places. On a name collision the earlier one wins:
+
 ```
-<project>/.jan/agent/skills/
-├── release/
-│   └── SKILL.md          # folder form, can bundle scripts alongside
-└── add-migration.md      # flat form
+1. ~/.jan/projects/<slug>/skills/        project: this project only
+   ├── release/
+   │   └── SKILL.md                       # folder form, can bundle scripts alongside
+   └── add-migration.md                   # flat form
+2. ~/.jan/projects/<slug>/plugins/<P>/    plugin skills, always named <P>:<name>
+3. ~/.jan/skills/                         user: every project on this machine
+4. jan                                    built-in onboarding skill
 ```
+
+Put a skill in `~/.jan/skills/` to use it from every project. A project skill with the same name
+**shadows** the user one in that project. Plugin skills never collide, because they're always
+qualified as `<plugin>:<name>`. A project or user skill named `jan` replaces the built-in one.
+
+Run `/skills` in the console to see every skill with its scope. A skill hidden by a
+higher-precedence one is marked `shadowed by project`.
+
+Skill folders can be symlinks in either scope, for example
+`~/.jan/skills/review -> ~/my-skills/review`. Jan follows them. If the same folder is reached twice,
+it's listed once. Dangling links and symlink loops are skipped.
 
 The folder form is what new and imported skills are written as, and it lets a skill ship helper
 scripts or templates next to its instructions. The format matches the wider SKILL.md ecosystem, so
 skills written elsewhere generally work here.
+
+The model sees skills rebuilt from disk on every run. To refresh the `/` popup after adding, editing,
+or deleting one mid-session, including a user skill, run `/reload skills`. It reports what was
+added, removed, or changed.
 
 ## Writing one
 
@@ -55,6 +75,9 @@ You can write the file yourself, or ask the agent to:
 Write a skill for how we cut releases, based on what you see in CHANGELOG.md and the CI config
 ```
 
+`skill_write` writes to the project by default. Ask for a user skill ("save this as a user skill")
+and the agent passes `scope: "user"`, which writes to `~/.jan/skills/<name>/SKILL.md`.
+
 ## Who can invoke a skill
 
 A skill has two invocation sides, and frontmatter closes either one:
@@ -77,33 +100,42 @@ from a git repo or picked from a marketplace, invocable under `<plugin>:<skill>`
 | --- | --- |
 | `skill_list` | No |
 | `skill_read` | No |
-| `skill_write` | Yes |
+| `skill_write` (`scope`: `project` default, or `user`) | No, unless denied in `[tools]` |
+
+`skill_list` and `skill_read` cover every scope above, including plugin skills
+(`skill_read` accepts `<plugin>:<name>`, or the plain name when it's unique).
 
 ## Controlling which are active
 
 ```toml
 [skills]
 enabled = []        # empty means all skills are enabled
-inject = "always"   # always | relevance
 ```
 
-`enabled` is a whitelist. `inject` decides how they reach the model: `always` puts every skill's
-name and purpose in the system prompt, `relevance` selects per task.
+`enabled` is a whitelist across every scope. It matches a plain name, a qualified
+`<plugin>:<name>`, or a plugin name, which enables all of that plugin's skills. Every enabled skill's
+name and purpose goes into the system prompt, and the body loads on demand.
 
 <Callout type="info">
-Skills are shared with [Jan Desktop's Cowork surface](/docs/desktop/cowork) - the same project
-files, through the same directory. A skill written in one shows up in the other.
+Older scaffolds had an `inject = "always" | "relevance"` key. It was never read, and Jan removes
+it from your `agent.toml` the next time the agent starts.
 </Callout>
 
-## Skills, AGENT.md, and memory
+<Callout type="info">
+[Jan Desktop's Cowork surface](/docs/desktop/cowork) (`nightly` channel only) keeps its own skill
+store under `<data folder>/agent-workspace/skills`. It layers the attached folder's project skills on
+top of that store. It doesn't read `~/.jan/skills` yet.
+</Callout>
+
+## Skills, AGENTS.md, and memory
 
 Three places that shape behaviour, easily confused:
 
 | | Scope | Loaded |
 | --- | --- | --- |
-| [`AGENT.md`](/docs/agent/project-config#agentmd) | Rules for everything the agent does here | Always |
+| [`AGENTS.md`](/docs/agent/project-config#agentsmd) | Rules for everything the agent does here | Always |
 | Skills | A specific procedure | On demand, when relevant |
 | [Memory](/docs/agent/memory) | Facts the agent learned | Recalled as needed |
 
-Rule of thumb: if it applies to every task, it belongs in `AGENT.md`. If it applies to one kind of
+Rule of thumb: if it applies to every task, it belongs in `AGENTS.md`. If it applies to one kind of
 task, make it a skill.

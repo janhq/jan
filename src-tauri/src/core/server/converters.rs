@@ -92,11 +92,31 @@ use std::collections::HashMap;
 /// not chat/completions (OpenAI `/v1/responses`, Google `generateContent`,
 /// Anthropic `/v1/messages`); the proxy selects one by `ProviderConfig.api_type`
 /// and otherwise forwards verbatim.
+/// How a provider engages its prompt cache. The gate that decides whether a
+/// request carries an explicit cache key: `Implicit` providers (OpenAI, Google,
+/// and every plain OpenAI-compatible endpoint) cache a stable prefix on their
+/// own, so no key is emitted -- emitting an unknown one risks a strict endpoint
+/// rejecting the whole request. `Explicit` providers (Anthropic) only cache when
+/// the request marks a breakpoint, which `convert_request` places on the stable
+/// system prefix and the tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheCapability {
+    Implicit,
+    Explicit,
+}
+
 pub trait UpstreamConverter: Send + Sync {
     /// Path suffix appended to the provider `base_url`. Derived from the request
     /// body because some APIs encode the model and action in the URL (Google:
     /// `/models/{model}:streamGenerateContent?alt=sse`).
     fn upstream_path(&self, body: &Value) -> String;
+
+    /// Whether this provider needs an explicit cache breakpoint in the request.
+    /// Defaults to `Implicit` so no converter accidentally emits a cache key a
+    /// strict endpoint would reject; Anthropic overrides it.
+    fn cache_capability(&self) -> CacheCapability {
+        CacheCapability::Implicit
+    }
 
     /// Authorization header for the upstream request. Defaults to OpenAI-style
     /// `Authorization: Bearer`; providers using a different scheme (Google:
@@ -161,6 +181,13 @@ pub struct StreamState {
     pub finished: bool,
     /// Prompt tokens captured early (Anthropic sends them in `message_start`).
     pub input_tokens: i64,
+    /// Cache read/write tokens, also in `message_start`. Kept beside
+    /// `input_tokens` so the terminal `message_delta` can fold them into the
+    /// chat-shaped usage. `None` when the upstream has said nothing about
+    /// caching so far, `Some(0)` when it reported a cold prefix: the console's
+    /// cache readout alarms on that zero, so the two must not collapse here.
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 /// Fronts OpenAI's `/v1/responses` API, exposing it as chat/completions so the
@@ -192,6 +219,34 @@ fn chatgpt_account_id(token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// An image carried by an OpenAI `image_url` content part, in the two forms
+/// every native API distinguishes: inline bytes, or a URL the provider fetches.
+#[derive(Debug, PartialEq)]
+enum ImageSource<'a> {
+    Base64 { mime: &'a str, data: &'a str },
+    Url(&'a str),
+}
+
+/// The images of a chat message `content`, in order. A malformed part is
+/// skipped, the same way [`message_text`] skips any part it cannot read.
+fn message_images(content: &Value) -> Vec<ImageSource<'_>> {
+    let Value::Array(parts) = content else {
+        return Vec::new();
+    };
+    parts
+        .iter()
+        .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("image_url"))
+        .filter_map(|p| p.get("image_url")?.get("url")?.as_str())
+        .filter_map(|url| match url.strip_prefix("data:") {
+            Some(rest) => {
+                let (mime, data) = rest.split_once(";base64,")?;
+                (!mime.is_empty() && !data.is_empty()).then_some(ImageSource::Base64 { mime, data })
+            }
+            None => Some(ImageSource::Url(url)),
+        })
+        .collect()
+}
+
 /// Extract plain text from a chat message `content` (string or content-part array).
 fn message_text(content: &Value) -> String {
     match content {
@@ -203,6 +258,24 @@ fn message_text(content: &Value) -> String {
             .join(""),
         _ => String::new(),
     }
+}
+
+/// A content-part array as Responses input items: the text first, then each
+/// image. Responses takes a data URL and a remote URL in the same field.
+fn responses_parts(content: &Value, images: Vec<ImageSource<'_>>) -> Vec<Value> {
+    let text = message_text(content);
+    let mut items = Vec::with_capacity(images.len() + 1);
+    if !text.is_empty() {
+        items.push(json!({"type": "input_text", "text": text}));
+    }
+    items.extend(images.into_iter().map(|image| {
+        let url = match image {
+            ImageSource::Base64 { mime, data } => format!("data:{mime};base64,{data}"),
+            ImageSource::Url(url) => url.to_string(),
+        };
+        json!({"type": "input_image", "image_url": url})
+    }));
+    items
 }
 
 impl UpstreamConverter for OpenAIResponsesConverter {
@@ -247,10 +320,19 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                     "system" | "developer" => instructions.push(message_text(&content)),
                     "tool" => {
                         // Chat tool result -> Responses function_call_output item.
+                        // An output with images is the item-list form, which
+                        // is where Responses reads a tool's media; a text-only
+                        // one stays a string, as before.
+                        let images = message_images(&content);
+                        let output = if images.is_empty() {
+                            json!(message_text(&content))
+                        } else {
+                            Value::Array(responses_parts(&content, images))
+                        };
                         input_items.push(json!({
                             "type": "function_call_output",
                             "call_id": msg.get("tool_call_id").cloned().unwrap_or(Value::Null),
-                            "output": message_text(&content),
+                            "output": output,
                         }));
                     }
                     "assistant" if msg.get("tool_calls").is_some() => {
@@ -270,7 +352,15 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                             input_items.push(json!({"role": "assistant", "content": text}));
                         }
                     }
-                    _ => input_items.push(json!({"role": role, "content": message_text(&content)})),
+                    _ => {
+                        let images = message_images(&content);
+                        let content = if images.is_empty() {
+                            json!(message_text(&content))
+                        } else {
+                            Value::Array(responses_parts(&content, images))
+                        };
+                        input_items.push(json!({"role": role, "content": content}));
+                    }
                 }
             }
         }
@@ -562,6 +652,21 @@ fn convert_gemini_usage(usage: Option<&Value>) -> Value {
     })
 }
 
+/// Whether the requested model reads media nested in `functionResponse.parts`,
+/// which Gemini added with its 3 series. The name is the only signal the
+/// converter has, so an unrecognized name gets the sibling-part form that
+/// every Gemini model accepts.
+fn gemini_reads_function_response_parts(body: &Value) -> bool {
+    let Some(model) = body.get("model").and_then(|m| m.as_str()) else {
+        return false;
+    };
+    let name = model.rsplit('/').next().unwrap_or(model);
+    name.strip_prefix("gemini-")
+        .and_then(|rest| rest.split(['.', '-']).next())
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 3)
+}
+
 impl UpstreamConverter for GoogleGenerateContentConverter {
     fn upstream_path(&self, body: &Value) -> String {
         let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
@@ -637,12 +742,50 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                             .ok()
                             .filter(|v: &Value| v.is_object())
                             .unwrap_or_else(|| json!({"result": text}));
-                        contents.push(json!({
-                            "role": "user",
-                            "parts": [{"functionResponse": {"name": name, "response": response}}]
-                        }));
+                        let mut function_response = json!({"name": name, "response": response});
+                        let mut parts: Vec<Value> = Vec::new();
+                        // `functionResponse.parts` takes inline bytes only, and
+                        // only Gemini 3+ reads it. Earlier models get the image
+                        // as a sibling part of the same turn instead, which is
+                        // the form they accept.
+                        let images: Vec<Value> = message_images(&content)
+                            .into_iter()
+                            .filter_map(|image| match image {
+                                ImageSource::Base64 { mime, data } => {
+                                    Some(json!({"inlineData": {"mimeType": mime, "data": data}}))
+                                }
+                                ImageSource::Url(_) => None,
+                            })
+                            .collect();
+                        let nested = gemini_reads_function_response_parts(body);
+                        if nested && !images.is_empty() {
+                            function_response["parts"] = Value::Array(images.clone());
+                        }
+                        parts.push(json!({"functionResponse": function_response}));
+                        if !nested {
+                            parts.extend(images);
+                        }
+                        contents.push(json!({"role": "user", "parts": parts}));
                     }
-                    _ => contents.push(json!({"role": "user", "parts": [{"text": message_text(&content)}]})),
+                    _ => {
+                        let mut parts: Vec<Value> = Vec::new();
+                        let text = message_text(&content);
+                        let images = message_images(&content);
+                        if !text.is_empty() || images.is_empty() {
+                            parts.push(json!({"text": text}));
+                        }
+                        parts.extend(images.into_iter().map(|image| match image {
+                            ImageSource::Base64 { mime, data } => {
+                                json!({"inlineData": {"mimeType": mime, "data": data}})
+                            }
+                            // A URL carries no MIME type; Gemini requires one,
+                            // and JPEG is the common default for photos.
+                            ImageSource::Url(url) => json!({"fileData": {
+                                "mimeType": "image/jpeg", "fileUri": url,
+                            }}),
+                        }));
+                        contents.push(json!({"role": "user", "parts": parts}));
+                    }
                 }
             }
         }
@@ -846,6 +989,14 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
 /// Anthropic requires a `max_tokens`; chat/completions may omit it.
 const ANTHROPIC_DEFAULT_MAX_TOKENS: i64 = 4096;
 
+/// Rough lower bound, in characters, on a prefix Anthropic will actually cache
+/// (~1024 tokens at 4 chars/token, matching the `estimate_token_count`
+/// heuristic used elsewhere). A `cache_control` breakpoint on a block smaller
+/// than this is a no-op Anthropic ignores, so the converter skips it -- which
+/// also avoids marking the small volatile block promoted to index 0 on a bare
+/// child run that has no stable prompt.
+const ANTHROPIC_MIN_CACHEABLE_CHARS: usize = 4096;
+
 /// Fronts Anthropic's `/v1/messages` API. Auth is `x-api-key` plus a fixed
 /// `anthropic-version` header. The registered provider `base_url` should include
 /// the version prefix, e.g. `https://api.anthropic.com/v1`.
@@ -867,6 +1018,42 @@ impl AnthropicMessagesConverter {
     pub fn new_oauth() -> Self {
         Self { oauth: true }
     }
+
+    /// Build the `system` field. `Implicit` keeps the joined-string form.
+    /// `Explicit` emits an array of text blocks and marks the stable prompt with
+    /// a cache breakpoint. The stable prompt is the first system block, except
+    /// when an OAuth billing header occupies index 0 -- the agent keeps its long
+    /// byte-stable prompt in that first non-header block, while the volatile
+    /// per-turn block and any compaction summary follow and are left uncached.
+    ///
+    /// The `Implicit` guard is defensive only: `AnthropicMessagesConverter`
+    /// always reports `Explicit`. It exists so the marker never escapes if a
+    /// future converter reuses this helper -- there is no runtime toggle.
+    fn system_value(&self, blocks: Vec<String>) -> Value {
+        if self.cache_capability() != CacheCapability::Explicit {
+            return json!(blocks.join("\n\n"));
+        }
+        let stable_idx = usize::from(self.oauth && blocks.len() > 1);
+        // Only breakpoint a block large enough for Anthropic to cache. When the
+        // agent has no stable prompt (a bare child run), the small volatile
+        // block is promoted to index 0; marking it would buy a cache *write*
+        // every turn at the 1.25x rate with a near-zero hit rate, so skip it.
+        let breakpoint = blocks
+            .get(stable_idx)
+            .is_some_and(|b| b.len() >= ANTHROPIC_MIN_CACHEABLE_CHARS);
+        let arr: Vec<Value> = blocks
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| {
+                let mut block = json!({ "type": "text", "text": text });
+                if breakpoint && i == stable_idx {
+                    block["cache_control"] = json!({ "type": "ephemeral" });
+                }
+                block
+            })
+            .collect();
+        json!(arr)
+    }
 }
 
 
@@ -882,12 +1069,75 @@ fn map_anthropic_finish(reason: &str, saw_tool: bool) -> &'static str {
     }
 }
 
-fn anthropic_usage(input_tokens: i64, output_tokens: i64) -> Value {
-    json!({
-        "prompt_tokens": input_tokens,
+fn anthropic_usage(
+    input_tokens: i64,
+    cache_read: Option<i64>,
+    cache_write: Option<i64>,
+    output_tokens: i64,
+) -> Value {
+    // Anthropic's `input_tokens` excludes both cache figures, whereas
+    // chat/completions `prompt_tokens` includes them (genai normalises the same
+    // way). Without this the prompt count silently shrinks by the cached prefix
+    // the moment caching is enabled, and the cache read/write never reach
+    // `Usage`. Emitted in the chat shape `Usage::from_completion` already reads.
+    //
+    // Emission is keyed on the upstream *having reported* the counter, not on it
+    // being non-zero: `cache_read_input_tokens: 0` is a cold prefix -- the state
+    // the console's cache readout draws in red -- and folding it into the same
+    // "no field" branch as a provider that never mentions caching is what made
+    // that alarm invisible. A response with no cache fields still emits none, so
+    // a no-cache provider stays byte-identical to before.
+    let prompt = input_tokens + cache_read.unwrap_or(0) + cache_write.unwrap_or(0);
+    let mut usage = json!({
+        "prompt_tokens": prompt,
         "completion_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-    })
+        "total_tokens": prompt + output_tokens,
+    });
+    if let Some(read) = cache_read {
+        usage["prompt_tokens_details"] = json!({ "cached_tokens": read });
+    }
+    if let Some(write) = cache_write {
+        usage["cache_creation_input_tokens"] = json!(write);
+    }
+    usage
+}
+
+/// Read Anthropic's two cache counters from a `usage` object (`message_start`
+/// for the stream, the top-level `usage` for a non-stream response). `None` when
+/// the field is absent -- keep that apart from a reported `0`, which the
+/// readout needs to tell a cold prefix from a silent provider. A negative count
+/// is not a report, so it reads as absent and leaves the prompt sum untouched.
+fn anthropic_cache_tokens(usage: Option<&Value>) -> (Option<i64>, Option<i64>) {
+    let counter = |key: &str| {
+        usage
+            .and_then(|u| u.get(key))
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v >= 0)
+    };
+    (
+        counter("cache_read_input_tokens"),
+        counter("cache_creation_input_tokens"),
+    )
+}
+
+/// A content-part array as Anthropic blocks: the text first, then each image.
+fn anthropic_blocks(content: &Value, images: Vec<ImageSource<'_>>) -> Vec<Value> {
+    let text = message_text(content);
+    let mut blocks = Vec::with_capacity(images.len() + 1);
+    if !text.is_empty() {
+        blocks.push(json!({"type": "text", "text": text}));
+    }
+    blocks.extend(images.into_iter().map(|image| match image {
+        ImageSource::Base64 { mime, data } => json!({
+            "type": "image",
+            "source": {"type": "base64", "media_type": mime, "data": data},
+        }),
+        ImageSource::Url(url) => json!({
+            "type": "image",
+            "source": {"type": "url", "url": url},
+        }),
+    }));
+    blocks
 }
 
 /// Append `blocks` to the last message when it shares `role`, else start a new
@@ -919,6 +1169,10 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         } else {
             "/messages".to_string()
         }
+    }
+
+    fn cache_capability(&self) -> CacheCapability {
+        CacheCapability::Explicit
     }
 
     fn auth_header(&self, key: &str) -> (&'static str, String) {
@@ -1008,31 +1262,44 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                         push_merged(&mut messages, "assistant", blocks);
                     }
                     "tool" => {
+                        // A result with images uses the block-list form of
+                        // `tool_result.content`, which is where Anthropic reads
+                        // a tool's media; a text-only one stays a string.
+                        let images = message_images(&content);
+                        let result = if images.is_empty() {
+                            json!(message_text(&content))
+                        } else {
+                            Value::Array(anthropic_blocks(&content, images))
+                        };
                         push_merged(
                             &mut messages,
                             "user",
                             vec![json!({
                                 "type": "tool_result",
                                 "tool_use_id": msg.get("tool_call_id").cloned().unwrap_or(Value::Null),
-                                "content": message_text(&content),
+                                "content": result,
                             })],
                         );
                     }
-                    _ => push_merged(
-                        &mut messages,
-                        "user",
-                        vec![json!({"type": "text", "text": message_text(&content)})],
-                    ),
+                    _ => {
+                        let images = message_images(&content);
+                        let blocks = if images.is_empty() {
+                            vec![json!({"type": "text", "text": message_text(&content)})]
+                        } else {
+                            anthropic_blocks(&content, images)
+                        };
+                        push_merged(&mut messages, "user", blocks);
+                    }
                 }
             }
         }
         out["messages"] = json!(messages);
         if !system.is_empty() {
-            out["system"] = json!(system.join("\n\n"));
+            out["system"] = self.system_value(system);
         }
 
         if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
-            let mapped: Vec<Value> = tools
+            let mut mapped: Vec<Value> = tools
                 .iter()
                 .filter_map(|t| {
                     let func = t.get("function")?;
@@ -1044,6 +1311,15 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 })
                 .collect();
             if !mapped.is_empty() {
+                // Tools sit at the head of Anthropic's cache prefix and are
+                // stable for the whole session, so a breakpoint on the last one
+                // caches the entire tool schema. Guarded by the capability so
+                // the marker is emitted only where the provider reads it.
+                if self.cache_capability() == CacheCapability::Explicit {
+                    if let Some(last) = mapped.last_mut() {
+                        last["cache_control"] = json!({ "type": "ephemeral" });
+                    }
+                }
                 out["tools"] = json!(mapped);
             }
         }
@@ -1119,6 +1395,7 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         let usage = upstream.get("usage");
         let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
         let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let (cache_read, cache_write) = anthropic_cache_tokens(usage);
 
         json!({
             "id": upstream.get("id").cloned().unwrap_or_else(|| json!("chatcmpl-proxy")),
@@ -1130,7 +1407,7 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 "message": message,
                 "finish_reason": finish_reason,
             }],
-            "usage": anthropic_usage(input_tokens, output_tokens),
+            "usage": anthropic_usage(input_tokens, cache_read, cache_write, output_tokens),
         })
     }
 
@@ -1161,6 +1438,9 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     if let Some(t) = msg.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()) {
                         state.input_tokens = t;
                     }
+                    let (read, write) = anthropic_cache_tokens(msg.get("usage"));
+                    state.cache_read_tokens = read;
+                    state.cache_write_tokens = write;
                 }
             }
             "content_block_start" => {
@@ -1230,7 +1510,12 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     .and_then(|u| u.get("output_tokens"))
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
-                let usage = anthropic_usage(state.input_tokens, output_tokens);
+                let usage = anthropic_usage(
+                    state.input_tokens,
+                    state.cache_read_tokens,
+                    state.cache_write_tokens,
+                    output_tokens,
+                );
                 out.push(chunk_str_with_usage(state, json!({}), Some(finish), Some(&usage)));
                 out.push("[DONE]".to_string());
                 state.finished = true;
@@ -1299,16 +1584,55 @@ fn convert_usage(usage: Option<&Value>) -> Value {
         .get("total_tokens")
         .and_then(|v| v.as_i64())
         .unwrap_or(prompt + completion);
-    json!({
+    let mut out = json!({
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": total,
-    })
+    });
+    // Responses reports cache reads under `input_tokens_details.cached_tokens`,
+    // and unlike Anthropic its `input_tokens` already includes them, so only the
+    // detail is forwarded (no compensation). Surfaced in the chat shape
+    // `Usage::from_completion` reads, so `/context` shows the cache line here too.
+    //
+    // Forwarded whenever the field is present, a reported `0` included: that is a
+    // cold prefix, the state the readout exists to alarm on, and filtering it out
+    // left it indistinguishable from a response that never mentions caching. A
+    // response with no `input_tokens_details` still emits nothing, so a no-cache
+    // provider stays byte-identical.
+    if let Some(cached) = u
+        .get("input_tokens_details")
+        .and_then(|d| d.get("cached_tokens"))
+        .and_then(|v| v.as_i64())
+        .filter(|c| *c >= 0)
+    {
+        out["prompt_tokens_details"] = json!({ "cached_tokens": cached });
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_images_reads_inline_and_remote_images_and_skips_the_rest() {
+        let content = json!([
+            {"type": "text", "text": "a"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+            {"type": "image_url", "image_url": {"url": "https://x.test/a.jpg"}},
+            {"type": "image_url", "image_url": {"url": "data:image/png,notbase64"}},
+            {"type": "image_url"},
+            {"type": "input_audio"}
+        ]);
+        assert_eq!(
+            message_images(&content),
+            vec![
+                ImageSource::Base64 { mime: "image/png", data: "AAAA" },
+                ImageSource::Url("https://x.test/a.jpg"),
+            ]
+        );
+        assert!(message_images(&json!("plain")).is_empty());
+    }
 
     #[test]
     fn parses_a_single_event_in_one_chunk() {
@@ -1415,6 +1739,43 @@ mod openai_responses_tests {
         assert_eq!(out["reasoning"], json!({"effort": "high", "summary": "auto"}));
     }
 
+    /// A camera frame from a tool, and a pasted image from the user, both
+    /// reach Responses in its own item forms; text-only content is unchanged.
+    #[test]
+    fn request_carries_tool_and_user_images() {
+        let body = json!({
+            "model": "gpt-5",
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "text", "text": "what is this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,BBBB"}}
+                ]},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "cam", "arguments": "{}"}}
+                ]},
+                {"role": "tool", "tool_call_id": "call_1", "content": [
+                    {"type": "text", "text": "front camera"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+                ]}
+            ]
+        });
+        let input = conv().convert_request(&body)["input"].clone();
+        assert_eq!(
+            input[0]["content"],
+            json!([
+                {"type": "input_text", "text": "what is this"},
+                {"type": "input_image", "image_url": "data:image/png;base64,BBBB"}
+            ])
+        );
+        assert_eq!(
+            input[2]["output"],
+            json!([
+                {"type": "input_text", "text": "front camera"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}
+            ])
+        );
+    }
+
     #[test]
     fn request_flattens_tools_and_maps_tool_messages() {
         let body = json!({
@@ -1468,6 +1829,26 @@ mod openai_responses_tests {
         assert_eq!(choice["message"]["reasoning_content"], json!("thinking"));
         assert_eq!(choice["finish_reason"], json!("stop"));
         assert_eq!(out["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
+    }
+
+    #[test]
+    fn response_keeps_a_reported_cold_prefix_and_omits_an_absent_one() {
+        // `cached_tokens: 0` is Responses saying the prefix was not reused --
+        // the state the console draws as a red `0%`. Dropping it here left that
+        // indistinguishable from a response that never mentions caching, which
+        // the readout can only render as "not reported".
+        let reported =
+            convert_usage(Some(&json!({"input_tokens": 100, "output_tokens": 5, "input_tokens_details": {"cached_tokens": 0}})));
+        assert_eq!(reported["prompt_tokens_details"]["cached_tokens"], json!(0));
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": reported})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(0), "a cold prefix is a report");
+
+        let silent = convert_usage(Some(&json!({"input_tokens": 100, "output_tokens": 5})));
+        assert!(silent.get("prompt_tokens_details").is_none(), "{silent}");
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": silent})).unwrap();
+        assert_eq!(parsed.cached_tokens, None, "silence stays silence");
     }
 
     #[test]
@@ -1706,6 +2087,73 @@ mod google_generate_content_tests {
         assert_eq!(out["toolConfig"], json!({"functionCallingConfig": {"mode": "ANY"}}));
     }
 
+    fn image_tool_body(model: &str) -> Value {
+        json!({
+            "model": model,
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "text", "text": "what is this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,BBBB"}}
+                ]},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "cam", "arguments": "{}"}}
+                ]},
+                {"role": "tool", "tool_call_id": "c1", "content": [
+                    {"type": "text", "text": "front camera"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+                ]}
+            ]
+        })
+    }
+
+    #[test]
+    fn a_user_image_becomes_inline_data() {
+        let out = conv().convert_request(&image_tool_body("gemini-2.5-pro"));
+        assert_eq!(
+            out["contents"][0]["parts"],
+            json!([
+                {"text": "what is this"},
+                {"inlineData": {"mimeType": "image/png", "data": "BBBB"}}
+            ])
+        );
+    }
+
+    /// Gemini 3 reads a tool's media nested in its `functionResponse`.
+    #[test]
+    fn a_gemini_3_tool_image_nests_in_the_function_response() {
+        let out = conv().convert_request(&image_tool_body("models/gemini-3-flash-preview"));
+        let parts = out["contents"][2]["parts"].as_array().unwrap();
+        assert_eq!(parts.len(), 1, "{parts:?}");
+        assert_eq!(parts[0]["functionResponse"]["name"], json!("cam"));
+        assert_eq!(parts[0]["functionResponse"]["response"], json!({"result": "front camera"}));
+        assert_eq!(
+            parts[0]["functionResponse"]["parts"],
+            json!([{"inlineData": {"mimeType": "image/png", "data": "AAAA"}}])
+        );
+    }
+
+    /// Earlier models ignore nested parts, so the image rides beside the
+    /// response in the same turn.
+    #[test]
+    fn an_older_gemini_tool_image_is_a_sibling_part() {
+        let out = conv().convert_request(&image_tool_body("gemini-2.5-pro"));
+        let parts = out["contents"][2]["parts"].as_array().unwrap();
+        assert!(parts[0]["functionResponse"].get("parts").is_none(), "{parts:?}");
+        assert_eq!(parts[1], json!({"inlineData": {"mimeType": "image/png", "data": "AAAA"}}));
+    }
+
+    #[test]
+    fn gemini_generation_is_read_from_the_model_name() {
+        let reads = |m: &str| gemini_reads_function_response_parts(&json!({"model": m}));
+        assert!(reads("gemini-3-pro"));
+        assert!(reads("gemini-3.1-flash"));
+        assert!(reads("models/gemini-3.8-flash"));
+        assert!(!reads("gemini-2.5-pro"));
+        assert!(!reads("gemini-1.5-flash"));
+        assert!(!reads("gemma-3-27b"));
+        assert!(!reads("some-alias"));
+    }
+
     #[test]
     fn tool_result_wraps_non_json_content() {
         let body = json!({
@@ -1841,6 +2289,12 @@ mod anthropic_messages_tests {
         AnthropicMessagesConverter::new()
     }
 
+    /// A stable system prompt large enough to clear `ANTHROPIC_MIN_CACHEABLE_CHARS`
+    /// so the cache breakpoint is actually placed.
+    fn big_system() -> String {
+        "S".repeat(ANTHROPIC_MIN_CACHEABLE_CHARS + 100)
+    }
+
     #[test]
     fn oauth_auth_and_headers_use_bearer_plus_code_beta() {
         let c = AnthropicMessagesConverter::new_oauth();
@@ -1893,7 +2347,9 @@ mod anthropic_messages_tests {
         });
         let out = conv().convert_request(&body);
         assert_eq!(out["model"], json!("claude-sonnet-4"));
-        assert_eq!(out["system"], json!("be brief"));
+        // A tiny system prompt is below Anthropic's min cacheable size, so it is
+        // emitted as a block array with no breakpoint.
+        assert_eq!(out["system"], json!([{"type": "text", "text": "be brief"}]));
         assert_eq!(out["max_tokens"], json!(ANTHROPIC_DEFAULT_MAX_TOKENS));
         assert_eq!(
             out["messages"],
@@ -1908,25 +2364,81 @@ mod anthropic_messages_tests {
         // OAuth account token to lightweight models (429 on sonnet) regardless
         // of the account's real plan. The oauth converter must mirror that or
         // heavy models fail under the Claude Code alias.
+        let prompt = big_system();
         let body = json!({
             "model": "claude-sonnet-5",
             "messages": [
-                {"role": "system", "content": "be brief"},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": "hi"}
             ]
         });
         let plain = conv().convert_request(&body);
-        assert_eq!(plain["system"], json!("be brief"));
+        assert_eq!(plain["system"][0]["text"], json!(prompt));
+        assert_eq!(plain["system"][0]["cache_control"], json!({"type": "ephemeral"}));
 
         let oauth_body = AnthropicMessagesConverter::new_oauth().convert_request(&body);
-        let sys = oauth_body["system"].as_str().unwrap();
-        assert!(
-            sys.starts_with("x-anthropic-billing-header: cc_version="),
-            "oauth request must inject the billing header first: {sys}"
+        let sys = oauth_body["system"].as_array().unwrap();
+        // The billing header is block 0 and stays uncached; the real system
+        // prompt is block 1 and carries the cache breakpoint.
+        assert!(sys[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("x-anthropic-billing-header: cc_version="));
+        assert!(sys[0].get("cache_control").is_none());
+        assert_eq!(sys[1]["text"], json!(prompt));
+        assert_eq!(sys[1]["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    /// The reviewer's probe, inverted: a tool's image lands inside its
+    /// `tool_result`, a user image as an `image` block, and the tool and user
+    /// turns still coalesce into one user message.
+    #[test]
+    fn request_carries_tool_and_user_images() {
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "user", "content": "go"},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "host__camera", "arguments": "{}"}}
+                ]},
+                {"role": "tool", "tool_call_id": "call_1", "content": [
+                    {"type": "text", "text": "front camera"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+                ]},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "what is this"},
+                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,BBBB"}}
+                ]}
+            ]
+        });
+        let msgs = conv().convert_request(&body)["messages"].clone();
+        assert_eq!(msgs.as_array().unwrap().len(), 3, "{msgs}");
+        assert_eq!(
+            msgs[2]["content"],
+            json!([
+                {"type": "tool_result", "tool_use_id": "call_1", "content": [
+                    {"type": "text", "text": "front camera"},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}
+                ]},
+                {"type": "text", "text": "what is this"},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "BBBB"}}
+            ])
         );
-        assert!(sys.contains("cc_entrypoint=sdk-cli;"));
-        // The real system prompt is still carried after the billing marker.
-        assert!(sys.contains("be brief"));
+    }
+
+    #[test]
+    fn a_remote_image_is_a_url_source() {
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": "https://x.test/a.jpg"}}
+            ]}]
+        });
+        let msgs = conv().convert_request(&body)["messages"].clone();
+        assert_eq!(
+            msgs[0]["content"],
+            json!([{"type": "image", "source": {"type": "url", "url": "https://x.test/a.jpg"}}])
+        );
     }
 
     #[test]
@@ -1978,9 +2490,84 @@ mod anthropic_messages_tests {
         let out = conv().convert_request(&body);
         assert_eq!(
             out["tools"],
-            json!([{"name": "f", "description": "d", "input_schema": {"type": "object"}}])
+            json!([{
+                "name": "f",
+                "description": "d",
+                "input_schema": {"type": "object"},
+                "cache_control": {"type": "ephemeral"}
+            }])
         );
         assert_eq!(out["tool_choice"], json!({"type": "any"}));
+    }
+
+    #[test]
+    fn cache_breakpoint_lands_on_the_stable_block_only() {
+        // The agent's shape after #340/#343: stable prompt, volatile per-turn
+        // block, compaction summary -- all system messages. Only the stable
+        // first block may carry the breakpoint; volatile and summary change and
+        // must stay uncached.
+        let stable = big_system();
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": stable},
+                {"role": "system", "content": "Today's date is 2026-09-16."},
+                {"role": "system", "content": "[Summary of earlier conversation, condensed to save context]\n\nx"},
+                {"role": "user", "content": "hi"}
+            ]
+        });
+        let sys = conv().convert_request(&body)["system"].as_array().unwrap().clone();
+        assert_eq!(sys.len(), 3);
+        assert_eq!(sys[0]["text"], json!(stable));
+        assert_eq!(sys[0]["cache_control"], json!({"type": "ephemeral"}));
+        assert!(sys[1].get("cache_control").is_none());
+        assert!(sys[2].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn anthropic_cached_system_block_is_byte_identical_across_turns() {
+        // #344: the cached block (system[0], carrying cache_control) must be
+        // byte-for-byte identical across turns for Anthropic's cache to hit,
+        // even as the volatile block and conversation change.
+        let stable = big_system();
+        let turn1 = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": stable},
+                {"role": "system", "content": "Today's date is 2026-09-16."},
+                {"role": "user", "content": "first"}
+            ]
+        });
+        let turn2 = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": stable},
+                {"role": "system", "content": "Today's date is 2026-09-17.\n\nrecalled note"},
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "second"}
+            ]
+        });
+        let block1 = conv().convert_request(&turn1)["system"][0].clone();
+        let block2 = conv().convert_request(&turn2)["system"][0].clone();
+        assert_eq!(
+            serde_json::to_string(&block1).unwrap(),
+            serde_json::to_string(&block2).unwrap()
+        );
+        assert_eq!(block1["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    #[test]
+    fn implicit_converters_emit_no_cache_control() {
+        assert_eq!(conv().cache_capability(), CacheCapability::Explicit);
+        assert_eq!(
+            OpenAIResponsesConverter::new().cache_capability(),
+            CacheCapability::Implicit
+        );
+        assert_eq!(
+            GoogleGenerateContentConverter::new().cache_capability(),
+            CacheCapability::Implicit
+        );
     }
 
     #[test]
@@ -2065,6 +2652,104 @@ mod anthropic_messages_tests {
         assert_eq!(finish["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
         assert_eq!(done[1], "[DONE]");
         assert!(state.finished);
+    }
+
+    #[test]
+    fn stream_folds_cache_tokens_into_prompt_tokens() {
+        // Anthropic reports cache read/write in message_start, excluded from
+        // input_tokens. The chat-shaped usage must add them back into
+        // prompt_tokens and expose them where `Usage::from_completion` reads.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {
+                    "input_tokens": 10,
+                    "cache_read_input_tokens": 80,
+                    "cache_creation_input_tokens": 40
+                }}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(130));
+        assert_eq!(usage["total_tokens"], json!(135));
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], json!(80));
+        assert_eq!(usage["cache_creation_input_tokens"], json!(40));
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(80));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+        assert_eq!(parsed.prompt_tokens, Some(130));
+    }
+
+    #[test]
+    fn stream_reports_a_cold_prefix_as_a_zero_read() {
+        // `cache_read_input_tokens: 0` is Anthropic saying the prefix was not
+        // reused. Folded into the "no cache field" branch it rendered as "not
+        // reported", hiding the one state the console's readout alarms on.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 40
+                }}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(140));
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], json!(0));
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(0), "an honest zero survives to Usage");
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn stream_omits_cache_fields_the_upstream_never_reported() {
+        // The other half of the pair: an upstream that says nothing about
+        // caching must yield `None`, not a fabricated zero.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {"input_tokens": 100}}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(100), "no cache figures to add back");
+        assert!(usage.get("prompt_tokens_details").is_none(), "{usage}");
+        assert!(usage.get("cache_creation_input_tokens").is_none(), "{usage}");
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, None);
+        assert_eq!(parsed.cache_write_tokens, None);
     }
 
     #[test]

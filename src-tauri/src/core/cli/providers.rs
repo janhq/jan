@@ -23,38 +23,252 @@ use crate::core::state::ProviderConfig;
 const MODEL_PROVIDER_KEY: &str = "model-provider";
 const API_KEY_SETTING_KEYS: [&str; 2] = ["api-key", "api_key"];
 
+/// Base URL for the explicitly named provider, when `--base-url` is not given.
+pub const BASE_URL_ENV: &str = "JAN_BASE_URL";
+/// Extra request headers for the explicitly named provider: newline-separated
+/// `Name: Value` lines, the format of Claude Code's `ANTHROPIC_CUSTOM_HEADERS`.
+pub const CUSTOM_HEADERS_ENV: &str = "JAN_CUSTOM_HEADERS";
+
 /// CLI/env overrides applied after loading the persisted store.
-#[derive(Debug, Default, Clone)]
+///
+/// The key applies the way it always has: to `provider`, or to every provider
+/// when none is targeted. The base URL and the headers apply only to a provider
+/// named with an explicit `--provider` (`explicit_provider`): the Desktop
+/// selection that fills `provider` in otherwise is a default for the key
+/// fallback, not a statement about where this run should go, and pointing
+/// whatever Desktop last had selected at a gateway would be a surprise.
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ProviderOverrides {
     /// Restrict/target a single provider (e.g. `anthropic`).
     pub provider: Option<String>,
     /// API key to inject for `provider` (or all providers when `provider` is None).
     pub api_key: Option<String>,
+    /// Base URL for `provider` (`--base-url`, else `JAN_BASE_URL`). Applied
+    /// only when `explicit_provider`.
+    pub base_url: Option<String>,
+    /// Extra request headers for `provider` (`JAN_CUSTOM_HEADERS`), beating a
+    /// configured header of the same name. Applied only when `explicit_provider`.
+    pub headers: Vec<(String, String)>,
+    /// Whether `provider` came from `--provider`, rather than being defaulted
+    /// from the Desktop selection.
+    pub explicit_provider: bool,
+    /// Where `base_url` came from, for `jan cli agent status`.
+    pub base_url_source: Option<OverrideSource>,
+}
+
+/// Which session override supplied a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverrideSource {
+    /// A command-line flag.
+    Flag,
+    /// An environment variable.
+    Env,
 }
 
 impl ProviderOverrides {
-    /// Fold in environment fallbacks for the API key when not set explicitly.
-    /// `JAN_API_KEY` wins, then a provider-specific var (`ANTHROPIC_API_KEY`,
-    /// `OPENAI_API_KEY`, ...) when a provider is targeted.
-    pub fn with_env(mut self) -> Self {
+    /// Fold in environment fallbacks for whatever was not set explicitly.
+    ///
+    /// The key: `JAN_API_KEY` wins, then a provider-specific var
+    /// (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...) when a provider is targeted.
+    /// For an explicitly named provider, `JAN_BASE_URL` and `JAN_CUSTOM_HEADERS`
+    /// too; with no explicit provider those two are ignored, and a warning says
+    /// so once per process (every provider-map rebuild comes through here, and
+    /// the TUI must not have its screen drawn over on each one).
+    pub fn with_env(self) -> Self {
+        self.with_env_from(|name| std::env::var(name).ok())
+    }
+
+    /// [`Self::with_env`] against an injected environment, so the precedence
+    /// is testable without mutating the process environment every other test
+    /// in this binary shares.
+    fn with_env_from(mut self, env: impl Fn(&str) -> Option<String>) -> Self {
+        let non_empty = |name: &str| env(name).filter(|v| !v.trim().is_empty());
         if self.api_key.is_none() {
-            if let Ok(k) = std::env::var("JAN_API_KEY") {
-                if !k.is_empty() {
-                    self.api_key = Some(k);
-                }
+            if let Some(k) = env("JAN_API_KEY").filter(|k| !k.is_empty()) {
+                self.api_key = Some(k);
             }
         }
         if self.api_key.is_none() {
             if let Some(provider) = &self.provider {
-                let var = format!("{}_API_KEY", provider.to_ascii_uppercase());
-                if let Ok(k) = std::env::var(&var) {
-                    if !k.is_empty() {
-                        self.api_key = Some(k);
-                    }
+                let var = provider_key_env(provider);
+                if let Some(k) = env(&var).filter(|k| !k.is_empty()) {
+                    self.api_key = Some(k);
                 }
             }
         }
+        let base_url = non_empty(BASE_URL_ENV);
+        let headers = non_empty(CUSTOM_HEADERS_ENV);
+        if !self.explicit_provider {
+            if base_url.is_some() || headers.is_some() {
+                warn_once_unscoped();
+            }
+            return self;
+        }
+        if self.base_url.is_none() {
+            if let Some(raw) = base_url {
+                match parse_base_url(&raw) {
+                    Ok(url) => {
+                        self.base_url = Some(url);
+                        self.base_url_source = Some(OverrideSource::Env);
+                    }
+                    Err(e) => warn_once_bad_base_url(&e),
+                }
+            }
+        }
+        if self.headers.is_empty() {
+            if let Some(raw) = headers {
+                self.headers = parse_custom_headers(&raw);
+            }
+        }
         self
+    }
+
+    /// The overrides this CLI session was started with, as recorded by
+    /// [`Self::install`]. Every rebuild of the provider map in the CLI goes
+    /// through this, so a key or base URL from the command line or the
+    /// environment survives a TUI reload, the `/model` probe and `cli models
+    /// list` instead of being dropped on the first rebuild. Before anything was
+    /// installed (a command that takes no provider flags), the environment
+    /// fallbacks alone, which is what those rebuilds always used.
+    pub fn session() -> Self {
+        super::session_provider::overrides().unwrap_or_else(|| Self::default().with_env())
+    }
+
+    /// Record these as the session's overrides (see [`Self::session`]) and hand
+    /// them back. Called once, by the binary, when it resolves its flags.
+    pub fn install(self) -> Self {
+        super::session_provider::install(&self);
+        self
+    }
+
+    /// The provider this session scopes to itself: one named with an explicit
+    /// `--provider` whose base URL or key came from these overrides. Its model
+    /// roster and prices describe the session's endpoint rather than whatever
+    /// `~/.jan` was written for, so they are kept in memory and never persisted
+    /// (see [`super::session_provider`]).
+    ///
+    /// `JAN_API_KEY` with no `--provider`, and a Desktop-default provider's
+    /// `<PROVIDER>_API_KEY`, do not make a provider session-scoped: those users
+    /// keep persisting refresh results exactly as before.
+    pub fn session_scoped_provider(&self) -> Option<&str> {
+        if self.base_url.is_none() && self.api_key.is_none() {
+            return None;
+        }
+        self.explicit_provider_name()
+    }
+
+    /// The provider named with an explicit `--provider`, if any -- never the
+    /// Desktop-selection default, which only steers the key fallback. The one
+    /// provider a base URL, headers, and anything else scoped to "the provider
+    /// this session named" apply to.
+    pub fn explicit_provider_name(&self) -> Option<&str> {
+        self.provider.as_deref().filter(|_| self.explicit_provider)
+    }
+}
+
+/// The environment variable that carries `provider`'s key for an explicit
+/// `--provider` (`ANTHROPIC_API_KEY`, `TOKAMAK_API_KEY`, ...).
+pub(crate) fn provider_key_env(provider: &str) -> String {
+    format!("{}_API_KEY", provider.to_ascii_uppercase())
+}
+
+fn warn_once_unscoped() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        log::warn!(
+            "{BASE_URL_ENV} and {CUSTOM_HEADERS_ENV} apply only to a provider named with \
+             --provider; ignoring them"
+        )
+    });
+}
+
+fn warn_once_bad_base_url(error: &str) {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| log::warn!("ignoring {BASE_URL_ENV}: {error}"));
+}
+
+/// Validate and normalize a base URL given on the command line or in the
+/// environment: an absolute `https://` URL, or `http://` for a loopback host --
+/// the same rule the `/models` probe and the provider settings form apply, so a
+/// key is never sent over a plaintext remote connection. The trailing slash is
+/// dropped, since every caller appends a path.
+pub fn parse_base_url(raw: &str) -> Result<String, String> {
+    let url = raw.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("'{url}' is not a URL: {e}"))?;
+    match parsed.scheme() {
+        "https" => {}
+        "http" if is_loopback_url(url) => {}
+        "http" => {
+            return Err(format!(
+                "'{url}' is plaintext http on a remote host; use https:// (http:// is only \
+                 accepted for localhost)"
+            ))
+        }
+        other => return Err(format!("'{url}' has an unsupported scheme '{other}'")),
+    }
+    if parsed.host_str().is_none_or(str::is_empty) {
+        return Err(format!("'{url}' has no host"));
+    }
+    Ok(url.to_string())
+}
+
+/// Parse `JAN_CUSTOM_HEADERS`: one `Name: Value` per line. Blank lines are
+/// skipped; a line with no `:`, an invalid name or value, or a
+/// [reserved](crate::core::agent::request_headers::RESERVED) name is dropped
+/// with a warning naming the header (never its value, which can be a
+/// credential). A repeated name keeps the later value.
+pub fn parse_custom_headers(raw: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            log::warn!("{CUSTOM_HEADERS_ENV}: skipping a line with no `Name: Value` separator");
+            continue;
+        };
+        let (name, value) = (name.trim(), value.trim());
+        if crate::core::agent::request_headers::is_reserved(name) {
+            log::warn!("{CUSTOM_HEADERS_ENV}: '{name}' is a reserved header; skipping it");
+            continue;
+        }
+        if reqwest::header::HeaderName::from_bytes(name.as_bytes()).is_err()
+            || reqwest::header::HeaderValue::from_str(value).is_err()
+        {
+            log::warn!("{CUSTOM_HEADERS_ENV}: '{name}' is not a valid header; skipping it");
+            continue;
+        }
+        out.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
+        out.push((name.to_string(), value.to_string()));
+    }
+    out
+}
+
+/// Where a provider's base URL came from, as `jan cli agent status` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseUrlSource {
+    /// `--base-url`.
+    Flag,
+    /// `JAN_BASE_URL`.
+    Env,
+    /// The project's `agent.toml` `[provider]`.
+    Project,
+    /// `~/.jan/config.toml`.
+    Config,
+    /// Inherited from Jan Desktop's `settings.json`.
+    Desktop,
+}
+
+impl BaseUrlSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BaseUrlSource::Flag => "flag",
+            BaseUrlSource::Env => "env",
+            BaseUrlSource::Project => "project",
+            BaseUrlSource::Config => "config",
+            BaseUrlSource::Desktop => "desktop",
+        }
     }
 }
 
@@ -114,6 +328,17 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Which provider serves `model`. Delegates to the routing order itself
+/// (`agent::upstream::pick_provider_for_model`) rather than restating it, so a
+/// price, a context window or a header label can never name a provider other
+/// than the one the request is sent to. `None` when nothing offers the model.
+///
+/// Sync and lock-free (the caller holds the map), so a render path or a price
+/// lookup can ask without awaiting the upstream resolver.
+pub fn provider_for_model(model: &str, pc: &HashMap<String, ProviderConfig>) -> Option<String> {
+    crate::core::agent::upstream::pick_provider_for_model(model, pc)
+}
+
 /// Log a provider-config load failure at most once per process. Startup probes
 /// this in two independent places (the headless sign-in guard and the model
 /// fallback), and a malformed `~/.jan/config.toml` fails both, so without this
@@ -130,7 +355,7 @@ fn warn_load_failure_once(context: &str, err: &str) {
 /// triggers the sign-in flow. A remote entry with no key does not count: the
 /// request would only fail later with a 401.
 pub fn has_usable_provider(project_root: Option<&std::path::Path>) -> bool {
-    let overrides = ProviderOverrides::default().with_env();
+    let overrides = ProviderOverrides::session();
     match load_provider_configs(project_root, &overrides) {
         Ok(configs) => configs.values().any(is_usable),
         Err(e) => {
@@ -149,11 +374,19 @@ pub fn provider_is_signed_in(project_root: Option<&Path>, provider: &str) -> boo
         return true;
     }
 
-    let overrides = ProviderOverrides {
-        provider: Some(provider.to_string()),
-        api_key: None,
-    }
-    .with_env();
+    // The session's own overrides only for the provider they name: merging
+    // them into another provider's answer would report it signed in on a key
+    // that was never meant for it.
+    let session = ProviderOverrides::session();
+    let overrides = if session.provider.as_deref() == Some(provider) {
+        session
+    } else {
+        ProviderOverrides {
+            provider: Some(provider.to_string()),
+            ..Default::default()
+        }
+        .with_env()
+    };
 
     load_provider_configs(project_root, &overrides)
         .ok()
@@ -247,7 +480,7 @@ pub fn unreachable_local_provider(
 /// exactly what a run can reach, including `~/.jan/config.toml` providers the
 /// desktop store knows nothing about.
 pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(String, String)> {
-    match load_provider_configs(project_root, &ProviderOverrides::default().with_env()) {
+    match load_provider_configs(project_root, &ProviderOverrides::session()) {
         Ok(configs) => reachable_models(&configs),
         Err(e) => {
             warn_load_failure_once(" for the model picker", &e);
@@ -256,56 +489,268 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
     }
 }
 
-/// Populate model lists for providers that have none configured
-/// (e.g. a provider just added via the `/settings` wizard with the models field
-/// left blank). For each reachable provider with an empty `models` list, query
-/// its OpenAI-compatible `GET {base_url}/models` endpoint and persist the
-/// discovered ids back to `~/.jan/config.toml`, mirroring how `/login` records
-/// Tokamak's model list. Returns `true` if at least one provider was populated.
-/// An unreachable endpoint is not fatal: it yields a warning and is skipped, so
-/// a dead credential never blocks the picker. The configured list is preserved
-/// when a provider already names models (the user's explicit choice wins), and
-/// only providers present in the global store are touched -- writing a
-/// models-only entry for a Desktop-inherited provider would shadow it.
-/// `already_probed` records which `(provider, base_url)` pairs were queried,
-/// so each is touched at most once per session: a dead upstream is not
-/// re-contacted on every picker open.
-pub async fn fetch_missing_models(
+/// One provider's model-list probe outcome, for the caller to report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderModels {
+    pub provider: String,
+    /// How many ids are configured for this provider after the probe.
+    pub models: usize,
+    /// Whether that differed from what was already configured. A refresh that
+    /// changes nothing is worth saying so rather than reading as a no-op.
+    pub changed: bool,
+    /// Configured ids the endpoint did not list, which an additive probe keeps.
+    /// Reported rather than dropped: see [`Roster::Additive`].
+    pub kept_unlisted: usize,
+}
+
+/// What a probe does with configured ids the endpoint did not list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Roster {
+    /// The answer is the roster: an id it omits is dropped. Only the explicit
+    /// refresh, which the user asked for and whose summary reports the result.
+    Replace,
+    /// New ids are added and configured ones are kept. Merely opening `/model`
+    /// runs a probe, and a permission-scoped or paginated `/models` answering
+    /// with a subset must not delete a hand-added alias from
+    /// `~/.jan/config.toml` with no confirmation and no way to re-add it.
+    Additive,
+}
+
+/// What a model-list probe did across every provider it touched.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelRefresh {
+    /// Providers whose endpoint answered, in name order.
+    pub listed: Vec<ProviderModels>,
+    /// `(provider, reason)` for each endpoint that could not be listed. Never
+    /// fatal: one dead credential must not block the rest.
+    pub failed: Vec<(String, String)>,
+    /// `default_model`, when this refresh is what stopped a provider from
+    /// offering it. A retired model otherwise surfaces as a 404 on the next
+    /// run, with nothing to connect it to the refresh that dropped it.
+    pub retired_default: Option<String>,
+}
+
+impl ModelRefresh {
+    /// Whether any provider's roster changed: on disk, or in the session-scoped
+    /// provider's in-memory overlay. Either way the caller's provider snapshot
+    /// is stale.
+    pub fn changed_any(&self) -> bool {
+        self.listed.iter().any(|p| p.changed)
+    }
+
+    /// One-line summary for a note or a terminal line.
+    pub fn summary(&self) -> String {
+        let mut parts: Vec<String> = self
+            .listed
+            .iter()
+            .map(|p| {
+                let suffix = if p.changed { "" } else { ", unchanged" };
+                let plural = if p.models == 1 { "" } else { "s" };
+                let kept = if p.kept_unlisted > 0 {
+                    format!(
+                        ", {} kept but no longer listed - `jan cli models refresh` drops them",
+                        p.kept_unlisted
+                    )
+                } else {
+                    String::new()
+                };
+                format!("{}: {} model{plural}{suffix}{kept}", p.provider, p.models)
+            })
+            .collect();
+        parts.extend(
+            self.failed
+                .iter()
+                .map(|(provider, reason)| format!("{provider}: {reason}")),
+        );
+        if let Some(model) = &self.retired_default {
+            parts.push(format!(
+                "default model '{model}' is no longer offered - select a different model"
+            ));
+        }
+        if parts.is_empty() {
+            "no providers to refresh".to_string()
+        } else {
+            parts.join(" · ")
+        }
+    }
+}
+
+/// Re-list every reachable provider that has not been probed yet this session,
+/// **adding** what its endpoint serves now to the stored model list. This is
+/// what `/model` runs on its first open: a roster captured at sign-in goes stale
+/// as a router-style endpoint gains and retires models, and the picker is where
+/// that is noticed.
+///
+/// Additive because the user only asked to *see* the picker: a subset answer
+/// (a permission-scoped key, a paginated gateway) would otherwise delete
+/// configured ids unprompted. Dropping one is [`refresh_models`]'s job.
+///
+/// `already_probed` records which `(provider, base_url)` pairs were queried, so
+/// each is touched at most once per session -- a dead upstream must not cost the
+/// picker its full request timeout on every open. The explicit
+/// [`refresh_models`] has no such guard.
+pub async fn refresh_models_once(
     project_root: Option<&std::path::Path>,
     already_probed: &mut std::collections::HashSet<String>,
-) -> Result<bool, String> {
+) -> Result<ModelRefresh, String> {
+    probe_models(project_root, Roster::Additive, |config| {
+        mark_probed(already_probed, config)
+    })
+    .await
+}
+
+/// Re-list every reachable provider (or just `provider`) and rewrite its model
+/// list, **replacing** a configured one. This is the explicit "my provider added
+/// models since I signed in" action -- a router-style endpoint gains and retires
+/// models continuously, and nothing else in the CLI ever re-reads `/models`
+/// after the list is first populated.
+///
+/// Unlike [`refresh_models_once`] there is no once-per-session guard: the user
+/// asked. Per-model metadata (`context_length`, pricing) is cached alongside in
+/// `~/.jan/model_catalog.json` -- see [`super::model_catalog`].
+pub async fn refresh_models(
+    project_root: Option<&std::path::Path>,
+    provider: Option<&str>,
+) -> Result<ModelRefresh, String> {
+    let mut refresh = probe_models(project_root, Roster::Replace, |config| {
+        provider.is_none_or(|name| config.provider == name)
+    })
+    .await?;
+    // A `--provider` that matched nothing is a failed refresh, not an empty
+    // one: without this the caller prints "no providers to refresh" and exits
+    // 0, so a typo (or a Desktop-inherited name, which has no entry in
+    // `~/.jan/config.toml` to rewrite) reads to a script as a complete refresh.
+    if let Some(name) = provider {
+        if refresh.listed.is_empty() && refresh.failed.is_empty() {
+            refresh
+                .failed
+                .push((name.to_string(), unrefreshable_reason(project_root, name)));
+        }
+    }
+    Ok(refresh)
+}
+
+/// List the session-scoped provider's models once, at session start, into the
+/// in-memory overlay ([`super::session_provider`]) -- its roster and prices are
+/// never on disk, so without this a fresh home would start with neither. `None`
+/// when the session has no session-scoped provider, which is every native
+/// launch: no extra request is made then.
+///
+/// The answer replaces whatever the overlay held. `wait` bounds the whole
+/// request: the caller decides how long its startup can afford.
+pub(crate) async fn probe_session_provider(
+    project_root: Option<&std::path::Path>,
+    overrides: &ProviderOverrides,
+    wait: Duration,
+) -> Option<(String, Result<usize, String>)> {
+    let provider = overrides.session_scoped_provider()?.to_string();
+    let outcome = async {
+        let configs = load_provider_configs(project_root, overrides)?;
+        let config = configs
+            .get(&provider)
+            .filter(|c| is_cli_reachable(c))
+            .ok_or_else(|| "no base URL to list them from".to_string())?;
+        let client = reqwest::Client::builder()
+            .timeout(wait)
+            .build()
+            .map_err(|e| e.to_string())?;
+        let base_url = config.base_url.clone().unwrap_or_default();
+        let listing = fetch_models(
+            &client,
+            &base_url,
+            &config.bearer_key_chain(),
+            &listing_headers(config),
+        )
+        .await?;
+        if listing.ids.is_empty() {
+            return Err("the endpoint listed no models".to_string());
+        }
+        let count = listing.ids.len();
+        super::session_provider::record_listing(&provider, listing.ids, listing.info);
+        Ok(count)
+    }
+    .await;
+    Some((provider, outcome))
+}
+
+/// Why `provider` could not be refreshed, for the report above. Reads only
+/// local config: the endpoint was never reached.
+fn unrefreshable_reason(project_root: Option<&std::path::Path>, provider: &str) -> String {
+    let known = load_provider_configs(project_root, &ProviderOverrides::session())
+        .ok()
+        .and_then(|configs| configs.get(provider).cloned());
+    let Some(config) = known else {
+        return "not a configured provider".to_string();
+    };
+    if !is_cli_reachable(&config) {
+        return "no base_url, so the CLI cannot reach it".to_string();
+    }
+    match load_global_config() {
+        Ok(global) if !global.contains_key(provider) => {
+            "inherited from Jan Desktop, so there is no ~/.jan/config.toml entry to refresh"
+                .to_string()
+        }
+        _ => "could not be listed".to_string(),
+    }
+}
+
+/// Record `config` in the once-per-session probe set, answering whether it had
+/// not been probed yet.
+fn mark_probed(
+    already_probed: &mut std::collections::HashSet<String>,
+    config: &ProviderConfig,
+) -> bool {
+    let tag = format!(
+        "{}|{}",
+        config.provider,
+        config.base_url.clone().unwrap_or_default()
+    );
+    already_probed.insert(tag)
+}
+
+/// Query `GET {base_url}/models` for every reachable global provider `select`
+/// accepts, and persist what comes back: ids into `~/.jan/config.toml` and
+/// per-model metadata into the model catalog.
+///
+/// Only providers present in the global store are touched -- writing a
+/// models-only entry for a Desktop-inherited provider would shadow it. The one
+/// exception is the session-scoped provider (see
+/// [`ProviderOverrides::session_scoped_provider`]), which is probed wherever its
+/// entry came from and whose answer goes to the in-memory overlay
+/// ([`super::session_provider`]), never to disk. An endpoint that cannot be
+/// listed is reported in [`ModelRefresh::failed`] rather than failing the call,
+/// so one dead credential never blocks the others.
+///
+/// Invariant: the roster written back is computed from `load_provider_configs`,
+/// which applies that overlay. That is safe only because the overlay changes the
+/// session-scoped provider's entry alone, and nothing here writes that provider
+/// back; widening the overlay to another provider would persist it.
+async fn probe_models(
+    project_root: Option<&std::path::Path>,
+    roster: Roster,
+    mut select: impl FnMut(&ProviderConfig) -> bool,
+) -> Result<ModelRefresh, String> {
     let global = load_global_config()?;
-    let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
-    let to_fetch: Vec<(String, String, Vec<String>)> = configs
+    let overrides = ProviderOverrides::session();
+    let scoped = overrides.session_scoped_provider().map(str::to_string);
+    let is_scoped = |provider: &str| scoped.as_deref() == Some(provider);
+    let configs = load_provider_configs(project_root, &overrides)?;
+    let mut to_fetch: Vec<(ProviderConfig, Vec<String>)> = configs
         .values()
-        .filter(|c| {
-            global.contains_key(&c.provider) && is_cli_reachable(c) && c.models.is_empty()
-        })
-        // Probe each provider at most once per session. A provider that still
-        // has an empty list after a probe was unreachable or offered nothing;
-        // re-probing it on every bare `/model` would freeze the render loop
-        // for the full request timeout each time. Filtered before the key is
-        // fetched so a re-open cannot re-prompt for a provider already probed.
-        .filter(|c| {
-            let tag = format!("{}|{}", c.provider, c.base_url.clone().unwrap_or_default());
-            if already_probed.contains(&tag) {
-                return false;
-            }
-            already_probed.insert(tag);
-            true
-        })
+        .filter(|c| (global.contains_key(&c.provider) || is_scoped(&c.provider)) && is_cli_reachable(c))
+        // Filtered before the key is fetched so a re-open cannot re-prompt for
+        // a provider already probed.
+        .filter(|c| select(c))
         .cloned()
         .map(|mut c| {
             hydrate_provider_keys(&mut c);
-            (
-                c.provider.clone(),
-                c.base_url.clone().unwrap_or_default(),
-                c.bearer_key_chain(),
-            )
+            let keys = c.bearer_key_chain();
+            (c, keys)
         })
         .collect();
+    to_fetch.sort_by(|a, b| a.0.provider.cmp(&b.0.provider));
     if to_fetch.is_empty() {
-        return Ok(false);
+        return Ok(ModelRefresh::default());
     }
 
     let client = reqwest::Client::builder()
@@ -315,53 +760,192 @@ pub async fn fetch_missing_models(
     // Probe providers concurrently so a batch of dead upstreams cannot stall
     // the `/model` picker for the sum of their timeouts; the slowest provider
     // bounds the wait.
-    let results = futures::future::join_all(to_fetch.into_iter().map(|(name, base_url, keys)| {
+    let results = futures::future::join_all(to_fetch.into_iter().map(|(config, keys)| {
         let client = &client;
         async move {
-            let models = fetch_models(client, &base_url, &keys).await;
-            (name, base_url, models)
+            let base_url = config.base_url.clone().unwrap_or_default();
+            let headers = listing_headers(&config);
+            let listing = fetch_models(client, &base_url, &keys, &headers).await;
+            (config, listing)
         }
     }))
     .await;
-    let mut populated = false;
-    for (name, _, result) in results {
-        let models = match result {
-            Ok(m) => m,
+
+    let mut catalog = super::model_catalog::load();
+    let mut catalog_dirty = false;
+    let mut refresh = ModelRefresh::default();
+    let default_model = crate::core::agent::global_config::default_model()
+        .ok()
+        .flatten()
+        .filter(|m| !m.trim().is_empty());
+    let mut default_dropped = false;
+    for (config, result) in results {
+        let listing = match result {
+            Ok(listing) => listing,
             Err(e) => {
-                log::warn!("could not list models for provider '{name}': {e}");
+                refresh.failed.push((config.provider, e));
                 continue;
             }
         };
-        if models.is_empty() {
+        // An endpoint that lists nothing is treated as having said nothing:
+        // wiping a working list over an empty answer is never the right guess.
+        if listing.ids.is_empty() {
+            refresh
+                .failed
+                .push((config.provider, "the endpoint listed no models".to_string()));
             continue;
         }
-        crate::core::agent::global_config::set_provider(
-            &name,
-            crate::core::agent::global_config::ProviderUpdate {
-                api_key: None,
-                base_url: None,
-                clear_api_key: false,
-                models: Some(models),
-                api_type: None,
-                ..Default::default()
+        let unlisted: Vec<&String> = config
+            .models
+            .iter()
+            .filter(|m| !listing.ids.contains(m))
+            .collect();
+        let stored = match roster {
+            Roster::Replace => listing.ids.clone(),
+            Roster::Additive => {
+                let mut merged = listing.ids.clone();
+                merged.extend(unlisted.iter().map(|m| (*m).clone()));
+                merged.sort();
+                merged.dedup();
+                merged
+            }
+        };
+        let changed = stored != config.models;
+        // The session's own endpoint: its answer lives in memory for this
+        // process only. `changed` still counts, so the caller reloads and a
+        // model the endpoint added mid-session routes without a restart.
+        if is_scoped(&config.provider) {
+            super::session_provider::record_listing(&config.provider, stored.clone(), listing.info);
+            refresh.listed.push(ProviderModels {
+                provider: config.provider,
+                models: stored.len(),
+                changed,
+                kept_unlisted: match roster {
+                    Roster::Additive => unlisted.len(),
+                    Roster::Replace => 0,
+                },
+            });
+            continue;
+        }
+        // Only a provider that *used to* offer the default can retire it; one
+        // that never listed it says nothing about it either way, and an
+        // additive probe drops nothing at all.
+        if let Some(model) = &default_model {
+            if config.models.contains(model) && !stored.contains(model) {
+                default_dropped = true;
+            }
+        }
+        if changed {
+            crate::core::agent::global_config::set_provider(
+                &config.provider,
+                crate::core::agent::global_config::ProviderUpdate {
+                    models: Some(stored.clone()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        // Metadata is refreshed even when the id list is unchanged: a price or
+        // a context window can move without the roster moving. An answer that
+        // carried no metadata at all leaves the cache alone rather than
+        // clearing it: a degraded id-only response is not a statement that the
+        // windows and prices cached earlier are wrong.
+        if !listing.info.is_empty() {
+            catalog.set_provider(&config.provider, listing.info);
+            catalog_dirty = true;
+        }
+        refresh.listed.push(ProviderModels {
+            provider: config.provider,
+            models: stored.len(),
+            changed,
+            kept_unlisted: match roster {
+                Roster::Additive => unlisted.len(),
+                Roster::Replace => 0,
             },
-        )?;
-        populated = true;
+        });
     }
-    Ok(populated)
+    // Another provider may still serve it, which is not a retirement.
+    if default_dropped {
+        if let Some(model) = default_model {
+            let still_offered = load_global_config()
+                .map(|configs| configs.values().any(|c| c.models.contains(&model)))
+                .unwrap_or(true);
+            if !still_offered {
+                refresh.retired_default = Some(model);
+            }
+        }
+    }
+    if catalog_dirty {
+        if let Err(e) = catalog.save() {
+            // The catalog only ever improves a readout, so a failed write is a
+            // warning: the ids it accompanies are already persisted.
+            log::warn!("could not save the model catalog: {e}");
+        }
+    }
+    Ok(refresh)
+}
+
+/// The headers a `/models` listing for `config` sends besides its key: the
+/// provider's custom headers and the `User-Agent`, the same set inference sends
+/// (reserved names dropped). No correlation ids: a listing belongs to no session.
+pub(crate) fn listing_headers(config: &ProviderConfig) -> Vec<(String, String)> {
+    use crate::core::agent::request_headers::{extras, owned, user_agent};
+    extras(&config.custom_headers, owned(user_agent(), None))
+}
+
+/// [`listing_headers`] for a provider known only by id -- a sign-in, which
+/// holds a provider definition rather than a resolved config: its configured
+/// headers, with the session's `JAN_CUSTOM_HEADERS` on top when the session
+/// names it. Read from `~/.jan/config.toml` directly, so no credential store
+/// is touched on the way.
+pub(crate) fn listing_headers_for(provider: &str) -> Vec<(String, String)> {
+    let mut config = load_global_config()
+        .ok()
+        .and_then(|configs| configs.get(provider).cloned())
+        .unwrap_or_default();
+    let session = ProviderOverrides::session();
+    if session.explicit_provider_name() == Some(provider) {
+        merge_custom_headers(&mut config.custom_headers, &session.headers);
+    }
+    listing_headers(&config)
+}
+
+/// Layer `headers` over `existing`: a header of the same name, in any case, is
+/// replaced, so an environment header beats a configured one.
+fn merge_custom_headers(
+    existing: &mut Vec<crate::core::state::ProviderCustomHeader>,
+    headers: &[(String, String)],
+) {
+    for (name, value) in headers {
+        existing.retain(|h| !h.header.eq_ignore_ascii_case(name));
+        existing.push(crate::core::state::ProviderCustomHeader {
+            header: name.clone(),
+            value: value.clone(),
+        });
+    }
+}
+
+/// What one `/models` response carried: the ids the config stores, plus the
+/// per-model metadata the catalog caches.
+struct ModelListing {
+    ids: Vec<String>,
+    info: std::collections::BTreeMap<String, super::model_catalog::ModelInfo>,
 }
 
 /// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
 /// each key in the chain on 401/403, matching upstream resolution) and return
-/// the parsed, sorted, deduped ids from the response body. A provider with no
-/// key (a keyless local endpoint) is queried unauthenticated. A remote
-/// plaintext-`http` base URL is rejected up front so a bearer key is never
-/// sent over a cleartext connection (loopback `http` is allowed).
+/// the parsed, sorted, deduped ids from the response body plus whatever
+/// per-model metadata it reported. A provider with no key (a keyless local
+/// endpoint) is queried unauthenticated. A remote plaintext-`http` base URL is
+/// rejected up front so a bearer key is never sent over a cleartext connection
+/// (loopback `http` is allowed). `headers` are sent too (see
+/// [`listing_headers`]): a gateway that requires a header for inference
+/// usually requires it for the listing.
 async fn fetch_models(
     client: &reqwest::Client,
     base_url: &str,
     keys: &[String],
-) -> Result<Vec<String>, String> {
+    headers: &[(String, String)],
+) -> Result<ModelListing, String> {
     if !(base_url.starts_with("https://")
         || (base_url.starts_with("http://") && is_loopback_url(base_url)))
     {
@@ -378,6 +962,9 @@ async fn fetch_models(
     };
     for key in attempts {
         let mut request = client.get(&url);
+        for (name, value) in headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
         if let Some(key) = key {
             request = request.header("Authorization", format!("Bearer {key}"));
         }
@@ -390,7 +977,10 @@ async fn fetch_models(
             let body = response.text().await.unwrap_or_default();
             let parsed: serde_json::Value = serde_json::from_str(&body)
                 .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
-            return Ok(super::tokamak::parse_models(&parsed));
+            return Ok(ModelListing {
+                ids: super::tokamak::parse_models(&parsed),
+                info: super::model_catalog::parse_listing(&parsed),
+            });
         }
         if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
             // A non-auth error (rate limit, upstream down) won't be fixed by
@@ -415,17 +1005,51 @@ pub fn load_provider_configs(
     project_root: Option<&std::path::Path>,
     overrides: &ProviderOverrides,
 ) -> Result<HashMap<String, ProviderConfig>, String> {
+    load_provider_configs_with_sources(project_root, overrides).map(|(configs, _)| configs)
+}
+
+/// Providers by id, and which layer each one's base URL came from.
+pub(crate) type LayeredConfigs = (HashMap<String, ProviderConfig>, HashMap<String, BaseUrlSource>);
+
+/// [`load_provider_configs`], plus which layer each provider's base URL came
+/// from (for `jan cli agent status`). One implementation, so the reported
+/// source can never describe a different layering than the one that ran.
+///
+/// The session-scoped provider's roster is the in-memory overlay's
+/// ([`super::session_provider::apply_roster`]). Safe here because nothing
+/// writes a config back from this map: config writes merge into
+/// `global_config::load_raw`, and the one writer that computes a roster from
+/// this map, `probe_models`, never writes the session-scoped provider.
+pub(crate) fn load_provider_configs_with_sources(
+    project_root: Option<&std::path::Path>,
+    overrides: &ProviderOverrides,
+) -> Result<LayeredConfigs, String> {
     let mut configs = load_global_config()?;
+    let mut sources: HashMap<String, BaseUrlSource> = configs
+        .keys()
+        .map(|name| (name.clone(), BaseUrlSource::Config))
+        .collect();
 
-    inherit_desktop_providers(&mut configs);
-
-    if let Some(root) = project_root {
-        apply_local_override(&mut configs, root)?;
+    for name in inherit_desktop_providers(&mut configs) {
+        sources.insert(name, BaseUrlSource::Desktop);
     }
 
-    apply_overrides(&mut configs, overrides);
+    if let Some(root) = project_root {
+        if let Some(name) = apply_local_override(&mut configs, root)? {
+            sources.insert(name, BaseUrlSource::Project);
+        }
+    }
+
+    if let Some((name, source)) = apply_overrides(&mut configs, overrides) {
+        let source = match source {
+            OverrideSource::Flag => BaseUrlSource::Flag,
+            OverrideSource::Env => BaseUrlSource::Env,
+        };
+        sources.insert(name, source);
+    }
+    super::session_provider::apply_roster(&mut configs, overrides);
     seed_from_credential_store(&mut configs);
-    Ok(configs)
+    Ok((configs, sources))
 }
 
 /// Fill a login-created provider's key chain from the auth credential store
@@ -461,15 +1085,20 @@ fn seed_from_credential_store(configs: &mut HashMap<String, ProviderConfig>) {
 /// providers a run will never select. Keys are fetched by
 /// [`hydrate_provider_keys`] for the one provider that is actually used;
 /// [`has_stored_key`] answers presence without touching the secret.
-fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
+fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) -> Vec<String> {
     let path = resolve_jan_data_folder().join("settings.json");
     let desktop_configs = match std::fs::read_to_string(&path) {
         Ok(raw) => parse_provider_store(&raw),
-        Err(_) => return,
+        Err(_) => return Vec::new(),
     };
+    let mut inherited = Vec::new();
     for (name, cfg) in desktop_configs {
-        configs.entry(name).or_insert(cfg);
+        if let std::collections::hash_map::Entry::Vacant(slot) = configs.entry(name.clone()) {
+            slot.insert(cfg);
+            inherited.push(name);
+        }
     }
+    inherited
 }
 
 /// Apply the project's `agent.toml` `[provider]` section, if present. Highest
@@ -478,15 +1107,16 @@ fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
 fn apply_local_override(
     configs: &mut HashMap<String, ProviderConfig>,
     project_root: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let cfg = match crate::core::agent::project::load_agent_config(project_root) {
         Ok(cfg) => cfg,
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(None),
     };
-    if let Some(section) = cfg.provider {
-        configs.insert(section.name.clone(), provider_config_from_section(section));
-    }
-    Ok(())
+    Ok(cfg.provider.map(|section| {
+        let name = section.name.clone();
+        configs.insert(name.clone(), provider_config_from_section(section));
+        name
+    }))
 }
 
 fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
@@ -498,6 +1128,7 @@ fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
         custom_headers: Vec::new(),
         models: section.models,
         api_type: section.api_type,
+        compaction_ratio: section.compaction_ratio,
     }
 }
 
@@ -631,36 +1262,68 @@ fn provider_from_json(p: &serde_json::Value) -> Option<ProviderConfig> {
         custom_headers: Vec::new(),
         models,
         api_type,
+        compaction_ratio: None,
     })
 }
 
-/// Inject the override API key into the targeted provider(s). When a provider
-/// is named but absent from the store, a minimal config is synthesized so the
-/// CLI can reach it purely from flags/env.
-fn apply_overrides(configs: &mut HashMap<String, ProviderConfig>, overrides: &ProviderOverrides) {
-    let Some(api_key) = &overrides.api_key else {
-        return;
-    };
-    match &overrides.provider {
-        Some(provider) => {
-            let cfg = configs
-                .entry(provider.clone())
-                .or_insert_with(|| ProviderConfig {
-                    provider: provider.clone(),
-                    api_key: None,
-                    api_keys: Vec::new(),
-                    base_url: None,
-                    custom_headers: Vec::new(),
-                    models: Vec::new(),
-                    api_type: None,
-                });
-            set_key(cfg, api_key);
-        }
-        None => {
-            for cfg in configs.values_mut() {
+/// Inject the override API key into the targeted provider(s), and the base URL
+/// and headers into an explicitly named one. When a provider is named but
+/// absent from the store, a minimal config is synthesized so the CLI can reach
+/// it purely from flags/env -- reachable once a base URL is given.
+///
+/// Each part applies on its own: a base URL with no key (a keyless gateway, or
+/// a key the store already holds) is as valid as a key with no base URL.
+/// Returns the provider whose base URL an override set, and which override did.
+fn apply_overrides(
+    configs: &mut HashMap<String, ProviderConfig>,
+    overrides: &ProviderOverrides,
+) -> Option<(String, OverrideSource)> {
+    if let Some(api_key) = &overrides.api_key {
+        match &overrides.provider {
+            Some(provider) => {
+                let cfg = configs
+                    .entry(provider.clone())
+                    .or_insert_with(|| synthesized(provider));
                 set_key(cfg, api_key);
             }
+            None => {
+                for cfg in configs.values_mut() {
+                    set_key(cfg, api_key);
+                }
+            }
         }
+    }
+    let provider = overrides.explicit_provider_name()?;
+    let mut base_url_set = None;
+    if let Some(base_url) = &overrides.base_url {
+        configs
+            .entry(provider.to_string())
+            .or_insert_with(|| synthesized(provider))
+            .base_url = Some(base_url.clone());
+        base_url_set = Some((
+            provider.to_string(),
+            overrides.base_url_source.unwrap_or(OverrideSource::Flag),
+        ));
+    }
+    // Headers alone do not conjure an entry: with neither a key nor a base URL
+    // there is nothing to send them to.
+    if let Some(cfg) = configs.get_mut(provider) {
+        merge_custom_headers(&mut cfg.custom_headers, &overrides.headers);
+    }
+    base_url_set
+}
+
+/// A minimal entry for a provider named only by flags/env.
+fn synthesized(provider: &str) -> ProviderConfig {
+    ProviderConfig {
+        provider: provider.to_string(),
+        api_key: None,
+        api_keys: Vec::new(),
+        base_url: None,
+        custom_headers: Vec::new(),
+        models: Vec::new(),
+        api_type: None,
+        compaction_ratio: None,
     }
 }
 
@@ -737,6 +1400,7 @@ mod tests {
         let ov = ProviderOverrides {
             provider: Some("openai".to_string()),
             api_key: Some("sk-new".to_string()),
+            ..Default::default()
         };
         apply_overrides(&mut configs, &ov);
         let openai = configs.get("openai").unwrap();
@@ -750,6 +1414,7 @@ mod tests {
         let ov = ProviderOverrides {
             provider: Some("anthropic".to_string()),
             api_key: Some("sk-ant".to_string()),
+            ..Default::default()
         };
         apply_overrides(&mut configs, &ov);
         assert_eq!(
@@ -764,6 +1429,7 @@ mod tests {
         let ov = ProviderOverrides {
             provider: None,
             api_key: Some("shared".to_string()),
+            ..Default::default()
         };
         apply_overrides(&mut configs, &ov);
         assert!(configs
@@ -1108,7 +1774,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_missing_models_populates_and_persists_empty_providers() {
+    fn refresh_models_once_populates_and_persists_empty_providers() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let addr = models_stub(
                 serde_json::json!({"data": [{"id": "m-b"}, {"id": "m-a"}]}).to_string(),
@@ -1128,7 +1794,13 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            let populated = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated);
 
             let configs = load_global_config().unwrap();
@@ -1140,34 +1812,170 @@ mod tests {
         });
     }
 
+    /// A stored list is no longer sacred: the first `/model` open of a session
+    /// re-lists a provider that already names models, which is the only way a
+    /// roster captured at sign-in ever picks up what the endpoint added since.
     #[test]
-    fn fetch_missing_models_leaves_configured_lists_alone() {
+    fn refresh_models_once_re_lists_a_configured_provider() {
         crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}, {"id": "my-model"}]}).to_string(),
+                1,
+            );
             crate::core::agent::global_config::set_provider(
                 "chosen",
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
-                    base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
-                    clear_api_key: false,
+                    base_url: Some(format!("http://{addr}/v1")),
                     models: Some(vec!["my-model".into()]),
-                    api_type: None,
-                                    ..Default::default()
+                    ..Default::default()
                 },
             )
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            // Nothing to fetch: the provider already names its models, so the
-            // dead endpoint above must never be contacted.
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
-            assert!(!populated);
+            let refreshed = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch");
+            assert!(refreshed.changed_any());
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("chosen").unwrap().models, vec!["my-model".to_string()]);
+            assert_eq!(
+                configs.get("chosen").unwrap().models,
+                vec!["m-new".to_string(), "my-model".to_string()]
+            );
+        });
+    }
+
+    /// Merely opening `/model` runs the automatic probe, so a subset answer (a
+    /// permission-scoped key, a paginated gateway) must not delete a
+    /// hand-configured id from `~/.jan/config.toml`.
+    #[test]
+    fn an_automatic_probe_keeps_an_id_the_endpoint_stopped_listing() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "gpt-4o"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["gpt-4o".into(), "my-alias".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch");
+            assert!(!refreshed.changed_any(), "nothing was added or dropped");
+            assert_eq!(refreshed.listed[0].kept_unlisted, 1);
+            assert!(refreshed.summary().contains("no longer listed"));
+            assert_eq!(
+                load_global_config().unwrap().get("gateway").unwrap().models,
+                vec!["gpt-4o".to_string(), "my-alias".to_string()],
+                "a configured id survives a probe the user did not ask for"
+            );
+        });
+    }
+
+    /// The explicit refresh is the one that drops: the user asked for the
+    /// endpoint's roster, and the summary reports what it did.
+    #[test]
+    fn an_explicit_refresh_drops_an_id_the_endpoint_stopped_listing() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "gpt-4o"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["gpt-4o".into(), "my-alias".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("gateway")))
+                .expect("fetch");
+            assert!(refreshed.changed_any());
+            assert_eq!(refreshed.listed[0].kept_unlisted, 0);
+            assert_eq!(
+                load_global_config().unwrap().get("gateway").unwrap().models,
+                vec!["gpt-4o".to_string()]
+            );
+        });
+    }
+
+    /// `--provider` naming nothing refreshable is a failure, not an empty
+    /// refresh: the caller's exit code reads `failed`, and a typo that exits 0
+    /// tells a script the refresh completed.
+    #[test]
+    fn refreshing_an_unknown_provider_is_reported_as_failed() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("typo")))
+                .expect("call");
+            assert!(refreshed.listed.is_empty());
+            assert_eq!(
+                refreshed.failed,
+                vec![("typo".to_string(), "not a configured provider".to_string())]
+            );
+        });
+    }
+
+    /// A degraded answer that lists ids and no metadata is not a statement that
+    /// the cached windows and prices are wrong, so it must not clear them.
+    #[test]
+    fn an_id_only_listing_keeps_the_cached_metadata() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-a".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let mut catalog = super::super::model_catalog::Catalog::default();
+            catalog.set_provider(
+                "gateway",
+                std::collections::BTreeMap::from([(
+                    "m-a".to_string(),
+                    super::super::model_catalog::ModelInfo {
+                        context_length: Some(200_000),
+                        ..Default::default()
+                    },
+                )]),
+            );
+            catalog.save().unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(refresh_models(None, Some("gateway")))
+                .expect("fetch");
+            assert_eq!(
+                super::super::model_catalog::load()
+                    .get(Some("gateway"), "m-a")
+                    .and_then(|i| i.context_length),
+                Some(200_000)
+            );
         });
     }
 
     #[test]
-    fn fetch_missing_models_queries_keyless_loopback_providers() {
+    fn refresh_models_once_queries_keyless_loopback_providers() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let addr = models_stub(
                 serde_json::json!({"data": [{"id": "local-model"}]}).to_string(),
@@ -1187,10 +1995,19 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            let populated = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated, "a keyless endpoint is queried unauthenticated");
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+            assert_eq!(
+                configs.get("local").unwrap().models,
+                vec!["local-model".to_string()]
+            );
         });
     }
 
@@ -1199,7 +2016,7 @@ mod tests {
     /// implementation (probe one to completion before starting the next)
     /// deadlocks into its 15s timeout and populates only one provider.
     #[test]
-    fn fetch_missing_models_probes_concurrently() {
+    fn refresh_models_once_probes_concurrently() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
             let stub = |models: &str| {
@@ -1240,17 +2057,282 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let populated = rt
-                .block_on(fetch_missing_models(None, &mut std::collections::HashSet::new()))
-                .expect("fetch");
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated);
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("prov-a").unwrap().models, vec!["model-a".to_string()]);
-            assert_eq!(configs.get("prov-b").unwrap().models, vec!["model-b".to_string()]);
+            assert_eq!(
+                configs.get("prov-a").unwrap().models,
+                vec!["model-a".to_string()]
+            );
+            assert_eq!(
+                configs.get("prov-b").unwrap().models,
+                vec!["model-b".to_string()]
+            );
+        });
+    }
+
+    /// The point of the refresh: a provider whose list was captured at sign-in
+    /// picks up models the endpoint has gained since, and its per-model
+    /// metadata is cached alongside for `/context` and `/usage`.
+    #[test]
+    fn refresh_models_replaces_a_configured_list_and_caches_metadata() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [
+                    {"id": "anthropic/claude-opus-5", "context_length": 1000000,
+                     "pricing": {"prompt": "0.000005", "completion": "0.000025"}},
+                    {"id": "openai/gpt-oss-120b-medium", "context_length": 131072},
+                ]})
+                .to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["stale-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(refreshed.changed_any());
+            assert_eq!(refreshed.failed, Vec::new());
+            assert_eq!(
+                refreshed.listed,
+                vec![ProviderModels {
+                    provider: "tokamak".to_string(),
+                    models: 2,
+                    changed: true,
+                    kept_unlisted: 0,
+                }]
+            );
+
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("tokamak").unwrap().models,
+                vec![
+                    "anthropic/claude-opus-5".to_string(),
+                    "openai/gpt-oss-120b-medium".to_string()
+                ],
+                "a stale list is replaced, not merged"
+            );
+
+            let catalog = crate::core::cli::model_catalog::load();
+            let info = catalog
+                .get(Some("tokamak"), "anthropic/claude-opus-5")
+                .expect("metadata cached");
+            assert_eq!(info.context_length, Some(1_000_000));
+            assert_eq!(info.prompt_usd, Some(0.000005));
+        });
+    }
+
+    /// A refresh that retires the model `default_model` points at must say so:
+    /// otherwise the next run fails with a 404 nothing connects to the refresh.
+    #[test]
+    fn refresh_models_reports_a_retired_default_model() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-retired".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("m-retired").unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert_eq!(refreshed.retired_default.as_deref(), Some("m-retired"));
+            assert!(refreshed.summary().contains("no longer offered"));
+        });
+    }
+
+    /// A default still served by some other provider was not retired, so the
+    /// warning must stay quiet.
+    #[test]
+    fn a_default_another_provider_still_serves_is_not_retired() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["shared".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_provider(
+                "backup",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://other.example/v1".into()),
+                    models: Some(vec!["shared".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("shared").unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("prov")))
+                .expect("refresh");
+            assert_eq!(refreshed.retired_default, None);
+        });
+    }
+
+    /// A refresh that finds the same roster must say so rather than reading as
+    /// a failure, and must not rewrite the config.
+    #[test]
+    fn refresh_models_reports_an_unchanged_roster() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-a".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(!refreshed.changed_any());
+            assert_eq!(refreshed.listed[0].models, 1);
+            assert!(
+                refreshed.summary().contains("unchanged"),
+                "{}",
+                refreshed.summary()
+            );
+        });
+    }
+
+    /// One dead upstream must not cost the others their refresh, and must be
+    /// reported rather than silently dropped.
+    #[test]
+    fn refresh_models_reports_failures_without_blocking_the_rest() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            for (name, base) in [
+                ("alive", format!("http://{addr}/v1")),
+                ("dead", "http://127.0.0.1:9/v1".to_string()),
+            ] {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(base),
+                        models: Some(vec![]),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            }
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert_eq!(refreshed.listed.len(), 1);
+            assert_eq!(refreshed.listed[0].provider, "alive");
+            assert_eq!(refreshed.failed.len(), 1);
+            assert_eq!(refreshed.failed[0].0, "dead");
+        });
+    }
+
+    /// `--provider` scopes the probe: nothing else is contacted, which is what
+    /// keeps a refresh of one provider from waiting on every other one.
+    #[test]
+    fn refresh_models_can_target_one_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "wanted",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            // A dead endpoint that must never be contacted.
+            crate::core::agent::global_config::set_provider(
+                "other",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("wanted")))
+                .expect("refresh");
+            assert_eq!(refreshed.listed.len(), 1);
+            assert!(
+                refreshed.failed.is_empty(),
+                "the other provider is untouched"
+            );
+        });
+    }
+
+    /// An endpoint that answers with an empty roster must not wipe a working
+    /// list: "nothing listed" is far more often an outage than a retirement.
+    #[test]
+    fn refresh_models_never_wipes_a_list_over_an_empty_answer() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": []}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["keep-me".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(refreshed.listed.is_empty());
+            assert_eq!(refreshed.failed.len(), 1);
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("prov").unwrap().models,
+                vec!["keep-me".to_string()]
+            );
         });
     }
 
     #[test]
-    fn fetch_missing_models_short_circuits_already_probed() {
+    fn refresh_models_once_short_circuits_already_probed() {
         crate::core::agent::global_config::with_temp_home(|_| {
             // A dead endpoint: if it were contacted, the 15s timeout would hang.
             crate::core::agent::global_config::set_provider(
@@ -1270,16 +2352,18 @@ mod tests {
             let mut probed = std::collections::HashSet::new();
             // First probe hits the dead endpoint (fast refusal) and warns.
             let populated = rt
-                .block_on(fetch_missing_models(None, &mut probed))
-                .expect("fetch");
+                .block_on(refresh_models_once(None, &mut probed))
+                .expect("fetch")
+                .changed_any();
             assert!(!populated);
             assert_eq!(probed.len(), 1, "dead provider is recorded as probed");
 
             // A second fetch must not re-contact the dead endpoint at all
             // (the probed set short-circuits it), and must not error.
             let again = rt
-                .block_on(fetch_missing_models(None, &mut probed))
-                .expect("second fetch");
+                .block_on(refresh_models_once(None, &mut probed))
+                .expect("second fetch")
+                .changed_any();
             assert!(!again, "already-probed provider is not re-fetched");
         });
     }
@@ -1433,12 +2517,567 @@ mod tests {
                 let overrides = ProviderOverrides {
                     provider: Some("deepseek".into()),
                     api_key: Some("sk-flag".into()),
+                    ..Default::default()
                 };
                 let configs = load_provider_configs(None, &overrides).unwrap();
                 assert_eq!(
                     configs.get("deepseek").unwrap().bearer_key_chain(),
                     vec!["sk-flag".to_string()]
                 );
+            });
+        });
+    }
+
+    // ── Run-time overrides for gateways ─────────────────────────────────────
+
+    fn env_of(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        move |name| map.get(name).cloned()
+    }
+
+    fn named(provider: &str) -> ProviderOverrides {
+        ProviderOverrides {
+            provider: Some(provider.to_string()),
+            explicit_provider: true,
+            ..Default::default()
+        }
+    }
+
+    /// The Desktop selection defaults `provider` for the key fallback only: a
+    /// gateway URL or headers must never be pointed at whatever Desktop last
+    /// had selected.
+    #[test]
+    fn a_desktop_default_provider_does_not_count_as_named() {
+        let env = env_of(&[
+            ("JAN_BASE_URL", "https://api-stag.tokamak.sh/v1"),
+            ("JAN_CUSTOM_HEADERS", "X-Client-Name: jan-agent"),
+            ("TOKAMAK_API_KEY", "tk-env"),
+        ]);
+        let defaulted = ProviderOverrides {
+            provider: Some("tokamak".into()),
+            ..Default::default()
+        }
+        .with_env_from(&env);
+        assert_eq!(defaulted.api_key.as_deref(), Some("tk-env"), "the key fallback stays");
+        assert_eq!(defaulted.base_url, None);
+        assert!(defaulted.headers.is_empty());
+        assert_eq!(defaulted.session_scoped_provider(), None);
+
+        let explicit = named("tokamak").with_env_from(&env);
+        assert_eq!(explicit.base_url.as_deref(), Some("https://api-stag.tokamak.sh/v1"));
+        assert_eq!(explicit.base_url_source, Some(OverrideSource::Env));
+        assert_eq!(
+            explicit.headers,
+            vec![("X-Client-Name".to_string(), "jan-agent".to_string())]
+        );
+        assert_eq!(explicit.session_scoped_provider(), Some("tokamak"));
+    }
+
+    /// `JAN_API_KEY` keeps its old meaning (every provider, or the targeted
+    /// one), and on its own scopes nothing to the session.
+    #[test]
+    fn jan_api_key_alone_scopes_nothing() {
+        let env = env_of(&[("JAN_API_KEY", "shared")]);
+        let unnamed = ProviderOverrides::default().with_env_from(&env);
+        assert_eq!(unnamed.api_key.as_deref(), Some("shared"));
+        assert_eq!(unnamed.session_scoped_provider(), None);
+        let named = named("openai").with_env_from(&env);
+        assert_eq!(named.api_key.as_deref(), Some("shared"));
+        assert_eq!(named.session_scoped_provider(), Some("openai"));
+    }
+
+    #[test]
+    fn the_base_url_flag_beats_the_env() {
+        let overrides = ProviderOverrides {
+            base_url: Some("https://flag.example/v1".into()),
+            base_url_source: Some(OverrideSource::Flag),
+            ..named("gw")
+        }
+        .with_env_from(env_of(&[("JAN_BASE_URL", "https://env.example/v1")]));
+        assert_eq!(overrides.base_url.as_deref(), Some("https://flag.example/v1"));
+        assert_eq!(overrides.base_url_source, Some(OverrideSource::Flag));
+    }
+
+    /// A key is never sent over a plaintext remote connection, whichever way
+    /// the base URL arrived.
+    #[test]
+    fn a_base_url_must_be_https_or_loopback() {
+        assert_eq!(
+            parse_base_url(" https://api-stag.tokamak.sh/v1/ ").as_deref(),
+            Ok("https://api-stag.tokamak.sh/v1")
+        );
+        assert_eq!(
+            parse_base_url("http://127.0.0.1:8080/v1").as_deref(),
+            Ok("http://127.0.0.1:8080/v1")
+        );
+        assert!(parse_base_url("http://gateway.example/v1").is_err());
+        assert!(parse_base_url("not a url").is_err());
+        assert!(parse_base_url("ftp://files.example").is_err());
+        // From the environment an unusable value is ignored, not half-applied.
+        let ignored = named("gw").with_env_from(env_of(&[("JAN_BASE_URL", "http://gw.example/v1")]));
+        assert_eq!(ignored.base_url, None);
+    }
+
+    #[test]
+    fn custom_headers_parse_like_claudes() {
+        let headers = parse_custom_headers(
+            "X-Client-Name: jan-agent\r\nX-Tokamak-Launch-Id:  abc \n\n\
+             Authorization: Bearer nope\nno separator here\nBad Name: v\n\
+             x-client-name: again\n",
+        );
+        assert_eq!(
+            headers,
+            vec![
+                ("X-Tokamak-Launch-Id".to_string(), "abc".to_string()),
+                ("x-client-name".to_string(), "again".to_string()),
+            ]
+        );
+    }
+
+    /// A gateway that needs no key (or whose key the store already holds) is
+    /// reachable from a base URL alone, and the entry is synthesized for it.
+    #[test]
+    fn a_keyless_override_synthesizes_a_reachable_entry() {
+        let mut configs = HashMap::new();
+        let source = apply_overrides(
+            &mut configs,
+            &ProviderOverrides {
+                base_url: Some("http://localhost:9999/v1".into()),
+                headers: vec![("X-Team".into(), "infra".into())],
+                ..named("gw")
+            },
+        );
+        assert_eq!(source, Some(("gw".to_string(), OverrideSource::Flag)));
+        let gw = configs.get("gw").expect("synthesized");
+        assert!(is_cli_reachable(gw));
+        assert!(gw.bearer_key_chain().is_empty());
+        assert_eq!(gw.custom_headers.len(), 1);
+    }
+
+    #[test]
+    fn a_base_url_and_headers_reach_only_an_explicit_provider() {
+        let mut configs = parse_provider_store(STORE);
+        configs.get_mut("openai").unwrap().custom_headers = vec![
+            crate::core::state::ProviderCustomHeader {
+                header: "X-Team".into(),
+                value: "from-config".into(),
+            },
+        ];
+        let overrides = ProviderOverrides {
+            provider: Some("openai".into()),
+            base_url: Some("https://gateway.example/v1".into()),
+            headers: vec![("x-team".into(), "from-env".into())],
+            ..Default::default()
+        };
+        assert_eq!(apply_overrides(&mut configs, &overrides), None);
+        let openai = configs.get("openai").unwrap();
+        assert_eq!(openai.base_url.as_deref(), Some("https://api.openai.com/v1"));
+        assert_eq!(openai.custom_headers[0].value, "from-config");
+
+        let explicit = ProviderOverrides {
+            explicit_provider: true,
+            ..overrides
+        };
+        apply_overrides(&mut configs, &explicit);
+        let openai = configs.get("openai").unwrap();
+        assert_eq!(openai.base_url.as_deref(), Some("https://gateway.example/v1"));
+        assert_eq!(openai.custom_headers.len(), 1, "one header per name");
+        assert_eq!(openai.custom_headers[0].value, "from-env", "the env beats the config");
+        // The key the store held survives a base-URL-only override.
+        assert_eq!(openai.api_key, None);
+        assert_eq!(
+            configs.get("anthropic").unwrap().base_url.as_deref(),
+            Some("https://api.anthropic.com/v1"),
+            "no other provider moves"
+        );
+    }
+
+    #[test]
+    fn configured_headers_load_from_config_toml() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let dir = home.join(".jan");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("config.toml"),
+                "[providers.gw]\nbase_url = \"https://gw.example/v1\"\n\
+                 headers = { \"X-Team\" = \"infra\" }\n",
+            )
+            .unwrap();
+            let configs = load_global_config().unwrap();
+            let gw = configs.get("gw").unwrap();
+            assert_eq!(gw.custom_headers.len(), 1);
+            assert_eq!(gw.custom_headers[0].header, "X-Team");
+            // A provider write keeps them.
+            crate::core::agent::global_config::set_provider(
+                "gw",
+                crate::core::agent::global_config::ProviderUpdate {
+                    models: Some(vec!["m".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(load_global_config().unwrap()["gw"].custom_headers.len(), 1);
+        });
+    }
+
+    /// A `/models` stub that also reports each request's head, for asserting
+    /// what a listing sent.
+    fn capturing_stub(
+        body: String,
+        connections: usize,
+    ) -> (std::net::SocketAddr, std::sync::mpsc::Receiver<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(connections) {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 8192];
+                let n = std::io::Read::read(&mut stream, &mut buf).unwrap_or(0);
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+            }
+        });
+        (addr, rx)
+    }
+
+    fn priced_listing(ids: &[&str]) -> String {
+        let data: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|id| {
+                serde_json::json!({
+                    "id": id,
+                    "context_length": 200000,
+                    "pricing": {"prompt": "0.000003", "completion": "0.000015"},
+                })
+            })
+            .collect();
+        serde_json::json!({ "data": data }).to_string()
+    }
+
+    fn session_tokamak(addr: std::net::SocketAddr) -> ProviderOverrides {
+        ProviderOverrides {
+            api_key: Some("tk-session".into()),
+            base_url: Some(format!("http://{addr}/v1")),
+            base_url_source: Some(OverrideSource::Env),
+            headers: vec![("X-Client-Name".into(), "jan-agent".into())],
+            ..named("tokamak")
+        }
+    }
+
+    /// Every file under `home` with its bytes, so a test can prove nothing was
+    /// written -- byte-identical, not merely "still parses".
+    fn home_files(home: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+        fn walk(dir: &std::path::Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if let Ok(bytes) = std::fs::read(&path) {
+                    out.insert(path.to_string_lossy().into_owned(), bytes);
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(home, &mut out);
+        out
+    }
+
+    /// The session's key must survive every rebuild of the provider map:
+    /// before this it was dropped by the first TUI reload and by the `/model`
+    /// probe, which then listed the band with the stored (production) key.
+    #[test]
+    fn session_overrides_survive_every_rebuild() {
+        let (addr, seen) = capturing_stub(priced_listing(&["m-1"]), 1);
+        super::super::session_provider::with_session(session_tokamak(addr), |_| {
+            assert_eq!(ProviderOverrides::session(), session_tokamak(addr));
+            assert!(has_usable_provider(None));
+            let configs = load_provider_configs(None, &ProviderOverrides::session()).unwrap();
+            assert_eq!(
+                configs["tokamak"].bearer_key_chain(),
+                vec!["tk-session".to_string()]
+            );
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(refresh_models_once(None, &mut std::collections::HashSet::new()))
+                .expect("probe");
+            let request = seen.recv_timeout(Duration::from_secs(10)).expect("listed");
+            assert!(request.contains("\r\nauthorization: bearer tk-session\r\n"), "{request}");
+            assert!(request.contains("\r\nx-client-name: jan-agent\r\n"), "{request}");
+        });
+    }
+
+    /// The whole point of the overlay, on a home that has never signed in:
+    /// the band's models and prices are usable -- listed, routable by bare id,
+    /// priced for a spend cap -- and nothing about them reaches a file.
+    #[test]
+    fn a_session_scoped_provider_works_on_a_fresh_home_and_writes_nothing() {
+        let (addr, _seen) = capturing_stub(priced_listing(&["anthropic/claude-x", "m-2"]), 2);
+        super::super::session_provider::with_session(session_tokamak(addr), |home| {
+            let before = home_files(home);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let probed = rt.block_on(probe_session_provider(
+                None,
+                &ProviderOverrides::session(),
+                Duration::from_secs(10),
+            ));
+            assert_eq!(probed, Some(("tokamak".to_string(), Ok(2))));
+
+            let pairs = list_provider_models(None);
+            assert!(
+                pairs.contains(&("tokamak".to_string(), "m-2".to_string())),
+                "the picker lists the band's models: {pairs:?}"
+            );
+            let configs = load_provider_configs(None, &ProviderOverrides::session()).unwrap();
+            assert_eq!(provider_for_model("m-2", &configs).as_deref(), Some("tokamak"));
+            let info = super::super::model_catalog::effective();
+            assert!(info
+                .get(Some("tokamak"), "anthropic/claude-x")
+                .and_then(|i| i.rates())
+                .is_some());
+            let ceiling = super::super::resolve_cost_ceiling(
+                Some(1.0),
+                None,
+                Some("tokamak"),
+                "anthropic/claude-x",
+            )
+            .expect("a priced model can be capped");
+            assert!(ceiling.is_some());
+
+            // The first `/model` open re-lists it, into memory again.
+            let refreshed = rt
+                .block_on(refresh_models_once(None, &mut std::collections::HashSet::new()))
+                .expect("probe");
+            assert_eq!(refreshed.listed.len(), 1);
+            assert_eq!(home_files(home), before, "config.toml and model_catalog.json untouched");
+        });
+    }
+
+    /// A failed startup probe must price nothing: not at the native entry's
+    /// rates for the same id, and not at another provider's, which is what
+    /// `Catalog::get` falls through to for a provider it has never seen.
+    #[test]
+    fn a_failed_startup_probe_prices_nothing() {
+        let overrides = ProviderOverrides {
+            base_url: Some("http://127.0.0.1:9/v1".into()),
+            ..session_tokamak("127.0.0.1:9".parse().unwrap())
+        };
+        super::super::session_provider::with_session(overrides, |_| {
+            let mut catalog = super::super::model_catalog::Catalog::default();
+            for provider in ["openrouter", "tokamak"] {
+                catalog.set_provider(
+                    provider,
+                    super::super::model_catalog::parse_listing(
+                        &serde_json::from_str(&priced_listing(&["anthropic/claude-x"])).unwrap(),
+                    ),
+                );
+            }
+            catalog.save().unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let probed = rt.block_on(probe_session_provider(
+                None,
+                &ProviderOverrides::session(),
+                Duration::from_secs(5),
+            ));
+            assert!(matches!(probed, Some((_, Err(_)))), "{probed:?}");
+
+            let effective = super::super::model_catalog::effective();
+            assert!(effective.get(Some("tokamak"), "anthropic/claude-x").is_none());
+            assert!(super::super::model_catalog::load()
+                .with_session_overlay()
+                .get(Some("tokamak"), "anthropic/claude-x")
+                .is_none());
+            assert!(super::super::resolve_cost_ceiling(
+                Some(1.0),
+                None,
+                Some("tokamak"),
+                "anthropic/claude-x"
+            )
+            .is_err());
+            let configs = load_provider_configs(None, &ProviderOverrides::session()).unwrap();
+            assert!(configs["tokamak"].models.is_empty(), "no roster from another endpoint");
+        });
+    }
+
+    /// The catalog's write paths all start from the disk file, and must stay
+    /// that way: a refresh of another provider, a sign-in to it and a sign-out
+    /// from it each save the whole catalog, and the session's `tokamak` entry
+    /// must not ride along -- absent on a fresh home, the native one otherwise.
+    #[test]
+    fn another_providers_writes_leave_the_tokamak_catalog_entry_alone() {
+        for native in [false, true] {
+            let (band, _b) = capturing_stub(priced_listing(&["band-only"]), 1);
+            let (other, _o) = capturing_stub(priced_listing(&["gpt-x"]), 1);
+            super::super::session_provider::with_session(session_tokamak(band), |home| {
+                crate::core::agent::global_config::set_provider(
+                    "openrouter",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(format!("http://{other}/v1")),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                if native {
+                    crate::core::agent::global_config::set_provider(
+                        "tokamak",
+                        crate::core::agent::global_config::ProviderUpdate {
+                            api_key: Some("tk-native".into()),
+                            base_url: Some("https://api.tokamak.sh/v1".into()),
+                            models: Some(vec!["native-model".into()]),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    let mut catalog = super::super::model_catalog::Catalog::default();
+                    catalog.set_provider(
+                        "tokamak",
+                        super::super::model_catalog::parse_listing(
+                            &serde_json::from_str(&priced_listing(&["native-model"])).unwrap(),
+                        ),
+                    );
+                    catalog.save().unwrap();
+                }
+                let tokamak_entry = || {
+                    let raw = std::fs::read_to_string(home.join(".jan").join("model_catalog.json"))
+                        .unwrap_or_default();
+                    serde_json::from_str::<serde_json::Value>(&raw)
+                        .ok()
+                        .and_then(|v| v["providers"].get("tokamak").cloned())
+                };
+                let config_entry = || load_global_config().unwrap().get("tokamak").cloned().map(|c| (c.models, c.base_url, c.api_key));
+                let (catalog_before, config_before) = (tokamak_entry(), config_entry());
+
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let refreshed = rt
+                    .block_on(refresh_models_once(None, &mut std::collections::HashSet::new()))
+                    .expect("probe");
+                assert_eq!(refreshed.listed.len(), 2, "{refreshed:?}");
+                // The sign-in to another provider and a sign-out from it.
+                super::super::model_catalog::cache_listing(
+                    "openrouter",
+                    &serde_json::from_str(&priced_listing(&["gpt-y"])).unwrap(),
+                );
+                super::super::model_catalog::forget("openrouter");
+
+                assert_eq!(tokamak_entry(), catalog_before, "native={native}");
+                assert_eq!(config_entry(), config_before, "native={native}");
+                assert_eq!(catalog_before.is_some(), native);
+            });
+        }
+    }
+
+    /// The exception to "only global providers are probed" is the
+    /// session-scoped provider alone: a Desktop-inherited or project provider
+    /// is still never probed (and so never has its key read from the keychain,
+    /// nor a models-only entry written that would shadow it).
+    #[test]
+    fn desktop_and_project_providers_are_still_not_probed() {
+        with_temp_secrets(|| {
+            let (band, _seen) = capturing_stub(priced_listing(&["m"]), 1);
+            super::super::session_provider::with_session(session_tokamak(band), |home| {
+                let store = r#"{"model-provider":"{\"state\":{\"providers\":[{\"provider\":\"desk\",\"base_url\":\"http://127.0.0.1:9/v1\",\"models\":[{\"id\":\"d\"}]}]}}"}"#;
+                let data = crate::core::app::commands::resolve_jan_data_folder();
+                std::fs::create_dir_all(&data).unwrap();
+                std::fs::write(data.join("settings.json"), store).unwrap();
+                let project = tempfile::tempdir().unwrap();
+                let agent_toml = crate::core::agent::project::agent_toml_path(project.path());
+                std::fs::create_dir_all(agent_toml.parent().unwrap()).unwrap();
+                std::fs::write(
+                    &agent_toml,
+                    "[provider]\nname = \"proj\"\nbase_url = \"http://127.0.0.1:9/v1\"\n",
+                )
+                .unwrap();
+                let before = home_files(home);
+
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let refreshed = rt
+                    .block_on(refresh_models_once(
+                        Some(project.path()),
+                        &mut std::collections::HashSet::new(),
+                    ))
+                    .expect("probe");
+                let touched: Vec<&str> = refreshed
+                    .listed
+                    .iter()
+                    .map(|p| p.provider.as_str())
+                    .chain(refreshed.failed.iter().map(|(p, _)| p.as_str()))
+                    .collect();
+                assert_eq!(touched, vec!["tokamak"]);
+                assert_eq!(home_files(home), before);
+            });
+        });
+    }
+
+    /// Neither `JAN_API_KEY` alone nor a Desktop-default provider's key makes a
+    /// provider session-scoped, so those users keep persisting what a refresh
+    /// finds, exactly as before.
+    #[test]
+    fn keys_that_scope_nothing_still_persist_refresh_results() {
+        for overrides in [
+            ProviderOverrides {
+                api_key: Some("shared".into()),
+                ..Default::default()
+            },
+            ProviderOverrides {
+                provider: Some("prov".into()),
+                api_key: Some("desktop-default".into()),
+                ..Default::default()
+            },
+        ] {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            super::super::session_provider::with_session(overrides, |_| {
+                crate::core::agent::global_config::set_provider(
+                    "prov",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        base_url: Some(format!("http://{addr}/v1")),
+                        models: Some(vec![]),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                let refreshed = rt
+                    .block_on(refresh_models_once(None, &mut std::collections::HashSet::new()))
+                    .expect("probe");
+                assert!(refreshed.changed_any());
+                assert_eq!(load_global_config().unwrap()["prov"].models, vec!["m-a".to_string()]);
+            });
+        }
+    }
+
+    /// `provider_is_signed_in` asks about an arbitrary provider: the session's
+    /// key answers only for the provider it was given for.
+    #[test]
+    fn the_session_key_signs_in_only_its_own_provider() {
+        with_temp_secrets(|| {
+            let overrides = ProviderOverrides {
+                api_key: Some("sk-or".into()),
+                ..named("openrouter")
+            };
+            super::super::session_provider::with_session(overrides, |_| {
+                for name in ["openrouter", "deepseek"] {
+                    crate::core::agent::global_config::set_provider(
+                        name,
+                        crate::core::agent::global_config::ProviderUpdate {
+                            base_url: Some(format!("https://{name}.example/v1")),
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                }
+                assert!(provider_is_signed_in(None, "openrouter"));
+                assert!(!provider_is_signed_in(None, "deepseek"));
             });
         });
     }

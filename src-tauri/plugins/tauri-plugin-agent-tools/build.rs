@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "sandbox_status",
     "subagent_result_reserve",
     "subagent_result_fill",
+    "blackboard_write",
     "attachment_import",
     "execute_tool",
     "execute_tool_streaming",

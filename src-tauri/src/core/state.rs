@@ -42,6 +42,12 @@ pub struct ProviderConfig {
     /// the provider's native API.
     #[serde(default)]
     pub api_type: Option<String>,
+    /// Share of the context window a prompt may fill before a run routed
+    /// through this provider compacts ahead of dispatching. Overrides
+    /// `[agent].compaction_ratio`; `None` inherits it. Sized per provider
+    /// because windows differ by an order of magnitude across them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compaction_ratio: Option<f64>,
 }
 
 impl ProviderConfig {

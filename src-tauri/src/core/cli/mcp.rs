@@ -25,9 +25,11 @@ use tokio::process::Command;
 
 use crate::core::app::commands::resolve_jan_data_folder;
 use crate::core::mcp::models::McpSettings;
-use crate::core::mcp::models::{extract_active_status, extract_command_args};
+use crate::core::mcp::models::{extract_active_status, extract_command_args, McpServerConfig};
 use crate::core::mcp::oauth;
 use crate::core::state::{RunningServiceEnum, SharedMcpServers};
+
+use super::providers::ProviderOverrides;
 
 /// The Jan Browser MCP needs the desktop bridge/lockfile machinery, so it is
 /// never offered or connected from the CLI.
@@ -77,7 +79,23 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
 
     let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    // MCP env/header fields can contain keys entered during plugin setup.
+    std::io::Write::write_all(&mut file, body.as_bytes()).map_err(|e| e.to_string())?;
+    drop(file);
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -445,25 +463,7 @@ async fn connect_in(
             }
         }
         _ => {
-            let mut cmd = Command::new(&params.command);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            #[cfg(unix)]
-            {
-                cmd.process_group(0);
-            }
-            cmd.kill_on_drop(true);
-            for arg in params.args.iter().filter_map(Value::as_str) {
-                cmd.arg(arg);
-            }
-            for (k, v) in params.envs.iter() {
-                if let Some(v) = v.as_str() {
-                    cmd.env(k, v);
-                }
-            }
+            let cmd = stdio_command(&params, &inherited_credentials());
             let (process, _stderr) = TokioChildProcess::builder(cmd)
                 .stderr(Stdio::null())
                 .spawn()
@@ -479,6 +479,73 @@ async fn connect_in(
 
     servers.lock().await.insert(name.to_string(), service);
     Ok(())
+}
+
+/// A stdio server's command: its args, and this process's environment minus
+/// `scrub`, with the server's own `env` entries set last so a server that
+/// needs one of the scrubbed variables can still be given it by name.
+fn stdio_command(params: &McpServerConfig, scrub: &[String]) -> Command {
+    let mut cmd = Command::new(&params.command);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    #[cfg(unix)]
+    {
+        cmd.process_group(0);
+    }
+    cmd.kill_on_drop(true);
+    for arg in params.args.iter().filter_map(Value::as_str) {
+        cmd.arg(arg);
+    }
+    for name in scrub {
+        cmd.env_remove(name);
+    }
+    for (k, v) in params.envs.iter() {
+        if let Some(v) = v.as_str() {
+            cmd.env(k, v);
+        }
+    }
+    cmd
+}
+
+/// The OTLP exporter's header variables. While Jan's own telemetry is on they
+/// hold its collector credentials (a launcher puts its API key there).
+const OTLP_HEADER_VARS: &[&str] = &[
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+    "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+];
+
+/// The variables a stdio MCP server must not inherit from this session: the
+/// credentials Jan was given to reach its own model gateway and collector.
+fn inherited_credentials() -> Vec<String> {
+    credential_vars(
+        ProviderOverrides::session().explicit_provider_name(),
+        crate::core::agent::otel::is_active(),
+    )
+}
+
+/// Deliberately narrow. `JAN_API_KEY`, the explicit `--provider`'s own
+/// `<PROVIDER>_API_KEY` and `JAN_CUSTOM_HEADERS` only ever address Jan's
+/// gateway. A Desktop-selected provider's variable (`OPENAI_API_KEY`, ...) is
+/// left alone, because servers commonly read those for themselves, and so are
+/// the OTLP header variables while Jan exports nothing: they are then the
+/// user's, for a server that exports to its own collector.
+fn credential_vars(explicit_provider: Option<&str>, telemetry_on: bool) -> Vec<String> {
+    let mut names = vec![
+        "JAN_API_KEY".to_string(),
+        super::providers::CUSTOM_HEADERS_ENV.to_string(),
+    ];
+    if let Some(provider) = explicit_provider {
+        names.push(super::providers::provider_key_env(provider));
+    }
+    if telemetry_on {
+        names.extend(OTLP_HEADER_VARS.iter().map(|v| v.to_string()));
+    }
+    names
 }
 
 /// Serve the streamable-http transport over any client that implements it, so
@@ -903,6 +970,87 @@ mod tests {
         assert!(parse_pairs("A=1,broken", "env").is_err());
         assert!(parse_pairs("", "env").unwrap().is_empty());
         assert_eq!(parse_args("npx  -y  my-mcp"), vec!["npx", "-y", "my-mcp"]);
+    }
+
+    #[test]
+    fn gateway_credentials_are_scrubbed_and_a_desktop_providers_key_is_not() {
+        // No explicit provider, no telemetry: only Jan's own gateway variables.
+        assert_eq!(credential_vars(None, false), ["JAN_API_KEY", "JAN_CUSTOM_HEADERS"]);
+
+        // A launcher's session: the named provider's key and, while Jan
+        // exports, its collector headers too.
+        let launched = credential_vars(Some("tokamak"), true);
+        for name in [
+            "JAN_API_KEY",
+            "JAN_CUSTOM_HEADERS",
+            "TOKAMAK_API_KEY",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+            "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+        ] {
+            assert!(launched.iter().any(|n| n == name), "{name} in {launched:?}");
+        }
+        // Keys servers read for themselves stay.
+        assert!(!launched.iter().any(|n| n == "OPENAI_API_KEY" || n == "GITHUB_TOKEN"));
+
+        // Telemetry off: the OTLP headers are the user's, for a server that
+        // exports to its own collector.
+        assert!(!credential_vars(Some("tokamak"), false)
+            .iter()
+            .any(|n| n.starts_with("OTEL_")));
+    }
+
+    #[test]
+    fn a_stdio_server_keeps_its_own_env_over_the_scrub() {
+        let params = extract_command_args(&serde_json::json!({
+            "command": "server",
+            "args": ["--stdio"],
+            "env": { "TOKAMAK_API_KEY": "the-servers-own" },
+        }))
+        .unwrap();
+        let scrub = credential_vars(Some("tokamak"), true);
+        let cmd = stdio_command(&params, &scrub);
+        let envs: std::collections::HashMap<String, Option<String>> = cmd
+            .as_std()
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        assert_eq!(envs.get("JAN_API_KEY"), Some(&None), "removed");
+        assert_eq!(envs.get("OTEL_EXPORTER_OTLP_HEADERS"), Some(&None), "removed");
+        assert_eq!(
+            envs.get("TOKAMAK_API_KEY"),
+            Some(&Some("the-servers-own".to_string())),
+            "a server's explicit env entry is still set"
+        );
+    }
+
+    /// The spawned process really goes without a scrubbed variable it would
+    /// otherwise inherit. `HOME` stands in for a credential: every test
+    /// process has it, so nothing here mutates the shared environment.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_spawned_stdio_server_does_not_inherit_a_scrubbed_variable() {
+        assert!(std::env::var_os("HOME").is_some());
+        let params = extract_command_args(&serde_json::json!({
+            "command": "/usr/bin/env",
+            "args": [],
+            "env": { "JAN_TEST_SERVER_OWN": "kept" },
+        }))
+        .unwrap();
+        let out = stdio_command(&params, &["HOME".to_string()])
+            .output()
+            .await
+            .expect("spawn env");
+        let env = String::from_utf8_lossy(&out.stdout);
+        assert!(!env.lines().any(|l| l.starts_with("HOME=")), "{env}");
+        assert!(env.lines().any(|l| l == "JAN_TEST_SERVER_OWN=kept"), "{env}");
+        assert!(env.lines().any(|l| l.starts_with("PATH=")), "the rest is inherited");
     }
 
     #[test]

@@ -122,6 +122,13 @@ impl AgentStatusReporter {
         Self::default()
     }
 
+    /// The last reported state, or `None` before the first transition. Lets
+    /// the TUI assert what a terminal integration is actually being told.
+    #[cfg(test)]
+    pub fn last_state(&self) -> Option<AgentStatusState> {
+        self.last_state
+    }
+
     /// Start emitting to stdout. Called by the real TUI once the terminal is
     /// set up; unit tests construct `App` through paths that leave it off.
     pub fn enable(&mut self) {

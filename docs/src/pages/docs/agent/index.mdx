@@ -74,6 +74,12 @@ curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
+
+Installs to `%USERPROFILE%\.local\bin`. To also add it to your user `PATH`:
+
+```powershell
+& ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
+```
   </Tabs.Tab>
 </Tabs>
 
@@ -117,7 +123,7 @@ Desktop's [local API server](/docs/desktop/api-server), with `jan config set --b
 ## Staying in control
 
 The agent edits files and runs commands without stopping to ask. File paths are checked against the
-project root, and `.jan/agent/` internals and anything in `[tools] deny` are refused outright - but
+project root, and anything in `[tools] deny` is refused outright - but
 shell commands are not sandboxed by default, so one runs with your own access.
 
 Three ways to change that:

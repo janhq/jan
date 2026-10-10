@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { route } from '@/constants/routes'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
@@ -25,6 +26,7 @@ import {
 } from '@/lib/coworkArtifacts'
 
 export const Route = createFileRoute(route.artifacts as any)({
+  beforeLoad: () => ensureCoworkEnabled(),
   component: ArtifactsPage,
 })
 

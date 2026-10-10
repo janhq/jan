@@ -248,6 +248,7 @@ function General() {
                     <div className="flex items-center gap-2 mt-1">
                       <div className="max-w-100 bg-secondary rounded-sm px-1 py-0.5">
                         <span
+                          data-testid="app-data-folder-path"
                           title={janDataFolder}
                           className="text-xs line-clamp-1 break-all"
                         >

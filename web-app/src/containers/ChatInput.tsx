@@ -865,7 +865,7 @@ const ChatInput = memo(function ChatInput({
       }
       cancelToolCall?.()
       // Aborting the stream/loop only discards a pending tool result; a running
-      // or backgrounded bash keeps executing until its session's shells are
+      // or backgrounded shell keeps executing until its session's shells are
       // killed. Chat's tool thread_id is the chat thread id.
       void cancelAgentThreadBash(threadId)
     },
@@ -2920,6 +2920,7 @@ const ChatInput = memo(function ChatInput({
                     <Button
                       variant="destructive"
                       size="icon-sm"
+                      data-testid="stop-message-button"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
                         // Stopping with messages queued clears the queue —
@@ -2951,6 +2952,7 @@ const ChatInput = memo(function ChatInput({
                   size="icon-sm"
                   disabled={(!prompt.trim() && !hasSendableMedia) || ingestingAny}
                   data-test-id="send-message-button"
+                  data-testid="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"
                 >
