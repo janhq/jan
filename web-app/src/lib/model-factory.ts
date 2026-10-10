@@ -10,8 +10,8 @@
  * - mlx: Local models via MLX-Swift on Apple Silicon (requires running session)
  * - anthropic: Claude models via Anthropic API (@ai-sdk/anthropic v2.0)
  * - google/gemini: Gemini models via Google Generative AI API (@ai-sdk/google v2.0)
- * - openai: OpenAI models via OpenAI API (@ai-sdk/openai)
- * - OpenAI-compatible: Azure, Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, etc.
+ * - openai / azure: OpenAI models via the Responses API (@ai-sdk/openai)
+ * - OpenAI-compatible: Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, etc.
  *
  * Usage:
  * ```typescript
@@ -961,12 +961,15 @@ export class ModelFactory {
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
 
+      // Azure's v1 API serves the OpenAI Responses API at the same base URL.
+      // Its reasoning deployments (gpt-6-*) reject function tools on
+      // /chat/completions, so Azure must not use the compatible route.
       case 'openai':
+      case 'azure':
         return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
         return this.createGoogleModel(modelId, provider, parameters)
-      case 'azure':
       case 'groq':
       case 'together':
       case 'fireworks':
@@ -1242,11 +1245,12 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    // The genuine OpenAI provider always supports the Responses API, so use it
-    // unconditionally: it is a superset of Chat Completions and the only surface
-    // that returns reasoning summaries. Custom OpenAI-compatible providers route
-    // through createOpenAICompatibleModel, not here, so this cannot hit a proxy
-    // that only implements /chat/completions.
+    // The genuine OpenAI provider and Azure's v1 API always support the
+    // Responses API, so use it unconditionally: it is a superset of Chat
+    // Completions and the only surface that returns reasoning summaries. Custom
+    // OpenAI-compatible providers route through createOpenAICompatibleModel,
+    // not here, so this cannot hit a proxy that only implements
+    // /chat/completions.
     return openai.responses(modelId)
   }
 
