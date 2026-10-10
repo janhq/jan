@@ -18,6 +18,10 @@ import {
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
+// Some catalogs list an id more than once (Azure's /models has one entry per
+// model version). The id is the model's identity in Jan, so keep the first.
+const uniqueIds = (ids: string[]): string[] => [...new Set(ids)]
+
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
     // Tauri implementation uses Tauri's fetch to avoid CORS issues
@@ -222,23 +226,29 @@ export class TauriProvidersService extends DefaultProvidersService {
         const data = await response.json()
 
         if (data.data && Array.isArray(data.data)) {
-          return data.data
-            .map((model: { id: string }) => model.id)
-            .filter(Boolean)
+          return uniqueIds(
+            data.data
+              .map((model: { id: string }) => model.id)
+              .filter(Boolean)
+          )
         }
         if (Array.isArray(data)) {
-          return data
-            .filter(Boolean)
-            .map((model) =>
-              typeof model === 'object' && 'id' in model ? model.id : model
-            )
+          return uniqueIds(
+            data
+              .filter(Boolean)
+              .map((model) =>
+                typeof model === 'object' && 'id' in model ? model.id : model
+              )
+          )
         }
         if (data.models && Array.isArray(data.models)) {
-          return data.models
-            .map((model: string | { id: string }) =>
-              typeof model === 'string' ? model : model.id
-            )
-            .filter(Boolean)
+          return uniqueIds(
+            data.models
+              .map((model: string | { id: string }) =>
+                typeof model === 'string' ? model : model.id
+              )
+              .filter(Boolean)
+          )
         }
         console.warn('Unexpected response format from provider API:', data)
         return []
