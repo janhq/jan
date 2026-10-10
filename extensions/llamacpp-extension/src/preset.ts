@@ -614,20 +614,13 @@ export async function generatePreset(
     ) {
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
-    // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
-    const hasMtpModel =
-      typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
-    const hasMtpLayers =
-      typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    const specDecoding = mc.mtp === true && (hasMtpLayers || hasMtpModel)
-
+    
     const modelParallel = explicitParallel(mc.parallel)
     if (modelParallel !== undefined) {
       lines.push(`parallel = ${modelParallel}`)
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     } else if (
-      specDecoding &&
+      isSpecType(mc.spec_type) &&
       explicitParallel(config.parallel) === undefined
     ) {
       // A model with speculative decoding gets one slot when parallel is auto.
