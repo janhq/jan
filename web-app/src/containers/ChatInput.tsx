@@ -477,6 +477,7 @@ const ChatInput = memo(function ChatInput({
     'tools' | 'assistants' | false
   >(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
   // Check if selected model is currently loaded/active
@@ -942,13 +943,13 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
-  const handleAttachDocsIngest = async () => {
+  const handleAttachDocsIngest = async (droppedPaths?: string[]) => {
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
         return
       }
-      const selection = await serviceHub.dialog().open({
+      const selection = droppedPaths ?? await serviceHub.dialog().open({
         multiple: true,
         filters: [
           {
@@ -1889,6 +1890,101 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
+  // Tauri's native file drops provide filesystem paths, while browser drop
+  // events are not consistently delivered by the desktop webview.
+  const nativeDropHandlersRef = useRef({
+    attachDocs: handleAttachDocsIngest,
+    processImages: processImageFiles,
+    attachmentsEnabled,
+    canAttachImages: hasMmproj,
+    canAttachDocs:
+      attachmentsEnabled &&
+      (!selectedModel || !!selectedModel.capabilities?.includes('tools')),
+  })
+  nativeDropHandlersRef.current = {
+    attachDocs: handleAttachDocsIngest,
+    processImages: processImageFiles,
+    attachmentsEnabled,
+    canAttachImages: hasMmproj,
+    canAttachDocs:
+      attachmentsEnabled &&
+      (!selectedModel || !!selectedModel.capabilities?.includes('tools')),
+  }
+
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    void import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
+      if (disposed) return
+      return getCurrentWebviewWindow().onDragDropEvent((event) => {
+        if (event.payload.type === 'leave') {
+          setIsDragOver(false)
+          return
+        }
+        const bounds = dropZoneRef.current?.getBoundingClientRect()
+        const position = event.payload.position
+        const scale = window.devicePixelRatio || 1
+        const inside = !!bounds && position.x / scale >= bounds.left &&
+          position.x / scale <= bounds.right && position.y / scale >= bounds.top &&
+          position.y / scale <= bounds.bottom
+        if (event.payload.type === 'enter' || event.payload.type === 'over') {
+          setIsDragOver(inside)
+          return
+        }
+        setIsDragOver(false)
+        if (!inside || !event.payload.paths.length) return
+
+        const handlers = nativeDropHandlersRef.current
+        if (!handlers.attachmentsEnabled) {
+          toast.info('Attachments are disabled in Settings')
+          return
+        }
+        const imageExts = new Set(['jpg', 'jpeg', 'png'])
+        const images: string[] = []
+        const documents: string[] = []
+        for (const path of event.payload.paths) {
+          const ext = path.split('.').pop()?.toLowerCase() ?? ''
+          ;(imageExts.has(ext) ? images : documents).push(path)
+        }
+        if (images.length && handlers.canAttachImages) {
+          void (async () => {
+            const files: File[] = []
+            const { convertFileSrc } = await import('@tauri-apps/api/core')
+            for (const path of images) {
+              try {
+                const response = await fetch(convertFileSrc(path))
+                if (!response.ok) throw new Error(response.statusText)
+                const name = path.split(/[\\/]/).pop() || 'image'
+                const blob = await response.blob()
+                files.push(new File([blob], name, { type: blob.type || 'image/jpeg' }))
+              } catch (error) {
+                console.error('Failed to read dropped image:', error)
+              }
+            }
+            if (files.length) await handlers.processImages(files)
+          })().catch((error) => console.error('Failed to process dropped images:', error))
+        } else if (images.length) {
+          toast.info('Vision model required', { description: 'Load a vision-capable model to attach images.' })
+        }
+        if (documents.length) {
+          if (handlers.canAttachDocs) {
+            void handlers.attachDocs(documents)
+          } else {
+            toast.info('A tool-capable model is required to attach documents.')
+          }
+        }
+      }).then((cleanup) => {
+        if (disposed) cleanup()
+        else unlisten = cleanup
+      })
+    }).catch((error) => console.warn('Failed to register native file drop listener:', error))
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
+
   const handlePaste = async (e: React.ClipboardEvent) => {
     if (audioSupported) {
       const clipboardItems = e.clipboardData?.items
@@ -2039,6 +2135,7 @@ const ChatInput = memo(function ChatInput({
           )}
 
           <div
+            ref={dropZoneRef}
             className={cn(
               'relative z-20 px-0 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
@@ -2374,8 +2471,11 @@ const ChatInput = memo(function ChatInput({
                     )}
                     {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                     <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
+                      onClick={() => void handleAttachDocsIngest()}
+                      disabled={
+                        !!selectedModel &&
+                        !selectedModel.capabilities?.includes('tools')
+                      }
                     >
                       {ingestingDocs ? (
                         <IconLoader2
