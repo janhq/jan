@@ -26,6 +26,9 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { compareModelsByName } from '@/lib/modelOrder'
+import { SortModelsByNameToggle } from '@/containers/SortModelsByNameToggle'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -72,6 +75,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
+  const sortModelsByName = useInterfaceSettings((s) => s.sortModelsByName)
   const serviceHub = useServiceHub()
 
   // Search state
@@ -313,10 +317,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   // Get favorite models that are currently available
   const favoriteItems = useMemo(() => {
-    return searchableItems.filter((item) =>
+    const items = searchableItems.filter((item) =>
       favoriteModels.some((fav) => fav.id === item.model.id)
     )
-  }, [searchableItems, favoriteModels])
+    return sortModelsByName
+      ? items.sort((a, b) => compareModelsByName(a.model, b.model))
+      : items
+  }, [searchableItems, favoriteModels, sortModelsByName])
 
   // Filter models based on search value
   const filteredItems = useMemo(() => {
@@ -394,8 +401,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       groups[providerKey].push(item)
     })
 
+    if (sortModelsByName) {
+      Object.values(groups).forEach((items) =>
+        items.sort((a, b) => compareModelsByName(a.model, b.model))
+      )
+    }
+
     return groups
-  }, [filteredItems, providers, searchValue, favoriteModels])
+  }, [filteredItems, providers, searchValue, favoriteModels, sortModelsByName])
 
   const handleSelect = useCallback(
     async (searchableModel: SearchableModel) => {
@@ -533,23 +546,22 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       >
         <div className="flex flex-col size-full">
           {/* Search input */}
-          <div className="relative p-2 border-b">
+          <div className="flex items-center gap-1 p-2 border-b">
             <input
               ref={searchInputRef}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               placeholder={t('common:searchModels')}
-              className="text-sm font-normal outline-0"
+              className="flex-1 min-w-0 text-sm font-normal outline-0"
             />
             {searchValue.length > 0 && (
-              <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
-                <IconX
-                  size={16}
-                  className="text-muted-foreground cursor-pointer"
-                  onClick={onClearSearch}
-                />
-              </div>
+              <IconX
+                size={16}
+                className="shrink-0 text-muted-foreground cursor-pointer"
+                onClick={onClearSearch}
+              />
             )}
+            <SortModelsByNameToggle className="shrink-0" />
           </div>
 
           {/* Model list */}
