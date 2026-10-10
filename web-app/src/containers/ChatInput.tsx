@@ -60,6 +60,11 @@ import type { ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import {
+  DOCUMENT_ATTACHMENT_EXTENSIONS,
+  IMAGE_ATTACHMENT_TYPES,
+  isDocumentAttachmentName,
+} from '@/constants/attachments'
+import {
   TEMPORARY_CHAT_ID,
   TEMPORARY_CHAT_QUERY_ID,
   SESSION_STORAGE_KEY,
@@ -953,143 +958,7 @@ const ChatInput = memo(function ChatInput({
         filters: [
           {
             name: 'Documents & Code',
-            extensions: [
-              // Documents
-              'pdf',
-              'docx',
-              'txt',
-              'md',
-              'csv',
-              'xlsx',
-              'xls',
-              'ods',
-              'pptx',
-              'html',
-              'htm',
-              // JavaScript / TypeScript
-              'js',
-              'mjs',
-              'cjs',
-              'ts',
-              'mts',
-              'cts',
-              'jsx',
-              'tsx',
-              // Python
-              'py',
-              'pyw',
-              'pyi',
-              // C / C++
-              'c',
-              'h',
-              'cpp',
-              'cc',
-              'cxx',
-              'hpp',
-              'hh',
-              // Systems languages
-              'rs',
-              'go',
-              'swift',
-              'zig',
-              // JVM languages
-              'java',
-              'kt',
-              'kts',
-              'scala',
-              'groovy',
-              // Scripting languages
-              'rb',
-              'php',
-              'lua',
-              'pl',
-              'r',
-              'jl',
-              // .NET
-              'cs',
-              'fs',
-              'vb',
-              'xaml',
-              'csproj',
-              'sln',
-              // CUDA
-              'cu',
-              'cuh',
-              // Shaders
-              'hlsl',
-              'glsl',
-              'cg',
-              'shader',
-              // Shell
-              'sh',
-              'bash',
-              'zsh',
-              'fish',
-              'ps1',
-              'bat',
-              'cmd',
-              'vbs',
-              // More languages
-              'asm',
-              's',
-              'm',
-              'mm',
-              'pas',
-              'pp',
-              'erl',
-              'hrl',
-              'ex',
-              'exs',
-              'clj',
-              'cljs',
-              'hs',
-              'lhs',
-              'ml',
-              'mli',
-              'f',
-              'f90',
-              // Web
-              'css',
-              'scss',
-              'sass',
-              'less',
-              'vue',
-              'svelte',
-              'astro',
-              'php',
-              'asp',
-              'aspx',
-              'jsp',
-              // Data / config formats
-              'json',
-              'jsonc',
-              'yaml',
-              'yml',
-              'toml',
-              'xml',
-              'ini',
-              'cfg',
-              'conf',
-              'env',
-              'properties',
-              'dockerfile',
-              'makefile',
-              'cmake',
-              'lock',
-              // Query / markup
-              'sql',
-              'graphql',
-              'gql',
-              'tex',
-              'rst',
-              'adoc',
-              'textile',
-              // Misc text
-              'log',
-              'diff',
-              'patch',
-              'gitignore',
-            ],
+            extensions: [...DOCUMENT_ATTACHMENT_EXTENSIONS],
           },
           {
             name: 'All Files',
@@ -1101,85 +970,122 @@ const ChatInput = memo(function ChatInput({
       const paths = Array.isArray(selection) ? selection : [selection]
       if (!paths.length) return
 
-      // Prepare attachments with file sizes
-      const preparedAttachments: Attachment[] = []
-      for (const p of paths) {
-        const name = p.split(/[\\/]/).pop() || p
-        const fileType = name.split('.').pop()?.toLowerCase()
-        let size: number | undefined = undefined
-        try {
-          const stat = await fs.fileStat(p)
-          size = stat?.size ? Number(stat.size) : undefined
-        } catch (e) {
-          console.warn('Failed to read file size for', p, e)
-        }
-        preparedAttachments.push(
-          createDocumentAttachment({
-            name,
-            path: p,
-            fileType,
-            size,
-            parseMode: parsePreference,
-          })
-        )
-      }
-
-      const maxFileSizeBytes =
-        typeof maxFileSizeMB === 'number' && maxFileSizeMB > 0
-          ? maxFileSizeMB * 1024 * 1024
-          : undefined
-
-      if (maxFileSizeBytes !== undefined) {
-        const hasOversized = preparedAttachments.some(
-          (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
-        )
-        if (hasOversized) {
-          toast.error('File too large', {
-            description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
-          })
-          return
-        }
-      }
-
-      let duplicates: string[] = []
-      let newDocAttachments: Attachment[] = []
-
-      setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
-        const existingPaths = new Set(
-          currentAttachments
-            .filter((a) => a.type === 'document' && a.path)
-            .map((a) => a.path)
-        )
-
-        duplicates = []
-        newDocAttachments = []
-
-        for (const att of preparedAttachments) {
-          if (existingPaths.has(att.path)) {
-            duplicates.push(att.name)
-            continue
-          }
-          newDocAttachments.push(att)
-        }
-
-        return newDocAttachments.length > 0
-          ? [...currentAttachments, ...newDocAttachments]
-          : currentAttachments
-      })
-
-      if (duplicates.length > 0) {
-        toast.warning('Files already attached', {
-          description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
-        })
-      }
-
-      if (newDocAttachments.length > 0) {
-        await processNewDocumentAttachments(newDocAttachments)
-      }
+      await attachDocumentPaths(paths)
     } catch (e) {
       console.error('Failed to attach documents:', e)
       const desc = e instanceof Error ? e.message : JSON.stringify(e)
       toast.error('Failed to attach documents', { description: desc })
+    }
+  }
+
+  const maxFileSizeBytes =
+    typeof maxFileSizeMB === 'number' && maxFileSizeMB > 0
+      ? maxFileSizeMB * 1024 * 1024
+      : undefined
+
+  const reportOversizedFiles = () => {
+    toast.error('File too large', {
+      description: `One or more files exceed the ${maxFileSizeMB}MB limit`,
+    })
+  }
+
+  /**
+   * Attach files on disk as documents. Shared by the file picker and by
+   * drag-and-drop (which first saves the dropped files to disk).
+   */
+  const attachDocumentPaths = async (paths: string[]) => {
+    // Prepare attachments with file sizes
+    const preparedAttachments: Attachment[] = []
+    for (const p of paths) {
+      const name = p.split(/[\\/]/).pop() || p
+      const fileType = name.split('.').pop()?.toLowerCase()
+      let size: number | undefined = undefined
+      try {
+        const stat = await fs.fileStat(p)
+        size = stat?.size ? Number(stat.size) : undefined
+      } catch (e) {
+        console.warn('Failed to read file size for', p, e)
+      }
+      preparedAttachments.push(
+        createDocumentAttachment({
+          name,
+          path: p,
+          fileType,
+          size,
+          parseMode: parsePreference,
+        })
+      )
+    }
+
+    if (maxFileSizeBytes !== undefined) {
+      const hasOversized = preparedAttachments.some(
+        (att) => typeof att.size === 'number' && att.size > maxFileSizeBytes
+      )
+      if (hasOversized) {
+        reportOversizedFiles()
+        return
+      }
+    }
+
+    let duplicates: string[] = []
+    let newDocAttachments: Attachment[] = []
+
+    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
+      const existingPaths = new Set(
+        currentAttachments
+          .filter((a) => a.type === 'document' && a.path)
+          .map((a) => a.path)
+      )
+
+      duplicates = []
+      newDocAttachments = []
+
+      for (const att of preparedAttachments) {
+        if (existingPaths.has(att.path)) {
+          duplicates.push(att.name)
+          continue
+        }
+        newDocAttachments.push(att)
+      }
+
+      return newDocAttachments.length > 0
+        ? [...currentAttachments, ...newDocAttachments]
+        : currentAttachments
+    })
+
+    if (duplicates.length > 0) {
+      toast.warning('Files already attached', {
+        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+      })
+    }
+
+    if (newDocAttachments.length > 0) {
+      await processNewDocumentAttachments(newDocAttachments)
+    }
+  }
+
+  /** Save dropped documents to disk, then attach them like picked files. */
+  const attachDroppedDocuments = async (files: File[]) => {
+    if (!attachmentsEnabled) {
+      toast.info('Attachments are disabled in Settings')
+      return
+    }
+    const withinLimit = files.filter(
+      (f) => maxFileSizeBytes === undefined || f.size <= maxFileSizeBytes
+    )
+    if (withinLimit.length < files.length) reportOversizedFiles()
+    if (withinLimit.length === 0) return
+
+    try {
+      const paths = await Promise.all(
+        withinLimit.map((f) => serviceHub.uploads().saveDroppedFile(f))
+      )
+      await attachDocumentPaths(paths)
+    } catch (e) {
+      console.error('Failed to attach dropped documents:', e)
+      toast.error(t('common:dropAttachFailed'), {
+        description: e instanceof Error ? e.message : JSON.stringify(e),
+      })
     }
   }
 
@@ -1242,7 +1148,6 @@ const ChatInput = memo(function ChatInput({
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
     const validFiles: File[] = []
 
     // First pass: validate file size and type (no duplicate check yet)
@@ -1258,7 +1163,7 @@ const ChatInput = memo(function ChatInput({
       const actualType = getFileTypeFromExtension(file.name) || detectedType
 
       // Check file type - images only
-      if (!allowedTypes.includes(actualType)) {
+      if (!IMAGE_ATTACHMENT_TYPES.includes(actualType)) {
         invalidTypeFiles.push(file.name)
         return
       }
@@ -1807,7 +1712,15 @@ const ChatInput = memo(function ChatInput({
     }
   }, [serviceHub, processImageFiles])
 
-  const dropAcceptsAnything = hasMmproj || audioSupported || videoSupported
+  // Documents can be dropped whenever attachments are enabled, whatever the
+  // model reads; images, audio and video need a model that reads them.
+  const dropAcceptsAnything =
+    attachmentsEnabled || hasMmproj || audioSupported || videoSupported
+
+  const isImageFile = (f: File) =>
+    IMAGE_ATTACHMENT_TYPES.includes(
+      getFileTypeFromExtension(f.name) || f.type
+    )
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
@@ -1872,14 +1785,28 @@ const ChatInput = memo(function ChatInput({
     const otherOnes = dropped.filter(
       (f) => !audioOnes.includes(f) && !videoOnes.includes(f)
     )
+    // Documents take the same path as the + button; images go to the image
+    // path when the model can read them; anything else is reported by name.
+    const documentOnes = otherOnes.filter((f) =>
+      isDocumentAttachmentName(f.name)
+    )
+    const imageOnes = hasMmproj
+      ? otherOnes.filter((f) => !documentOnes.includes(f) && isImageFile(f))
+      : []
+    const unsupportedOnes = otherOnes.filter(
+      (f) => !documentOnes.includes(f) && !imageOnes.includes(f)
+    )
 
-    if (otherOnes.length > 0 && hasMmproj) {
-      const dt = new DataTransfer()
-      otherOnes.forEach((f) => dt.items.add(f))
-      const syntheticEvent = {
-        target: { files: dt.files },
-      } as React.ChangeEvent<HTMLInputElement>
-      handleFileChange(syntheticEvent)
+    if (imageOnes.length > 0) {
+      void processImageFiles(imageOnes)
+    }
+    if (documentOnes.length > 0) {
+      void attachDroppedDocuments(documentOnes)
+    }
+    if (unsupportedOnes.length > 0) {
+      toast.error(t('common:dropUnsupportedFiles'), {
+        description: unsupportedOnes.map((f) => f.name).join(', '),
+      })
     }
     if (audioOnes.length > 0) {
       void processAudioFiles(audioOnes)
