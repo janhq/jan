@@ -51,6 +51,8 @@ macro_rules! invoke_commands_with_extras {
         core::filesystem::commands::read_yaml,
         core::filesystem::commands::decompress,
         core::filesystem::commands::open_dialog,
+        // Saving files dropped onto the chat as attachments
+        core::attachments::commands::save_attachment_file,
         core::filesystem::commands::save_dialog,
         // App configuration commands
         core::app::commands::get_app_configurations,

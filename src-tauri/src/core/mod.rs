@@ -1,5 +1,8 @@
 pub mod agent;
 pub mod app;
+// Saving files dropped onto the chat so they can be attached; desktop-only.
+#[cfg(not(feature = "cli"))]
+pub mod attachments;
 #[cfg(feature = "cli")]
 pub mod cli;
 // Download manager, native file dialogs/IO commands, and the system/tray

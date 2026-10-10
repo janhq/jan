@@ -163,6 +163,8 @@
   "temporaryChatTooltip": "一時的なチャットは履歴に表示されません",
   "noResultsFoundDesc": "検索に一致するチャットが見つかりませんでした。別のキーワードをお試しください。",
   "searchModels": "モデルを検索...",
+  "dropUnsupportedFiles": "これらのファイルは添付できません",
+  "dropAttachFailed": "ドロップしたファイルを添付できませんでした",
   "searchStyles": "スタイルを検索...",
   "createAssistant": "アシスタントを作成",
   "enterApiKey": "APIキーを入力",
