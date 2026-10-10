@@ -281,6 +281,9 @@ const ChatInput = memo(function ChatInput({
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
   )
+  const enterKeyInsertsNewline = useGeneralSetting(
+    (state) => state.enterKeyInsertsNewline
+  )
   const tokenCounterCompact = useGeneralSetting(
     (state) => state.tokenCounterCompact
   )
@@ -2235,7 +2238,14 @@ const ChatInput = memo(function ChatInput({
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
-                if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                // With "Enter adds a new line" on, Enter is left to the
+                // textarea and only the send button sends.
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  !isComposing &&
+                  !enterKeyInsertsNewline
+                ) {
                   e.preventDefault()
                   // Submit prompt when Enter is pressed without Shift and prompt is not empty.
                   // If streaming, handleSendMessage will queue the message automatically.
