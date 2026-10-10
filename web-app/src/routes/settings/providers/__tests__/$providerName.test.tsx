@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
@@ -292,7 +292,9 @@ vi.mock('@/lib/utils', () => ({
   isLocalProvider: (p: string) => p === 'llamacpp' || p === 'mlx',
 }))
 
-vi.mock('@/constants/providers', () => ({
+vi.mock('@/constants/providers', async (importOriginal) => ({
+  // Keep the module's other exports (the Azure page renders constants from it).
+  ...(await importOriginal<typeof import('@/constants/providers')>()),
   predefinedProviders: [{ provider: 'openai' }],
 }))
 
@@ -740,6 +742,118 @@ describe('ProviderDetail route', () => {
         fireEvent.click(dyns[0])
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
+    })
+  })
+
+  describe('Azure deployed models only', () => {
+    const BASE_URL = 'https://my-resource.services.ai.azure.com/openai/v1'
+    const DEPLOYMENTS_URL =
+      'https://my-resource.services.ai.azure.com/openai/deployments?api-version=2022-12-01'
+    const azureModel = (id: string) => ({
+      id,
+      model: id,
+      name: id,
+      capabilities: ['completion'],
+      version: '1',
+    })
+
+    const respond = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+    const serveAzure = (deploymentsStatus = 200) => {
+      h.providersSvc.fetch = vi.fn(() =>
+        vi.fn(async (input: unknown) => {
+          const url = String(input)
+          if (url === DEPLOYMENTS_URL) {
+            return deploymentsStatus === 200
+              ? respond({
+                  data: [{ id: 'gpt-6-astra', model: 'gpt-6-astra', status: 'succeeded' }],
+                })
+              : respond({ error: { code: String(deploymentsStatus) } }, deploymentsStatus)
+          }
+          if (url === `${BASE_URL}/models`) {
+            return respond({
+              data: [{ id: 'gpt-6-astra', capabilities: { chat_completion: true } }],
+            })
+          }
+          return respond({}, 404)
+        })
+      )
+    }
+
+    beforeEach(() => {
+      h.params.providerName = 'azure'
+      h.providerMap.azure = {
+        provider: 'azure',
+        active: true,
+        api_key: 'user-azure-key',
+        base_url: BASE_URL,
+        models: [azureModel('gpt-4o')],
+        settings: [],
+      }
+      serveAzure()
+    })
+
+    const deployedOnlySwitch = () =>
+      within(screen.getByTestId('azure-deployed-only')).getByTestId(
+        'provider-switch'
+      ) as HTMLInputElement
+
+    it('is on by default and adds the resource’s deployments to the list', async () => {
+      renderComponent()
+
+      expect(deployedOnlySwitch().checked).toBe(true)
+      await waitFor(() => {
+        expect(h.updateProvider).toHaveBeenCalledWith(
+          'azure',
+          expect.objectContaining({
+            deployments: ['gpt-6-astra'],
+            models: expect.arrayContaining([
+              expect.objectContaining({ id: 'gpt-6-astra' }),
+              expect.objectContaining({ id: 'gpt-4o' }),
+            ]),
+          })
+        )
+      })
+    })
+
+    it('lists only the deployed models while the switch is on', () => {
+      h.providerMap.azure.models = [azureModel('gpt-6-astra'), azureModel('gpt-4o')]
+      h.providerMap.azure.deployments = ['gpt-6-astra']
+
+      renderComponent()
+
+      expect(screen.getByTestId('edit-gpt-6-astra')).toBeInTheDocument()
+      expect(screen.queryByTestId('edit-gpt-4o')).not.toBeInTheDocument()
+    })
+
+    it('shows every model once the user turns the switch off', async () => {
+      h.providerMap.azure.models = [azureModel('gpt-6-astra'), azureModel('gpt-4o')]
+      h.providerMap.azure.deployments = ['gpt-6-astra']
+      renderComponent()
+
+      await act(async () => {
+        fireEvent.click(deployedOnlySwitch())
+      })
+
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'azure',
+        expect.objectContaining({ deployed_models_only: false })
+      )
+    })
+
+    it('says so and hides nothing when the deployments cannot be fetched', async () => {
+      serveAzure(404)
+
+      renderComponent()
+
+      expect(
+        await screen.findByText('providers:azureDeployedOnly.fetchFailed')
+      ).toBeInTheDocument()
+      expect(screen.getByTestId('edit-gpt-4o')).toBeInTheDocument()
     })
   })
 })

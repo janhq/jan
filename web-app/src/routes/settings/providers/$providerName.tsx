@@ -49,6 +49,11 @@ import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
 } from '@/lib/remoteModelCatalog'
+import {
+  fetchAzureDeployments,
+  isDeployedModelsOnly,
+  visibleProviderModels,
+} from '@/lib/azureDeployments'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -87,7 +92,10 @@ function ProviderDetail() {
     () => predefinedProviders.some((p) => p.provider === providerName),
     [providerName]
   )
-  const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
+  const allModels = useMemo(
+    () => (provider ? visibleProviderModels(provider) : []),
+    [provider]
+  )
   const embeddingModels = useMemo(
     () =>
       isLlamacpp
@@ -253,6 +261,67 @@ function ProviderDetail() {
     setBaseUrlDraft(provider.base_url ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.base_url])
+
+  const [deploymentsFailed, setDeploymentsFailed] = useState(false)
+
+  /**
+   * Fetch Azure's deployments, add the ones not listed yet and remember them
+   * so only deployed models are shown. Returns how many were added, or null
+   * when the deployments could not be fetched (then nothing is hidden).
+   */
+  const syncAzureDeployments = useCallback(
+    async (target: ModelProvider): Promise<number | null> => {
+      try {
+        const names = await fetchAzureDeployments(
+          target,
+          serviceHub.providers().fetch()
+        )
+        const listed = new Set(target.models.map((m) => m.id))
+        const added: Model[] = names
+          .filter((name) => !listed.has(name))
+          .map((name) => ({
+            id: name,
+            model: name,
+            name,
+            capabilities: ['completion'],
+            version: '1.0',
+          }))
+        updateProvider(target.provider, {
+          ...target,
+          deployments: names,
+          models: [...target.models, ...added],
+        })
+        setDeploymentsFailed(false)
+        return added.length
+      } catch (error) {
+        console.error('Failed to fetch Azure deployments:', error)
+        updateProvider(target.provider, { ...target, deployments: undefined })
+        setDeploymentsFailed(true)
+        return null
+      }
+    },
+    [serviceHub, updateProvider]
+  )
+
+  // Keep Azure's deployments current whenever its endpoint or key changes, or
+  // the user turns "deployed models only" back on.
+  useEffect(() => {
+    if (!provider || !isDeployedModelsOnly(provider)) return
+    if (!provider.base_url?.trim() || !providerHasRemoteApiKeys(provider)) return
+    void syncAzureDeployments(provider)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    provider?.provider,
+    provider?.base_url,
+    provider?.api_key,
+    provider?.deployed_models_only,
+  ])
+
+  const setDeployedModelsOnly = (enabled: boolean) => {
+    if (!provider) return
+    setDeploymentsFailed(false)
+    updateProvider(providerName, { ...provider, deployed_models_only: enabled })
+  }
 
   const autoCatalogAttempted = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -479,6 +548,34 @@ function ProviderDetail() {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
+      return
+    }
+
+    // With "deployed models only" on, refreshing means re-reading Azure's
+    // deployments rather than importing the whole model catalog.
+    if (isDeployedModelsOnly(provider)) {
+      setRefreshingModels(true)
+      try {
+        const added = await syncAzureDeployments(provider)
+        if (added === null) {
+          toast.error(t('providers:models'), {
+            description: t('providers:azureDeployedOnly.fetchFailed'),
+          })
+        } else if (added === 0) {
+          toast.success(t('providers:models'), {
+            description: t('providers:noNewModels'),
+          })
+        } else {
+          toast.success(t('providers:models'), {
+            description: t('providers:refreshModelsSuccess', {
+              count: added,
+              provider: provider.provider,
+            }),
+          })
+        }
+      } finally {
+        setRefreshingModels(false)
+      }
       return
     }
 
@@ -824,6 +921,33 @@ function ProviderDetail() {
                           spellCheck={false}
                           autoComplete="off"
                         />
+                      </div>
+                    )}
+                    {provider.provider === 'azure' && (
+                      <div
+                        data-testid="azure-deployed-only"
+                        className="space-y-2 mb-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <h2 className="font-medium text-foreground text-base">
+                              {t('providers:azureDeployedOnly.title')}
+                            </h2>
+                            <p className="text-sm text-muted-foreground leading-normal">
+                              {t('providers:azureDeployedOnly.description')}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={isDeployedModelsOnly(provider)}
+                            onCheckedChange={setDeployedModelsOnly}
+                            aria-label={t('providers:azureDeployedOnly.title')}
+                          />
+                        </div>
+                        {deploymentsFailed && (
+                          <p role="alert" className="text-sm text-destructive">
+                            {t('providers:azureDeployedOnly.fetchFailed')}
+                          </p>
+                        )}
                       </div>
                     )}
                     <div className="space-y-2">

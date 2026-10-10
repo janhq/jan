@@ -91,6 +91,11 @@
     "title": "ベースURL",
     "azureDescription": "あなたのAzure OpenAIエンドポイント。YOUR-RESOURCE-NAMEをAzureリソース名に置き換えてください。"
   },
+  "azureDeployedOnly": {
+    "title": "デプロイ済みのモデルのみ表示",
+    "description": "Azure リソースにデプロイ済みのモデルだけを一覧に表示します。デプロイ済みのモデルは自動で追加され、デプロイしていないモデルは削除されずに非表示になります。",
+    "fetchFailed": "Azure リソースのデプロイ一覧を取得できなかったため、すべてのモデルを表示しています。"
+  },
   "apiKeys": {
     "title": "APIキー",
     "description": "APIキーを入力してください。詳細設定で追加のキーを登録でき、キーが失敗した場合はJanが自動的に次のキーを試します。",

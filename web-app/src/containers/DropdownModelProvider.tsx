@@ -24,6 +24,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { visibleProviderModels } from '@/lib/azureDeployments'
 import { ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -266,7 +267,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     providers.forEach((provider) => {
       if (!provider.active) return
 
-      provider.models.forEach((modelItem) => {
+      // Azure hides catalog models the user's resource has not deployed.
+      visibleProviderModels(provider).forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
         if (modelItem.embedding) return
 
