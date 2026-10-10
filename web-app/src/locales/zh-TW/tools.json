@@ -35,6 +35,7 @@
     "resultLimit": "前 {{count}} 筆",
     "contentTruncated": "內容已截斷",
     "originWeb": "網路",
+    "originProviderSearch": "供應商搜尋",
     "originDocuments": "文件",
     "originWorkspace": "工作區",
     "originSubagent": "子代理",

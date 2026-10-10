@@ -35,6 +35,7 @@
     "resultLimit": "上位 {{count}} 件",
     "contentTruncated": "コンテンツは省略されました",
     "originWeb": "ウェブ",
+    "originProviderSearch": "プロバイダの検索",
     "originDocuments": "ドキュメント",
     "originWorkspace": "ワークスペース",
     "originSubagent": "サブエージェント",

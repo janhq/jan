@@ -35,6 +35,7 @@ import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { predefinedProviders } from '@/constants/providers'
+import { usesAzureWebSearch } from '@/lib/azureWebSearch'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
@@ -993,6 +994,31 @@ function ProviderDetail() {
                         </div>
                       )}
                     </div>
+                    {provider.provider === 'azure' && (
+                      <div
+                        data-testid="azure-web-search"
+                        className="flex items-start justify-between gap-4 mt-4"
+                      >
+                        <div className="space-y-1">
+                          <h2 className="font-medium text-foreground text-base">
+                            {t('providers:azureWebSearch.title')}
+                          </h2>
+                          <p className="text-sm text-muted-foreground leading-normal">
+                            {t('providers:azureWebSearch.description')}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={usesAzureWebSearch(provider)}
+                          onCheckedChange={(enabled) =>
+                            updateProvider(providerName, {
+                              ...provider,
+                              azure_web_search: enabled,
+                            })
+                          }
+                          aria-label={t('providers:azureWebSearch.title')}
+                        />
+                      </div>
+                    )}
                   </Card>
                 )}
 

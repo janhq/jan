@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
@@ -740,6 +740,61 @@ describe('ProviderDetail route', () => {
         fireEvent.click(dyns[0])
       })
       expect(h.modelsSvc.stopAllModels).toHaveBeenCalled()
+    })
+  })
+
+  describe('Azure web search', () => {
+    beforeEach(() => {
+      h.params.providerName = 'azure'
+      h.providerMap.azure = {
+        provider: 'azure',
+        active: true,
+        api_key: 'user-azure-key',
+        base_url: 'https://my-resource.services.ai.azure.com/openai/v1',
+        models: [],
+        settings: [],
+      }
+    })
+
+    const webSearchSwitch = () =>
+      within(screen.getByTestId('azure-web-search')).getByTestId(
+        'provider-switch'
+      ) as HTMLInputElement
+
+    it("is on by default, explaining that searches go to Azure's Bing", () => {
+      renderComponent()
+
+      expect(webSearchSwitch().checked).toBe(true)
+      expect(
+        screen.getByText('providers:azureWebSearch.description')
+      ).toBeInTheDocument()
+    })
+
+    it('remembers when the user turns it off', () => {
+      renderComponent()
+
+      fireEvent.click(webSearchSwitch())
+
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'azure',
+        expect.objectContaining({ azure_web_search: false })
+      )
+    })
+
+    it('shows the saved choice', () => {
+      h.providerMap.azure.azure_web_search = false
+
+      renderComponent()
+
+      expect(webSearchSwitch().checked).toBe(false)
+    })
+
+    it('is only offered for Azure', () => {
+      h.params.providerName = 'openai'
+
+      renderComponent()
+
+      expect(screen.queryByTestId('azure-web-search')).not.toBeInTheDocument()
     })
   })
 })

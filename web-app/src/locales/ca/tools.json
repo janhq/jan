@@ -35,6 +35,7 @@
     "resultLimit": "els {{count}} primers",
     "contentTruncated": "Contingut truncat",
     "originWeb": "Web",
+    "originProviderSearch": "Cerca del proveïdor",
     "originDocuments": "Documents",
     "originWorkspace": "Espai de treball",
     "originSubagent": "Subagent",

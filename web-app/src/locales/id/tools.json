@@ -35,6 +35,7 @@
     "resultLimit": "{{count}} teratas",
     "contentTruncated": "Konten dipotong",
     "originWeb": "Web",
+    "originProviderSearch": "Pencarian penyedia",
     "originDocuments": "Dokumen",
     "originWorkspace": "Ruang Kerja",
     "originSubagent": "Subagen",

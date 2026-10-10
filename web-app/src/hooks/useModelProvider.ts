@@ -218,6 +218,10 @@ export const useModelProvider = create<ModelProviderState>()(
                 existingProvider?.api_key_fallbacks ?? provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
+              // A user choice the provider definitions don't carry.
+              ...(existingProvider?.azure_web_search !== undefined
+                ? { azure_web_search: existingProvider.azure_web_search }
+                : {}),
             }
           })
           const nextProviders = [

@@ -56,6 +56,33 @@ describe('ToolCallCard', () => {
     ).not.toBeInTheDocument()
   })
 
+  // Azure runs its web_search itself: the query arrives with the result, and the
+  // card must not credit Jan's search provider for it.
+  it('presents a search the provider ran itself', () => {
+    origin.mockReturnValue({ kind: 'web-search', detail: 'Exa' })
+    render(
+      <ToolCallCard
+        part={{
+          type: 'tool-web_search',
+          state: 'output-available',
+          toolCallId: 'tc-hosted',
+          providerExecuted: true,
+          input: {},
+          output: {
+            action: { type: 'search', query: 'tokyo weather' },
+            sources: [{ type: 'url', url: 'https://weathernews.jp/' }],
+          },
+        }}
+        messageId="m1"
+      />
+    )
+    expect(screen.getByTestId('web-widget')).toHaveTextContent('tokyo weather')
+    expect(
+      screen.getByText('tools:toolCall.originProviderSearch')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Exa')).not.toBeInTheDocument()
+  })
+
   // Without a widget the header preview is the only thing describing the call
   // while it is collapsed.
   it('previews the arguments in the header for a tool with no widget', () => {

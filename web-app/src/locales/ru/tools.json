@@ -35,6 +35,7 @@
     "resultLimit": "топ-{{count}}",
     "contentTruncated": "Содержимое обрезано",
     "originWeb": "Веб",
+    "originProviderSearch": "Поиск провайдера",
     "originDocuments": "Документы",
     "originWorkspace": "Рабочая область",
     "originSubagent": "Субагент",

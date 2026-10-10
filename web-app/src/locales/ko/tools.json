@@ -35,6 +35,7 @@
     "resultLimit": "상위 {{count}}개",
     "contentTruncated": "내용이 잘림",
     "originWeb": "웹",
+    "originProviderSearch": "공급자 검색",
     "originDocuments": "문서",
     "originWorkspace": "워크스페이스",
     "originSubagent": "하위 에이전트",

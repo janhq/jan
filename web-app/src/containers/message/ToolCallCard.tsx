@@ -11,7 +11,11 @@ import { ToolProgressRow } from '@/components/ai-elements/tool-runtime'
 import { useToolOrigin } from '@/hooks/useToolOrigin'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { completedToolLabel } from '@/lib/agentActivity'
-import { describeNativeToolCall, isToolRunning } from '@/lib/toolPresentation'
+import {
+  describeHostedWebSearchCall,
+  describeNativeToolCall,
+  isToolRunning,
+} from '@/lib/toolPresentation'
 import { isToolPart, type MessagePartLike } from './types'
 import { RagToolWidget } from './RagToolWidget'
 import { WebToolWidget } from './WebToolWidget'
@@ -36,6 +40,9 @@ export const ToolCallCard = memo(
     if (!isToolPart(part)) return null
 
     const isError = part.state === 'output-error'
+    // Azure's web_search runs on the provider, not through Jan's search provider.
+    const hostedSearch =
+      origin?.kind === 'web-search' && part.providerExecuted === true
     // Native families get a fixed label; web search and MCP name their source.
     const originLabel =
       origin === undefined
@@ -48,7 +55,9 @@ export const ToolCallCard = memo(
               ? t('tools:toolCall.originWorkspace')
               : origin.kind === 'subagent'
                 ? t('tools:toolCall.originSubagent')
-                : origin.detail
+                : hostedSearch
+                  ? t('tools:toolCall.originProviderSearch')
+                  : origin.detail
 
     const errorText = isError
       ? part.error || part.errorText || t('tools:toolCall.executionFailed')
@@ -57,7 +66,9 @@ export const ToolCallCard = memo(
     // Native tools present as an input bar that fills in as the arguments
     // stream, so it stays visible instead of hiding behind the collapsible;
     // the raw payload is still one click away in the header.
-    const bar = describeNativeToolCall(origin, toolName, part.input)
+    const bar = hostedSearch
+      ? describeHostedWebSearchCall(part.output)
+      : describeNativeToolCall(origin, toolName, part.input)
 
     // `skill_read` reads as a bare tool name otherwise; the label names the
     // skill actually being loaded, which is the only interesting part of it.
