@@ -23,6 +23,8 @@
   "engineReportedDetail": "The engine reported: {{detail}}",
   "startModelFailed": "Failed to start model: {{reason}}",
   "createModelFailed": "Failed to create model: {{reason}}",
+  "attachedFileRejected": "The model could not read the attached file: {{reason}}",
+  "attachedFileMissing": "The attached file {{name}} can no longer be read: {{reason}}",
   "noRunningSession": "No running session found for model: {{model}}",
   "serverPortOccupied": "Port has been occupied",
   "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",

@@ -90,6 +90,7 @@ import {
 } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
+import { isSentAsIs } from '@/lib/nativeFileInput'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
@@ -892,6 +893,8 @@ const ChatInput = memo(function ChatInput({
       // (processAttachmentsForSend inside processAndSendMessage).
       const docsNeedingPrompt = docs.filter((doc) => {
         if (doc.processed || doc.injectionMode) return false
+        // Sent to the model as it is, so there is nothing to choose.
+        if (isSentAsIs(doc, selectedProvider, projectId)) return false
         const preference = doc.parseMode ?? parsePreference
         return preference === 'prompt' || preference === 'auto'
       })
@@ -943,6 +946,8 @@ const ChatInput = memo(function ChatInput({
       ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
       attachmentsKey,
       parsePreference,
+      projectId,
+      selectedProvider,
       setAttachmentsForThread,
     ]
   )

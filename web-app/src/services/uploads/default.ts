@@ -3,7 +3,7 @@ import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 
 // Convert in slices: spreading a whole large file into String.fromCharCode
 // overflows the call stack.
@@ -20,6 +20,15 @@ function readFileBytes(file: File): Promise<ArrayBuffer> {
   })
 }
 
+// A file on disk, read through the asset protocol like picked audio and video.
+async function readLocalFile(path: string): Promise<Uint8Array> {
+  const response = await fetch(convertFileSrc(path))
+  if (!response.ok) {
+    throw new Error(`Failed to read ${path}: ${response.status} ${response.statusText}`)
+  }
+  return new Uint8Array(await response.arrayBuffer())
+}
+
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
   for (let i = 0; i < bytes.length; i += BASE64_SLICE_BYTES) {
@@ -32,6 +41,15 @@ export class DefaultUploadsService implements UploadsService {
   async saveDroppedFile(file: File): Promise<string> {
     const dataBase64 = toBase64(new Uint8Array(await readFileBytes(file)))
     return invoke<string>('save_attachment_file', { fileName: file.name, dataBase64 })
+  }
+
+  async keepAttachmentFile(path: string, fileName: string): Promise<string> {
+    const dataBase64 = toBase64(await readLocalFile(path))
+    return invoke<string>('save_attachment_file', { fileName, dataBase64 })
+  }
+
+  async readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string> {
+    return `data:${mediaType};base64,${toBase64(await readLocalFile(path))}`
   }
 
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {

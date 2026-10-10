@@ -8,7 +8,7 @@ export interface FileMetadata {
   type?: string
   size?: number
   chunkCount?: number
-  injectionMode?: 'inline' | 'embeddings'
+  injectionMode?: 'inline' | 'embeddings' | 'native'
 }
 
 const FILE_METADATA_START = '[ATTACHED_FILES]'
@@ -97,7 +97,11 @@ export function extractFilesFromPrompt(prompt: string): {
       fileObj.chunkCount = chunkCount;
     }
     const injectionMode = map['mode']
-    if (injectionMode === 'inline' || injectionMode === 'embeddings') {
+    if (
+      injectionMode === 'inline' ||
+      injectionMode === 'embeddings' ||
+      injectionMode === 'native'
+    ) {
       fileObj.injectionMode = injectionMode
     }
     files.push(fileObj);

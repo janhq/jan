@@ -44,6 +44,11 @@ import {
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
+import { i18n } from '@/i18n/react-i18next-compat'
+import {
+  isAttachedFileRejection,
+  supportsNativePdf,
+} from '@/lib/nativeFileInput'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -95,6 +100,10 @@ export type OnFinishCallback = (params: {
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
 export type ContinuationContent = { text?: string; reasoning?: string }
 export type ServiceHub = {
+  uploads(): {
+    /** Reads a file Jan kept, to send it to the model as it is. */
+    readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string>
+  }
   rag(): {
     getTools(): Promise<
       Array<{ name: string; description: string; inputSchema: unknown }>
@@ -575,6 +584,22 @@ const RESOLVED_TOOL_STATES = new Set([
  * with a brief explanation, preserving the user's intent and the assistant's
  * reasoning instead of dropping the whole turn.
  */
+type NativeFile = { name: string; path: string; media_type: string }
+
+/** The files a user message carries to be sent as they are (see completion.ts). */
+function nativeFilesOf(message: UIMessage): NativeFile[] {
+  if (message.role !== 'user') return []
+  const files = (message.metadata as { native_files?: unknown } | undefined)
+    ?.native_files
+  if (!Array.isArray(files)) return []
+  return files.filter(
+    (file): file is NativeFile =>
+      typeof file?.name === 'string' &&
+      typeof file?.path === 'string' &&
+      typeof file?.media_type === 'string'
+  )
+}
+
 export function resolveOrphanToolCalls(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => {
     if (message.role !== 'assistant') return message
@@ -1529,6 +1554,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
+    const sendsNativeFiles =
+      supportsNativePdf(providerId) &&
+      effectiveMessages.some((message) => nativeFilesOf(message).length > 0)
+    const withNativeFiles = await this.attachNativeFiles(
+      effectiveMessages,
+      providerId
+    )
     const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
@@ -1536,7 +1568,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             this.encodeAudioAttachments(
               stripUnsupportedImageParts(
                 encodeMcpToolImages(
-                  this.mapUserInlineAttachments(effectiveMessages)
+                  this.mapUserInlineAttachments(withNativeFiles)
                 ),
                 modelSupportsVision
               )
@@ -1647,6 +1679,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ? unwrapped.message
               : JSON.stringify(unwrapped)
         const baseMessage = stripRetryErrorWrapper(rawMessage)
+
+        // A file sent as it is that the model could not read (for example a
+        // corrupted PDF): say so in the user's language, with the API's reason.
+        if (sendsNativeFiles && isAttachedFileRejection(unwrapped)) {
+          return i18n.t('model-errors:attachedFileRejected', {
+            reason: baseMessage,
+          })
+        }
 
         const contextInfo = extractContextInfoFromError(unwrapped)
         if (contextInfo) {
@@ -1777,7 +1817,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'Some user messages contain an [ATTACHED_FILES] block listing files',
       'attached to that turn (file_id, name, type, size, chunk count, mode).',
       'Use the available retrieval tools with those file_ids when their',
-      'contents are relevant to the request.',
+      'contents are relevant to the request. A file whose mode is native is',
+      'attached to that message itself; read it there.',
     ].join(' ')
   }
 
@@ -1839,6 +1880,50 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'there that should last. It has no network access, so commands that',
       'download or upload will fail.',
     ].join(' ')
+  }
+
+  /**
+   * PDFs sent to be read as they are (see attachmentProcessing) are kept in
+   * Jan's data folder and recorded on their message as `native_files`. For a
+   * provider whose API reads PDFs itself, read each into a file part of the
+   * request. The thread's own messages are left untouched; other providers get
+   * no file, since nothing in their request could read it.
+   */
+  protected async attachNativeFiles(
+    messages: UIMessage[],
+    providerId: string
+  ): Promise<UIMessage[]> {
+    if (!supportsNativePdf(providerId)) return messages
+    return Promise.all(
+      messages.map(async (message) => {
+        const files = nativeFilesOf(message)
+        if (files.length === 0) return message
+        const fileParts = await Promise.all(
+          files.map(async (file) => {
+            try {
+              const url = await this.serviceHub!.uploads().readAttachmentAsDataUrl(
+                file.path,
+                file.media_type
+              )
+              return {
+                type: 'file' as const,
+                mediaType: file.media_type,
+                url,
+                filename: file.name,
+              }
+            } catch (error) {
+              throw new Error(
+                i18n.t('model-errors:attachedFileMissing', {
+                  name: file.name,
+                  reason: error instanceof Error ? error.message : String(error),
+                })
+              )
+            }
+          })
+        )
+        return { ...message, parts: [...message.parts, ...fileParts] }
+      })
+    )
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

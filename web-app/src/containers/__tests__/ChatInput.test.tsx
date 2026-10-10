@@ -315,6 +315,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 
@@ -766,6 +767,43 @@ describe('ChatInput - dropping files', () => {
       ])
     )
     expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  // A PDF for a Responses API model goes to the model as it is, so there is
+  // no inline-or-retrieval choice to ask about.
+  describe('asking how to use a dropped PDF', () => {
+    const showPrompt = vi.fn()
+    beforeEach(() => {
+      showPrompt.mockReset().mockResolvedValue('embeddings')
+      ;(useAttachmentIngestionPrompt as unknown as { getState: () => unknown }).getState =
+        () => ({ showPrompt })
+      // Run the store updater, so ChatInput sees which documents are new.
+      setAttachmentsMock.mockImplementation((_key: string, update: unknown) =>
+        typeof update === 'function' ? update([]) : update
+      )
+    })
+    afterEach(() => {
+      setAttachmentsMock.mockImplementation(() => undefined)
+    })
+
+    it('does not ask for an Azure model', async () => {
+      selectedProviderOverride = 'azure'
+      renderInput()
+
+      await drop(new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' }))
+
+      await waitFor(() => expect(storedAttachments()).toHaveLength(1))
+      expect(showPrompt).not.toHaveBeenCalled()
+    })
+
+    it('still asks for a local model', async () => {
+      selectedProviderOverride = 'llamacpp'
+      renderInput()
+
+      await drop(new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' }))
+
+      await waitFor(() => expect(showPrompt).toHaveBeenCalled())
+    })
   })
 
   it('accepts dropped documents even when the model cannot read images', () => {

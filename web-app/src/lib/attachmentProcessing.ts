@@ -1,6 +1,7 @@
 import { ServiceHub } from '@/services'
 import { Attachment } from '@/types/attachment'
 import { toast } from 'sonner'
+import { isSentAsIs } from '@/lib/nativeFileInput'
 
 type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 
@@ -83,6 +84,7 @@ export const processAttachmentsForSend = async (
     threadId,
     projectId,
     serviceHub,
+    selectedProvider,
     contextThreshold,
     estimateTokens,
     parsePreference,
@@ -98,10 +100,11 @@ export const processAttachmentsForSend = async (
   const imagesToProcess = attachments.filter(
     (img) => img.type === 'image' && !(img.processed && img.id)
   )
+  const isSettledDocument = (doc: Attachment) =>
+    !!doc.processed &&
+    (!!doc.id || doc.injectionMode === 'inline' || doc.injectionMode === 'native')
   const documentsToProcess = attachments.filter(
-    (doc) =>
-      doc.type === 'document' &&
-      !(doc.processed && (doc.id || doc.injectionMode === 'inline'))
+    (doc) => doc.type === 'document' && !isSettledDocument(doc)
   )
   const ingestTotal = imagesToProcess.length + documentsToProcess.length
   let ingestCompleted = 0
@@ -184,14 +187,33 @@ export const processAttachmentsForSend = async (
   const documents = attachments.filter((a) => a.type === 'document')
   for (const doc of documents) {
     try {
-      if (doc.processed && (doc.id || doc.injectionMode === 'inline')) {
+      if (isSettledDocument(doc)) {
         hasEmbeddedDocuments =
-          hasEmbeddedDocuments || doc.injectionMode !== 'inline'
+          hasEmbeddedDocuments ||
+          (doc.injectionMode !== 'inline' && doc.injectionMode !== 'native')
         processedAttachments.push(doc)
         continue
       }
 
       notifyUpdate(doc.name, 'processing')
+
+      // The Responses API reads a PDF itself, so it goes to the model as it
+      // is. A copy in Jan's data folder keeps it readable for later turns.
+      if (isSentAsIs(doc, selectedProvider, projectId) && doc.path) {
+        const keptPath = await serviceHub
+          .uploads()
+          .keepAttachmentFile(doc.path, doc.name)
+        const native: Partial<Attachment> = {
+          path: keptPath,
+          processing: false,
+          processed: true,
+          injectionMode: 'native',
+        }
+        processedAttachments.push({ ...doc, ...native })
+        notifyUpdate(doc.name, 'done', native)
+        bumpIngest()
+        continue
+      }
 
       const targetPreference = doc.parseMode ?? parsePreference
       let targetMode: 'inline' | 'embeddings' =
