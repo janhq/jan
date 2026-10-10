@@ -1,6 +1,7 @@
 import { openai } from '@ai-sdk/openai'
 import type { Tool, UIMessage } from 'ai'
 import { WEB_FETCH_TOOL, WEB_SEARCH_TOOL } from '@/lib/toolOrigin'
+import { getProviderMeta } from '@/hooks/useWebSearchConfig'
 
 /**
  * Azure: search the web with the resource's built-in `web_search` tool (Bing,
@@ -11,6 +12,16 @@ export const usesAzureWebSearch = (
   provider: Pick<ProviderObject, 'provider' | 'azure_web_search'> | undefined
 ): boolean =>
   provider?.provider === 'azure' && provider.azure_web_search !== false
+
+/**
+ * The name of the search engine a web search with `provider` runs on: Bing
+ * when Azure searches with its own tool, Jan's search provider otherwise.
+ */
+export const webSearchEngineLabel = (
+  provider: Pick<ProviderObject, 'provider' | 'azure_web_search'> | undefined,
+  searchProviderId: string
+): string =>
+  usesAzureWebSearch(provider) ? 'Bing' : getProviderMeta(searchProviderId).label
 
 /**
  * The tools for one request. When the provider searches with its own

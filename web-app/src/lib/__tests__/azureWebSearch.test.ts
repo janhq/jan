@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { Tool, UIMessage } from 'ai'
 import {
   usesAzureWebSearch,
+  webSearchEngineLabel,
   withHostedWebSearch,
   withoutForeignHostedToolCalls,
 } from '../azureWebSearch'
@@ -121,5 +122,19 @@ describe('withoutForeignHostedToolCalls', () => {
     expect(
       withoutForeignHostedToolCalls(messages, { provider: 'openai' } as ProviderObject)
     ).toBe(messages)
+  })
+})
+
+describe('webSearchEngineLabel', () => {
+  it("names Bing while Azure searches with its own tool", () => {
+    expect(webSearchEngineLabel(azure(), 'exa')).toBe('Bing')
+  })
+
+  it("names Jan's search provider otherwise", () => {
+    expect(webSearchEngineLabel(azure(false), 'exa')).toBe('Exa')
+    expect(
+      webSearchEngineLabel({ provider: 'openai' } as ProviderObject, 'tavily')
+    ).toBe('Tavily')
+    expect(webSearchEngineLabel(undefined, 'searxng')).toBe('SearXNG')
   })
 })
