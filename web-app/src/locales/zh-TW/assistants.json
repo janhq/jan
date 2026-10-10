@@ -31,5 +31,11 @@
   "personality": "個性",
   "capabilities": "能力",
   "instructionsDateHint": "提示：使用 {{current_date}} 插入今天的日期。",
-  "maxToolSteps": "最大工具步驟"
+  "maxToolSteps": "最大工具步驟",
+  "setAsDefault": "設為預設助理",
+  "isDefault": "預設",
+  "defaultAssistantSection": "預設助理",
+  "defaultAssistantDesc": "開始新聊天時使用",
+  "allAssistants": "所有助理",
+  "lastUsed": "上次使用"
 }
