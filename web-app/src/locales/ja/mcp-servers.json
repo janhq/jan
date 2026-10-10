@@ -59,6 +59,8 @@
     "description": "JanがMCPサーバーを管理し再試行する方法を設定します。",
     "toolCallTimeout": "ツール呼び出しタイムアウト（秒）",
     "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。",
+    "maxToolOutputChars": "ツール出力の最大文字数",
+    "maxToolOutputCharsDesc": "会話に残すツール結果の最大文字数です。これを超えた部分は切り詰められ、省略された印が付きます。大きな結果1件でモデルのコンテキストを使い切らないようにするためです。0にすると、結果を切り詰めずに残します。",
     "smartToolRouting": "スマートなMCPツールルーティング",
     "smartToolRoutingDesc": "有効にすると、Janはツールを読み込む前に関連するMCPサーバーを選びます。無効にすると、常にMCPツールの全リストを読み込みます。",
     "useLightweightRouterModel": "ルーティング専用モデルを使う",
@@ -69,5 +71,31 @@
     "routerModelSearchPlaceholder": "モデルを検索…",
     "routerModelEmptyList": "利用可能な軽量モデルがありません。より小さなモデルを追加するか、「モデル」でAPIキーを設定してください。",
     "routerModelEmptySearch": "「{{query}}」に一致するものはありません。"
+  },
+  "auth": {
+    "label": "認証:",
+    "state": {
+      "notApplicable": "不要",
+      "staticHeader": "Authorizationヘッダー",
+      "authenticated": "認証済み",
+      "expired": "期限切れ",
+      "staleResource": "別のURL向けに発行済み",
+      "unauthenticated": "未認証"
+    },
+    "expiresIn": "残り{{duration}}",
+    "authenticate": "ログイン",
+    "reauthenticate": "再認証",
+    "clear": "認証情報を消去",
+    "waiting": "ブラウザを待っています...",
+    "openSignInPage": "ログインページを開く",
+    "needsAuth": "{{serverName}}の認証が必要です",
+    "needsAuthHint": "接続するには、このサーバーにログインしてください。",
+    "authorized": "{{serverName}}にログインしました",
+    "authorizeFailed": "{{serverName}}へのログインに失敗しました",
+    "cleared": "{{serverName}}の保存済み資格情報を消去しました",
+    "nothingToClear": "{{serverName}}に保存済みの資格情報はありませんでした",
+    "clearFailed": "{{serverName}}の資格情報を消去できませんでした",
+    "renew": "セッションを更新",
+    "expiredAgo": "{{duration}}前に期限切れ"
   }
 }

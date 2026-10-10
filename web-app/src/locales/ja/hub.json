@@ -14,5 +14,6 @@
   "useModel": "このモデルを使用",
   "downloadModel": "モデルをダウンロード",
   "tools": "ツール",
-  "searchPlaceholder": "Hugging Faceでモデルを検索..."
+  "searchPlaceholder": "Hugging Faceでモデルを検索...",
+  "resumeUnavailable": "このダウンロードは再開できません。最初からやり直してください。"
 }
