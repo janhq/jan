@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'http://localhost:4000/v1',
+    explore_models_url: 'https://docs.litellm.ai/docs/proxy/quick_start',
+    provider: 'litellm',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'A LiteLLM virtual key or the master key authenticates requests. Leave it empty if your proxy runs without authentication. See [Virtual Keys](https://docs.litellm.ai/docs/proxy/virtual_keys) for details.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key (optional)',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]

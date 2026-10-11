@@ -14,8 +14,11 @@ type ProviderLike = {
   api_key_fallbacks?: string[]
 }
 
-/** Local engines are usable on models alone; they need no credential. */
-const KEYLESS_PREDEFINED_PROVIDERS = ['llamacpp', 'jan']
+/**
+ * Local engines and a self-hosted LiteLLM proxy (which can run without
+ * authentication) are usable on models alone; they need no credential.
+ */
+const KEYLESS_PREDEFINED_PROVIDERS = ['llamacpp', 'jan', 'litellm']
 
 /**
  * An embedding model cannot answer a message. Jan installs one on its own during
