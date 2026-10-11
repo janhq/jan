@@ -71,6 +71,15 @@ export type MessageItemProps = {
   highlightedPrefix?: string | null
 }
 
+/**
+ * How long a streaming reply may go without new output before it shows that
+ * Jan is still working: long enough not to flicker between tokens, short
+ * enough that a stall (a reasoning model thinking for minutes without
+ * streaming its reasoning, say) never leaves the user looking at a frozen
+ * answer.
+ */
+export const STALLED_STREAM_INDICATOR_DELAY_MS = 2_000
+
 export const MessageItem = memo(
   ({
     message,
@@ -176,6 +185,23 @@ export const MessageItem = memo(
         (status === CHAT_STATUS.STREAMING ||
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
+
+    // Whether a streaming reply has gone quiet: no new output for a moment.
+    // Every chunk replaces `message.parts`, so each one starts the wait again.
+    const [stalled, setStalled] = useState(false)
+    const replyStreaming =
+      isLastMessage &&
+      message.role === 'assistant' &&
+      status === CHAT_STATUS.STREAMING
+    useEffect(() => {
+      setStalled(false)
+      if (!replyStreaming) return
+      const timer = setTimeout(
+        () => setStalled(true),
+        STALLED_STREAM_INDICATOR_DELAY_MS
+      )
+      return () => clearTimeout(timer)
+    }, [replyStreaming, message.parts])
 
     // Aggregate RAG citations in part order and record each rag tool part's
     // base offset, so its card numbers/anchors continue the same global
@@ -587,9 +613,13 @@ export const MessageItem = memo(
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+          (hasPendingToolCall ||
+            status === CHAT_STATUS.SUBMITTED ||
+            stalled) && (
             <div className="mt-3">
-              <PromptProgress hideIdle={hasPendingToolCall} />
+              {/* A running tool reports itself on its card, until the reply
+                  stalls: then the generic "Working…" shows too. */}
+              <PromptProgress hideIdle={hasPendingToolCall && !stalled} />
             </div>
           )}
 
