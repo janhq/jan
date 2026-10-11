@@ -11,6 +11,8 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useMessageErrors } from '@/stores/message-errors'
+import { useRateLimitRetry } from '@/stores/rate-limit-retry-store'
+import { useRateLimitAutoRetry } from '@/hooks/useRateLimitAutoRetry'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
@@ -1653,21 +1655,32 @@ function ThreadDetail() {
       useMessageErrors.getState().clearError(targetId)
       return
     }
-    useMessageErrors.getState().setError(targetId, errMessage)
+    // A rate limit is retried on its own after a wait; once the retries run
+    // out, the failure also says what the user can do.
+    useRateLimitRetry.getState().schedule(threadId, targetId, Date.now())
+    const shownError =
+      useRateLimitRetry.getState().gaveUp[threadId] === targetId
+        ? `${errMessage}
+
+${t('model-errors:rateLimitGaveUp')}`
+        : errMessage
+    useMessageErrors.getState().setError(targetId, shownError)
     const tm = useMessages.getState().getMessages(threadId).find(
       (m) => m.id === targetId
     )
     if (tm) {
       const existingError = (tm.metadata as Record<string, unknown> | undefined)
         ?.error
-      if (existingError !== errMessage) {
+      if (existingError !== shownError) {
         updateMessage({
           ...tm,
-          metadata: { ...(tm.metadata || {}), error: errMessage },
+          metadata: { ...(tm.metadata || {}), error: shownError },
         })
       }
     }
-  }, [status, error, threadId, chatMessages, updateMessage])
+  }, [status, error, threadId, chatMessages, updateMessage, t])
+
+  useRateLimitAutoRetry(threadId, handleRegenerate, { status })
 
   // Persist whenever the user message lands in useMessages — covers the race
   // where the stamping effect ran before addMessage's commit was observable.
