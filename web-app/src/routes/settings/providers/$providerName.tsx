@@ -923,33 +923,6 @@ function ProviderDetail() {
                         />
                       </div>
                     )}
-                    {provider.provider === 'azure' && (
-                      <div
-                        data-testid="azure-deployed-only"
-                        className="space-y-2 mb-4"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1">
-                            <h2 className="font-medium text-foreground text-base">
-                              {t('providers:azureDeployedOnly.title')}
-                            </h2>
-                            <p className="text-sm text-muted-foreground leading-normal">
-                              {t('providers:azureDeployedOnly.description')}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={isDeployedModelsOnly(provider)}
-                            onCheckedChange={setDeployedModelsOnly}
-                            aria-label={t('providers:azureDeployedOnly.title')}
-                          />
-                        </div>
-                        {deploymentsFailed && (
-                          <p role="alert" className="text-sm text-destructive">
-                            {t('providers:azureDeployedOnly.fetchFailed')}
-                          </p>
-                        )}
-                      </div>
-                    )}
                     <div className="space-y-2">
                       <div className="space-y-1">
                         <h2 className="font-medium text-foreground text-base">
@@ -1195,6 +1168,33 @@ function ProviderDetail() {
                   </div>
                 }
               >
+                {provider?.provider === 'azure' && (
+                  <div
+                    data-testid="azure-deployed-only"
+                    className="space-y-2 mb-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <h2 className="font-medium text-foreground text-base">
+                          {t('providers:azureDeployedOnly.title')}
+                        </h2>
+                        <p className="text-sm text-muted-foreground leading-normal">
+                          {t('providers:azureDeployedOnly.description')}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={isDeployedModelsOnly(provider)}
+                        onCheckedChange={setDeployedModelsOnly}
+                        aria-label={t('providers:azureDeployedOnly.title')}
+                      />
+                    </div>
+                    {deploymentsFailed && (
+                      <p role="alert" className="text-sm text-destructive">
+                        {t('providers:azureDeployedOnly.fetchFailed')}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {provider?.models.length ? (
                   <>
                   {isLlamacpp && embeddingModels.length > 0 && chatModels.length > 0 && (

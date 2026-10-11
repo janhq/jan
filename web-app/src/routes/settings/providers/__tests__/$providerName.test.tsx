@@ -820,6 +820,22 @@ describe('ProviderDetail route', () => {
       })
     })
 
+    // The switch decides which models the list shows, so it sits right above
+    // the list, after the endpoint and key settings.
+    it('sits right above the model list', () => {
+      h.providerMap.azure.models = [azureModel('gpt-6-astra')]
+      h.providerMap.azure.deployments = ['gpt-6-astra']
+
+      renderComponent()
+
+      const toggle = screen.getByTestId('azure-deployed-only')
+      const follows = (a: Node, b: Node) =>
+        Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(follows(screen.getByText('providers:apiKeys.title'), toggle)).toBe(true)
+      expect(follows(screen.getByText('providers:models'), toggle)).toBe(true)
+      expect(follows(toggle, screen.getByTestId('edit-gpt-6-astra'))).toBe(true)
+    })
+
     it('lists only the deployed models while the switch is on', () => {
       h.providerMap.azure.models = [azureModel('gpt-6-astra'), azureModel('gpt-4o')]
       h.providerMap.azure.deployments = ['gpt-6-astra']
