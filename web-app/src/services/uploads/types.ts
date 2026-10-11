@@ -26,6 +26,7 @@ export interface UploadsService {
   // a file sent to the model as it is stays readable for later turns
   keepAttachmentFile(path: string, fileName: string): Promise<string>
 
-  // Read a file on disk as a data URL, to send it to the model as it is
+  // Read a file kept with keepAttachmentFile as a data URL, to send it to the
+  // model as it is; files outside Jan's attachments folder are refused
   readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string>
 }

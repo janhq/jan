@@ -83,3 +83,54 @@ fn test_save_attachment_file_rejects_data_that_is_not_base64() {
 
     assert!(result.is_err());
 }
+
+// A file sent to the model as it is is read back by path from the thread, so
+// only files Jan saved under its attachments folder may be read this way:
+// a path pointing anywhere else (an SSH key, say) must never reach a model.
+#[test]
+fn test_read_attachment_file_reads_a_saved_attachment() {
+    let app = mock_app();
+    let bytes: &[u8] = b"%PDF-1.7\x00\xfe";
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let saved = save_attachment_file(
+        app.handle().clone(),
+        "report.pdf".to_string(),
+        encoded.clone(),
+    )
+    .unwrap();
+
+    let read = read_attachment_file(app.handle().clone(), saved.clone()).unwrap();
+
+    assert_eq!(read, encoded);
+    let _ = fs::remove_dir_all(PathBuf::from(saved).parent().unwrap());
+}
+
+#[test]
+fn test_read_attachment_file_refuses_files_outside_the_attachments_folder() {
+    let app = mock_app();
+    let outside = std::env::temp_dir().join(format!("jan_secret_{}.txt", uuid::Uuid::new_v4()));
+    fs::write(&outside, b"not for any model").unwrap();
+
+    let result = read_attachment_file(app.handle().clone(), outside.to_string_lossy().to_string());
+
+    assert!(result.is_err(), "read {outside:?}");
+    let _ = fs::remove_file(&outside);
+}
+
+#[test]
+fn test_read_attachment_file_refuses_paths_that_climb_out() {
+    let app = mock_app();
+    let data = get_jan_data_folder_path(app.handle().clone());
+    fs::create_dir_all(data.join(ATTACHMENTS_DIR)).unwrap();
+    let secret = data.join(format!("secret_{}.txt", uuid::Uuid::new_v4()));
+    fs::write(&secret, b"not for any model").unwrap();
+    let climbing = data
+        .join(ATTACHMENTS_DIR)
+        .join("..")
+        .join(secret.file_name().unwrap());
+
+    let result = read_attachment_file(app.handle().clone(), climbing.to_string_lossy().to_string());
+
+    assert!(result.is_err(), "read {climbing:?}");
+    let _ = fs::remove_file(&secret);
+}

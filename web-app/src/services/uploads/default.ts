@@ -48,8 +48,11 @@ export class DefaultUploadsService implements UploadsService {
     return invoke<string>('save_attachment_file', { fileName, dataBase64 })
   }
 
+  // The path comes from thread data, so the backend reads it, and refuses
+  // anything outside the attachments folder Jan saved it to.
   async readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string> {
-    return `data:${mediaType};base64,${toBase64(await readLocalFile(path))}`
+    const dataBase64 = await invoke<string>('read_attachment_file', { path })
+    return `data:${mediaType};base64,${dataBase64}`
   }
 
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {

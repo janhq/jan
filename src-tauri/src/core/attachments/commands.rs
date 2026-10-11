@@ -57,3 +57,23 @@ pub fn save_attachment_file<R: Runtime>(
     fs::write(&path, bytes).map_err(|e| format!("save_attachment_file error: {e}"))?;
     Ok(path.to_string_lossy().into_owned())
 }
+
+/// Reads a file Jan saved under the attachments folder, base64-encoded, so it
+/// can be sent to a model as it is. The path comes from thread data, so it is
+/// resolved first (symbolic links and `..` included) and refused unless it is
+/// inside the attachments folder: no other local file can be read this way.
+#[tauri::command]
+pub fn read_attachment_file<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    path: String,
+) -> Result<String, String> {
+    let attachments = get_jan_data_folder_path(app_handle).join(ATTACHMENTS_DIR);
+    let attachments = fs::canonicalize(&attachments)
+        .map_err(|e| format!("read_attachment_file error: no attachments folder: {e}"))?;
+    let file = fs::canonicalize(&path).map_err(|e| format!("read_attachment_file error: {e}"))?;
+    if !file.starts_with(&attachments) || !file.is_file() {
+        return Err("read_attachment_file error: not an attachment Jan saved".to_string());
+    }
+    let bytes = fs::read(&file).map_err(|e| format!("read_attachment_file error: {e}"))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}

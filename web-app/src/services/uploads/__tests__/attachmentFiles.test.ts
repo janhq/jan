@@ -46,25 +46,34 @@ describe('DefaultUploadsService attachment files', () => {
     })
   })
 
-  it('reads a kept file as a data URL for the model', async () => {
-    vi.stubGlobal('fetch', serveFile(PDF_BYTES))
+  // The path comes from thread data, so the backend reads it, and only from
+  // the attachments folder; the webview never reads it itself.
+  it('reads a kept file through the backend as a data URL for the model', async () => {
+    const fetchMock = serveFile(PDF_BYTES)
+    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(invoke).mockResolvedValue(Buffer.from(PDF_BYTES).toString('base64'))
 
     const url = await new DefaultUploadsService().readAttachmentAsDataUrl(
       'D:/jan-data/attachments/01J/report.pdf',
       'application/pdf'
     )
 
+    expect(invoke).toHaveBeenCalledWith('read_attachment_file', {
+      path: 'D:/jan-data/attachments/01J/report.pdf',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
     expect(url).toBe(
       `data:application/pdf;base64,${Buffer.from(PDF_BYTES).toString('base64')}`
     )
   })
 
-  it('fails when the file cannot be read', async () => {
-    vi.stubGlobal('fetch', serveFile(null))
+  it('fails when the backend refuses or cannot read the file', async () => {
+    vi.mocked(invoke).mockRejectedValue(
+      new Error('read_attachment_file error: not an attachment Jan saved')
+    )
 
     await expect(
-      new DefaultUploadsService().readAttachmentAsDataUrl('D:/gone.pdf', 'application/pdf')
-    ).rejects.toThrow()
-    expect(invoke).not.toHaveBeenCalled()
+      new DefaultUploadsService().readAttachmentAsDataUrl('C:/Users/me/.ssh/id_ed25519', 'application/pdf')
+    ).rejects.toThrow('not an attachment Jan saved')
   })
 })
