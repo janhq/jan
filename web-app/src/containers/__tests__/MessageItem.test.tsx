@@ -111,8 +111,16 @@ vi.mock('@/components/PromptProgress', () => ({
   // `hideIdle` is what suppresses the generic "Working…" fallback, and the real
   // component renders nothing when it is set with no model load in flight, so
   // the stand-in has to honour it or every caller looks like it shows a card.
-  PromptProgress: ({ hideIdle }: { hideIdle?: boolean }) =>
-    hideIdle ? null : <div data-testid="prompt-progress" />,
+  PromptProgress: ({
+    hideIdle,
+    waitingSince,
+  }: {
+    hideIdle?: boolean
+    waitingSince?: number
+  }) =>
+    hideIdle ? null : (
+      <div data-testid="prompt-progress" data-waiting-since={waitingSince} />
+    ),
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
@@ -801,6 +809,20 @@ describe('MessageItem while a reply stalls', () => {
 
     rerender(streaming(text('Half an answer')))
     expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+  })
+
+  it('counts the wait from the last output', () => {
+    vi.setSystemTime(50_000)
+    const { rerender } = render(streaming(text('Half')))
+    act(() => vi.advanceTimersByTime(1_000))
+    rerender(streaming(text('Half an')))
+
+    act(() => vi.advanceTimersByTime(STALL_MS))
+
+    expect(screen.getByTestId('prompt-progress')).toHaveAttribute(
+      'data-waiting-since',
+      String(51_000)
+    )
   })
 
   it('shows it during a stalled tool call too', () => {

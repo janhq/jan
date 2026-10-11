@@ -186,18 +186,20 @@ export const MessageItem = memo(
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
 
-    // Whether a streaming reply has gone quiet: no new output for a moment.
-    // Every chunk replaces `message.parts`, so each one starts the wait again.
-    const [stalled, setStalled] = useState(false)
+    // When a streaming reply last moved, once it has gone quiet: no new output
+    // for a moment. Every chunk replaces `message.parts`, so each one starts
+    // the wait again (and setting null again does not re-render).
+    const [stalledSince, setStalledSince] = useState<number | null>(null)
+    const stalled = stalledSince !== null
     const replyStreaming =
       isLastMessage &&
       message.role === 'assistant' &&
       status === CHAT_STATUS.STREAMING
     useEffect(() => {
-      setStalled(false)
+      setStalledSince(null)
       if (!replyStreaming) return
       const timer = setTimeout(
-        () => setStalled(true),
+        () => setStalledSince(Date.now() - STALLED_STREAM_INDICATOR_DELAY_MS),
         STALLED_STREAM_INDICATOR_DELAY_MS
       )
       return () => clearTimeout(timer)
@@ -619,7 +621,10 @@ export const MessageItem = memo(
             <div className="mt-3">
               {/* A running tool reports itself on its card, until the reply
                   stalls: then the generic "Working…" shows too. */}
-              <PromptProgress hideIdle={hasPendingToolCall && !stalled} />
+              <PromptProgress
+                hideIdle={hasPendingToolCall && !stalled}
+                waitingSince={stalledSince ?? undefined}
+              />
             </div>
           )}
 
