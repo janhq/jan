@@ -131,3 +131,50 @@ fn test_get_vulkan_gpus_on_ios() {
         }
     }
 }
+
+mod nvidia_driver {
+    use crate::vendor::nvidia::{CudaVersion, NvidiaDriver};
+
+    // NVML reports the CUDA a driver supports as 1000 * major + 10 * minor.
+    #[test]
+    fn the_driver_reported_cuda_int_splits_into_major_and_minor() {
+        assert_eq!(
+            CudaVersion::from_driver_int(13020),
+            Some(CudaVersion { major: 13, minor: 2 })
+        );
+        assert_eq!(
+            CudaVersion::from_driver_int(12080),
+            Some(CudaVersion { major: 12, minor: 8 })
+        );
+        assert_eq!(CudaVersion::from_driver_int(0), None);
+        assert_eq!(CudaVersion::from_driver_int(-1), None);
+    }
+
+    #[test]
+    fn a_cuda_version_parses_and_prints_as_major_dot_minor() {
+        let v = CudaVersion::parse(" 13.2 ").expect("parses");
+        assert_eq!(v.to_string(), "13.2");
+        assert_eq!(CudaVersion::parse("13"), None);
+        assert_eq!(CudaVersion::parse("x.y"), None);
+    }
+
+    // Minor 10 is newer than minor 2; a string compare would get it backwards.
+    #[test]
+    fn versions_order_numerically() {
+        let older = CudaVersion { major: 12, minor: 9 };
+        let newer = CudaVersion { major: 13, minor: 0 };
+        assert!(older < newer);
+        assert!(CudaVersion { major: 13, minor: 2 } < CudaVersion { major: 13, minor: 10 });
+    }
+
+    #[test]
+    fn the_release_branch_is_the_number_before_the_dot() {
+        let driver = |version: &str| NvidiaDriver {
+            version: version.into(),
+            cuda: None,
+        };
+        assert_eq!(driver("595.97").branch(), Some(595));
+        assert_eq!(driver("617.42").branch(), Some(617));
+        assert_eq!(driver("not-a-version").branch(), None);
+    }
+}

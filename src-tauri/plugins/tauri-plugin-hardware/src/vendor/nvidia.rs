@@ -18,6 +18,77 @@ pub struct NvidiaInfo {
     pub compute_capability: String,
 }
 
+/// A CUDA version. NVML reports the one a driver supports as
+/// `1000 * major + 10 * minor`, the same number `cuDriverGetVersion` returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CudaVersion {
+    pub major: u32,
+    pub minor: u32,
+}
+
+impl CudaVersion {
+    pub fn from_driver_int(v: i32) -> Option<Self> {
+        let v = u32::try_from(v).ok().filter(|v| *v > 0)?;
+        Some(Self {
+            major: v / 1000,
+            minor: (v % 1000) / 10,
+        })
+    }
+
+    /// Parses `13.2`, the form `nvcc --version` and the engine report.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (major, minor) = text.trim().split_once('.')?;
+        Some(Self {
+            major: major.parse().ok()?,
+            minor: minor.parse().ok()?,
+        })
+    }
+}
+
+impl std::fmt::Display for CudaVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+/// What the installed NVIDIA driver says about itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NvidiaDriver {
+    /// The driver release, e.g. `595.97`.
+    pub version: String,
+    /// The newest CUDA the driver can run, when NVML reports it.
+    pub cuda: Option<CudaVersion>,
+}
+
+impl NvidiaDriver {
+    /// The release branch NVIDIA names drivers by (`595.97` is R595).
+    pub fn branch(&self) -> Option<u32> {
+        self.version.split('.').next()?.parse().ok()
+    }
+}
+
+/// The installed NVIDIA driver, or None when there is no NVIDIA GPU, NVML does
+/// not load, or the platform has no NVIDIA driver.
+pub fn nvidia_driver() -> Option<NvidiaDriver> {
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
+    {
+        None
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
+    {
+        with_nvml(|nvml| {
+            let nvml = nvml?;
+            let version = nvml.sys_driver_version().ok()?;
+            let cuda = nvml
+                .sys_cuda_driver_version()
+                .ok()
+                .and_then(CudaVersion::from_driver_int);
+            Some(NvidiaDriver { version, cuda })
+        })
+    }
+}
+
 /// Run a closure with the current NVML handle, initializing if needed.
 #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
 fn with_nvml<F, R>(f: F) -> R
