@@ -1783,7 +1783,7 @@ const BANNER_HINTS: &[(&str, &str)] = &[
 
 fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
     let (r, g, b) = brand::LOGO_RGB;
-    let accent = Style::new().fg(Color::Rgb(r, g, b)).bold();
+    let accent = Style::new().fg(theme::Theme::current().fit(Color::Rgb(r, g, b))).bold();
     let label = Style::new().dark_gray();
     let dim = Style::new().dim();
     let indent = " ".repeat(BANNER_INDENT as usize);
@@ -45998,6 +45998,30 @@ mod tests {
             joined.contains(super::super::updater::build_version()),
             "{joined}"
         );
+    }
+
+    /// The wordmark is brand `#FEC928` on truecolor and fitted to the palette
+    /// elsewhere, so a 256- or 16-colour terminal never receives RGB codes.
+    #[test]
+    fn banner_wordmark_is_brand_yellow_fitted_to_depth() {
+        use super::theme::{with_theme, ColorDepth, Theme};
+        use ratatui::style::Color;
+        let (r, g, b) = brand::LOGO_RGB;
+        let wordmark_fg = || {
+            let mut app = test_app();
+            app.push_banner("--safe", true);
+            app.transcript
+                .rows
+                .iter()
+                .flat_map(|row| row.lines(90))
+                .find(|l| l.spans.iter().any(|s| s.content.contains(brand::LOGO[0].trim())))
+                .and_then(|l| l.style.fg.or(l.spans[0].style.fg))
+        };
+        for depth in [ColorDepth::Truecolor, ColorDepth::Ansi256, ColorDepth::Ansi16] {
+            let theme = Theme { light: false, depth };
+            let fg = with_theme(theme, wordmark_fg);
+            assert_eq!(fg, Some(theme.fit(Color::Rgb(r, g, b))), "{depth:?}");
+        }
     }
 
     /// The splash opens on the wordmark alone. The hand-wave block art that used
