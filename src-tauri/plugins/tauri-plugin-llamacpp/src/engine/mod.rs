@@ -15,6 +15,7 @@
 use std::fmt;
 
 pub mod commands;
+pub mod driver;
 pub mod events;
 pub mod http;
 pub mod preset;

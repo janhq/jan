@@ -120,12 +120,18 @@ const MISSING_LIBRARY_MARKERS: [&str; 5] = [
     "image not found",
 ];
 
-const DRIVER_TOO_OLD_MARKERS: [&str; 5] = [
+const DRIVER_TOO_OLD_MARKERS: [&str; 8] = [
     "driver version is insufficient",
     "cudaerrorinsufficientdriver",
     "error_incompatible_driver",
     "unsupported display driver",
     "forward compatibility was attempted on non supported",
+    // A GPU with no native code in the engine is compiled from PTX by the
+    // driver on first use, and a driver older than the toolkit that wrote the
+    // PTX refuses it (#9185).
+    "compiled with an unsupported toolchain",
+    "cuda_error_unsupported_ptx_version",
+    "cudaerrorunsupportedptxversion",
 ];
 
 fn is_missing_library(lower: &str) -> bool {
@@ -134,7 +140,9 @@ fn is_missing_library(lower: &str) -> bool {
         .any(|m| lower.contains(m))
 }
 
-fn is_driver_too_old(lower: &str) -> bool {
+/// True for a lowercased engine line that says the NVIDIA/Vulkan driver is too
+/// old for the engine.
+pub fn is_driver_too_old(lower: &str) -> bool {
     DRIVER_TOO_OLD_MARKERS
         .iter()
         .any(|m| lower.contains(m))
@@ -361,6 +369,10 @@ mod tests {
             "ggml_vulkan: vkCreateInstance failed: ERROR_INCOMPATIBLE_DRIVER",
             "forward compatibility was attempted on non supported HW",
             "system has unsupported display driver / cuda driver combination",
+            // What ggml prints when the driver cannot compile the engine's PTX.
+            "CUDA error: the provided PTX was compiled with an unsupported toolchain.",
+            "cuda_error_unsupported_ptx_version",
+            "cudaErrorUnsupportedPtxVersion",
         ] {
             let err = classify(stderr);
             assert!(matches!(err.code, ErrorCode::GpuDriverTooOld), "{stderr} -> {err:?}");
