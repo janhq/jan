@@ -1568,8 +1568,8 @@ struct ToolGroup {
     /// collapsed row reports. Results can land out of dispatch order, so this
     /// can't be read back off `calls`.
     last_result_error: Option<bool>,
-    /// The expanded group before wrapping, once every call has resolved (see
-    /// `flat_detail`); reset when a late result lands on a closed group.
+    /// The expanded group before wrapping, kept once the group is closed (see
+    /// `flat_detail`); reset when a late result lands on it.
     flat: std::cell::OnceCell<Vec<String>>,
 }
 
@@ -1581,14 +1581,13 @@ impl ToolGroup {
     }
 
     /// What the expanded group says before wrapping (see `find::flat_text`),
-    /// laid out once every call has resolved. A group with a call still
-    /// running changes as it goes, so it is laid out each time.
+    /// laid out once. Only for a closed group, whose calls change just when a
+    /// late result lands (which resets it); the open group is never kept.
     fn flat_detail(&self) -> std::borrow::Cow<'_, [String]> {
-        let lay_out = || find::flat_text(&group_detail_lines(self, find::FLAT_WIDTH));
-        if self.is_running() {
-            return std::borrow::Cow::Owned(lay_out());
-        }
-        std::borrow::Cow::Borrowed(self.flat.get_or_init(lay_out))
+        std::borrow::Cow::Borrowed(
+            self.flat
+                .get_or_init(|| find::flat_text(&group_detail_lines(self, find::FLAT_WIDTH))),
+        )
     }
 
     /// Whether any call is still awaiting its `ToolResult`. A group can stay
@@ -3492,11 +3491,11 @@ impl Transcript {
     }
 
     /// An expanded region's text before wrapping, one entry per logical line,
-    /// for `/find`. Kept on a finished region (a group whose calls have all
-    /// resolved, a reasoning block, a finished subagent) and borrowed from it:
-    /// laying one out wide is the costly part, and a search asks again on every
-    /// step and every frame. A group still running changes under the search, so
-    /// its text is laid out each time. Same precedence as `region_detail_in`.
+    /// for `/find`. Kept on a finished region (a closed tool group, a reasoning
+    /// block, a finished subagent) and borrowed from it: laying one out wide is
+    /// the costly part, and a search asks again on every step and every frame.
+    /// The open tool group changes under the search, so its text is laid out
+    /// each time. Same precedence as `region_detail_in`.
     fn region_flat<'a>(
         &'a self,
         index: &RegionIndex,
@@ -3506,8 +3505,12 @@ impl Transcript {
         if let Some(&pos) = index.groups.get(&i) {
             return Some(self.groups[pos].flat_detail());
         }
+        // The open group takes new calls and results, so nothing is kept for it.
         if let Some(group) = self.tool_group.as_ref().filter(|g| g.idx == i) {
-            return Some(group.flat_detail());
+            return Some(Cow::Owned(find::flat_text(&group_detail_lines(
+                group,
+                find::FLAT_WIDTH,
+            ))));
         }
         if let Some(&pos) = index.reasoning.get(&i) {
             return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
@@ -34919,6 +34922,49 @@ mod tests {
             Some(ToolState::Running),
             "row: {row}"
         );
+    }
+
+    // /find reads a group's unwrapped text, kept once every call has resolved.
+    // A group that goes on to take another call must not answer from the text
+    // it kept before.
+    #[test]
+    fn an_open_groups_search_text_follows_the_calls_added_after_it_resolved() {
+        let mut app = test_app();
+        let flat_of = |app: &App, idx: usize| -> String {
+            let index = app.transcript.region_index();
+            app.transcript
+                .region_flat(&index, idx)
+                .expect("the group owns a region")
+                .join("\n")
+        };
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo alpha-marker" }),
+        });
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "alpha-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(flat_of(&app, idx).contains("alpha-marker"));
+
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo omega-marker" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "omega-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        let text = flat_of(&app, idx);
+        assert!(text.contains("omega-marker"), "{text}");
+        assert!(text.contains("alpha-marker"), "{text}");
     }
 
     #[test]
