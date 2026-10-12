@@ -1782,7 +1782,8 @@ const BANNER_HINTS: &[(&str, &str)] = &[
 ];
 
 fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
-    let accent = Style::new().yellow().bold();
+    let (r, g, b) = brand::LOGO_RGB;
+    let accent = Style::new().fg(Color::Rgb(r, g, b)).bold();
     let label = Style::new().dark_gray();
     let dim = Style::new().dim();
     let indent = " ".repeat(BANNER_INDENT as usize);

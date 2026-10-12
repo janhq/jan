@@ -14,6 +14,10 @@ pub const LOGO: [&str; 6] = [
 
 pub const LOGO_WIDTH: u16 = 25;
 
+/// Brand yellow `#FEC928` for the wordmark. Hard-coded truecolor rather than
+/// the terminal's palette yellow, whose shade varies by theme.
+pub const LOGO_RGB: (u8, u8, u8) = (0xFE, 0xC9, 0x28);
+
 /// The hand-wave mark as a single glyph, for the header's leading column where
 /// the block art has no room. No VS16: the emoji is already presentation-default
 /// and the extra selector makes some terminals advance a column ratatui has not
