@@ -336,6 +336,9 @@ impl Glyphs {
             };
             let tries = starts[starts.partition_point(|&l| l < at)..]
                 .iter()
+                // A rule is the next one close by, not any below: one this
+                // screen does not draw must not reach for a far border.
+                .filter(|&&l| !rule || l < at + MAX_TRIES)
                 .take(if rule { 1 } else { MAX_TRIES });
             let mut fitted = None;
             for &start in tries {
@@ -931,6 +934,30 @@ mod tests {
         hits.sort();
         hits.dedup();
         assert_eq!(hits.len(), 3);
+    }
+
+    // A rule that the narrow render does not draw must not reach for one far
+    // below (a table border) and leave the lines between it loose.
+    #[test]
+    fn a_rule_missing_from_the_screen_does_not_grab_a_distant_one() {
+        let mut shown: Vec<String> = vec!["alpha beta".into(), "gamma delta".into()];
+        let mut whole: Vec<String> = vec![
+            "alpha beta".into(),
+            "-".repeat(40),
+            "gamma delta".into(),
+        ];
+        for i in 0..20 {
+            shown.push(format!("filler{i}"));
+            whole.push(format!("filler{i}"));
+        }
+        shown.push("+---+".into());
+        whole.push(format!("+{}+", "-".repeat(38)));
+        let lines: Vec<Line<'static>> = shown.iter().map(|t| Line::raw(t.clone())).collect();
+        let found = occurrences(&lines, Some(&whole), "filler7");
+        assert_eq!(found.len(), 1);
+        // Its own logical line (3 + 7), not folded into a run that started earlier.
+        assert_eq!((found[0].logical, found[0].sub), (10, 0));
+        assert_eq!(found[0].pieces, vec![(9, 0..7)]);
     }
 
     #[test]

@@ -1568,6 +1568,9 @@ struct ToolGroup {
     /// collapsed row reports. Results can land out of dispatch order, so this
     /// can't be read back off `calls`.
     last_result_error: Option<bool>,
+    /// The expanded group before wrapping, once every call has resolved (see
+    /// `flat_detail`); reset when a late result lands on a closed group.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl ToolGroup {
@@ -1575,6 +1578,17 @@ impl ToolGroup {
     /// as an `Explored` row listing them rather than a counted summary.
     fn explored(&self) -> bool {
         self.calls.iter().all(|c| c.explore.is_some())
+    }
+
+    /// What the expanded group says before wrapping (see `find::flat_text`),
+    /// laid out once every call has resolved. A group with a call still
+    /// running changes as it goes, so it is laid out each time.
+    fn flat_detail(&self) -> std::borrow::Cow<'_, [String]> {
+        let lay_out = || find::flat_text(&group_detail_lines(self, find::FLAT_WIDTH));
+        if self.is_running() {
+            return std::borrow::Cow::Owned(lay_out());
+        }
+        std::borrow::Cow::Borrowed(self.flat.get_or_init(lay_out))
     }
 
     /// Whether any call is still awaiting its `ToolResult`. A group can stay
@@ -2604,6 +2618,7 @@ impl Transcript {
                     call.diff = diff;
                     call.content = Some(content);
                     group.last_result_error = Some(is_error);
+                    group.flat = std::cell::OnceCell::new();
                     self.rows[group.idx] = group.row(GroupRow::Closed);
                     break;
                 }
@@ -3082,6 +3097,7 @@ impl Transcript {
                         detail,
                         source: seg.clone(),
                         committed: Instant::now(),
+                        flat: std::cell::OnceCell::new(),
                     });
                 }
             } else {
@@ -3141,6 +3157,7 @@ impl Transcript {
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
+            flat: std::cell::OnceCell::new(),
         };
         self.push_row(group.row(GroupRow::Open));
         self.tool_group = Some(group);
@@ -3475,20 +3492,30 @@ impl Transcript {
     }
 
     /// An expanded region's text before wrapping, one entry per logical line,
-    /// for `/find`. A finished subagent's is kept on its block; the others are
-    /// cheap to lay out wide, and hold no per-width row caches that doing so
-    /// would disturb.
-    fn region_flat(&self, index: &RegionIndex, i: usize) -> Option<Vec<String>> {
-        let owned_elsewhere = index.groups.contains_key(&i)
-            || index.reasoning.contains_key(&i)
-            || self.tool_group.as_ref().is_some_and(|g| g.idx == i);
-        if !owned_elsewhere {
-            if let Some(&pos) = index.subagents.get(&i) {
-                return Some(self.subagent_blocks[pos].flat_detail().clone());
-            }
+    /// for `/find`. Kept on a finished region (a group whose calls have all
+    /// resolved, a reasoning block, a finished subagent) and borrowed from it:
+    /// laying one out wide is the costly part, and a search asks again on every
+    /// step and every frame. A group still running changes under the search, so
+    /// its text is laid out each time. Same precedence as `region_detail_in`.
+    fn region_flat<'a>(
+        &'a self,
+        index: &RegionIndex,
+        i: usize,
+    ) -> Option<std::borrow::Cow<'a, [String]>> {
+        use std::borrow::Cow;
+        if let Some(&pos) = index.groups.get(&i) {
+            return Some(self.groups[pos].flat_detail());
         }
-        self.region_detail_in(index, i, find::FLAT_WIDTH)
-            .map(|lines| find::flat_text(&lines))
+        if let Some(group) = self.tool_group.as_ref().filter(|g| g.idx == i) {
+            return Some(group.flat_detail());
+        }
+        if let Some(&pos) = index.reasoning.get(&i) {
+            return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
+        }
+        index
+            .subagents
+            .get(&i)
+            .map(|&pos| Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()))
     }
 
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
@@ -3663,6 +3690,15 @@ struct ReasoningBlock {
     /// `REASONING_FOLD_AFTER` before folding to its summary. Not journaled: a
     /// replayed block is history and folds immediately.
     committed: Instant,
+    /// What the block says before wrapping (see `find::flat_text`), laid out
+    /// once: `detail` never changes after the block is committed.
+    flat: std::cell::OnceCell<Vec<String>>,
+}
+
+impl ReasoningBlock {
+    fn flat_detail(&self) -> &[String] {
+        self.flat.get_or_init(|| find::flat_text(&self.detail))
+    }
 }
 
 /// A "trace": a maximal contiguous run of committed reasoning-summary and
@@ -21241,14 +21277,14 @@ struct Segment {
 
 /// An expanded region's text before wrapping, read through a per-frame
 /// `RegionIndex` built on first use. Only called for the detail segments a
-/// search is about to paint (the ones on screen) and for the one it jumps to,
-/// so a transcript with many expanded regions does not re-render all of them
-/// every frame.
-fn detail_flat_text(
-    transcript: &Transcript,
+/// search is about to paint (the ones on screen) and for the one it jumps to;
+/// a finished region's text is kept on it (see `Transcript::region_flat`), so
+/// a frame borrows it rather than laying the region out again.
+fn detail_flat_text<'a>(
+    transcript: &'a Transcript,
     index: &std::cell::OnceCell<RegionIndex>,
     row: usize,
-) -> Option<Vec<String>> {
+) -> Option<std::borrow::Cow<'a, [String]>> {
     let index = index.get_or_init(|| transcript.region_index());
     transcript.region_flat(index, row)
 }
@@ -21308,14 +21344,14 @@ impl BodyLayout {
     /// paragraph wraps a viewport's worth of lines instead of the session.
     /// `find` paints the search term onto those lines, the current match
     /// brighter.
-    fn window(
+    fn window<'f>(
         self,
         rows: &[Row],
         width: u16,
         scroll: u16,
         height: u16,
         find: Option<(&str, Option<find::Hit>)>,
-        detail_flat: &dyn Fn(usize) -> Option<Vec<String>>,
+        detail_flat: &dyn Fn(usize) -> Option<std::borrow::Cow<'f, [String]>>,
     ) -> (Vec<Line<'static>>, Vec<Option<usize>>, u16) {
         let end = scroll.saturating_add(height);
         let mut visible: Vec<Line<'static>> = Vec::new();
@@ -21356,7 +21392,7 @@ impl BodyLayout {
                             .and_then(detail_flat);
                         let flat = match (&kept, &region) {
                             (Some(kept), _) => Some(kept.as_slice()),
-                            (None, Some(flat)) => Some(flat.as_slice()),
+                            (None, Some(flat)) => Some(&**flat),
                             (None, None) => None,
                         };
                         let found = find::occurrences(&lines, flat, needle);
