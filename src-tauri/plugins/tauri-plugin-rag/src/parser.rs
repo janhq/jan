@@ -219,6 +219,79 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
     Ok(out)
 }
 
+const SECS_PER_DAY: i64 = 86_400;
+
+/// Largest serial Excel accepts (9999-12-31); anything past it is not a date.
+const MAX_EXCEL_SERIAL: f64 = 2_958_466.0;
+
+/// Renders a cell for the model. Date cells arrive as Excel serial numbers,
+/// which a model cannot read as dates, so they become ISO 8601 text.
+fn format_cell(cell: &DataType) -> String {
+    match cell {
+        DataType::DateTime(serial) => excel_serial_to_iso(*serial),
+        DataType::Duration(days) => excel_duration(*days),
+        other => other.to_string(),
+    }
+}
+
+/// Converts a 1900-system serial. calamine already shifts 1904-system
+/// workbooks onto this system, so no epoch detection is needed here.
+fn excel_serial_to_iso(serial: f64) -> String {
+    if !serial.is_finite() || !(0.0..MAX_EXCEL_SERIAL).contains(&serial) {
+        return serial.to_string();
+    }
+    let total_secs = (serial * SECS_PER_DAY as f64).round() as i64;
+    let serial_days = total_secs.div_euclid(SECS_PER_DAY);
+    let secs_of_day = total_secs.rem_euclid(SECS_PER_DAY);
+    let time = format!(
+        "{:02}:{:02}:{:02}",
+        secs_of_day / 3600,
+        secs_of_day % 3600 / 60,
+        secs_of_day % 60
+    );
+    // Serial 0 is Excel's "1900-01-00": the cell holds only a time of day.
+    if serial_days == 0 {
+        return time;
+    }
+    // Excel counts a 1900-02-29 that never existed (serial 60), so serials
+    // before it are one day behind the 1899-12-30 epoch used for later ones.
+    let days_since_epoch = if serial_days < 60 { serial_days + 1 } else { serial_days };
+    // 1899-12-30 is 25569 days before 1970-01-01.
+    let (y, m, d) = civil_from_days(days_since_epoch - 25_569);
+    let date = format!("{:04}-{:02}-{:02}", y, m, d);
+    if secs_of_day == 0 {
+        date
+    } else {
+        format!("{}T{}", date, time)
+    }
+}
+
+/// Renders an Excel duration (fractional days) as elapsed `[h]:mm:ss`.
+fn excel_duration(days: f64) -> String {
+    if !days.is_finite() || days.abs() >= MAX_EXCEL_SERIAL {
+        return days.to_string();
+    }
+    let total_secs = (days * SECS_PER_DAY as f64).round() as i64;
+    let sign = if total_secs < 0 { "-" } else { "" };
+    let secs = total_secs.abs();
+    format!("{}{}:{:02}:{:02}", sign, secs / 3600, secs % 3600 / 60, secs % 60)
+}
+
+/// Proleptic Gregorian date for a day count relative to 1970-01-01
+/// (Howard Hinnant's civil_from_days), avoiding a date-library dependency.
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y, m, d)
+}
+
 fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
     if metadata.len() > MAX_PARSE_FILE_SIZE {
@@ -233,15 +306,7 @@ fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
             for row in range.rows() {
                 let cells = row
                     .iter()
-                    .map(|c| match c {
-                        DataType::Empty => "".to_string(),
-                        DataType::String(s) => s.to_string(),
-                        DataType::Float(f) => format!("{}", f),
-                        DataType::Int(i) => i.to_string(),
-                        DataType::Bool(b) => b.to_string(),
-                        DataType::DateTime(f) => format!("{}", f),
-                        other => other.to_string(),
-                    })
+                    .map(format_cell)
                     .collect::<Vec<_>>()
                     .join("\t");
                 out.push_str(&cells);
@@ -347,5 +412,55 @@ fn read_text_auto(file_path: &str) -> Result<String, RagError> {
         Ok(String::from_utf8_lossy(&bytes).to_string())
     } else {
         Ok(decoded.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn date_only_serial_renders_as_iso_date() {
+        assert_eq!(format_cell(&DataType::DateTime(45123.0)), "2023-07-16");
+    }
+
+    #[test]
+    fn serial_with_time_renders_as_iso_datetime() {
+        assert_eq!(format_cell(&DataType::DateTime(45123.5)), "2023-07-16T12:00:00");
+    }
+
+    #[test]
+    fn time_only_serial_renders_as_time() {
+        assert_eq!(format_cell(&DataType::DateTime(0.75)), "18:00:00");
+    }
+
+    #[test]
+    fn serials_before_the_phantom_leap_day_are_not_shifted() {
+        assert_eq!(format_cell(&DataType::DateTime(1.0)), "1900-01-01");
+        assert_eq!(format_cell(&DataType::DateTime(59.0)), "1900-02-28");
+        assert_eq!(format_cell(&DataType::DateTime(61.0)), "1900-03-01");
+    }
+
+    #[test]
+    fn seconds_round_instead_of_truncating() {
+        // 10:00:00 as a float is slightly below the exact value.
+        assert_eq!(
+            format_cell(&DataType::DateTime(44927.0 + 10.0 / 24.0)),
+            "2023-01-01T10:00:00"
+        );
+    }
+
+    #[test]
+    fn durations_render_as_elapsed_time() {
+        assert_eq!(format_cell(&DataType::Duration(1.5)), "36:00:00");
+    }
+
+    #[test]
+    fn iso_variants_pass_through() {
+        assert_eq!(
+            format_cell(&DataType::DateTimeIso("2024-02-29T08:15:00".into())),
+            "2024-02-29T08:15:00"
+        );
+        assert_eq!(format_cell(&DataType::DurationIso("PT1H".into())), "PT1H");
     }
 }
