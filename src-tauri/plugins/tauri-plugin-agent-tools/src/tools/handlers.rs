@@ -1263,13 +1263,6 @@ pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
         || (tool.capability == super::Capability::Exec && bash_result_failed(content))
 }
 
-/// True when a shell tool result reports failure via its exit marker: a
-/// non-zero `[exit N]` or a signal termination. The marker is emitted by
-/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
-/// so scan every line rather than only the tail. Model-facing content is
-/// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
-/// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
-/// the display-only `is_error` flag so the TUI marks the call failed.
 /// What a confined command's output gets appended when it failed on the
 /// sandbox, empty otherwise. `Permission denied` on its own tells the model
 /// nothing about *why*; without this it retries the same command until it
@@ -1291,6 +1284,13 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
 /// The escalation half of [`sandbox_denial_note`].
 const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun it with `escalate: true` and a `justification` to ask the user to run it outside the sandbox.]";
 
+/// True when a shell tool result reports failure via its exit marker: a
+/// non-zero `[exit N]` or a signal termination. The marker is emitted by
+/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
+/// so scan every line rather than only the tail. Model-facing content is
+/// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
+/// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
+/// the display-only `is_error` flag so the TUI marks the call failed.
 pub fn bash_result_failed(content: &str) -> bool {
     content.lines().any(|line| {
         let l = line.trim();

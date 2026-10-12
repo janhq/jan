@@ -181,12 +181,16 @@ An approved command runs with your own access, like a command you typed. The min
   from a pipe or CI, and a subagent whose parent cannot be asked. The command does not run at all,
   and the model is told how you could enable it.
 - **The desktop never escalates.** Its chat sandbox is throwaway by design.
-- The sandbox's hard limits still win. A command reaching `~/.jan` is refused before anyone is asked.
+- An escalated command runs outside the sandbox, so `~/.jan` is **not** hidden from it. A command
+  that names `~/.jan` outright is refused before anyone is asked, but that check only reads the
+  command text: a command that reaches the folder indirectly (`cd ~ && cat .jan/config.toml`)
+  gets past it, and could read your provider keys. Read the command before you approve it.
 
-For unattended runs that accept the risk, allow escalation without a prompt:
+For unattended runs that accept the risk, allow escalation without a prompt. Nobody then reads
+the command, so any escalated command can reach everything you can, `~/.jan` included:
 
 ```bash
-jan cli agent run --sandbox --allow-escalation --task "..."
+jan cli agent run --sandbox --allow-escalation "..."
 ```
 
 ```toml
