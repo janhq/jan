@@ -22,6 +22,7 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
+import { useChatShell } from '@/hooks/useChatShell'
 import { useCoTDuration } from '@/hooks/useCoTDuration'
 
 /**
@@ -56,6 +57,7 @@ const secondaryStores = [
   useWebSearchConfig,
   useCoworkSessions,
   useCoworkConfig,
+  useChatShell,
   useCoTDuration,
 ] as const
 

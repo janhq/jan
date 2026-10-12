@@ -28,6 +28,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
@@ -1179,9 +1180,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it.
+      // already withholds shell when no sandbox backend can confine it. A user
+      // who switched it off (#9222) gets none of it.
       try {
-        for (const schema of await getAgentToolSchemas()) {
+        const shellOn = useChatShell.getState().shellEnabled
+        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
           if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
           toolsRecord[schema.function.name] = {
             description: schema.function.description,
@@ -1835,7 +1838,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   buildAgentToolsSystemInstruction(): string {
-    if (!sandboxEnforces()) return ''
+    // Describing a tool the model was not given only invites it to ask for it.
+    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
     // Stating the limits up front is cheaper than letting the model discover
     // them by having a command refused.
     return [
