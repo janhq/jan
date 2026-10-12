@@ -202,6 +202,19 @@ vi.mock('@/containers/ChatInput', () => ({
       >
         send
       </button>
+      <button
+        data-testid="chat-send-ref"
+        onClick={() =>
+          onSubmit(
+            'summarise\n\n---\nReferenced file contents:\n\nbody',
+            undefined,
+            undefined,
+            'summarise @notes.md'
+          )
+        }
+      >
+        send with reference
+      </button>
       <button data-testid="chat-stop" onClick={() => onStop()}>
         stop
       </button>
@@ -621,6 +634,20 @@ describe('ThreadDetail route', () => {
       expect(processAttachmentsForSend).not.toHaveBeenCalled()
       expect(h.mockSendMessage).not.toHaveBeenCalled()
       expect(h.messagesState.addMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('cancelling restores the typed draft, not the expanded @references', async () => {
+      vi.mocked(promptIngestionChoices).mockResolvedValueOnce(undefined)
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send-ref').click()
+      })
+      await waitFor(() => {
+        expect(usePrompt.getState().prompt).toBe('summarise @notes.md')
+      })
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
       h.attachmentsState.getAttachments = vi.fn(() => [])
       usePrompt.getState().resetPrompt()
     })

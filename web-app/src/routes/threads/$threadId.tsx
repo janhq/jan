@@ -1022,7 +1022,8 @@ function ThreadDetail() {
   const processAndSendMessage = useCallback(
     async (
       text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>
+      files?: Array<{ type: string; mediaType: string; url: string }>,
+      draft: string = text
     ) => {
       // Cancel any in-flight title summarization so it doesn't compete with this request
       titleAbortRef.current?.abort()
@@ -1108,9 +1109,10 @@ function ThreadDetail() {
         const choices = await promptIngestionChoices(unrouted)
         if (!choices) {
           // ChatInput cleared the input on submit; hand the draft back so
-          // cancelling only cancels the send.
+          // cancelling only cancels the send. `text` has @path references
+          // expanded, so restore what the user actually typed.
           setAttachmentsForThread(attachmentsKey, allAttachments)
-          usePrompt.getState().setPrompt(text)
+          usePrompt.getState().setPrompt(draft)
           return
         }
         combinedAttachments = applyIngestionChoices(
@@ -1309,10 +1311,15 @@ function ThreadDetail() {
         try {
           const message = JSON.parse(storedMessage) as {
             text: string
+            draft?: string
             files?: Array<{ type: string; mediaType: string; url: string }>
           }
 
-          await processAndSendMessage(message.text, message.files)
+          await processAndSendMessage(
+            message.text,
+            message.files,
+            message.draft
+          )
         } catch (error) {
           console.error('Failed to parse initial message:', error)
         }
@@ -1361,10 +1368,13 @@ function ThreadDetail() {
   const handleSubmit = useCallback(
     async (
       text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>
+      files?: Array<{ type: string; mediaType: string; url: string }>,
+      // This route reads documents back out of the attachments store.
+      _documents?: unknown,
+      draft?: string
     ) => {
       clearBannerErrors()
-      await processAndSendMessage(text, files)
+      await processAndSendMessage(text, files, draft)
     },
     [processAndSendMessage, clearBannerErrors]
   )

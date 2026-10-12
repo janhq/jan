@@ -138,7 +138,10 @@ type ChatInputProps = {
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
     /** Document attachments, for surfaces that do not read them back out of
      * the attachments store themselves. */
-    documents?: Attachment[]
+    documents?: Attachment[],
+    /** What the user typed, before @path references were expanded into
+     * `text`, so a cancelled send can hand it back unchanged. */
+    draft?: string
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -710,7 +713,8 @@ const ChatInput = memo(function ChatInput({
       onSubmit(
         effectivePrompt,
         files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined
+        documents.length > 0 ? documents : undefined,
+        prompt
       )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
@@ -727,6 +731,7 @@ const ChatInput = memo(function ChatInput({
 
       const messagePayload = {
         text: effectivePrompt,
+        draft: prompt,
         files: [] as Array<{ type: string; mediaType: string; url: string }>,
       }
 
