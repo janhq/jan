@@ -5696,10 +5696,16 @@ impl App {
         let mut scan = |row: usize, detail: bool, lines: &[Line<'static>], flat: &[String]| {
             let mut last = None;
             for found in find::occurrences(lines, Some(flat), needle) {
-                // One hit per logical line, however many times it matches.
-                if last != Some(found.logical) {
-                    last = Some(found.logical);
-                    hits.push(find::Hit { row, detail, line: found.logical });
+                // One hit per logical line, however many times it matches (and
+                // one per rendered line inside a run that could not be lined up).
+                if last != Some((found.logical, found.sub)) {
+                    last = Some((found.logical, found.sub));
+                    hits.push(find::Hit {
+                        row,
+                        detail,
+                        line: found.logical,
+                        sub: found.sub,
+                    });
                 }
             }
         };
@@ -21354,7 +21360,9 @@ impl BodyLayout {
                             (None, None) => None,
                         };
                         let found = find::occurrences(&lines, flat, needle);
-                        let current = hit.filter(|_| self.find_seg == Some(n)).map(|h| h.line);
+                        let current = hit
+                            .filter(|_| self.find_seg == Some(n))
+                            .map(|h| (h.line, h.sub));
                         visible.extend(find::paint_lines(lines, &found, current));
                     }
                     None => visible.extend(lines),
@@ -21601,7 +21609,7 @@ fn draw(f: &mut Frame, app: &mut App) {
                 let flat = kept.as_deref().map(Vec::as_slice).or(region.as_deref());
                 let first = find::occurrences(&lines, flat, needle)
                     .iter()
-                    .find(|o| o.logical == hit.line)
+                    .find(|o| (o.logical, o.sub) == (hit.line, hit.sub))
                     .and_then(|o| o.pieces.first())
                     .map_or(0, |(line, _)| *line);
                 lines.truncate(first);

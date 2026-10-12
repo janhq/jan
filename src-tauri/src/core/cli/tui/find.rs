@@ -16,13 +16,16 @@ use ratatui::text::{Line, Span};
 /// folded detail (what Ctrl-O or a click reveals) rather than the row itself,
 /// and the line within that part as the row says it before the terminal wraps
 /// it. That index does not move when the window resizes, which is what keeps the
-/// hit count and the current hit steady. The field order makes the derived
+/// hit count and the current hit steady, except inside a run of lines that
+/// could not be lined up (see `sub`). The field order makes the derived
 /// ordering top to bottom as drawn, which is the order Enter walks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Hit {
     pub(super) row: usize,
     pub(super) detail: bool,
     pub(super) line: usize,
+    /// See `Occurrence::sub`.
+    pub(super) sub: usize,
 }
 
 /// Active search state. Lives on `App` until Esc, a new turn, or a rebuilt
@@ -128,6 +131,11 @@ pub(super) struct Occurrence {
     /// The logical (unwrapped) line it sits in: the identity of a `Hit`, so the
     /// hit count and what Enter walks do not change when the window resizes.
     pub(super) logical: usize,
+    /// Within a run of lines that could not be lined up, the rendered line it
+    /// is on, counted from the run's start; 0 everywhere else. Those lines
+    /// are known only as they are drawn, so this part of the identity follows
+    /// the width.
+    pub(super) sub: usize,
     /// Where it lands on the lines as rendered at the current width: one
     /// (rendered line, byte range in that line's text) per line it spans. A
     /// term that word-wrapped has a piece on each line.
@@ -173,6 +181,7 @@ pub(super) fn occurrences(
             .into_iter()
             .map(|(l, r)| Occurrence {
                 logical: l,
+                sub: 0,
                 pieces: vec![(l, r)],
             })
             .collect();
@@ -184,14 +193,16 @@ pub(super) fn occurrences(
     for (logical, text) in flat.iter().enumerate() {
         if let Some(span) = &fit.loose[logical] {
             // Only the rendered lines are known: search them as they are. The
-            // run of loose lines shares one span, searched once and counted
-            // under its first line.
+            // run of loose lines shares one span, searched once. Its matches sit
+            // under the run's first line, each rendered line a hit of its own
+            // (`sub`), so Enter can step through all of them.
             if last_loose != Some(span) {
                 last_loose = Some(span);
                 for line in span.clone() {
                     for range in match_ranges(&rendered[line], needle) {
                         out.push(Occurrence {
                             logical,
+                            sub: line - span.start,
                             pieces: vec![(line, range)],
                         });
                     }
@@ -210,7 +221,11 @@ pub(super) fn occurrences(
                 }
             }
             if !pieces.is_empty() {
-                out.push(Occurrence { logical, pieces });
+                out.push(Occurrence {
+                    logical,
+                    sub: 0,
+                    pieces,
+                });
             }
         }
     }
@@ -227,6 +242,7 @@ fn per_line(texts: &[String], needle: &str) -> Vec<Occurrence> {
                 .into_iter()
                 .map(move |r| Occurrence {
                     logical: l,
+                    sub: 0,
                     pieces: vec![(l, r)],
                 })
         })
@@ -362,6 +378,13 @@ impl Glyphs {
 /// given up as one that does not line up.
 const MAX_TRIES: usize = 8;
 
+#[cfg(test)]
+thread_local! {
+    /// How many times `follow` has run on this thread, so a test can bound the
+    /// work of an alignment by count rather than by the clock.
+    static FOLLOWS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Reads `own`, the non-blank characters of a logical line, off `shown` from
 /// rendered line `start`, writing where each one sits into `map`. Returns the
 /// rendered line after the one it ends on, or `None` when the screen does not
@@ -373,6 +396,8 @@ const MAX_TRIES: usize = 8;
 /// skipped is a gutter (a bullet, a rail) at the start of a continuation line,
 /// and only on that line.
 fn follow(own: &[char], shown: &Glyphs, start: usize, map: &mut [usize]) -> Option<usize> {
+    #[cfg(test)]
+    FOLLOWS.with(|n| n.set(n.get() + 1));
     let rendered = shown.starts.len() - 1;
     let mut line = start;
     let mut at = shown.starts[start];
@@ -463,13 +488,13 @@ pub(super) fn highlight_ranges(
 }
 
 /// `lines` with every occurrence painted, each piece onto the line it landed
-/// on. `current` is the logical line of the jumped-to hit: only its first
-/// occurrence gets the current style, so the one a step landed on stands apart
-/// from the rest of the line.
+/// on. `current` is the (logical line, sub) of the jumped-to hit: only its
+/// first occurrence gets the current style, so the one a step landed on stands
+/// apart from the rest of the line.
 pub(super) fn paint_lines(
     lines: Vec<Line<'static>>,
     found: &[Occurrence],
-    current: Option<usize>,
+    current: Option<(usize, usize)>,
 ) -> Vec<Line<'static>> {
     if found.is_empty() {
         return lines;
@@ -477,7 +502,8 @@ pub(super) fn paint_lines(
     let mut ranges: Vec<Vec<(Range<usize>, bool)>> = vec![Vec::new(); lines.len()];
     let mut landed = false;
     for o in found {
-        let is_current = current == Some(o.logical) && !std::mem::replace(&mut landed, true);
+        let is_current =
+            current == Some((o.logical, o.sub)) && !std::mem::replace(&mut landed, true);
         for (line, range) in &o.pieces {
             if let Some(on_line) = ranges.get_mut(*line) {
                 on_line.push((range.clone(), is_current));
@@ -530,6 +556,7 @@ mod tests {
             row,
             detail: false,
             line,
+            sub: 0,
         }
     }
 
@@ -638,6 +665,7 @@ mod tests {
             row: 1,
             detail: true,
             line: 0,
+            sub: 0,
         };
         assert!(hit(1, 9) < detail && detail < hit(2, 0));
     }
@@ -860,18 +888,49 @@ mod tests {
         shown.push("tail text".into());
         whole.push("tail text".into());
         let lines: Vec<Line<'static>> = shown.iter().map(|t| Line::raw(t.clone())).collect();
-        let started = std::time::Instant::now();
+        FOLLOWS.with(|n| n.set(0));
         let found = occurrences(&lines, Some(&whole), "tail");
-        let took = started.elapsed();
+        let attempts = FOLLOWS.with(|n| n.get());
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].logical, rows_n + 1);
+        // Each logical line tries a bounded number of starting points, however
+        // long the run of lines before it that did not line up.
         assert!(
-            took < std::time::Duration::from_millis(250),
-            "{rows_n} loose rows took {took:?}"
+            attempts <= (rows_n + 2) * MAX_TRIES,
+            "{attempts} alignment attempts for {} logical lines",
+            rows_n + 2
         );
         let found = occurrences(&lines, Some(&whole), "brown fox");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].logical, 0);
+    }
+
+    // Every rendered line of a run that could not be lined up is a hit of its
+    // own, so Enter can step through all of them, not just the first.
+    #[test]
+    fn matches_in_lines_that_cannot_be_lined_up_each_get_their_own_hit() {
+        let shown = ["| hit a | x |", "| hit b | y |", "| hit c | z |"];
+        // Each logical row says more than the screen shows, so none lines up.
+        let whole = flat(&[
+            "| hit a \u{3a9} | x |",
+            "| hit b \u{3a9} | y |",
+            "| hit c \u{3a9} | z |",
+        ]);
+        let found = occurrences(&rows(&shown), Some(&whole), "hit");
+        let ids: Vec<(usize, usize)> = found.iter().map(|o| (o.logical, o.sub)).collect();
+        assert_eq!(ids, vec![(0, 0), (0, 1), (0, 2)]);
+        let mut hits: Vec<Hit> = found
+            .iter()
+            .map(|o| Hit {
+                row: 0,
+                detail: false,
+                line: o.logical,
+                sub: o.sub,
+            })
+            .collect();
+        hits.sort();
+        hits.dedup();
+        assert_eq!(hits.len(), 3);
     }
 
     #[test]
