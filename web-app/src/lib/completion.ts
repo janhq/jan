@@ -8,6 +8,7 @@ import {
 import { ulid } from 'ulidx'
 import { Attachment } from '@/types/attachment'
 import { injectFilesIntoPrompt } from './fileMetadata'
+import { PDF_MEDIA_TYPE } from './nativeFileInput'
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -31,6 +32,11 @@ export const newUserThreadContent = (
 
   const inlineDocuments = documents.filter(
     (doc) => doc.injectionMode === 'inline' && doc.inlineContent
+  )
+  // Recorded by where Jan keeps them, not by their contents; the request
+  // reads them when it is sent.
+  const nativeDocuments = documents.filter(
+    (doc) => doc.injectionMode === 'native' && doc.path
   )
 
   // Inject document metadata into the text content (id, name, fileType only - no path)
@@ -105,12 +111,25 @@ export const newUserThreadContent = (
     created_at: Date.now(),
     completed_at: Date.now(),
     metadata:
-      inlineDocuments.length > 0
+      inlineDocuments.length > 0 || nativeDocuments.length > 0
         ? {
-            inline_file_contents: inlineDocuments.map((doc) => ({
-              name: doc.name,
-              content: doc.inlineContent,
-            })),
+            ...(inlineDocuments.length > 0
+              ? {
+                  inline_file_contents: inlineDocuments.map((doc) => ({
+                    name: doc.name,
+                    content: doc.inlineContent,
+                  })),
+                }
+              : {}),
+            ...(nativeDocuments.length > 0
+              ? {
+                  native_files: nativeDocuments.map((doc) => ({
+                    name: doc.name,
+                    path: doc.path,
+                    media_type: PDF_MEDIA_TYPE,
+                  })),
+                }
+              : {}),
           }
         : undefined,
   }

@@ -115,3 +115,16 @@ describe('extractFilesFromPrompt', () => {
     expect(result.files[1].id).toBe('f2')
   })
 })
+
+// A PDF sent to the model as it is keeps its mode, so its chip says so.
+describe('a file sent to the model as it is', () => {
+  it('round-trips its mode', () => {
+    const prompt = injectFilesIntoPrompt('read this', [
+      { id: 'report.pdf', name: 'report.pdf', type: 'pdf', injectionMode: 'native' },
+    ])
+    expect(prompt).toContain('mode: native')
+    expect(extractFilesFromPrompt(prompt).files).toEqual([
+      { id: 'report.pdf', name: 'report.pdf', type: 'pdf', injectionMode: 'native' },
+    ])
+  })
+})

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   render,
   screen,
@@ -315,6 +315,9 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import { toast } from 'sonner'
+import { useServiceHub } from '@/hooks/useServiceHub'
 
 // Helpers -------------------------------------------------------------------
 
@@ -706,3 +709,121 @@ describe('ChatInput', () => {
     })
   })
  })
+
+// Dropping a file must attach it the way the + button does. Documents used to
+// be handed to the image path (jpg/png only) and rejected with an error, and
+// drops were ignored entirely unless the model could read images, audio or
+// video.
+describe('ChatInput - dropping files', () => {
+  const SAVED_PATH = 'D:/jan-data/attachments/01J0000000/report.pdf'
+  const saveDroppedFile = vi.fn()
+  let restoreUploads: () => void
+
+  beforeEach(() => {
+    resetAll()
+    saveDroppedFile.mockReset().mockResolvedValue(SAVED_PATH)
+    const hub = useServiceHub() as unknown as Record<string, unknown>
+    const previous = hub.uploads
+    hub.uploads = () => ({ saveDroppedFile })
+    restoreUploads = () => {
+      hub.uploads = previous
+    }
+  })
+
+  afterEach(() => restoreUploads())
+
+  const dropZone = () =>
+    document.querySelector('[data-drop-zone="true"]') as HTMLElement | null
+
+  const drop = async (file: File) => {
+    const zone = dropZone()
+    expect(zone).not.toBeNull()
+    await act(async () => {
+      fireEvent.drop(zone!, { dataTransfer: { files: [file], types: ['Files'] } })
+    })
+  }
+
+  /** The attachments ChatInput stored, replaying its updater on an empty list. */
+  const storedAttachments = () =>
+    setAttachmentsMock.mock.calls.flatMap(([, update]) =>
+      typeof update === 'function' ? update([]) : update
+    )
+
+  it('attaches a dropped PDF as a document, like the + button', async () => {
+    renderInput()
+    const pdf = new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' })
+
+    await drop(pdf)
+
+    await waitFor(() => expect(saveDroppedFile).toHaveBeenCalledWith(pdf))
+    await waitFor(() =>
+      expect(storedAttachments()).toEqual([
+        expect.objectContaining({
+          type: 'document',
+          name: 'report.pdf',
+          path: SAVED_PATH,
+          fileType: 'pdf',
+        }),
+      ])
+    )
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  // A PDF for a Responses API model goes to the model as it is, so there is
+  // no inline-or-retrieval choice to ask about.
+  describe('asking how to use a dropped PDF', () => {
+    const showPrompt = vi.fn()
+    beforeEach(() => {
+      showPrompt.mockReset().mockResolvedValue('embeddings')
+      ;(useAttachmentIngestionPrompt as unknown as { getState: () => unknown }).getState =
+        () => ({ showPrompt })
+      // Run the store updater, so ChatInput sees which documents are new.
+      setAttachmentsMock.mockImplementation((_key: string, update: unknown) =>
+        typeof update === 'function' ? update([]) : update
+      )
+    })
+    afterEach(() => {
+      setAttachmentsMock.mockImplementation(() => undefined)
+    })
+
+    it('does not ask for an Azure model', async () => {
+      selectedProviderOverride = 'azure'
+      renderInput()
+
+      await drop(new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' }))
+
+      await waitFor(() => expect(storedAttachments()).toHaveLength(1))
+      expect(showPrompt).not.toHaveBeenCalled()
+    })
+
+    it('still asks for a local model', async () => {
+      selectedProviderOverride = 'llamacpp'
+      renderInput()
+
+      await drop(new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' }))
+
+      await waitFor(() => expect(showPrompt).toHaveBeenCalled())
+    })
+  })
+
+  it('accepts dropped documents even when the model cannot read images', () => {
+    // The default model in this suite has no vision, audio or video support.
+    renderInput()
+
+    expect(dropZone()).not.toBeNull()
+  })
+
+  it('says which dropped files cannot be attached', async () => {
+    renderInput()
+
+    await drop(new File(['PK'], 'archive.zip', { type: 'application/zip' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'common:dropUnsupportedFiles',
+        expect.objectContaining({ description: 'archive.zip' })
+      )
+    )
+    expect(saveDroppedFile).not.toHaveBeenCalled()
+  })
+})

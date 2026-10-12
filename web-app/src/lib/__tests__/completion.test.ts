@@ -78,3 +78,68 @@ describe('newUserThreadContent — audio attachments', () => {
     expect(types).toContain(ContentType.InputAudio)
   })
 })
+
+// A PDF sent to the model as it is is recorded by where Jan keeps it, not by
+// its contents, so the thread stays small and the file is read when sent.
+describe('newUserThreadContent — PDFs sent as they are', () => {
+  it('records where the PDF is kept and lists it among the files', () => {
+    const doc: Attachment = {
+      name: 'report.pdf',
+      type: 'document',
+      fileType: 'pdf',
+      size: 1234,
+      path: 'D:/jan-data/attachments/01J/report.pdf',
+      processed: true,
+      injectionMode: 'native',
+    }
+
+    const msg = newUserThreadContent('thread-1', 'summarise this', [doc], 'm1')
+
+    expect(msg.metadata).toEqual({
+      native_files: [
+        {
+          name: 'report.pdf',
+          path: 'D:/jan-data/attachments/01J/report.pdf',
+          media_type: 'application/pdf',
+        },
+      ],
+    })
+    const text = (msg.content[0] as { text: { value: string } }).text.value
+    expect(text).toContain('name: report.pdf')
+    expect(text).toContain('mode: native')
+    expect(JSON.stringify(msg.content)).not.toContain('base64')
+  })
+
+  it('keeps inline documents next to PDFs sent as they are', () => {
+    const msg = newUserThreadContent(
+      'thread-1',
+      'compare',
+      [
+        {
+          name: 'report.pdf',
+          type: 'document',
+          fileType: 'pdf',
+          path: 'D:/kept/report.pdf',
+          processed: true,
+          injectionMode: 'native',
+        },
+        {
+          name: 'notes.txt',
+          type: 'document',
+          fileType: 'txt',
+          processed: true,
+          injectionMode: 'inline',
+          inlineContent: 'some notes',
+        },
+      ],
+      'm2'
+    )
+
+    expect(msg.metadata).toEqual({
+      inline_file_contents: [{ name: 'notes.txt', content: 'some notes' }],
+      native_files: [
+        { name: 'report.pdf', path: 'D:/kept/report.pdf', media_type: 'application/pdf' },
+      ],
+    })
+  })
+})

@@ -16,4 +16,17 @@ export interface UploadsService {
 
   // Ingest a document attachment in the context of a project (shared across all threads)
   ingestFileAttachmentForProject(projectId: string, attachment: Attachment): Promise<UploadResult>
+
+  // Save a file dropped onto the chat (which has no path on disk) into Jan's
+  // data folder and return the saved file's path, so it can be attached like
+  // a file picked with the dialog
+  saveDroppedFile(file: File): Promise<string>
+
+  // Copy a file on disk into Jan's data folder and return the copy's path, so
+  // a file sent to the model as it is stays readable for later turns
+  keepAttachmentFile(path: string, fileName: string): Promise<string>
+
+  // Read a file kept with keepAttachmentFile as a data URL, to send it to the
+  // model as it is; files outside Jan's attachments folder are refused
+  readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string>
 }

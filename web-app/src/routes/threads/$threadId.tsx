@@ -63,6 +63,7 @@ import {
   NEW_THREAD_ATTACHMENT_KEY,
 } from '@/hooks/useChatAttachments'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import { isSentAsIs } from '@/lib/nativeFileInput'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -1016,7 +1017,8 @@ function ThreadDetail() {
         (a) =>
           a.type === 'document' &&
           !a.processed &&
-          a.parseMode !== 'inline'
+          a.parseMode !== 'inline' &&
+          !isSentAsIs(a, selectedProvider, thread?.metadata?.project?.id)
       )
 
       // When there are unprocessed documents (e.g. first-message flow),

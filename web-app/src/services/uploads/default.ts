@@ -3,8 +3,58 @@ import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+
+// Convert in slices: spreading a whole large file into String.fromCharCode
+// overflows the call stack.
+const BASE64_SLICE_BYTES = 0x8000
+
+// FileReader, like the image attachment path, rather than File.arrayBuffer:
+// it is available wherever attachments are read, including the test DOM.
+function readFileBytes(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+// A file on disk, read through the asset protocol like picked audio and video.
+async function readLocalFile(path: string): Promise<Uint8Array> {
+  const response = await fetch(convertFileSrc(path))
+  if (!response.ok) {
+    throw new Error(`Failed to read ${path}: ${response.status} ${response.statusText}`)
+  }
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += BASE64_SLICE_BYTES) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_SLICE_BYTES))
+  }
+  return btoa(binary)
+}
 
 export class DefaultUploadsService implements UploadsService {
+  async saveDroppedFile(file: File): Promise<string> {
+    const dataBase64 = toBase64(new Uint8Array(await readFileBytes(file)))
+    return invoke<string>('save_attachment_file', { fileName: file.name, dataBase64 })
+  }
+
+  async keepAttachmentFile(path: string, fileName: string): Promise<string> {
+    const dataBase64 = toBase64(await readLocalFile(path))
+    return invoke<string>('save_attachment_file', { fileName, dataBase64 })
+  }
+
+  // The path comes from thread data, so the backend reads it, and refuses
+  // anything outside the attachments folder Jan saved it to.
+  async readAttachmentAsDataUrl(path: string, mediaType: string): Promise<string> {
+    const dataBase64 = await invoke<string>('read_attachment_file', { path })
+    return `data:${mediaType};base64,${dataBase64}`
+  }
+
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {
     if (attachment.type !== 'image') throw new Error('ingestImage: attachment is not image')
     // Placeholder upload flow; swap for real API call when backend is ready

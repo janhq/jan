@@ -30,7 +30,8 @@ export type Attachment = {
 
   // After processing (images uploaded, documents ingested)
   id?: string
-  injectionMode?: 'inline' | 'embeddings'
+  /** 'native': sent to the model as it is (a PDF for the Responses API). */
+  injectionMode?: 'inline' | 'embeddings' | 'native'
   inlineContent?: string
 }
 
