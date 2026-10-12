@@ -15,6 +15,8 @@
     "MISSING_SHARED_LIBRARY": "A library the engine needs is missing, so it cannot start.",
     "GPU_DRIVER_TOO_OLD": "Your GPU driver is too old for this engine. Updating the driver, or switching to the CPU engine in Settings, will fix this.",
     "OUT_OF_MEMORY": "There is not enough memory to run this model. A smaller model or a smaller context size usually helps.",
+    "ENGINE_STOPPED": "The llama.cpp engine stopped unexpectedly. Sending the message again starts it again; if it keeps stopping, security software or the GPU driver may be the cause.",
+    "ENGINE_UNREACHABLE": "The llama.cpp engine is running, but Jan cannot connect to it on this computer (127.0.0.1). A VPN, proxy or security software may be blocking local connections.",
     "INVALID_ARGUMENT": "One of the model's settings is not valid.",
     "IO_ERROR": "A file could not be read or written while starting the model.",
     "INTERNAL_ERROR": "Something went wrong inside Jan while starting the model."
