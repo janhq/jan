@@ -2,10 +2,9 @@
 //!
 //! Resolved once at startup and read live everywhere a colour depends on the
 //! terminal (the syntect theme in `highlight`, the diff `+`/`-` bands, the
-//! accent). The state is process-wide, mirroring `set_think_tags_parsed`: the
-//! colour helpers are reached from free render functions with no session in
-//! hand. Dark truecolor is the default so tests and any pre-resolution render
-//! match today's behaviour.
+//! accent). The state is process-wide: the colour helpers are reached from free
+//! render functions with no session in hand. Dark truecolor is the default so
+//! tests and any pre-resolution render match today's behaviour.
 //!
 //! Callers that need more than one colour take a resolved [`Theme`] (from
 //! [`Theme::current`]) and pass every truecolor value through [`Theme::fit`] or

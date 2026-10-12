@@ -2409,6 +2409,11 @@ struct Transcript {
     /// main conversation is journaled for a resume; a child's transcript lives
     /// as long as the session does, so recording it would only grow memory.
     journal: bool,
+    /// Whether inline `<think>` tags in this run's model content are reasoning.
+    /// Per run rather than per process: a subagent definition can name its own
+    /// model, so a child may be served by a provider whose default differs from
+    /// the main model's, and its content must follow its own provider's setting.
+    parse_think_tags: bool,
 }
 
 impl Transcript {
@@ -2419,6 +2424,18 @@ impl Transcript {
             // Overwritten from the session config right after construction.
             stream_reasoning: true,
             journal: true,
+            parse_think_tags: INITIAL_THINK_TAGS,
+            ..Transcript::default()
+        }
+    }
+
+    /// A subagent's transcript, not journaled. It starts on the main
+    /// conversation's setting, since a child with no model of its own runs on
+    /// the parent's, and moves to its own provider's once its first request
+    /// reports which that is.
+    fn for_child(parse_think_tags: bool) -> Self {
+        Transcript {
+            parse_think_tags,
             ..Transcript::default()
         }
     }
@@ -2991,7 +3008,7 @@ impl Transcript {
         }
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only turn, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&prose, &segs) {
+        if !assistant_has_content(&prose, &segs, self.parse_think_tags) {
             return;
         }
         // Model prose ends the current run of tool calls.
@@ -3017,7 +3034,7 @@ impl Transcript {
         segs: &[ReasoningSeg],
         reasoning_dur: Option<Duration>,
     ) {
-        let runs = assistant_runs(prose, segs);
+        let runs = assistant_runs(prose, segs, self.parse_think_tags);
         // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
         // when the turn has one reasoning block; stamping it on each of several
         // would misreport all but one (per-block timing is not tracked). With
@@ -3508,7 +3525,7 @@ impl Transcript {
     /// `buf_scan` brought up to date with `assistant_buf`.
     fn scan_buf(&self) -> BufScan {
         let mut scan = self.buf_scan.borrow_mut();
-        scan.sync(&self.assistant_buf);
+        scan.sync(&self.assistant_buf, self.parse_think_tags);
         scan.clone()
     }
 
@@ -3521,7 +3538,7 @@ impl Transcript {
             width,
             fold: !self.show_reasoning,
             stream: self.stream_reasoning,
-            gate: think_tags_parsed(),
+            gate: self.parse_think_tags,
             theme: theme::Theme::current(),
         };
         let mut cache = self.live_tail.borrow_mut();
@@ -3539,16 +3556,17 @@ impl Transcript {
                     width,
                     key.fold,
                     key.stream,
+                    key.gate,
                 ),
-                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs),
-                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs),
+                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs, key.gate),
+                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs, key.gate),
             });
         }
         let tail = cache.as_ref().expect("filled above");
         (tail.lines.clone(), tail.leading, tail.trailing)
     }
 
-    /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
+    /// `has_answer_text(&self.assistant_buf, ..)`, without rescanning the reply.
     fn answer_started(&self) -> bool {
         self.scan_buf().answer
     }
@@ -4554,7 +4572,7 @@ impl SubagentPanel {
             waiting: 0,
             pending: false,
             phase: None,
-            transcript: Transcript::default(),
+            transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
 
@@ -7085,32 +7103,45 @@ impl App {
         resolved
     }
 
-    /// Point the `<think>` tag gate at whoever serves the current model. The
-    /// default differs per provider, so it follows the model across `/model`
-    /// switches and provider reloads; rows already built keep the split they
-    /// were built with.
+    /// Point the main conversation's `<think>` tag gate at whoever serves the
+    /// current model. The default differs per provider, so it follows the model
+    /// across `/model` switches and provider reloads; rows already built keep
+    /// the split they were built with. A subagent's gate is its own, set from
+    /// the provider its requests report (see `apply_subagent_event`).
     fn sync_think_tags(&mut self) {
-        let gate = self.think_tags_gate();
-        set_think_tags_parsed(gate);
+        self.transcript.parse_think_tags = self.think_tags_gate();
     }
 
-    /// Whether the current model's provider has its inline tags parsed.
+    /// Whether the current model's provider has its inline tags parsed. The
+    /// main gate resolves even when the config lock is busy, from the
+    /// provider's name alone, as it always has.
     fn think_tags_gate(&mut self) -> bool {
         let provider = self.serving_provider();
-        let (api_type, base_url) = provider
-            .as_deref()
-            .and_then(|name| {
-                let args = self.args.as_ref()?;
+        self.think_tags_for_provider(provider.as_deref(), None)
+            .unwrap_or_else(|| think_tags_for_run(provider.as_deref(), None, None))
+    }
+
+    /// Whether a run served by the configured provider `provider` has its
+    /// inline tags parsed: that provider's own `api_type` and `base_url` decide,
+    /// the way they do for the main model. `api_type` is the one a request
+    /// reported, used when the configuration does not name one. `None` when the
+    /// configuration cannot be read right now (its lock is held), so a caller
+    /// that already has an answer can keep it.
+    fn think_tags_for_provider(&self, provider: Option<&str>, api_type: Option<&str>) -> Option<bool> {
+        let (configured_api_type, base_url) = match (provider, self.args.as_ref()) {
+            (Some(name), Some(args)) => {
                 let pc = args.provider_configs.try_lock().ok()?;
-                let config = pc.get(name)?;
-                Some((config.api_type.clone(), config.base_url.clone()))
-            })
-            .unwrap_or_default();
-        crate::core::agent::global_config::think_tags_enabled_for(
-            provider.as_deref(),
-            api_type.as_deref(),
+                pc.get(name)
+                    .map(|config| (config.api_type.clone(), config.base_url.clone()))
+                    .unwrap_or_default()
+            }
+            _ => Default::default(),
+        };
+        Some(think_tags_for_run(
+            provider,
+            configured_api_type.as_deref().or(api_type),
             base_url.as_deref(),
-        )
+        ))
     }
 
     /// The `/usage` bucket one request bills against.
@@ -7529,12 +7560,17 @@ impl App {
                 }
             }
             StreamEvent::SubagentStart { run_id, name, task } => {
+                // A child with no model of its own runs on the parent's, so it
+                // starts on the parent's tag setting; its first request moves it
+                // to its own provider's if that differs.
+                let inherited = self.transcript.parse_think_tags;
                 // A queued/pending dispatch already opened a panel; promote it to
                 // running instead of pushing a duplicate. A queued one matches by
                 // run_id; a pending later-phase one matches by name (no run_id
                 // yet). Otherwise open a fresh live panel (several may be active).
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.queued = false;
+                    panel.transcript.parse_think_tags = inherited;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -7543,14 +7579,16 @@ impl App {
                     panel.run_id = run_id;
                     panel.pending = false;
                     panel.queued = false;
+                    panel.transcript.parse_think_tags = inherited;
                     if let Some(t) = task {
                         panel.task = t;
                     }
                 } else {
                     self.transcript.finalize_tool_group();
                     self.transcript.flush_assistant();
-                    self.subagents
-                        .push(SubagentPanel::new(run_id, name, task.unwrap_or_default()));
+                    let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
+                    panel.transcript.parse_think_tags = inherited;
+                    self.subagents.push(panel);
                 }
             }
             StreamEvent::SubagentQueued {
@@ -7731,6 +7769,21 @@ impl App {
     /// dock row and, once it ends, its summary row. A permission request docks
     /// the shared prompt, attributed to the asking subagent.
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
+        // A request names the provider that serves it, before any of its
+        // content streams. That is how a child learns its own tag setting: a
+        // definition can name a model another provider serves, and its content
+        // must follow that provider's default, not the main model's.
+        if let StreamEvent::RequestProvenance { provider, api_type, .. } = &event {
+            // An unreadable config (another run holds the lock) leaves the
+            // child's gate as it was: guessing without the endpoint can read an
+            // `openai`-named entry pointed at vLLM as the official API.
+            if let Some(gate) = self.think_tags_for_provider(provider.as_deref(), api_type.as_deref()) {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.transcript.parse_think_tags = gate;
+                }
+            }
+            return;
+        }
         let (show, stream) = (self.transcript.show_reasoning, self.transcript.stream_reasoning);
         let mut panel = self.subagents.iter_mut().find(|p| p.run_id == run_id);
         // A child's reasoning reads the way the parent's does, including after
@@ -8033,7 +8086,7 @@ impl App {
         // Preserved so the final assistant turn can be resent with its
         // reasoning (see below).
         let (reasoning, answer) = self.take_turn_answer();
-        let wire = answer_without_reasoning(&answer);
+        let wire = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
             // Resend the final answer's reasoning on the wire turn, mirroring
@@ -8111,7 +8164,7 @@ impl App {
         // truncated/filtered finish, or a "stop" that yielded no answer (an
         // empty/malformed upstream completion defaults to stop_reason=stop).
         let normal = matches!(stop_reason.as_str(), "stop" | "end_turn" | "stop_sequence");
-        let no_answer = !has_answer_text(&answer);
+        let no_answer = !has_answer_text(&answer, self.transcript.parse_think_tags);
         if !normal || no_answer {
             let msg = if no_answer {
                 format!("finished with no answer (stop_reason={stop_reason})")
@@ -8319,7 +8372,7 @@ impl App {
         // Like `on_done`, so a cancelled turn's partial answer keeps the
         // reasoning that produced it.
         let (reasoning, answer) = self.take_turn_answer();
-        let answer = answer_without_reasoning(&answer);
+        let answer = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !answer.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
             if !reasoning.is_empty() {
@@ -11099,10 +11152,10 @@ fn pluralize(noun: &str, n: usize) -> String {
 /// decide when a tool group closes: reasoning streamed between tool calls must
 /// not end the run (a reasoning model thinks before every call), only real
 /// answer text does.
-fn has_answer_text(buf: &str) -> bool {
+fn has_answer_text(buf: &str, parse_tags: bool) -> bool {
     #[cfg(test)]
     tally(&ANSWER_SCANS);
-    split_reasoning(buf)
+    split_reasoning(buf, parse_tags)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
 }
@@ -11110,9 +11163,9 @@ fn has_answer_text(buf: &str) -> bool {
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning never belongs in `content`; it rides along on the message's
 /// `reasoning_content` instead (see `on_done`), and the display journal is what
-/// keeps it for a resume.
-pub(crate) fn answer_without_reasoning(text: &str) -> String {
-    split_reasoning(text)
+/// keeps it for a resume. `parse_tags` is the setting of the run that said it.
+pub(crate) fn answer_without_reasoning(text: &str, parse_tags: bool) -> String {
+    split_reasoning(text, parse_tags)
         .into_iter()
         .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
         .collect::<String>()
@@ -11197,47 +11250,47 @@ fn think_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"</?[a-zA-Z:]*think>").unwrap())
 }
 
-/// Whether inline `<think>` tags in model content are parsed as reasoning.
-/// Process-wide rather than a session field because the split runs on every
-/// rendered row, from free functions a `Row` reaches with no session in hand.
-/// Set from the serving provider's setting by `set_think_tags_parsed`; `false`
-/// until then.
-static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// What a transcript parses before its serving provider has been resolved: off,
+/// so a run never treats tags as reasoning on a guess. Tests start on instead,
+/// as `THINK_TAGS_TEST_GATE` does, because the reasoning-fold tests feed inline
+/// tags.
+const INITIAL_THINK_TAGS: bool = cfg!(test);
+
+/// Whether inline `<think>` tags are parsed as reasoning for a run served by
+/// `provider`: the one place a run's setting is resolved, so the main
+/// conversation and each subagent can disagree. The default differs per
+/// provider, which is why it is a property of the run that renders the content
+/// and not of the process.
+fn think_tags_for_run(
+    provider: Option<&str>,
+    api_type: Option<&str>,
+    base_url: Option<&str>,
+) -> bool {
+    #[cfg(test)]
+    if let Some(forced) = THINK_TAGS_TEST_GATE.with(|c| c.get()) {
+        return forced;
+    }
+    crate::core::agent::global_config::think_tags_enabled_for(provider, api_type, base_url)
+}
 
 #[cfg(test)]
 thread_local! {
-    /// Per-test override. A test flips its own thread's answer instead of the
-    /// shared static, so a gate-off test cannot race the rest of the suite.
-    /// Starts on: the reasoning-fold tests feed inline tags, which production
-    /// only parses once `think_tags = true`. The shipped default (off) is
-    /// pinned by the `global_config` test.
-    static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
+    /// What `think_tags_for_run` answers in a test, instead of consulting the
+    /// config. Starts on: the reasoning-fold tests feed inline tags, which
+    /// production only parses once `think_tags = true`; the shipped default
+    /// (off) is pinned by the `global_config` test. `None` resolves for real,
+    /// for the tests that care which provider a run is served by.
+    static THINK_TAGS_TEST_GATE: std::cell::Cell<Option<bool>> =
         const { std::cell::Cell::new(Some(true)) };
 }
 
-/// Apply the tag gate for the process. Seeded by `prepare_agent_session` for
-/// every surface; `App::sync_think_tags` re-applies it in the TUI whenever the
-/// serving provider can change.
-pub(crate) fn set_think_tags_parsed(enabled: bool) {
-    PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
-}
-
-fn think_tags_parsed() -> bool {
-    #[cfg(test)]
-    {
-        if let Some(over) = PARSE_THINK_TAGS_OVERRIDE.with(|c| c.get()) {
-            return over;
-        }
-    }
-    PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Run `f` with `<think>` parsing off on this thread only.
+/// Run `f` with the tag gate resolved from the real provider settings, on this
+/// thread only.
 #[cfg(test)]
-fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
-    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
+fn with_real_think_tag_gate<T>(f: impl FnOnce() -> T) -> T {
+    let before = THINK_TAGS_TEST_GATE.with(|c| c.replace(None));
     let out = f();
-    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(true)));
+    THINK_TAGS_TEST_GATE.with(|c| c.set(before));
     out
 }
 
@@ -11248,8 +11301,8 @@ fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
 /// With `think_tags = false` in `~/.jan/config.toml` the tags carry no meaning:
 /// the whole text is one answer run, so it renders verbatim and stays in the
 /// answer that goes back as history.
-fn split_reasoning(text: &str) -> Vec<(bool, String)> {
-    if !think_tags_parsed() {
+fn split_reasoning(text: &str, parse_tags: bool) -> Vec<(bool, String)> {
+    if !parse_tags {
         return if text.is_empty() {
             Vec::new()
         } else {
@@ -11286,22 +11339,22 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
 ///
 /// Offsets come from `prose.len()` at emission time, so they are always char
 /// boundaries and always ascending.
-fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
+fn assistant_runs(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Vec<(bool, String)> {
     if segs.is_empty() {
-        return split_reasoning(prose);
+        return split_reasoning(prose, parse_tags);
     }
     let mut out = Vec::new();
     let mut last = 0;
     for seg in segs {
         let at = seg.at.min(prose.len()).max(last);
-        out.extend(split_reasoning(&prose[last..at]));
+        out.extend(split_reasoning(&prose[last..at], parse_tags));
         let text = seg.text.trim_end();
         if !text.is_empty() {
             out.push((true, text.to_string()));
         }
         last = at;
     }
-    out.extend(split_reasoning(&prose[last..]));
+    out.extend(split_reasoning(&prose[last..], parse_tags));
     out
 }
 
@@ -11336,8 +11389,7 @@ struct BufScan {
 const BUF_SCAN_TAIL: usize = 32;
 
 impl BufScan {
-    fn sync(&mut self, buf: &str) {
-        let gate = think_tags_parsed();
+    fn sync(&mut self, buf: &str, gate: bool) {
         let same = gate == self.gate
             && buf.len() >= self.len
             && buf.as_bytes()[self.len - self.tail.len()..self.len] == self.tail[..];
@@ -11489,9 +11541,9 @@ fn could_become_think_tag(s: &str) -> bool {
 /// matching close has not yet streamed). The live path folds this in token by
 /// token (`BufScan`); this full scan is the reference it is tested against.
 #[cfg(test)]
-fn thinking_open(text: &str) -> bool {
+fn thinking_open(text: &str, parse_tags: bool) -> bool {
     tally(&THINK_SCANS);
-    if !think_tags_parsed() {
+    if !parse_tags {
         return false;
     }
     let mut open = false;
@@ -11502,8 +11554,8 @@ fn thinking_open(text: &str) -> bool {
 }
 
 /// True if the turn has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
-    assistant_runs(prose, segs)
+fn assistant_has_content(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> bool {
+    assistant_runs(prose, segs, parse_tags)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
 }
@@ -11512,8 +11564,8 @@ fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
 /// separator can mirror `gap` exactly: reasoning shares the `Tool` band, so a
 /// tool call followed by streaming reasoning gets no blank, while streaming
 /// prose still opens with one.
-fn live_leading_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
-    assistant_runs(prose, segs)
+fn live_leading_kind(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Option<Kind> {
+    assistant_runs(prose, segs, parse_tags)
         .into_iter()
         .find(|(_, seg)| !seg.trim().is_empty())
         .map(|(reasoning, _)| if reasoning { Kind::Reasoning } else { Kind::Prose })
@@ -11522,8 +11574,8 @@ fn live_leading_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
 /// `Kind` of the last non-empty run the live tail renders, so a row appended
 /// below it (an awaiting/starting throbber) can gap against what actually
 /// precedes it rather than always inserting a blank.
-fn live_trailing_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
-    assistant_runs(prose, segs)
+fn live_trailing_kind(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Option<Kind> {
+    assistant_runs(prose, segs, parse_tags)
         .into_iter()
         .rev()
         .find(|(_, seg)| !seg.trim().is_empty())
@@ -12035,6 +12087,8 @@ pub async fn run(
         limits,
         show_reasoning,
         stream_reasoning,
+        // Re-resolved by `App::sync_think_tags` below and on every model switch.
+        parse_think_tags: _,
         send_reasoning,
         mcp_servers,
         mcp_task,
@@ -24254,7 +24308,7 @@ mod tests {
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        without_think_tags, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -26817,7 +26871,7 @@ mod tests {
 
     #[test]
     fn split_reasoning_separates_think_blocks() {
-        let segs = split_reasoning("before<think>hidden</think>after");
+        let segs = split_reasoning("before<think>hidden</think>after", true);
         assert_eq!(
             segs,
             vec![
@@ -26830,7 +26884,7 @@ mod tests {
 
     #[test]
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
-        let segs = split_reasoning("<mm:think>reasoning tail");
+        let segs = split_reasoning("<mm:think>reasoning tail", true);
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
     }
 
@@ -26839,7 +26893,7 @@ mod tests {
     #[test]
     fn think_tags_gate_off_makes_the_whole_text_answer_prose() {
         let text = "before<think>hidden</think>after";
-        let segs = without_think_tags(|| split_reasoning(text));
+        let segs = split_reasoning(text, false);
         assert_eq!(segs, vec![(false, text.to_string())]);
     }
 
@@ -26849,12 +26903,12 @@ mod tests {
     fn think_tags_gate_off_keeps_the_tags_in_the_wire_answer() {
         let text = "<think>hidden</think>answer";
         assert_eq!(
-            without_think_tags(|| answer_without_reasoning(text)),
+            answer_without_reasoning(text, false),
             text,
             "nothing is reasoning with the gate off"
         );
         assert_eq!(
-            answer_without_reasoning(text),
+            answer_without_reasoning(text, true),
             "answer",
             "the default still strips it"
         );
@@ -26864,8 +26918,8 @@ mod tests {
     /// badge and the folded live tail stay off.
     #[test]
     fn think_tags_gate_off_never_reports_an_open_block() {
-        assert!(thinking_open("<think>still going"));
-        assert!(!without_think_tags(|| thinking_open("<think>still going")));
+        assert!(thinking_open("<think>still going", true));
+        assert!(!thinking_open("<think>still going", false));
     }
 
     /// A journal written before reasoning was stored apart has its markers
@@ -26925,9 +26979,9 @@ mod tests {
             (true, "a thought".to_string()),
             (false, "answer".to_string()),
         ];
-        assert_eq!(assistant_runs("answer", &segs), expected);
+        assert_eq!(assistant_runs("answer", &segs, true), expected);
         assert_eq!(
-            without_think_tags(|| assistant_runs("answer", &segs)),
+            assistant_runs("answer", &segs, false),
             expected,
             "native reasoning is not encoded as tags, so the gate cannot hide it"
         );
@@ -26948,7 +27002,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            assistant_runs("prose tail", &segs),
+            assistant_runs("prose tail", &segs, true),
             vec![
                 (true, "first".to_string()),
                 (false, "prose ".to_string()),
@@ -26967,7 +27021,7 @@ mod tests {
             text: "the </think> tag closes a block".into(),
         }];
         assert_eq!(
-            assistant_runs("answer", &segs),
+            assistant_runs("answer", &segs, true),
             vec![
                 (true, "the </think> tag closes a block".to_string()),
                 (false, "answer".to_string()),
@@ -26979,20 +27033,19 @@ mod tests {
     /// as ordinary prose, with no reasoning block folded out of the transcript.
     #[test]
     fn think_tags_gate_off_commits_tagged_content_as_one_answer() {
-        without_think_tags(|| {
-            let mut app = test_app();
-            app.submit_user("go".into());
-            app.apply(StreamEvent::Token {
-                text: "<think>ponder</think>Answer.".into(),
-            });
-            app.on_done("stop".into(), None);
-            assert!(
-                app.transcript.reasoning_blocks.is_empty(),
-                "nothing may fold with the gate off"
-            );
-            let last = app.history.last().expect("assistant turn in history");
-            assert_eq!(last["content"], "<think>ponder</think>Answer.");
+        let mut app = test_app();
+        app.transcript.parse_think_tags = false;
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder</think>Answer.".into(),
         });
+        app.on_done("stop".into(), None);
+        assert!(
+            app.transcript.reasoning_blocks.is_empty(),
+            "nothing may fold with the gate off"
+        );
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "<think>ponder</think>Answer.");
     }
 
     #[test]
@@ -27055,7 +27108,7 @@ mod tests {
     #[test]
     fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
         let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
-        let lines = super::live_assistant_lines(&format!("<think>{body}"), &[], 60, true, true);
+        let lines = super::live_assistant_lines(&format!("<think>{body}"), &[], 60, true, true, true);
         let text: Vec<String> = lines
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -27077,7 +27130,7 @@ mod tests {
         for n in (1..=words.len()).step_by(3) {
             let body = words[..n].join(" ");
             let lines =
-                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true);
+                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true, true);
             let rows = lines.len() as u16;
             assert_eq!(
                 rows,
@@ -27102,6 +27155,7 @@ mod tests {
             "<think>weighed it\ntwice</think>Here is the answer.",
             &[],
             60,
+            true,
             true,
             true,
         );
@@ -30510,52 +30564,58 @@ mod tests {
         });
     }
 
+    /// Two providers whose defaults disagree: a custom OpenAI-compatible one
+    /// (inline tags are reasoning) and tokamak on its own host (reasoning comes
+    /// in its own field, so tags are ordinary prose).
+    fn tag_gate_providers() -> std::collections::HashMap<String, crate::core::state::ProviderConfig>
+    {
+        let provider = |name: &str, model: &str| {
+            let base_url = match name {
+                "tokamak" => "https://api.tokamak.sh/v1",
+                _ => "http://127.0.0.1:1/v1",
+            };
+            (
+                name.to_string(),
+                crate::core::state::ProviderConfig {
+                    provider: name.into(),
+                    base_url: Some(base_url.into()),
+                    models: vec![model.into()],
+                    ..Default::default()
+                },
+            )
+        };
+        [provider("mine", "local-reasoner"), provider("tokamak", "tk-1")]
+            .into_iter()
+            .collect()
+    }
+
     /// The tag gate follows whoever serves the model: a custom OpenAI-compatible
     /// provider parses inline tags, tokamak (reasoning in its own field) does not,
     /// and switching models moves the gate with it.
     #[test]
     fn think_tag_gate_follows_the_serving_provider_across_a_model_switch() {
         crate::core::agent::global_config::with_temp_home(|_| {
-            // `tokamak` is only "separate reasoning" on its own host.
-            let provider = |name: &str, model: &str| {
-                let base_url = match name {
-                    "tokamak" => "https://api.tokamak.sh/v1",
-                    _ => "http://127.0.0.1:1/v1",
-                };
-                (
-                    name.to_string(),
-                    crate::core::state::ProviderConfig {
-                        provider: name.into(),
-                        base_url: Some(base_url.into()),
-                        models: vec![model.into()],
-                        ..Default::default()
-                    },
-                )
-            };
-            let mut app = test_app();
-            let args = test_args(
-                &app,
-                [provider("mine", "local-reasoner"), provider("tokamak", "tk-1")]
-                    .into_iter()
-                    .collect(),
-            );
-            app.args = Some(args);
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                let args = test_args(&app, tag_gate_providers());
+                app.args = Some(args);
 
-            app.model = "local-reasoner".into();
-            assert!(app.think_tags_gate(), "custom provider parses tags");
-            app.set_model("tk-1".into());
-            assert!(!app.think_tags_gate(), "tokamak sends reasoning separately");
-            assert!(!super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
-            app.set_model("local-reasoner".into());
-            assert!(super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
+                app.model = "local-reasoner".into();
+                assert!(app.think_tags_gate(), "custom provider parses tags");
+                app.set_model("tk-1".into());
+                assert!(!app.think_tags_gate(), "tokamak sends reasoning separately");
+                assert!(!app.transcript.parse_think_tags);
+                app.set_model("local-reasoner".into());
+                assert!(app.transcript.parse_think_tags);
+            });
         });
     }
 
     /// A headless run (`jan cli agent run`, rpc, acp) never builds an `App`, yet
-    /// its result strips reasoning through the same gate, so session setup has
-    /// to seed it from the provider that serves the model.
+    /// its result strips reasoning by the serving provider's setting, so session
+    /// setup has to resolve it from the provider that serves the model.
     #[test]
-    fn preparing_a_session_seeds_the_think_tag_gate_for_headless_runs() {
+    fn preparing_a_session_resolves_the_think_tag_gate_for_headless_runs() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let set = |name: &str, model: &str| {
                 let base_url = match name {
@@ -30575,7 +30635,7 @@ mod tests {
             set("mine", "local-reasoner");
             set("tokamak", "tk-1");
             let dir = tempfile::tempdir().unwrap();
-            let prepare = |model: &str| {
+            let gate = |model: &str| {
                 super::super::prepare_agent_session(
                     dir.path().to_str().unwrap(),
                     Some(model.to_string()),
@@ -30584,12 +30644,175 @@ mod tests {
                     None,
                 )
                 .expect("session")
+                .parse_think_tags
             };
-            let gate = || super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed);
-            prepare("local-reasoner");
-            assert!(gate(), "custom provider parses tags");
-            prepare("tk-1");
-            assert!(!gate(), "tokamak sends reasoning separately");
+            assert!(gate("local-reasoner"), "custom provider parses tags");
+            assert!(!gate("tk-1"), "tokamak sends reasoning separately");
+        });
+    }
+
+    /// A request a child makes, as its run reports it before any of its content.
+    fn child_request_on(provider: &str, model: &str) -> StreamEvent {
+        StreamEvent::Subagent {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            event: Box::new(StreamEvent::RequestProvenance {
+                run_id: Some("sub-a-1".into()),
+                session_id: None,
+                provider: Some(provider.into()),
+                model: model.into(),
+                api_type: None,
+                request_sha256: String::new(),
+                body_bytes: 0,
+                tools_sha256: None,
+                images: Vec::new(),
+            }),
+        }
+    }
+
+    /// Run a main model and a child that says `<think>child thought</think>
+    /// child answer`; the child's request (when `child_on` names one) says which
+    /// provider serves it. Returns what the child's panel shows and the main
+    /// conversation's own gate.
+    fn child_with_tagged_content(main_model: &str, child_on: Option<(&str, &str)>) -> (String, bool) {
+        let mut app = test_app();
+        let args = test_args(&app, tag_gate_providers());
+        app.args = Some(args);
+        app.model = main_model.into();
+        app.sync_think_tags();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            task: None,
+        });
+        if let Some((provider, model)) = child_on {
+            app.apply(child_request_on(provider, model));
+        }
+        app.apply(StreamEvent::Subagent {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            event: Box::new(StreamEvent::Token {
+                text: "<think>child thought</think>child answer".into(),
+            }),
+        });
+        let text = agent_detail_text(&mut app, "sub-a-1", 100, 40);
+        (text, app.transcript.parse_think_tags)
+    }
+
+    /// A subagent definition can name a model another provider serves, so the
+    /// child must treat inline tags by *its* provider's setting: here the main
+    /// model parses them and the child's provider does not.
+    #[test]
+    fn a_child_on_a_provider_that_does_not_parse_tags_shows_them_as_prose() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, main_parses) =
+                    child_with_tagged_content("local-reasoner", Some(("tokamak", "tk-1")));
+                assert!(main_parses, "the main model's provider parses tags");
+                assert!(
+                    child.contains("<think>child thought</think>child answer"),
+                    "the child's tags are prose: {child}"
+                );
+                assert!(!child.contains("Thought"), "no reasoning row folded: {child}");
+            });
+        });
+    }
+
+    /// The other direction: the main model's provider leaves tags alone and the
+    /// child's provider parses them.
+    #[test]
+    fn a_child_on_a_provider_that_parses_tags_folds_them_into_reasoning() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, main_parses) =
+                    child_with_tagged_content("tk-1", Some(("mine", "local-reasoner")));
+                assert!(!main_parses, "the main model's provider does not parse tags");
+                assert!(child.contains("┊ Thought"), "the child's reasoning folds: {child}");
+                assert!(!child.contains("<think>"), "its tags are consumed: {child}");
+            });
+        });
+    }
+
+    /// A child that names no model of its own runs on the parent's, so before
+    /// any request says otherwise it follows the parent's setting.
+    #[test]
+    fn a_child_with_no_model_of_its_own_follows_the_mains_setting() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, _) = child_with_tagged_content("local-reasoner", None);
+                assert!(child.contains("┊ Thought"), "parsed like the main model: {child}");
+                let (child, _) = child_with_tagged_content("tk-1", None);
+                assert!(
+                    child.contains("<think>child thought</think>child answer"),
+                    "left alone like the main model: {child}"
+                );
+            });
+        });
+    }
+
+    /// Each run strips its own answer: the main run's history copy follows the
+    /// main model's provider, whatever a child on another provider does.
+    #[test]
+    fn a_childs_provider_does_not_change_how_the_main_answer_is_stripped() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                let args = test_args(&app, tag_gate_providers());
+                app.args = Some(args);
+                app.model = "local-reasoner".into();
+                app.sync_think_tags();
+                app.apply(StreamEvent::SubagentStart {
+                    run_id: "sub-a-1".into(),
+                    name: "a".into(),
+                    task: None,
+                });
+                app.apply(child_request_on("tokamak", "tk-1"));
+                app.submit_user("go".into());
+                app.apply(StreamEvent::Token {
+                    text: "<think>main thought</think>main answer".into(),
+                });
+                app.on_done("stop".into(), None);
+                let last = app.history.last().expect("assistant turn in history");
+                assert_eq!(last["content"], "main answer");
+            });
+        });
+    }
+
+    /// A request landing while the provider config is locked cannot say what
+    /// the child's provider is configured as. The child keeps the setting it
+    /// has rather than guessing: without the endpoint, a `tokamak` entry
+    /// pointed at some other host reads as the official one and would flip a
+    /// tags-parsing child off for that request.
+    #[test]
+    fn a_busy_config_lock_leaves_a_childs_tag_gate_as_it_was() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                // `tokamak` on a self-hosted endpoint: tags are reasoning there.
+                let mut providers = tag_gate_providers();
+                providers
+                    .get_mut("tokamak")
+                    .expect("seeded")
+                    .base_url = Some("http://127.0.0.1:1/v1".into());
+                let args = test_args(&app, providers);
+                app.args = Some(args.clone());
+                app.model = "tk-1".into();
+                app.sync_think_tags();
+                assert!(app.transcript.parse_think_tags, "self-hosted tokamak parses tags");
+                app.apply(StreamEvent::SubagentStart {
+                    run_id: "sub-a-1".into(),
+                    name: "a".into(),
+                    task: None,
+                });
+                let rt = tokio::runtime::Runtime::new().expect("runtime");
+                let held = rt.block_on(args.provider_configs.lock());
+                app.apply(child_request_on("tokamak", "tk-1"));
+                drop(held);
+                assert!(
+                    app.subagents[0].transcript.parse_think_tags,
+                    "an unreadable config must not turn the child's tags off"
+                );
+            });
         });
     }
 
