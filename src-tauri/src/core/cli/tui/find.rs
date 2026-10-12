@@ -283,20 +283,13 @@ pub(super) fn highlight_ranges(
             if r.start >= end || r.end <= start {
                 continue;
             }
-            let paint = if *current {
-                current_style()
-            } else {
-                match_style()
-            };
+            let paint = if *current { current_style() } else { match_style() };
             let (a, b) = (r.start.max(start).max(cut), r.end.min(end));
             if b <= a {
                 continue;
             }
             if a > cut {
-                spans.push(Span::styled(
-                    text[cut - start..a - start].to_string(),
-                    span.style,
-                ));
+                spans.push(Span::styled(text[cut - start..a - start].to_string(), span.style));
             }
             spans.push(Span::styled(
                 text[a - start..b - start].to_string(),
