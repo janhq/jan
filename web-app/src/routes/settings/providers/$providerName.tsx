@@ -34,7 +34,10 @@ import {
 import { useDefaultEmbeddingModel } from '@/hooks/useDefaultEmbeddingModel'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { predefinedProviders } from '@/constants/providers'
+import {
+  AZURE_BASE_URL_PLACEHOLDER,
+  predefinedProviders,
+} from '@/constants/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
@@ -817,7 +820,7 @@ function ProviderDetail() {
                         </div>
                         <input
                           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          placeholder="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1"
+                          placeholder={AZURE_BASE_URL_PLACEHOLDER}
                           value={baseUrlDraft}
                           onChange={(e) => setBaseUrlDraft(e.target.value)}
                           onBlur={() => commitBaseUrlDraft()}

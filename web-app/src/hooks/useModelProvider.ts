@@ -4,7 +4,10 @@ import { localStorageKey } from '@/constants/localStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { backendStorage } from '@/lib/backendStorage'
 import { modelSettings } from '@/lib/predefined'
-import { predefinedProviders } from '@/constants/providers'
+import {
+  AZURE_BASE_URL_PLACEHOLDER,
+  predefinedProviders,
+} from '@/constants/providers'
 import { isLocalProvider } from '@/lib/utils'
 import { API_KEY_FALLBACKS_SETTING_KEY } from '@/lib/provider-api-keys'
 
@@ -795,9 +798,31 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 19 && state?.providers) {
+          // Azure used to ship its example endpoint as the default base_url,
+          // so an unconfigured install sent requests (and any key the user had
+          // entered) to `your-resource-name`, a resource name anyone can
+          // register. Treat that stored example as "not configured".
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'azure') return
+            if (provider.base_url === AZURE_BASE_URL_PLACEHOLDER) {
+              provider.base_url = ''
+            }
+            const baseUrlSetting = provider.settings?.find(
+              (s) => s.key === 'base-url'
+            )
+            const props = baseUrlSetting?.controller_props as
+              | { value?: unknown }
+              | undefined
+            if (props?.value === AZURE_BASE_URL_PLACEHOLDER) {
+              props.value = ''
+            }
+          })
+        }
+
         return state
       },
-      version: 19,
+      version: 20,
     }
   )
 )
