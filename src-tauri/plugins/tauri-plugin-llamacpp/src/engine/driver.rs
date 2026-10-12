@@ -66,7 +66,7 @@ pub fn startup_warning(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -> O
     }
     let (supported, built) = (driver.cuda?, toolkit?);
     let effect = if supported.major < built.major {
-        "The CUDA runtime will not start on this driver for every GPU."
+        "The CUDA runtime will not start on this driver for any GPU."
     } else {
         "GPUs the engine has no native code for will fail to load."
     };
@@ -257,7 +257,7 @@ mod tests {
         assert!(!payload.contains("installed driver 5"), "{payload}");
     }
 
-    // A driver a whole CUDA major behind fails the runtime for every GPU, so
+    // A driver a whole CUDA major behind fails the runtime for any GPU, so
     // the log must not suggest only PTX-only GPUs are affected.
     #[test]
     fn the_startup_warning_says_what_actually_fails() {
@@ -265,7 +265,7 @@ mod tests {
         assert!(same_major.contains("no native code"), "{same_major}");
         let older_major = startup_warning(&driver("470.1", Some((12, 4))), CUDA_13_2).unwrap();
         assert!(!older_major.contains("no native code"), "{older_major}");
-        assert!(older_major.contains("every GPU"), "{older_major}");
+        assert!(older_major.contains("any GPU"), "{older_major}");
         assert_eq!(
             startup_warning(&driver("595.97", Some((13, 2))), CUDA_13_2),
             None
