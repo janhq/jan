@@ -52,23 +52,30 @@ pub fn actionable_message(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -
     )
 }
 
-/// The text the backend-error banner shows for a worker fault line. A line that
-/// says the driver cannot run the engine's code gets the update advice ahead of
-/// ggml's own words; anything else, or no NVIDIA driver to name, is passed through.
+/// The text the backend-error banner shows for a worker fault line. A CUDA line
+/// that says the driver cannot run the engine's code gets the update advice
+/// ahead of ggml's own words. Anything else is passed through: that includes a
+/// Vulkan driver error, which is not fixed by updating the NVIDIA driver even
+/// on a machine that has one.
+///
+/// `driver` is only called for a line that qualifies, so an ordinary fault
+/// does not pay for an NVML query.
 pub fn fault_payload(
     line: &str,
-    driver: Option<&NvidiaDriver>,
+    driver: impl FnOnce() -> Option<NvidiaDriver>,
     toolkit: Option<CudaVersion>,
 ) -> String {
-    match driver {
-        Some(driver) if crate::error::is_driver_too_old(&line.to_lowercase()) => {
-            format!(
+    let lower = line.to_lowercase();
+    let cuda = lower.contains("cuda") || lower.contains("ptx");
+    if cuda && crate::error::is_driver_too_old(&lower) {
+        if let Some(driver) = driver() {
+            return format!(
                 "{} Engine output: {line}",
-                actionable_message(driver, toolkit)
-            )
+                actionable_message(&driver, toolkit)
+            );
         }
-        _ => line.to_string(),
     }
+    line.to_string()
 }
 
 #[cfg(test)]
@@ -166,7 +173,11 @@ mod tests {
 
     #[test]
     fn a_ptx_toolchain_fault_gets_the_update_advice_ahead_of_ggmls_words() {
-        let payload = fault_payload(PTX_LINE, Some(&driver("580.88", Some((13, 0)))), CUDA_13_2);
+        let payload = fault_payload(
+            PTX_LINE,
+            || Some(driver("580.88", Some((13, 0)))),
+            CUDA_13_2,
+        );
         assert!(
             payload.starts_with("Update your NVIDIA driver to R595 or newer."),
             "{payload}"
@@ -181,7 +192,26 @@ mod tests {
     fn other_faults_and_a_missing_driver_pass_through_untouched() {
         let nvidia = driver("580.88", Some((13, 0)));
         let oom = "CUDA error: out of memory";
-        assert_eq!(fault_payload(oom, Some(&nvidia), CUDA_13_2), oom);
-        assert_eq!(fault_payload(PTX_LINE, None, CUDA_13_2), PTX_LINE);
+        assert_eq!(
+            fault_payload(
+                oom,
+                || panic!("an OOM line must not query the driver"),
+                CUDA_13_2
+            ),
+            oom
+        );
+        assert_eq!(fault_payload(PTX_LINE, || None, CUDA_13_2), PTX_LINE);
+    }
+
+    // A box with an NVIDIA card can still hit a Vulkan driver error on another
+    // device; telling that user to update the NVIDIA driver would be wrong.
+    #[test]
+    fn a_vulkan_driver_error_is_not_blamed_on_the_nvidia_driver() {
+        let nvidia = driver("580.88", Some((13, 0)));
+        let vulkan = "ggml_vulkan: vkCreateInstance failed: ERROR_INCOMPATIBLE_DRIVER";
+        assert_eq!(
+            fault_payload(vulkan, || Some(nvidia.clone()), CUDA_13_2),
+            vulkan
+        );
     }
 }

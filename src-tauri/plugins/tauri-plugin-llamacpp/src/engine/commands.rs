@@ -141,7 +141,7 @@ fn fault_emitter<R: tauri::Runtime>(
     Arc::new(move |fault: worker::RuntimeFault, line: String| {
         log::error!("jan-llama-worker fault ({fault:?}): {line}");
         let payload =
-            driver::fault_payload(&line, nvidia_driver().as_ref(), toolkit.get().copied());
+            driver::fault_payload(&line, nvidia_driver, toolkit.get().copied());
         if let Err(e) = app_handle.emit(fault.event_name(), payload) {
             log::warn!("emit {} failed: {e}", fault.event_name());
         }
@@ -203,7 +203,8 @@ pub async fn start_engine<R: tauri::Runtime>(
     if let Some(v) = handle.cuda_toolkit {
         let _ = toolkit.set(v);
     }
-    log_nvidia_driver(handle.cuda_toolkit).await;
+    // Detached: NVML can be slow to load, and start_engine holds the engine lock.
+    tokio::spawn(log_nvidia_driver(handle.cuda_toolkit));
 
     let info = EngineInfo::from(&handle);
     // Subscribed here rather than lazily: an eviction can happen on the very

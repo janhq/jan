@@ -60,13 +60,6 @@ pub struct NvidiaDriver {
     pub cuda: Option<CudaVersion>,
 }
 
-impl NvidiaDriver {
-    /// The release branch NVIDIA names drivers by (`595.97` is R595).
-    pub fn branch(&self) -> Option<u32> {
-        self.version.split('.').next()?.parse().ok()
-    }
-}
-
 /// The installed NVIDIA driver, or None when there is no NVIDIA GPU, NVML does
 /// not load, or the platform has no NVIDIA driver.
 pub fn nvidia_driver() -> Option<NvidiaDriver> {

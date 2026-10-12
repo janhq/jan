@@ -133,7 +133,7 @@ fn test_get_vulkan_gpus_on_ios() {
 }
 
 mod nvidia_driver {
-    use crate::vendor::nvidia::{CudaVersion, NvidiaDriver};
+    use crate::vendor::nvidia::CudaVersion;
 
     // NVML reports the CUDA a driver supports as 1000 * major + 10 * minor.
     #[test]
@@ -165,16 +165,5 @@ mod nvidia_driver {
         let newer = CudaVersion { major: 13, minor: 0 };
         assert!(older < newer);
         assert!(CudaVersion { major: 13, minor: 2 } < CudaVersion { major: 13, minor: 10 });
-    }
-
-    #[test]
-    fn the_release_branch_is_the_number_before_the_dot() {
-        let driver = |version: &str| NvidiaDriver {
-            version: version.into(),
-            cuda: None,
-        };
-        assert_eq!(driver("595.97").branch(), Some(595));
-        assert_eq!(driver("617.42").branch(), Some(617));
-        assert_eq!(driver("not-a-version").branch(), None);
     }
 }
