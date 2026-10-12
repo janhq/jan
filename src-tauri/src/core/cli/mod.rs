@@ -1385,6 +1385,9 @@ pub(crate) struct PreparedRun {
     pub permission_requests: PermissionRegistry,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
+    /// Whether the serving provider's inline `<think>` tags are reasoning, for
+    /// stripping them out of the result a headless run reports.
+    pub parse_think_tags: bool,
     /// Where to write the conversation once the run finishes.
     persist: PersistTarget,
 }
@@ -1466,6 +1469,9 @@ pub(crate) struct AgentSession {
     /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
     /// of `show_reasoning`, which unfolds it for good.
     pub stream_reasoning: bool,
+    /// Whether inline `<think>` tags in the serving provider's content are
+    /// reasoning (see `think_tags` in `~/.jan/config.toml`).
+    pub parse_think_tags: bool,
     /// Whether to resend a prior assistant turn's reasoning to the model
     /// (default true). False drops `reasoning_content` from outgoing assistant
     /// messages; the display journal still keeps reasoning for a resume.
@@ -1819,17 +1825,18 @@ fn prepare_agent_session(
     let serving_provider =
         crate::core::cli::providers::provider_for_model(&model, &provider_configs);
 
-    // The tag gate is process-wide and read by free rendering functions, and a
-    // headless run strips reasoning through it too, so every surface seeds it
-    // here. The TUI re-applies it when the serving provider changes.
+    // Whether inline `<think>` tags are reasoning for this run, from the
+    // provider that serves its model. It rides on the session so each surface
+    // hands it to what renders or strips this run's content: the TUI keeps it
+    // on its transcript, a headless run on its report.
     let serving_config = serving_provider
         .as_deref()
         .and_then(|name| provider_configs.get(name));
-    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled_for(
+    let parse_think_tags = crate::core::agent::global_config::think_tags_enabled_for(
         serving_provider.as_deref(),
         serving_config.and_then(|config| config.api_type.as_deref()),
         serving_config.and_then(|config| config.base_url.as_deref()),
-    ));
+    );
 
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
@@ -1939,6 +1946,7 @@ fn prepare_agent_session(
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
+        parse_think_tags,
         send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,
@@ -2074,6 +2082,7 @@ fn prepare_agent_run(
         provider: session.provider,
         permission_requests: session.permission_requests,
         mcp_task: session.mcp_task,
+        parse_think_tags: session.parse_think_tags,
         // Non-interactive runs persist into the same per-project store the TUI
         // uses, so a run can later be continued with --resume from either side.
         persist: PersistTarget {
@@ -2211,6 +2220,7 @@ async fn run_agent_loop(
         provider,
         permission_requests,
         mcp_task,
+        parse_think_tags,
         persist,
     } = match prepared {
         Ok(prepared) => prepared,
@@ -2310,7 +2320,7 @@ async fn run_agent_loop(
     // The report is folded in both formats from the same stream the printer
     // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
-        let mut report = RunReport::default();
+        let mut report = RunReport::for_run(parse_think_tags);
         let mut updated_history = None;
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);

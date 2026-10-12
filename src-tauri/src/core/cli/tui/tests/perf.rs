@@ -300,21 +300,12 @@ fn incremental_buffer_scan_matches_the_full_scan() {
                 let mut buf = String::new();
                 for piece in chunks(case, size) {
                     buf.push_str(&piece);
-                    let mut check = || {
-                        scan.sync(&buf);
-                        (scan.answer, scan.think_open)
-                    };
-                    let want = || {
-                        (
-                            super::super::has_answer_text(&buf),
-                            super::super::thinking_open(&buf),
-                        )
-                    };
-                    let (got, want) = if gate {
-                        (check(), want())
-                    } else {
-                        without_think_tags(|| (check(), want()))
-                    };
+                    scan.sync(&buf, gate);
+                    let got = (scan.answer, scan.think_open);
+                    let want = (
+                        super::super::has_answer_text(&buf, gate),
+                        super::super::thinking_open(&buf, gate),
+                    );
                     assert_eq!(got, want, "gate {gate}, prefix {buf:?}");
                 }
             }
