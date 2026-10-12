@@ -190,7 +190,6 @@ mod tests {
 
     #[test]
     fn other_faults_and_a_missing_driver_pass_through_untouched() {
-        let nvidia = driver("580.88", Some((13, 0)));
         let oom = "CUDA error: out of memory";
         assert_eq!(
             fault_payload(
