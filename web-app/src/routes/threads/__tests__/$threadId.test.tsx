@@ -954,18 +954,21 @@ describe('ThreadDetail route', () => {
       )
     })
 
-    // Off must not mean "runs after a click on a prompt that was never meant to
-    // exist": a refused shell is not auto-approved, so it is never executed.
-    it('never executes a shell call the user did not approve while it is off', async () => {
+    // A prompt for a tool the user turned off is itself wrong: an "always allow"
+    // answer could save a permission for it. It is refused before any prompt,
+    // on both paths that can open one.
+    it('never prompts for a shell call while the switch is off', async () => {
       shell.enabled = false
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
       renderComponent()
       await act(async () => {
         await (h as any).capturedOnToolCall(shellCall('sh3'))
       })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       await act(async () => {
         await finish()
       })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(shell.execute).not.toHaveBeenCalled()
     })
   })

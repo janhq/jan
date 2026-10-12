@@ -118,13 +118,15 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
-// A chat agent tool that the user has not switched off. The switch is enforced
-// where the command would run, not only where the tool is offered: a call can
-// still arrive from replayed history or from a turn in flight when it flips.
-function isEnabledChatAgentTool(toolName: string): boolean {
+// A chat agent tool the user has switched off. The switch is enforced where the
+// command would run, not only where the tool is offered: a call can still
+// arrive from replayed history or from a turn in flight when it flips. Such a
+// call is refused outright, before any approval prompt, because a prompt for a
+// tool the user turned off could save a permission for it.
+function isDisabledChatAgentTool(toolName: string): boolean {
   return (
     CHAT_AGENT_TOOL_NAMES.has(toolName) &&
-    useChatShell.getState().shellEnabled
+    !useChatShell.getState().shellEnabled
   )
 }
 
@@ -135,7 +137,7 @@ function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     WEB_TOOL_NAMES.has(toolName) ||
-    isEnabledChatAgentTool(toolName)
+    (CHAT_AGENT_TOOL_NAMES.has(toolName) && !isDisabledChatAgentTool(toolName))
   )
 }
 
@@ -551,6 +553,16 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
+            if (isDisabledChatAgentTool(toolName)) {
+              addToolOutput({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: 'Shell is turned off',
+              })
+              continue
+            }
+
             const approved = isAutoAllowedTool(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
@@ -583,15 +595,6 @@ function ThreadDetail() {
             if (WEB_TOOL_NAMES.has(toolName)) {
               result = await executeWebTool(toolName, toolCall.input)
             } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
-              if (!useChatShell.getState().shellEnabled) {
-                addToolOutput({
-                  state: 'output-error',
-                  tool: toolCall.toolName,
-                  toolCallId: toolCall.toolCallId,
-                  errorText: 'Shell is turned off',
-                })
-                continue
-              }
               // Chat's shell runs with the sandbox network closed: the default
               // `allowNetwork = false` is the contract here, not an accident.
               const agentResult = await executeAgentTool(
@@ -759,6 +762,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       if (
         !isAutoAllowedTool(toolCall.toolName) &&
+        !isDisabledChatAgentTool(toolCall.toolName) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(
