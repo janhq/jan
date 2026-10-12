@@ -72,6 +72,7 @@ import {
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   OUT_OF_CONTEXT_SIZE,
   isContextOverflowMessage,
@@ -117,6 +118,16 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
+// A chat agent tool that the user has not switched off. The switch is enforced
+// where the command would run, not only where the tool is offered: a call can
+// still arrive from replayed history or from a turn in flight when it flips.
+function isEnabledChatAgentTool(toolName: string): boolean {
+  return (
+    CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+    useChatShell.getState().shellEnabled
+  )
+}
+
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
 // approval), so only workspace-confined calls ever reach here.
@@ -124,7 +135,7 @@ function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     WEB_TOOL_NAMES.has(toolName) ||
-    CHAT_AGENT_TOOL_NAMES.has(toolName)
+    isEnabledChatAgentTool(toolName)
   )
 }
 
@@ -572,6 +583,15 @@ function ThreadDetail() {
             if (WEB_TOOL_NAMES.has(toolName)) {
               result = await executeWebTool(toolName, toolCall.input)
             } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+              if (!useChatShell.getState().shellEnabled) {
+                addToolOutput({
+                  state: 'output-error',
+                  tool: toolCall.toolName,
+                  toolCallId: toolCall.toolCallId,
+                  errorText: 'Shell is turned off',
+                })
+                continue
+              }
               // Chat's shell runs with the sandbox network closed: the default
               // `allowNetwork = false` is the contract here, not an accident.
               const agentResult = await executeAgentTool(

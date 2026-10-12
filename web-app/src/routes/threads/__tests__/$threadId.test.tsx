@@ -375,6 +375,17 @@ vi.mock('@/hooks/useChatAttachments', () => ({
 }))
 vi.mock('@/hooks/useAttachments', () => ({ useAttachments: h.useAttachmentsMock }))
 vi.mock('@/hooks/useToolAvailable', () => ({ useToolAvailable: h.useToolAvailableMock }))
+const shell = vi.hoisted(() => ({
+  enabled: true,
+  execute: vi.fn(async () => ({ output: 'ok' })),
+}))
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: shell.enabled }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  executeAgentTool: shell.execute,
+}))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
@@ -885,6 +896,77 @@ describe('ThreadDetail route', () => {
       ]
       renderComponent()
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
+  })
+
+  // #9222: the shell switch is enforced where the command would run, so a call
+  // that still arrives while it is off (replayed history, a turn in flight when
+  // the switch flipped) is refused rather than auto-approved.
+  describe('the chat shell switch at execution time', () => {
+    const shellCall = (id: string) => ({
+      toolCall: { toolCallId: id, toolName: 'shell', input: { command: 'ls' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-sh',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+
+    beforeEach(() => {
+      shell.enabled = true
+      shell.execute.mockClear()
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+    })
+
+    it('runs the shell without a prompt while the switch is on', async () => {
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh1'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not run the shell, and says why, once the switch is off', async () => {
+      shell.enabled = false
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh2'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'sh2',
+          tool: 'shell',
+          state: 'output-error',
+        })
+      )
+    })
+
+    // Off must not mean "runs after a click on a prompt that was never meant to
+    // exist": a refused shell is not auto-approved, so it is never executed.
+    it('never executes a shell call the user did not approve while it is off', async () => {
+      shell.enabled = false
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh3'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(shell.execute).not.toHaveBeenCalled()
     })
   })
 

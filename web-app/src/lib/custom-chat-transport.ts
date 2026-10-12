@@ -1814,12 +1814,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces, because shell is then
-   * withheld too — stating limits for a tool that is not offered would only
-   * confuse the model, and an empty string keeps the prompt prefix stable.
-   */
-  /**
    * A self-contained digest of the newest memory notes. Chat advertises no
    * memory tools, so a catalog it cannot dereference would be useless; whole
    * notes under a strict budget are what fit a conversation surface. Empty when
@@ -1837,6 +1831,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     ].join('\n')
   }
 
+  /**
+   * Static instruction for the one built-in tool chat offers: the sandboxed
+   * shell. Empty when no sandbox backend enforces or when the user has turned
+   * the shell off, because shell is then withheld too — stating limits for a
+   * tool that is not offered would only confuse the model, and an empty string
+   * keeps the prompt prefix stable.
+   */
   buildAgentToolsSystemInstruction(): string {
     // Describing a tool the model was not given only invites it to ask for it.
     if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''

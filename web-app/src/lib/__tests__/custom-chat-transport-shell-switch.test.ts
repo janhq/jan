@@ -50,7 +50,9 @@ vi.mock('@/hooks/useAttachments', () => ({
   useAttachments: { getState: () => ({ enabled: false }) },
 }))
 vi.mock('@/hooks/useMCPServers', () => ({
-  useMCPServers: { getState: () => ({ settings: { enableSmartToolRouting: false } }) },
+  useMCPServers: {
+    getState: () => ({ settings: { enableSmartToolRouting: false } }),
+  },
 }))
 vi.mock('@/hooks/useWebSearchConfig', () => ({
   useWebSearchConfig: { getState: () => ({ webSearchEnabled: false }) },
@@ -80,7 +82,11 @@ describe('chat shell switch (#9222)', () => {
     h.schemas.mockResolvedValue([
       {
         type: 'function',
-        function: { name: 'shell', description: 'run', parameters: { type: 'object' } },
+        function: {
+          name: 'shell',
+          description: 'run',
+          parameters: { type: 'object' },
+        },
       },
     ])
     transport = new CustomChatTransport('sys', 'thread-1')
