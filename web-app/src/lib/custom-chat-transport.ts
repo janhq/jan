@@ -44,6 +44,7 @@ import {
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
+import { smoothTextStream } from '@/lib/smoothTextStream'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -1604,6 +1605,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
+      // Providers send replies in bursts with pauses between them; let the
+      // text out at a steady pace so the reply reads as continuous progress.
+      experimental_transform: smoothTextStream(),
       ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
       ...(reasoningProviderOptions
         ? { providerOptions: reasoningProviderOptions }

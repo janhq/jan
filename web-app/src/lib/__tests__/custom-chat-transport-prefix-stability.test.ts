@@ -177,6 +177,14 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     ])
   })
 
+  // Providers send replies in bursts; the reply is let out at a steady pace.
+  it('smooths the reply as it streams', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0].experimental_transform).toBeTypeOf('function')
+  })
+
   it('sends a byte-identical prefix (system + tools + prior turns) on the next turn', async () => {
     const transport = new CustomChatTransport('you are jan', 'thread-1')
 
