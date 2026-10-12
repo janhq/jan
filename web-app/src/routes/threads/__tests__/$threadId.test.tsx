@@ -98,6 +98,7 @@ const h = vi.hoisted(() => {
   const attachmentsState: any = {
     getAttachments: vi.fn(() => []),
     clearAttachments: vi.fn(),
+    setAttachments: vi.fn(),
   }
   const useChatAttachmentsMock: any = (selector: any) => selector(attachmentsState)
   useChatAttachmentsMock.getState = () => attachmentsState
@@ -325,6 +326,14 @@ vi.mock('@/lib/attachmentProcessing', () => ({
     .fn()
     .mockResolvedValue({ processedAttachments: [], hasEmbeddedDocuments: false }),
   resolveAutoInlineBudget: vi.fn().mockResolvedValue(6144),
+  needsIngestionChoice: vi.fn(
+    (doc: any, pref: string) => (doc.parseMode ?? pref) === 'auto'
+  ),
+  promptIngestionChoices: vi.fn(),
+  applyIngestionChoices: (atts: any[], choices: Map<string, string>) =>
+    atts.map((a) =>
+      choices.has(a.path) ? { ...a, parseMode: choices.get(a.path) } : a
+    ),
 }))
 
 vi.mock('@/lib/thread-title-summarizer', () => ({
@@ -419,8 +428,10 @@ import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { useMessageErrors } from '@/stores/message-errors'
 import {
   processAttachmentsForSend,
+  promptIngestionChoices,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
+import { usePrompt } from '@/hooks/usePrompt'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -557,7 +568,75 @@ describe('ThreadDetail route', () => {
       contextThreshold: 6144,
       parsePreference: 'auto',
     })
+    expect(promptIngestionChoices).not.toHaveBeenCalled()
     h.attachmentsState.getAttachments = vi.fn(() => [])
+  })
+
+  describe('when the auto-inline budget is gone at send time', () => {
+    const sheet = {
+      name: 'sheet.xlsx',
+      type: 'document',
+      path: '/sheet.xlsx',
+      parseMode: 'auto',
+    }
+
+    beforeEach(() => {
+      // Cloud model, unloaded auto-fit model, or a conversation that has
+      // outgrown the window all resolve to no budget.
+      vi.mocked(resolveAutoInlineBudget).mockResolvedValueOnce(undefined)
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+    })
+
+    it('asks the user and sends the document the way they chose', async () => {
+      vi.mocked(promptIngestionChoices).mockResolvedValueOnce(
+        new Map([['/sheet.xlsx', 'inline']])
+      )
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(processAttachmentsForSend).toHaveBeenCalled()
+      })
+      expect(promptIngestionChoices).toHaveBeenCalledWith([sheet])
+      expect(
+        vi.mocked(processAttachmentsForSend).mock.calls[0][0].attachments
+      ).toEqual([{ ...sheet, parseMode: 'inline' }])
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+    })
+
+    it('cancelling keeps the draft and sends nothing', async () => {
+      vi.mocked(promptIngestionChoices).mockResolvedValueOnce(undefined)
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+          'thread-1',
+          [sheet]
+        )
+      })
+      expect(usePrompt.getState().prompt).toBe('hello world')
+      expect(processAttachmentsForSend).not.toHaveBeenCalled()
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+      expect(h.messagesState.addMessage).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('does not ask for project threads, whose files always embed', async () => {
+      h.threadsState.threads['thread-1'].metadata = { project: { id: 'p1' } }
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(processAttachmentsForSend).toHaveBeenCalled()
+      })
+      expect(promptIngestionChoices).not.toHaveBeenCalled()
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+    })
   })
 
   it('invokes stop when ChatInput calls onStop', () => {

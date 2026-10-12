@@ -2,6 +2,7 @@ import { ServiceHub } from '@/services'
 import { Attachment } from '@/types/attachment'
 import { toast } from 'sonner'
 import { estimateTokens } from '@/lib/context-manager'
+import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import {
   getLocalPropsExtension,
   readCtxLen,
@@ -113,8 +114,10 @@ export const resolveAutoInlineBudget = async (
 }
 
 /**
- * Whether the user must pick inline vs embeddings for a document at attach
- * time. 'auto' only asks when there is no budget to decide by size.
+ * Whether the user must pick inline vs embeddings for a document. 'auto' only
+ * asks when there is no budget to decide by size. Checked at attach time and
+ * again at send time, since the budget can disappear in between (model
+ * switched or unloaded, conversation grown).
  */
 export const needsIngestionChoice = (
   doc: Attachment,
@@ -125,6 +128,38 @@ export const needsIngestionChoice = (
   const preference = doc.parseMode ?? parsePreference
   return preference === 'prompt' || (preference === 'auto' && !hasInlineBudget)
 }
+
+export type IngestionChoice = 'inline' | 'embeddings'
+
+/**
+ * Asks the user, one document at a time, whether to inline or embed it.
+ * Resolves to each choice keyed by document path, or undefined as soon as the
+ * user cancels.
+ */
+export const promptIngestionChoices = async (
+  docs: Attachment[]
+): Promise<Map<string, IngestionChoice> | undefined> => {
+  const choices = new Map<string, IngestionChoice>()
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i]
+    const choice = await useAttachmentIngestionPrompt
+      .getState()
+      .showPrompt(doc, i, docs.length)
+    if (!choice) return undefined
+    if (doc.path) choices.set(doc.path, choice)
+  }
+  return choices
+}
+
+/** Records each choice as its document's parseMode, which send time honours. */
+export const applyIngestionChoices = (
+  attachments: Attachment[],
+  choices: Map<string, IngestionChoice>
+): Attachment[] =>
+  attachments.map((att) => {
+    const mode = att.path ? choices.get(att.path) : undefined
+    return mode ? { ...att, parseMode: mode } : att
+  })
 
 export const processAttachmentsForSend = async (
   options: AttachmentProcessingOptions
