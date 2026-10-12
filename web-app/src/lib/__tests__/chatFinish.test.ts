@@ -44,6 +44,23 @@ describe('isContextLimitStop', () => {
     ).toBe(false)
   })
 
+  it('reads a string ctx_len the way the settings store keeps it', () => {
+    expect(
+      isContextLimitStop({ provider: 'llamacpp', usage, ctxLen: '131072' })
+    ).toBe(false)
+  })
+
+  it('uses the launched n_ctx when ctx_len is left to auto-fit', () => {
+    expect(
+      isContextLimitStop({
+        provider: 'llamacpp',
+        usage: { inputTokens: 3800, outputTokens: 200 },
+        ctxLen: '',
+        launchedCtxLen: 4096,
+      })
+    ).toBe(true)
+  })
+
   it('never flags cloud providers, whose length stop is the output cap', () => {
     expect(
       isContextLimitStop({ provider: 'anthropic', usage, ctxLen: undefined })

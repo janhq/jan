@@ -241,8 +241,10 @@ fn format_cell(cell: &DataType) -> String {
     }
 }
 
-/// Converts a 1900-system serial. calamine already shifts 1904-system
-/// workbooks onto this system, so no epoch detection is needed here.
+/// Converts a 1900-system serial. calamine 0.23 already shifts 1904-system
+/// workbooks onto this system (`format_excel_f64_ref` adds 1462 days when
+/// xlsx `date1904`, xls record 0x0022 or the xlsb flag is set), and ods dates
+/// arrive as `DateTimeIso`, so no epoch detection is needed here.
 fn excel_serial_to_iso(serial: f64) -> String {
     if !serial.is_finite() || !(0.0..MAX_EXCEL_SERIAL).contains(&serial) {
         return serial.to_string();
@@ -260,17 +262,27 @@ fn excel_serial_to_iso(serial: f64) -> String {
     if serial_days == 0 {
         return time;
     }
-    // Excel counts a 1900-02-29 that never existed (serial 60), so serials
-    // before it are one day behind the 1899-12-30 epoch used for later ones.
-    let days_since_epoch = if serial_days < 60 { serial_days + 1 } else { serial_days };
-    // 1899-12-30 is 25569 days before 1970-01-01.
-    let (y, m, d) = civil_from_days(days_since_epoch - 25_569);
-    let date = format!("{:04}-{:02}-{:02}", y, m, d);
+    // Serial 60 is the 1900-02-29 Excel shows but no calendar has; spell it
+    // out so it does not collide with serial 59.
+    let date = if serial_days == 60 {
+        "1900-02-29".to_string()
+    } else {
+        excel_days_to_iso(serial_days)
+    };
     if secs_of_day == 0 {
         date
     } else {
         format!("{}T{}", date, time)
     }
+}
+
+fn excel_days_to_iso(serial_days: i64) -> String {
+    // Excel counts a 1900-02-29 that never existed (serial 60), so serials
+    // before it are one day behind the 1899-12-30 epoch used for later ones.
+    let days_since_epoch = if serial_days < 60 { serial_days + 1 } else { serial_days };
+    // 1899-12-30 is 25569 days before 1970-01-01.
+    let (y, m, d) = civil_from_days(days_since_epoch - 25_569);
+    format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
 /// Renders an Excel duration (fractional days) as elapsed `[h]:mm:ss`.
@@ -446,6 +458,13 @@ mod tests {
         assert_eq!(format_cell(&DataType::DateTime(1.0)), "1900-01-01");
         assert_eq!(format_cell(&DataType::DateTime(59.0)), "1900-02-28");
         assert_eq!(format_cell(&DataType::DateTime(61.0)), "1900-03-01");
+    }
+
+    #[test]
+    fn phantom_leap_day_renders_as_excel_shows_it() {
+        // Excel displays serial 60 as 1900-02-29; collapsing it onto 02-28
+        // would make two different cells read as the same date.
+        assert_eq!(format_cell(&DataType::DateTime(60.0)), "1900-02-29");
     }
 
     #[test]

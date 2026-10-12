@@ -35,9 +35,13 @@ describe('error utilities', () => {
           'input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000, decrease input length or `max_tokens` and try again'
         )
       ).toBe(true)
-      expect(isContextOverflowMessage('request_too_large')).toBe(true)
-      // The SDK surfaces only error.message for a 413, not its type.
-      expect(isContextOverflowMessage('Request exceeds the maximum size')).toBe(true)
+    })
+
+    it('does not treat a 413 payload-size error as a context overflow', () => {
+      // A byte limit on the HTTP body (often images/files): regenerating the
+      // same request cannot help, so the provider text must stay visible.
+      expect(isContextOverflowMessage('request_too_large')).toBe(false)
+      expect(isContextOverflowMessage('Request exceeds the maximum size')).toBe(false)
     })
 
     it('matches OpenAI overflow errors', () => {

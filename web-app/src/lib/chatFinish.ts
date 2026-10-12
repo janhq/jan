@@ -1,8 +1,9 @@
 import type { UIMessage } from 'ai'
 import { uiMessageHasMeaningfulContent } from '@/lib/messages'
 import { isContextOverflowMessage } from '@/utils/error'
+import { readCtxLen } from '@/lib/llamacppRouterProps'
 
-// Used when a local model has no usable ctx_len value (unset or "auto").
+// Used when a local model has neither a ctx_len value nor a known launched n_ctx.
 const DEFAULT_CTX_LEN = 32768
 
 /**
@@ -24,14 +25,17 @@ export function isContextLimitStop({
   provider,
   usage,
   ctxLen,
+  launchedCtxLen,
 }: {
   provider: string | undefined
   usage: { inputTokens?: number; outputTokens?: number } | undefined
   ctxLen: unknown
+  /** n_ctx the model actually launched with; decides when ctx_len auto-fits. */
+  launchedCtxLen?: number
 }): boolean {
   if (!providerHasContextSetting(provider)) return false
   const limit =
-    typeof ctxLen === 'number' && ctxLen > 0 ? ctxLen : DEFAULT_CTX_LEN
+    readCtxLen(ctxLen) ?? readCtxLen(launchedCtxLen) ?? DEFAULT_CTX_LEN
   const totalTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
   return totalTokens >= limit * 0.9
 }

@@ -5,16 +5,16 @@ export const OUT_OF_CONTEXT_SIZE =
 // as local ones instead of raw error text:
 //   llama-server: "request (N tokens) exceeds the available context size ..."
 //   Anthropic:    "prompt is too long: ...",
-//                 "input length and `max_tokens` exceed context limit: ...",
-//                 413 request_too_large ("Request exceeds the maximum size")
+//                 "input length and `max_tokens` exceed context limit: ..."
 //   OpenAI:       "This model's maximum context length is N tokens ...",
 //                 code context_length_exceeded
+// Anthropic's 413 request_too_large is deliberately absent: it is a byte limit
+// on the HTTP body (large images/files), not the token window, so it keeps the
+// provider's own message instead of the generic context banner.
 const CONTEXT_OVERFLOW_PATTERNS = [
   /exceeds the available context size/i,
   /prompt is too long/i,
   /exceed context limit/i,
-  /request_too_large/i,
-  /request exceeds the maximum size/i,
   /context_length_exceeded/i,
   /maximum context length/i,
 ]

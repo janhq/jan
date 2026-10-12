@@ -805,14 +805,17 @@ describe('ThreadDetail route', () => {
         ...extra,
       })
 
-    it('surfaces an error on a finished reply with no content', () => {
+    it('pins the error on the user turn, which is persisted', () => {
+      // The empty assistant reply is never saved, so an error keyed to it
+      // would vanish on reload; the user message survives and is hydrated.
       renderComponent()
       act(() => {
         finishEmpty()
       })
-      const err = useMessageErrors.getState().errors['a-empty']
+      const err = useMessageErrors.getState().errors['u1']
       expect(err).toBeTruthy()
       expect(err).not.toContain(':')
+      expect(useMessageErrors.getState().errors['a-empty']).toBeUndefined()
     })
 
     it('does not flag a reply the user stopped', () => {

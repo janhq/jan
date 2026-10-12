@@ -94,6 +94,10 @@ import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import {
+  getLocalPropsExtension,
+  readCtxLen,
+} from '@/lib/llamacppRouterProps'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -289,6 +293,9 @@ function ThreadDetail() {
   // Set before a generation when the resulting assistant message should be
   // linked to a specific parent (versioning). Consumed once in onFinish.
   const pendingAssistantParentId = useRef<string | null>(null)
+  // n_ctx the local model launched with. onFinish is synchronous, so it is
+  // fetched once streaming starts (the model is loaded by then).
+  const launchedCtxLenRef = useRef<number | undefined>(undefined)
   // Holds the id of a stopped assistant message being resumed. Continuing must
   // extend the turn in place, not fork a new version, so onFinish deletes this
   // stale partial once the continued reply is persisted.
@@ -332,6 +339,7 @@ function ThreadDetail() {
           ctxLen:
             providerState.selectedModel?.settings?.ctx_len?.controller_props
               ?.value,
+          launchedCtxLen: launchedCtxLenRef.current,
         })
 
         if (isContextLimit) {
@@ -356,11 +364,18 @@ function ThreadDetail() {
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
 
       // Nothing would be persisted for an empty reply, so without this the
-      // turn silently vanishes and the user cannot tell it failed.
+      // turn silently vanishes and the user cannot tell it failed. The error
+      // goes on the user turn it answers (as the stream-error path does):
+      // that message is persisted, so the error survives a reload.
       if (isEmptyReply({ message, isAbort, isError, finishReason })) {
-        useMessageErrors
-          .getState()
-          .setError(message.id, i18n.t('model-errors:emptyReply'))
+        const userTurnId =
+          pendingAssistantParentId.current ?? resolveAssistantParent(undefined)
+        pendingAssistantParentId.current = null
+        if (userTurnId) {
+          useMessageErrors
+            .getState()
+            .setError(userTurnId, i18n.t('model-errors:emptyReply'))
+        }
       }
 
       // The turn ended before completion (user hit Stop, or the model hit its
@@ -807,6 +822,26 @@ function ThreadDetail() {
       resetReasoningScroll()
     }
   }, [status, resetReasoningScroll])
+
+  useEffect(() => {
+    if (status !== 'streaming') return
+    launchedCtxLenRef.current = undefined
+    const modelId = selectedModel?.id
+    const ext = getLocalPropsExtension(selectedProvider)
+    if (!modelId || !ext?.getModelProps) return
+    let cancelled = false
+    ext
+      .getModelProps(modelId)
+      .then((props) => {
+        if (!cancelled) launchedCtxLenRef.current = readCtxLen(props?.nCtx)
+      })
+      .catch(() => {
+        // Router unreachable: isContextLimitStop falls back to its default.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status, selectedProvider, selectedModel?.id])
 
   useEffect(() => {
     if (status === 'streaming') {

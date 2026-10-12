@@ -2,7 +2,10 @@ import { ServiceHub } from '@/services'
 import { Attachment } from '@/types/attachment'
 import { toast } from 'sonner'
 import { estimateTokens } from '@/lib/context-manager'
-import { getLocalPropsExtension } from '@/lib/llamacppRouterProps'
+import {
+  getLocalPropsExtension,
+  readCtxLen,
+} from '@/lib/llamacppRouterProps'
 
 type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 
@@ -76,11 +79,6 @@ const formatAttachmentError = (err: unknown): string => {
 }
 
 type ParsePreference = AttachmentProcessingOptions['parsePreference']
-
-const readCtxLen = (value: unknown): number | undefined => {
-  const n = typeof value === 'string' ? parseInt(value, 10) : value
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined
-}
 
 /**
  * Token budget an 'auto' document may use to be inlined: the model's context

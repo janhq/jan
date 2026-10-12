@@ -28,7 +28,8 @@ const createMockServiceHub = (overrides: Record<string, unknown> = {}) => ({
 
 const getModelPropsMock = vi.fn()
 let propsExtensionAvailable = true
-vi.mock('@/lib/llamacppRouterProps', () => ({
+vi.mock('@/lib/llamacppRouterProps', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/llamacppRouterProps')>()),
   getLocalPropsExtension: (provider: string) =>
     propsExtensionAvailable &&
     (provider === 'llamacpp' || provider === 'mlx')
