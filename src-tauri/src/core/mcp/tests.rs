@@ -1,5 +1,7 @@
 use super::commands::is_extension_not_connected_error;
-use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
+use super::helpers::{
+    add_server_config, add_server_config_with_path, jan_client_info, run_mcp_commands,
+};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
@@ -1037,4 +1039,37 @@ async fn terminate_browser_mcp_reaps_process_group() {
         !status.success(),
         "group leader should have been signalled, got {status:?}"
     );
+}
+
+/// What a server sees in `initialize.clientInfo` when Jan connects: Jan and its
+/// app version, not the `rmcp` crate's own default.
+#[tokio::test]
+async fn initialize_identifies_the_client_as_jan() {
+    use rmcp::{ServerHandler, ServiceExt};
+
+    #[derive(Clone)]
+    struct Recorder;
+    impl ServerHandler for Recorder {}
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server_task = tokio::spawn(async move {
+        let running = Recorder.serve(server_io).await.expect("server starts");
+        let seen = running
+            .peer_info()
+            .expect("client info")
+            .client_info
+            .clone();
+        let _ = running.waiting().await;
+        seen
+    });
+
+    let client = jan_client_info()
+        .serve(client_io)
+        .await
+        .expect("client initializes");
+    client.cancel().await.expect("client closes");
+
+    let seen = server_task.await.expect("server task");
+    assert_eq!(seen.name, "Jan");
+    assert_eq!(seen.version, env!("CARGO_PKG_VERSION"));
 }
