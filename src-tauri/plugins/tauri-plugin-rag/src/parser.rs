@@ -210,13 +210,20 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
         .flexible(true)
         .from_path(file_path)
         .map_err(|e| RagError::ParseError(e.to_string()))?;
-    let mut out = String::new();
+    // Re-serialise through the csv writer so a cell holding the delimiter, a
+    // quote or a newline stays one cell instead of shifting the columns after it.
+    let mut wtr = csv_crate::WriterBuilder::new()
+        .flexible(true)
+        .from_writer(Vec::new());
     for rec in rdr.records() {
         let rec = rec.map_err(|e| RagError::ParseError(e.to_string()))?;
-        out.push_str(&rec.iter().collect::<Vec<_>>().join(", "));
-        out.push('\n');
+        wtr.write_record(&rec)
+            .map_err(|e| RagError::ParseError(e.to_string()))?;
     }
-    Ok(out)
+    let bytes = wtr
+        .into_inner()
+        .map_err(|e| RagError::ParseError(e.to_string()))?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 const SECS_PER_DAY: i64 = 86_400;
@@ -462,5 +469,21 @@ mod tests {
             "2024-02-29T08:15:00"
         );
         assert_eq!(format_cell(&DataType::DurationIso("PT1H".into())), "PT1H");
+    }
+
+    #[test]
+    fn csv_cells_with_delimiters_quotes_or_newlines_are_quoted() {
+        let path = std::env::temp_dir().join(format!(
+            "jan-rag-parse-csv-{}.csv",
+            std::process::id()
+        ));
+        fs::write(&path, "name,note\n\"Doe, Jane\",\"say \"\"hi\"\"\nthere\"\nplain,x\n")
+            .unwrap();
+        let out = parse_csv(path.to_str().unwrap());
+        let _ = fs::remove_file(&path);
+        assert_eq!(
+            out.unwrap(),
+            "name,note\n\"Doe, Jane\",\"say \"\"hi\"\"\nthere\"\nplain,x\n"
+        );
     }
 }
