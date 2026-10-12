@@ -86,11 +86,14 @@ type ParsePreference = AttachmentProcessingOptions['parsePreference']
  * the app knows (configured ctx_len, or the launched n_ctx when ctx_len is
  * left to auto-fit and the model is already loaded). Cloud providers expose
  * no context-window metadata, so they get undefined and the user is asked.
+ * `usedTokens` is what the conversation already occupies: a document that
+ * fits the bare window can still overflow it on top of a long thread.
  */
 export const resolveAutoInlineBudget = async (
   model: Model | null | undefined,
   provider: string | undefined,
-  ratio: number | undefined
+  ratio: number | undefined,
+  usedTokens = 0
 ): Promise<number | undefined> => {
   if (!model || typeof ratio !== 'number' || !(ratio > 0)) return undefined
   let ctxLen = readCtxLen(model.settings?.ctx_len?.controller_props?.value)
@@ -104,7 +107,9 @@ export const resolveAutoInlineBudget = async (
       // Not loaded yet: the window is unknown until the router launches it.
     }
   }
-  return ctxLen ? Math.floor(ctxLen * ratio) : undefined
+  if (!ctxLen) return undefined
+  const budget = Math.floor(ctxLen * ratio) - usedTokens
+  return budget > 0 ? budget : undefined
 }
 
 /**

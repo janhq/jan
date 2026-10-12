@@ -533,6 +533,10 @@ describe('ThreadDetail route', () => {
 
   it('passes the auto-inline budget when sending documents', async () => {
     h.useAttachmentsState.autoInlineContextRatio = 0.75
+    // 35 chars -> 10 estimated tokens + 4 per-message overhead.
+    h.chatState.messages = [
+      { id: 'u0', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(35) }] },
+    ]
     h.attachmentsState.getAttachments = vi.fn(() => [
       { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' },
     ])
@@ -546,7 +550,8 @@ describe('ThreadDetail route', () => {
     expect(resolveAutoInlineBudget).toHaveBeenCalledWith(
       h.modelProviderState.selectedModel,
       'openai',
-      0.75
+      0.75,
+      14
     )
     expect(vi.mocked(processAttachmentsForSend).mock.calls[0][0]).toMatchObject({
       contextThreshold: 6144,

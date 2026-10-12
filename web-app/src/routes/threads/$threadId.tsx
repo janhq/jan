@@ -19,7 +19,10 @@ import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { deriveToolOutputCap } from '@/lib/context-manager'
+import {
+  deriveToolOutputCap,
+  estimateMessageTokens,
+} from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
@@ -817,6 +820,11 @@ function ThreadDetail() {
     reset: resetReasoningScroll,
   } = useAutoScroll()
 
+  // Read at send time without making the send callbacks depend on every
+  // streamed token.
+  const chatMessagesRef = useRef(chatMessages)
+  chatMessagesRef.current = chatMessages
+
   const lastIsAssistant = useMemo(() => {
     const last = chatMessages[chatMessages.length - 1]
     return !!last && last.role === 'assistant'
@@ -1115,7 +1123,11 @@ function ThreadDetail() {
             contextThreshold: await resolveAutoInlineBudget(
               useModelProvider.getState().selectedModel,
               selectedProvider,
-              autoInlineContextRatio
+              autoInlineContextRatio,
+              chatMessagesRef.current.reduce(
+                (sum, m) => sum + estimateMessageTokens(m),
+                0
+              )
             ),
           })
           processedAttachments = result.processedAttachments

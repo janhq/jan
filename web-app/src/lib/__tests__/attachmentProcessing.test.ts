@@ -283,6 +283,18 @@ describe('processAttachmentsForSend', () => {
       expect(getModelPropsMock).toHaveBeenCalledWith('m1')
     })
 
+    it('leaves out what the conversation already uses', async () => {
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(8192), 'llamacpp', 0.75, 5000)
+      ).resolves.toBe(1144)
+    })
+
+    it('is undefined once the conversation has used up the budget', async () => {
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(8192), 'llamacpp', 0.75, 7000)
+      ).resolves.toBeUndefined()
+    })
+
     it('is undefined when the local model is not loaded yet', async () => {
       getModelPropsMock.mockRejectedValue(new Error('not loaded'))
       await expect(
