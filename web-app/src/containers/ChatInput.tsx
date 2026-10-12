@@ -105,8 +105,7 @@ import {
   needsIngestionChoice,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
-import { estimateConversationTokens } from '@/lib/context-manager'
-import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import { activePathTokens } from '@/lib/message-branching'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -899,15 +898,20 @@ const ChatInput = memo(function ChatInput({
       // dialog.  Actual ingestion is always deferred to send time
       // (processAttachmentsForSend inside processAndSendMessage), where
       // 'auto' documents are routed by size when the model's window is known.
-      // Same conversation-aware budget as the send path, so 'auto' asks here
-      // exactly when send time would have no budget to decide by.
+      // Same conversation-aware budget as the send path (the active branch,
+      // which is what gets sent), so 'auto' asks here exactly when send time
+      // would have no budget to decide by.
       const hasInlineBudget =
         (await resolveAutoInlineBudget(
           selectedModel,
           selectedProvider,
           autoInlineContextRatio,
-          estimateConversationTokens(
-            convertThreadMessagesToUIMessages(threadMessagesRef.current ?? [])
+          activePathTokens(
+            threadMessagesRef.current,
+            (
+              useThreads.getState().threads[currentThreadId ?? '']
+                ?.metadata as Record<string, unknown> | undefined
+            )?.activeRootId as string | undefined
           )
         )) !== undefined
       const docsNeedingPrompt = docs.filter((doc) =>
@@ -955,6 +959,7 @@ const ChatInput = memo(function ChatInput({
     [
       attachmentsKey,
       autoInlineContextRatio,
+      currentThreadId,
       parsePreference,
       selectedModel,
       selectedProvider,
