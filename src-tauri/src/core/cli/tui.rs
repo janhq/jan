@@ -1961,6 +1961,8 @@ struct Row {
     /// re-parse its markdown and re-highlight its diffs 20 times a second;
     /// only a width change invalidates the entry.
     cache: std::cell::RefCell<Option<RowRender>>,
+    /// The row's text before wrapping, filled on first use by `flat`.
+    flat: std::cell::RefCell<Option<Vec<String>>>,
 }
 
 /// A row's rendered lines plus the height they occupy once the body
@@ -2129,6 +2131,7 @@ impl From<RowKind> for Row {
         Row {
             kind,
             cache: std::cell::RefCell::new(None),
+            flat: std::cell::RefCell::new(None),
         }
     }
 }
@@ -2155,6 +2158,20 @@ impl Row {
     fn height(&self, width: u16) -> u16 {
         self.fill(width);
         self.cache.borrow().as_ref().map_or(0, |r| r.height)
+    }
+
+    /// What the row says unwrapped (see `find::flat_text`), rendered once at
+    /// `find::FLAT_WIDTH` and kept: it does not depend on the terminal, and
+    /// `/find` reads it on every step. Rows are replaced rather than edited, so
+    /// it never goes stale.
+    fn flat(&self) -> std::cell::Ref<'_, Vec<String>> {
+        if self.flat.borrow().is_none() {
+            let lines = self.kind.render(find::FLAT_WIDTH);
+            *self.flat.borrow_mut() = Some(find::flat_text(&lines));
+        }
+        std::cell::Ref::map(self.flat.borrow(), |flat| {
+            flat.as_ref().expect("filled above")
+        })
     }
 
     fn fill(&self, width: u16) {
@@ -2752,6 +2769,7 @@ impl Transcript {
                             idx: Some(i),
                             height: row.height(width),
                             lines: None,
+                            flat: None,
                         }
                     }
                 }
@@ -2759,6 +2777,7 @@ impl Transcript {
                     idx: Some(i),
                     height: row.height(width),
                     lines: None,
+                    flat: None,
                 },
             };
             if find_hit.is_some_and(|h| h.row == i && !h.detail) {
@@ -2808,7 +2827,15 @@ impl Transcript {
                             find_at = Some(content_h);
                         }
                     }
-                    let seg = Segment::eager(Some(i), detail, width);
+                    let mut seg = Segment::eager(Some(i), detail, width);
+                    // The lingering reasoning tail is a bounded view of the block,
+                    // not a wrapped copy of its detail, so it has no unwrapped form.
+                    if find.is_some() && !(active_reasoning && !expanded) {
+                        let index = region_index.get_or_insert_with(|| self.region_index());
+                        seg.flat = self
+                            .region_detail_in(index, i, find::FLAT_WIDTH)
+                            .map(|lines| find::flat_text(&lines));
+                    }
                     content_h = content_h.saturating_add(seg.height);
                     segs.push(seg);
                 }
@@ -5629,17 +5656,25 @@ impl App {
         }
     }
 
-    /// Every committed line matching `needle`, top to bottom. Scans what the
-    /// rows render to, folded detail included, rather than only what is on
-    /// screen: the transcript is built from `display_log`, so this covers the
-    /// whole session. The streaming tail is not committed yet and is skipped.
+    /// Every committed logical line matching `needle`, top to bottom. Scans
+    /// what the rows render to, folded detail included, rather than only what
+    /// is on screen: the transcript is built from `display_log`, so this covers
+    /// the whole session. The streaming tail is not committed yet and is
+    /// skipped.
+    ///
+    /// Matching runs on each part's unwrapped text and a hit is a logical line
+    /// of it, so a term that word-wraps across two rendered lines is found and
+    /// the count is the same at any terminal width.
     fn find_hits(&self, needle: &str) -> Vec<find::Hit> {
         let width = self.transcript.render_width();
         let mut hits = Vec::new();
-        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>]| {
-            for (line, l) in lines.iter().enumerate() {
-                if !find::match_ranges(&find::line_text(l), needle).is_empty() {
-                    hits.push(find::Hit { row, detail, line });
+        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>], flat: &[String]| {
+            let mut last = None;
+            for found in find::occurrences(lines, Some(flat), needle) {
+                // One hit per logical line, however many times it matches.
+                if last != Some(found.logical) {
+                    last = Some(found.logical);
+                    hits.push(find::Hit { row, detail, line: found.logical });
                 }
             }
         };
@@ -5649,10 +5684,15 @@ impl App {
             // on each `/find` and step was most of the scan's cost.
             row.fill(width);
             if let Some(cached) = row.cache.borrow().as_ref() {
-                scan(i, false, &cached.lines);
+                scan(i, false, &cached.lines, &row.flat());
             }
             if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
-                scan(i, true, &detail);
+                let flat = self
+                    .transcript
+                    .region_detail_in(&index, i, find::FLAT_WIDTH)
+                    .map(|lines| find::flat_text(&lines))
+                    .unwrap_or_default();
+                scan(i, true, &detail, &flat);
             }
         }
         hits
@@ -21160,6 +21200,10 @@ struct Segment {
     idx: Option<usize>,
     height: u16,
     lines: Option<Vec<Line<'static>>>,
+    /// An expanded region's text before wrapping, read only while a search is
+    /// active. A committed row's is kept on the row itself; every other
+    /// inline segment is searched as rendered.
+    flat: Option<Vec<String>>,
 }
 
 impl Segment {
@@ -21168,6 +21212,7 @@ impl Segment {
             idx,
             height: wrapped_height_of(&lines, width),
             lines: Some(lines),
+            flat: None,
         }
     }
 }
@@ -21200,6 +21245,7 @@ impl BodyLayout {
                 idx: None,
                 height: pad,
                 lines: Some(vec![Line::raw(""); pad as usize]),
+                flat: None,
             },
         );
         self.content_h = self.content_h.saturating_add(pad);
@@ -21235,6 +21281,7 @@ impl BodyLayout {
             let seg_end = at.saturating_add(seg.height);
             if seg_end > scroll && at < end {
                 first_start.get_or_insert(at);
+                let committed = seg.lines.is_none();
                 let lines = match seg.lines {
                     Some(lines) => lines,
                     // Committed rows are cloned out of the cache only here.
@@ -21249,11 +21296,19 @@ impl BodyLayout {
                 // cache never holds a highlighted copy.
                 match find {
                     Some((needle, hit)) => {
-                        visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
-                            let current =
-                                self.find_seg == Some(n) && hit.is_some_and(|h| h.line == li);
-                            find::highlight_line(line, needle, current)
-                        }))
+                        // Matched on the unwrapped text, so a term that wrapped
+                        // is painted on each line it lands on. A committed row
+                        // keeps that text itself; an expanded region carries it.
+                        let row = seg.idx.filter(|_| committed).and_then(|i| rows.get(i));
+                        let kept = row.map(Row::flat);
+                        let flat = match (&kept, &seg.flat) {
+                            (Some(kept), _) => Some(kept.as_slice()),
+                            (None, Some(flat)) => Some(flat.as_slice()),
+                            (None, None) => None,
+                        };
+                        let found = find::occurrences(&lines, flat, needle);
+                        let current = hit.filter(|_| self.find_seg == Some(n)).map(|h| h.line);
+                        visible.extend(find::paint_lines(lines, &found, current));
                     }
                     None => visible.extend(lines),
                 }
@@ -21472,25 +21527,33 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     app.transcript.reveal = None;
     let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
-    if let (Some(start), Some(hit)) = (layout.find_at, find_hit) {
-        // Down to the matching line inside its segment, measured with the same
-        // wrap the body uses. Only on the jump frame, so the lines above it are
-        // cloned once per step, not every frame.
+    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
+    if let (Some(start), Some(hit), Some(needle)) =
+        (layout.find_at, find_hit, find_needle.as_deref())
+    {
+        // Down to the line the match starts on inside its segment (the match
+        // may have wrapped, so its logical line is not a rendered line), measured
+        // with the same wrap the body uses. Only on the jump frame, so the lines
+        // above it are cloned once per step, not every frame.
         let above = layout
             .segs
             .get(layout.find_seg.unwrap_or(usize::MAX))
-            .map(|seg| match &seg.lines {
-                Some(lines) => lines[..hit.line.min(lines.len())].to_vec(),
-                None => app
-                    .transcript
-                    .rows
-                    .get(hit.row)
-                    .map(|row| {
-                        let mut lines = row.lines(width);
-                        lines.truncate(hit.line);
-                        lines
-                    })
-                    .unwrap_or_default(),
+            .map(|seg| {
+                let (mut lines, kept) = match &seg.lines {
+                    Some(lines) => (lines.clone(), None),
+                    None => match app.transcript.rows.get(hit.row) {
+                        Some(row) => (row.lines(width), Some(row.flat())),
+                        None => (Vec::new(), None),
+                    },
+                };
+                let flat = kept.as_deref().map(Vec::as_slice).or(seg.flat.as_deref());
+                let first = find::occurrences(&lines, flat, needle)
+                    .iter()
+                    .find(|o| o.logical == hit.line)
+                    .and_then(|o| o.pieces.first())
+                    .map_or(0, |(line, _)| *line);
+                lines.truncate(first);
+                lines
             })
             .map_or(0, |lines| wrapped_height(lines, width));
         // A third of the way down rather than the top edge, so what led up to
@@ -21498,7 +21561,6 @@ fn draw(f: &mut Frame, app: &mut App) {
         let target = start.saturating_add(above).saturating_sub(inner_h / 3);
         app.scrollback = max_back.saturating_sub(target);
     }
-    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
     if let Some(find) = app.find.as_mut() {
         find.jump = false;
     }
@@ -47169,6 +47231,81 @@ mod tests {
         assert!(hit.detail, "the match is in the folded detail");
         let shown = frame_text(&find_frame(&mut app, 60, 20));
         assert!(shown.contains("secret-output-xyz"), "{shown}");
+    }
+
+    /// A turn whose answer has three paragraphs; "brown fox" is in the first and
+    /// the last, so where it wraps depends on the width.
+    fn wrapping_answer_app() -> TestApp {
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        app.apply(StreamEvent::Token {
+            text: "alpha the quick brown fox jumps over the lazy dog\n\n\
+                   nothing to see in this one\n\n\
+                   omega another quick brown fox leaps over a sleeping hound"
+                .into(),
+        });
+        app.on_done("stop".into(), None);
+        app
+    }
+
+    /// The text of every highlighted cell, in reading order.
+    fn lit_text(buf: &Buffer) -> String {
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let style = buf[(x, y)].style();
+                let reversed = style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::REVERSED);
+                if reversed || style.bg == Some(Color::Yellow) {
+                    out.push_str(buf[(x, y)].symbol());
+                }
+            }
+        }
+        out
+    }
+
+    // Regression for a term that word-wraps: matching ran on each rendered
+    // line, so "brown fox" was missed wherever the wrap fell between the words,
+    // and the hit count moved as the window was resized.
+    #[tokio::test]
+    async fn find_matches_a_term_that_wraps_at_any_width() {
+        let mut split_somewhere = false;
+        for width in 14..=100u16 {
+            let mut app = wrapping_answer_app();
+            run_command(&mut app, "find brown fox", &no_mcp()).await;
+            let buf = find_frame(&mut app, width, 70);
+            let hits = app.find.as_ref().unwrap().hits.len();
+            assert_eq!(hits, 2, "one hit per paragraph at width {width}");
+            // Stepping rescans at the new width; it must find the same two.
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            let buf_after = find_frame(&mut app, width, 70);
+            assert_eq!(app.find.as_ref().unwrap().hits.len(), 2, "after a step at width {width}");
+
+            // Every occurrence is highlighted whole, on whichever lines it fell.
+            for b in [&buf, &buf_after] {
+                let lit: String = lit_text(b).split_whitespace().collect();
+                assert_eq!(lit, "brownfoxbrownfox", "highlighted at width {width}");
+            }
+            let text = frame_text(&buf);
+            let rows: Vec<&str> = text.lines().collect();
+            split_somewhere |= rows.windows(2).any(|p| {
+                p[0].trim_end().ends_with("brown") && p[1].trim_start().starts_with("fox")
+            });
+        }
+        assert!(split_somewhere, "no width wrapped between the words, so this proved nothing");
+    }
+
+    // The same session searched at two widths steps through the same hits.
+    #[tokio::test]
+    async fn the_hit_count_does_not_change_when_the_window_is_resized() {
+        let mut app = wrapping_answer_app();
+        run_command(&mut app, "find brown fox", &no_mcp()).await;
+        let wide = app.find.as_ref().unwrap().hits.clone();
+        let _ = find_frame(&mut app, 18, 70);
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        let narrow = app.find.as_ref().unwrap().hits.clone();
+        assert_eq!(wide, narrow);
     }
 
     #[test]

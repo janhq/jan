@@ -11,10 +11,12 @@ use std::ops::Range;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-/// One matching line: its transcript row, whether it sits in that row's folded
-/// detail (what Ctrl-O or a click reveals) rather than the row itself, and the
-/// line within that part. The field order makes the derived ordering top to
-/// bottom as drawn, which is the order Enter walks.
+/// One matching logical line: its transcript row, whether it sits in that row's
+/// folded detail (what Ctrl-O or a click reveals) rather than the row itself,
+/// and the line within that part as the row says it before the terminal wraps
+/// it. That index does not move when the window resizes, which is what keeps the
+/// hit count and the current hit steady. The field order makes the derived
+/// ordering top to bottom as drawn, which is the order Enter walks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Hit {
     pub(super) row: usize,
@@ -104,14 +106,169 @@ fn current_style() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// `line` with every occurrence of `needle` painted over its own style. Spans
-/// are split at match edges, so a match that straddles two styled spans is
-/// still covered whole. A line without a match comes back unchanged. When
-/// `current` is set the line is the jumped-to hit, and only its first match
-/// gets the current style: hits are whole lines, so that is the one a step landed
-/// on, and the rest stay reversed.
-pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -> Line<'static> {
-    let ranges = match_ranges(&line_text(&line), needle);
+/// The width a row is rendered at to read what it says before the terminal
+/// cuts it into lines. Wide enough that prose does not wrap in practice; a
+/// band that pads to the width (a user turn) stays cheap at this size.
+pub(super) const FLAT_WIDTH: u16 = 2000;
+
+/// `lines` as text, one entry per line, trailing blanks dropped: a row's
+/// unwrapped form when `lines` were rendered at [`FLAT_WIDTH`]. Each entry is a
+/// *logical* line, whose index does not depend on the terminal width.
+pub(super) fn flat_text(lines: &[Line<'_>]) -> Vec<String> {
+    lines
+        .iter()
+        .map(|l| line_text(l).trim_end().to_string())
+        .collect()
+}
+
+/// One place the search term occurs.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct Occurrence {
+    /// The logical (unwrapped) line it sits in: the identity of a `Hit`, so the
+    /// hit count and what Enter walks do not change when the window resizes.
+    pub(super) logical: usize,
+    /// Where it lands on the lines as rendered at the current width: one
+    /// (rendered line, byte range in that line's text) per line it spans. A
+    /// term that word-wrapped has a piece on each line.
+    pub(super) pieces: Vec<(usize, Range<usize>)>,
+}
+
+/// Every occurrence of the already-lowercased `needle` in a row part, matched
+/// against its unwrapped text `flat` (see [`flat_text`]) and mapped back onto
+/// `lines`, the part as rendered at the current width. Without `flat` the
+/// rendered lines are the text.
+///
+/// The mapping lines the two renderings up by their non-blank characters, so a
+/// wrap that swallows a space, or a gutter glyph repeated on a continuation
+/// line, does not matter. When they do not line up (a table re-laid out, a
+/// label cut short at a narrow width) the rendered lines are searched on their
+/// own, as they were before the term could span lines.
+pub(super) fn occurrences(
+    lines: &[Line<'_>],
+    flat: Option<&[String]>,
+    needle: &str,
+) -> Vec<Occurrence> {
+    let rendered: Vec<String> = lines.iter().map(line_text).collect();
+    let Some(flat) = flat else {
+        return per_line(&rendered, needle);
+    };
+    let found: Vec<(usize, Range<usize>)> = flat
+        .iter()
+        .enumerate()
+        .flat_map(|(l, text)| match_ranges(text, needle).into_iter().map(move |r| (l, r)))
+        .collect();
+    if found.is_empty() {
+        return Vec::new();
+    }
+    // Nothing wrapped at this width: the unwrapped ranges are the pieces.
+    if rendered.len() == flat.len()
+        && rendered
+            .iter()
+            .zip(flat)
+            .all(|(shown, whole)| shown.trim_end() == whole)
+    {
+        return found
+            .into_iter()
+            .map(|(l, r)| Occurrence {
+                logical: l,
+                pieces: vec![(l, r)],
+            })
+            .collect();
+    }
+    let (whole, shown) = (Glyphs::of(flat), Glyphs::of(&rendered));
+    let Some(map) = whole.onto(&shown) else {
+        return per_line(&rendered, needle);
+    };
+    found
+        .into_iter()
+        .filter_map(|(logical, range)| {
+            let mut pieces: Vec<(usize, Range<usize>)> = Vec::new();
+            for g in whole.within(logical, &range) {
+                let (line, at) = shown.at[map[g]];
+                let end = at + shown.chars[map[g]].len_utf8();
+                match pieces.last_mut() {
+                    Some((l, r)) if *l == line => r.end = end,
+                    _ => pieces.push((line, at..end)),
+                }
+            }
+            (!pieces.is_empty()).then_some(Occurrence { logical, pieces })
+        })
+        .collect()
+}
+
+/// Occurrences inside single lines, each its own logical line.
+fn per_line(texts: &[String], needle: &str) -> Vec<Occurrence> {
+    texts
+        .iter()
+        .enumerate()
+        .flat_map(|(l, text)| {
+            match_ranges(text, needle)
+                .into_iter()
+                .map(move |r| Occurrence {
+                    logical: l,
+                    pieces: vec![(l, r)],
+                })
+        })
+        .collect()
+}
+
+/// The non-blank characters of some lines, and where each one sits.
+struct Glyphs {
+    chars: Vec<char>,
+    /// (line, byte offset) of each character.
+    at: Vec<(usize, usize)>,
+    /// Index in `chars` of each line's first character, then `chars.len()`.
+    starts: Vec<usize>,
+}
+
+impl Glyphs {
+    fn of(texts: &[String]) -> Glyphs {
+        let mut g = Glyphs {
+            chars: Vec::new(),
+            at: Vec::new(),
+            starts: Vec::new(),
+        };
+        for (line, text) in texts.iter().enumerate() {
+            g.starts.push(g.chars.len());
+            for (byte, c) in text.char_indices().filter(|(_, c)| !c.is_whitespace()) {
+                g.chars.push(c);
+                g.at.push((line, byte));
+            }
+        }
+        g.starts.push(g.chars.len());
+        g
+    }
+
+    /// Indices of the characters of `line` inside `range`.
+    fn within(&self, line: usize, range: &Range<usize>) -> Range<usize> {
+        let (from, to) = (self.starts[line], self.starts[line + 1]);
+        let before = |at: usize| self.at[from..to].partition_point(|&(_, byte)| byte < at);
+        from + before(range.start)..from + before(range.end)
+    }
+
+    /// For each of this one's characters, the index of the same character in
+    /// `other`, which may carry extras (a gutter glyph repeated on every
+    /// continuation line). `None` when this one has text `other` does not.
+    fn onto(&self, other: &Glyphs) -> Option<Vec<usize>> {
+        let mut map = Vec::with_capacity(self.chars.len());
+        let mut next = 0;
+        for c in &self.chars {
+            let skip = other.chars[next..].iter().position(|o| o == c)?;
+            map.push(next + skip);
+            next += skip + 1;
+        }
+        Some(map)
+    }
+}
+
+/// `line` with `ranges` painted over its own styles, in order. Spans are split
+/// at the edges, so a range that straddles two styled spans is still covered
+/// whole. A `true` range is the match the viewport jumped to and gets the
+/// current style; the rest are reversed.
+pub(super) fn highlight_ranges(
+    line: Line<'static>,
+    ranges: &[(Range<usize>, bool)],
+) -> Line<'static> {
     if ranges.is_empty() {
         return line;
     }
@@ -122,14 +279,24 @@ pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -
         let (start, end) = (offset, offset + text.len());
         offset = end;
         let mut cut = start;
-        for (n, r) in ranges.iter().enumerate() {
+        for (r, current) in ranges {
             if r.start >= end || r.end <= start {
                 continue;
             }
-            let paint = if current && n == 0 { current_style() } else { match_style() };
-            let (a, b) = (r.start.max(start), r.end.min(end));
+            let paint = if *current {
+                current_style()
+            } else {
+                match_style()
+            };
+            let (a, b) = (r.start.max(start).max(cut), r.end.min(end));
+            if b <= a {
+                continue;
+            }
             if a > cut {
-                spans.push(Span::styled(text[cut - start..a - start].to_string(), span.style));
+                spans.push(Span::styled(
+                    text[cut - start..a - start].to_string(),
+                    span.style,
+                ));
             }
             spans.push(Span::styled(
                 text[a - start..b - start].to_string(),
@@ -141,10 +308,36 @@ pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -
             spans.push(Span::styled(text[cut - start..].to_string(), span.style));
         }
     }
-    Line {
-        spans,
-        ..line
+    Line { spans, ..line }
+}
+
+/// `lines` with every occurrence painted, each piece onto the line it landed
+/// on. `current` is the logical line of the jumped-to hit: only its first
+/// occurrence gets the current style, so the one a step landed on stands apart
+/// from the rest of the line.
+pub(super) fn paint_lines(
+    lines: Vec<Line<'static>>,
+    found: &[Occurrence],
+    current: Option<usize>,
+) -> Vec<Line<'static>> {
+    if found.is_empty() {
+        return lines;
     }
+    let mut ranges: Vec<Vec<(Range<usize>, bool)>> = vec![Vec::new(); lines.len()];
+    let mut landed = false;
+    for o in found {
+        let is_current = current == Some(o.logical) && !std::mem::replace(&mut landed, true);
+        for (line, range) in &o.pieces {
+            if let Some(on_line) = ranges.get_mut(*line) {
+                on_line.push((range.clone(), is_current));
+            }
+        }
+    }
+    lines
+        .into_iter()
+        .zip(ranges)
+        .map(|(line, on_line)| highlight_ranges(line, &on_line))
+        .collect()
 }
 
 /// The match a fresh search lands on: the last one at or above `bottom_row`
@@ -155,11 +348,7 @@ pub(super) fn nearest(hits: &[Hit], bottom_row: usize) -> Option<usize> {
     if hits.is_empty() {
         return None;
     }
-    Some(
-        hits.iter()
-            .rposition(|h| h.row <= bottom_row)
-            .unwrap_or(0),
-    )
+    Some(hits.iter().rposition(|h| h.row <= bottom_row).unwrap_or(0))
 }
 
 /// Index of the match after (`forward`) or before `from`, wrapping at either
@@ -226,7 +415,7 @@ mod tests {
             Span::styled("say he", Style::new().green()),
             Span::styled("llo there", Style::new().blue()),
         ]);
-        let out = highlight_line(line.clone(), "hello", false);
+        let out = paint(line.clone(), "hello", false);
         assert_eq!(line_text(&out), line_text(&line), "text is unchanged");
         let painted: String = out
             .spans
@@ -248,16 +437,16 @@ mod tests {
 
     #[test]
     fn highlight_marks_the_current_match_distinctly() {
-        let out = highlight_line(Line::raw("a needle"), "needle", true);
+        let out = paint(Line::raw("a needle"), "needle", true);
         let hit = out.spans.iter().find(|s| s.content == "needle").unwrap();
         assert_eq!(hit.style.bg, Some(Color::Yellow));
-        let plain = highlight_line(Line::raw("no match here"), "needle", true);
+        let plain = paint(Line::raw("no match here"), "needle", true);
         assert_eq!(plain, Line::raw("no match here"));
     }
 
     #[test]
     fn only_the_first_match_on_the_current_line_gets_the_current_style() {
-        let out = highlight_line(Line::raw("needle and needle"), "needle", true);
+        let out = paint(Line::raw("needle and needle"), "needle", true);
         let bands: Vec<bool> = out
             .spans
             .iter()
@@ -296,5 +485,150 @@ mod tests {
             line: 0,
         };
         assert!(hit(1, 9) < detail && detail < hit(2, 0));
+    }
+
+    /// `needle` painted onto one unwrapped line the way `draw` does it, with the
+    /// first match as the current one when `current`.
+    fn paint(line: Line<'static>, needle: &str, current: bool) -> Line<'static> {
+        let ranges: Vec<(Range<usize>, bool)> = match_ranges(&line_text(&line), needle)
+            .into_iter()
+            .enumerate()
+            .map(|(n, r)| (r, current && n == 0))
+            .collect();
+        highlight_ranges(line, &ranges)
+    }
+
+    fn rows(texts: &[&str]) -> Vec<Line<'static>> {
+        texts.iter().map(|t| Line::raw(t.to_string())).collect()
+    }
+
+    fn flat(texts: &[&str]) -> Vec<String> {
+        texts.iter().map(|t| t.to_string()).collect()
+    }
+
+    /// The text each piece of `o` covers on `lines`.
+    fn covered(lines: &[&str], o: &Occurrence) -> Vec<String> {
+        o.pieces
+            .iter()
+            .map(|(l, r)| lines[*l][r.clone()].to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_term_that_wraps_across_two_lines_is_found_with_a_piece_on_each() {
+        let shown = ["• the quick brown", "  fox jumps"];
+        let found = occurrences(
+            &rows(&shown),
+            Some(&flat(&["• the quick brown fox jumps"])),
+            "brown fox",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, 0);
+        assert_eq!(covered(&shown, &found[0]), vec!["brown", "fox"]);
+    }
+
+    #[test]
+    fn the_count_is_the_same_at_every_width() {
+        let whole = flat(&["foo bar foo bar"]);
+        for shown in [
+            vec!["foo bar foo bar"],
+            vec!["foo bar", "foo bar"],
+            vec!["foo", "bar foo", "bar"],
+            vec!["foo", "bar", "foo", "bar"],
+        ] {
+            let found = occurrences(&rows(&shown), Some(&whole), "foo bar");
+            assert_eq!(found.len(), 2, "{shown:?}");
+            assert!(found.iter().all(|o| o.logical == 0), "{shown:?}");
+            // However it wrapped, each occurrence covers all of "foo bar".
+            for o in &found {
+                assert_eq!(
+                    covered(&shown, o).join(" ").replace("  ", " "),
+                    "foo bar",
+                    "{shown:?}"
+                );
+            }
+        }
+    }
+
+    // Lines that are separate in the source stay separate: a term does not run
+    // from the end of one paragraph into the next.
+    #[test]
+    fn a_term_does_not_span_a_real_line_break() {
+        let found = occurrences(
+            &rows(&["alpha", "beta"]),
+            Some(&flat(&["alpha", "beta"])),
+            "alpha beta",
+        );
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn a_gutter_glyph_repeated_on_each_continuation_line_is_skipped() {
+        let shown = ["│ alpha beta", "│ gamma delta"];
+        let found = occurrences(
+            &rows(&shown),
+            Some(&flat(&["│ alpha beta gamma delta"])),
+            "beta gamma",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(covered(&shown, &found[0]), vec!["beta", "gamma"]);
+    }
+
+    #[test]
+    fn each_logical_line_keeps_its_own_index() {
+        let shown = ["one hit", "two", "again hit"];
+        let found = occurrences(&rows(&shown), Some(&flat(&shown)), "hit");
+        assert_eq!(
+            found.iter().map(|o| o.logical).collect::<Vec<_>>(),
+            vec![0, 2]
+        );
+    }
+
+    // The rendered lines differ from the unwrapped text beyond wrapping (a
+    // label cut short at a narrow width), so there is nothing to map onto:
+    // search what is shown, and never invent a match for text that is not.
+    #[test]
+    fn text_that_is_not_on_screen_is_not_matched() {
+        let shown = rows(&["label long…"]);
+        let whole = flat(&["label long enough to be cut"]);
+        assert!(occurrences(&shown, Some(&whole), "enough").is_empty());
+        let found = occurrences(&shown, Some(&whole), "label");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].pieces, vec![(0, 0..5)]);
+    }
+
+    #[test]
+    fn without_unwrapped_text_each_rendered_line_is_searched_on_its_own() {
+        let found = occurrences(&rows(&["a hit", "no", "hit hit"]), None, "hit");
+        assert_eq!(found.len(), 3);
+        assert_eq!(found[2].logical, 2);
+    }
+
+    #[test]
+    fn a_wrapped_term_is_painted_on_both_lines() {
+        let shown = ["say hel", "lo there"];
+        // "hel" and "lo" are two pieces of one occurrence, painted on their own lines.
+        let found = occurrences(&rows(&shown), Some(&flat(&["say hello there"])), "hello");
+        assert_eq!(found.len(), 1);
+        let painted: Vec<String> = (0..2)
+            .map(|l| {
+                let ranges: Vec<(Range<usize>, bool)> = found
+                    .iter()
+                    .flat_map(|o| {
+                        o.pieces
+                            .iter()
+                            .filter(|(pl, _)| *pl == l)
+                            .map(|(_, r)| (r.clone(), true))
+                    })
+                    .collect();
+                highlight_ranges(Line::raw(shown[l].to_string()), &ranges)
+                    .spans
+                    .iter()
+                    .filter(|s| s.style.bg == Some(Color::Yellow))
+                    .map(|s| s.content.as_ref())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(painted, vec!["hel", "lo"]);
     }
 }
