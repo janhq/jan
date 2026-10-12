@@ -7112,30 +7112,36 @@ impl App {
         self.transcript.parse_think_tags = self.think_tags_gate();
     }
 
-    /// Whether the current model's provider has its inline tags parsed.
+    /// Whether the current model's provider has its inline tags parsed. The
+    /// main gate resolves even when the config lock is busy, from the
+    /// provider's name alone, as it always has.
     fn think_tags_gate(&mut self) -> bool {
         let provider = self.serving_provider();
         self.think_tags_for_provider(provider.as_deref(), None)
+            .unwrap_or_else(|| think_tags_for_run(provider.as_deref(), None, None))
     }
 
     /// Whether a run served by the configured provider `provider` has its
     /// inline tags parsed: that provider's own `api_type` and `base_url` decide,
     /// the way they do for the main model. `api_type` is the one a request
-    /// reported, used when the configuration does not name one.
-    fn think_tags_for_provider(&self, provider: Option<&str>, api_type: Option<&str>) -> bool {
-        let (configured_api_type, base_url) = provider
-            .and_then(|name| {
-                let args = self.args.as_ref()?;
+    /// reported, used when the configuration does not name one. `None` when the
+    /// configuration cannot be read right now (its lock is held), so a caller
+    /// that already has an answer can keep it.
+    fn think_tags_for_provider(&self, provider: Option<&str>, api_type: Option<&str>) -> Option<bool> {
+        let (configured_api_type, base_url) = match (provider, self.args.as_ref()) {
+            (Some(name), Some(args)) => {
                 let pc = args.provider_configs.try_lock().ok()?;
-                let config = pc.get(name)?;
-                Some((config.api_type.clone(), config.base_url.clone()))
-            })
-            .unwrap_or_default();
-        think_tags_for_run(
+                pc.get(name)
+                    .map(|config| (config.api_type.clone(), config.base_url.clone()))
+                    .unwrap_or_default()
+            }
+            _ => Default::default(),
+        };
+        Some(think_tags_for_run(
             provider,
             configured_api_type.as_deref().or(api_type),
             base_url.as_deref(),
-        )
+        ))
     }
 
     /// The `/usage` bucket one request bills against.
@@ -7768,9 +7774,13 @@ impl App {
         // definition can name a model another provider serves, and its content
         // must follow that provider's default, not the main model's.
         if let StreamEvent::RequestProvenance { provider, api_type, .. } = &event {
-            let gate = self.think_tags_for_provider(provider.as_deref(), api_type.as_deref());
-            if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                panel.transcript.parse_think_tags = gate;
+            // An unreadable config (another run holds the lock) leaves the
+            // child's gate as it was: guessing without the endpoint can read an
+            // `openai`-named entry pointed at vLLM as the official API.
+            if let Some(gate) = self.think_tags_for_provider(provider.as_deref(), api_type.as_deref()) {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.transcript.parse_think_tags = gate;
+                }
             }
             return;
         }
@@ -30764,6 +30774,44 @@ mod tests {
                 app.on_done("stop".into(), None);
                 let last = app.history.last().expect("assistant turn in history");
                 assert_eq!(last["content"], "main answer");
+            });
+        });
+    }
+
+    /// A request landing while the provider config is locked cannot say what
+    /// the child's provider is configured as. The child keeps the setting it
+    /// has rather than guessing: without the endpoint, a `tokamak` entry
+    /// pointed at some other host reads as the official one and would flip a
+    /// tags-parsing child off for that request.
+    #[test]
+    fn a_busy_config_lock_leaves_a_childs_tag_gate_as_it_was() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                // `tokamak` on a self-hosted endpoint: tags are reasoning there.
+                let mut providers = tag_gate_providers();
+                providers
+                    .get_mut("tokamak")
+                    .expect("seeded")
+                    .base_url = Some("http://127.0.0.1:1/v1".into());
+                let args = test_args(&app, providers);
+                app.args = Some(args.clone());
+                app.model = "tk-1".into();
+                app.sync_think_tags();
+                assert!(app.transcript.parse_think_tags, "self-hosted tokamak parses tags");
+                app.apply(StreamEvent::SubagentStart {
+                    run_id: "sub-a-1".into(),
+                    name: "a".into(),
+                    task: None,
+                });
+                let rt = tokio::runtime::Runtime::new().expect("runtime");
+                let held = rt.block_on(args.provider_configs.lock());
+                app.apply(child_request_on("tokamak", "tk-1"));
+                drop(held);
+                assert!(
+                    app.subagents[0].transcript.parse_think_tags,
+                    "an unreadable config must not turn the child's tags off"
+                );
             });
         });
     }
