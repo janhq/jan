@@ -348,7 +348,11 @@ pub(super) fn nearest(hits: &[Hit], bottom_row: usize) -> Option<usize> {
     if hits.is_empty() {
         return None;
     }
-    Some(hits.iter().rposition(|h| h.row <= bottom_row).unwrap_or(0))
+    Some(
+        hits.iter()
+            .rposition(|h| h.row <= bottom_row)
+            .unwrap_or(0),
+    )
 }
 
 /// Index of the match after (`forward`) or before `from`, wrapping at either
