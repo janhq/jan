@@ -21,7 +21,7 @@ import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import {
   deriveToolOutputCap,
-  estimateMessageTokens,
+  estimateConversationTokens,
 } from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
@@ -1124,10 +1124,7 @@ function ThreadDetail() {
               useModelProvider.getState().selectedModel,
               selectedProvider,
               autoInlineContextRatio,
-              chatMessagesRef.current.reduce(
-                (sum, m) => sum + estimateMessageTokens(m),
-                0
-              )
+              estimateConversationTokens(chatMessagesRef.current)
             ),
           })
           processedAttachments = result.processedAttachments

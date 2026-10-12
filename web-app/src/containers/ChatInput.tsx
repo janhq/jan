@@ -105,6 +105,8 @@ import {
   needsIngestionChoice,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
+import { estimateConversationTokens } from '@/lib/context-manager'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -463,6 +465,11 @@ const ChatInput = memo(function ChatInput({
       currentThreadId ? state.messages[currentThreadId] : []
     )
   )
+
+  // Read when a document is attached, without rebuilding the attach
+  // callback on every message update.
+  const threadMessagesRef = useRef(threadMessages)
+  threadMessagesRef.current = threadMessages
 
   const maxRows = 10
 
@@ -892,11 +899,16 @@ const ChatInput = memo(function ChatInput({
       // dialog.  Actual ingestion is always deferred to send time
       // (processAttachmentsForSend inside processAndSendMessage), where
       // 'auto' documents are routed by size when the model's window is known.
+      // Same conversation-aware budget as the send path, so 'auto' asks here
+      // exactly when send time would have no budget to decide by.
       const hasInlineBudget =
         (await resolveAutoInlineBudget(
           selectedModel,
           selectedProvider,
-          autoInlineContextRatio
+          autoInlineContextRatio,
+          estimateConversationTokens(
+            convertThreadMessagesToUIMessages(threadMessagesRef.current ?? [])
+          )
         )) !== undefined
       const docsNeedingPrompt = docs.filter((doc) =>
         needsIngestionChoice(doc, parsePreference, hasInlineBudget)
