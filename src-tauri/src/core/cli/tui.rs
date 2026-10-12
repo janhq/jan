@@ -1568,6 +1568,9 @@ struct ToolGroup {
     /// collapsed row reports. Results can land out of dispatch order, so this
     /// can't be read back off `calls`.
     last_result_error: Option<bool>,
+    /// The expanded group before wrapping, kept once the group is closed (see
+    /// `flat_detail`); reset when a late result lands on it.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl ToolGroup {
@@ -1575,6 +1578,16 @@ impl ToolGroup {
     /// as an `Explored` row listing them rather than a counted summary.
     fn explored(&self) -> bool {
         self.calls.iter().all(|c| c.explore.is_some())
+    }
+
+    /// What the expanded group says before wrapping (see `find::flat_text`),
+    /// laid out once. Only for a closed group, whose calls change just when a
+    /// late result lands (which resets it); the open group is never kept.
+    fn flat_detail(&self) -> std::borrow::Cow<'_, [String]> {
+        std::borrow::Cow::Borrowed(
+            self.flat
+                .get_or_init(|| find::flat_text(&group_detail_lines(self, find::FLAT_WIDTH))),
+        )
     }
 
     /// Whether any call is still awaiting its `ToolResult`. A group can stay
@@ -1961,6 +1974,8 @@ struct Row {
     /// re-parse its markdown and re-highlight its diffs 20 times a second;
     /// only a width change invalidates the entry.
     cache: std::cell::RefCell<Option<RowRender>>,
+    /// The row's text before wrapping, filled on first use by `flat`.
+    flat: std::cell::RefCell<Option<Vec<String>>>,
 }
 
 /// A row's rendered lines plus the height they occupy once the body
@@ -2129,6 +2144,7 @@ impl From<RowKind> for Row {
         Row {
             kind,
             cache: std::cell::RefCell::new(None),
+            flat: std::cell::RefCell::new(None),
         }
     }
 }
@@ -2155,6 +2171,20 @@ impl Row {
     fn height(&self, width: u16) -> u16 {
         self.fill(width);
         self.cache.borrow().as_ref().map_or(0, |r| r.height)
+    }
+
+    /// What the row says unwrapped (see `find::flat_text`), rendered once at
+    /// `find::FLAT_WIDTH` and kept: it does not depend on the terminal, and
+    /// `/find` reads it on every step. Rows are replaced rather than edited, so
+    /// it never goes stale.
+    fn flat(&self) -> std::cell::Ref<'_, Vec<String>> {
+        if self.flat.borrow().is_none() {
+            let lines = self.kind.render(find::FLAT_WIDTH);
+            *self.flat.borrow_mut() = Some(find::flat_text(&lines));
+        }
+        std::cell::Ref::map(self.flat.borrow(), |flat| {
+            flat.as_ref().expect("filled above")
+        })
     }
 
     fn fill(&self, width: u16) {
@@ -2604,6 +2634,7 @@ impl Transcript {
                     call.diff = diff;
                     call.content = Some(content);
                     group.last_result_error = Some(is_error);
+                    group.flat = std::cell::OnceCell::new();
                     self.rows[group.idx] = group.row(GroupRow::Closed);
                     break;
                 }
@@ -2769,6 +2800,7 @@ impl Transcript {
                             idx: Some(i),
                             height: row.height(width),
                             lines: None,
+                            detail: false,
                         }
                     }
                 }
@@ -2776,6 +2808,7 @@ impl Transcript {
                     idx: Some(i),
                     height: row.height(width),
                     lines: None,
+                    detail: false,
                 },
             };
             if find_hit.is_some_and(|h| h.row == i && !h.detail) {
@@ -2825,7 +2858,10 @@ impl Transcript {
                             find_at = Some(content_h);
                         }
                     }
-                    let seg = Segment::eager(Some(i), detail, width);
+                    let mut seg = Segment::eager(Some(i), detail, width);
+                    // The lingering reasoning tail is a bounded view of the block,
+                    // not a wrapped copy of its detail, so it has no unwrapped form.
+                    seg.detail = !(active_reasoning && !expanded);
                     content_h = content_h.saturating_add(seg.height);
                     segs.push(seg);
                 }
@@ -2901,7 +2937,9 @@ impl Transcript {
     fn all_lines(&self, width: u16) -> Vec<Line<'static>> {
         let layout = self.layout_body(width, 0, false, true, None, Vec::new());
         let height = layout.content_h;
-        layout.window(&self.rows, width, 0, height, None).0
+        layout
+            .window(&self.rows, width, 0, height, None, &|_| None)
+            .0
     }
 
     /// Mark every edit/write row still awaiting a result as interrupted: the
@@ -3075,6 +3113,7 @@ impl Transcript {
                         detail,
                         source: seg.clone(),
                         committed: Instant::now(),
+                        flat: std::cell::OnceCell::new(),
                     });
                 }
             } else {
@@ -3134,6 +3173,7 @@ impl Transcript {
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
+            flat: std::cell::OnceCell::new(),
         };
         self.push_row(group.row(GroupRow::Open));
         self.tool_group = Some(group);
@@ -3467,6 +3507,37 @@ impl Transcript {
             })
     }
 
+    /// An expanded region's text before wrapping, one entry per logical line,
+    /// for `/find`. Kept on a finished region (a closed tool group, a reasoning
+    /// block, a finished subagent) and borrowed from it: laying one out wide is
+    /// the costly part, and a search asks again on every step and every frame.
+    /// The open tool group changes under the search, so its text is laid out
+    /// each time. Same precedence as `region_detail_in`.
+    fn region_flat<'a>(
+        &'a self,
+        index: &RegionIndex,
+        i: usize,
+    ) -> Option<std::borrow::Cow<'a, [String]>> {
+        use std::borrow::Cow;
+        if let Some(&pos) = index.groups.get(&i) {
+            return Some(self.groups[pos].flat_detail());
+        }
+        // The open group takes new calls and results, so nothing is kept for it.
+        if let Some(group) = self.tool_group.as_ref().filter(|g| g.idx == i) {
+            return Some(Cow::Owned(find::flat_text(&group_detail_lines(
+                group,
+                find::FLAT_WIDTH,
+            ))));
+        }
+        if let Some(&pos) = index.reasoning.get(&i) {
+            return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
+        }
+        index
+            .subagents
+            .get(&i)
+            .map(|&pos| Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()))
+    }
+
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
     /// `subagent_blocks`, so a caller asking about many rows (the search scan,
     /// a frame with many expanded rows) does one lookup per row instead of
@@ -3640,6 +3711,15 @@ struct ReasoningBlock {
     /// `REASONING_FOLD_AFTER` before folding to its summary. Not journaled: a
     /// replayed block is history and folds immediately.
     committed: Instant,
+    /// What the block says before wrapping (see `find::flat_text`), laid out
+    /// once: `detail` never changes after the block is committed.
+    flat: std::cell::OnceCell<Vec<String>>,
+}
+
+impl ReasoningBlock {
+    fn flat_detail(&self) -> &[String] {
+        self.flat.get_or_init(|| find::flat_text(&self.detail))
+    }
 }
 
 /// A "trace": a maximal contiguous run of committed reasoning-summary and
@@ -4786,6 +4866,10 @@ struct SubagentBlock {
     idx: usize,
     panel: SubagentPanel,
     outcome: SubagentOutcome,
+    /// What the expanded run says before wrapping (see `find::flat_text`),
+    /// laid out once: a finished child's transcript does not change, and
+    /// laying it out wide refills every one of its rows' single-width caches.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl SubagentBlock {
@@ -4802,6 +4886,12 @@ impl SubagentBlock {
                 Line::from(spans).style(line.style)
             })
             .collect()
+    }
+
+    /// The run's text before wrapping, laid out once (see `flat`).
+    fn flat_detail(&self) -> &Vec<String> {
+        self.flat
+            .get_or_init(|| find::flat_text(&self.detail_lines(find::FLAT_WIDTH)))
     }
 }
 
@@ -5394,6 +5484,7 @@ impl App {
                 idx,
                 panel,
                 outcome,
+                flat: std::cell::OnceCell::new(),
             });
         }
     }
@@ -5647,17 +5738,31 @@ impl App {
         }
     }
 
-    /// Every committed line matching `needle`, top to bottom. Scans what the
-    /// rows render to, folded detail included, rather than only what is on
-    /// screen: the transcript is built from `display_log`, so this covers the
-    /// whole session. The streaming tail is not committed yet and is skipped.
+    /// Every committed logical line matching `needle`, top to bottom. Scans
+    /// what the rows render to, folded detail included, rather than only what
+    /// is on screen: the transcript is built from `display_log`, so this covers
+    /// the whole session. The streaming tail is not committed yet and is
+    /// skipped.
+    ///
+    /// Matching runs on each part's unwrapped text and a hit is a logical line
+    /// of it, so a term that word-wraps across two rendered lines is found and
+    /// the count is the same at any terminal width.
     fn find_hits(&self, needle: &str) -> Vec<find::Hit> {
         let width = self.transcript.render_width();
         let mut hits = Vec::new();
-        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>]| {
-            for (line, l) in lines.iter().enumerate() {
-                if !find::match_ranges(&find::line_text(l), needle).is_empty() {
-                    hits.push(find::Hit { row, detail, line });
+        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>], flat: &[String]| {
+            let mut last = None;
+            for found in find::occurrences(lines, Some(flat), needle) {
+                // One hit per logical line, however many times it matches (and
+                // one per rendered line inside a run that could not be lined up).
+                if last != Some((found.logical, found.sub)) {
+                    last = Some((found.logical, found.sub));
+                    hits.push(find::Hit {
+                        row,
+                        detail,
+                        line: found.logical,
+                        sub: found.sub,
+                    });
                 }
             }
         };
@@ -5667,10 +5772,12 @@ impl App {
             // on each `/find` and step was most of the scan's cost.
             row.fill(width);
             if let Some(cached) = row.cache.borrow().as_ref() {
-                scan(i, false, &cached.lines);
+                scan(i, false, &cached.lines, &row.flat());
             }
-            if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
-                scan(i, true, &detail);
+            if let Some(flat) = self.transcript.region_flat(&index, i) {
+                if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
+                    scan(i, true, &detail, &flat);
+                }
             }
         }
         hits
@@ -19094,8 +19201,14 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let max_back = layout.content_h.saturating_sub(body.height);
     app.agent_detail_scroll = app.agent_detail_scroll.min(max_back);
     let scroll = max_back - app.agent_detail_scroll;
-    let (lines, _, offset) =
-        layout.window(&panel.transcript.rows, width, scroll, body.height, None);
+    let (lines, _, offset) = layout.window(
+        &panel.transcript.rows,
+        width,
+        scroll,
+        body.height,
+        None,
+        &|_| None,
+    );
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -21214,6 +21327,23 @@ struct Segment {
     idx: Option<usize>,
     height: u16,
     lines: Option<Vec<Line<'static>>>,
+    /// Whether this is an expanded region's detail, whose unwrapped text a
+    /// search reads (see `detail_flat_text`) for the segments on screen.
+    detail: bool,
+}
+
+/// An expanded region's text before wrapping, read through a per-frame
+/// `RegionIndex` built on first use. Only called for the detail segments a
+/// search is about to paint (the ones on screen) and for the one it jumps to;
+/// a finished region's text is kept on it (see `Transcript::region_flat`), so
+/// a frame borrows it rather than laying the region out again.
+fn detail_flat_text<'a>(
+    transcript: &'a Transcript,
+    index: &std::cell::OnceCell<RegionIndex>,
+    row: usize,
+) -> Option<std::borrow::Cow<'a, [String]>> {
+    let index = index.get_or_init(|| transcript.region_index());
+    transcript.region_flat(index, row)
 }
 
 impl Segment {
@@ -21222,6 +21352,7 @@ impl Segment {
             idx,
             height: wrapped_height_of(&lines, width),
             lines: Some(lines),
+            detail: false,
         }
     }
 }
@@ -21254,6 +21385,7 @@ impl BodyLayout {
                 idx: None,
                 height: pad,
                 lines: Some(vec![Line::raw(""); pad as usize]),
+                detail: false,
             },
         );
         self.content_h = self.content_h.saturating_add(pad);
@@ -21269,13 +21401,14 @@ impl BodyLayout {
     /// paragraph wraps a viewport's worth of lines instead of the session.
     /// `find` paints the search term onto those lines, the current match
     /// brighter.
-    fn window(
+    fn window<'f>(
         self,
         rows: &[Row],
         width: u16,
         scroll: u16,
         height: u16,
         find: Option<(&str, Option<find::Hit>)>,
+        detail_flat: &dyn Fn(usize) -> Option<std::borrow::Cow<'f, [String]>>,
     ) -> (Vec<Line<'static>>, Vec<Option<usize>>, u16) {
         let end = scroll.saturating_add(height);
         let mut visible: Vec<Line<'static>> = Vec::new();
@@ -21289,6 +21422,7 @@ impl BodyLayout {
             let seg_end = at.saturating_add(seg.height);
             if seg_end > scroll && at < end {
                 first_start.get_or_insert(at);
+                let committed = seg.lines.is_none();
                 let lines = match seg.lines {
                     Some(lines) => lines,
                     // Committed rows are cloned out of the cache only here.
@@ -21303,11 +21437,26 @@ impl BodyLayout {
                 // cache never holds a highlighted copy.
                 match find {
                     Some((needle, hit)) => {
-                        visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
-                            let current =
-                                self.find_seg == Some(n) && hit.is_some_and(|h| h.line == li);
-                            find::highlight_line(line, needle, current)
-                        }))
+                        // Matched on the unwrapped text, so a term that wrapped
+                        // is painted on each line it lands on. A committed row
+                        // keeps that text itself; an expanded region's is read
+                        // here, for the segments on screen only.
+                        let row = seg.idx.filter(|_| committed).and_then(|i| rows.get(i));
+                        let kept = row.map(Row::flat);
+                        let region = seg
+                            .idx
+                            .filter(|_| seg.detail)
+                            .and_then(detail_flat);
+                        let flat = match (&kept, &region) {
+                            (Some(kept), _) => Some(kept.as_slice()),
+                            (None, Some(flat)) => Some(&**flat),
+                            (None, None) => None,
+                        };
+                        let found = find::occurrences(&lines, flat, needle);
+                        let current = hit
+                            .filter(|_| self.find_seg == Some(n))
+                            .map(|h| (h.line, h.sub));
+                        visible.extend(find::paint_lines(lines, &found, current));
                     }
                     None => visible.extend(lines),
                 }
@@ -21526,25 +21675,38 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     app.transcript.reveal = None;
     let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
-    if let (Some(start), Some(hit)) = (layout.find_at, find_hit) {
-        // Down to the matching line inside its segment, measured with the same
-        // wrap the body uses. Only on the jump frame, so the lines above it are
-        // cloned once per step, not every frame.
+    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
+    if let (Some(start), Some(hit), Some(needle)) =
+        (layout.find_at, find_hit, find_needle.as_deref())
+    {
+        // Down to the line the match starts on inside its segment (the match
+        // may have wrapped, so its logical line is not a rendered line), measured
+        // with the same wrap the body uses. Only on the jump frame, so the lines
+        // above it are cloned once per step, not every frame.
+        let flat_index = std::cell::OnceCell::new();
         let above = layout
             .segs
             .get(layout.find_seg.unwrap_or(usize::MAX))
-            .map(|seg| match &seg.lines {
-                Some(lines) => lines[..hit.line.min(lines.len())].to_vec(),
-                None => app
-                    .transcript
-                    .rows
-                    .get(hit.row)
-                    .map(|row| {
-                        let mut lines = row.lines(width);
-                        lines.truncate(hit.line);
-                        lines
-                    })
-                    .unwrap_or_default(),
+            .map(|seg| {
+                let (mut lines, kept) = match &seg.lines {
+                    Some(lines) => (lines.clone(), None),
+                    None => match app.transcript.rows.get(hit.row) {
+                        Some(row) => (row.lines(width), Some(row.flat())),
+                        None => (Vec::new(), None),
+                    },
+                };
+                let region = seg
+                    .detail
+                    .then(|| detail_flat_text(&app.transcript, &flat_index, hit.row))
+                    .flatten();
+                let flat = kept.as_deref().map(Vec::as_slice).or(region.as_deref());
+                let first = find::occurrences(&lines, flat, needle)
+                    .iter()
+                    .find(|o| (o.logical, o.sub) == (hit.line, hit.sub))
+                    .and_then(|o| o.pieces.first())
+                    .map_or(0, |(line, _)| *line);
+                lines.truncate(first);
+                lines
             })
             .map_or(0, |lines| wrapped_height(lines, width));
         // A third of the way down rather than the top edge, so what led up to
@@ -21552,18 +21714,20 @@ fn draw(f: &mut Frame, app: &mut App) {
         let target = start.saturating_add(above).saturating_sub(inner_h / 3);
         app.scrollback = max_back.saturating_sub(target);
     }
-    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
     if let Some(find) = app.find.as_mut() {
         find.jump = false;
     }
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
+    let flat_index = std::cell::OnceCell::new();
+    let detail_flat = |i: usize| detail_flat_text(&app.transcript, &flat_index, i);
     let (visible, row_index, offset) = layout.window(
         &app.transcript.rows,
         width,
         scroll,
         inner_h,
         find_needle.as_deref().map(|needle| (needle, find_hit)),
+        &detail_flat,
     );
     let body = Paragraph::new(visible)
         .wrap(Wrap { trim: false })
@@ -34983,6 +35147,49 @@ mod tests {
         );
     }
 
+    // /find reads a group's unwrapped text, kept once every call has resolved.
+    // A group that goes on to take another call must not answer from the text
+    // it kept before.
+    #[test]
+    fn an_open_groups_search_text_follows_the_calls_added_after_it_resolved() {
+        let mut app = test_app();
+        let flat_of = |app: &App, idx: usize| -> String {
+            let index = app.transcript.region_index();
+            app.transcript
+                .region_flat(&index, idx)
+                .expect("the group owns a region")
+                .join("\n")
+        };
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo alpha-marker" }),
+        });
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "alpha-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(flat_of(&app, idx).contains("alpha-marker"));
+
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo omega-marker" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "omega-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        let text = flat_of(&app, idx);
+        assert!(text.contains("omega-marker"), "{text}");
+        assert!(text.contains("alpha-marker"), "{text}");
+    }
+
     #[test]
     fn failed_grouped_row_shows_the_failure_before_the_group_closes() {
         let mut app = test_app();
@@ -47392,6 +47599,81 @@ mod tests {
         assert!(hit.detail, "the match is in the folded detail");
         let shown = frame_text(&find_frame(&mut app, 60, 20));
         assert!(shown.contains("secret-output-xyz"), "{shown}");
+    }
+
+    /// A turn whose answer has three paragraphs; "brown fox" is in the first and
+    /// the last, so where it wraps depends on the width.
+    fn wrapping_answer_app() -> TestApp {
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        app.apply(StreamEvent::Token {
+            text: "alpha the quick brown fox jumps over the lazy dog\n\n\
+                   nothing to see in this one\n\n\
+                   omega another quick brown fox leaps over a sleeping hound"
+                .into(),
+        });
+        app.on_done("stop".into(), None);
+        app
+    }
+
+    /// The text of every highlighted cell, in reading order.
+    fn lit_text(buf: &Buffer) -> String {
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let style = buf[(x, y)].style();
+                let reversed = style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::REVERSED);
+                if reversed || style.bg == Some(Color::Yellow) {
+                    out.push_str(buf[(x, y)].symbol());
+                }
+            }
+        }
+        out
+    }
+
+    // Regression for a term that word-wraps: matching ran on each rendered
+    // line, so "brown fox" was missed wherever the wrap fell between the words,
+    // and the hit count moved as the window was resized.
+    #[tokio::test]
+    async fn find_matches_a_term_that_wraps_at_any_width() {
+        let mut split_somewhere = false;
+        for width in 14..=100u16 {
+            let mut app = wrapping_answer_app();
+            run_command(&mut app, "find brown fox", &no_mcp()).await;
+            let buf = find_frame(&mut app, width, 70);
+            let hits = app.find.as_ref().unwrap().hits.len();
+            assert_eq!(hits, 2, "one hit per paragraph at width {width}");
+            // Stepping rescans at the new width; it must find the same two.
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            let buf_after = find_frame(&mut app, width, 70);
+            assert_eq!(app.find.as_ref().unwrap().hits.len(), 2, "after a step at width {width}");
+
+            // Every occurrence is highlighted whole, on whichever lines it fell.
+            for b in [&buf, &buf_after] {
+                let lit: String = lit_text(b).split_whitespace().collect();
+                assert_eq!(lit, "brownfoxbrownfox", "highlighted at width {width}");
+            }
+            let text = frame_text(&buf);
+            let rows: Vec<&str> = text.lines().collect();
+            split_somewhere |= rows.windows(2).any(|p| {
+                p[0].trim_end().ends_with("brown") && p[1].trim_start().starts_with("fox")
+            });
+        }
+        assert!(split_somewhere, "no width wrapped between the words, so this proved nothing");
+    }
+
+    // The same session searched at two widths steps through the same hits.
+    #[tokio::test]
+    async fn the_hit_count_does_not_change_when_the_window_is_resized() {
+        let mut app = wrapping_answer_app();
+        run_command(&mut app, "find brown fox", &no_mcp()).await;
+        let wide = app.find.as_ref().unwrap().hits.clone();
+        let _ = find_frame(&mut app, 18, 70);
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        let narrow = app.find.as_ref().unwrap().hits.clone();
+        assert_eq!(wide, narrow);
     }
 
     #[test]
