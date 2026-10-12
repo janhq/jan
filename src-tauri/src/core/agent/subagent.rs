@@ -4362,6 +4362,7 @@ pub(crate) mod tests {
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
+            allow_escalation: None,
             compaction: None,
             session_start: None,
         }

@@ -1315,6 +1315,7 @@ fn build_cli_orchestration_args(
     plan: bool,
     max_parallel_subagents: u32,
     sandbox: Option<bool>,
+    allow_escalation: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: crate::core::agent::upstream::agent_http_client(),
@@ -1359,6 +1360,9 @@ fn build_cli_orchestration_args(
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
+        // `--allow-escalation` only when passed; unset falls through to
+        // `[tools].allow_escalation`, then off.
+        allow_escalation,
         // Filled in by `prepare_agent_session`, which is where the route's
         // context window is resolved. The desktop paths leave it `None`: their
         // window lives in the local engine's preset, not in a catalog this
@@ -1564,6 +1568,11 @@ pub struct SessionFlags {
     /// to `[tools].sandbox`, then the global `sandbox`, then the CLI default of
     /// off.
     pub sandbox: Option<bool>,
+    /// `--allow-escalation`: run a sandboxed shell command that asks to leave
+    /// the sandbox without prompting. `None` (not passed) defers to
+    /// `[tools].allow_escalation`, then off: escalation waits for a human
+    /// answer, which `auto_approve` does not give.
+    pub allow_escalation: Option<bool>,
     /// `--worktree`: work in a dedicated git checkout. `None` (not passed)
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
@@ -1889,6 +1898,7 @@ fn prepare_agent_session(
         flags.plan,
         max_parallel_subagents,
         flags.sandbox,
+        flags.allow_escalation,
     );
 
     // Resolution order: configured `[agent].context_window` override, then what
@@ -2910,6 +2920,7 @@ async fn resolve_permission_silently(
         capability,
         path,
         command,
+        justification,
         ..
     } = ev
     else {
@@ -2920,10 +2931,7 @@ async fn resolve_permission_silently(
     if duplex {
         return None;
     }
-    let detail = command
-        .map(|c| format!(" ({c})"))
-        .or_else(|| path.map(|p| format!(" on {p}")))
-        .unwrap_or_default();
+    let detail = permission_detail(command, path, justification);
     let decision = prompt_permission(tool_name, capability, detail).await;
     if let Some(sender) = registry.lock().await.remove(&request_id) {
         let _ = sender.send(decision);
@@ -3287,12 +3295,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             path,
             command,
             diff,
+            justification,
             ..
         } => {
-            let detail = command
-                .map(|c| format!(" ({c})"))
-                .or_else(|| path.map(|p| format!(" on {p}")))
-                .unwrap_or_default();
+            let detail = permission_detail(command, path, justification);
             if let Some(diff) = diff {
                 eprintln!("\x1b[2m{diff}\x1b[0m");
             }
@@ -3324,6 +3330,24 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         }
         // Structured data for a host's own display; text output has none.
         StreamEvent::ToolDetails { .. } => {}
+    }
+}
+
+/// What a headless permission line names after the tool: the command or the
+/// path, then an escalation's reason, so a user approving a command outside
+/// the sandbox reads why the model wants it.
+fn permission_detail(
+    command: Option<String>,
+    path: Option<String>,
+    justification: Option<String>,
+) -> String {
+    let target = command
+        .map(|c| format!(" ({c})"))
+        .or_else(|| path.map(|p| format!(" on {p}")))
+        .unwrap_or_default();
+    match justification {
+        Some(why) => format!("{target} because: {why}"),
+        None => target,
     }
 }
 
@@ -3359,6 +3383,19 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The headless line names the command, then an escalation's reason.
+    #[test]
+    fn permission_detail_names_the_target_then_the_reason() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(permission_detail(s("ls"), None, None), " (ls)");
+        assert_eq!(permission_detail(None, s("a.txt"), None), " on a.txt");
+        assert_eq!(
+            permission_detail(s("cargo build"), None, s("fetch crates")),
+            " (cargo build) because: fetch crates"
+        );
+        assert_eq!(permission_detail(None, None, None), "");
+    }
 
     /// The duplex channel end to end over a pipe: a follow-up is queued for the
     /// steering handshake, a permission reply reaches the waiting run, a

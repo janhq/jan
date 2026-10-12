@@ -926,15 +926,12 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
+    let escalation = ctx.escalation;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
-        // `Permission denied` on its own tells the model nothing about *why*;
-        // without this it retries the same command until it gives up. Only when
-        // confined: unsandboxed, a denial is an ordinary filesystem permission
-        // and the hint would name limits that are not in force.
-        if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
-            out.push_str(&jail::denial_hint(&policy));
+        if sandboxed {
+            out.push_str(&sandbox_denial_note(&out, &policy, escalation));
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1273,6 +1270,27 @@ pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
 /// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
+/// What a confined command's output gets appended when it failed on the
+/// sandbox, empty otherwise. `Permission denied` on its own tells the model
+/// nothing about *why*; without this it retries the same command until it
+/// gives up. Only for a confined run: unsandboxed, a denial is an ordinary
+/// filesystem permission and the note would name limits that are not in force.
+/// With `escalation` the note also names the way out, so the model reaches for
+/// it exactly when it applies rather than from the tool description alone.
+fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> String {
+    if !(bash_result_failed(out) && jail::looks_denied(out)) {
+        return String::new();
+    }
+    let mut note = jail::denial_hint(policy);
+    if escalation {
+        note.push_str(ESCALATION_HINT);
+    }
+    note
+}
+
+/// The escalation half of [`sandbox_denial_note`].
+const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun it with `escalate: true` and a `justification` to ask the user to run it outside the sandbox.]";
+
 pub fn bash_result_failed(content: &str) -> bool {
     content.lines().any(|line| {
         let l = line.trim();
@@ -3230,6 +3248,22 @@ mod tests {
         let out = execute_builtin(lookup("shell").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A sandbox denial names the way out only when the run offers it, and an
+    /// ordinary failure (or a success) gets no note at all.
+    #[test]
+    fn sandbox_denial_note_mentions_escalation_only_when_offered() {
+        let policy = jail::Policy::new(Path::new("/w"), true);
+        let denied = "touch: cannot touch '/x': Read-only file system\n[exit 1]";
+        let plain = sandbox_denial_note(denied, &policy, false);
+        assert!(plain.contains("[sandbox:"), "got: {plain}");
+        assert!(!plain.contains("escalate"));
+        let offered = sandbox_denial_note(denied, &policy, true);
+        assert!(offered.starts_with(&plain));
+        assert!(offered.contains("escalate: true"));
+        assert!(sandbox_denial_note("no such file\n[exit 1]", &policy, true).is_empty());
+        assert!(sandbox_denial_note("Read-only file system\n[exit 0]", &policy, true).is_empty());
     }
 
     #[test]

@@ -101,6 +101,10 @@ struct SandboxArgs {
     /// Run shell commands unconfined, overriding a persistent sandbox setting
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
+    /// Let a sandboxed shell command that asks to escalate run outside the
+    /// sandbox without prompting (escalation is never auto-approved otherwise)
+    #[arg(long)]
+    allow_escalation: bool,
 }
 
 /// Whether this invocation works in its own git worktree.
@@ -137,6 +141,12 @@ impl SandboxArgs {
             (_, true) => Some(false),
             _ => None,
         }
+    }
+
+    /// `None` when not passed, so `[tools].allow_escalation` decides. There is
+    /// no `--no-allow-escalation`: off is already the default.
+    fn escalation_flag(self) -> Option<bool> {
+        self.allow_escalation.then_some(true)
     }
 }
 
@@ -781,6 +791,7 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                allow_escalation: cli.sandbox.escalation_flag(),
                 worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
@@ -1099,6 +1110,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     worktree: worktree.into_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
@@ -1129,6 +1141,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     ..Default::default()
                 },
             )
