@@ -38,6 +38,7 @@ mod highlight;
 mod markdown;
 mod motion;
 mod theme;
+pub(super) use theme::fg_sgr;
 mod vibe_setting;
 
 use markdown::{

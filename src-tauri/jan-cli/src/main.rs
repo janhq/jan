@@ -717,12 +717,12 @@ enum McpCommands {
 /// gated on the same `colors_enabled` check `console::Style` uses.
 fn make_logo() -> String {
     use app_lib::core::cli::brand;
-    let (r, g, b) = brand::LOGO_RGB;
+    let sgr = brand::logo_sgr();
     let color = console::colors_enabled();
     let mut out = vec![String::new(), String::new()];
     for l in brand::LOGO {
         if color {
-            out.push(format!("  \x1b[1;38;2;{r};{g};{b}m{l}\x1b[0m"));
+            out.push(format!("  \x1b[1;{sgr}m{l}\x1b[0m"));
         } else {
             out.push(format!("  {l}"));
         }

@@ -18,6 +18,14 @@ pub const LOGO_WIDTH: u16 = 25;
 /// the terminal's palette yellow, whose shade varies by theme.
 pub const LOGO_RGB: (u8, u8, u8) = (0xFE, 0xC9, 0x28);
 
+/// SGR parameters for the wordmark colour outside the TUI, fitted to the
+/// terminal's colour depth like the splash, so a 256- or 16-colour terminal
+/// gets its nearest palette colour rather than an RGB code it may misrender.
+pub fn logo_sgr() -> String {
+    let (r, g, b) = LOGO_RGB;
+    super::tui::fg_sgr(ratatui::style::Color::Rgb(r, g, b))
+}
+
 /// The hand-wave mark as a single glyph, for the header's leading column where
 /// the block art has no room. No VS16: the emoji is already presentation-default
 /// and the extra selector makes some terminals advance a column ratatui has not
