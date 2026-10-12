@@ -72,6 +72,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import {
   OUT_OF_CONTEXT_SIZE,
   isContextOverflowMessage,
+  isLocalContextOverflowMessage,
   parseContextOverflow,
 } from '@/utils/error'
 import { useTranslation, i18n } from '@/i18n/react-i18next-compat'
@@ -249,7 +250,9 @@ function ThreadDetail() {
   const { t } = useTranslation()
 
   // llama-server's overflow string is raw English; localize it, interpolating
-  // the parsed request/context token counts when available.
+  // the parsed request/context token counts when available. Any other wording
+  // is a provider's own error (Anthropic, OpenAI), which already says what to
+  // cut, so it is shown as is rather than hidden behind the generic text.
   const contextBannerMessage = useMemo(() => {
     const raw = contextLimitError?.message
     if (!raw) return undefined
@@ -259,6 +262,7 @@ function ThreadDetail() {
         request: info.requestTokens.toLocaleString(),
         context: info.contextTokens.toLocaleString(),
       })
+    if (!isLocalContextOverflowMessage(raw)) return raw
     return t('model-errors:contextOverflowGeneric')
   }, [contextLimitError, t])
 
@@ -366,7 +370,8 @@ function ThreadDetail() {
       // Nothing would be persisted for an empty reply, so without this the
       // turn silently vanishes and the user cannot tell it failed. The error
       // goes on the user turn it answers (as the stream-error path does):
-      // that message is persisted, so the error survives a reload.
+      // that message is persisted, and the errorEntries effect below copies
+      // the error into its metadata.error, which hydration restores on reload.
       if (isEmptyReply({ message, isAbort, isError, finishReason })) {
         const userTurnId =
           pendingAssistantParentId.current ?? resolveAssistantParent(undefined)

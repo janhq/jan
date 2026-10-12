@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   OUT_OF_CONTEXT_SIZE,
   isContextOverflowMessage,
+  isLocalContextOverflowMessage,
   parseContextOverflow,
 } from '../error'
 
@@ -35,6 +36,18 @@ describe('error utilities', () => {
           'input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000, decrease input length or `max_tokens` and try again'
         )
       ).toBe(true)
+    })
+
+    it('tells llama-server wording apart from cloud provider wording', () => {
+      expect(isLocalContextOverflowMessage(OUT_OF_CONTEXT_SIZE)).toBe(true)
+      expect(
+        isLocalContextOverflowMessage(
+          'request (518 tokens) exceeds the available context size (512 tokens)'
+        )
+      ).toBe(true)
+      expect(
+        isLocalContextOverflowMessage('prompt is too long: 210000 tokens > 200000 maximum')
+      ).toBe(false)
     })
 
     it('does not treat a 413 payload-size error as a context overflow', () => {

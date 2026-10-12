@@ -1,8 +1,8 @@
 export const OUT_OF_CONTEXT_SIZE =
   'the request exceeds the available context size.'
 
-// Context-overflow wordings by source, so cloud overflows get the same banner
-// as local ones instead of raw error text:
+// Context-overflow wordings by source, so cloud overflows reach the same
+// context banner as local ones (the banner keeps a provider's own text):
 //   llama-server: "request (N tokens) exceeds the available context size ..."
 //   Anthropic:    "prompt is too long: ...",
 //                 "input length and `max_tokens` exceed context limit: ..."
@@ -11,8 +11,10 @@ export const OUT_OF_CONTEXT_SIZE =
 // Anthropic's 413 request_too_large is deliberately absent: it is a byte limit
 // on the HTTP body (large images/files), not the token window, so it keeps the
 // provider's own message instead of the generic context banner.
+const LOCAL_CONTEXT_OVERFLOW = /exceeds the available context size/i
+
 const CONTEXT_OVERFLOW_PATTERNS = [
-  /exceeds the available context size/i,
+  LOCAL_CONTEXT_OVERFLOW,
   /prompt is too long/i,
   /exceed context limit/i,
   /context_length_exceeded/i,
@@ -21,6 +23,12 @@ const CONTEXT_OVERFLOW_PATTERNS = [
 
 export function isContextOverflowMessage(message: string): boolean {
   return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message))
+}
+
+// llama-server's own wording, which the banner localizes; anything else that
+// matched isContextOverflowMessage came from a cloud provider.
+export function isLocalContextOverflowMessage(message: string): boolean {
+  return LOCAL_CONTEXT_OVERFLOW.test(message)
 }
 
 export interface ContextOverflowInfo {

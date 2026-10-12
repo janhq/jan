@@ -818,6 +818,27 @@ describe('ThreadDetail route', () => {
       expect(useMessageErrors.getState().errors['a-empty']).toBeUndefined()
     })
 
+    it('persists the empty-reply error into the user turn metadata', () => {
+      const u1 = {
+        id: 'u1',
+        role: 'user',
+        content: [{ type: 'text', text: { value: 'hi', annotations: [] } }],
+        metadata: {},
+      }
+      h.messagesState.messages = { 'thread-1': [u1] }
+      h.messagesState.getMessages = vi.fn(() => [u1])
+      renderComponent()
+      act(() => {
+        finishEmpty()
+      })
+      const persisted = h.messagesState.updateMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.id === 'u1' && m.metadata?.error)
+      expect(persisted?.metadata.error).toBe(
+        useMessageErrors.getState().errors['u1']
+      )
+    })
+
     it('does not flag a reply the user stopped', () => {
       renderComponent()
       act(() => {
@@ -840,6 +861,10 @@ describe('ThreadDetail route', () => {
       renderComponent()
       expect(screen.getByText('Model ran out of context size')).toBeInTheDocument()
       expect(screen.queryByText('Increase Context Size')).toBeNull()
+      // The provider's own text says what to cut; the generic string hid it.
+      expect(
+        screen.getByText(/188240 \+ 21333 > 200000/)
+      ).toBeInTheDocument()
     })
 
     it('offers Increase Context Size for a llamacpp overflow', () => {
