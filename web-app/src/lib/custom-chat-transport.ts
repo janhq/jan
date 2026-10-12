@@ -1397,6 +1397,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ...(inferenceParams ?? {}),
         ...reasoningParams,
       }
+      // This only strips the raw-body injection. The output cap still reaches
+      // these providers through streamText's maxOutputTokens, which lets each
+      // SDK map it (Anthropic adds the thinking budget, OpenAI reasoning
+      // models need max_completion_tokens); a body max_tokens would clobber
+      // that. The context budget params are read client-side only.
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
@@ -1604,7 +1609,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
-      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
+      ...(maxOutputTokens !== undefined && maxOutputTokens >= 1
+        ? { maxOutputTokens }
+        : {}),
       ...(reasoningProviderOptions
         ? { providerOptions: reasoningProviderOptions }
         : {}),
