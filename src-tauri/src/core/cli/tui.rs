@@ -3474,6 +3474,23 @@ impl Transcript {
             })
     }
 
+    /// An expanded region's text before wrapping, one entry per logical line,
+    /// for `/find`. A finished subagent's is kept on its block; the others are
+    /// cheap to lay out wide, and hold no per-width row caches that doing so
+    /// would disturb.
+    fn region_flat(&self, index: &RegionIndex, i: usize) -> Option<Vec<String>> {
+        let owned_elsewhere = index.groups.contains_key(&i)
+            || index.reasoning.contains_key(&i)
+            || self.tool_group.as_ref().is_some_and(|g| g.idx == i);
+        if !owned_elsewhere {
+            if let Some(&pos) = index.subagents.get(&i) {
+                return Some(self.subagent_blocks[pos].flat_detail().clone());
+            }
+        }
+        self.region_detail_in(index, i, find::FLAT_WIDTH)
+            .map(|lines| find::flat_text(&lines))
+    }
+
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
     /// `subagent_blocks`, so a caller asking about many rows (the search scan,
     /// a frame with many expanded rows) does one lookup per row instead of
@@ -4792,6 +4809,10 @@ struct SubagentBlock {
     idx: usize,
     panel: SubagentPanel,
     outcome: SubagentOutcome,
+    /// What the expanded run says before wrapping (see `find::flat_text`),
+    /// laid out once: a finished child's transcript does not change, and
+    /// laying it out wide refills every one of its rows' single-width caches.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl SubagentBlock {
@@ -4808,6 +4829,12 @@ impl SubagentBlock {
                 Line::from(spans).style(line.style)
             })
             .collect()
+    }
+
+    /// The run's text before wrapping, laid out once (see `flat`).
+    fn flat_detail(&self) -> &Vec<String> {
+        self.flat
+            .get_or_init(|| find::flat_text(&self.detail_lines(find::FLAT_WIDTH)))
     }
 }
 
@@ -5400,6 +5427,7 @@ impl App {
                 idx,
                 panel,
                 outcome,
+                flat: std::cell::OnceCell::new(),
             });
         }
     }
@@ -5683,13 +5711,10 @@ impl App {
             if let Some(cached) = row.cache.borrow().as_ref() {
                 scan(i, false, &cached.lines, &row.flat());
             }
-            if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
-                let flat = self
-                    .transcript
-                    .region_detail_in(&index, i, find::FLAT_WIDTH)
-                    .map(|lines| find::flat_text(&lines))
-                    .unwrap_or_default();
-                scan(i, true, &detail, &flat);
+            if let Some(flat) = self.transcript.region_flat(&index, i) {
+                if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
+                    scan(i, true, &detail, &flat);
+                }
             }
         }
         hits
@@ -21219,9 +21244,7 @@ fn detail_flat_text(
     row: usize,
 ) -> Option<Vec<String>> {
     let index = index.get_or_init(|| transcript.region_index());
-    transcript
-        .region_detail_in(index, row, find::FLAT_WIDTH)
-        .map(|lines| find::flat_text(&lines))
+    transcript.region_flat(index, row)
 }
 
 impl Segment {

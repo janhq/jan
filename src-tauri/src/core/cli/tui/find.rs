@@ -138,11 +138,12 @@ pub(super) struct Occurrence {
 /// `lines`, the part as rendered at the current width. Without `flat` the
 /// rendered lines are the text.
 ///
-/// The mapping lines the two renderings up by their non-blank characters, so a
-/// wrap that swallows a space, or a gutter glyph repeated on a continuation
-/// line, does not matter. When they do not line up (a table re-laid out, a
-/// label cut short at a narrow width) the rendered lines are searched on their
-/// own, as they were before the term could span lines.
+/// Each logical line of `flat` is lined up with the rendered lines by its
+/// non-blank characters, so a wrap that swallows a space, or a gutter glyph
+/// repeated on a continuation line, does not matter. A line that does not line
+/// up (a table row whose cells wrapped, a label cut short at a narrow width)
+/// has the rendered lines it sits among searched on their own, and only that
+/// line: the others keep their wrap-aware matching and their logical index.
 pub(super) fn occurrences(
     lines: &[Line<'_>],
     flat: Option<&[String]>,
@@ -176,24 +177,43 @@ pub(super) fn occurrences(
             .collect();
     }
     let (whole, shown) = (Glyphs::of(flat), Glyphs::of(&rendered));
-    let Some(map) = whole.onto(&shown) else {
-        return per_line(&rendered, needle);
-    };
-    found
-        .into_iter()
-        .filter_map(|(logical, range)| {
+    let fit = whole.align(&shown);
+    let mut out = Vec::new();
+    let mut last_loose: Option<&Range<usize>> = None;
+    for (logical, text) in flat.iter().enumerate() {
+        if let Some(span) = &fit.loose[logical] {
+            // Only the rendered lines are known: search them as they are. The
+            // run of loose lines shares one span, searched once and counted
+            // under its first line.
+            if last_loose != Some(span) {
+                last_loose = Some(span);
+                for line in span.clone() {
+                    for range in match_ranges(&rendered[line], needle) {
+                        out.push(Occurrence {
+                            logical,
+                            pieces: vec![(line, range)],
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+        for range in match_ranges(text, needle) {
             let mut pieces: Vec<(usize, Range<usize>)> = Vec::new();
             for g in whole.within(logical, &range) {
-                let (line, at) = shown.at[map[g]];
-                let end = at + shown.chars[map[g]].len_utf8();
+                let (line, at) = shown.at[fit.map[g]];
+                let end = at + shown.chars[fit.map[g]].len_utf8();
                 match pieces.last_mut() {
                     Some((l, r)) if *l == line => r.end = end,
                     _ => pieces.push((line, at..end)),
                 }
             }
-            (!pieces.is_empty()).then_some(Occurrence { logical, pieces })
-        })
-        .collect()
+            if !pieces.is_empty() {
+                out.push(Occurrence { logical, pieces });
+            }
+        }
+    }
+    out
 }
 
 /// Occurrences inside single lines, each its own logical line.
@@ -246,38 +266,106 @@ impl Glyphs {
         from + before(range.start)..from + before(range.end)
     }
 
-    /// For each of this one's characters, the index of the same character in
-    /// `other`, which may carry extras (a gutter glyph repeated on every
-    /// continuation line). `None` when this one has text `other` does not.
+    /// Lines each logical line of this one up with the rendered lines of
+    /// `shown`, one logical line at a time. A line starts at the first
+    /// rendered line, from where the last one ended, that opens with its first
+    /// character, and takes its characters in order from there, so a wrap
+    /// that swallows a space, or a gutter glyph repeated on a continuation
+    /// line, does not matter. A line that does not line up (a table row whose
+    /// cells wrapped and interleaved, a label cut short with `…`) is `loose`,
+    /// and the next one picks up from where the last good one ended: one such
+    /// line does not cost the others theirs.
     ///
     /// A line of only rule glyphs (a horizontal rule, a box border) is as wide
     /// as the render it came from, so this one has far more of them than a
-    /// narrower `other`. Such a line is mapped as a unit onto the matching line
-    /// of `other`, its surplus glyphs landing on that line's last one.
-    fn onto(&self, other: &Glyphs) -> Option<Vec<usize>> {
-        let mut map = Vec::with_capacity(self.chars.len());
-        let mut next = 0;
-        for line in 0..self.starts.len() - 1 {
-            let (from, to) = (self.starts[line], self.starts[line + 1]);
-            let own = &self.chars[from..to];
-            if !own.is_empty() && own.iter().all(|&c| is_rule_glyph(c)) {
-                if let Some(&(shown, _)) = other.at.get(next) {
-                    let (a, b) = (other.starts[shown], other.starts[shown + 1]);
-                    if a == next && other.chars[a..b].iter().all(|&c| is_rule_glyph(c)) {
-                        map.extend((0..own.len()).map(|k| a + k.min(b - a - 1)));
-                        next = b;
-                        continue;
+    /// narrower `shown`. Such a line is mapped as a unit onto the next rule
+    /// line of `shown`, its surplus glyphs landing on that line's last one.
+    fn align(&self, shown: &Glyphs) -> Alignment {
+        let lines = self.starts.len() - 1;
+        let mut map = vec![usize::MAX; self.chars.len()];
+        let mut loose: Vec<Option<Range<usize>>> = vec![None; lines];
+        let mut at = 0;
+        // The loose lines since the last one that lined up, and the rendered
+        // line they begin at: all that is known of them is that they sit
+        // between that and wherever the next good line starts.
+        let mut run: Vec<usize> = Vec::new();
+        let mut run_from = 0;
+        for line in 0..lines {
+            if self.starts[line] == self.starts[line + 1] {
+                continue;
+            }
+            match self.fit(line, shown, at, &mut map) {
+                Some((first, next)) => {
+                    for l in run.drain(..) {
+                        loose[l] = Some(run_from..first);
                     }
+                    at = next;
+                }
+                None => {
+                    if run.is_empty() {
+                        run_from = at;
+                    }
+                    run.push(line);
                 }
             }
-            for c in own {
-                let skip = other.chars[next..].iter().position(|o| o == c)?;
-                map.push(next + skip);
+        }
+        for l in run {
+            loose[l] = Some(run_from..shown.starts.len() - 1);
+        }
+        Alignment { map, loose }
+    }
+
+    /// Maps one logical line onto `shown` at or after rendered line `at`.
+    /// Returns the rendered line it starts on and the one after it ends.
+    fn fit(
+        &self,
+        line: usize,
+        shown: &Glyphs,
+        at: usize,
+        map: &mut [usize],
+    ) -> Option<(usize, usize)> {
+        let from = self.starts[line];
+        let own = &self.chars[from..self.starts[line + 1]];
+        let rule = own.iter().all(|&c| is_rule_glyph(c));
+        for start in at..shown.starts.len() - 1 {
+            let (a, b) = (shown.starts[start], shown.starts[start + 1]);
+            if a == b {
+                continue;
+            }
+            if rule {
+                if shown.chars[a..b].iter().all(|&c| is_rule_glyph(c)) {
+                    for k in 0..own.len() {
+                        map[from + k] = a + k.min(b - a - 1);
+                    }
+                    return Some((start, start + 1));
+                }
+                continue;
+            }
+            if shown.chars[a] != own[0] {
+                continue;
+            }
+            // The first line that opens right decides: a later one has less
+            // to match from, so it could not succeed where this one did not.
+            let mut next = a;
+            for (k, c) in own.iter().enumerate() {
+                let skip = shown.chars[next..].iter().position(|o| o == c)?;
+                map[from + k] = next + skip;
                 next += skip + 1;
             }
+            return Some((start, shown.at[next - 1].0 + 1));
         }
-        Some(map)
+        None
     }
+}
+
+/// How the logical lines of an unwrapped text sit among the rendered lines.
+struct Alignment {
+    /// For each character of the unwrapped text, the index of the same one in
+    /// the rendered text. Meaningless for a loose line.
+    map: Vec<usize>,
+    /// Per logical line: `Some` when it could not be lined up, holding the
+    /// rendered lines it can only be somewhere among.
+    loose: Vec<Option<Range<usize>>>,
 }
 
 /// Glyphs a horizontal rule or a box border is drawn with.
@@ -654,6 +742,41 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].logical, 3);
         assert_eq!(covered(&shown, &found[0]), vec!["code"]);
+    }
+
+    // A table row whose cells wrapped interleaves their lines, so it cannot be
+    // lined up with its unwrapped text. Only that row loses wrap awareness: a
+    // term wrapped elsewhere in the answer is still found, and the lines
+    // around it keep their logical index, so a hit made at a width where the
+    // table fit still names the same line after a resize.
+    #[test]
+    fn one_line_that_cannot_be_lined_up_does_not_cost_the_rest_its_matching() {
+        let shown = [
+            "the quick brown",
+            "fox jumps",
+            "| a | c |",
+            "| b | d |",
+            "tail text",
+        ];
+        let whole = flat(&["the quick brown fox jumps", "| a b | c d |", "tail text"]);
+        let found = occurrences(&rows(&shown), Some(&whole), "brown fox");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, 0);
+        assert_eq!(covered(&shown, &found[0]), vec!["brown", "fox"]);
+
+        let found = occurrences(&rows(&shown), Some(&whole), "tail");
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].logical, 2,
+            "the logical line, not the rendered one"
+        );
+        assert_eq!(covered(&shown, &found[0]), vec!["tail"]);
+
+        // Inside the row that did not line up, what is on screen is searched.
+        let found = occurrences(&rows(&shown), Some(&whole), "d");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, 1);
+        assert_eq!(found[0].pieces, vec![(3, 6..7)]);
     }
 
     #[test]
