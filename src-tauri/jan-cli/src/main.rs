@@ -5,7 +5,6 @@
 //! Build with: cd src-tauri/jan-cli && cargo build --no-default-features --features cli
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
@@ -713,12 +712,20 @@ enum McpCommands {
 
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
-/// Build a left-aligned, bright-yellow ASCII logo for the help header.
+/// Build a left-aligned ASCII logo in the brand yellow for the help header.
+/// console 0.15 has no truecolor `Color`, so the SGR is written by hand and
+/// gated on the same `colors_enabled` check `console::Style` uses.
 fn make_logo() -> String {
-    let yellow = Style::new().yellow().bold();
+    use app_lib::core::cli::brand;
+    let sgr = brand::logo_sgr();
+    let color = console::colors_enabled();
     let mut out = vec![String::new(), String::new()];
-    for l in app_lib::core::cli::brand::LOGO {
-        out.push(format!("  {}", yellow.apply_to(l)));
+    for l in brand::LOGO {
+        if color {
+            out.push(format!("  \x1b[1;{sgr}m{l}\x1b[0m"));
+        } else {
+            out.push(format!("  {l}"));
+        }
     }
     out.join("\n")
 }

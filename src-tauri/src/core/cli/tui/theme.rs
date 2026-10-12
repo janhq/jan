@@ -419,6 +419,27 @@ fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> Color {
         .unwrap_or(Color::Reset)
 }
 
+/// SGR parameters selecting `color` as the foreground, fitted to the depth the
+/// environment reports. For output printed outside the TUI (`jan --help`),
+/// which never runs `resolve_and_apply` and so reads the depth directly.
+pub(crate) fn fg_sgr(color: Color) -> String {
+    fg_sgr_at(detect_depth(), color)
+}
+
+fn fg_sgr_at(depth: ColorDepth, color: Color) -> String {
+    let fitted = Theme { light: false, depth }.fit(color);
+    match fitted {
+        Color::Rgb(r, g, b) => format!("38;2;{r};{g};{b}"),
+        Color::Indexed(i) => format!("38;5;{i}"),
+        named => match ANSI16.iter().position(|(c, _)| *c == named) {
+            // ANSI16 is in SGR order: 30-37, then the bright 90-97.
+            Some(i @ 0..=7) => format!("{}", 30 + i),
+            Some(i) => format!("{}", 90 + i - 8),
+            None => "39".to_string(),
+        },
+    }
+}
+
 /// Decide light vs dark from the config value, deferring to `detect` only when
 /// the value is auto/unset (or an unrecognized string). An explicit choice never
 /// runs detection. Pure -- `detect` is passed in -- so the precedence is tested
@@ -546,6 +567,17 @@ fn query_osc11_is_light() -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `jan --help` never sends a 256- or 16-colour terminal an RGB code: the
+    /// brand yellow lands on the xterm index or named colour `fit` picks.
+    #[test]
+    fn fg_sgr_fits_the_colour_to_the_depth() {
+        let brand = Color::Rgb(0xFE, 0xC9, 0x28);
+        assert_eq!(fg_sgr_at(ColorDepth::Truecolor, brand), "38;2;254;201;40");
+        assert_eq!(fg_sgr_at(ColorDepth::Ansi256, brand), "38;5;220");
+        assert_eq!(fg_sgr_at(ColorDepth::Ansi16, brand), "33");
+        assert_eq!(fg_sgr_at(ColorDepth::Ansi16, Color::LightYellow), "93");
+    }
 
     #[test]
     fn luminance_splits_at_the_midpoint() {
