@@ -303,9 +303,10 @@ pub(crate) struct ToolsSection {
     #[serde(default)]
     pub sandbox: Option<bool>,
     /// Let a sandboxed `shell` call that asks to escalate run unconfined
-    /// without a prompt. `None` (unset) and `false` keep escalation behind a
-    /// human answer -- auto-approval never covers it -- and refuse it where
-    /// nobody can answer. For unattended runs that accept the risk.
+    /// without an escalation prompt; an exec approval the run requires anyway
+    /// (`--safe`) still applies. `None` (unset) and `false` keep escalation
+    /// behind a human answer -- auto-approval never covers it -- and refuse it
+    /// where nobody can answer. For unattended runs that accept the risk.
     #[serde(default)]
     pub allow_escalation: Option<bool>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit

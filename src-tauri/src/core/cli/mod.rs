@@ -1569,7 +1569,8 @@ pub struct SessionFlags {
     /// off.
     pub sandbox: Option<bool>,
     /// `--allow-escalation`: run a sandboxed shell command that asks to leave
-    /// the sandbox without prompting. `None` (not passed) defers to
+    /// the sandbox without an escalation prompt (an exec approval `--safe`
+    /// requires anyway is still asked). `None` (not passed) defers to
     /// `[tools].allow_escalation`, then off: escalation waits for a human
     /// answer, which `auto_approve` does not give.
     pub allow_escalation: Option<bool>,

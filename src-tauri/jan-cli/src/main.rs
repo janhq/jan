@@ -102,7 +102,7 @@ struct SandboxArgs {
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
     /// Let a sandboxed shell command that asks to escalate run outside the
-    /// sandbox without prompting (escalation is never auto-approved otherwise)
+    /// sandbox without an escalation prompt (--safe still asks once)
     #[arg(long)]
     allow_escalation: bool,
 }

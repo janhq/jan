@@ -880,8 +880,10 @@ enum Escalation {
     /// Offered, and each request waits for a human answer. Auto-approval does
     /// not cover it, and a headless run with no terminal denies it.
     Prompt,
-    /// Offered and granted without asking (`--allow-escalation` or
-    /// `[tools].allow_escalation`), for unattended runs that accept the risk.
+    /// Offered and granted without an escalation prompt (`--allow-escalation`
+    /// or `[tools].allow_escalation`), for unattended runs that accept the
+    /// risk. The exec approval underneath still applies: a command this run
+    /// would have asked about confined (`--safe`) is asked about once.
     Allow,
 }
 
@@ -1217,11 +1219,22 @@ impl CompositeToolInvoker {
             .with_output_sink(output_sink(&self.events, id))
     }
 
+    /// Whether this run would have approved `args` as a plain, confined exec
+    /// without asking: auto-approval, a `[tools]` allow rule naming the shell,
+    /// or a session grant covering every command it runs.
+    fn exec_preapproved(&self, name: &str, args: &serde_json::Value) -> bool {
+        let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        self.auto_approve
+            || self.permissions.is_allowed(name)
+            || self.grants.lock().unwrap().covers_command(command)
+    }
+
     /// Answer a `shell` call that asks to run outside the sandbox, and run it
-    /// unconfined when allowed. Only a fresh human answer or the explicit
-    /// opt-in lets it through: never auto-approval, never a session grant,
-    /// and "allow always" is not offered. The gate has already refused the
-    /// hard denies (the Jan home, a denied shell) before this is reached.
+    /// unconfined when allowed. Only a fresh human answer, or the explicit
+    /// opt-in on a command the run would have run confined without asking,
+    /// lets it through: auto-approval or a session grant alone never does, and
+    /// "allow always" is not offered. The gate has already refused the hard
+    /// denies (the Jan home, a denied shell) before this is reached.
     async fn escalate(
         &self,
         name: &str,
@@ -1231,8 +1244,11 @@ impl CompositeToolInvoker {
     ) -> String {
         let approved = match self.escalation {
             Escalation::Off => return escalation_unavailable_msg(name, self.sandbox),
-            Escalation::Allow => true,
-            Escalation::Prompt => {
+            Escalation::Allow if self.exec_preapproved(name, args) => true,
+            // The opt-in drops the escalation prompt, not the exec approval
+            // under it: under `--safe` the command would have been asked about
+            // anyway, so one prompt covers both.
+            Escalation::Allow | Escalation::Prompt => {
                 let request_id = next_permission_id();
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 self.permission_requests
@@ -11088,6 +11104,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
         invoker.escalation = Escalation::Allow;
+        invoker.auto_approve = true;
         let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
         assert!(out[0].content.contains("[exit 0]"), "{}", out[0].content);
         assert!(marker.exists());
@@ -11095,6 +11112,39 @@ mod tests {
             assert!(!matches!(ev, StreamEvent::PermissionRequest { .. }), "prompted");
         }
         let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The opt-in drops only the escalation prompt, never the exec approval
+    /// underneath it: under `--safe`, adding `escalate: true` must not turn a
+    /// command that would have been asked about into one that runs unasked.
+    /// The user is asked once, and a Deny runs nothing.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn allowed_escalation_still_asks_under_safe() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        invoker.escalation = Escalation::Allow;
+        let responder = tokio::spawn(async move {
+            let mut kinds = Vec::new();
+            while let Some(ev) = rx.recv().await {
+                if let StreamEvent::PermissionRequest { request_id, prompt_kind, .. } = ev {
+                    kinds.push(prompt_kind);
+                    if let Some(tx) = registry.lock().await.remove(&request_id) {
+                        let _ = tx.send(PermissionDecision::Deny);
+                    }
+                }
+            }
+            kinds
+        });
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        drop(invoker);
+        assert_eq!(responder.await.unwrap(), ["escalate"], "asked exactly once");
+        assert!(out[0].content.contains("denied by user"), "{}", out[0].content);
+        assert!(!marker.exists(), "--safe was bypassed");
         let _ = std::fs::remove_dir_all(&root);
     }
 

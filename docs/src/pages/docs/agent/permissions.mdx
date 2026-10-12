@@ -199,6 +199,10 @@ jan cli agent run --sandbox --allow-escalation "..."
 allow_escalation = true
 ```
 
+This drops only the escalation prompt. With `--safe`, a shell command still needs your approval
+whether or not it escalates, so you are asked once (about running it outside the sandbox) rather
+than not at all. Adding `escalate` never gets a command past an approval it would otherwise need.
+
 ### Which shell runs commands
 
 On macOS and Linux the `shell` tool runs `bash` (or `sh` where there is none). On Windows it runs
