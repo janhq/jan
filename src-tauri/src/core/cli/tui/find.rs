@@ -6,6 +6,7 @@
 //! already materializes. Everything here is pure so the matching, wraparound and
 //! highlighting rules are tested without a terminal.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use ratatui::style::{Color, Modifier, Style};
@@ -267,21 +268,32 @@ impl Glyphs {
     }
 
     /// Lines each logical line of this one up with the rendered lines of
-    /// `shown`, one logical line at a time. A line starts at the first
-    /// rendered line, from where the last one ended, that opens with its first
-    /// character, and takes its characters in order from there, so a wrap
-    /// that swallows a space, or a gutter glyph repeated on a continuation
-    /// line, does not matter. A line that does not line up (a table row whose
-    /// cells wrapped and interleaved, a label cut short with `…`) is `loose`,
-    /// and the next one picks up from where the last good one ended: one such
-    /// line does not cost the others theirs.
+    /// `shown`, one logical line at a time. A line starts at a rendered line,
+    /// from where the last one ended, that opens with its first character, and
+    /// reads its characters in order from there (see `follow`), so a wrap that
+    /// swallows a space, or a gutter glyph repeated on a continuation line,
+    /// does not matter. A line that does not line up (a table row whose cells
+    /// wrapped and interleaved, a label cut short with `…`) is `loose`, and the
+    /// next one picks up from where the last good one ended: one such line does
+    /// not cost the others theirs.
     ///
-    /// A line of only rule glyphs (a horizontal rule, a box border) is as wide
-    /// as the render it came from, so this one has far more of them than a
-    /// narrower `shown`. Such a line is mapped as a unit onto the next rule
-    /// line of `shown`, its surplus glyphs landing on that line's last one.
+    /// Each line tries only a few starting points, found through an index of
+    /// how the rendered lines open, so a long run of lines that do not line up
+    /// costs time in proportion to its size.
     fn align(&self, shown: &Glyphs) -> Alignment {
         let lines = self.starts.len() - 1;
+        let mut opens: HashMap<char, Vec<usize>> = HashMap::new();
+        let mut rules: Vec<usize> = Vec::new();
+        for l in 0..shown.starts.len() - 1 {
+            let (a, b) = (shown.starts[l], shown.starts[l + 1]);
+            if a == b {
+                continue;
+            }
+            opens.entry(shown.chars[a]).or_default().push(l);
+            if shown.chars[a..b].iter().all(|&c| is_rule_glyph(c)) {
+                rules.push(l);
+            }
+        }
         let mut map = vec![usize::MAX; self.chars.len()];
         let mut loose: Vec<Option<Range<usize>>> = vec![None; lines];
         let mut at = 0;
@@ -291,10 +303,40 @@ impl Glyphs {
         let mut run: Vec<usize> = Vec::new();
         let mut run_from = 0;
         for line in 0..lines {
-            if self.starts[line] == self.starts[line + 1] {
+            let (from, to) = (self.starts[line], self.starts[line + 1]);
+            if from == to {
                 continue;
             }
-            match self.fit(line, shown, at, &mut map) {
+            let own = &self.chars[from..to];
+            // A line of only rule glyphs (a horizontal rule, a box border) is as
+            // wide as the render it came from, so this one has far more of them
+            // than a narrower `shown`: it is mapped as a unit onto the next rule
+            // line, its surplus glyphs landing on that line's last one.
+            let rule = own.iter().all(|&c| is_rule_glyph(c));
+            let starts: &[usize] = if rule {
+                &rules
+            } else {
+                opens.get(&own[0]).map_or(&[], Vec::as_slice)
+            };
+            let tries = starts[starts.partition_point(|&l| l < at)..]
+                .iter()
+                .take(if rule { 1 } else { MAX_TRIES });
+            let mut fitted = None;
+            for &start in tries {
+                if rule {
+                    let (a, b) = (shown.starts[start], shown.starts[start + 1]);
+                    for k in 0..own.len() {
+                        map[from + k] = a + k.min(b - a - 1);
+                    }
+                    fitted = Some((start, start + 1));
+                } else if let Some(end) = follow(own, shown, start, &mut map[from..to]) {
+                    fitted = Some((start, end));
+                }
+                if fitted.is_some() {
+                    break;
+                }
+            }
+            match fitted {
                 Some((first, next)) => {
                     for l in run.drain(..) {
                         loose[l] = Some(run_from..first);
@@ -314,48 +356,52 @@ impl Glyphs {
         }
         Alignment { map, loose }
     }
+}
 
-    /// Maps one logical line onto `shown` at or after rendered line `at`.
-    /// Returns the rendered line it starts on and the one after it ends.
-    fn fit(
-        &self,
-        line: usize,
-        shown: &Glyphs,
-        at: usize,
-        map: &mut [usize],
-    ) -> Option<(usize, usize)> {
-        let from = self.starts[line];
-        let own = &self.chars[from..self.starts[line + 1]];
-        let rule = own.iter().all(|&c| is_rule_glyph(c));
-        for start in at..shown.starts.len() - 1 {
-            let (a, b) = (shown.starts[start], shown.starts[start + 1]);
-            if a == b {
-                continue;
-            }
-            if rule {
-                if shown.chars[a..b].iter().all(|&c| is_rule_glyph(c)) {
-                    for k in 0..own.len() {
-                        map[from + k] = a + k.min(b - a - 1);
+/// How many rendered lines a logical line tries as its start before it is
+/// given up as one that does not line up.
+const MAX_TRIES: usize = 8;
+
+/// Reads `own`, the non-blank characters of a logical line, off `shown` from
+/// rendered line `start`, writing where each one sits into `map`. Returns the
+/// rendered line after the one it ends on, or `None` when the screen does not
+/// say the same thing.
+///
+/// Characters are taken one after another on a rendered line, with nothing
+/// skipped between them: a line cut short, or laid out differently, ends the
+/// attempt there rather than borrowing from the lines after it. The one thing
+/// skipped is a gutter (a bullet, a rail) at the start of a continuation line,
+/// and only on that line.
+fn follow(own: &[char], shown: &Glyphs, start: usize, map: &mut [usize]) -> Option<usize> {
+    let rendered = shown.starts.len() - 1;
+    let mut line = start;
+    let mut at = shown.starts[start];
+    // Nothing read from this rendered line yet, so a gutter may come first.
+    let mut fresh = false;
+    for (k, c) in own.iter().enumerate() {
+        loop {
+            let end = shown.starts[line + 1];
+            if at < end {
+                if shown.chars[at] != *c {
+                    if !fresh {
+                        return None;
                     }
-                    return Some((start, start + 1));
+                    at += shown.chars[at..end].iter().position(|o| o == c)?;
                 }
-                continue;
+                map[k] = at;
+                at += 1;
+                fresh = false;
+                break;
             }
-            if shown.chars[a] != own[0] {
-                continue;
+            line += 1;
+            if line >= rendered {
+                return None;
             }
-            // The first line that opens right decides: a later one has less
-            // to match from, so it could not succeed where this one did not.
-            let mut next = a;
-            for (k, c) in own.iter().enumerate() {
-                let skip = shown.chars[next..].iter().position(|o| o == c)?;
-                map[from + k] = next + skip;
-                next += skip + 1;
-            }
-            return Some((start, shown.at[next - 1].0 + 1));
+            at = shown.starts[line];
+            fresh = true;
         }
-        None
     }
+    Some(line + 1)
 }
 
 /// How the logical lines of an unwrapped text sit among the rendered lines.
@@ -777,6 +823,55 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].logical, 1);
         assert_eq!(found[0].pieces, vec![(3, 6..7)]);
+    }
+
+    // A label cut short with `…` has fewer characters on screen than it says,
+    // and must not borrow the missing ones from the line after it.
+    #[test]
+    fn a_cut_short_line_does_not_borrow_characters_from_the_next_one() {
+        let shown = ["label lo…", "long tail"];
+        let whole = flat(&["label long", "long tail"]);
+        let found = occurrences(&rows(&shown), Some(&whole), "tail");
+        assert_eq!(found.len(), 1);
+        assert_eq!(covered(&shown, &found[0]), vec!["tail"]);
+        // "long" is on the second line whole, not split across two.
+        let found = occurrences(&rows(&shown), Some(&whole), "long");
+        let on_second: Vec<_> = found.iter().filter(|o| o.logical == 1).collect();
+        assert_eq!(on_second.len(), 1);
+        assert_eq!(covered(&shown, on_second[0]), vec!["long"]);
+    }
+
+    // A long table whose cells wrap is a run of lines that cannot be lined up;
+    // it must cost time in proportion to its size, not its square.
+    #[test]
+    fn a_long_table_that_cannot_be_lined_up_is_searched_in_linear_time() {
+        let rows_n = 4000;
+        let mut shown: Vec<String> = Vec::new();
+        let mut whole: Vec<String> = Vec::new();
+        shown.push("intro brown".into());
+        shown.push("fox here".into());
+        whole.push("intro brown fox here".into());
+        for i in 0..rows_n {
+            shown.push(format!("| row{i} | c |"));
+            shown.push(format!("| more{i} | d |"));
+            // A glyph the screen never shows, as a cut-short cell would be.
+            whole.push(format!("| row{i} more{i} \u{3a9} | c d |"));
+        }
+        shown.push("tail text".into());
+        whole.push("tail text".into());
+        let lines: Vec<Line<'static>> = shown.iter().map(|t| Line::raw(t.clone())).collect();
+        let started = std::time::Instant::now();
+        let found = occurrences(&lines, Some(&whole), "tail");
+        let took = started.elapsed();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, rows_n + 1);
+        assert!(
+            took < std::time::Duration::from_millis(250),
+            "{rows_n} loose rows took {took:?}"
+        );
+        let found = occurrences(&lines, Some(&whole), "brown fox");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, 0);
     }
 
     #[test]
