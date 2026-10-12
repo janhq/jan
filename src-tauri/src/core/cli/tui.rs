@@ -614,6 +614,9 @@ struct Pending {
     /// with the change in view; `None` for other tools.
     diff: Option<String>,
     offers_always: bool,
+    /// Why the model asks to run the command outside the sandbox, for an
+    /// escalation prompt; `None` for every other prompt.
+    justification: Option<String>,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
     /// Name of the subagent that requested this, when the call originated inside
@@ -695,6 +698,15 @@ impl Pending {
             vec![Span::styled(lead, dim)],
             vec![Span::raw("  ")],
         ));
+        // The model's own words, set apart from the command so it is read as
+        // its claim rather than as part of what will run.
+        if let Some(why) = &self.justification {
+            out.extend(gutter_lines(
+                wrap_text(why, Style::new().italic(), max.saturating_sub(5).max(1)),
+                vec![Span::styled("why ", dim)],
+                vec![Span::raw("    ")],
+            ));
+        }
         out
     }
 
@@ -7608,6 +7620,7 @@ impl App {
                 command,
                 diff,
                 offers_always,
+                justification,
                 ..
             } => {
                 // Don't close the tool group here: the prompt renders docked
@@ -7621,6 +7634,7 @@ impl App {
                     command,
                     diff,
                     offers_always,
+                    justification,
                     selected: 0,
                     subagent: None,
                 });
@@ -7970,6 +7984,7 @@ impl App {
                 command,
                 diff,
                 offers_always,
+                justification,
                 ..
             } => {
                 self.pending_queue.push_back(Pending {
@@ -7980,6 +7995,7 @@ impl App {
                     command,
                     diff,
                     offers_always,
+                    justification,
                     selected: 0,
                     subagent: Some(name.to_string()),
                 });
@@ -25774,6 +25790,7 @@ mod tests {
             command: Some("git status".into()),
             diff: None,
             offers_always,
+            justification: None,
             selected: 0,
             subagent: None,
         }
@@ -26629,6 +26646,7 @@ mod tests {
             diff: Some("@@ created file @@\n+ hi".into()),
             prompt_kind: "write".into(),
             offers_always: true,
+            justification: None,
         });
         let p = app.pending().unwrap();
         assert_eq!(p.diff.as_deref(), Some("@@ created file @@\n+ hi"));
@@ -26663,6 +26681,7 @@ mod tests {
             diff: None,
             prompt_kind: "exec".into(),
             offers_always: true,
+            justification: None,
         });
         assert!(app.pending().unwrap().diff_preview(60).is_empty());
     }
@@ -31057,6 +31076,7 @@ mod tests {
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
+            allow_escalation: None,
             monitors: Some(app.monitor_set.clone()),
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
@@ -33471,6 +33491,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             },
         ));
         assert_eq!(
@@ -33509,6 +33530,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             },
         ));
         // Second subagent's request arrives while the first is still pending.
@@ -33524,6 +33546,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "read".into(),
                 offers_always: false,
+                justification: None,
             },
         ));
 
@@ -36208,6 +36231,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             });
             app.pending_queue.clear(); // simulate approval
             app.apply(StreamEvent::ToolResult {
@@ -42772,6 +42796,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "write".into(),
                 offers_always: true,
+                justification: None,
             }),
         });
         assert_eq!(app.status, Status::Parked, "the parent is still parked");

@@ -302,6 +302,13 @@ pub(crate) struct ToolsSection {
     /// checks it out.
     #[serde(default)]
     pub sandbox: Option<bool>,
+    /// Let a sandboxed `shell` call that asks to escalate run unconfined
+    /// without an escalation prompt; an exec approval the run requires anyway
+    /// (`--safe`) still applies. `None` (unset) and `false` keep escalation
+    /// behind a human answer -- auto-approval never covers it -- and refuse it
+    /// where nobody can answer. For unattended runs that accept the risk.
+    #[serde(default)]
+    pub allow_escalation: Option<bool>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist, merged over `~/.jan/config.toml`. Empty
     /// by default; a secret-looking name is never copied by a glob.
@@ -372,6 +379,11 @@ allow_write = []
 # ~/.jan/config.toml; the desktop always confines. Set it here to require
 # confinement for anyone working in this project.
 # sandbox = true
+# Let a sandboxed shell command that asks to escalate run outside the sandbox
+# without asking you. Off by default: escalation always waits for your answer
+# (even when other tools are auto-approved) and is refused where nobody can
+# answer, such as a piped headless run. Same as passing --allow-escalation.
+# allow_escalation = true
 # Host environment variables the shell may inherit beyond the minimal base
 # (PATH, HOME, TMPDIR, ...). Names are exact or use a "*" wildcard; merged with
 # ~/.jan/config.toml. A secret-looking name (*KEY*, *TOKEN*, ...) is never
@@ -521,6 +533,8 @@ pub(crate) struct RunSettings {
     /// `[tools].sandbox`; `None` when unset, so the caller applies the default
     /// appropriate to its surface.
     pub sandbox: Option<bool>,
+    /// `[tools].allow_escalation`; `None` when unset.
+    pub allow_escalation: Option<bool>,
     /// `[tools].env_passthrough`: host env-var names/globs the shell may inherit
     /// beyond the base allowlist. Merged with the global setting by the caller.
     pub env_passthrough: Vec<String>,
@@ -553,6 +567,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
         sandbox: cfg.tools.sandbox,
+        allow_escalation: cfg.tools.allow_escalation,
         env_passthrough: cfg.tools.env_passthrough,
         env_set: cfg.tools.env_set.into_iter().collect(),
         tool_notices,

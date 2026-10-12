@@ -219,6 +219,7 @@ fn tool_decisions_name_their_source() {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             },
             result("b", "ERROR: tool 'bash' denied by user"),
             call("c", "write"),
