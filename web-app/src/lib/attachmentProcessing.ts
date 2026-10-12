@@ -165,6 +165,9 @@ export const processAttachmentsForSend = async (
     contextThreshold > 0
       ? contextThreshold
       : undefined
+  // One budget for the whole send: each document that fits alone could still
+  // overflow the window together with the others inlined before it.
+  let remainingInlineBudget = effectiveContextThreshold ?? 0
   const notifyUpdate = (
     ...args: Parameters<
       NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>
@@ -260,11 +263,12 @@ export const processAttachmentsForSend = async (
       }
 
       if (parsedContent) {
+        const tokens = estimateTokens(parsedContent)
         targetMode =
-          !decideBySize ||
-          estimateTokens(parsedContent) <= (effectiveContextThreshold ?? 0)
+          !decideBySize || tokens <= remainingInlineBudget
             ? 'inline'
             : 'embeddings'
+        if (targetMode === 'inline') remainingInlineBudget -= tokens
       }
 
       if (targetMode === 'inline' && parsedContent) {

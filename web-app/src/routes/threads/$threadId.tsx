@@ -1918,7 +1918,7 @@ function ThreadDetail() {
                           <IconAlertCircle className="size-4 mr-2" />
                           Increase Context Size
                         </Button>
-                      ) : (
+                      ) : oomError || backendError ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1926,9 +1926,9 @@ function ThreadDetail() {
                           onClick={() => handleRegenerate()}
                         >
                           <IconRefresh className="size-4 mr-2" />
-                          {oomError || backendError ? 'Reload' : 'Regenerate'}
+                          Reload
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </div>

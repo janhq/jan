@@ -865,6 +865,8 @@ describe('ThreadDetail route', () => {
       expect(
         screen.getByText(/188240 \+ 21333 > 200000/)
       ).toBeInTheDocument()
+      // Regenerate would re-send the same oversized prompt.
+      expect(screen.queryByText('Regenerate')).toBeNull()
     })
 
     it('offers Increase Context Size for a llamacpp overflow', () => {

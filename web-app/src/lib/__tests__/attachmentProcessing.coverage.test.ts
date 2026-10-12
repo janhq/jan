@@ -84,6 +84,25 @@ describe('processAttachmentsForSend - additional coverage', () => {
     expect(result.processedAttachments[0].injectionMode).toBe('inline')
   })
 
+  it('auto mode spends one budget across all documents in a send', async () => {
+    // Each 'parsed text' is 4 estimated tokens: two fit alone, not together.
+    const hub = createMockServiceHub()
+    const result = await processAttachmentsForSend({
+      attachments: [
+        { name: 'a.txt', type: 'document' as const, path: '/a.txt' },
+        { name: 'b.txt', type: 'document' as const, path: '/b.txt' },
+      ],
+      threadId,
+      serviceHub: hub as any,
+      parsePreference: 'auto',
+      contextThreshold: 6,
+    })
+    expect(result.processedAttachments.map((a) => a.injectionMode)).toEqual([
+      'inline',
+      'embeddings',
+    ])
+  })
+
   it('auto mode without a context budget embeds without parsing', async () => {
     const parseDocument = vi.fn().mockResolvedValue('parsed text')
     const hub = { ...createMockServiceHub(), rag: () => ({ parseDocument }) }
