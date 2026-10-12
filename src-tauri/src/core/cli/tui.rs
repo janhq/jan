@@ -2769,7 +2769,7 @@ impl Transcript {
                             idx: Some(i),
                             height: row.height(width),
                             lines: None,
-                            flat: None,
+                            detail: false,
                         }
                     }
                 }
@@ -2777,7 +2777,7 @@ impl Transcript {
                     idx: Some(i),
                     height: row.height(width),
                     lines: None,
-                    flat: None,
+                    detail: false,
                 },
             };
             if find_hit.is_some_and(|h| h.row == i && !h.detail) {
@@ -2830,12 +2830,7 @@ impl Transcript {
                     let mut seg = Segment::eager(Some(i), detail, width);
                     // The lingering reasoning tail is a bounded view of the block,
                     // not a wrapped copy of its detail, so it has no unwrapped form.
-                    if find.is_some() && !(active_reasoning && !expanded) {
-                        let index = region_index.get_or_insert_with(|| self.region_index());
-                        seg.flat = self
-                            .region_detail_in(index, i, find::FLAT_WIDTH)
-                            .map(|lines| find::flat_text(&lines));
-                    }
+                    seg.detail = !(active_reasoning && !expanded);
                     content_h = content_h.saturating_add(seg.height);
                     segs.push(seg);
                 }
@@ -2911,7 +2906,9 @@ impl Transcript {
     fn all_lines(&self, width: u16) -> Vec<Line<'static>> {
         let layout = self.layout_body(width, 0, false, true, None, Vec::new());
         let height = layout.content_h;
-        layout.window(&self.rows, width, 0, height, None).0
+        layout
+            .window(&self.rows, width, 0, height, None, &|_| None)
+            .0
     }
 
     /// Mark every edit/write row still awaiting a result as interrupted: the
@@ -19080,8 +19077,14 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let max_back = layout.content_h.saturating_sub(body.height);
     app.agent_detail_scroll = app.agent_detail_scroll.min(max_back);
     let scroll = max_back - app.agent_detail_scroll;
-    let (lines, _, offset) =
-        layout.window(&panel.transcript.rows, width, scroll, body.height, None);
+    let (lines, _, offset) = layout.window(
+        &panel.transcript.rows,
+        width,
+        scroll,
+        body.height,
+        None,
+        &|_| None,
+    );
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -21200,10 +21203,25 @@ struct Segment {
     idx: Option<usize>,
     height: u16,
     lines: Option<Vec<Line<'static>>>,
-    /// An expanded region's text before wrapping, read only while a search is
-    /// active. A committed row's is kept on the row itself; every other
-    /// inline segment is searched as rendered.
-    flat: Option<Vec<String>>,
+    /// Whether this is an expanded region's detail, whose unwrapped text a
+    /// search reads (see `detail_flat_text`) for the segments on screen.
+    detail: bool,
+}
+
+/// An expanded region's text before wrapping, read through a per-frame
+/// `RegionIndex` built on first use. Only called for the detail segments a
+/// search is about to paint (the ones on screen) and for the one it jumps to,
+/// so a transcript with many expanded regions does not re-render all of them
+/// every frame.
+fn detail_flat_text(
+    transcript: &Transcript,
+    index: &std::cell::OnceCell<RegionIndex>,
+    row: usize,
+) -> Option<Vec<String>> {
+    let index = index.get_or_init(|| transcript.region_index());
+    transcript
+        .region_detail_in(index, row, find::FLAT_WIDTH)
+        .map(|lines| find::flat_text(&lines))
 }
 
 impl Segment {
@@ -21212,7 +21230,7 @@ impl Segment {
             idx,
             height: wrapped_height_of(&lines, width),
             lines: Some(lines),
-            flat: None,
+            detail: false,
         }
     }
 }
@@ -21245,7 +21263,7 @@ impl BodyLayout {
                 idx: None,
                 height: pad,
                 lines: Some(vec![Line::raw(""); pad as usize]),
-                flat: None,
+                detail: false,
             },
         );
         self.content_h = self.content_h.saturating_add(pad);
@@ -21268,6 +21286,7 @@ impl BodyLayout {
         scroll: u16,
         height: u16,
         find: Option<(&str, Option<find::Hit>)>,
+        detail_flat: &dyn Fn(usize) -> Option<Vec<String>>,
     ) -> (Vec<Line<'static>>, Vec<Option<usize>>, u16) {
         let end = scroll.saturating_add(height);
         let mut visible: Vec<Line<'static>> = Vec::new();
@@ -21298,10 +21317,15 @@ impl BodyLayout {
                     Some((needle, hit)) => {
                         // Matched on the unwrapped text, so a term that wrapped
                         // is painted on each line it lands on. A committed row
-                        // keeps that text itself; an expanded region carries it.
+                        // keeps that text itself; an expanded region's is read
+                        // here, for the segments on screen only.
                         let row = seg.idx.filter(|_| committed).and_then(|i| rows.get(i));
                         let kept = row.map(Row::flat);
-                        let flat = match (&kept, &seg.flat) {
+                        let region = seg
+                            .idx
+                            .filter(|_| seg.detail)
+                            .and_then(detail_flat);
+                        let flat = match (&kept, &region) {
                             (Some(kept), _) => Some(kept.as_slice()),
                             (None, Some(flat)) => Some(flat.as_slice()),
                             (None, None) => None,
@@ -21535,6 +21559,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         // may have wrapped, so its logical line is not a rendered line), measured
         // with the same wrap the body uses. Only on the jump frame, so the lines
         // above it are cloned once per step, not every frame.
+        let flat_index = std::cell::OnceCell::new();
         let above = layout
             .segs
             .get(layout.find_seg.unwrap_or(usize::MAX))
@@ -21546,7 +21571,11 @@ fn draw(f: &mut Frame, app: &mut App) {
                         None => (Vec::new(), None),
                     },
                 };
-                let flat = kept.as_deref().map(Vec::as_slice).or(seg.flat.as_deref());
+                let region = seg
+                    .detail
+                    .then(|| detail_flat_text(&app.transcript, &flat_index, hit.row))
+                    .flatten();
+                let flat = kept.as_deref().map(Vec::as_slice).or(region.as_deref());
                 let first = find::occurrences(&lines, flat, needle)
                     .iter()
                     .find(|o| o.logical == hit.line)
@@ -21566,12 +21595,15 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
+    let flat_index = std::cell::OnceCell::new();
+    let detail_flat = |i: usize| detail_flat_text(&app.transcript, &flat_index, i);
     let (visible, row_index, offset) = layout.window(
         &app.transcript.rows,
         width,
         scroll,
         inner_h,
         find_needle.as_deref().map(|needle| (needle, find_hit)),
+        &detail_flat,
     );
     let body = Paragraph::new(visible)
         .wrap(Wrap { trim: false })

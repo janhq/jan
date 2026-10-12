@@ -249,16 +249,40 @@ impl Glyphs {
     /// For each of this one's characters, the index of the same character in
     /// `other`, which may carry extras (a gutter glyph repeated on every
     /// continuation line). `None` when this one has text `other` does not.
+    ///
+    /// A line of only rule glyphs (a horizontal rule, a box border) is as wide
+    /// as the render it came from, so this one has far more of them than a
+    /// narrower `other`. Such a line is mapped as a unit onto the matching line
+    /// of `other`, its surplus glyphs landing on that line's last one.
     fn onto(&self, other: &Glyphs) -> Option<Vec<usize>> {
         let mut map = Vec::with_capacity(self.chars.len());
         let mut next = 0;
-        for c in &self.chars {
-            let skip = other.chars[next..].iter().position(|o| o == c)?;
-            map.push(next + skip);
-            next += skip + 1;
+        for line in 0..self.starts.len() - 1 {
+            let (from, to) = (self.starts[line], self.starts[line + 1]);
+            let own = &self.chars[from..to];
+            if !own.is_empty() && own.iter().all(|&c| is_rule_glyph(c)) {
+                if let Some(&(shown, _)) = other.at.get(next) {
+                    let (a, b) = (other.starts[shown], other.starts[shown + 1]);
+                    if a == next && other.chars[a..b].iter().all(|&c| is_rule_glyph(c)) {
+                        map.extend((0..own.len()).map(|k| a + k.min(b - a - 1)));
+                        next = b;
+                        continue;
+                    }
+                }
+            }
+            for c in own {
+                let skip = other.chars[next..].iter().position(|o| o == c)?;
+                map.push(next + skip);
+                next += skip + 1;
+            }
         }
         Some(map)
     }
+}
+
+/// Glyphs a horizontal rule or a box border is drawn with.
+fn is_rule_glyph(c: char) -> bool {
+    matches!(c, '-' | '+' | '|' | '=' | '_') || ('\u{2500}'..='\u{257F}').contains(&c)
 }
 
 /// `line` with `ranges` painted over its own styles, in order. Spans are split
@@ -599,6 +623,37 @@ mod tests {
         let found = occurrences(&rows(&["a hit", "no", "hit hit"]), None, "hit");
         assert_eq!(found.len(), 3);
         assert_eq!(found[2].logical, 2);
+    }
+
+    // A rule or a box border is as wide as the render it is in, so the
+    // unwrapped text carries far more of its glyphs than the narrow render.
+    // That must not cost the rest of the region its wrap-aware matching.
+    #[test]
+    fn a_rule_or_box_border_does_not_stop_a_wrapped_term_being_found() {
+        let rule = "-".repeat(40);
+        let border = format!("+{}+", "-".repeat(38));
+        let shown = [
+            "the quick brown",
+            "fox jumps",
+            "-----",
+            "+---+",
+            "| code |",
+            "+---+",
+        ];
+        let whole = [
+            "the quick brown fox jumps".to_string(),
+            rule,
+            border.clone(),
+            "| code |".to_string(),
+            border,
+        ];
+        let found = occurrences(&rows(&shown), Some(&whole), "brown fox");
+        assert_eq!(found.len(), 1);
+        assert_eq!(covered(&shown, &found[0]), vec!["brown", "fox"]);
+        let found = occurrences(&rows(&shown), Some(&whole), "code");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].logical, 3);
+        assert_eq!(covered(&shown, &found[0]), vec!["code"]);
     }
 
     #[test]
