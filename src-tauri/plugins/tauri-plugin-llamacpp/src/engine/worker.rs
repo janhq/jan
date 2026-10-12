@@ -83,7 +83,13 @@ pub fn classify_fault(line_lower: &str) -> Option<RuntimeFault> {
 }
 
 fn is_oom_line(line_lower: &str) -> bool {
-    if line_lower.contains("erroroutofdevicememory") || line_lower.contains("erroroutofhostmemory")
+    // The Metal code is what macOS reports when the mapped model outgrows
+    // `recommendedMaxWorkingSetSize`; "insufficient memory" is both its
+    // localized text and ggml_aligned_malloc's ENOMEM message.
+    if line_lower.contains("erroroutofdevicememory")
+        || line_lower.contains("erroroutofhostmemory")
+        || line_lower.contains("kiogpucommandbuffercallbackerroroutofmemory")
+        || line_lower.contains("insufficient memory")
     {
         return true;
     }
@@ -125,6 +131,56 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .iter()
     .any(|m| line_lower.contains(m))
 }
+
+/// Turns worker stderr lines into faults, one call per line.
+///
+/// Metal reports a failed command buffer as two lines: a status line that
+/// only says "failed with status N", then the cause (`error: Insufficient
+/// Memory (...)`). Classified one at a time, the status line would be
+/// reported as a backend fault and the debounce would swallow the OOM line
+/// after it, so the status line is held until the next line decides it.
+#[derive(Debug, Default)]
+struct FaultReader {
+    pending_metal_status: Option<String>,
+}
+
+impl FaultReader {
+    fn feed(&mut self, line: &str) -> Vec<(RuntimeFault, String)> {
+        let lower = line.to_lowercase();
+        let mut out = Vec::new();
+        let is_status = lower.contains("command buffer") && lower.contains("failed with status");
+        if let Some(status) = self.pending_metal_status.take() {
+            // ggml-metal prints the detail as `error: <description>`, behind
+            // whatever prefix the log sink adds, so match loosely.
+            if !is_status && lower.contains("error:") {
+                let fault = classify_fault(&lower).unwrap_or(RuntimeFault::Backend);
+                out.push((fault, format!("{status} {line}")));
+                return out;
+            }
+            out.push((RuntimeFault::Backend, status));
+        }
+        if is_status {
+            self.pending_metal_status = Some(line.to_string());
+            return out;
+        }
+        if let Some(fault) = classify_fault(&lower) {
+            out.push((fault, line.to_string()));
+        }
+        out
+    }
+
+    /// A held status line whose detail never came (stderr closed or went
+    /// quiet), reported as the backend fault it is on its own.
+    fn flush(&mut self) -> Option<(RuntimeFault, String)> {
+        self.pending_metal_status
+            .take()
+            .map(|status| (RuntimeFault::Backend, status))
+    }
+}
+
+/// How long a held Metal status line waits for its detail line. The two are
+/// printed back to back, so this only bounds the no-detail case.
+const METAL_DETAIL_WAIT: Duration = Duration::from_millis(500);
 
 /// Called once per classified line, with the line itself. Boxed rather than
 /// generic so `WorkerHandle` does not have to carry a type parameter.
@@ -419,19 +475,39 @@ pub async fn spawn(
     if let Some(stderr) = child.stderr.take() {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
+            let mut reader = FaultReader::default();
             let mut last_fault_at: Option<tokio::time::Instant> = None;
-            while let Ok(Some(line)) = lines.next_line().await {
-                log::debug!("jan-llama-worker: {line}");
-                let Some(cb) = on_fault.as_ref() else { continue };
-                let Some(fault) = classify_fault(&line.to_lowercase()) else {
-                    continue;
-                };
+            let mut report = |fault: RuntimeFault, line: String| {
+                let Some(cb) = on_fault.as_ref() else { return };
                 let now = tokio::time::Instant::now();
                 if last_fault_at.is_some_and(|t| now.duration_since(t) <= FAULT_DEBOUNCE) {
-                    continue;
+                    return;
                 }
                 last_fault_at = Some(now);
                 cb(fault, line);
+            };
+            loop {
+                let next = if reader.pending_metal_status.is_some() {
+                    match tokio::time::timeout(METAL_DETAIL_WAIT, lines.next_line()).await {
+                        Ok(next) => next,
+                        Err(_) => {
+                            if let Some((fault, line)) = reader.flush() {
+                                report(fault, line);
+                            }
+                            continue;
+                        }
+                    }
+                } else {
+                    lines.next_line().await
+                };
+                let Ok(Some(line)) = next else { break };
+                log::debug!("jan-llama-worker: {line}");
+                for (fault, text) in reader.feed(&line) {
+                    report(fault, text);
+                }
+            }
+            if let Some((fault, line)) = reader.flush() {
+                report(fault, line);
             }
         });
     }
@@ -572,6 +648,75 @@ mod tests {
             classify_fault("common_fit_params: failed to allocate a plan"),
             None
         );
+    }
+
+    #[test]
+    fn classifies_metal_and_host_out_of_memory_as_oom() {
+        for line in [
+            "error: insufficient memory (00000008:kiogpucommandbuffercallbackerroroutofmemory)",
+            "ggml_aligned_malloc: insufficient memory (attempted to allocate 512.00 mb)",
+        ] {
+            assert_eq!(classify_fault(line), Some(RuntimeFault::Oom), "{line:?}");
+        }
+    }
+
+    // The exact pair from janhq/jan#9198. The status line alone looks like a
+    // generic Metal error; only the line after it says it was memory.
+    #[test]
+    fn a_metal_status_line_is_reported_together_with_its_oom_detail() {
+        let mut r = FaultReader::default();
+        assert_eq!(
+            r.feed("E ggml_metal_synchronize: error: command buffer 0 failed with status 5"),
+            vec![]
+        );
+        assert_eq!(
+            r.feed("E error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)"),
+            vec![(
+                RuntimeFault::Oom,
+                "E ggml_metal_synchronize: error: command buffer 0 failed with status 5 \
+                 E error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)"
+                    .to_string()
+            )]
+        );
+        assert_eq!(r.flush(), None);
+    }
+
+    #[test]
+    fn a_metal_status_line_with_a_non_memory_detail_stays_a_backend_fault() {
+        let mut r = FaultReader::default();
+        r.feed("ggml_metal_synchronize: error: command buffer 0 failed with status 5");
+        let out = r.feed("error: Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, RuntimeFault::Backend);
+        assert!(out[0].1.contains("Timeout"), "{:?}", out[0].1);
+    }
+
+    // A status other than Error prints no detail line, so whatever comes next
+    // is unrelated and must be classified on its own, not glued on.
+    #[test]
+    fn a_metal_status_line_without_detail_is_reported_alone() {
+        let mut r = FaultReader::default();
+        let status = "ggml_metal_synchronize: error: command buffer 1 failed with status 4";
+        r.feed(status);
+        assert_eq!(
+            r.feed("srv log_server_r: request: post /v1/chat/completions"),
+            vec![(RuntimeFault::Backend, status.to_string())]
+        );
+
+        r.feed(status);
+        assert_eq!(r.flush(), Some((RuntimeFault::Backend, status.to_string())));
+        assert_eq!(r.flush(), None);
+    }
+
+    #[test]
+    fn the_reader_passes_other_lines_straight_through() {
+        let mut r = FaultReader::default();
+        assert_eq!(
+            r.feed("ErrorOutOfDeviceMemory"),
+            vec![(RuntimeFault::Oom, "ErrorOutOfDeviceMemory".to_string())]
+        );
+        assert_eq!(r.feed("main: server is listening"), vec![]);
+        assert_eq!(r.flush(), None);
     }
 
     #[test]
