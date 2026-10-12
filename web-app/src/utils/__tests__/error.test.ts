@@ -26,6 +26,29 @@ describe('error utilities', () => {
       ).toBe(true)
     })
 
+    it('matches Anthropic overflow errors', () => {
+      expect(
+        isContextOverflowMessage('prompt is too long: 210000 tokens > 200000 maximum')
+      ).toBe(true)
+      expect(
+        isContextOverflowMessage(
+          'input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000, decrease input length or `max_tokens` and try again'
+        )
+      ).toBe(true)
+      expect(isContextOverflowMessage('request_too_large')).toBe(true)
+      // The SDK surfaces only error.message for a 413, not its type.
+      expect(isContextOverflowMessage('Request exceeds the maximum size')).toBe(true)
+    })
+
+    it('matches OpenAI overflow errors', () => {
+      expect(
+        isContextOverflowMessage(
+          "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens."
+        )
+      ).toBe(true)
+      expect(isContextOverflowMessage('context_length_exceeded')).toBe(true)
+    })
+
     it('does not match unrelated errors', () => {
       expect(isContextOverflowMessage('Could not establish connection')).toBe(false)
       expect(isContextOverflowMessage('cuda error: out of memory')).toBe(false)
@@ -51,6 +74,20 @@ describe('error utilities', () => {
 
     it('returns null when no token counts are present', () => {
       expect(parseContextOverflow(OUT_OF_CONTEXT_SIZE)).toBeNull()
+      // Cloud messages use other layouts; never misread them as counts.
+      expect(
+        parseContextOverflow('prompt is too long: 210000 tokens > 200000 maximum')
+      ).toBeNull()
+      expect(
+        parseContextOverflow(
+          'input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000'
+        )
+      ).toBeNull()
+      expect(
+        parseContextOverflow(
+          "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens."
+        )
+      ).toBeNull()
       expect(parseContextOverflow('cuda error: out of memory')).toBeNull()
     })
   })

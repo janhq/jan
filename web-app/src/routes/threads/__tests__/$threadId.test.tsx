@@ -404,7 +404,8 @@ vi.mock('@/constants/chat', () => ({
   SESSION_STORAGE_PREFIX: { INITIAL_MESSAGE: 'initial-message-' },
 }))
 
-vi.mock('@/utils/error', () => ({
+vi.mock('@/utils/error', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/error')>()),
   OUT_OF_CONTEXT_SIZE: 'OUT_OF_CONTEXT_SIZE',
 }))
 
@@ -414,6 +415,7 @@ vi.mock('@/utils/error', () => ({
 import { Route } from '../$threadId'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import { useMessageErrors } from '@/stores/message-errors'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -712,6 +714,114 @@ describe('ThreadDetail route', () => {
     expect(persisted).toBeTruthy()
     expect(persisted.metadata.parentId).toBe('u2')
     expect(persisted.metadata.parentId).not.toBeNull()
+  })
+
+  describe('finishReason length (#9228)', () => {
+    const finishAtLength = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-len',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'partial answer' }],
+          metadata: {
+            finishReason: 'length',
+            usage: { inputTokens: 30000, outputTokens: 4000 },
+          },
+        },
+        isAbort: false,
+        isError: false,
+      })
+
+    it('keeps a truncated cloud reply as stopped instead of a context banner', () => {
+      h.modelProviderState.selectedProvider = 'anthropic'
+      renderComponent()
+      act(() => {
+        finishAtLength()
+      })
+      const added = h.messagesState.addMessage.mock.calls.map((c: any[]) => c[0])
+      const persisted = added.find((m: any) => m.id === 'a-len')
+      expect(persisted).toBeTruthy()
+      expect(persisted.metadata.stopped).toBe(true)
+      expect(screen.queryByText('Increase Context Size')).toBeNull()
+    })
+
+    it('still offers Increase Context Size for a local model near ctx_len', () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      renderComponent()
+      act(() => {
+        finishAtLength()
+      })
+      expect(
+        h.messagesState.addMessage.mock.calls.some((c: any[]) => c[0].id === 'a-len')
+      ).toBe(false)
+      expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
+  })
+
+  describe('empty replies (#9228)', () => {
+    beforeEach(() => {
+      useMessageErrors.getState().clearAll()
+    })
+
+    const finishEmpty = (extra: Record<string, unknown> = {}) =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-empty',
+          role: 'assistant',
+          parts: [],
+          metadata: { finishReason: 'stop' },
+        },
+        isAbort: false,
+        isError: false,
+        ...extra,
+      })
+
+    it('surfaces an error on a finished reply with no content', () => {
+      renderComponent()
+      act(() => {
+        finishEmpty()
+      })
+      const err = useMessageErrors.getState().errors['a-empty']
+      expect(err).toBeTruthy()
+      expect(err).not.toContain(':')
+    })
+
+    it('does not flag a reply the user stopped', () => {
+      renderComponent()
+      act(() => {
+        finishEmpty({ isAbort: true })
+      })
+      expect(useMessageErrors.getState().errors['a-empty']).toBeUndefined()
+    })
+  })
+
+  describe('context overflow banner (#9228)', () => {
+    it('does not offer a no-op Increase Context Size for a cloud overflow', () => {
+      h.modelProviderState.selectedProvider = 'anthropic'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error(
+        'input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000'
+      )
+      h.chatState.messages = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      ]
+      renderComponent()
+      expect(screen.getByText('Model ran out of context size')).toBeInTheDocument()
+      expect(screen.queryByText('Increase Context Size')).toBeNull()
+    })
+
+    it('offers Increase Context Size for a llamacpp overflow', () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error(
+        'request (518 tokens) exceeds the available context size (512 tokens)'
+      )
+      h.chatState.messages = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+      ]
+      renderComponent()
+      expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
   })
 
   describe('tool-call approval requested early, execution stays in onFinish', () => {

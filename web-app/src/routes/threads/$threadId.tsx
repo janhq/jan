@@ -71,7 +71,12 @@ import {
   isContextOverflowMessage,
   parseContextOverflow,
 } from '@/utils/error'
-import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useTranslation, i18n } from '@/i18n/react-i18next-compat'
+import {
+  isContextLimitStop,
+  isEmptyReply,
+  offersContextIncrease,
+} from '@/lib/chatFinish'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -303,7 +308,7 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
-    onFinish: ({ message, isAbort }) => {
+    onFinish: ({ message, isAbort, isError }) => {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
       // Consume once per generation so a skipped persist (error/empty) can't
@@ -315,16 +320,16 @@ function ThreadDetail() {
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
-        const selectedModelState = useModelProvider.getState().selectedModel
-        const usage = msgMeta?.usage as
-          | { inputTokens?: number; outputTokens?: number }
-          | undefined
-        const totalTokens =
-          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? 32768
-        const isContextLimit = totalTokens >= ctxLen * 0.9
+        const providerState = useModelProvider.getState()
+        const isContextLimit = isContextLimitStop({
+          provider: providerState.selectedProvider,
+          usage: msgMeta?.usage as
+            | { inputTokens?: number; outputTokens?: number }
+            | undefined,
+          ctxLen:
+            providerState.selectedModel?.settings?.ctx_len?.controller_props
+              ?.value,
+        })
 
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
@@ -346,6 +351,14 @@ function ThreadDetail() {
       }
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      // Nothing would be persisted for an empty reply, so without this the
+      // turn silently vanishes and the user cannot tell it failed.
+      if (isEmptyReply({ message, isAbort, isError, finishReason })) {
+        useMessageErrors
+          .getState()
+          .setError(message.id, i18n.t('model-errors:emptyReply'))
+      }
 
       // The turn ended before completion (user hit Stop, or the model hit its
       // output-token cap). Persist the partial marked `stopped` so the UI can
@@ -1843,20 +1856,10 @@ function ThreadDetail() {
                           <li>Use a smaller / more quantized model</li>
                         </ul>
                       )}
-                      {((error ?? contextLimitError)?.message
-                        ?.toLowerCase()
-                        .includes('context') &&
-                        ((error ?? contextLimitError)?.message
-                          ?.toLowerCase()
-                          .includes('size') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('length') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('limit'))) ||
-                      (error ?? contextLimitError)?.message ===
-                        OUT_OF_CONTEXT_SIZE ? (
+                      {offersContextIncrease(
+                        selectedProvider,
+                        (error ?? contextLimitError)?.message
+                      ) ? (
                         <Button
                           variant="outline"
                           size="sm"
