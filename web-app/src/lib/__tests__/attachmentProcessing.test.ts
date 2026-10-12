@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
+  needsIngestionChoice,
   processAttachmentsForSend,
+  resolveAutoInlineBudget,
   type AttachmentProcessingResult,
 } from '../attachmentProcessing'
 import type { Attachment } from '@/types/attachment'
@@ -22,6 +24,29 @@ const createMockServiceHub = (overrides: Record<string, unknown> = {}) => ({
   rag: () => ({
     parseDocument: vi.fn().mockResolvedValue('parsed document text'),
   }),
+})
+
+const getModelPropsMock = vi.fn()
+let propsExtensionAvailable = true
+vi.mock('@/lib/llamacppRouterProps', () => ({
+  getLocalPropsExtension: (provider: string) =>
+    propsExtensionAvailable &&
+    (provider === 'llamacpp' || provider === 'mlx')
+      ? { getModelProps: getModelPropsMock }
+      : undefined,
+}))
+
+const modelWithCtx = (value: string | number): Model => ({
+  id: 'm1',
+  settings: {
+    ctx_len: {
+      key: 'ctx_len',
+      title: 'Context Size',
+      description: '',
+      controller_type: 'input',
+      controller_props: { value },
+    },
+  },
 })
 
 const docAttachment = (overrides: Partial<Attachment> = {}): Attachment => ({
@@ -167,26 +192,6 @@ describe('processAttachmentsForSend', () => {
     })
   })
 
-  describe('auto mode with perFileChoices', () => {
-    it('respects per-file user choice for auto-mode documents', async () => {
-      const hub = createMockServiceHub()
-      const doc = docAttachment({ parseMode: 'auto' })
-      const choices = new Map<string, 'inline' | 'embeddings'>([
-        ['/tmp/report.pdf', 'inline'],
-      ])
-
-      const result = await processAttachmentsForSend({
-        attachments: [doc],
-        threadId,
-        serviceHub: hub as any,
-        parsePreference: 'auto',
-        perFileChoices: choices,
-      })
-
-      expect(result.processedAttachments[0].injectionMode).toBe('inline')
-    })
-  })
-
   describe('callbacks', () => {
     it('calls updateAttachmentProcessing for each document', async () => {
       const hub = createMockServiceHub()
@@ -250,6 +255,77 @@ describe('processAttachmentsForSend', () => {
       expect(result.processedAttachments[0].type).toBe('image')
       expect(result.processedAttachments[1].type).toBe('document')
       expect(result.hasEmbeddedDocuments).toBe(true)
+    })
+  })
+
+  describe('resolveAutoInlineBudget', () => {
+    beforeEach(() => {
+      getModelPropsMock.mockReset()
+      propsExtensionAvailable = true
+    })
+
+    it('scales the configured ctx_len by the ratio', async () => {
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(8192), 'llamacpp', 0.75)
+      ).resolves.toBe(6144)
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx('16384'), 'llamacpp', 0.5)
+      ).resolves.toBe(8192)
+      expect(getModelPropsMock).not.toHaveBeenCalled()
+    })
+
+    it('falls back to the launched window when ctx_len is left to auto-fit', async () => {
+      getModelPropsMock.mockResolvedValue({ nCtx: 4096 })
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(''), 'llamacpp', 0.75)
+      ).resolves.toBe(3072)
+      expect(getModelPropsMock).toHaveBeenCalledWith('m1')
+    })
+
+    it('is undefined when the local model is not loaded yet', async () => {
+      getModelPropsMock.mockRejectedValue(new Error('not loaded'))
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(''), 'llamacpp', 0.75)
+      ).resolves.toBeUndefined()
+    })
+
+    it('is undefined for cloud models, which report no context window', async () => {
+      await expect(
+        resolveAutoInlineBudget({ id: 'gpt' }, 'openai', 0.75)
+      ).resolves.toBeUndefined()
+    })
+
+    it('is undefined without a model or with a non-positive ratio', async () => {
+      await expect(
+        resolveAutoInlineBudget(undefined, 'llamacpp', 0.75)
+      ).resolves.toBeUndefined()
+      await expect(
+        resolveAutoInlineBudget(modelWithCtx(8192), 'llamacpp', 0)
+      ).resolves.toBeUndefined()
+    })
+  })
+
+  describe('needsIngestionChoice', () => {
+    it('asks in prompt mode regardless of the budget', () => {
+      expect(needsIngestionChoice(docAttachment(), 'prompt', true)).toBe(true)
+    })
+
+    it('decides auto mode by size when a budget is known', () => {
+      expect(needsIngestionChoice(docAttachment(), 'auto', true)).toBe(false)
+    })
+
+    it('asks in auto mode only when no budget is known', () => {
+      expect(needsIngestionChoice(docAttachment(), 'auto', false)).toBe(true)
+    })
+
+    it('never asks for explicit modes or already-routed documents', () => {
+      expect(needsIngestionChoice(docAttachment(), 'inline', false)).toBe(false)
+      expect(
+        needsIngestionChoice(docAttachment({ parseMode: 'embeddings' }), 'prompt', false)
+      ).toBe(false)
+      expect(
+        needsIngestionChoice(docAttachment({ injectionMode: 'inline' }), 'prompt', false)
+      ).toBe(false)
     })
   })
 })

@@ -62,7 +62,10 @@ import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
 } from '@/hooks/useChatAttachments'
-import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import {
+  processAttachmentsForSend,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -1060,7 +1063,8 @@ function ThreadDetail() {
           useAppState.getState().setThreadBusy(threadId, true)
         }
         try {
-          const parsePreference = useAttachments.getState().parseMode
+          const { parseMode: parsePreference, autoInlineContextRatio } =
+            useAttachments.getState()
           const result = await processAttachmentsForSend({
             attachments: combinedAttachments,
             threadId,
@@ -1068,6 +1072,11 @@ function ThreadDetail() {
             serviceHub,
             selectedProvider,
             parsePreference,
+            contextThreshold: await resolveAutoInlineBudget(
+              useModelProvider.getState().selectedModel,
+              selectedProvider,
+              autoInlineContextRatio
+            ),
           })
           processedAttachments = result.processedAttachments
 

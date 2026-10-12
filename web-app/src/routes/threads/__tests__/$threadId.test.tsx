@@ -324,6 +324,7 @@ vi.mock('@/lib/attachmentProcessing', () => ({
   processAttachmentsForSend: vi
     .fn()
     .mockResolvedValue({ processedAttachments: [], hasEmbeddedDocuments: false }),
+  resolveAutoInlineBudget: vi.fn().mockResolvedValue(6144),
 }))
 
 vi.mock('@/lib/thread-title-summarizer', () => ({
@@ -416,6 +417,10 @@ import { Route } from '../$threadId'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { useMessageErrors } from '@/stores/message-errors'
+import {
+  processAttachmentsForSend,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -524,6 +529,30 @@ describe('ThreadDetail route', () => {
       expect(h.mockSendMessage).toHaveBeenCalled()
     })
     expect(h.messagesState.addMessage).toHaveBeenCalled()
+  })
+
+  it('passes the auto-inline budget when sending documents', async () => {
+    h.useAttachmentsState.autoInlineContextRatio = 0.75
+    h.attachmentsState.getAttachments = vi.fn(() => [
+      { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' },
+    ])
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(processAttachmentsForSend).toHaveBeenCalled()
+    })
+    expect(resolveAutoInlineBudget).toHaveBeenCalledWith(
+      h.modelProviderState.selectedModel,
+      'openai',
+      0.75
+    )
+    expect(vi.mocked(processAttachmentsForSend).mock.calls[0][0]).toMatchObject({
+      contextThreshold: 6144,
+      parsePreference: 'auto',
+    })
+    h.attachmentsState.getAttachments = vi.fn(() => [])
   })
 
   it('invokes stop when ChatInput calls onStop', () => {
