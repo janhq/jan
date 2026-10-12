@@ -1,6 +1,11 @@
 import { ServiceHub } from '@/services'
 import { Attachment } from '@/types/attachment'
 import { toast } from 'sonner'
+import { estimateTokens } from '@/lib/context-manager'
+import {
+  getLocalPropsExtension,
+  readCtxLen,
+} from '@/lib/llamacppRouterProps'
 
 type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 
@@ -15,11 +20,9 @@ type AttachmentProcessingOptions = {
   projectId?: string
   serviceHub: ServiceHub
   selectedProvider?: string
+  /** Token budget under which an 'auto' document is inlined; see resolveAutoInlineBudget. */
   contextThreshold?: number
-  estimateTokens?: (text: string) => Promise<number | undefined>
   parsePreference: 'auto' | 'inline' | 'embeddings' | 'prompt'
-  autoFallbackMode?: 'inline' | 'embeddings'
-  perFileChoices?: Map<string, 'inline' | 'embeddings'>
   updateAttachmentProcessing?: (
     name: string,
     status: AttachmentProcessingStatus,
@@ -75,6 +78,54 @@ const formatAttachmentError = (err: unknown): string => {
   return String(err)
 }
 
+type ParsePreference = AttachmentProcessingOptions['parsePreference']
+
+/**
+ * Token budget an 'auto' document may use to be inlined: the model's context
+ * window times the user's auto-inline ratio. Only local models have a window
+ * the app knows (configured ctx_len, or the launched n_ctx when ctx_len is
+ * left to auto-fit and the model is already loaded). Cloud providers expose
+ * no context-window metadata, so they get undefined and the user is asked.
+ * `usedTokens` is what the conversation already occupies: a document that
+ * fits the bare window can still overflow it on top of a long thread.
+ */
+export const resolveAutoInlineBudget = async (
+  model: Model | null | undefined,
+  provider: string | undefined,
+  ratio: number | undefined,
+  usedTokens = 0
+): Promise<number | undefined> => {
+  if (!model || typeof ratio !== 'number' || !(ratio > 0)) return undefined
+  let ctxLen = readCtxLen(model.settings?.ctx_len?.controller_props?.value)
+  if (!ctxLen) {
+    try {
+      const props = await getLocalPropsExtension(provider)?.getModelProps?.(
+        model.id
+      )
+      ctxLen = readCtxLen(props?.nCtx)
+    } catch {
+      // Not loaded yet: the window is unknown until the router launches it.
+    }
+  }
+  if (!ctxLen) return undefined
+  const budget = Math.floor(ctxLen * ratio) - usedTokens
+  return budget > 0 ? budget : undefined
+}
+
+/**
+ * Whether the user must pick inline vs embeddings for a document at attach
+ * time. 'auto' only asks when there is no budget to decide by size.
+ */
+export const needsIngestionChoice = (
+  doc: Attachment,
+  parsePreference: ParsePreference,
+  hasInlineBudget: boolean
+): boolean => {
+  if (doc.processed || doc.injectionMode) return false
+  const preference = doc.parseMode ?? parsePreference
+  return preference === 'prompt' || (preference === 'auto' && !hasInlineBudget)
+}
+
 export const processAttachmentsForSend = async (
   options: AttachmentProcessingOptions
 ): Promise<AttachmentProcessingResult> => {
@@ -84,10 +135,7 @@ export const processAttachmentsForSend = async (
     projectId,
     serviceHub,
     contextThreshold,
-    estimateTokens,
     parsePreference,
-    autoFallbackMode,
-    perFileChoices,
     updateAttachmentProcessing,
     onIngestProgress,
   } = options
@@ -122,6 +170,9 @@ export const processAttachmentsForSend = async (
     contextThreshold > 0
       ? contextThreshold
       : undefined
+  // One budget for the whole send: each document that fits alone could still
+  // overflow the window together with the others inlined before it.
+  let remainingInlineBudget = effectiveContextThreshold ?? 0
   const notifyUpdate = (
     ...args: Parameters<
       NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>
@@ -194,69 +245,35 @@ export const processAttachmentsForSend = async (
       notifyUpdate(doc.name, 'processing')
 
       const targetPreference = doc.parseMode ?? parsePreference
-      let targetMode: 'inline' | 'embeddings' =
-        targetPreference === 'inline' ? 'inline' : 'embeddings'
+      // Project files always use embeddings, never inline. 'prompt' documents
+      // carry the user's pick in parseMode, so reaching here means no pick
+      // was recorded and the safe default applies.
+      const decideBySize =
+        !projectId &&
+        targetPreference === 'auto' &&
+        effectiveContextThreshold !== undefined
+      const wantsInline =
+        !projectId && (targetPreference === 'inline' || decideBySize)
+      let targetMode: 'inline' | 'embeddings' = 'embeddings'
       let parsedContent: string | undefined
 
-      // Project files always use embeddings, never inline
-      if (projectId) {
-        targetMode = 'embeddings'
-      }
-
-      const canInline = !projectId && targetPreference !== 'embeddings' && !!doc.path
-
-      if (canInline) {
+      if (wantsInline && doc.path) {
         try {
           parsedContent = await serviceHub
             .rag()
-            .parseDocument?.(doc.path!, doc.fileType)
+            .parseDocument?.(doc.path, doc.fileType)
         } catch (err) {
           console.warn(`Failed to parse ${doc.name} for inline use`, err)
         }
       }
 
-      if (targetPreference === 'auto') {
-        // Check if user made a per-file choice for this document
-        const userChoice = perFileChoices?.get(doc.path || '')
-        // Project files always use embeddings
-        const effectiveMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
-        targetMode = effectiveMode
-
-        // Only do auto-detection if no user choice was made and not project file
-        if (!projectId && !userChoice && parsedContent && estimateTokens) {
-          const estimatedTokens = await estimateTokens(parsedContent)
-          const tokenCount =
-            typeof estimatedTokens === 'number' &&
-            Number.isFinite(estimatedTokens) &&
-            estimatedTokens > 0
-              ? estimatedTokens
-              : undefined
-          if (!effectiveContextThreshold) {
-            console.debug(
-              `Attachment ${doc.name}: no context threshold available; defaulting to ${targetMode}`
-            )
-          } else if (typeof tokenCount === 'number') {
-            targetMode =
-              tokenCount <= effectiveContextThreshold ? 'inline' : 'embeddings'
-          } else {
-            console.debug(
-              `Attachment ${doc.name}: token estimate unavailable or non-positive; defaulting to ${targetMode}`
-            )
-          }
-        } else if (!projectId && !userChoice && !parsedContent) {
-          console.debug(
-            `Attachment ${doc.name}: parsed content unavailable for token estimation; defaulting to ${targetMode}`
-          )
-        } else if (!projectId && !userChoice) {
-          console.debug(
-            `Attachment ${doc.name}: token estimator unavailable; defaulting to ${targetMode}`
-          )
-        }
-      } else if (targetPreference === 'prompt') {
-        // Check if user made a per-file choice for this document
-        const userChoice = perFileChoices?.get(doc.path || '')
-        // Project files always use embeddings
-        targetMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
+      if (parsedContent) {
+        const tokens = estimateTokens(parsedContent)
+        targetMode =
+          !decideBySize || tokens <= remainingInlineBudget
+            ? 'inline'
+            : 'embeddings'
+        if (targetMode === 'inline') remainingInlineBudget -= tokens
       }
 
       if (targetMode === 'inline' && parsedContent) {

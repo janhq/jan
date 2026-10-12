@@ -19,7 +19,10 @@ import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { deriveToolOutputCap } from '@/lib/context-manager'
+import {
+  deriveToolOutputCap,
+  estimateConversationTokens,
+} from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
@@ -62,16 +65,25 @@ import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
 } from '@/hooks/useChatAttachments'
-import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import {
+  processAttachmentsForSend,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import {
   OUT_OF_CONTEXT_SIZE,
   isContextOverflowMessage,
+  isLocalContextOverflowMessage,
   parseContextOverflow,
 } from '@/utils/error'
-import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useTranslation, i18n } from '@/i18n/react-i18next-compat'
+import {
+  isContextLimitStop,
+  isEmptyReply,
+  offersContextIncrease,
+} from '@/lib/chatFinish'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -86,6 +98,10 @@ import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import {
+  getLocalPropsExtension,
+  readCtxLen,
+} from '@/lib/llamacppRouterProps'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -237,7 +253,9 @@ function ThreadDetail() {
   const { t } = useTranslation()
 
   // llama-server's overflow string is raw English; localize it, interpolating
-  // the parsed request/context token counts when available.
+  // the parsed request/context token counts when available. Any other wording
+  // is a provider's own error (Anthropic, OpenAI), which already says what to
+  // cut, so it is shown as is rather than hidden behind the generic text.
   const contextBannerMessage = useMemo(() => {
     const raw = contextLimitError?.message
     if (!raw) return undefined
@@ -247,6 +265,7 @@ function ThreadDetail() {
         request: info.requestTokens.toLocaleString(),
         context: info.contextTokens.toLocaleString(),
       })
+    if (!isLocalContextOverflowMessage(raw)) return raw
     return t('model-errors:contextOverflowGeneric')
   }, [contextLimitError, t])
 
@@ -281,6 +300,9 @@ function ThreadDetail() {
   // Set before a generation when the resulting assistant message should be
   // linked to a specific parent (versioning). Consumed once in onFinish.
   const pendingAssistantParentId = useRef<string | null>(null)
+  // n_ctx the local model launched with. onFinish is synchronous, so it is
+  // fetched once streaming starts (the model is loaded by then).
+  const launchedCtxLenRef = useRef<number | undefined>(undefined)
   // Holds the id of a stopped assistant message being resumed. Continuing must
   // extend the turn in place, not fork a new version, so onFinish deletes this
   // stale partial once the continued reply is persisted.
@@ -303,7 +325,7 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
-    onFinish: ({ message, isAbort }) => {
+    onFinish: ({ message, isAbort, isError }) => {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
       // Consume once per generation so a skipped persist (error/empty) can't
@@ -315,16 +337,17 @@ function ThreadDetail() {
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
-        const selectedModelState = useModelProvider.getState().selectedModel
-        const usage = msgMeta?.usage as
-          | { inputTokens?: number; outputTokens?: number }
-          | undefined
-        const totalTokens =
-          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? 32768
-        const isContextLimit = totalTokens >= ctxLen * 0.9
+        const providerState = useModelProvider.getState()
+        const isContextLimit = isContextLimitStop({
+          provider: providerState.selectedProvider,
+          usage: msgMeta?.usage as
+            | { inputTokens?: number; outputTokens?: number }
+            | undefined,
+          ctxLen:
+            providerState.selectedModel?.settings?.ctx_len?.controller_props
+              ?.value,
+          launchedCtxLen: launchedCtxLenRef.current,
+        })
 
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
@@ -346,6 +369,22 @@ function ThreadDetail() {
       }
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      // Nothing would be persisted for an empty reply, so without this the
+      // turn silently vanishes and the user cannot tell it failed. The error
+      // goes on the user turn it answers (as the stream-error path does):
+      // that message is persisted, and the errorEntries effect below copies
+      // the error into its metadata.error, which hydration restores on reload.
+      if (isEmptyReply({ message, isAbort, isError, finishReason })) {
+        const userTurnId =
+          pendingAssistantParentId.current ?? resolveAssistantParent(undefined)
+        pendingAssistantParentId.current = null
+        if (userTurnId) {
+          useMessageErrors
+            .getState()
+            .setError(userTurnId, i18n.t('model-errors:emptyReply'))
+        }
+      }
 
       // The turn ended before completion (user hit Stop, or the model hit its
       // output-token cap). Persist the partial marked `stopped` so the UI can
@@ -781,6 +820,11 @@ function ThreadDetail() {
     reset: resetReasoningScroll,
   } = useAutoScroll()
 
+  // Read at send time without making the send callbacks depend on every
+  // streamed token.
+  const chatMessagesRef = useRef(chatMessages)
+  chatMessagesRef.current = chatMessages
+
   const lastIsAssistant = useMemo(() => {
     const last = chatMessages[chatMessages.length - 1]
     return !!last && last.role === 'assistant'
@@ -791,6 +835,26 @@ function ThreadDetail() {
       resetReasoningScroll()
     }
   }, [status, resetReasoningScroll])
+
+  useEffect(() => {
+    if (status !== 'streaming') return
+    launchedCtxLenRef.current = undefined
+    const modelId = selectedModel?.id
+    const ext = getLocalPropsExtension(selectedProvider)
+    if (!modelId || !ext?.getModelProps) return
+    let cancelled = false
+    ext
+      .getModelProps(modelId)
+      .then((props) => {
+        if (!cancelled) launchedCtxLenRef.current = readCtxLen(props?.nCtx)
+      })
+      .catch(() => {
+        // Router unreachable: isContextLimitStop falls back to its default.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status, selectedProvider, selectedModel?.id])
 
   useEffect(() => {
     if (status === 'streaming') {
@@ -1047,7 +1111,8 @@ function ThreadDetail() {
           useAppState.getState().setThreadBusy(threadId, true)
         }
         try {
-          const parsePreference = useAttachments.getState().parseMode
+          const { parseMode: parsePreference, autoInlineContextRatio } =
+            useAttachments.getState()
           const result = await processAttachmentsForSend({
             attachments: combinedAttachments,
             threadId,
@@ -1055,6 +1120,12 @@ function ThreadDetail() {
             serviceHub,
             selectedProvider,
             parsePreference,
+            contextThreshold: await resolveAutoInlineBudget(
+              useModelProvider.getState().selectedModel,
+              selectedProvider,
+              autoInlineContextRatio,
+              estimateConversationTokens(chatMessagesRef.current)
+            ),
           })
           processedAttachments = result.processedAttachments
 
@@ -1843,20 +1914,10 @@ function ThreadDetail() {
                           <li>Use a smaller / more quantized model</li>
                         </ul>
                       )}
-                      {((error ?? contextLimitError)?.message
-                        ?.toLowerCase()
-                        .includes('context') &&
-                        ((error ?? contextLimitError)?.message
-                          ?.toLowerCase()
-                          .includes('size') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('length') ||
-                          (error ?? contextLimitError)?.message
-                            ?.toLowerCase()
-                            .includes('limit'))) ||
-                      (error ?? contextLimitError)?.message ===
-                        OUT_OF_CONTEXT_SIZE ? (
+                      {offersContextIncrease(
+                        selectedProvider,
+                        (error ?? contextLimitError)?.message
+                      ) ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1866,7 +1927,7 @@ function ThreadDetail() {
                           <IconAlertCircle className="size-4 mr-2" />
                           Increase Context Size
                         </Button>
-                      ) : (
+                      ) : oomError || backendError ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1874,9 +1935,9 @@ function ThreadDetail() {
                           onClick={() => handleRegenerate()}
                         >
                           <IconRefresh className="size-4 mr-2" />
-                          {oomError || backendError ? 'Reload' : 'Regenerate'}
+                          Reload
                         </Button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </div>

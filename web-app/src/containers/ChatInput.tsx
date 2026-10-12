@@ -101,6 +101,11 @@ import {
   createAudioAttachment,
   createVideoAttachment,
 } from '@/types/attachment'
+import {
+  needsIngestionChoice,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
+import { activePathTokens } from '@/lib/message-branching'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -460,8 +465,12 @@ const ChatInput = memo(function ChatInput({
     )
   )
 
+  // Read when a document is attached, without rebuilding the attach
+  // callback on every message update.
+  const threadMessagesRef = useRef(threadMessages)
+  threadMessagesRef.current = threadMessages
+
   const maxRows = 10
-  const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -532,6 +541,9 @@ const ChatInput = memo(function ChatInput({
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
+  const autoInlineContextRatio = useAttachments(
+    (s) => s.autoInlineContextRatio
+  )
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
@@ -884,12 +896,27 @@ const ChatInput = memo(function ChatInput({
 
       // Only collect the user's inline-vs-embeddings preference via the
       // dialog.  Actual ingestion is always deferred to send time
-      // (processAttachmentsForSend inside processAndSendMessage).
-      const docsNeedingPrompt = docs.filter((doc) => {
-        if (doc.processed || doc.injectionMode) return false
-        const preference = doc.parseMode ?? parsePreference
-        return preference === 'prompt' || preference === 'auto'
-      })
+      // (processAttachmentsForSend inside processAndSendMessage), where
+      // 'auto' documents are routed by size when the model's window is known.
+      // Same conversation-aware budget as the send path (the active branch,
+      // which is what gets sent), so 'auto' asks here exactly when send time
+      // would have no budget to decide by.
+      const hasInlineBudget =
+        (await resolveAutoInlineBudget(
+          selectedModel,
+          selectedProvider,
+          autoInlineContextRatio,
+          activePathTokens(
+            threadMessagesRef.current,
+            (
+              useThreads.getState().threads[currentThreadId ?? '']
+                ?.metadata as Record<string, unknown> | undefined
+            )?.activeRootId as string | undefined
+          )
+        )) !== undefined
+      const docsNeedingPrompt = docs.filter((doc) =>
+        needsIngestionChoice(doc, parsePreference, hasInlineBudget)
+      )
 
       if (docsNeedingPrompt.length > 0) {
         const choices = new Map<string, 'inline' | 'embeddings'>()
@@ -897,12 +924,7 @@ const ChatInput = memo(function ChatInput({
           const doc = docsNeedingPrompt[i]
           const choice = await useAttachmentIngestionPrompt
             .getState()
-            .showPrompt(
-              doc,
-              ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
-              i,
-              docsNeedingPrompt.length
-            )
+            .showPrompt(doc, i, docsNeedingPrompt.length)
 
           if (!choice) {
             // User cancelled — remove all pending docs
@@ -935,9 +957,12 @@ const ChatInput = memo(function ChatInput({
       }
     },
     [
-      ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
       attachmentsKey,
+      autoInlineContextRatio,
+      currentThreadId,
       parsePreference,
+      selectedModel,
+      selectedProvider,
       setAttachmentsForThread,
     ]
   )
