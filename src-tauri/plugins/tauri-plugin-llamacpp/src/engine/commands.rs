@@ -7,7 +7,9 @@ use std::sync::Arc;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
+use tauri_plugin_hardware::vendor::nvidia::{nvidia_driver, CudaVersion};
 
+use super::driver;
 use super::worker::{self, WorkerHandle};
 use crate::state::LlamacppState;
 
@@ -127,14 +129,40 @@ fn worker_missing_message(tried: &[PathBuf]) -> String {
 /// Forwards a worker fault to the frontend, which turns it into the OOM or
 /// backend-error dialog. A mid-generation `GGML_ASSERT` kills the worker
 /// outright, so its log line is the only account of what happened.
-fn fault_emitter<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> worker::FaultCallback {
+///
+/// A driver too old for the engine's CUDA code is told apart from a generic
+/// backend crash, and the banner (which shows this text verbatim) says to
+/// update the driver instead of leaving the user with a bare ggml abort.
+fn fault_emitter<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    toolkit: Arc<std::sync::OnceLock<CudaVersion>>,
+) -> worker::FaultCallback {
     use tauri::Emitter;
     Arc::new(move |fault: worker::RuntimeFault, line: String| {
         log::error!("jan-llama-worker fault ({fault:?}): {line}");
-        if let Err(e) = app_handle.emit(fault.event_name(), line) {
+        let payload =
+            driver::fault_payload(&line, nvidia_driver().as_ref(), toolkit.get().copied());
+        if let Err(e) = app_handle.emit(fault.event_name(), payload) {
             log::warn!("emit {} failed: {e}", fault.event_name());
         }
     })
+}
+
+/// Writes the NVIDIA driver and CUDA versions to `app.log` next to the engine's
+/// own toolkit, and warns when the driver is older than the engine. Without
+/// this a CUDA failure on an old driver cannot be told from any other (#9185).
+async fn log_nvidia_driver(toolkit: Option<CudaVersion>) {
+    // NVML loads a shared library and may take a moment on first use.
+    let Ok(Some(driver)) = tokio::task::spawn_blocking(nvidia_driver).await else {
+        return;
+    };
+    log::info!("{}", driver::startup_line(&driver, toolkit));
+    if driver::driver_older_than_engine(&driver, toolkit) {
+        log::warn!(
+            "{} GPUs the engine has no native code for will fail to load.",
+            driver::actionable_message(&driver, toolkit)
+        );
+    }
 }
 
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
@@ -157,6 +185,9 @@ pub async fn start_engine<R: tauri::Runtime>(
 
     let exe = resolve_worker_exe(&app_handle)?;
     let api_key = generate_worker_key();
+    // Filled from the handshake, after the worker is up; a fault before then
+    // is worded without it.
+    let toolkit = Arc::new(std::sync::OnceLock::new());
     let handle = worker::spawn(
         &exe,
         &PathBuf::from(preset_path),
@@ -165,10 +196,14 @@ pub async fn start_engine<R: tauri::Runtime>(
         models_max,
         slot_cache_mib,
         envs,
-        Some(fault_emitter(app_handle.clone())),
+        Some(fault_emitter(app_handle.clone(), toolkit.clone())),
     )
     .await
     .map_err(|e| e.to_string())?;
+    if let Some(v) = handle.cuda_toolkit {
+        let _ = toolkit.set(v);
+    }
+    log_nvidia_driver(handle.cuda_toolkit).await;
 
     let info = EngineInfo::from(&handle);
     // Subscribed here rather than lazily: an eviction can happen on the very
