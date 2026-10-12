@@ -170,11 +170,8 @@ async fn record_nvidia_driver(versions: Arc<EngineVersions>) {
     };
     let toolkit = versions.toolkit.get().copied();
     log::info!("{}", driver::startup_line(&driver, toolkit));
-    if driver::driver_older_than_engine(&driver, toolkit) {
-        log::warn!(
-            "{} GPUs the engine has no native code for will fail to load.",
-            driver::actionable_message(&driver, toolkit)
-        );
+    if let Some(warning) = driver::startup_warning(&driver, toolkit) {
+        log::warn!("{warning}");
     }
     let _ = versions.driver.set(driver);
 }

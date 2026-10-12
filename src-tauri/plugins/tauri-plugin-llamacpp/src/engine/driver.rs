@@ -36,20 +36,44 @@ pub fn startup_line(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -> Stri
 }
 
 /// What to tell the user when the engine reports the driver cannot run its
-/// code. Leads with the action, then the versions that explain it.
-pub fn actionable_message(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -> String {
+/// code. Leads with the action, then the versions that explain it. Without a
+/// driver read (NVML would not load, or the startup read has not finished) the
+/// engine's report is all there is, and the message says only that.
+pub fn actionable_message(driver: Option<&NvidiaDriver>, toolkit: Option<CudaVersion>) -> String {
     let update = match toolkit.and_then(minimum_branch) {
         Some(branch) => format!("Update your NVIDIA driver to R{branch} or newer."),
         None => "Update your NVIDIA driver to the latest version.".to_string(),
     };
+    let built = toolkit.map_or(String::new(), |v| format!(", built with CUDA {v}"));
+    let Some(driver) = driver else {
+        return format!("{update} The installed driver is too old for this engine{built}.");
+    };
     let cuda = driver
         .cuda
         .map_or(String::new(), |v| format!(" (supports CUDA {v})"));
-    let built = toolkit.map_or(String::new(), |v| format!(", built with CUDA {v}"));
     format!(
         "{update} The installed driver {}{cuda} is too old for this engine{built}.",
         driver.version
     )
+}
+
+/// The `app.log` warning when the driver is older than the engine, naming what
+/// fails. Within the engine's CUDA major only GPUs covered by PTX alone stop
+/// working; a driver a whole major behind cannot start the CUDA runtime for any.
+pub fn startup_warning(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -> Option<String> {
+    if !driver_older_than_engine(driver, toolkit) {
+        return None;
+    }
+    let (supported, built) = (driver.cuda?, toolkit?);
+    let effect = if supported.major < built.major {
+        "The CUDA runtime will not start on this driver for every GPU."
+    } else {
+        "GPUs the engine has no native code for will fail to load."
+    };
+    Some(format!(
+        "{} {effect}",
+        actionable_message(Some(driver), toolkit)
+    ))
 }
 
 /// The text the backend-error banner shows for a worker fault line. A CUDA line
@@ -59,19 +83,23 @@ pub fn actionable_message(driver: &NvidiaDriver, toolkit: Option<CudaVersion>) -
 /// known to support the engine's CUDA, where "too old" would contradict the
 /// versions printed beside it.
 ///
-/// With either version unknown the engine's own line is the evidence, so the
-/// advice still applies.
+/// With either version unknown, or no driver read at all, the engine's own line
+/// is the evidence, so the advice still applies.
 pub fn fault_payload(
     line: &str,
     driver: Option<&NvidiaDriver>,
     toolkit: Option<CudaVersion>,
 ) -> String {
     let lower = line.to_lowercase();
-    let cuda = lower.contains("cuda") || lower.contains("ptx");
-    let Some(driver) = driver.filter(|_| cuda && crate::error::is_driver_too_old(&lower)) else {
+    if !(lower.contains("cuda") || lower.contains("ptx"))
+        || !crate::error::is_driver_too_old(&lower)
+    {
         return line.to_string();
-    };
-    if matches!((driver.cuda, toolkit), (Some(supported), Some(built)) if supported >= built) {
+    }
+    if matches!(
+        (driver.and_then(|d| d.cuda), toolkit),
+        (Some(supported), Some(built)) if supported >= built
+    ) {
         return line.to_string();
     }
     format!(
@@ -140,7 +168,7 @@ mod tests {
 
     #[test]
     fn the_message_asks_for_r595_when_the_engine_is_cuda_13_2() {
-        let msg = actionable_message(&driver("580.88", Some((13, 0))), CUDA_13_2);
+        let msg = actionable_message(Some(&driver("580.88", Some((13, 0)))), CUDA_13_2);
         assert!(
             msg.starts_with("Update your NVIDIA driver to R595 or newer."),
             "{msg}"
@@ -161,7 +189,7 @@ mod tests {
             }),
             None,
         ] {
-            let msg = actionable_message(&driver("470.1", None), toolkit);
+            let msg = actionable_message(Some(&driver("470.1", None)), toolkit);
             assert!(
                 msg.starts_with("Update your NVIDIA driver to the latest version."),
                 "{msg}"
@@ -187,11 +215,11 @@ mod tests {
     }
 
     #[test]
-    fn other_faults_and_a_missing_driver_pass_through_untouched() {
+    fn other_faults_pass_through_untouched() {
         let nvidia = driver("580.88", Some((13, 0)));
         let oom = "CUDA error: out of memory";
         assert_eq!(fault_payload(oom, Some(&nvidia), CUDA_13_2), oom);
-        assert_eq!(fault_payload(PTX_LINE, None, CUDA_13_2), PTX_LINE);
+        assert_eq!(fault_payload(oom, None, CUDA_13_2), oom);
     }
 
     // The banner prints both versions, so "too old" beside a driver that
@@ -210,6 +238,39 @@ mod tests {
             payload.starts_with("Update your NVIDIA driver to the latest version."),
             "{payload}"
         );
+    }
+
+    // A fault can land before the startup read of the driver finishes, or on a
+    // machine where NVML will not load; the engine's own line is still the
+    // evidence, and the banner is shown once per fault.
+    #[test]
+    fn a_fault_with_no_driver_read_yet_still_gets_the_advice() {
+        let payload = fault_payload(PTX_LINE, None, CUDA_13_2);
+        assert!(
+            payload.starts_with("Update your NVIDIA driver to R595 or newer."),
+            "{payload}"
+        );
+        assert!(
+            payload.ends_with(&format!("Engine output: {PTX_LINE}")),
+            "{payload}"
+        );
+        assert!(!payload.contains("installed driver 5"), "{payload}");
+    }
+
+    // A driver a whole CUDA major behind fails the runtime for every GPU, so
+    // the log must not suggest only PTX-only GPUs are affected.
+    #[test]
+    fn the_startup_warning_says_what_actually_fails() {
+        let same_major = startup_warning(&driver("580.88", Some((13, 0))), CUDA_13_2).unwrap();
+        assert!(same_major.contains("no native code"), "{same_major}");
+        let older_major = startup_warning(&driver("470.1", Some((12, 4))), CUDA_13_2).unwrap();
+        assert!(!older_major.contains("no native code"), "{older_major}");
+        assert!(older_major.contains("every GPU"), "{older_major}");
+        assert_eq!(
+            startup_warning(&driver("595.97", Some((13, 2))), CUDA_13_2),
+            None
+        );
+        assert_eq!(startup_warning(&driver("470.1", None), CUDA_13_2), None);
     }
 
     // A box with an NVIDIA card can still hit a Vulkan driver error on another
