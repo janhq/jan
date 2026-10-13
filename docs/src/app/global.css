@@ -480,14 +480,14 @@ figure.shiki .line {
   background: transparent;
 }
 
-/* <kbd>: plain inline code, as on the old site. */
+/* <kbd>: plain monospace text, as on the old site (no chip). */
 #nd-page .prose kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-  padding: 0.125rem 0.25em;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  border-radius: 0.375rem;
-  background: rgba(0, 0, 0, 0.03);
+  font-size: 1em;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
   color: inherit;
 }
