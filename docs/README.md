@@ -1,62 +1,64 @@
-# Website & Docs
+# Jan Docs (docs.jan.ai)
 
-This website is built using [Nextra](https://nextra.site/), a modern static website generator.
+Documentation for Jan Desktop and Jan Agent, built with
+[Fumadocs](https://fumadocs.dev) on Next.js and exported as a static site to
+Cloudflare Pages. The marketing site (jan.ai: home, download, blog, research,
+changelog, handbook) lives in `janhq/jan.ai`.
 
-### Information Architecture
-
-We try to **keep routes consistent** to maintain SEO.
-
-- **`/docs/`**: Product documentation (Jan Desktop, Jan Agent).
-
-- **`/handbook/`**: Handbook pages.
-
-- **`/research/`**: Research content.
-
-- **`/changelog/`**: A list of changes made to the Jan application with each release.
-
-- **`/blog/`**: The blog index; individual posts live under `/post/`.
-
-- **`/download/`**: Download page.
-
-- **`/support/`**: Support page.
-
-- **`/privacy/`**: Privacy policy.
-
-- **`/tokamak/`**: Tokamak landing page.
-
-## How to Contribute
-
-Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/main/CONTRIBUTING.md) for more comprehensive information on how to contribute to the Jan project.
-
-### Pre-requisites and Installation
-
-- [Node.js](https://nodejs.org/en/) (version 20.0.0 or higher)
-- [yarn](https://yarnpkg.com/) (version 4.x; the repo pins 4.5.3 via corepack)
-
-#### Installation
+## Develop
 
 ```bash
-cd jan/docs
+cd docs
 yarn install
-yarn dev
+yarn dev          # http://localhost:3000
+yarn build        # static site in out/ (regenerates public/_redirects first)
+yarn types:check
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+## Write docs
 
-#### Build
+- Pages are MDX in `content/`. `content/desktop/x.mdx` is served at
+  `https://docs.jan.ai/desktop/x`.
+- Sidebar order, separators (`---Title---`) and hidden pages (`!page`) are in
+  each folder's `meta.json`. `desktop/` and `agent/` are `root` sections and
+  show as the sidebar switcher.
+- The frontmatter `title` is the page H1. Use `sidebarTitle` for a shorter
+  sidebar label. `description`, `keywords`, `noindex` and `ogImage` are supported.
+- Put images next to the page in `_assets/` and reference them relatively:
+  `![Alt](./_assets/x.png)`.
+- These components work without an import: `Callout`, `Steps` (each `###` is
+  a step), `Tabs` with `Tabs.Tab`, `DocCard`/`DocCards`, `DownloadButton`,
+  `FAQBox`, plus Fumadocs' defaults. ```` ```mermaid ```` blocks and `$math$`
+  render too.
+- Link to other pages with absolute paths (`/agent/skills`) or relative file
+  paths. Don't link to private repos or internal issues.
 
-```bash
-yarn build
-```
+## Redirects
 
-This command generates static content into the `out` directory (`next.config.mjs` sets `output: 'export'`) and can be served using any static contents hosting service.
+`public/_redirects` is generated. Don't edit it by hand.
 
-### Deployment
+- `redirects/legacy-jan.ai.txt` is the old jan.ai `_redirects`, kept as input.
+- `node scripts/build-redirects.mjs` writes `public/_redirects`, which is
+  served by docs.jan.ai, and `redirects/jan.ai.txt`. That second file is the
+  block janhq/jan.ai must ship so that every old `jan.ai/docs/*` URL reaches
+  its final page in one 301.
+- `node scripts/check-redirects.mjs` (after `yarn build`) follows every old URL
+  through both sites offline and fails on dead ends or chains longer than 2 hops.
 
-There is no `yarn deploy` script; the `jan-docs.yml` workflow builds the site and publishes `out` to Cloudflare Pages.
+When you rename or delete a page, add `/docs/<old> /docs/<new> 301` to
+`redirects/legacy-jan.ai.txt` and rebuild.
 
-### Preview URL, Pre-release and Publishing Documentation
+## CI
 
-- When a pull request is created, the preview URL will be automatically commented on the pull request.
+- `.github/workflows/jan-docs.yml` builds, checks the redirects, deploys
+  PR previews (`pr-<number>`), and deploys `main` to the `jan-docs` Pages
+  project (docs.jan.ai).
+- `.github/workflows/jan-docs-link-check.yml` runs lychee on the built site.
+  Internal links block the PR. External links are checked weekly and reported
+  in one issue.
 
-- The documentation will then be published to [https://jan.ai/](https://jan.ai/) when the pull request is merged to `main`.
+## History
+
+`scripts/migrate-content.mjs` converted the Nextra 2 site (`src/pages/docs`,
+see git history before the Fumadocs move) into `content/`. It is kept for
+reference; content is now edited directly.
