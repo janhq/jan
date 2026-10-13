@@ -49,7 +49,6 @@ jobs:
             {"name":"linux-x64-cuda12","variant":"cuda12-vulkan","runs-on":"ubuntu-22.04"},
             {"name":"linux-x64-rocm","variant":"rocm-vulkan","runs-on":"ubuntu-22.04","rocm":true},
             {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-2025"},
-            {"name":"windows-x64-cuda12","variant":"cuda12-vulkan","runs-on":"windows-2025"},
             {"name":"macos-arm64-metal","variant":"metal","runs-on":"macos-latest"}
           ]'
           # Not in `full`, and each for a reason rather than an oversight:
@@ -57,6 +56,10 @@ jobs:
           #                        aarch64 Vulkan SDK are untried here
           #   linux-arm64-vulkan   same, untried rather than blocked
           #   windows-arm64-vulkan see jan-tauri-build-windows-arm64.yml
+          #   windows-x64-cuda12   windows-2025 is the VS 2026 image, and no CUDA 12
+          #                        host_config.h accepts its _MSC_VER; nothing ships
+          #                        it either -- Windows bundles are cuda13-vulkan.
+          #                        windows-2022 (VS 2022) could build it if needed
           #   windows-x64-rocm     no Windows HIP SDK image; ROCm on Windows is
           #                        an installer run, not an apt line
           if [ "${{ github.event_name }}" = "pull_request" ]; then
