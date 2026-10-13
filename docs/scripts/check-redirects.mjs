@@ -39,7 +39,8 @@ function parse(file) {
 
 const norm = (p) => (p.length > 1 ? p.replace(/\/+$/, '') : p)
 
-// Cloudflare: first matching rule wins; trailing slash is ignored for matching.
+// Cloudflare: first matching rule wins; static sources match literally
+// (`/x` and `/x/` are different), splats match any path under the base.
 function match(rules, p) {
   const n = norm(p)
   for (const r of rules) {
@@ -49,7 +50,7 @@ function match(rules, p) {
         const splat = n === base ? '' : n.slice(base.length + 1)
         return r.to.replace(':splat', splat)
       }
-    } else if (norm(r.from) === n) return r.to
+    } else if (r.from === p) return r.to
   }
   return null
 }
@@ -68,6 +69,8 @@ function follow(start) {
   let p = start
   const hops = []
   for (let i = 0; i < 6; i++) {
+    // Pages serves /x/ as a 308 to /x before page lookup; not a redirect hop
+    // we control, so normalise only when no rule matched the literal path.
     const to = match(host === 'jan.ai' ? janRules : docsRules, p)
     if (!to) break
     hops.push(to)

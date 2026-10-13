@@ -57,6 +57,12 @@ const LINK_FIXES = [
   ['(/windows#compatibility)', '(/desktop/install/windows#compatibility)'],
   ['(/desktop/install/windows#step-2-handle-jan-data)', '(/desktop/install/windows#step-2-clean-up-remaining-files)'],
   ['(/desktop/model-parameters#model-capabilities-edit-button)', '(/desktop/model-parameters#how-to-access-settings)'],
+  // Fumadocs makes every heading a link; a link inside it nests <a> in <a>
+  // (invalid HTML, React hydration error). Move the link into the text.
+  [
+    '#### 2. Import from [Hugging Face](https://huggingface.co/)\n\nYou can download models with a direct link from Hugging Face:',
+    '#### 2. Import from Hugging Face\n\nYou can download models with a direct link from [Hugging Face](https://huggingface.co/):',
+  ],
 ]
 
 let stats = { pages: 0, assets: 0, metas: 0, links: 0, titles: 0 }
@@ -146,6 +152,8 @@ function writeMeta(dir, rel, metaFile) {
     // file regardless of meta.json; `!key` keeps it out of the `...` rest.
     if (v.display === 'hidden') {
       pages.push(`!${key}`)
+      // Nextra `type: "page"` = full-width page outside the docs layout.
+      if (v.type === 'page') setFrontmatter(rel, key, 'layout', 'standalone')
       continue
     }
     pages.push(key)
@@ -193,6 +201,14 @@ function setTitle(dir, rel, key, label) {
     }
   }
   fs.writeFileSync(file, src)
+}
+
+function setFrontmatter(rel, key, field, value) {
+  const file = path.join(OUT, rel, `${key}.mdx`)
+  if (!fs.existsSync(file)) return
+  const src = fs.readFileSync(file, 'utf8')
+  if (new RegExp(`^${field}:`, 'm').test(src)) return
+  fs.writeFileSync(file, src.replace(/^---\n/, `---\n${field}: ${value}\n`))
 }
 
 // First ATX heading outside fenced code: { depth, text, raw, index }.

@@ -1,15 +1,12 @@
-import {
-  DocsBody,
-  DocsDescription,
-  DocsPage,
-  DocsTitle,
-  EditOnGitHub,
-  MarkdownCopyButton,
-} from 'fumadocs-ui/layouts/docs/page'
+import { DocsLayout } from 'fumadocs-ui/layouts/docs'
+import { DocsBody, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page'
+import { baseOptions } from '@/lib/layout.shared'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getMDXComponents } from '@/components/mdx'
+import { TocFooter } from '@/components/toc-footer'
+import { Breadcrumb } from '@/components/breadcrumb'
 import { source } from '@/lib/source'
 import { defaultOgImage, editUrl, pageMarkdownUrl } from '@/lib/shared'
 
@@ -21,26 +18,55 @@ export default async function Page(props: Props) {
   if (!page) notFound()
 
   const MDX = page.data.body
+  const footer = (
+    <TocFooter
+      title={page.data.title}
+      editUrl={editUrl(page.path)}
+      markdownUrl={pageMarkdownUrl(page.slugs)}
+    />
+  )
 
+  const body = <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
+
+  // `layout: standalone` (Nextra `type: "page"`, e.g. the privacy policy):
+  // full-width page, no sidebar, breadcrumb or table of contents.
+  if (page.data.layout === 'standalone') {
+    return (
+      <article id="nd-page" className="jan-container jan-standalone py-8">
+        <div className="mx-auto max-w-[832px]">
+          <h1>{page.data.title}</h1>
+          <div className="prose">{body}</div>
+        </div>
+      </article>
+    )
+  }
+
+  // Same page top as jan.ai/docs: breadcrumb, H1, then the body. The
+  // frontmatter description is metadata only (it was never shown on the page).
   return (
+    <DocsLayout
+      tree={source.getPageTree()}
+      {...baseOptions()}
+      // Jan Desktop / Jan Agent are root folders -> sidebar tab switcher.
+      tabMode="auto"
+      sidebar={{ defaultOpenLevel: 0, collapsible: false }}
+    >
     <DocsPage
       toc={page.data.toc}
       full={page.data.full}
-      // Old site: full path breadcrumb (Docs > Jan Desktop > Install > Linux).
-      breadcrumb={{ includeRoot: true, includePage: true }}
+      breadcrumb={{ enabled: false }}
+      // One active heading at a time, like Nextra.
+      tableOfContent={{ footer, single: true }}
+      tableOfContentPopover={{ footer }}
+      footer={{ enabled: true }}
     >
-      <DocsTitle>{page.data.title}</DocsTitle>
-      {page.data.description && (
-        <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
-      )}
-      <div className="flex flex-row items-center gap-2 border-b pb-6">
-        <MarkdownCopyButton markdownUrl={pageMarkdownUrl(page.slugs)} />
-        <EditOnGitHub href={editUrl(page.path)} />
-      </div>
+      <Breadcrumb />
+      <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
       <DocsBody>
-        <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
+        {body}
       </DocsBody>
     </DocsPage>
+    </DocsLayout>
   )
 }
 

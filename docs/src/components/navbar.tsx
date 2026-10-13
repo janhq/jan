@@ -126,7 +126,7 @@ export function Navbar() {
                   rel={item.external ? 'noopener noreferrer' : undefined}
                   className={cn(
                     'flex items-center gap-1 transition-opacity hover:opacity-70',
-                    isActive(item.href) && 'font-semibold text-jan-blue'
+                    isActive(item.href) && 'font-semibold'
                   )}
                 >
                   {item.name}
@@ -226,7 +226,7 @@ export function Navbar() {
                         href={item.href}
                         className={cn(
                           'block py-2 text-lg font-medium text-black transition-colors hover:text-gray-600',
-                          isActive(item.href) && 'font-bold text-jan-blue'
+                          isActive(item.href) && 'font-bold text-blue-600'
                         )}
                         onClick={() => setMobileOpen(false)}
                       >

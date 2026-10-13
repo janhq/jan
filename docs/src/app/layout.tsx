@@ -36,11 +36,13 @@ const structuredData = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="flex min-h-screen flex-col font-sans">
+      <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
+      </head>
+      <body className="flex min-h-screen flex-col font-sans">
         <Provider>
           <Navbar />
           <div className="flex-1">{children}</div>

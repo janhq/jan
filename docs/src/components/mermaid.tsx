@@ -10,7 +10,13 @@ export function Mermaid({ chart }: { chart: string }) {
   useEffect(() => {
     let cancelled = false
     import('mermaid').then(async ({ default: mermaid }) => {
-      mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' })
+      // Same config as the old site (Nextra 2 / @theguild/remark-mermaid).
+      mermaid.initialize({
+        startOnLoad: false,
+        fontFamily: 'inherit',
+        themeCSS: 'margin: 1.5rem auto 0;',
+        theme: 'default',
+      })
       const { svg } = await mermaid.render(`mermaid-${id}`, chart)
       if (!cancelled) setSvg(svg)
     })
@@ -26,5 +32,5 @@ export function Mermaid({ chart }: { chart: string }) {
       </pre>
     )
   }
-  return <div className="not-prose my-6 flex justify-center" dangerouslySetInnerHTML={{ __html: svg }} />
+  return <div className="not-prose flex justify-center leading-6" dangerouslySetInnerHTML={{ __html: svg }} />
 }

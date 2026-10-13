@@ -20,6 +20,22 @@ const remarkMermaid = () => (tree: any) => {
   })
 }
 
+// Headings inside <Tabs> were not in the old "On This Page" list (Nextra only
+// rendered the active panel). Mark them [!toc] so Fumadocs skips them.
+// biome-ignore lint/suspicious/noExplicitAny: mdast types are loose here
+const remarkTabsNoToc = () => (tree: any) => {
+  // biome-ignore lint/suspicious/noExplicitAny: mdast node
+  visit(tree, (node: any) => {
+    if (node.type !== 'mdxJsxFlowElement' || node.name !== 'Tabs') return
+    // biome-ignore lint/suspicious/noExplicitAny: mdast node
+    visit(node, 'heading', (h: any) => {
+      const last = h.children[h.children.length - 1]
+      if (last?.type === 'text') last.value = `${last.value} [!toc]`
+      else h.children.push({ type: 'text', value: ' [!toc]' })
+    })
+  })
+}
+
 export const docs = defineDocs({
   dir: 'content',
   docs: {
@@ -30,6 +46,8 @@ export const docs = defineDocs({
       keywords: z.array(z.string()).optional(),
       noindex: z.boolean().optional(),
       ogImage: z.string().optional(),
+      // 'standalone': no sidebar, TOC or breadcrumb (Nextra `type: "page"`).
+      layout: z.enum(['docs', 'standalone']).optional(),
     }),
     postprocess: {
       includeProcessedMarkdown: true,
@@ -46,7 +64,7 @@ export default defineConfig({
     rehypeCodeOptions: {
       themes: { light: 'dark-plus', dark: 'dark-plus' },
     },
-    remarkPlugins: (v) => [remarkMath, remarkMermaid, ...v],
+    remarkPlugins: (v) => [remarkMath, remarkMermaid, remarkTabsNoToc, ...v],
     rehypePlugins: (v) => [rehypeKatex, ...v],
   },
 })
