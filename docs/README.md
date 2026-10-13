@@ -28,8 +28,7 @@ yarn types:check
   `![Alt](./_assets/x.png)`.
 - These components work without an import: `Callout`, `Steps` (each `###` is
   a step), `Tabs` with `Tabs.Tab`, `DocCard`/`DocCards`, `DownloadButton`,
-  `FAQBox`, plus Fumadocs' defaults. ```` ```mermaid ```` blocks and `$math$`
-  render too.
+  `FAQBox`, plus Fumadocs' defaults. ```` ```mermaid ```` blocks render too.
 - Link to other pages with absolute paths (`/agent/skills`) or relative file
   paths. Don't link to private repos or internal issues.
 
