@@ -27,16 +27,23 @@ const isUnsettled = (part: unknown): boolean => {
 /**
  * After a Stop nothing will ever resolve a tool call that is still streaming
  * its arguments or waiting to run, so its card would keep saying "Running"
- * (live, and after every reload, once persisted). Settles each such call in the
- * last message, the turn that was stopped, as an error and marks that message
- * `stopped`. Earlier messages are history and are never touched.
+ * (live, and after every reload, once persisted). Settles each such call in one
+ * message, the turn that was stopped, as an error and marks that message
+ * `stopped`. That is the message with `messageId`, or the last one when none is
+ * given. Other messages are history and are never touched.
  *
  * Returns the same array when there is nothing to settle, so callers can tell
  * by identity whether to write anything back.
  */
-export function settleStoppedToolCalls(messages: UIMessage[]): UIMessage[] {
-  const lastIndex = messages.length - 1
-  const message = messages[lastIndex]
+export function settleStoppedToolCalls(
+  messages: UIMessage[],
+  messageId?: string
+): UIMessage[] {
+  const index =
+    messageId === undefined
+      ? messages.length - 1
+      : messages.findIndex((m) => m.id === messageId)
+  const message = messages[index]
   if (
     !message ||
     message.role !== 'assistant' ||
@@ -56,7 +63,7 @@ export function settleStoppedToolCalls(messages: UIMessage[]): UIMessage[] {
       stopped: true,
     },
   } as UIMessage
-  return [...messages.slice(0, lastIndex), settled]
+  return messages.map((m, i) => (i === index ? settled : m))
 }
 
 /**

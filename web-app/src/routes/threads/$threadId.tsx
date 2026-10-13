@@ -134,6 +134,9 @@ const toolStopControllers = new Map<string, AbortController>()
 // would be shared by every thread's loop and let one thread's Stop, or one
 // thread's loop finishing, end another's.
 const toolLoopControllers = new Map<string, AbortController>()
+// The message each thread's running tool loop belongs to, so a Stop settles that
+// turn even when the user has sent another one since.
+const toolLoopTurns = new WeakMap<AbortController, string>()
 
 // Approval promises started in onToolCall (so the popup appears immediately) and
 // awaited by the onFinish execution loop, keyed by thread and then toolCallId.
@@ -614,6 +617,7 @@ function ThreadDetail() {
       // we await that already-started promise here rather than prompting again.
       const callController = new AbortController()
       toolLoopControllers.set(threadId, callController)
+      toolLoopTurns.set(callController, message.id)
       const signal = callController.signal
       const stopController = new AbortController()
       toolStopControllers.set(threadId, stopController)
@@ -943,7 +947,11 @@ function ThreadDetail() {
   // drops the approval prompts, and settles whatever tool call never got to
   // finish so its card stops saying "Running" (and stays settled on reload).
   const handleStop = useCallback(() => {
-    toolLoopControllers.get(threadId)?.abort()
+    const loop = toolLoopControllers.get(threadId)
+    // The turn whose loop this aborts; with no loop (the reply is still
+    // streaming) it is the last message.
+    const turnId = loop ? toolLoopTurns.get(loop) : undefined
+    loop?.abort()
     toolStopControllers.get(threadId)?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
@@ -955,16 +963,17 @@ function ThreadDetail() {
     const live =
       useChatSessions.getState().sessions[threadId]?.chat.messages ??
       chatMessagesRef.current
-    const last = live[live.length - 1]
-    const settled = settleStoppedToolCalls(live)
-    if (settled === live || !last) return
-    setChatMessages((prev) => settleStoppedToolCalls(prev))
+    const settled = settleStoppedToolCalls(live, turnId)
+    if (settled === live) return
+    setChatMessages((prev) => settleStoppedToolCalls(prev, turnId))
     // A turn that was still streaming is persisted by onFinish; one that is
     // already stored (its tools were running) has to be rewritten here. It was
     // stored before any tool ran, so the output of a call that did finish is
     // only in the rendered message, and the follow-up reply that would have
     // persisted it never happens.
-    rewriteStoredTurn(threadId, settled[settled.length - 1], true)
+    const stoppedId = turnId ?? live[live.length - 1].id
+    const stoppedTurn = settled.find((m) => m.id === stoppedId)
+    if (stoppedTurn) rewriteStoredTurn(threadId, stoppedTurn, true)
   }, [threadId, stop, setChatMessages])
 
   // Global disabled-tools set; re-run the effect below when it changes.

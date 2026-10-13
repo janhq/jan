@@ -1539,6 +1539,66 @@ describe('ThreadDetail route', () => {
         expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
       })
 
+      // The composer still sends while tools run, so the last message can be a
+      // newer turn. Stop ends the older turn's loop, and that is the turn whose
+      // call must be settled.
+      it('Stop settles the turn whose loop it aborts, not just the last message', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>(() => {})
+        )
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'input-available',
+                    },
+                  ],
+                },
+                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
+                {
+                  id: 'a-newer',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+
+        try {
+          renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('Stopped'),
+        })
+      })
+
       // The rendered messages are throttled; the SDK's chat state is current.
       // A result that landed inside the throttle window must not be saved as a
       // stopped call while the live copy holds it.
