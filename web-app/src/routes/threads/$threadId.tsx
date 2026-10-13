@@ -344,6 +344,12 @@ function ThreadDetail() {
       const message = isAbort
         ? settleStoppedToolCalls([finishedMessage])[0]
         : finishedMessage
+      // The live copy too, for every aborted turn: one stopped before its tool
+      // call had any input has nothing meaningful to persist below, but its
+      // card still reads "Running".
+      if (isAbort) {
+        setChatMessagesRef.current?.((prev) => settleStoppedToolCalls(prev))
+      }
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
       // Consume once per generation so a skipped persist (error/empty) can't
@@ -426,9 +432,6 @@ function ThreadDetail() {
             : {}),
         }
 
-        if (isAbort) {
-          setChatMessagesRef.current?.((prev) => settleStoppedToolCalls(prev))
-        }
         if (isStoppedTurn) {
           setChatMessagesRef.current?.((prev) =>
             prev.map((m) =>

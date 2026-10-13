@@ -975,6 +975,39 @@ describe('ThreadDetail route', () => {
       })
       expect(useMessageErrors.getState().errors['a-empty']).toBeUndefined()
     })
+
+    // Stopped right after the tool call started, before any input arrived: the
+    // turn has nothing worth persisting, but its live card must not stay
+    // "Running".
+    it('settles a live tool call stopped before it had any input', () => {
+      renderComponent()
+      h.mockSetChatMessages.mockClear()
+      act(() => {
+        ;(h as any).capturedOnFinish({
+          message: {
+            id: 'a-early',
+            role: 'assistant',
+            parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
+            metadata: {},
+          },
+          isAbort: true,
+          isError: false,
+        })
+      })
+      const updater = h.mockSetChatMessages.mock.calls
+        .map((c: any[]) => c[0])
+        .find((a: unknown) => typeof a === 'function')
+      const live = [
+        {
+          id: 'a-early',
+          role: 'assistant',
+          parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
+        },
+      ]
+      expect(updater(live)[0].parts[0]).toMatchObject({
+        state: 'output-error',
+      })
+    })
   })
 
   describe('context overflow banner (#9228)', () => {
