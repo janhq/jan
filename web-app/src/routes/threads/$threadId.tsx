@@ -138,6 +138,10 @@ const toolLoopControllers = new Map<string, AbortController>()
 // controller, so a Stop settles that turn even when the user has sent another
 // one since or left and came back.
 const toolLoopTurns = new WeakMap<AbortController, string>()
+// Which tool loop of a thread is the latest. A loop that was replaced (an edit or
+// a regenerate started a newer turn) must not, as it winds down, settle the
+// runtime, drop the approvals or clear the busy flag the newer loop now owns.
+const toolLoopGeneration = new Map<string, number>()
 
 // Approval promises started in onToolCall (so the popup appears immediately) and
 // awaited by the onFinish execution loop, keyed by thread and then toolCallId.
@@ -624,7 +628,11 @@ function ThreadDetail() {
       const signal = callController.signal
       const stopController = new AbortController()
       const stopSignal = stopController.signal
+      const generation = hasTools
+        ? (toolLoopGeneration.get(threadId) ?? 0) + 1
+        : -1
       if (hasTools) {
+        toolLoopGeneration.set(threadId, generation)
         toolLoopControllers.set(threadId, callController)
         toolStopControllers.set(threadId, stopController)
         toolLoopTurns.set(stopController, message.id)
@@ -813,7 +821,7 @@ function ThreadDetail() {
             .sessions[threadId]?.chat.messages.find((m) => m.id === message.id)
           if (turn?.role === 'assistant') rewriteStoredTurn(threadId, turn, false)
         }
-        if (!hasTools) return
+        if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
         sessionData.tools = []
@@ -829,7 +837,7 @@ function ThreadDetail() {
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
-        if (!hasTools) return
+        if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
         sessionData.tools = []
@@ -990,6 +998,14 @@ function ThreadDetail() {
     const stoppedTurn = settled.find((m) => m.id === stoppedId)
     if (stoppedTurn) rewriteStoredTurn(threadId, stoppedTurn, true)
   }, [threadId, stop, setChatMessages])
+
+  // A new reply (regenerate, edit) replaces the turn it answers, so a tool call
+  // that turn still has running is abandoned: ended like a Stop, before the new
+  // turn can register its own loop over it.
+  const endRunningTools = useCallback(() => {
+    const running = toolStopControllers.get(threadId)
+    if (running && !running.signal.aborted) handleStop()
+  }, [threadId, handleStop])
 
   // Global disabled-tools set; re-run the effect below when it changes.
   const disabledTools = useToolAvailable((state) => state.disabledTools)
@@ -1706,10 +1722,12 @@ function ThreadDetail() {
       ensureBranched()
       pendingAssistantParentId.current = resolveAssistantParent(messageId)
 
+      endRunningTools()
       regenerate(messageId ? { messageId } : undefined)
     },
     [
       regenerate,
+      endRunningTools,
       stripBannerMetadata,
       contextLimitError,
       ensureBranched,
@@ -1764,6 +1782,7 @@ function ThreadDetail() {
       if (target.role === 'user') {
         pendingAssistantParentId.current = newId
         syncActivePath()
+        endRunningTools()
         regenerate({ messageId: newId })
       } else {
         syncActivePath()
@@ -1775,6 +1794,7 @@ function ThreadDetail() {
       setActiveBranch,
       syncActivePath,
       regenerate,
+      endRunningTools,
     ]
   )
 

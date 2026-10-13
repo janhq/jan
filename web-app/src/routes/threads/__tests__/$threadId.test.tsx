@@ -1322,6 +1322,42 @@ describe('ThreadDetail route', () => {
         expect(h.mockAddToolOutput).not.toHaveBeenCalled()
       })
 
+      // Edit and regenerate stay available while tools run (the status is
+      // `ready`). The new reply replaces the turn it answers, so the call that
+      // turn still has running must be ended first, or the new turn's loop would
+      // take over the controllers and Stop could no longer reach it.
+      it.each([
+        ['editing a message', 'edit-u1'],
+        ['regenerating a reply', 'regen-a-tc'],
+      ])('%s ends the tool call the replaced turn still has running', async (_name, button) => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          { id: 'a-tc', role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
+        ]
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        await act(async () => {
+          screen.getByTestId(button).click()
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(h.mockRegenerate).toHaveBeenCalled()
+      })
+
       // A reply with no tool calls has no loop. If it registered one anyway it
       // would take the controllers of an earlier turn whose call is still
       // running, and its empty loop would delete them: Stop could no longer end
