@@ -515,7 +515,13 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
       const toolName = (part.type as string).replace('tool-', '')
       const toolCallId = part.toolCallId || part.toolInvocationId
       const input = part.input || part.args
-      const output = part.output || part.result
+      // A call that failed or was stopped has no output, only `errorText`. Store
+      // that as the output: without it the call reloads with neither result nor
+      // error and its card reads "Running" forever.
+      const output =
+        part.output ||
+        part.result ||
+        (part.state === 'output-error' ? part.errorText : undefined)
 
       const toolCallContent = {
         type: 'tool_call' as ContentType.ToolCall,
