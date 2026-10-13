@@ -681,8 +681,10 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
-      // When the model is still streaming, queue the message for later
-      if (isStreaming && queueId) {
+      // While the model is still streaming, or the turn's tools are still
+      // running, queue the message for later. The queue waits for the tools, so
+      // a second turn never starts under a tool loop that Stop still has to end.
+      if ((isStreaming || toolsRunning) && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,

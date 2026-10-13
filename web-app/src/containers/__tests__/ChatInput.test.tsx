@@ -495,6 +495,22 @@ describe('ChatInput', () => {
     expect(setPromptMock).toHaveBeenCalledWith('')
   })
 
+  // Tools running means the stream is over (`ready`), but the turn is not: a new
+  // message must wait for it like one sent mid-stream.
+  it('queues the message while the turn\'s tools are still running', async () => {
+    promptState = 'queued msg'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
   it('shows "please select a model" inline message when no model selected', () => {
     // With no selected model, Enter should set the inline error message
     selectedModelOverride = null
