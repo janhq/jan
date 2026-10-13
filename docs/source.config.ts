@@ -1,7 +1,5 @@
 import { defineConfig, defineDocs } from 'fumadocs-mdx/config'
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
 import { visit } from 'unist-util-visit'
 import { z } from 'zod'
 
@@ -68,7 +66,6 @@ export default defineConfig({
     rehypeCodeOptions: {
       themes: { light: 'dark-plus', dark: 'dark-plus' },
     },
-    remarkPlugins: (v) => [remarkMath, remarkMermaid, ...v, remarkTabsNoToc],
-    rehypePlugins: (v) => [rehypeKatex, ...v],
+    remarkPlugins: (v) => [remarkMermaid, ...v, remarkTabsNoToc],
   },
 })

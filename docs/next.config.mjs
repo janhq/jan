@@ -14,6 +14,8 @@ const config = {
     GTM_ID: process.env.GTM_ID,
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
+    // Footer copyright year, inlined at build time (no hydration mismatch).
+    BUILD_YEAR: String(new Date().getFullYear()),
   },
 }
 

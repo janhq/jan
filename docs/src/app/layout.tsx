@@ -1,13 +1,10 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import type { ReactNode } from 'react'
 import { Provider } from '@/components/provider'
 import { Navbar } from '@/components/navbar'
 import { Footer } from '@/components/footer'
 import { defaultDescription, defaultOgImage, siteName, siteUrl } from '@/lib/shared'
 import './global.css'
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter-loaded' })
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -35,7 +32,7 @@ const structuredData = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           type="application/ld+json"

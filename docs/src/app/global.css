@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
-@import 'katex/dist/katex.min.css';
 
 @source '../../node_modules/fumadocs-ui/dist/**/*.js';
 
@@ -55,9 +54,6 @@
     'Oxygen-Sans', Ubuntu, Cantarell, Helvetica, sans-serif;
   /* `font-serif` resolved to Studio Feixen Sans on the old site too. */
   --font-serif: var(--font-sans);
-  --font-inter:
-    var(--font-inter-loaded), -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    Roboto, Helvetica, sans-serif;
 
   /* Jan palette: white page, near-black text, Jan blue accents. */
   --color-fd-background: #ffffff;

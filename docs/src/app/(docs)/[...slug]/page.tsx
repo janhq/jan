@@ -10,7 +10,7 @@ import { NextraToc, NextraTocMeta } from '@/components/nextra-toc'
 import { NavLinks } from '@/components/nav-links'
 import { Breadcrumb } from '@/components/breadcrumb'
 import { source } from '@/lib/source'
-import { defaultOgImage, editUrl, pageMarkdownUrl } from '@/lib/shared'
+import { defaultOgImage, editUrl, pageMarkdownUrl, siteName } from '@/lib/shared'
 
 type Props = { params: Promise<{ slug: string[] }> }
 
@@ -95,6 +95,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     keywords,
     robots: noindex ? { index: false, follow: false } : undefined,
     alternates: { canonical: page.url },
-    openGraph: { title, description, url: page.url, images: [image] },
+    // Page-level openGraph replaces the root one, so repeat site-wide fields.
+    openGraph: { type: 'article', siteName, title, description, url: page.url, images: [image] },
   }
 }

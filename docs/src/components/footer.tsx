@@ -8,6 +8,9 @@ type FooterLink = { name: string; href: string; external?: boolean }
 type FooterMenu = { title: string; links: FooterLink[] }
 
 // Same columns as the old FooterMenu; marketing links now point to jan.ai.
+// Evaluated when the static site is built.
+const BUILD_YEAR = process.env.BUILD_YEAR
+
 const FOOTER_MENUS: FooterMenu[] = [
   {
     title: 'Product',
@@ -112,7 +115,9 @@ export function Footer() {
               Menlo Research
             </a>
           </p>
-          <p>© {new Date().getFullYear()} All rights reserved</p>
+          {/* Year is fixed at build time; the client renders the same value,
+              so hydration matches even when the build is older than today. */}
+          <p>© {BUILD_YEAR} All rights reserved</p>
         </div>
       </div>
     </footer>
