@@ -102,7 +102,7 @@ repository checkout, Jan Desktop or Rust compiler required.</p>
 Pass the returned <code>bin</code> to <code>JanRuntime.start</code>.
 An existing compatible binary can also be passed explicitly.</p>
 <p><a href="{base_url}/manifest.json">Versioned manifest and SHA-256 digests</a> |
-<a href="https://jan.ai/docs/agent/adk">ADK guides</a></p>
+<a href="https://docs.jan.ai/agent/adk">ADK guides</a></p>
 <p>Supported: Linux x64/ARM64, macOS Intel/Apple Silicon, Windows x64.
 Windows ARM64 is not declared supported by this nightly smoke matrix.</p>
 <p>Save this versioned page for repeatable installation. Versioned artifacts are not

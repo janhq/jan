@@ -374,7 +374,7 @@ function General() {
                   description={t('settings:general.janCliDesc')}
                   actions={
                     <a
-                      href="https://www.jan.ai/docs/agent/quickstart"
+                      href="https://docs.jan.ai/agent/quickstart"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -507,7 +507,7 @@ function General() {
                 description={t('settings:general.documentationDesc')}
                 actions={
                   <a
-                    href="https://jan.ai/docs"
+                    href="https://docs.jan.ai"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

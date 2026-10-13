@@ -23,7 +23,7 @@ npm install "$(node -e "fetch('https://delta.jan.ai/adk-nightly/manifest.json').
 The URL is versioned, so `package.json` pins that exact build. That build's
 manifest also pins its matching runtime:
 `installRuntime({ manifestUrl: manifest.runtime.manifestUrl, version: manifest.runtime.version })`.
-See [nightly installation](https://jan.ai/docs/agent/adk-nightly) for PowerShell
+See [nightly installation](https://docs.jan.ai/agent/adk-nightly) for PowerShell
 and the source-install fallback.
 
 The runtime binary is separate, and there are three ways to have one: on `PATH`,
@@ -64,7 +64,7 @@ const found = await findRuntime({ version: '0.8.4-50' })       // reads the cach
 ```
 
 The nightly channel also publishes a shell installer, which is what the
-[jan.ai ADK pages](https://jan.ai/docs/agent/adk) use:
+[Jan ADK docs](https://docs.jan.ai/agent/adk) use:
 
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash

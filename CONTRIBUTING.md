@@ -263,7 +263,7 @@ The `-S` flag signs the commit; `commit.gpgsign true` (above) makes it the defau
 
 If things go sideways:
 
-1. **Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)**
+1. **Check our [troubleshooting docs](https://docs.jan.ai/desktop/troubleshooting)**
 2. **Clear everything and start fresh:** `make clean` then `make dev`
 3. **Copy your error logs and system specs**
 4. **Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH)** `#🆘|jan-help` channel
@@ -275,7 +275,7 @@ Common issues:
 
 ## Getting Help
 
-- [Documentation](https://jan.ai/docs) - The manual you should read
+- [Documentation](https://docs.jan.ai) - The manual you should read
 - [Discord Community](https://discord.gg/FTk2MvZwJH) - Where the community lives
 - [GitHub Issues](https://github.com/janhq/jan/issues) - Report bugs here
 - [GitHub Discussions](https://github.com/janhq/jan/discussions) - Ask questions

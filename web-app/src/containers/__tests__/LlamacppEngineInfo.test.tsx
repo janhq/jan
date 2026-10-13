@@ -64,7 +64,7 @@ describe('LlamacppEngineInfo', () => {
       screen.getByRole('link', { name: /engineOtherVersionLink/ })
     ).toHaveAttribute(
       'href',
-      'https://jan.ai/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
+      'https://docs.jan.ai/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
     )
   })
 

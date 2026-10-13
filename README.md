@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/desktop">Getting Started</a>
+  <a href="https://docs.jan.ai/desktop">Getting Started</a>
   - <a href="https://discord.gg/Exe46xPMbK">Community</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
   - <a href="https://github.com/janhq/jan/issues">Bug reports</a>
@@ -160,13 +160,13 @@ make dev JAN_ENGINE_VARIANT=cuda13
 - **Windows**: 10+ with GPU support for NVIDIA/AMD/Intel Arc
 - **Linux**: Most distributions work, GPU acceleration available
 
-For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/mac).
+For detailed compatibility, check our [installation guides](https://docs.jan.ai/desktop/install/mac).
 
 ## Troubleshooting
 
 If things go sideways:
 
-1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
+1. Check our [troubleshooting docs](https://docs.jan.ai/desktop/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
@@ -179,7 +179,7 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel
 
 ## Links
 
-- [Documentation](https://jan.ai/docs) - The manual you should read
+- [Documentation](https://docs.jan.ai) - The manual you should read
 - [API Reference](https://jan.ai/api-reference) - For the technically inclined
 - [Changelog](https://jan.ai/changelog) - What we broke and fixed
 - [Discord](https://discord.gg/FTk2MvZwJH) - Where the community lives
