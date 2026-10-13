@@ -39,11 +39,13 @@ function parse(file) {
 
 const norm = (p) => (p.length > 1 ? p.replace(/\/+$/, '') : p)
 
-// Cloudflare: first matching rule wins; static sources match literally
-// (`/x` and `/x/` are different), splats match any path under the base.
+// Cloudflare: static rules are applied before dynamic ones; within each group
+// the first match wins. Static sources match literally (`/x` and `/x/` are
+// different); splats match any path under the base.
 function match(rules, p) {
   const n = norm(p)
-  for (const r of rules) {
+  const ordered = [...rules.filter((r) => !r.from.includes('*')), ...rules.filter((r) => r.from.includes('*'))]
+  for (const r of ordered) {
     if (r.from.endsWith('/*')) {
       const base = r.from.slice(0, -2)
       if (n === base || n.startsWith(`${base}/`)) {
@@ -82,16 +84,21 @@ function follow(start) {
   return { host, path: p, hops }
 }
 
+const failures = []
+
 const starts = new Set(
   fs.readFileSync(path.join(ROOT, 'redirects/old-docs-urls.txt'), 'utf8').split('\n').filter(Boolean)
 )
-// Every legacy source that used to land in /docs.
+// Every legacy source that used to land in /docs. A splat that kept the path
+// (/guides/* -> /docs/:splat) is tested with a real page under it, since an
+// unknown path correctly ends on the docs.jan.ai 404 page, as it did before.
+const SAMPLE_PAGE = 'desktop/quickstart'
 for (const r of parse('redirects/legacy-jan.ai.txt')) {
   if (!r.to.startsWith('/docs')) continue
-  starts.add(r.from.endsWith('/*') ? `${r.from.slice(0, -2)}/some-old-page` : r.from)
+  if (!r.from.endsWith('/*')) starts.add(r.from)
+  else starts.add(`${r.from.slice(0, -2)}/${r.to.includes(':splat') ? SAMPLE_PAGE : 'some-old-page'}`)
 }
 
-const failures = []
 let checked = 0
 for (const s of starts) {
   for (const variant of new Set([norm(s), `${norm(s)}/`])) {
@@ -103,6 +110,40 @@ for (const s of starts) {
     else if (r.host === 'jan.ai' && r.hops.length === 0 && s.startsWith('/docs'))
       failures.push(`not redirected: ${variant}`)
   }
+}
+
+// The hand-off sits above jan.ai's own rules, so it must not change where a
+// non-docs legacy rule lands (e.g. /guides/changelog/* -> /changelog/*).
+const legacy = parse('redirects/legacy-jan.ai.txt')
+for (const r of legacy) {
+  if (r.to.startsWith('/docs')) continue
+  const sample = r.from.endsWith('/*') ? `${r.from.slice(0, -2)}/some-old-page` : r.from
+  const expected = r.from.endsWith('/*') ? r.to.replace(':splat', 'some-old-page') : r.to
+  const got = match(janRules, sample)
+  if (!got) continue // not handled by the hand-off: jan.ai's own rule applies
+  const gotUrl = new URL(got, 'https://jan.ai')
+  if (gotUrl.hostname !== 'jan.ai' || norm(gotUrl.pathname) !== norm(expected)) {
+    failures.push(`hand-off overrides jan.ai rule: ${sample} should go to ${expected}, goes to ${got}`)
+  }
+}
+
+// Cloudflare Pages limits and hygiene for both files.
+const VALID_STATUS = new Set([301, 302, 303, 307, 308])
+for (const [name, rules] of [['jan.ai.txt', janRules], ['_redirects', docsRules]]) {
+  const dynamic = rules.filter((r) => r.from.includes('*') || r.from.includes(':'))
+  if (rules.length - dynamic.length > 2000) failures.push(`${name}: more than 2000 static rules`)
+  if (dynamic.length > 100) failures.push(`${name}: more than 100 dynamic rules`)
+  const seen = new Set()
+  for (const r of rules) {
+    if (!VALID_STATUS.has(r.status)) failures.push(`${name}: bad status ${r.status} for ${r.from}`)
+    if (`${r.from} ${r.to} ${r.status}`.length > 1000) failures.push(`${name}: line too long for ${r.from}`)
+    if (seen.has(r.from)) failures.push(`${name}: duplicate source ${r.from}`)
+    seen.add(r.from)
+  }
+}
+// docs.jan.ai rules must not hide a live page.
+for (const r of docsRules) {
+  if (!r.from.includes('*') && exists(r.from)) failures.push(`_redirects: ${r.from} shadows a live page`)
 }
 
 // Every docs.jan.ai rule must also land on a page.

@@ -48,6 +48,8 @@
 /cortex/rag/overview/                                    https://docs.jan.ai/ 301
 /cortex/server                                           https://docs.jan.ai/ 301
 /cortex/server/                                          https://docs.jan.ai/ 301
+/cortex/vision                                           https://jan.ai/handbook/why/why-jan-exists 301
+/cortex/vision/                                          https://jan.ai/handbook/why/why-jan-exists 301
 /desktop                                                 https://docs.jan.ai/desktop 301
 /desktop/                                                https://docs.jan.ai/desktop 301
 /developer                                               https://docs.jan.ai/ 301
@@ -366,6 +368,10 @@
 /docs/models/manage-models/                              https://docs.jan.ai/desktop/manage-models 301
 /docs/models/model-parameters                            https://docs.jan.ai/desktop/model-parameters 301
 /docs/models/model-parameters/                           https://docs.jan.ai/desktop/model-parameters 301
+/docs/privacy                                            https://jan.ai/privacy 301
+/docs/privacy/                                           https://jan.ai/privacy 301
+/docs/privacy-policy                                     https://jan.ai/privacy 301
+/docs/privacy-policy/                                    https://jan.ai/privacy 301
 /docs/quickstart                                         https://docs.jan.ai/ 301
 /docs/quickstart/                                        https://docs.jan.ai/ 301
 /docs/remote-inference/groq                              https://docs.jan.ai/desktop/remote-models/groq 301
@@ -420,6 +426,8 @@
 /docs/shortcuts/                                         https://docs.jan.ai/ 301
 /docs/system-requirements                                https://docs.jan.ai/desktop 301
 /docs/system-requirements/                               https://docs.jan.ai/desktop 301
+/docs/threads                                            https://jan.ai/changelog/2024-01-16-settings-options-right-panel 301
+/docs/threads/                                           https://jan.ai/changelog/2024-01-16-settings-options-right-panel 301
 /docs/tools/retrieval                                    https://docs.jan.ai/ 301
 /docs/tools/retrieval/                                   https://docs.jan.ai/ 301
 /docs/troubleshooting                                    https://docs.jan.ai/desktop/troubleshooting 301
@@ -434,6 +442,8 @@
 /getting-started/install/linux/                          https://docs.jan.ai/desktop/install/linux 301
 /guides                                                  https://docs.jan.ai/ 301
 /guides/                                                 https://docs.jan.ai/ 301
+/guides/changelog                                        https://jan.ai/changelog 301
+/guides/changelog/                                       https://jan.ai/changelog 301
 /guides/server                                           https://docs.jan.ai/desktop/api-server 301
 /guides/server/                                          https://docs.jan.ai/desktop/api-server 301
 /home-server                                             https://docs.jan.ai/ 301
@@ -491,15 +501,16 @@
 /windows                                                 https://docs.jan.ai/desktop/install/windows 301
 /windows/                                                https://docs.jan.ai/desktop/install/windows 301
 
+/docs/desktop/mcp-examples/*                             https://docs.jan.ai/desktop/mcp 301
+/docs/desktop/server-examples/*                          https://docs.jan.ai/desktop 301
+/docs/server-installation/*                              https://docs.jan.ai/ 301
+/docs/server/*                                           https://docs.jan.ai/ 301
+/guides/changelog/*                                      https://jan.ai/changelog/:splat 301
 /install/*                                               https://docs.jan.ai/desktop 301
 /cortex/*                                                https://docs.jan.ai/ 301
 /api-reference/*                                         https://docs.jan.ai/ 301
 /developer/*                                             https://docs.jan.ai/ 301
 /server/*                                                https://docs.jan.ai/ 301
 /hardware/*                                              https://docs.jan.ai/desktop 301
-/docs/desktop/mcp-examples/*                             https://docs.jan.ai/desktop/mcp 301
-/docs/desktop/server-examples/*                          https://docs.jan.ai/desktop 301
-/docs/server-installation/*                              https://docs.jan.ai/ 301
-/docs/server/*                                           https://docs.jan.ai/ 301
-/guides/*                                                https://docs.jan.ai/ 301
+/guides/*                                                https://docs.jan.ai/:splat 301
 /docs/*                                                  https://docs.jan.ai/:splat 301

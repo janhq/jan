@@ -59,6 +59,9 @@ for (const r of legacy) {
 
 const warnings = []
 
+/** True when splat source `outer` (`/a/*`) also matches everything `inner` (`/a/b/*`) does. */
+const covers = (outer, inner) => inner.startsWith(outer.slice(0, -1))
+
 /** Follow legacy rules from a jan.ai path to where it finally lands on jan.ai. */
 function resolveOnJanAi(p) {
   const seen = new Set()
@@ -109,6 +112,14 @@ for (const [from] of staticMap) {
   const to = toDocsPath(from, from)
   if (to) janRules.set(from, `${DOCS_ORIGIN}${to === '/' ? '/' : to}`)
 }
+// 1b. Legacy /docs/* rules that leave the docs for a jan.ai page
+// (/docs/privacy -> /privacy, /docs/threads -> /changelog/...). Without an
+// explicit rule the /docs/* catch-all below would send them to docs.jan.ai.
+for (const [from] of staticMap) {
+  if (!from.startsWith('/docs/') || janRules.has(from)) continue
+  const landed = resolveOnJanAi(from)
+  if (landed !== '/docs' && !landed.startsWith('/docs/')) janRules.set(from, `https://jan.ai${landed}`)
+}
 // 2. Every live docs page at its old address.
 for (const p of pages) {
   janRules.set(p === '/' ? '/docs' : `/docs${p}`, `${DOCS_ORIGIN}${p === '/' ? '/' : p}`)
@@ -116,13 +127,32 @@ for (const p of pages) {
 const janSplats = []
 for (const s of splats) {
   if (s.to.includes(':splat')) {
-    // e.g. /guides/* -> /docs/:splat. The old paths under it don't exist on
-    // docs.jan.ai, so send them to the docs home instead of a 404.
-    if (s.to.startsWith('/docs')) janSplats.push([s.from, `${DOCS_ORIGIN}/`])
+    if (s.to.startsWith('/docs')) {
+      // e.g. /guides/* -> /docs/:splat: keep the path on docs.jan.ai (a live
+      // page, a docs.jan.ai rename, or its 404), as the old rule did.
+      janSplats.push([s.from, `${DOCS_ORIGIN}${s.to.slice('/docs'.length)}`])
+    } else if (splats.some((o) => o !== s && o.to.startsWith('/docs') && covers(o.from, s.from))) {
+      // A non-docs splat nested under a docs splat (/guides/changelog/* under
+      // /guides/*): the hand-off is placed above jan.ai's own rules, so repeat
+      // it here, absolute, or the broader docs splat would swallow it.
+      janSplats.push([s.from, `https://jan.ai${s.to}`])
+    }
     continue
   }
   const to = toDocsPath(s.to, s.from)
   if (to) janSplats.push([s.from, `${DOCS_ORIGIN}${to === '/' ? '/' : to}`])
+}
+// More specific splats first: Cloudflare applies the first matching rule.
+janSplats.sort(([a], [b]) => b.split('/').length - a.split('/').length)
+// A legacy jan.ai rule that stays on jan.ai (/cortex/vision -> /handbook/...)
+// but falls under a hand-off splat (/cortex/* -> docs.jan.ai) is repeated in
+// the hand-off as an absolute rule, so the hand-off never changes where it
+// lands, whatever order jan.ai merges the files in.
+for (const [from] of staticMap) {
+  if (janRules.has(from)) continue
+  const landed = resolveOnJanAi(from)
+  if (landed === '/docs' || landed.startsWith('/docs/')) continue
+  if (janSplats.some(([splat]) => covers(splat, `${from}/`))) janRules.set(from, `https://jan.ai${landed}`)
 }
 // 3. Catch-all last: anything else under /docs keeps its path.
 janSplats.push(['/docs/*', `${DOCS_ORIGIN}/:splat`])

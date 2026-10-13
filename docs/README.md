@@ -61,4 +61,6 @@ When you rename or delete a page, add `/docs/<old> /docs/<new> 301` to
 
 `scripts/migrate-content.mjs` converted the Nextra 2 site (`src/pages/docs`,
 see git history before the Fumadocs move) into `content/`. It is kept for
-reference; content is now edited directly.
+reference; content is now edited directly. It refuses to run while `content/`
+exists, because regenerating would discard every edit made since; `--force`
+overrides that.

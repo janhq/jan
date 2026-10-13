@@ -3,7 +3,7 @@
  * One-shot migration of the Nextra 2 docs (src/pages/docs) to Fumadocs
  * (content/). Re-runnable: it rebuilds content/ from the given source dir.
  *
- *   node scripts/migrate-content.mjs <old-pages-docs-dir>
+ *   node scripts/migrate-content.mjs <old-pages-docs-dir> [--force]
  *
  * Get the old tree with:
  *   git archive <rev> docs/src/pages/docs | tar -x -C /tmp/old
@@ -77,6 +77,15 @@ const LINK_FIXES = [
 
 let stats = { pages: 0, assets: 0, metas: 0, links: 0, titles: 0 }
 
+// One-shot tool: content/ is edited by hand after the migration, so never
+// overwrite it unless explicitly asked to.
+if (fs.existsSync(OUT) && fs.readdirSync(OUT).length > 0 && !process.argv.includes('--force')) {
+  console.error(
+    `${OUT} already exists and is edited by hand since the migration.\n` +
+      'Re-running would replace every edit. Pass --force only to regenerate it from scratch.'
+  )
+  process.exit(1)
+}
 fs.rmSync(OUT, { recursive: true, force: true })
 fs.mkdirSync(OUT, { recursive: true })
 
