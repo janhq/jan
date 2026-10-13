@@ -52,8 +52,9 @@ export function Footer() {
     )
 
   return (
-    <footer className="w-full border-t border-black/5 bg-white py-12">
-      <div className="jan-container">
+    <footer className="w-full border-t border-black/5 bg-white py-12 text-[#4b5563]">
+      {/* Old Nextra footer: 90rem container with 1.5rem + 1.5rem padding. */}
+      <div className="jan-container jan-footer-inner">
         <div className="grid grid-cols-1 lg:grid-cols-6 lg:gap-8">
           {FOOTER_MENUS.map((menu, index) => {
             const isOpen = openSections.includes(menu.title)
@@ -82,7 +83,7 @@ export function Footer() {
                     <li key={link.name}>
                       <a
                         href={link.href}
-                        className="text-base text-gray-600 hover:text-gray-900"
+                        className="text-base hover:text-gray-900"
                         target={link.external ? '_blank' : undefined}
                         rel={link.external ? 'noopener noreferrer' : undefined}
                       >
@@ -99,7 +100,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-black/5 pt-6 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-12 flex flex-col gap-2 border-t border-black/5 pt-6 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p>
             Built with ♡ by{' '}
             <a

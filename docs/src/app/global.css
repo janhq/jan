@@ -403,27 +403,6 @@ figure.shiki .line {
   display: none;
 }
 
-/* "On This Page" */
-#nd-toc #toc-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #000;
-}
-#nd-toc #toc-title svg {
-  display: none;
-}
-#nd-toc a {
-  font-size: 0.875rem;
-  line-height: 1.3125rem;
-  color: #6b7280;
-}
-#nd-toc a[data-active='true'] {
-  color: #006be6;
-  font-weight: 600;
-}
-#nd-toc a:hover {
-  color: #111827;
-}
 
 /* Page top spacing as on the old site: breadcrumb ~22px under the navbar. */
 @media (min-width: 768px) {
@@ -437,12 +416,6 @@ figure.shiki .line {
 /* TOC entries are plain text, like Nextra (no inline-code chips). */
 #nd-toc code {
   all: unset;
-}
-#nd-toc #toc-title {
-  margin-top: 0.75rem;
-}
-#nd-toc {
-  padding-top: 1.5rem;
 }
 
 /* Table wrapper: no background band beside narrow tables (old site had none). */
@@ -495,4 +468,13 @@ figure.shiki .line {
 #nd-page .prose blockquote p::before,
 #nd-page .prose blockquote p::after {
   content: none;
+}
+
+/* Footer content inset as on the old site (Nextra footer: container padding +
+   an inner 1.5rem). */
+@media (min-width: 1024px) {
+  .jan-footer-inner {
+    padding-left: max(env(safe-area-inset-left), 3rem);
+    padding-right: max(env(safe-area-inset-right), 3rem);
+  }
 }

@@ -1,11 +1,13 @@
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { DocsBody, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page'
+import { TOCPopover, TOCProvider } from 'fumadocs-ui/layouts/docs/page/slots/toc'
 import { baseOptions } from '@/lib/layout.shared'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getMDXComponents } from '@/components/mdx'
-import { TocFooter } from '@/components/toc-footer'
+import { NextraToc, NextraTocMeta } from '@/components/nextra-toc'
+import { NavLinks } from '@/components/nav-links'
 import { Breadcrumb } from '@/components/breadcrumb'
 import { source } from '@/lib/source'
 import { defaultOgImage, editUrl, pageMarkdownUrl } from '@/lib/shared'
@@ -20,13 +22,11 @@ export default async function Page(props: Props) {
   const MDX = page.data.body
   const tocExclude = new Set(page.data.tocExclude ?? [])
   const toc = page.data.toc.filter((item) => !tocExclude.has(item.url))
-  const footer = (
-    <TocFooter
-      title={page.data.title}
-      editUrl={editUrl(page.path)}
-      markdownUrl={pageMarkdownUrl(page.slugs)}
-    />
-  )
+  const tocMeta = {
+    title: page.data.title,
+    editUrl: editUrl(page.path),
+    markdownUrl: pageMarkdownUrl(page.slugs),
+  }
 
   const body = <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
 
@@ -53,21 +53,25 @@ export default async function Page(props: Props) {
       tabMode="auto"
       sidebar={{ defaultOpenLevel: 0, collapsible: false }}
     >
+    <NextraTocMeta {...tocMeta}>
     <DocsPage
       toc={toc}
       full={page.data.full}
       breadcrumb={{ enabled: false }}
-      // One active heading at a time, like Nextra.
-      tableOfContent={{ footer, single: true }}
-      tableOfContentPopover={{ footer }}
-      footer={{ enabled: true }}
+      // "On This Page" is a port of Nextra's TOC (one active heading at a time).
+      tableOfContent={{ single: true }}
+      slots={{ toc: { provider: TOCProvider, main: NextraToc, popover: TOCPopover } }}
+      // Prev/next as on jan.ai/docs (title + arrow), not Fumadocs' cards.
+      footer={{ enabled: false }}
     >
       <Breadcrumb />
       <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
       <DocsBody>
         {body}
       </DocsBody>
+      <NavLinks />
     </DocsPage>
+    </NextraTocMeta>
     </DocsLayout>
   )
 }

@@ -46,6 +46,14 @@ const GLOBAL_IMPORT =
 
 // Links that were already broken on jan.ai/docs (found by lychee), and
 // marketing pages that now live on jan.ai.
+// Frontmatter that was malformed on jan.ai/docs.
+const FRONTMATTER_FIXES = {
+  'desktop/install/mac.mdx': [
+    'alternative to run offline.\n  [',
+    'alternative to run offline.\nkeywords:\n  [',
+  ],
+}
+
 const LINK_FIXES = [
   ['](/download)', '](https://jan.ai/download)'],
   ['](/changelog/', '](https://jan.ai/changelog/'],
@@ -110,6 +118,8 @@ function transformMdx(src, relPath) {
   })
 
   for (const [from, to] of LINK_FIXES) out = out.split(from).join(to)
+  const fmFix = FRONTMATTER_FIXES[relPath]
+  if (fmFix) out = out.replace(fmFix[0], fmFix[1])
 
   // Nextra showed the page's first `# H1` and used the frontmatter title only
   // for <title>/sidebar. Fumadocs renders the frontmatter title as the H1, so
@@ -137,7 +147,6 @@ function transformMdx(src, relPath) {
 
   // Collapse 3+ blank lines left behind by removed imports.
   out = out.replace(/\n{3,}/g, '\n\n')
-  void relPath
   return out
 }
 
