@@ -1574,6 +1574,9 @@ impl CompositeToolInvoker {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
+                // Rejected before any child started (an unknown agent, a tool
+                // the parent denies), the names go back for the retry.
+                let reserved = plan.names.clone();
                 match spawn_dispatch_plan(
                     &ctx.bg,
                     ctx.bg_generation,
@@ -1594,7 +1597,10 @@ impl CompositeToolInvoker {
                     self.subagent_scratch(),
                 ) {
                     Ok(d) => format_dispatched_plan(&d),
-                    Err(e) => format!("ERROR: {e}"),
+                    Err(e) => {
+                        ctx.bg.release_names(&reserved);
+                        format!("ERROR: {e}")
+                    }
                 }
             }
             "message_subagent" => {

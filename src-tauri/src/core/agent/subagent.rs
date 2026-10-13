@@ -1172,6 +1172,15 @@ impl BackgroundSubagents {
         Ok(plan)
     }
 
+    /// Hand back the names a dispatch reserved but never started, so a
+    /// corrected retry is named `explore` again rather than `explore-2`.
+    pub(crate) fn release_names(&self, names: &[String]) {
+        let mut reserved = self.reserved_names.lock().unwrap();
+        for name in names {
+            reserved.remove(name);
+        }
+    }
+
     /// Create a registry admitting at most `cap` concurrently-running children.
     /// Clamped to at least 1: a cap of 0 would make every dispatch queue
     /// forever with nothing ever releasing a permit.
@@ -2849,17 +2858,27 @@ pub fn constrain_tool_names(
     names.dedup();
     for tool in offered.iter_mut() {
         let name = tool["function"]["name"].as_str().unwrap_or_default();
-        let items = match name {
+        let properties = match name {
             "dispatch_subagent" => {
                 &mut tool["function"]["parameters"]["properties"]["subagents"]["items"]
-                    ["properties"]["allowed_tools"]["items"]
+                    ["properties"]
             }
-            "create_subagent" => {
-                &mut tool["function"]["parameters"]["properties"]["allowed_tools"]["items"]
-            }
+            "create_subagent" => &mut tool["function"]["parameters"]["properties"],
             _ => continue,
         };
-        if items.is_object() {
+        let Some(properties) = properties.as_object_mut() else {
+            continue;
+        };
+        // Nothing to hand a child (a host-only session that declared no host
+        // tools): an empty `enum` is invalid JSON Schema that some providers
+        // reject, failing every request, so the field is dropped -- a child
+        // then simply inherits the (empty) set.
+        if names.is_empty() {
+            properties.remove("allowed_tools");
+        } else if let Some(items) = properties
+            .get_mut("allowed_tools")
+            .and_then(|field| field.get_mut("items"))
+        {
             items["enum"] = serde_json::json!(names);
         }
     }
@@ -5785,6 +5804,17 @@ pub(crate) mod tests {
         assert_eq!(enum_of(&ceiling), serde_json::json!(["shell"]));
         constrain_tool_names(&mut denied, &perms_denying(&["find"]), false);
         assert_eq!(enum_of(&denied), serde_json::json!(["grep", "ls", "shell"]));
+
+        // Nothing delegable: no `allowed_tools` at all, never an empty enum.
+        let mut bare = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        constrain_tool_names(&mut bare, &ToolPermissions::allow_all(), true);
+        let item = &bare[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        assert!(item["properties"].get("allowed_tools").is_none(), "{item}");
+        let create = bare
+            .iter()
+            .find(|s| s["function"]["name"] == "create_subagent")
+            .unwrap();
+        assert!(create["function"]["parameters"]["properties"].get("allowed_tools").is_none());
     }
 
     /// A name is held from the moment a dispatch hands it out -- a later-phase
@@ -5820,7 +5850,16 @@ pub(crate) mod tests {
                 Some(&scratch),
             )
             .unwrap();
-        assert_eq!(names(second), ["general-2", "explore-3"]);
+        assert_eq!(names(second.clone()), ["general-2", "explore-3"]);
+        // A dispatch that failed to start gives its names back.
+        bg.release_names(&second.names);
+        let retry = bg
+            .plan_dispatch(
+                &serde_json::json!({ "subagents": [ { "agent": "general", "task": "c" } ] }),
+                Some(&scratch),
+            )
+            .unwrap();
+        assert_eq!(names(retry), ["general-2"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
