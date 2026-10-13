@@ -616,25 +616,33 @@ function ThreadDetail() {
       // auto-resubmit (sendAutomaticallyWhen) fires. Approval is requested
       // earlier in onToolCall (popup appears without waiting for this callback);
       // we await that already-started promise here rather than prompting again.
+      // A reply without tool calls has no loop. It must not register
+      // controllers, settle the runtime or clear the busy flag, or it would take
+      // them from an earlier turn whose call is still running.
+      const hasTools = sessionData.tools.length > 0
       const callController = new AbortController()
-      toolLoopControllers.set(threadId, callController)
       const signal = callController.signal
       const stopController = new AbortController()
-      toolStopControllers.set(threadId, stopController)
-      toolLoopTurns.set(stopController, message.id)
       const stopSignal = stopController.signal
+      if (hasTools) {
+        toolLoopControllers.set(threadId, callController)
+        toolStopControllers.set(threadId, stopController)
+        toolLoopTurns.set(stopController, message.id)
+      }
 
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
 
       // Keep the thread marked busy while awaiting approval and executing tools,
       // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
-      useAppState.getState().setThreadBusy(threadId, true)
+      if (hasTools) {
+        useAppState.getState().setThreadBusy(threadId, true)
 
-      // Tools run one at a time below, so the rest are genuinely queued.
-      useToolCallRuntime
-        .getState()
-        .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
+        // Tools run one at a time below, so the rest are genuinely queued.
+        useToolCallRuntime
+          .getState()
+          .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
+      }
 
       // The outcomes handed to the chat, so a loop that ends after the thread was
       // left can wait for them to land before it persists the turn.
@@ -805,6 +813,7 @@ function ThreadDetail() {
             .sessions[threadId]?.chat.messages.find((m) => m.id === message.id)
           if (turn?.role === 'assistant') rewriteStoredTurn(threadId, turn, false)
         }
+        if (!hasTools) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
         sessionData.tools = []
@@ -820,6 +829,7 @@ function ThreadDetail() {
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
+        if (!hasTools) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
         sessionData.tools = []

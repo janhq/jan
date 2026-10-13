@@ -148,8 +148,8 @@ type ChatInputProps = {
   /**
    * The turn's tools are still running or awaiting approval after the stream
    * ended (`chatStatus` is already `ready`). Stop must stay reachable then: a
-   * runaway command otherwise leaves a send arrow and no way to end it. Unlike
-   * `chatStatus`, it does not queue what the user types.
+   * runaway command otherwise leaves a send arrow and no way to end it. Like
+   * `chatStatus`, it queues what the user types until the turn ends.
    */
   toolsRunning?: boolean
   // Overrides the conversation scope this input belongs to — both its message

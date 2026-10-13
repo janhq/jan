@@ -1322,6 +1322,42 @@ describe('ThreadDetail route', () => {
         expect(h.mockAddToolOutput).not.toHaveBeenCalled()
       })
 
+      // A reply with no tool calls has no loop. If it registered one anyway it
+      // would take the controllers of an earlier turn whose call is still
+      // running, and its empty loop would delete them: Stop could no longer end
+      // that call.
+      it('a reply without tool calls leaves an earlier running call stoppable', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        const { rerender } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        // A newer reply with no tool calls finishes (a fresh render, so a fresh
+        // tool list).
+        rerender(<Component />)
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+        expect(cancel).toHaveBeenCalledTimes(1)
+      })
+
       // Leaving the thread ends the loop but is not a Stop: a call already
       // running keeps going and its result still lands in the retained session.
       it('leaving the thread does not cancel a running MCP call', async () => {
