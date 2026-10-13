@@ -135,6 +135,31 @@ const toolStopControllers = new Map<string, AbortController>()
 // thread's loop finishing, end another's.
 const toolLoopControllers = new Map<string, AbortController>()
 
+// Approval promises started in onToolCall (so the popup appears immediately) and
+// awaited by the onFinish execution loop, keyed by thread and then toolCallId.
+// Executing stays in onFinish so the tool result lands on a completed assistant
+// message and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires. A
+// component ref would be shared by every thread (the route is reused across
+// thread switches), so one thread finishing or being left would drop another
+// thread's pending approvals and prompt the user again.
+const toolApprovalPromises = new Map<string, Map<string, Promise<boolean>>>()
+const approvalsOf = (threadId: string) => {
+  let approvals = toolApprovalPromises.get(threadId)
+  if (!approvals) {
+    approvals = new Map()
+    toolApprovalPromises.set(threadId, approvals)
+  }
+  return approvals
+}
+const forgetApprovals = (threadId: string) => {
+  toolApprovalPromises.delete(threadId)
+}
+
+// Recorded for a call that never ran because its chat was closed (the thread was
+// left) rather than because the user refused or stopped it.
+const CHAT_CLOSED_TOOL_ERROR =
+  'Tool call cancelled: the chat was closed before it ran.'
+
 // The MCP server a tool belongs to, so an approval prompt can offer to trust
 // the whole server rather than this one tool.
 function serverForTool(toolName: string): string | undefined {
@@ -221,12 +246,6 @@ function ThreadDetail() {
   // Session data for tool call tracking
   const getSessionData = useChatSessions((state) => state.getSessionData)
   const sessionData = getSessionData(threadId)
-
-  // Approval promises started in onToolCall (so the popup appears immediately)
-  // and awaited by the onFinish execution loop, keyed by toolCallId. Executing
-  // stays in onFinish so the tool result lands on a completed assistant message
-  // and the AI SDK's auto-resubmit (sendAutomaticallyWhen) fires.
-  const toolApprovalPromises = useRef<Map<string, Promise<boolean>>>(new Map())
 
   const titleAbortRef = useRef<AbortController | null>(null)
 
@@ -551,8 +570,8 @@ function ThreadDetail() {
       // prompts stay up, and a late "Allow" would run the tool and resume the
       // reply the user just stopped.
       if (isAbort) {
+        forgetApprovals(threadId)
         sessionData.tools = []
-        toolApprovalPromises.current.clear()
         useToolApprovalRequests.getState().clearPendingForThread(threadId)
         return
       }
@@ -592,7 +611,7 @@ function ThreadDetail() {
               state: 'output-error',
               tool: toolCall.toolName,
               toolCallId: toolCall.toolCallId,
-              errorText: 'Tool call cancelled: the chat was closed before it ran.',
+              errorText: CHAT_CLOSED_TOOL_ERROR,
             })
             useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
             continue
@@ -603,7 +622,7 @@ function ThreadDetail() {
 
             const approved = isAutoAllowedTool(toolName)
               ? true
-              : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
+              : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
                   useToolApprovalRequests
                     .getState()
                     .requestApproval(
@@ -612,7 +631,7 @@ function ThreadDetail() {
                       threadId,
                       serverForTool(toolName)
                     ))
-            toolApprovalPromises.current.delete(toolCall.toolCallId)
+            approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Leaving the thread also
             // resolves a pending approval as denied; that denial must still be
             // recorded, or the call stays "Running" with nothing running.
@@ -623,7 +642,11 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: 'Tool execution denied by user',
+                // Leaving the thread resolves a pending approval as denied; that
+                // was not the user's decision and the model reads this later.
+                errorText: signal.aborted
+                  ? CHAT_CLOSED_TOOL_ERROR
+                  : 'Tool execution denied by user',
               })
               continue
             }
@@ -729,8 +752,8 @@ function ThreadDetail() {
         }
 
         useToolCallRuntime.getState().settleRemaining()
+        forgetApprovals(threadId)
         sessionData.tools = []
-        toolApprovalPromises.current.clear()
         // Only this loop's own: a later loop of the thread may have replaced it.
         if (toolLoopControllers.get(threadId) === callController) {
           toolLoopControllers.delete(threadId)
@@ -744,8 +767,8 @@ function ThreadDetail() {
           console.error('Tool call error:', error)
         }
         useToolCallRuntime.getState().settleRemaining()
+        forgetApprovals(threadId)
         sessionData.tools = []
-        toolApprovalPromises.current.clear()
         if (toolLoopControllers.get(threadId) === callController) {
           toolLoopControllers.delete(threadId)
         }
@@ -831,9 +854,9 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       if (
         !isAutoAllowedTool(toolCall.toolName) &&
-        !toolApprovalPromises.current.has(toolCall.toolCallId)
+        !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
-        toolApprovalPromises.current.set(
+        approvalsOf(threadId).set(
           toolCall.toolCallId,
           useToolApprovalRequests
             .getState()
@@ -1114,12 +1137,10 @@ function ThreadDetail() {
   // are leaving. Cleanup captures the previous threadId; without this the
   // unresolved approval promise keeps that thread marked busy forever.
   useEffect(() => {
-    // Stable ref object (never reassigned) — capture for the cleanup closure.
-    const approvalPromises = toolApprovalPromises.current
     return () => {
       toolLoopControllers.get(threadId)?.abort()
       toolLoopControllers.delete(threadId)
-      approvalPromises.clear()
+      forgetApprovals(threadId)
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       // Drop per-thread timing/progress/diff state from the shared runtime
       // store. The cards for the thread we leave are unmounting, so a thread a

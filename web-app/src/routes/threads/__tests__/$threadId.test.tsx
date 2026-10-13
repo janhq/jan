@@ -1607,9 +1607,10 @@ describe('ThreadDetail route', () => {
         }
       })
 
-      // Leaving the thread resolves a pending approval as denied. The denial
-      // must be recorded, or the call stays "Running" with nothing running.
-      it('records the denial when leaving the thread cuts an approval short', async () => {
+      // Leaving the thread resolves a pending approval as denied. It must be
+      // recorded, or the call stays "Running" with nothing running, but not as a
+      // refusal by the user: the model reads this on the next turn.
+      it('records a cut-short approval as the chat closing, not a user denial', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         let decide: (approved: boolean) => void = () => {}
         h.toolApprovalState.requestApproval = vi.fn(
@@ -1631,9 +1632,50 @@ describe('ThreadDetail route', () => {
           expect.objectContaining({
             toolCallId: 'tcA',
             state: 'output-error',
-            errorText: 'Tool execution denied by user',
+            errorText: expect.stringContaining('chat was closed'),
           })
         )
+      })
+
+      // The approval promises are shared by every thread's loop. A thread whose
+      // turn is cut off must forget only its own, or the thread in front would
+      // be asked again about a call the user may already have allowed.
+      it('another thread ending does not drop the approval in flight here', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>(() => {})
+        )
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          const onFinishA = (h as any).capturedOnFinish
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await arrive('tcB')
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+
+          // Thread 1's turn is cut off in the background.
+          await act(async () => {
+            await onFinishA({
+              message: {
+                id: 'a-bg',
+                role: 'assistant',
+                parts: [{ type: 'text', text: '' }],
+                metadata: {},
+              },
+              isAbort: true,
+            })
+          })
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
       })
 
       // The calls queued behind the one awaiting approval are cut short too.
