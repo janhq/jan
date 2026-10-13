@@ -399,4 +399,49 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://inference.runanywhere.ai/v1',
+    explore_models_url: 'https://www.runwally.com/pricing',
+    provider: 'wally',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Wally API uses API keys for authentication. See the [Wally API documentation](https://docs.runanywhere.ai/wally-cloud/api) to get the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'glm-5.3-flash',
+        name: 'GLM-5.3 Flash',
+        version: '1.0',
+        description: '1M context window. Accepts image input.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'deepseek-v4.1-flash',
+        name: 'DeepSeek V4.1 Flash',
+        version: '1.0',
+        description: '1M context window. Accepts image input.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'mimo-v2.6-pro',
+        name: 'MiMo V2.6 Pro',
+        version: '1.0',
+        description: '1M context window.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
 ]

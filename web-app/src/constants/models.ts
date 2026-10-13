@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  wally: {
+    models: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro'],
+    supportsCompletion: true,
+    supportsStreaming: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro'],
+    supportsJSON: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro'],
+    supportsImages: ['glm-5.3-flash', 'deepseek-v4.1-flash'],
+    supportsToolCalls: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro'],
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
