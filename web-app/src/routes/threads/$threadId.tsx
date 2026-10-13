@@ -560,8 +560,9 @@ function ThreadDetail() {
       // auto-resubmit (sendAutomaticallyWhen) fires. Approval is requested
       // earlier in onToolCall (popup appears without waiting for this callback);
       // we await that already-started promise here rather than prompting again.
-      toolCallAbortController.current = new AbortController()
-      const signal = toolCallAbortController.current.signal
+      const callController = new AbortController()
+      toolCallAbortController.current = callController
+      const signal = callController.signal
       const stopController = new AbortController()
       toolStopControllers.set(threadId, stopController)
       const stopSignal = stopController.signal
@@ -728,7 +729,10 @@ function ThreadDetail() {
         useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
-        toolCallAbortController.current = null
+        // The ref is shared by every thread's loop: only clear this loop's own.
+        if (toolCallAbortController.current === callController) {
+          toolCallAbortController.current = null
+        }
         if (toolStopControllers.get(threadId) === stopController) {
           toolStopControllers.delete(threadId)
         }
@@ -740,7 +744,9 @@ function ThreadDetail() {
         useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
-        toolCallAbortController.current = null
+        if (toolCallAbortController.current === callController) {
+          toolCallAbortController.current = null
+        }
         if (toolStopControllers.get(threadId) === stopController) {
           toolStopControllers.delete(threadId)
         }

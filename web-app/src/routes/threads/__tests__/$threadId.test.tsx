@@ -379,7 +379,7 @@ vi.mock('@/types/attachment', () => ({
 
 vi.mock('ai', () => ({
   generateId: () => 'gen-id',
-  lastAssistantMessageIsCompleteWithToolCalls: () => false,
+  lastAssistantMessageIsCompleteWithToolCalls: () => true,
 }))
 
 vi.mock('zustand/react/shallow', () => ({
@@ -390,6 +390,7 @@ vi.mock('@/hooks/use-chat', () => ({
   useChat: (_args: any) => {
     ;(h as any).capturedOnFinish = _args?.onFinish
     ;(h as any).capturedOnToolCall = _args?.onToolCall
+    ;(h as any).capturedSendAutomaticallyWhen = _args?.sendAutomaticallyWhen
     return {
       messages: h.chatState.messages,
       status: h.chatState.status,
@@ -1335,6 +1336,49 @@ describe('ThreadDetail route', () => {
         unmount()
 
         expect(cancel).not.toHaveBeenCalled()
+      })
+
+      // The tool-loop controller is one ref shared by every thread's loop. A
+      // loop left behind by a thread switch finishing later must not clear the
+      // controller of the thread now in front: that thread's reply would never
+      // continue after its tool result.
+      it('a left thread\'s loop ending does not stop the current thread continuing', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const results: Array<(r: unknown) => void> = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise((resolve) => results.push(resolve)),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await arrive('tcB')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          // Thread 1's call, left running, now completes.
+          await act(async () => {
+            results[0]({ error: '', content: [] })
+          })
+
+          const followUp = (h as any).capturedSendAutomaticallyWhen
+          expect(followUp({ messages: [] })).toBe(true)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
       })
 
       // The route component is reused across thread switches, so a Stop must
