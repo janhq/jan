@@ -424,12 +424,11 @@ function ThreadDetail() {
         uiMessageHasMeaningfulContent(message)
       ) {
         const contentParts = extractContentPartsFromUIMessage(message)
+        const toolErrors = toolErrorsOf(message)
         const messageMetadata = {
           ...((message.metadata || {}) as Record<string, unknown>),
           ...(isStoppedTurn ? { stopped: true } : {}),
-          ...(toolErrorsOf(message)
-            ? { toolErrors: toolErrorsOf(message) }
-            : {}),
+          ...(toolErrors ? { toolErrors } : {}),
         }
 
         if (isStoppedTurn) {
