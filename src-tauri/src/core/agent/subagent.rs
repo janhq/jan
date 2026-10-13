@@ -70,6 +70,7 @@ impl SubagentScope {
 const BUILTIN_SUBAGENTS: &[&str] = &[
     include_str!("builtin_subagents/debug.toml"),
     include_str!("builtin_subagents/explore.toml"),
+    include_str!("builtin_subagents/general.toml"),
     include_str!("builtin_subagents/research.toml"),
     include_str!("builtin_subagents/review.toml"),
 ];
@@ -728,21 +729,19 @@ fn qualify_host_names(
     tools
 }
 
-/// One subagent within a phased dispatch. `agent` names the definition to run
-/// (any scope, built-ins included); without it, a `name` matching a saved user,
-/// project or plugin definition uses that one, as before. Either way the
-/// definition's role and tools are used, and `allowed_tools` further narrows
-/// them. Otherwise the subagent runs as a focused general-purpose agent defined
-/// by its `description` (the task) alone. `name` is the worker's own identity
-/// and the blackboard filename its answer is written to
-/// (`blackboard/<name>.md`), so it stays unique even when several workers run
-/// one definition.
+/// One subagent within a phased dispatch. `agent` names the predefined
+/// definition to run (any scope, built-ins included); its role, prompt and
+/// model are used, and `allowed_tools` narrows its tools. `name` is not chosen
+/// by the model: it is the agent's name, numbered for each repeat within one
+/// plan (`explore`, `explore-2`, see [`worker_names`]), and is the worker's
+/// identity -- its run id, its blackboard file (`blackboard/<name>.md`), the
+/// name `message_subagent`/`stop_subagent` address and its transcript rows.
 #[derive(Debug, Clone)]
 pub struct SubagentRequest {
     pub name: String,
     pub description: String,
     pub allowed_tools: Option<Vec<String>>,
-    pub agent: Option<String>,
+    pub agent: String,
 }
 
 /// A group of subagents that run concurrently. The next phase starts only once
@@ -783,74 +782,28 @@ fn resolve_dispatch(
     qualify: impl Fn(Vec<String>) -> Vec<String>,
 ) -> Result<ResolvedDispatch, SubagentError> {
     let requested = req.allowed_tools.clone().map(&qualify);
-    // A built-in is reached only through `agent`: matching it by the worker's
-    // `name` would hand an ad-hoc worker that happens to be called `research`
-    // a prompt and allowlist it never asked for. Saved definitions keep the
-    // match by name, which is how they have always been dispatched.
-    let definition = match req.agent.as_deref() {
-        Some(agent) => Some(registry.get(agent).cloned().ok_or_else(|| {
-            SubagentError::Upstream(format!(
-                "no subagent definition named '{agent}' for agent; available: {}. Omit \
-                 agent to run a one-off general-purpose subagent.",
-                registry.dispatchable_names().join(", ")
-            ))
-        })?),
-        None => registry
-            .get(&req.name)
-            .filter(|d| d.scope != SubagentScope::Builtin)
-            .cloned(),
-    };
-    match definition {
-        Some(mut definition) => {
-            // The worker keeps its own identity: its run id, blackboard file
-            // and transcript rows name the instance, not the definition.
-            definition.name = req.name.clone();
-            definition.allowed_tools = definition.allowed_tools.map(&qualify);
-            // Registered definition: the call-site allowlist further narrows it.
-            let allowed_tools = intersect_allowed_tools(
-                definition.allowed_tools.as_deref(),
-                requested.as_deref(),
-                parent,
-            )?;
-            Ok(ResolvedDispatch {
-                definition,
-                allowed_tools,
-            })
-        }
-        None => {
-            // No saved definition: a focused general-purpose subagent defined by
-            // its task. The call-site allowlist IS its toolset; only the parent's
-            // deny-list narrows it further. The list came from the model's own
-            // call, so a stale entry is reported as that, not as a definition.
-            refuse_renamed_shell(requested.as_deref(), "allowed_tools")?;
-            let definition = SubagentDefinition {
-                name: req.name.clone(),
-                description: req.description.clone(),
-                system_prompt: ephemeral_subagent_prompt(&req.name),
-                allowed_tools: requested,
-                model: None,
-                scope: SubagentScope::Project,
-            };
-            let allowed_tools =
-                intersect_allowed_tools(definition.allowed_tools.as_deref(), None, parent)?;
-            Ok(ResolvedDispatch {
-                definition,
-                allowed_tools,
-            })
-        }
-    }
-}
-
-/// The system prompt for a subagent dispatched without a saved definition: a
-/// focused generalist whose closing report becomes the next phase's input.
-fn ephemeral_subagent_prompt(name: &str) -> String {
-    format!(
-        "You are \"{name}\", a focused subagent handling one task as part of a larger plan. \
-         Do exactly the task you are given, using your tools as needed, and do not wait for \
-         clarification -- you cannot receive any. When you finish, end with a concise, \
-         self-contained report of what you found or did: it is handed verbatim to the agents in \
-         the next phase, so include the facts, paths, and decisions they will need."
-    )
+    let mut definition = registry.get(&req.agent).cloned().ok_or_else(|| {
+        SubagentError::Upstream(format!(
+            "no subagent named '{}'; agent must be one of: {}. Use `general` for a task \
+             no other agent fits.",
+            req.agent,
+            registry.dispatchable_names().join(", ")
+        ))
+    })?;
+    // The worker keeps its own identity: its run id, blackboard file and
+    // transcript rows name the instance, not the definition.
+    definition.name = req.name.clone();
+    definition.allowed_tools = definition.allowed_tools.map(&qualify);
+    // The call-site allowlist narrows the definition's own.
+    let allowed_tools = intersect_allowed_tools(
+        definition.allowed_tools.as_deref(),
+        requested.as_deref(),
+        parent,
+    )?;
+    Ok(ResolvedDispatch {
+        definition,
+        allowed_tools,
+    })
 }
 
 /// Child stream events are folded into the parent's own stream, except the
@@ -1162,6 +1115,12 @@ impl Default for BackgroundSubagents {
 }
 
 impl BackgroundSubagents {
+    /// Whether a worker of this session already goes by `name`; a new worker
+    /// is numbered past it (see [`parse_dispatch_plan`]).
+    pub(crate) fn has_worker(&self, name: &str) -> bool {
+        self.inner.lock().unwrap().values().any(|e| e.name == name)
+    }
+
     /// Create a registry admitting at most `cap` concurrently-running children.
     /// Clamped to at least 1: a cap of 0 would make every dispatch queue
     /// forever with nothing ever releasing a permit.
@@ -2750,34 +2709,93 @@ pub fn format_subagent_list(registry: &SubagentRegistry) -> String {
     lines.join("\n")
 }
 
-/// OpenAI tool schemas for the subagent tools. The dispatch tool's description
-/// lists the currently-resolvable subagent names so the model can pick one
-/// without a separate discovery call.
+/// The agent catalog for the system prompt's `# Subagents` block: each
+/// dispatchable name with the model it runs on and what it is for, one per
+/// line. `None` when nothing is dispatchable. It lives in the cached prompt
+/// prefix rather than the tool description so the schema stays small, and is
+/// read from the same registry the `agent` enum is built from, so the two
+/// never disagree.
+pub fn agent_catalog(registry: &SubagentRegistry) -> Option<String> {
+    let lines: Vec<String> = registry
+        .dispatchable_names()
+        .into_iter()
+        .filter_map(|name| registry.get(name))
+        .map(|d| format!("- `{}` (model: {}): {}", d.name, d.model_label(), d.description))
+        .collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+/// Tools a child never gets whatever its allowlist says: it cannot dispatch
+/// (nesting is capped at one), and it has no `ask` client, todo list or
+/// monitor set of its own (see [`run_subagent`]).
+fn never_delegated(name: &str) -> bool {
+    is_subagent_tool(name)
+        || matches!(name, "ask" | "todo")
+        || name == tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME
+}
+
+/// Pin every `allowed_tools` array in the subagent schemas to the tools this
+/// run can actually hand a child, as a JSON-schema `enum`.
+///
+/// Left free-form, models filled the optional array with names that match
+/// nothing (`bash`, `search`, `read_file`), which silently narrowed the child
+/// to the forced skill tools. With the names fixed a strict provider cannot
+/// emit a stray one, and every other provider is at least shown the set.
+/// `offered` is the run's final tool array; the shell-free search tools are
+/// added because a child that names them is offered them even though the
+/// parent is not. Applied after the whole array is built so MCP, plugin and
+/// host tools are included, and derived from it alone so the array stays
+/// byte-identical across the run's turns.
+pub fn constrain_tool_names(offered: &mut [serde_json::Value]) {
+    let search = tauri_plugin_agent_tools::tools::schema::search_tool_schemas();
+    let mut names: Vec<String> = offered
+        .iter()
+        .chain(search.iter())
+        .filter_map(|t| t["function"]["name"].as_str())
+        .filter(|n| !never_delegated(n))
+        .map(str::to_string)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    for tool in offered.iter_mut() {
+        let name = tool["function"]["name"].as_str().unwrap_or_default();
+        let items = match name {
+            "dispatch_subagent" => {
+                &mut tool["function"]["parameters"]["properties"]["subagents"]["items"]
+                    ["properties"]["allowed_tools"]["items"]
+            }
+            "create_subagent" => {
+                &mut tool["function"]["parameters"]["properties"]["allowed_tools"]["items"]
+            }
+            _ => continue,
+        };
+        if items.is_object() {
+            items["enum"] = serde_json::json!(names);
+        }
+    }
+}
+
+/// OpenAI tool schemas for the subagent tools. The dispatch tool's `agent`
+/// field is an `enum` of the dispatchable names; what each one is for is in
+/// the system prompt (see [`agent_catalog`]). The `allowed_tools` names are
+/// pinned later, once the run's whole tool array is known
+/// (see [`constrain_tool_names`]).
 pub fn subagent_tool_schemas(
     registry: &SubagentRegistry,
     max_parallel: u32,
 ) -> Vec<serde_json::Value> {
     use serde_json::json;
-    // Each name with the model its winning definition dispatches on, so the
-    // agent can send cheap work to a cheap agent without a list call.
-    let available: Vec<String> = {
-        registry
-            .dispatchable_names()
-            .into_iter()
-            .filter_map(|name| registry.get(name))
-            .map(|d| format!("{} ({})", d.name, d.model_label()))
-            .collect()
-    };
-    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by the name you gave it here.");
+    // Built-ins are always loaded, so the enum always holds at least `general`.
+    let agent_field = json!({
+        "type": "string",
+        "enum": registry.dispatchable_names(),
+        "description": "The predefined agent to run (see the Subagents section of your instructions for what each is for); use `general` when no other fits. The same agent may appear several times: repeats are named `<agent>-2`, `<agent>-3`, ... in the order listed, and that name is what message_subagent/stop_subagent take and the blackboard/<name>.md file its answer is written to."
+    });
+    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
-    let dispatch_desc = if available.is_empty() {
-        format!("Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} No saved subagents yet; each runs as a focused general-purpose agent defined by its task.")
-    } else {
-        format!(
-            "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Set `agent` to run one of these as a subagent, using its role, tools and model (several entries may run the same agent under different names); omit it for a focused general-purpose subagent. Available agents, each with the model it runs on: {}.",
-            available.join(", ")
-        )
-    };
+    let dispatch_desc = format!(
+        "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless you restrict it with allowed_tools."
+    );
     vec![
         json!({
             "type": "function",
@@ -2793,8 +2811,7 @@ pub fn subagent_tool_schemas(
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": { "type": "string", "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md)." },
-                                    "agent": { "type": "string", "description": "Optional saved or built-in subagent to run as (one of the names listed in this tool's description); its role, tools and model are used. Several entries may share one agent under different names. Omit it for a focused general-purpose subagent defined by its task." },
+                                    "agent": agent_field,
                                     "task": { "type": "string", "description": "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them." },
                                     "phase": { "type": "integer", "minimum": 0, "description": "Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out." },
                                     "allowed_tools": {
@@ -2803,7 +2820,7 @@ pub fn subagent_tool_schemas(
                                         "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
                                     }
                                 },
-                                "required": ["name", "task"]
+                                "required": ["agent", "task"]
                             }
                         }
                     },
@@ -2882,28 +2899,31 @@ fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
         .filter(|list| !list.is_empty())
 }
 
-/// Longest subagent name accepted in a plan. Kept under the blackboard stem's
-/// own 80-char cap so a validated name maps to `blackboard/<name>.md` verbatim
-/// (no truncation), which is what lets the next phase read it back by name.
-const MAX_SUBAGENT_NAME_LEN: usize = 64;
-
 /// Parse a `dispatch_subagent` tool-call argument object into an ordered plan.
 ///
-/// The wire shape is a flat `subagents` array; each subagent's optional `phase`
-/// (a non-negative integer, default 0) groups it into a stage. Subagents that
-/// share a `phase` run together; lower phases run first. This one shape covers
-/// both a plain fan-out (omit `phase` everywhere -> a single stage) and a
-/// pipeline (raise `phase` for later work). Names are validated (charset +
-/// length) and required unique across the whole plan, since each is a blackboard
-/// filename and a panel identity.
-pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, SubagentError> {
+/// The wire shape is a flat `subagents` array of `{ agent, task, phase? }`.
+/// `agent` (required) is one of the predefined agents; each subagent's optional
+/// `phase` (a non-negative integer, default 0) groups it into a stage.
+/// Subagents that share a `phase` run together; lower phases run first. This
+/// one shape covers both a plain fan-out (omit `phase` everywhere -> a single
+/// stage) and a pipeline (raise `phase` for later work).
+///
+/// Each worker is named by [`number_workers`] in the order listed, skipping a
+/// name `taken` reports still held by an earlier worker of the session. The
+/// name is the worker's blackboard file and the handle
+/// `message_subagent`/`stop_subagent` take, so a repeat must neither overwrite
+/// an earlier worker's answer nor be confused with it.
+pub fn parse_dispatch_plan(
+    args: &serde_json::Value,
+    taken: impl Fn(&str) -> bool,
+) -> Result<DispatchPlan, SubagentError> {
     let subs_val = args
         .get("subagents")
         .and_then(|v| v.as_array())
         .ok_or_else(|| {
             SubagentError::Upstream(
-                "missing required argument 'subagents' (an array of subagents, each with a name \
-                 and task, plus an optional integer 'phase')"
+                "missing required argument 'subagents' (an array of subagents, each with an \
+                 agent and task, plus an optional integer 'phase')"
                     .to_string(),
             )
         })?;
@@ -2912,26 +2932,21 @@ pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, Sub
             "'subagents' must contain at least one subagent".to_string(),
         ));
     }
-    let mut seen = std::collections::HashSet::new();
     // BTreeMap so phases come out in ascending `phase` order regardless of the
     // order the model listed them, and sparse numbers (0, 5) just collapse to
     // adjacent stages.
     let mut by_phase: std::collections::BTreeMap<u32, Vec<SubagentRequest>> =
         std::collections::BTreeMap::new();
-    for sub in subs_val {
-        let name = required_str(sub, "name")?;
-        validate_name(&name)?;
-        if name.len() > MAX_SUBAGENT_NAME_LEN {
-            return Err(SubagentError::PermissionDenied(format!(
-                "subagent name '{name}' is too long (max {MAX_SUBAGENT_NAME_LEN} characters)"
-            )));
-        }
-        if !seen.insert(name.clone()) {
-            return Err(SubagentError::Upstream(format!(
-                "duplicate subagent name '{name}': names must be unique across the whole plan \
-                 (each is a blackboard filename)"
-            )));
-        }
+    let agents = subs_val
+        .iter()
+        .map(|sub| {
+            let agent = required_str(sub, "agent")?.trim().to_string();
+            validate_name(&agent)?;
+            Ok(agent)
+        })
+        .collect::<Result<Vec<_>, SubagentError>>()?;
+    let names = number_workers(agents.iter().map(String::as_str), taken);
+    for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names) {
         let description = required_str(sub, "task")?;
         let phase = match sub.get("phase") {
             None | Some(serde_json::Value::Null) => 0,
@@ -2945,12 +2960,6 @@ pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, Sub
                     ))
                 })?,
         };
-        let agent = sub
-            .get("agent")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|a| !a.is_empty())
-            .map(String::from);
         by_phase.entry(phase).or_default().push(SubagentRequest {
             name,
             description,
@@ -2963,6 +2972,31 @@ pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, Sub
         .map(|(number, subagents)| Phase { number, subagents })
         .collect();
     Ok(DispatchPlan { phases })
+}
+
+/// Name each worker after its agent, in order: the agent's own name the first
+/// time (`explore`), then numbered (`explore-2`, `explore-3`), skipping any
+/// name `taken` reports in use. The one numbering rule, shared by dispatch and
+/// the TUI's dispatch row.
+pub(crate) fn number_workers<'a>(
+    agents: impl IntoIterator<Item = &'a str>,
+    taken: impl Fn(&str) -> bool,
+) -> Vec<String> {
+    let mut used = std::collections::HashSet::new();
+    agents
+        .into_iter()
+        .map(|agent| {
+            let name = (1..)
+                .map(|n| match n {
+                    1 => agent.to_string(),
+                    n => format!("{agent}-{n}"),
+                })
+                .find(|name| !used.contains(name) && !taken(name))
+                .expect("an unbounded sequence has a free name");
+            used.insert(name.clone());
+            name
+        })
+        .collect()
 }
 
 /// Parse an `await_subagent` tool-call argument object, returning the run_id.
@@ -3164,7 +3198,7 @@ pub(crate) mod tests {
     fn the_builtin_catalog_parses_in_a_stable_order() {
         let defs = builtin_definitions();
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names, ["debug", "explore", "research", "review"]);
+        assert_eq!(names, ["debug", "explore", "general", "research", "review"]);
         for def in &defs {
             assert_eq!(def.scope, SubagentScope::Builtin);
             assert!(!def.description.is_empty() && !def.system_prompt.is_empty());
@@ -3178,31 +3212,14 @@ pub(crate) mod tests {
                 );
             }
         }
-        // `explore` is read-only by construction: no shell, no write tools,
-        // so a cheap model under an auto-approving parent still cannot write.
-        let explore = &defs[1];
-        assert_eq!(explore.model.as_deref(), Some(SMOL_ROLE));
-        let tools: Vec<&str> = explore
-            .allowed_tools
-            .as_deref()
-            .unwrap()
-            .iter()
-            .map(String::as_str)
-            .collect();
-        assert_eq!(tools, ["read", "ls", "find", "grep"]);
-        for tool in &tools {
-            let cap = tauri_plugin_agent_tools::tools::lookup(tool).unwrap().capability;
-            assert_eq!(cap, tauri_plugin_agent_tools::tools::Capability::Read, "{tool}");
+        // Every built-in inherits the dispatching run's full toolset: a role is
+        // its prompt and model, never a narrower tool set the model cannot see.
+        for def in &defs {
+            assert_eq!(def.allowed_tools, None, "{}", def.name);
         }
-        // `review` keeps the shell for `git diff`, so it must not claim to be
-        // read-only; it is told not to edit instead.
-        let review = &defs[3];
-        assert!(!review.description.contains("read-only"), "{}", review.description);
-        // `debug` has to edit and run tests, so it keeps the full toolset
-        // (narrowed only by the parent's policy) on the session's model.
-        let debug = &defs[0];
-        assert_eq!(debug.model.as_deref(), Some(INHERIT_ROLE));
-        assert_eq!(debug.allowed_tools, None);
+        assert_eq!(defs[1].model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(defs[0].model.as_deref(), Some(INHERIT_ROLE));
+        assert_eq!(defs[2].model.as_deref(), Some(INHERIT_ROLE));
         assert_eq!(builtin_definitions(), defs, "deterministic");
     }
 
@@ -3573,14 +3590,14 @@ pub(crate) mod tests {
         assert!(intersect_allowed_tools(None, Some(&req), &p).is_err());
     }
 
-    /// An ad-hoc dispatch has no definition, so the refusal must name the
-    /// call's own list -- the one the model wrote and can fix.
+    /// A stale entry in the call's own list is reported against that list --
+    /// the one the model wrote and can fix -- not the definition's.
     #[test]
-    fn an_ad_hoc_bash_entry_names_the_calls_own_list() {
-        let reg = registry_with("other", None);
+    fn a_bash_entry_in_the_call_names_the_calls_own_list() {
+        let reg = registry_with("worker", None);
         let Err(SubagentError::PermissionDenied(msg)) = resolve_dispatch_plain(
             &reg,
-            &req("adhoc", Some(vec!["bash".to_string()])),
+            &req("worker", Some(vec!["bash".to_string()])),
             &ToolPermissions::allow_all(),
         ) else {
             panic!("expected a permission error");
@@ -3612,12 +3629,27 @@ pub(crate) mod tests {
         }
     }
 
+    /// A `general` worker going by `name`, for tests about scheduling and
+    /// phases rather than which agent runs (all of them `cli`-only).
+    #[cfg(feature = "cli")]
+    fn worker(name: &str) -> SubagentRequest {
+        SubagentRequest {
+            agent: "general".to_string(),
+            ..req(name, None)
+        }
+    }
+
+    /// `parse_dispatch_plan` in a session with no earlier workers.
+    fn parse_dispatch_plan_fresh(args: &serde_json::Value) -> Result<DispatchPlan, SubagentError> {
+        parse_dispatch_plan(args, |_| false)
+    }
+
     fn req(name: &str, allowed: Option<Vec<String>>) -> SubagentRequest {
         SubagentRequest {
             name: name.to_string(),
             description: "do the thing".to_string(),
             allowed_tools: allowed,
-            agent: None,
+            agent: name.to_string(),
         }
     }
 
@@ -3823,61 +3855,48 @@ pub(crate) mod tests {
         assert_eq!(off["send_reasoning"], serde_json::json!(false));
     }
 
-    /// An unknown name is no longer an error: it runs as a focused generalist
-    /// whose default prompt names it, with the request's tools as its toolset.
+    /// An `agent` that names nothing is an error listing what it may name, not
+    /// a silent fallback to an unprompted agent on the main model.
     #[test]
-    fn resolve_unknown_name_runs_ephemeral_generalist() {
-        let reg = SubagentRegistry::default();
+    fn resolve_rejects_an_unknown_agent() {
+        let reg = SubagentRegistry::load(&unique_root("unknown_agent"));
         let p = ToolPermissions::allow_all();
-        let request = SubagentRequest {
-            name: "one-off".to_string(),
-            description: "task".to_string(),
-            allowed_tools: Some(vec!["read".to_string()]),
-            agent: None,
-        };
-        let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
-        assert_eq!(resolved.definition.name, "one-off");
-        assert!(resolved.definition.system_prompt.contains("one-off"));
-        assert_eq!(
-            resolved.allowed_tools,
-            Some(vec![
-                "read".to_string(),
-                "skill_list".to_string(),
-                "skill_read".to_string(),
-            ])
-        );
+        let err = resolve_dispatch_plain(&reg, &req("one-off", None), &p)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("one-off") && err.contains("general"), "{err}");
     }
 
     #[test]
     fn parse_dispatch_plan_groups_flat_subagents_by_phase() {
         // Listed out of order and with a gap (0, 2); the parser groups and
         // orders them, and the phase number carried is the model's own key.
-        let plan = parse_dispatch_plan(&serde_json::json!({
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({
             "subagents": [
-                { "name": "synthesize", "task": "write it up", "phase": 2 },
-                { "name": "research-api", "task": "study the api" },
-                { "name": "research-perf", "task": "study perf", "phase": 0, "allowed_tools": ["read", "grep"] }
+                { "agent": "general", "task": "write it up", "phase": 2 },
+                { "agent": "research", "task": "study the api" },
+                { "agent": "explore", "task": "study perf", "phase": 0, "allowed_tools": ["read", "grep"] }
             ]
         }))
         .unwrap();
         assert_eq!(plan.phases.len(), 2);
         assert_eq!(plan.phases[0].number, 0);
         assert_eq!(plan.phases[0].subagents.len(), 2);
-        assert_eq!(plan.phases[0].subagents[0].name, "research-api");
+        assert_eq!(plan.phases[0].subagents[0].agent, "research");
         assert_eq!(
             plan.phases[0].subagents[1].allowed_tools,
             Some(vec!["read".to_string(), "grep".to_string()])
         );
         assert_eq!(plan.phases[1].number, 2);
-        assert_eq!(plan.phases[1].subagents[0].name, "synthesize");
+        assert_eq!(plan.phases[1].subagents[0].agent, "general");
     }
 
     #[test]
     fn parse_dispatch_plan_fans_out_with_no_phase() {
-        let plan = parse_dispatch_plan(&serde_json::json!({
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({
             "subagents": [
-                { "name": "a", "task": "x" },
-                { "name": "b", "task": "y" }
+                { "agent": "explore", "task": "x" },
+                { "agent": "general", "task": "y" }
             ]
         }))
         .unwrap();
@@ -3885,34 +3904,48 @@ pub(crate) mod tests {
         assert_eq!(plan.phases[0].subagents.len(), 2);
     }
 
+    /// Repeats of one agent are numbered in the order listed, across phases,
+    /// and a name an earlier worker of the session still holds is skipped.
     #[test]
-    fn parse_dispatch_plan_rejects_duplicate_names() {
-        let err = parse_dispatch_plan(&serde_json::json!({
+    fn workers_are_numbered_in_listed_order_skipping_taken_names() {
+        let plan = parse_dispatch_plan(&serde_json::json!({
             "subagents": [
-                { "name": "a", "task": "x" },
-                { "name": "a", "task": "y", "phase": 1 }
+                { "agent": "explore", "task": "a" },
+                { "agent": "general", "task": "b" },
+                { "agent": "explore", "task": "c" },
+                { "agent": "explore", "task": "d", "phase": 1 }
             ]
-        }))
-        .unwrap_err();
-        assert!(matches!(err, SubagentError::Upstream(m) if m.contains("duplicate")));
+        }), |name| name == "general")
+        .unwrap();
+        let names: Vec<&str> = plan
+            .phases
+            .iter()
+            .flat_map(|p| p.subagents.iter().map(|s| s.name.as_str()))
+            .collect();
+        assert_eq!(names, ["explore", "general-2", "explore-2", "explore-3"]);
     }
 
     #[test]
     fn parse_dispatch_plan_rejects_empty_missing_and_bad_phase() {
-        assert!(parse_dispatch_plan(&serde_json::json!({})).is_err());
-        assert!(parse_dispatch_plan(&serde_json::json!({ "subagents": [] })).is_err());
+        assert!(parse_dispatch_plan_fresh(&serde_json::json!({})).is_err());
+        assert!(parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [] })).is_err());
         // missing task
-        assert!(parse_dispatch_plan(
-            &serde_json::json!({ "subagents": [ { "name": "a" } ] })
+        assert!(parse_dispatch_plan_fresh(
+            &serde_json::json!({ "subagents": [ { "agent": "general" } ] })
+        )
+        .is_err());
+        // missing agent: a free-form name is no longer accepted
+        assert!(parse_dispatch_plan_fresh(
+            &serde_json::json!({ "subagents": [ { "name": "a", "task": "x" } ] })
         )
         .is_err());
         // negative / non-integer phase
-        assert!(parse_dispatch_plan(
-            &serde_json::json!({ "subagents": [ { "name": "a", "task": "x", "phase": -1 } ] })
+        assert!(parse_dispatch_plan_fresh(
+            &serde_json::json!({ "subagents": [ { "agent": "general", "task": "x", "phase": -1 } ] })
         )
         .is_err());
-        assert!(parse_dispatch_plan(
-            &serde_json::json!({ "subagents": [ { "name": "a", "task": "x", "phase": "later" } ] })
+        assert!(parse_dispatch_plan_fresh(
+            &serde_json::json!({ "subagents": [ { "agent": "general", "task": "x", "phase": "later" } ] })
         )
         .is_err());
     }
@@ -4735,11 +4768,11 @@ pub(crate) mod tests {
             phases: vec![
                 Phase {
                     number: 0,
-                    subagents: vec![req("alpha", None), req("beta", None)],
+                    subagents: vec![worker("alpha"), worker("beta")],
                 },
                 Phase {
                     number: 1,
-                    subagents: vec![req("collector", None)],
+                    subagents: vec![worker("collector")],
                 },
             ],
         };
@@ -4811,11 +4844,11 @@ pub(crate) mod tests {
             phases: vec![
                 Phase {
                     number: 0,
-                    subagents: vec![req("alpha", None)],
+                    subagents: vec![worker("alpha")],
                 },
                 Phase {
                     number: 1,
-                    subagents: vec![req("collector", None)],
+                    subagents: vec![worker("collector")],
                 },
             ],
         };
@@ -4877,7 +4910,7 @@ pub(crate) mod tests {
         bg.abort_all();
 
         let dispatched =
-            spawn_subagent(&scope, &args, req("late", None), &parent_run(), &tx, None, true);
+            spawn_subagent(&scope, &args, worker("late"), &parent_run(), &tx, None, true);
         assert!(
             matches!(dispatched, Err(SubagentError::Cancelled)),
             "a dispatch after teardown must be refused, not started"
@@ -5075,11 +5108,11 @@ pub(crate) mod tests {
             phases: vec![
                 Phase {
                     number: 0,
-                    subagents: vec![req("alpha", None)],
+                    subagents: vec![worker("alpha")],
                 },
                 Phase {
                     number: 1,
-                    subagents: vec![req("collector", None)],
+                    subagents: vec![worker("collector")],
                 },
             ],
         };
@@ -5139,11 +5172,11 @@ pub(crate) mod tests {
             phases: vec![
                 Phase {
                     number: 0,
-                    subagents: vec![req("alpha", None), req("beta", None)],
+                    subagents: vec![worker("alpha"), worker("beta")],
                 },
                 Phase {
                     number: 1,
-                    subagents: vec![req("gamma", None), req("collector", None)],
+                    subagents: vec![worker("gamma"), worker("collector")],
                 },
             ],
         };
@@ -5443,7 +5476,9 @@ pub(crate) mod tests {
             ]
         );
         let dispatch = &schemas[0]["function"]["description"].as_str().unwrap();
-        assert!(dispatch.contains("reviewer"), "got: {dispatch}");
+        let agent = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"]
+            ["properties"]["agent"];
+        assert_eq!(agent["enum"], serde_json::json!(["reviewer"]));
         // await_subagent is no longer advertised; the description explains the
         // background model (a note carries each child's answer) instead.
         assert!(!dispatch.contains("await_subagent"), "no await reference: {dispatch}");
@@ -5473,9 +5508,9 @@ pub(crate) mod tests {
             "create_subagent must not let the model choose a model"
         );
 
-        let dispatch = schemas[0]["function"]["description"].as_str().unwrap();
-        assert!(dispatch.contains("reviewer (smol)"), "{dispatch}");
-        assert!(dispatch.contains("writer (inherit)"), "{dispatch}");
+        let catalog = agent_catalog(&reg).unwrap();
+        assert!(catalog.contains("`reviewer` (model: smol)"), "{catalog}");
+        assert!(catalog.contains("`writer` (model: inherit)"), "{catalog}");
     }
 
     /// `list_subagents` reports the model a name dispatches on next to its
@@ -5586,44 +5621,29 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// `agent` names the definition a worker runs, separately from the
-    /// worker's own `name`, so one plan can fan out several `explore` workers
-    /// (names must be unique: each is a blackboard file) and an ad-hoc worker
-    /// that happens to be called `research` is not hijacked by the built-in.
+    /// Several workers of one agent each run its definition under their own
+    /// numbered name, which is what their blackboard file and run id carry.
     #[test]
-    fn agent_names_the_definition_and_name_the_worker() {
+    fn repeated_agents_run_the_definition_under_their_own_names() {
         let root = unique_root("agent_field");
         let reg = SubagentRegistry::load(&root);
         let p = ToolPermissions::allow_all();
-        let plan = parse_dispatch_plan(&serde_json::json!({ "subagents": [
-            { "name": "explore-api", "agent": "explore", "task": "a" },
-            { "name": "explore-db", "agent": "explore", "task": "b" },
-            { "name": "research", "task": "look into the build", "allowed_tools": ["shell"] }
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "explore", "task": "a" },
+            { "agent": "explore", "task": "b" }
         ]}))
         .expect("two explore workers in one plan");
         let subs = &plan.phases[0].subagents;
-        assert_eq!(subs[0].agent.as_deref(), Some("explore"));
-
-        let api = resolve_dispatch_plain(&reg, &subs[0], &p).unwrap();
-        assert_eq!(api.definition.name, "explore-api", "the worker keeps its own name");
-        assert_eq!(api.definition.scope, SubagentScope::Builtin);
-        assert_eq!(api.definition.model.as_deref(), Some(SMOL_ROLE));
-        assert!(api.definition.system_prompt.contains("read-only"));
-
-        // No `agent`: a one-off, whatever its name, with its own tools.
-        let adhoc = resolve_dispatch_plain(&reg, &subs[2], &p).expect("not hijacked");
-        assert_ne!(adhoc.definition.scope, SubagentScope::Builtin);
-        assert_eq!(adhoc.definition.model, None);
-
-        // An `agent` that names nothing is an error the model can fix, not a
-        // silent fallback to a general-purpose agent on the main model.
-        let bad = SubagentRequest { agent: Some("nope".into()), ..req("w", None) };
-        let err = resolve_dispatch_plain(&reg, &bad, &p).unwrap_err().to_string();
-        assert!(err.contains("nope") && err.contains("explore"), "{err}");
+        let second = resolve_dispatch_plain(&reg, &subs[1], &p).unwrap();
+        assert_eq!(second.definition.name, "explore-2", "the worker keeps its own name");
+        assert_eq!(second.definition.scope, SubagentScope::Builtin);
+        assert_eq!(second.definition.model.as_deref(), Some(SMOL_ROLE));
+        assert_eq!(second.allowed_tools, None, "inherits the full toolset");
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The dispatch schema documents `agent` and lists what it may name.
+    /// The dispatch schema's `agent` is a required enum of the predefined
+    /// agents, and there is no free-form `name` to invent.
     #[test]
     fn the_dispatch_schema_offers_agent() {
         let reg = SubagentRegistry::load(&unique_root("agent_schema"));
@@ -5631,10 +5651,33 @@ pub(crate) mod tests {
         let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
         let agent = &item["properties"]["agent"];
         assert_eq!(agent["type"], "string");
-        let required = item["required"].as_array().unwrap();
-        assert!(!required.iter().any(|r| r == "agent"));
-        let dispatch = schemas[0]["function"]["description"].as_str().unwrap();
-        assert!(dispatch.contains("explore (smol)"), "{dispatch}");
+        assert_eq!(item["required"], serde_json::json!(["agent", "task"]));
+        assert!(item["properties"].get("name").is_none());
+        assert_eq!(
+            agent["enum"],
+            serde_json::json!(["debug", "explore", "general", "research", "review"])
+        );
+    }
+
+    /// Every `allowed_tools` array is pinned to the names the run offers, minus
+    /// the tools no child can get, plus the search tools a child may ask for.
+    #[test]
+    fn allowed_tools_are_pinned_to_the_offered_names() {
+        let reg = SubagentRegistry::load(&unique_root("tool_enum"));
+        let mut tools = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        tools.push(serde_json::json!({ "type": "function", "function": { "name": "shell" } }));
+        tools.push(serde_json::json!({ "type": "function", "function": { "name": "ask" } }));
+        constrain_tool_names(&mut tools);
+        let expected = serde_json::json!(["find", "grep", "ls", "shell"]);
+        let dispatch = &tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]
+            ["properties"]["allowed_tools"]["items"];
+        assert_eq!(dispatch["enum"], expected);
+        let create = tools
+            .iter()
+            .find(|s| s["function"]["name"] == "create_subagent")
+            .unwrap();
+        let items = &create["function"]["parameters"]["properties"]["allowed_tools"]["items"];
+        assert_eq!(items["enum"], expected);
     }
 
     #[test]
