@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  wally: {
+    models: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'deepseek-v4.1-flash-fast', 'glm-5.3-fast', 'deepseek-v4-pro-fast', 'deepseek-v4-flash-0731', 'minimax-m3'],
+    supportsCompletion: true,
+    supportsStreaming: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'deepseek-v4.1-flash-fast', 'glm-5.3-fast', 'deepseek-v4-pro-fast', 'deepseek-v4-flash-0731', 'minimax-m3'],
+    supportsJSON: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'deepseek-v4.1-flash-fast', 'glm-5.3-fast', 'deepseek-v4-pro-fast', 'deepseek-v4-flash-0731', 'minimax-m3'],
+    supportsImages: ['deepseek-v4.1-flash', 'kimi-k3', 'deepseek-v4.1-flash-fast'],
+    supportsToolCalls: ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'deepseek-v4.1-flash-fast', 'glm-5.3-fast', 'deepseek-v4-pro-fast', 'deepseek-v4-flash-0731', 'minimax-m3'],
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
