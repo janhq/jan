@@ -265,7 +265,7 @@ describe('MessageItem', () => {
                 toolCallId: 'c1',
                 state: 'output-error',
                 input: {},
-                errorText: 'Stopped by the user before the tool finished.',
+                errorText: 'Stopped before the tool finished.',
               },
             ],
           }) as any

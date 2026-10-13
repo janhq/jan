@@ -1,14 +1,15 @@
 import type { UIMessage } from '@ai-sdk/react'
 
 /**
- * What a tool card reads when the user pressed Stop before its call finished.
+ * What a tool card reads when the turn was stopped before its call finished.
  * It is also what the model is told on the next turn: the call was stopped and
- * its result discarded. Only MCP calls are cancelled on the backend; a web,
- * RAG or agent call may still finish its side effects, so this does not claim
- * the call never ran.
+ * its result discarded. Neutral on who stopped it, since Stop is also pressed
+ * for the user by the error handling (out of memory, backend or context
+ * errors). Only MCP calls are cancelled on the backend; a web, RAG or agent
+ * call may still finish its side effects, so this does not claim the call never
+ * ran.
  */
-export const STOPPED_TOOL_ERROR =
-  'Stopped by the user before the tool finished.'
+export const STOPPED_TOOL_ERROR = 'Stopped before the tool finished.'
 
 /** The part of a tool's result the tool loop reads. */
 export type ToolRunResult = { error?: string; content?: unknown }
