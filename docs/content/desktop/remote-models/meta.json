@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "anthropic",
+    "google",
+    "groq",
+    "mistralai",
+    "openai",
+    "azure",
+    "openrouter",
+    "huggingface",
+    "custom-endpoint",
+    "..."
+  ],
+  "title": "Cloud Providers"
+}

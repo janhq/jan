@@ -1,1 +1,6 @@
-{"pages":["desktop","agent"]}
+{
+  "pages": [
+    "desktop",
+    "agent"
+  ]
+}

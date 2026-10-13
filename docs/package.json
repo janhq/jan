@@ -28,6 +28,7 @@
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^3.5.0",
+    "unist-util-visit": "^5.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

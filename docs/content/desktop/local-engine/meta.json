@@ -1,0 +1,8 @@
+{
+  "pages": [
+    "llama-cpp",
+    "mlx",
+    "..."
+  ],
+  "title": "Local AI Engine"
+}

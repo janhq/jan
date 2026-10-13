@@ -23,7 +23,12 @@ export default async function Page(props: Props) {
   const MDX = page.data.body
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full} tableOfContent={{ style: 'clerk' }}>
+    <DocsPage
+      toc={page.data.toc}
+      full={page.data.full}
+      // Old site: full path breadcrumb (Docs > Jan Desktop > Install > Linux).
+      breadcrumb={{ includeRoot: true, includePage: true }}
+    >
       <DocsTitle>{page.data.title}</DocsTitle>
       {page.data.description && (
         <DocsDescription className="mb-0">{page.data.description}</DocsDescription>

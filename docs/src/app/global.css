@@ -136,6 +136,75 @@ body {
   padding-right: max(env(safe-area-inset-right), 1.5rem);
 }
 
+/* Callouts in the old Nextra look: tinted box, colored border and text. */
+.prose [data-callout],
+.jan-callout {
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+.jan-callout {
+  background: color-mix(in srgb, var(--callout-color) 10%, white);
+  border-color: color-mix(in srgb, var(--callout-color) 30%, white);
+  color: color-mix(in srgb, var(--callout-color) 75%, black);
+  font-size: 1rem;
+}
+.jan-callout > div:first-child {
+  display: none; /* the vertical bar */
+}
+.jan-callout p,
+.jan-callout li,
+.jan-callout strong,
+.jan-callout a {
+  color: inherit;
+}
+:root {
+  --color-fd-info: #2563eb;
+  --color-fd-warning: #ca8a04;
+  --color-fd-error: #dc2626;
+  --color-fd-success: #16a34a;
+  --color-fd-idea: #16a34a;
+}
+
+/* Code blocks: dark, as with Code Hike `dark-plus`. */
+.prose figure.shiki {
+  background: #1e1e1e;
+  border-color: #1e1e1e;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.prose figure.shiki button {
+  color: #c8c8c8;
+}
+
+/* <Steps>: every h3 is a numbered step, like Nextra's Steps. */
+.jan-steps {
+  counter-reset: step;
+  margin-inline-start: 1rem;
+  padding-inline-start: 1.75rem;
+  border-inline-start: 1px solid var(--color-fd-border);
+  margin-bottom: 3rem;
+}
+.jan-steps h3 {
+  counter-increment: step;
+  position: relative;
+}
+.jan-steps h3::before {
+  content: counter(step);
+  position: absolute;
+  inset-inline-start: calc(-1.75rem - 1rem - 0.5px);
+  top: -0.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: 4px solid var(--color-fd-background);
+  background: var(--color-fd-secondary);
+  color: var(--color-fd-secondary-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 /* Content images keep the old rounded look. */
 .prose img {
   border-radius: 12px;
