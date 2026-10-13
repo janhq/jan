@@ -843,26 +843,23 @@ function ThreadDetail() {
     if (settled === rendered || !last) return
     setChatMessages((prev) => settleStoppedToolCalls(prev))
     // A turn that was still streaming is persisted by onFinish; one that is
-    // already stored (its tools were running) has to be rewritten here. Its
-    // content already has no output for the unfinished calls, so only the
-    // errors and the stopped flag change.
+    // already stored (its tools were running) has to be rewritten here. It was
+    // stored before any tool ran, so the output of a call that did finish is
+    // only in the rendered message, and the follow-up reply that would have
+    // persisted it never happens.
     const stored = useMessages
       .getState()
       .getMessages(threadId)
       .find((m) => m.id === last.id)
     if (!stored) return
-    const storedErrors = (
-      stored.metadata as { toolErrors?: Record<string, string> } | undefined
-    )?.toolErrors
+    const settledLast = settled[settled.length - 1]
     updateMessage({
       ...stored,
+      content: extractContentPartsFromUIMessage(settledLast),
       metadata: {
         ...stored.metadata,
         stopped: true,
-        toolErrors: {
-          ...storedErrors,
-          ...toolErrorsOf(settled[settled.length - 1]),
-        },
+        toolErrors: toolErrorsOf(settledLast),
       },
     })
   }, [threadId, stop, setChatMessages, updateMessage])

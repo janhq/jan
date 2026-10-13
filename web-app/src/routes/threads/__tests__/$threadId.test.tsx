@@ -317,12 +317,22 @@ vi.mock('@/lib/messages', () => ({
       parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
     })),
   extractContentPartsFromUIMessage: (msg: any) =>
-    msg.parts
-      .filter((p: any) => p.type === 'text')
-      .map((p: any) => ({ type: 'text', text: { value: p.text, annotations: [] } })),
+    msg.parts.flatMap((p: any) =>
+      p.type === 'text'
+        ? [{ type: 'text', text: { value: p.text, annotations: [] } }]
+        : p.type?.startsWith('tool-')
+          ? [{ type: 'tool_call', tool_call_id: p.toolCallId, output: p.output }]
+          : []
+    ),
   uiMessageHasMeaningfulContent: (msg: any) =>
     !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
-  toolErrorsOf: () => undefined,
+  toolErrorsOf: (msg: any) => {
+    const errors: Record<string, string> = {}
+    for (const p of msg.parts ?? []) {
+      if (p.state === 'output-error') errors[p.toolCallId] = p.errorText
+    }
+    return Object.keys(errors).length ? errors : undefined
+  },
 }))
 
 // The chat runs MCP tools through the cancellable API so Stop can end the call.
@@ -1266,6 +1276,55 @@ describe('ThreadDetail route', () => {
           false
         )
         expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+      })
+
+      // The turn was stored before any tool ran, so a call that finished while
+      // another was still running has its output only in the rendered message.
+      it('Stop keeps a finished call\'s output and settles only the running one', async () => {
+        const part = (id: string, state: string, extra: object = {}) => ({
+          type: 'tool-fetch',
+          toolCallId: id,
+          input: {},
+          state,
+          ...extra,
+        })
+        const stored = {
+          id: 'a-tools',
+          role: 'assistant',
+          content: [],
+          metadata: { parentId: 'u1' },
+        }
+        h.messagesState.getMessages = vi.fn(() => [stored])
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          {
+            id: 'a-tools',
+            role: 'assistant',
+            parts: [
+              part('tcA', 'output-available', { output: 'result A' }),
+              part('tcB', 'input-available'),
+            ],
+          },
+        ]
+        renderComponent()
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+
+        const rewritten = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tools')
+        expect(rewritten.content).toEqual([
+          { type: 'tool_call', tool_call_id: 'tcA', output: 'result A' },
+          { type: 'tool_call', tool_call_id: 'tcB', output: undefined },
+        ])
+        expect(rewritten.metadata).toMatchObject({
+          parentId: 'u1',
+          stopped: true,
+          toolErrors: { tcB: expect.stringContaining('Stopped') },
+        })
+        expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
       })
 
       it('drains the runtime queue and times every call', async () => {
