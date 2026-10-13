@@ -134,13 +134,20 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
-/// Join a program and its arguments into a `CreateProcessW` command line.
+/// Join a program and its arguments into a `CreateProcessW` command line. cmd
+/// does not parse its line with `CommandLineToArgvW`, so for cmd the last
+/// argument -- the command -- is appended in cmd's own form instead of quoted.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn command_line(program: &Path, args: &[String]) -> String {
     let mut line = quote_arg(&program.to_string_lossy());
-    for a in args {
+    let cmd = super::proc::kind_of(program) == super::proc::ShellKind::Cmd;
+    for (i, a) in args.iter().enumerate() {
         line.push(' ');
-        line.push_str(&quote_arg(a));
+        if cmd && i + 1 == args.len() {
+            line.push_str(&super::proc::cmd_payload(a));
+        } else {
+            line.push_str(&quote_arg(a));
+        }
     }
     line
 }
@@ -244,11 +251,26 @@ where
     block
 }
 
+/// The shell's working directory: the long form of `workspace` (`long`, its
+/// canonical path) when that is still a drive path, else `workspace` as given.
+///
+/// The long form fixes an 8.3 short path, which Windows PowerShell 5.1 cannot
+/// expand inside the container. But a workspace on a mapped drive canonicalizes
+/// to `\\?\UNC\server\share\...`, and cmd refuses a UNC working directory
+/// and silently runs in `C:\Windows` instead, so that one keeps its drive path.
+#[cfg(any(windows, test))]
+fn working_dir(workspace: &Path, long: Option<PathBuf>) -> PathBuf {
+    match long.map(|l| super::proc::without_verbatim_prefix(&l)) {
+        Some(l) if !l.to_string_lossy().starts_with(r"\\") => l,
+        _ => workspace.to_path_buf(),
+    }
+}
+
 /// The message for a confined spawn that never started. The advice is keyed to
 /// the error: `ERROR_ACCESS_DENIED` is the one case where a shell installed
 /// under the user profile is the likely cause, and every other failure used to
-/// be told the same thing - which sent the report that prompted this to
-/// reinstall Git for Windows system-wide on a machine that already had it.
+/// be told the same thing - which sent one report to reinstall a shell that
+/// was already installed system-wide.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
     /// `ERROR_ACCESS_DENIED`.
@@ -259,8 +281,9 @@ fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
     match error.raw_os_error() {
         Some(DENIED) => format!(
             "could not start {} inside the sandbox: {error}. A shell installed \
-             under your user profile is unreadable to the sandbox; install \
-             Git for Windows system-wide instead.",
+             under your user profile is unreadable to the sandbox; install it \
+             system-wide (under Program Files), or unset JAN_AGENT_SHELL to use \
+             the built-in Windows PowerShell.",
             program.display()
         ),
         Some(ENVVAR_NOT_FOUND) => format!(
@@ -671,7 +694,13 @@ mod win {
         startup.lpAttributeList = attributes;
 
         let mut line = wide(OsStr::new(&command_line(&req.program, &req.args)));
-        let cwd = wide(req.workspace.as_os_str());
+        // The moniker and ACEs keep the path as given. The shell's working
+        // directory is the long form: a `TEMP`-based workspace is often 8.3
+        // (`C:\Users\RUNNER~1\...`), and Windows PowerShell 5.1 expands a short
+        // name by listing each parent, which the container may not read, so it
+        // fails with access denied. Resolved here, outside the container, and
+        // without the verbatim prefix `canonicalize` adds, which cmd refuses.
+        let cwd = wide(super::working_dir(&req.workspace, req.workspace.canonicalize().ok()).as_os_str());
         // The helper's own environment, which `proc.rs` reduced to
         // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
         // than left to inheritance: see `environment_block`.
@@ -868,6 +897,38 @@ mod tests {
         assert_eq!(
             line,
             r#""C:\Program Files\Git\bin\bash.exe" -c "ls -la && echo \"done\"""#
+        );
+    }
+
+    /// A short or verbatim path becomes its long drive form; a mapped drive
+    /// that resolves to UNC keeps its drive letter, which cmd can start in.
+    #[test]
+    fn the_working_dir_is_the_long_form_unless_that_is_unc() {
+        let short = Path::new(r"C:\Users\RUNNER~1\ws");
+        assert_eq!(
+            working_dir(short, Some(PathBuf::from(r"\\?\C:\Users\runneradmin\ws"))),
+            PathBuf::from(r"C:\Users\runneradmin\ws")
+        );
+        let mapped = Path::new(r"Z:\proj");
+        assert_eq!(
+            working_dir(mapped, Some(PathBuf::from(r"\\?\UNC\server\share\proj"))),
+            PathBuf::from(r"Z:\proj")
+        );
+        assert_eq!(working_dir(mapped, None), PathBuf::from(r"Z:\proj"));
+    }
+
+    /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
+    /// are quoted as usual, but the command goes in cmd's `/S` form so its own
+    /// quotes are not turned into `\"`.
+    #[test]
+    fn the_cmd_command_line_hands_the_command_over_in_cmds_form() {
+        let line = command_line(
+            Path::new(r"C:\Windows\System32\cmd.exe"),
+            &["/D".into(), "/S".into(), "/C".into(), r#"echo "a b" && dir"#.into()],
+        );
+        assert_eq!(
+            line,
+            r#"C:\Windows\System32\cmd.exe /D /S /C "echo "a b" && dir""#
         );
     }
 

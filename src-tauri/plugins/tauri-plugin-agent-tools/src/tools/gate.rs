@@ -20,6 +20,24 @@ pub enum PromptKind {
     /// exists.
     WriteEscape,
     Exec,
+    /// A shell command asking to run outside the OS sandbox (`escalate: true`).
+    /// Never covered by a grant, an allow rule or auto-approval: it is the one
+    /// prompt that widens the sandbox itself, so it always needs a fresh
+    /// answer (see [`requests_escalation`]).
+    Escalate,
+}
+
+/// The `shell` argument that asks to run the command unconfined.
+pub const ESCALATE_ARG: &str = "escalate";
+/// The `shell` argument carrying the model's reason, shown in the prompt.
+pub const JUSTIFICATION_ARG: &str = "justification";
+
+/// Whether this call asks to leave the sandbox: the shell with `escalate`
+/// set to literal `true`. Any other tool, or any other value, is not a
+/// request, so a confused model cannot escalate by accident.
+pub fn requests_escalation(tool: &BuiltinTool, args: &serde_json::Value) -> bool {
+    tool.name == crate::tools::SHELL_TOOL
+        && args.get(ESCALATE_ARG).and_then(|v| v.as_bool()) == Some(true)
 }
 
 /// The user's answer to a permission prompt (wire shape for a later IPC command).
@@ -57,6 +75,7 @@ impl SessionGrants {
             PromptKind::WriteEscape => self.write_escape,
             // Exec coverage is command-specific; use `covers_command`.
             PromptKind::Exec => false,
+            PromptKind::Escalate => false,
         }
     }
 
@@ -79,6 +98,8 @@ impl SessionGrants {
             PromptKind::WriteEscape => self.write_escape = true,
             // No-op: exec is granted per command via `grant_command`.
             PromptKind::Exec => {}
+            // No-op: an escalation is answered once, never remembered.
+            PromptKind::Escalate => {}
         }
     }
 
@@ -178,6 +199,11 @@ pub fn resolve_decision(
         if hits_path || hits_command {
             return Decision::HardDeny(DenyReason::Hidden);
         }
+    }
+    // After the hard denies, ahead of allow rules and grants: those vouch for
+    // the tool running confined, which is not what is being asked.
+    if requests_escalation(tool, args) {
+        return Decision::Prompt(PromptKind::Escalate);
     }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
@@ -404,7 +430,7 @@ mod tests {
             ("edit", json!({"path": ".jan/config.toml"})),
             ("ls", json!({"path": ".jan"})),
             ("grep", json!({"pattern": "key", "path": ".jan"})),
-            ("bash", json!({"command": "cat ~/.jan/config.toml"})),
+            ("shell", json!({"command": "cat ~/.jan/config.toml"})),
         ];
         for perms in [ToolPermissions::default(), ToolPermissions::allow_all()] {
             for (tool, args) in &cases {
@@ -492,7 +518,7 @@ mod tests {
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
         let grants = SessionGrants::default();
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "ls"}),
             &GateContext {
                 project_root: &root,
@@ -506,6 +532,97 @@ mod tests {
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn escalation_ctx(root: &Path) -> GateContext<'_> {
+        GateContext {
+            project_root: root,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: None,
+        }
+    }
+
+    /// An escalation asks to leave the sandbox, which no allow rule, session
+    /// grant or earlier "allow always" was given for: it prompts regardless.
+    #[test]
+    fn escalated_shell_prompts_past_allow_rules_and_grants() {
+        let root = unique_root();
+        let args = json!({"command": "cargo build", "escalate": true, "justification": "fetch crates"});
+        let mut grants = SessionGrants::default();
+        grants.grant_command("cargo build");
+        for perms in [
+            ToolPermissions::allow_all(),
+            ToolPermissions::new(PermissionDefault::ReadOnly, &s(&["shell"]), &[], &[]),
+            ToolPermissions::default(),
+        ] {
+            let d = resolve_decision(
+                lookup("shell").unwrap(),
+                &args,
+                &escalation_ctx(&root),
+                &perms,
+                &grants,
+            );
+            assert_eq!(d, Decision::Prompt(PromptKind::Escalate));
+        }
+        // `grant` is a no-op for it, so nothing can make it stick.
+        grants.grant(PromptKind::Escalate);
+        assert!(!grants.covers(PromptKind::Escalate));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `escalate: false` (or absent) is an ordinary exec.
+    #[test]
+    fn unescalated_shell_is_ordinary_exec() {
+        let root = unique_root();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &s(&["shell"]), &[], &[]);
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &json!({"command": "ls", "escalate": false}),
+            &escalation_ctx(&root),
+            &perms,
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The two hard denies still win: a denied shell, and a command reaching
+    /// the Jan home, are refused before anyone is asked to unconfine them.
+    #[test]
+    fn hard_denies_win_over_escalation() {
+        let root = unique_root();
+        let jan = root.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        let ctx = GateContext { hidden_root: Some(&jan), ..escalation_ctx(&root) };
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &json!({"command": "cat .jan/config.toml", "escalate": true}),
+            &ctx,
+            &ToolPermissions::allow_all(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
+        let denied = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["shell"]), &[]);
+        let d = resolve_decision(
+            lookup("shell").unwrap(),
+            &json!({"command": "ls", "escalate": true}),
+            &escalation_ctx(&root),
+            &denied,
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::HardDeny(DenyReason::Policy));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Only the shell can escalate: the flag on any other tool means nothing.
+    #[test]
+    fn escalation_is_shell_only() {
+        assert!(requests_escalation(lookup("shell").unwrap(), &json!({"command": "x", "escalate": true})));
+        assert!(!requests_escalation(lookup("shell").unwrap(), &json!({"command": "x"})));
+        assert!(!requests_escalation(lookup("shell").unwrap(), &json!({"command": "x", "escalate": "yes"})));
+        assert!(!requests_escalation(lookup("write").unwrap(), &json!({"path": "x", "escalate": true})));
     }
 
     #[test]
@@ -526,7 +643,7 @@ mod tests {
 
         // Same base command -> allowed without prompting.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "git push"}),
             &GateContext {
                 project_root: &root,
@@ -542,7 +659,7 @@ mod tests {
 
         // A different command still prompts.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "rm -rf /"}),
             &GateContext {
                 project_root: &root,
@@ -572,7 +689,7 @@ mod tests {
             "git status $(rm x)",
         ] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
@@ -602,7 +719,7 @@ mod tests {
         grants.grant_command("git status && rm foo");
         for cmd in ["git push", "rm bar", "rm baz && git pull"] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
@@ -628,7 +745,7 @@ mod tests {
 
         // Whitespace-normalized identical command is covered.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo   systemctl restart nginx"}),
             &GateContext {
                 project_root: &root,
@@ -644,7 +761,7 @@ mod tests {
 
         // A different sudo command still prompts (no blanket `sudo` grant).
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo rm -rf /"}),
             &GateContext {
                 project_root: &root,

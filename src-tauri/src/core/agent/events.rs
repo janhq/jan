@@ -285,6 +285,10 @@ pub enum StreamEvent {
         diff: Option<String>,
         prompt_kind: String,
         offers_always: bool,
+        /// The model's reason for an `escalate` prompt (running a shell command
+        /// outside the sandbox), shown beside the command; `None` otherwise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        justification: Option<String>,
     },
     /// A host-registered tool was called and the run is waiting for the host to
     /// execute it. The client replies with a `tool_result` line carrying this
@@ -750,6 +754,7 @@ pub(crate) mod tests {
                     diff: None,
                     prompt_kind: "exec".into(),
                     offers_always: true,
+                    justification: None,
                 },
             ),
             (
@@ -999,6 +1004,7 @@ pub(crate) mod tests {
             diff: Some("@@ created file @@\n+ hi".into()),
             prompt_kind: "write".into(),
             offers_always: true,
+            justification: None,
         })
         .unwrap();
         assert_eq!(

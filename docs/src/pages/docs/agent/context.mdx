@@ -26,10 +26,11 @@ only when a turn ends.
 At the end of a turn you get a receipt:
 
 ```
-2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+  Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ```
 
-`↑` is context sent, `↓` tokens produced, then elapsed time and throughput. The two differ on
+First how long the turn took and when it finished, then `↑` context sent, `↓` tokens produced, and
+throughput. The two differ on
 purpose: context is the size of the request, output is what came back.
 
 ### The `/context` overlay

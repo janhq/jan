@@ -88,7 +88,6 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
-import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -101,6 +100,13 @@ import {
   createAudioAttachment,
   createVideoAttachment,
 } from '@/types/attachment'
+import {
+  applyIngestionChoices,
+  needsIngestionChoice,
+  promptIngestionChoices,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
+import { activePathTokens } from '@/lib/message-branching'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
@@ -132,7 +138,10 @@ type ChatInputProps = {
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
     /** Document attachments, for surfaces that do not read them back out of
      * the attachments store themselves. */
-    documents?: Attachment[]
+    documents?: Attachment[],
+    /** What the user typed, before @path references were expanded into
+     * `text`, so a cancelled send can hand it back unchanged. */
+    draft?: string
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -460,8 +469,12 @@ const ChatInput = memo(function ChatInput({
     )
   )
 
+  // Read when a document is attached, without rebuilding the attach
+  // callback on every message update.
+  const threadMessagesRef = useRef(threadMessages)
+  threadMessagesRef.current = threadMessages
+
   const maxRows = 10
-  const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -532,6 +545,9 @@ const ChatInput = memo(function ChatInput({
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
+  const autoInlineContextRatio = useAttachments(
+    (s) => s.autoInlineContextRatio
+  )
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
@@ -697,7 +713,8 @@ const ChatInput = memo(function ChatInput({
       onSubmit(
         effectivePrompt,
         files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined
+        documents.length > 0 ? documents : undefined,
+        prompt
       )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
@@ -714,6 +731,7 @@ const ChatInput = memo(function ChatInput({
 
       const messagePayload = {
         text: effectivePrompt,
+        draft: prompt,
         files: [] as Array<{ type: string; mediaType: string; url: string }>,
       }
 
@@ -865,7 +883,7 @@ const ChatInput = memo(function ChatInput({
       }
       cancelToolCall?.()
       // Aborting the stream/loop only discards a pending tool result; a running
-      // or backgrounded bash keeps executing until its session's shells are
+      // or backgrounded shell keeps executing until its session's shells are
       // killed. Chat's tool thread_id is the chat thread id.
       void cancelAgentThreadBash(threadId)
     },
@@ -884,60 +902,60 @@ const ChatInput = memo(function ChatInput({
 
       // Only collect the user's inline-vs-embeddings preference via the
       // dialog.  Actual ingestion is always deferred to send time
-      // (processAttachmentsForSend inside processAndSendMessage).
-      const docsNeedingPrompt = docs.filter((doc) => {
-        if (doc.processed || doc.injectionMode) return false
-        const preference = doc.parseMode ?? parsePreference
-        return preference === 'prompt' || preference === 'auto'
-      })
+      // (processAttachmentsForSend inside processAndSendMessage), where
+      // 'auto' documents are routed by size when the model's window is known.
+      // Same conversation-aware budget as the send path (the active branch,
+      // which is what gets sent). If the budget is gone by send time, the
+      // send path asks for the remaining 'auto' documents itself.
+      const hasInlineBudget =
+        (await resolveAutoInlineBudget(
+          selectedModel,
+          selectedProvider,
+          autoInlineContextRatio,
+          activePathTokens(
+            threadMessagesRef.current,
+            (
+              useThreads.getState().threads[currentThreadId ?? '']
+                ?.metadata as Record<string, unknown> | undefined
+            )?.activeRootId as string | undefined
+          )
+        )) !== undefined
+      const docsNeedingPrompt = docs.filter((doc) =>
+        needsIngestionChoice(doc, parsePreference, hasInlineBudget)
+      )
 
       if (docsNeedingPrompt.length > 0) {
-        const choices = new Map<string, 'inline' | 'embeddings'>()
-        for (let i = 0; i < docsNeedingPrompt.length; i++) {
-          const doc = docsNeedingPrompt[i]
-          const choice = await useAttachmentIngestionPrompt
-            .getState()
-            .showPrompt(
-              doc,
-              ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
-              i,
-              docsNeedingPrompt.length
-            )
+        const choices = await promptIngestionChoices(docsNeedingPrompt)
 
-          if (!choice) {
-            // User cancelled — remove all pending docs
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter(
-                (att) =>
-                  !docsNeedingPrompt.some(
-                    (d) => d.path && att.path && d.path === att.path
-                  )
-              )
+        if (!choices) {
+          // User cancelled — remove all pending docs
+          setAttachmentsForThread(attachmentsKey, (prev) =>
+            prev.filter(
+              (att) =>
+                !docsNeedingPrompt.some(
+                  (d) => d.path && att.path && d.path === att.path
+                )
             )
-            return
-          }
-
-          if (doc.path) {
-            choices.set(doc.path, choice)
-          }
+          )
+          return
         }
 
         // Persist each document's chosen mode so processAttachmentsForSend
         // can pick it up at send time.
         if (choices.size > 0) {
           setAttachmentsForThread(attachmentsKey, (prev) =>
-            prev.map((att) => {
-              const mode = att.path ? choices.get(att.path) : undefined
-              return mode ? { ...att, parseMode: mode } : att
-            })
+            applyIngestionChoices(prev, choices)
           )
         }
       }
     },
     [
-      ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
       attachmentsKey,
+      autoInlineContextRatio,
+      currentThreadId,
       parsePreference,
+      selectedModel,
+      selectedProvider,
       setAttachmentsForThread,
     ]
   )

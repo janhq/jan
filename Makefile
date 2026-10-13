@@ -153,6 +153,10 @@ test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
+	# No --locked: this crate gitignores its Cargo.lock, as rust-check.yml assumes.
+	# The unit tests that run the shell for real are ignored on Windows, where
+	# sandbox_spawn covers them (it needs its own main to host the helper re-exec).
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-agent-tools/Cargo.toml --no-default-features --lib --test sandbox_spawn
 
 # protocol/schema.json is committed, and core::cli::protocol_schema fails when it
 # no longer matches the types that define the channel. This is the fix for that
@@ -166,7 +170,8 @@ protocol-schema:
 # The same guard for the RPC surface: protocol/rpc-schema.json is committed, and
 # core::cli::rpc_schema fails when it no longer matches the types that define the
 # envelope. It covers this surface only - stream-json records are in
-# protocol/schema.json, and ACP has no document yet.
+# protocol/schema.json, and ACP (`jan acp`) uses the upstream
+# ACP schema.
 protocol-rpc-schema:
 	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent rpc-schema --out ../../protocol/rpc-schema.json
 
@@ -330,9 +335,10 @@ endif
 # cuda12 and cuda13 cannot be combined: the CUDA major is whichever nvcc is on
 # PATH, one toolkit per configure, and both emit libggml-cuda.so.
 #
-# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
-# llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
-# CMakeLists only adds the 50/61/70 virtual archs below CUDA 13). They are still
+# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found ($CUDACXX,
+# else PATH). On x86_64, build.rs passes ggml-cuda's default arch list for that
+# version with Turing as native code (#9185); it only adds the 50/61/70 virtual
+# archs below CUDA 13. They are still
 # separate variants because the resulting binaries cover different GPUs, so
 # check-engine-toolchain asserts the toolkit matches the variant name rather
 # than letting a cuda13 build ship labelled cuda12.

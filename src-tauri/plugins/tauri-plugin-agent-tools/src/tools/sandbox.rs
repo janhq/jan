@@ -593,11 +593,16 @@ mod tests {
                 file.to_string_lossy()
             );
         }
-        // Outside the scratch the path is untouched either way.
+        // Outside the scratch the path is only lexically normalized, which on
+        // Windows also spells it with the native separator.
         let other = PathBuf::from("/elsewhere/out.txt");
         assert_eq!(
             scratch_display_path(Some(&scratch), &other),
-            other.to_string_lossy()
+            if cfg!(windows) {
+                r"\elsewhere\out.txt"
+            } else {
+                "/elsewhere/out.txt"
+            }
         );
     }
 
@@ -666,7 +671,10 @@ mod tests {
     }
 
     /// `/tmpx` and `/tmp-archive` are not descendants of `/tmp` and must not be
-    /// silently redirected into the scratch.
+    /// silently redirected into the scratch. Unix only: the remap exists only
+    /// where a sandbox mounts the scratch over `/tmp`, and on Windows `/tmp` is
+    /// not an absolute path at all.
+    #[cfg(unix)]
     #[test]
     fn tmp_lookalikes_are_not_remapped() {
         assert_eq!(tmp_relative("/tmp"), Some(String::new()));

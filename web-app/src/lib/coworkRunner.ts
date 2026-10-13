@@ -101,7 +101,7 @@ export function releaseHandle(sid: string, handle: RunHandle): void {
  * Stop a session's run: the model stream, the tool dispatch loop, every nested
  * subagent, and any question the user was being asked.
  *
- * `abortRun` unwinds only the JS side; a running or backgrounded `bash` child
+ * `abortRun` unwinds only the JS side; a running or backgrounded `shell` child
  * is killed separately by the Stop handler via `cancelAgentThreadBash`, which
  * reaps the session's shells in Rust (`proc::kill_thread`).
  */

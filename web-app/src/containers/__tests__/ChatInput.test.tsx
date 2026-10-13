@@ -398,7 +398,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'hello world',
+        undefined,
+        undefined,
+        'hello world'
+      )
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
@@ -432,7 +437,12 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'button submit',
+        undefined,
+        undefined,
+        'button submit'
+      )
     )
   })
 
@@ -547,7 +557,8 @@ describe('ChatInput', () => {
             url: 'data:image/png;base64,xxx',
           }),
         ]),
-        undefined
+        undefined,
+        'with image'
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
@@ -562,9 +573,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('read this', undefined, [
-        expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' }),
-      ])
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read this',
+        undefined,
+        [expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' })],
+        'read this'
+      )
     )
   })
 

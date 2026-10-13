@@ -202,7 +202,7 @@ class AdkTest(unittest.TestCase):
             self.assertTrue(fork.id)
             self.assertNotEqual(fork.id, first.id)
             self.assertEqual(fork.model, "stub-model")
-            self.assertIn("bash", fork.get_tools()["tools"])
+            self.assertIn("shell", fork.get_tools()["tools"])
 
     def test_a_turn_is_bounded_when_nobody_drains_it(self) -> None:
         scratch = self.prepare([prose("unread")])

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import { Minus, Square, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Copy, Minus, Square, X } from 'lucide-react'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,27 @@ export const WindowControls = () => {
     }
   }, [appWindow, refresh])
 
+  // Maximize, restore and OS snapping all resize the window, so re-read the
+  // state on every resize to swap the Maximize/Restore glyph.
+  const [isMaximized, setIsMaximized] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    const sync = async () => {
+      try {
+        const maximized = await appWindow.isMaximized()
+        if (!cancelled) setIsMaximized(maximized)
+      } catch {
+        // Missing permission must not break the title bar; keep last state.
+      }
+    }
+    sync()
+    const unlisten = appWindow.onResized(sync)
+    return () => {
+      cancelled = true
+      unlisten.then((fn) => fn()).catch(() => {})
+    }
+  }, [appWindow])
+
   const actions: Record<ButtonId, () => Promise<void>> = {
     minimize: () => appWindow.minimize(),
     maximize: () => appWindow.toggleMaximize(),
@@ -50,12 +71,16 @@ export const WindowControls = () => {
   }
   const icons: Record<ButtonId, React.ReactNode> = {
     minimize: <Minus className="size-4" />,
-    maximize: <Square className="size-3" />,
+    maximize: isMaximized ? (
+      <Copy className="size-3" />
+    ) : (
+      <Square className="size-3" />
+    ),
     close: <X className="size-4" />,
   }
   const labels: Record<ButtonId, string> = {
     minimize: 'Minimize',
-    maximize: 'Maximize',
+    maximize: isMaximized ? 'Restore' : 'Maximize',
     close: 'Close',
   }
 

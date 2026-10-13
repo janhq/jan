@@ -5,6 +5,9 @@ import {
   ChatCompletionRole,
 } from '@janhq/core'
 
+import { estimateConversationTokens } from '@/lib/context-manager'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 /**
@@ -115,6 +118,20 @@ export const computeActivePath = (
   }
   return path
 }
+
+/**
+ * Tokens the conversation the model will actually see already occupies. Only
+ * the active branch is sent, so inactive versions must not count.
+ */
+export const activePathTokens = (
+  messages: ThreadMessage[] | undefined,
+  activeRootId?: string
+): number =>
+  estimateConversationTokens(
+    convertThreadMessagesToUIMessages(
+      computeActivePath(messages ?? [], activeRootId)
+    )
+  )
 
 /** Return a copy of `m` with `parentId` set in metadata. */
 export const withParentId = (

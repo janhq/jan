@@ -42,6 +42,21 @@ pub(crate) struct AgentToml {
     /// `[hooks]` map because several hooks may share one event.
     #[serde(default)]
     pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[subagents.<name>]` -- per-project overrides of saved subagent
+    /// definitions, keyed by definition name.
+    #[serde(default)]
+    pub subagents: BTreeMap<String, SubagentOverride>,
+}
+
+/// One `[subagents.<name>]` table. Lets a project move a definition it does
+/// not own (a user-wide or plugin agent) to another model without editing the
+/// definition's file.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct SubagentOverride {
+    /// Replaces the definition's `model`: a role (`smol`, `inherit`) or a
+    /// literal model id. Blank is ignored.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// `[prompt]` — where each contributor to the system prompt may sit. Deny-wins,
@@ -161,12 +176,6 @@ pub(crate) struct ProviderSection {
 pub(crate) struct SkillsSection {
     #[serde(default)]
     pub enabled: Vec<String>,
-    /// Retired `inject = "always" | "relevance"`: it was scaffolded and
-    /// documented but never read, so it is no longer part of the config.
-    /// Still accepted (any value) so an older agent.toml keeps parsing; its
-    /// presence only earns a one-time log warning.
-    #[serde(default)]
-    pub inject: Option<toml::Value>,
 }
 
 /// `[budget]` — the only cap on how long a run may go. The agent takes as many
@@ -226,6 +235,16 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Saved threads untouched for this many days are pruned at session start
+    /// (default 90; 0 disables), when `prune_threads = true` in
+    /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
+    /// parents and worktree-owning threads are always kept.
+    #[serde(default)]
+    pub thread_retention_days: Option<u32>,
+    /// Most saved threads a project keeps (default 500; 0 disables); the oldest
+    /// past it are pruned at session start, subject to the same exemptions.
+    #[serde(default)]
+    pub max_threads: Option<u32>,
     /// Expand `<think>` reasoning blocks in the TUI transcript instead of
     /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
     /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
@@ -283,6 +302,13 @@ pub(crate) struct ToolsSection {
     /// checks it out.
     #[serde(default)]
     pub sandbox: Option<bool>,
+    /// Let a sandboxed `shell` call that asks to escalate run unconfined
+    /// without an escalation prompt; an exec approval the run requires anyway
+    /// (`--safe`) still applies. `None` (unset) and `false` keep escalation
+    /// behind a human answer -- auto-approval never covers it -- and refuse it
+    /// where nobody can answer. For unattended runs that accept the risk.
+    #[serde(default)]
+    pub allow_escalation: Option<bool>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist, merged over `~/.jan/config.toml`. Empty
     /// by default; a secret-looking name is never copied by a glob.
@@ -302,6 +328,9 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
+# max_threads = 500  # keep at most this many saved threads; 0 disables
+#                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 # send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 #                        # (a provider that rejects the field is detected and stripped automatically)
@@ -345,11 +374,16 @@ allow_write = []
 # credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
 # allows it (true), the desktop masks $HOME. Writes stay in the workspace.
 # allow_home_read = true
-# Whether `bash` runs under OS confinement at all. Unset follows the surface:
+# Whether `shell` runs under OS confinement at all. Unset follows the surface:
 # the CLI runs unconfined unless you pass --sandbox or set sandbox = true in
 # ~/.jan/config.toml; the desktop always confines. Set it here to require
 # confinement for anyone working in this project.
 # sandbox = true
+# Let a sandboxed shell command that asks to escalate run outside the sandbox
+# without asking you. Off by default: escalation always waits for your answer
+# (even when other tools are auto-approved) and is refused where nobody can
+# answer, such as a piped headless run. Same as passing --allow-escalation.
+# allow_escalation = true
 # Host environment variables the shell may inherit beyond the minimal base
 # (PATH, HOME, TMPDIR, ...). Names are exact or use a "*" wildcard; merged with
 # ~/.jan/config.toml. A secret-looking name (*KEY*, *TOKEN*, ...) is never
@@ -362,6 +396,12 @@ allow_write = []
 
 [skills]
 enabled = []
+
+# Per-project model for a saved subagent, overriding its definition's own.
+# A model id, "smol" (smol_model in ~/.jan/config.toml) or "inherit" (this
+# session's model). /settings > subagents edits these.
+# [subagents.explorer]
+# model = "smol"
 
 # Where each contributor to the system prompt may sit, deny-wins like [tools].
 # Above the cache line ("prefix") a contributor must be constant for the whole
@@ -493,6 +533,8 @@ pub(crate) struct RunSettings {
     /// `[tools].sandbox`; `None` when unset, so the caller applies the default
     /// appropriate to its surface.
     pub sandbox: Option<bool>,
+    /// `[tools].allow_escalation`; `None` when unset.
+    pub allow_escalation: Option<bool>,
     /// `[tools].env_passthrough`: host env-var names/globs the shell may inherit
     /// beyond the base allowlist. Merged with the global setting by the caller.
     pub env_passthrough: Vec<String>,
@@ -506,6 +548,11 @@ pub(crate) struct RunSettings {
     /// like the `[agent]` section it comes from.
     #[cfg(feature = "cli")]
     pub worktree: Option<bool>,
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
+    /// shell tool's old name `bash`, which now matches nothing. Reported at run
+    /// start with the hook-load notices, so a deny rule that stopped applying
+    /// does not do so silently.
+    pub tool_notices: Vec<String>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -514,30 +561,36 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     let Ok(cfg) = load_agent_config(project_root) else {
         return RunSettings::default();
     };
-    if cfg.skills.inject.is_some() {
-        warn_retired_inject();
-    }
+    let tool_notices = renamed_tool_notices(&cfg.tools);
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
         sandbox: cfg.tools.sandbox,
+        allow_escalation: cfg.tools.allow_escalation,
         env_passthrough: cfg.tools.env_passthrough,
         env_set: cfg.tools.env_set.into_iter().collect(),
+        tool_notices,
         prompt: PromptPolicy::new(cfg.prompt.default, cfg.prompt.prefix_allow),
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
 }
 
-/// Log once per process that `[skills].inject` is ignored.
-fn warn_retired_inject() {
-    static WARNED: std::sync::Once = std::sync::Once::new();
-    WARNED.call_once(|| {
-        log::warn!(
-            "agent.toml: [skills].inject is no longer used and is ignored; every enabled skill's name and description is listed in the prompt. Remove the key to silence this warning."
-        );
-    });
+/// See [`RunSettings::tool_notices`].
+fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
+    [
+        ("[tools] allow", &tools.allow),
+        ("[tools] deny", &tools.deny),
+        ("[tools] allow_write", &tools.allow_write),
+    ]
+    .into_iter()
+    .flat_map(|(where_, list)| {
+        list.iter().filter_map(move |name| {
+            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+        })
+    })
+    .collect()
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
@@ -608,11 +661,35 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !toml_path.exists() {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
+    } else if drop_retired_keys(&toml_path) {
+        log::info!("agent.toml: removed the retired [skills].inject key");
     }
     // Best-effort: only the memory index's project pointers read it.
     let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&agent_dir, project_root);
 
     Ok(agent_dir)
+}
+
+/// Delete keys an older scaffold wrote that nothing reads any more, in place and
+/// format-preserving. Only `[skills].inject` today (janhq/jan-internal#394): the
+/// agent.toml is Jan's own scaffold in Jan's store, so tidying it here beats a
+/// warning on every launch asking the user to do the same edit by hand.
+///
+/// Best-effort: a file that cannot be read, parsed or written is left alone,
+/// since the key is ignored when parsing anyway. True when a key was removed.
+fn drop_retired_keys(path: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(mut doc) = raw.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let removed = doc
+        .get_mut("skills")
+        .and_then(|skills| skills.as_table_like_mut())
+        .and_then(|skills| skills.remove("inject"))
+        .is_some();
+    removed && std::fs::write(path, doc.to_string()).is_ok()
 }
 
 /// Persist `[agent].model` into the agent.toml at `path`, format-preserving
@@ -628,6 +705,70 @@ pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), St
     let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
     agent["model"] = toml_edit::value(model);
 
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist `[subagents.<name>].model` into the agent.toml at `path`,
+/// format-preserving. `None` removes the key, and the table with it once
+/// empty, so the definition's own model applies again. A dedicated writer
+/// rather than [`set_agent_key`]: a definition name may itself be any
+/// `[A-Za-z0-9_-]` string, so `subagents.<name>.model` cannot be split on dots.
+#[cfg(feature = "cli")]
+pub(crate) fn set_subagent_model(
+    path: &Path,
+    name: &str,
+    model: Option<&str>,
+) -> Result<(), String> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("Failed to read {}: {e}", path.display())),
+    };
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    match model.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(model) => {
+            let subagents = doc["subagents"].or_insert(toml_edit::table());
+            // Dotted headers (`[subagents.explorer]`) rather than an empty
+            // `[subagents]` header above them. A hand-written inline table is
+            // edited in place instead, in whatever shape the user chose.
+            if let Some(table) = subagents.as_table_mut() {
+                table.set_implicit(true);
+            }
+            let subagents = subagents
+                .as_table_like_mut()
+                .ok_or_else(|| format!("{}: `subagents` is not a table", path.display()))?;
+            if subagents.get(name).is_none() {
+                subagents.insert(name, toml_edit::table());
+            }
+            let entry = subagents
+                .get_mut(name)
+                .and_then(|e| e.as_table_like_mut())
+                .ok_or_else(|| format!("{}: `subagents.{name}` is not a table", path.display()))?;
+            entry.insert("model", toml_edit::value(model));
+        }
+        None => {
+            if let Some(subagents) = doc.get_mut("subagents").and_then(|t| t.as_table_like_mut()) {
+                if let Some(entry) = subagents.get_mut(name).and_then(|t| t.as_table_like_mut()) {
+                    entry.remove("model");
+                    if entry.is_empty() {
+                        subagents.remove(name);
+                    }
+                }
+                if subagents.is_empty() {
+                    doc.remove("subagents");
+                }
+            }
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+    }
     std::fs::write(path, doc.to_string())
         .map_err(|e| format!("Failed to write {}: {e}", path.display()))
 }
@@ -746,6 +887,15 @@ mod tests {
     }
 
     #[test]
+    fn a_tools_list_naming_bash_is_reported() {
+        let root = unique_root("renamed_bash");
+        write_agent_toml(&root, "[tools]\ndeny = [\"bash\", \"web_*\"]\nallow = [\"shell\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
+    }
+
+    #[test]
     fn run_settings_reads_allow_network_both_ways() {
         let root = unique_root("allow_net");
         write_agent_toml(&root, "[tools]\nallow_network = true\n");
@@ -786,8 +936,26 @@ mod tests {
                 toml::from_str(&format!("[skills]\nenabled = [\"a\"]\ninject = {value}\n"))
                     .expect("a legacy inject key still parses");
             assert_eq!(cfg.skills.enabled, vec!["a".to_string()]);
-            assert!(cfg.skills.inject.is_some());
         }
+    }
+
+    /// Starting a run removes the retired key from an existing agent.toml,
+    /// keeping the rest of the file (comments included) byte for byte, and
+    /// leaves a file without it untouched.
+    #[test]
+    fn ensure_project_removes_the_retired_skills_inject_key() {
+        let root = unique_root("retired_inject");
+        let store = ensure_project(&root).expect("scaffold");
+        let path = store.join("agent.toml");
+        let kept = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n\n[tools]\ndefault = \"allow\"\n";
+        let legacy = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n# how skills reach the prompt\ninject = \"relevance\"\n\n[tools]\ndefault = \"allow\"\n";
+        std::fs::write(&path, legacy).unwrap();
+
+        ensure_project(&root).expect("ensure again");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        assert!(!drop_retired_keys(&path), "nothing left to remove");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The scaffold documents the key, so it has to stay parseable as written.
@@ -883,7 +1051,7 @@ mod tests {
             Placement::Prefix
         );
         assert_eq!(
-            policy.placement_of(Composer::Date).unwrap(),
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
             Placement::Tail
         );
         let _ = std::fs::remove_dir_all(&root);
@@ -951,6 +1119,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The `/settings` subagent-model writer round-trips through the parser,
+    /// keeps the rest of the file, and unsetting the last override removes the
+    /// table rather than leaving an empty `[subagents]` header behind.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn subagent_model_override_round_trips_and_unsets_cleanly() {
+        let root = unique_root("subagent_model");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_subagent_model(&path, "explorer", Some("smol")).expect("write");
+        set_subagent_model(&path, "code-reviewer", Some("gpt-x")).expect("write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("[subagents.explorer]"), "{raw}");
+        assert!(raw.contains("[agent]"), "the rest of the file is kept: {raw}");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.subagents["explorer"].model.as_deref(), Some("smol"));
+        assert_eq!(cfg.subagents["code-reviewer"].model.as_deref(), Some("gpt-x"));
+
+        set_subagent_model(&path, "explorer", None).expect("unset");
+        set_subagent_model(&path, "code-reviewer", Some(" ")).expect("blank unsets");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !raw.lines().any(|l| l.starts_with("[subagents")),
+            "no live [subagents] header left: {raw}"
+        );
+        assert!(load_agent_config(&root).expect("load").subagents.is_empty());
+
+        // A hand-written inline entry is edited in place, not refused.
+        let raw = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{raw}\n[subagents]\nexplorer = {{ model = \"a\" }}\n"))
+            .unwrap();
+        set_subagent_model(&path, "explorer", Some("b")).expect("inline write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.subagents["explorer"].model.as_deref(), Some("b"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(feature = "cli")]
     #[test]
     fn max_parallel_subagents_parses_and_defaults_to_none() {
@@ -975,6 +1181,45 @@ mod tests {
         set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn thread_retention_keys_parse_and_default_to_none() {
+        let root = unique_root("thread_retention");
+        // The store sits in the shared per-pid test home, not under `root`, so a
+        // leftover from an earlier run with the same pid must not leak in.
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None, "template leaves it unset");
+        assert_eq!(cfg.agent.max_threads, None);
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "thread_retention_days", Some(toml_edit::value(30))).expect("write");
+        set_agent_key(&path, "max_threads", Some(toml_edit::value(0))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, Some(30));
+        assert_eq!(cfg.agent.max_threads, Some(0), "0 is a real value: it disables the cap");
+        set_agent_key(&path, "thread_retention_days", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None);
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffolded agent.toml documents both knobs, so a user finds them
+    /// without reading source.
+    #[test]
+    fn the_scaffolded_agent_toml_documents_the_housekeeping_keys() {
+        let root = unique_root("template_keys");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let written = std::fs::read_to_string(agent_toml_path(&root)).unwrap();
+        assert!(written.contains("# thread_retention_days = 90"), "{written}");
+        assert!(written.contains("# max_threads = 500"), "{written}");
+        let _ = std::fs::remove_dir_all(store_root(&root));
         let _ = std::fs::remove_dir_all(&root);
     }
 

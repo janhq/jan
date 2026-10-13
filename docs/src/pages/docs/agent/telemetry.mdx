@@ -112,14 +112,18 @@ export what is buffered, then exit as that signal would.
 All metrics are monotonic sums. They are cumulative (running totals since the process started)
 unless `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` asks for delta, where each point holds
 only what changed since the last export. Every point carries `session.id` unless
-`OTEL_METRICS_INCLUDE_SESSION_ID=false`. When an RPC host archives a session, its series are sent
-one last time and then dropped, so a long-lived host doesn't keep exporting finished sessions.
+`OTEL_METRICS_INCLUDE_SESSION_ID=false`, so a backend that sums points per session can fold all of
+them. Under delta, `jan_agent.telemetry.dropped` carries the session it happened in; drops before
+any session started are held and sent with the first one. `jan cli agent status` lists
+`otlp-delta` in `capabilities` for builds that behave this way. When an RPC host archives a
+session, its series are sent one last time and then dropped, so a long-lived host doesn't keep
+exporting finished sessions.
 
 | Metric | Unit | Attributes |
 | --- | --- | --- |
 | `jan_agent.session.count` | 1 | |
 | `jan_agent.prompt.count` | 1 | Counts new user prompts. A run that continues or resumes a conversation without a new user message doesn't count. |
-| `jan_agent.turn.count` | 1 | `agent` (`main` / `subagent`) |
+| `jan_agent.turn.count` | 1 | `agent` (`main` / `subagent`), and the run's `session.id` |
 | `jan_agent.token.usage` | tokens | `type` (`input` / `output` / `cache_read` / `cache_write`), `model`, `provider` |
 | `jan_agent.cost.usage` | USD | `model`, `provider`. Only for models whose price is in the model catalog. An unpriced model reports nothing, not zero. |
 | `jan_agent.api_request.count` | 1 | `model`, `provider`, `success` |
@@ -216,7 +220,10 @@ LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=... LANGFUSE_BASE_URL=https://cloud.
 Recording a signal never waits: it goes into a bounded in-memory queue. If a collector is slow or
 down, new records are dropped and counted in `jan_agent.telemetry.dropped`, and the turn doesn't
 slow down. A collector that answers 429, 502, 503 or 504 gets one retry, after its `Retry-After`
-(up to 10 seconds; a longer wait drops the batch) or 1 second.
+(up to 10 seconds; a longer wait counts as a failure) or 1 second. A log or trace batch that still
+fails is dropped. A metrics export that still fails keeps its window: the next export carries it
+again, over the combined span, so a delta backend loses nothing. If the failed export had in fact
+landed and only its answer was lost, that window is counted twice.
 Export failures are logged at debug level (`RUST_LOG=debug`) on stderr and never printed to
 stdout.
 

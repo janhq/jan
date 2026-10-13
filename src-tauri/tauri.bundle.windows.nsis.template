@@ -724,6 +724,13 @@ Function .onInit
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
   !endif
+
+  ; Captured here rather than in Section Install, where stock Tauri reads it: a
+  ; passive upgrade runs the previous uninstaller from PageLeaveReinstall, and
+  ; that deletes UNINSTKEY. Read any later, the name is gone, so a renamed main
+  ; binary (jan.exe -> Jan-Desktop.exe in 0.8.5) leaves every shortcut pointing
+  ; at the deleted exe.
+  ReadRegStr $OldMainBinaryName SHCTX "${UNINSTKEY}" "MainBinaryName"
 FunctionEnd
 
 
@@ -958,7 +965,6 @@ Section Install
   !endif
 
   ; Remove old main binary if it doesn't match new main binary name
-  ReadRegStr $OldMainBinaryName SHCTX "${UNINSTKEY}" "MainBinaryName"
   ${If} $OldMainBinaryName != ""
   ${AndIf} $OldMainBinaryName != "${MAINBINARYNAME}.exe"
     Delete "$INSTDIR\$OldMainBinaryName"

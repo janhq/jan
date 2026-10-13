@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{oneshot, Mutex};
 
 /// Prefix every host tool's advertised name carries, so a host cannot shadow a
-/// built-in (`bash`, `read`) or collide with a plugin or MCP tool. Mirrors
+/// built-in (`shell`, `read`) or collide with a plugin or MCP tool. Mirrors
 /// `plugin_tools::NAME_PREFIX`; the model sees the qualified name and calls it
 /// by that.
 ///
@@ -380,7 +380,7 @@ impl HostToolSet {
                     .map_err(DeclError::UnsafeName)?;
             // A host tool is prefixed, so it cannot collide with a built-in on
             // the wire. The check is on the *bare* name anyway: a host that
-            // registers `bash` or `read` has almost certainly misunderstood
+            // registers `shell` or `read` has almost certainly misunderstood
             // whose implementation will run, and failing at startup is kinder
             // than letting it call its own sandbox for a whole session.
             if is_reserved(&name) {
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn reserved_names_are_refused() {
         for name in [
-            "bash",
+            "shell",
             "read",
             "edit",
             "monitor",

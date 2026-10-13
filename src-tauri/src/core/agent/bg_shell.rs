@@ -159,10 +159,7 @@ impl BackgroundShells {
         state.pending = live;
         for p in expired {
             state.notices.push(ShellNotice {
-                headline: format!(
-                    "Background command still running: {}",
-                    short_command(&p.command)
-                ),
+                headline: still_running_headline(&p.command),
                 text: abandoned_text(&p),
             });
         }
@@ -180,13 +177,29 @@ fn short_command(command: &str) -> String {
     format!("{head}...")
 }
 
-fn headline(done: &ShellDone) -> String {
-    let verb = if done.failed { "failed" } else { "finished" };
+/// Opening words of a failed command's headline. The TUI styles a headline by
+/// how it opens, so these are shared with it rather than repeated as literals.
+pub(crate) const FAILED_PREFIX: &str = "Background command failed after ";
+
+/// Opening words of a finished command's headline (see [`FAILED_PREFIX`]).
+pub(crate) const FINISHED_PREFIX: &str = "Background command finished after ";
+
+pub(crate) fn headline(done: &ShellDone) -> String {
+    let prefix = if done.failed {
+        FAILED_PREFIX
+    } else {
+        FINISHED_PREFIX
+    };
     format!(
-        "Background command {verb} after {}s: {}",
+        "{prefix}{}s: {}",
         done.elapsed_secs,
         short_command(&done.command)
     )
+}
+
+/// The headline of a command the run stopped waiting on.
+pub(crate) fn still_running_headline(command: &str) -> String {
+    format!("Background command still running: {}", short_command(command))
 }
 
 fn text(done: &ShellDone) -> String {

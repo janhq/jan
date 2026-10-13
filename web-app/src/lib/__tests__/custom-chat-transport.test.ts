@@ -6,6 +6,7 @@ import {
   coalesceMessagesForAlternation,
   effectiveContextWindow,
   hasGenuineUserQuery,
+  isLocalChatServer,
   extractContextInfoFromError,
   normalizeToolInputSchema,
   resolveOrphanToolCalls,
@@ -14,6 +15,7 @@ import {
   unwrapRetryError,
 } from '../custom-chat-transport'
 import { encodeToolImageSentinel } from '../tool-image-sentinel'
+import { encodeAudioSentinel } from '../audio-sentinel'
 
 const userMsg = (id: string, text: string): UIMessage =>
   ({
@@ -458,26 +460,78 @@ describe('buildLlamacppReasoningParams', () => {
 })
 
 describe('coalesceMessagesForAlternation', () => {
-  it('drops an empty assistant placeholder and merges the surrounding users', () => {
+  it('drops a failed turn instead of resending it inside the next question', () => {
     const input = [
-      userMsg('u1', 'first question'),
+      userMsg('u1', 'failed question'),
       assistantMsg('a1', []),
-      userMsg('u2', 'retry after error'),
+      userMsg('u2', 'new question'),
     ]
     const out = coalesceMessagesForAlternation(input)
     expect(out).toHaveLength(1)
-    expect(out[0].role).toBe('user')
+    expect(out[0].id).toBe('u2')
+    expect(out[0].parts).toEqual([{ type: 'text', text: 'new question' }])
+  })
+
+  it('keeps only the last of consecutive unanswered user messages', () => {
+    const input = [
+      userMsg('u1', 'q'),
+      assistantMsg('a1', [{ type: 'text', text: 'a' }] as UIMessage['parts']),
+      userMsg('u2', 'failed'),
+      userMsg('u3', 'next'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out.map((m) => m.id)).toEqual(['u1', 'a1', 'u3'])
+  })
+
+  it("carries a dropped turn's attachments forward, but not its question", () => {
+    const image = {
+      type: 'file',
+      mediaType: 'image/png',
+      url: 'data:image/png;base64,AAA',
+    } as unknown as UIMessage['parts'][number]
+    const audio = { type: 'text', text: encodeAudioSentinel('wav', 'UklG') }
+    const docs =
+      '[ATTACHED_FILES]\n- file_id: f1, name: a.pdf\n[/ATTACHED_FILES]'
+    const input: UIMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [
+          { type: 'text', text: `failed question\n\n${docs}` },
+          image,
+          audio,
+        ],
+      } as UIMessage,
+      assistantMsg('a1', []),
+      userMsg('u2', 'what is in it?'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('u2')
     expect(out[0].parts).toEqual([
-      { type: 'text', text: 'first question\n\nretry after error' },
+      { type: 'text', text: docs },
+      image,
+      audio,
+      { type: 'text', text: 'what is in it?' },
     ])
   })
 
-  it('merges two consecutive user messages with no intervening assistant', () => {
-    const input = [userMsg('u1', 'hello'), userMsg('u2', 'still hello')]
+  it('carries a Cowork ping turn forward into the next user message', () => {
+    const ping = {
+      type: 'text',
+      text: '<SYSTEM>\nsubagent a1 finished\n</SYSTEM>',
+    }
+    const input: UIMessage[] = [
+      userMsg('u1', 'start'),
+      assistantMsg('a1', [{ type: 'text', text: 'ok' }] as UIMessage['parts']),
+      { id: 'ping-2', role: 'user', parts: [ping] } as UIMessage,
+      userMsg('u2', 'what did it find?'),
+    ]
     const out = coalesceMessagesForAlternation(input)
-    expect(out).toHaveLength(1)
-    expect(out[0].parts).toEqual([
-      { type: 'text', text: 'hello\n\nstill hello' },
+    expect(out.map((m) => m.id)).toEqual(['u1', 'a1', 'u2'])
+    expect(out[2].parts).toEqual([
+      ping,
+      { type: 'text', text: 'what did it find?' },
     ])
   })
 
@@ -512,31 +566,6 @@ describe('coalesceMessagesForAlternation', () => {
     const out = coalesceMessagesForAlternation(input)
     expect(out).toHaveLength(1)
     expect(out[0].role).toBe('user')
-  })
-
-  it('preserves non-text user parts (e.g. file attachments) when merging', () => {
-    const filePart = {
-      type: 'file',
-      mediaType: 'image/png',
-      url: 'data:image/png;base64,AAA',
-    } as unknown as UIMessage['parts'][number]
-    const input: UIMessage[] = [
-      {
-        id: 'u1',
-        role: 'user',
-        parts: [{ type: 'text', text: 'first' }, filePart],
-      } as UIMessage,
-      userMsg('u2', 'second'),
-    ]
-    const out = coalesceMessagesForAlternation(input)
-    expect(out).toHaveLength(1)
-    // Order is preserved: file stays where it was sent, second message's
-    // text is appended after it rather than merged into the first text part.
-    expect(out[0].parts).toEqual([
-      { type: 'text', text: 'first' },
-      filePart,
-      { type: 'text', text: 'second' },
-    ])
   })
 
   it('returns the input unchanged when alternation is already valid', () => {
@@ -837,5 +866,30 @@ describe('hasGenuineUserQuery', () => {
         userMsg('u2', 'Summarize the result'),
       ])
     ).toBe(true)
+  })
+})
+
+describe('isLocalChatServer', () => {
+  it.each([
+    ['llamacpp', undefined],
+    ['mlx', undefined],
+    ['custom', 'http://localhost:11434/v1'],
+    ['custom', 'http://127.0.0.1:8080/v1'],
+    ['custom', 'http://127.0.0.2:8080/v1'],
+    ['custom', 'http://0.0.0.0:1234/v1'],
+    ['custom', 'http://[::1]:1234/v1'],
+  ])('treats %s at %s as local (no retries)', (provider, baseUrl) => {
+    expect(isLocalChatServer(provider, baseUrl)).toBe(true)
+  })
+
+  it.each([
+    ['openai', 'https://api.openai.com/v1'],
+    ['custom', 'http://192.168.1.5:1234/v1'],
+    ['custom', 'https://localhost.example.com/v1'],
+    ['custom', 'http://127.example.com/v1'],
+    ['custom', undefined],
+    ['custom', 'not a url'],
+  ])('treats %s at %s as hosted (SDK retries)', (provider, baseUrl) => {
+    expect(isLocalChatServer(provider, baseUrl)).toBe(false)
   })
 })

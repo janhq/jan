@@ -5,7 +5,6 @@
 //! Build with: cd src-tauri/jan-cli && cargo build --no-default-features --features cli
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
@@ -102,6 +101,10 @@ struct SandboxArgs {
     /// Run shell commands unconfined, overriding a persistent sandbox setting
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
+    /// Let a sandboxed shell command that asks to escalate run outside the
+    /// sandbox without an escalation prompt (--safe still asks once)
+    #[arg(long)]
+    allow_escalation: bool,
 }
 
 /// Whether this invocation works in its own git worktree.
@@ -138,6 +141,12 @@ impl SandboxArgs {
             (_, true) => Some(false),
             _ => None,
         }
+    }
+
+    /// `None` when not passed, so `[tools].allow_escalation` decides. There is
+    /// no `--no-allow-escalation`: off is already the default.
+    fn escalation_flag(self) -> Option<bool> {
+        self.allow_escalation.then_some(true)
     }
 }
 
@@ -270,6 +279,16 @@ enum Commands {
         #[command(subcommand)]
         cmd: McpServeCommands,
     },
+    /// Experimental: serve the agent over the Agent Client Protocol (ACP) on
+    /// stdio, for Zed, JetBrains and other ACP clients. Hidden until it
+    /// graduates; needs JAN_EXPERIMENTAL_ACP=1 or `[experimental] acp = true`
+    #[command(hide = true)]
+    Acp {
+        /// Sign in interactively and exit: what an ACP client runs for the
+        /// terminal auth method `initialize` offers
+        #[arg(long)]
+        login: bool,
+    },
     /// Update this binary to the latest build of the channel it was built for
     #[command(display_order = 8)]
     Update {
@@ -298,7 +317,7 @@ enum McpServeCommands {
         /// Also serve the mutating filesystem tools (write, edit), confined to the project root
         #[arg(long)]
         allow_write: bool,
-        /// Also serve bash (runs under the same OS sandbox the agent's shell does)
+        /// Also serve the shell tool (runs under the same OS sandbox as the agent)
         #[arg(long)]
         allow_exec: bool,
         /// Serve only these tools, repeatable; never widens what the allow flags permit
@@ -423,20 +442,43 @@ struct ProviderArgs {
     /// API key for the target provider (else JAN_API_KEY / <PROVIDER>_API_KEY)
     #[arg(long)]
     api_key: Option<String>,
+    /// Base URL for the --provider named, e.g. a gateway (else JAN_BASE_URL)
+    #[arg(
+        long,
+        value_name = "URL",
+        requires = "provider",
+        value_parser = app_lib::core::cli::providers::parse_base_url
+    )]
+    base_url: Option<String>,
 }
 
 impl ProviderArgs {
+    /// Resolve the flags and their environment fallbacks, and record the result
+    /// as this process's session overrides, so every later rebuild of the
+    /// provider map (a TUI reload, the `/model` probe) keeps them.
     fn into_overrides(self) -> ProviderOverrides {
         // Default the target provider to the desktop app's current selection so
         // env-key fallback (<PROVIDER>_API_KEY) works without an explicit flag.
+        // Only an explicit --provider scopes a base URL or headers, though:
+        // redirecting whatever Desktop last had selected would be a surprise.
+        let explicit_provider = self.provider.is_some();
         let provider = self
             .provider
             .or_else(|| app_lib::core::cli::providers::desktop_selection().provider);
+        let base_url_source = self
+            .base_url
+            .is_some()
+            .then_some(app_lib::core::cli::providers::OverrideSource::Flag);
         ProviderOverrides {
             provider,
             api_key: self.api_key,
+            base_url: self.base_url,
+            explicit_provider,
+            base_url_source,
+            ..Default::default()
         }
         .with_env()
+        .install()
     }
 }
 
@@ -680,12 +722,20 @@ enum McpCommands {
 
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
-/// Build a left-aligned, bright-yellow ASCII logo for the help header.
+/// Build a left-aligned ASCII logo in the brand yellow for the help header.
+/// console 0.15 has no truecolor `Color`, so the SGR is written by hand and
+/// gated on the same `colors_enabled` check `console::Style` uses.
 fn make_logo() -> String {
-    let yellow = Style::new().yellow().bold();
+    use app_lib::core::cli::brand;
+    let sgr = brand::logo_sgr();
+    let color = console::colors_enabled();
     let mut out = vec![String::new(), String::new()];
-    for l in app_lib::core::cli::brand::LOGO {
-        out.push(format!("  {}", yellow.apply_to(l)));
+    for l in brand::LOGO {
+        if color {
+            out.push(format!("  \x1b[1;{sgr}m{l}\x1b[0m"));
+        } else {
+            out.push(format!("  {l}"));
+        }
     }
     out.join("\n")
 }
@@ -709,6 +759,12 @@ async fn main() {
         "warn"
     }))
     .init();
+
+    // Inference requests name this client, so a gateway can tell Jan Agent's
+    // traffic from the desktop's, which sends none. Set before anything sends.
+    app_lib::core::agent::request_headers::set_user_agent(app_lib::core::cli::telemetry::user_agent(
+        app_lib::core::cli::updater::build_version(),
+    ));
 
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
@@ -735,6 +791,7 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                allow_escalation: cli.sandbox.escalation_flag(),
                 worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
@@ -762,6 +819,7 @@ async fn main() {
         command,
         Commands::Update { .. }
             | Commands::Mcp { .. }
+            | Commands::Acp { .. }
             | Commands::Cli {
                 cmd: CliCommands::Agent {
                     cmd: AgentCommands::Rpc
@@ -799,9 +857,35 @@ async fn main() {
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
         Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
+        Commands::Acp { login } => handle_acp(login).await,
         Commands::Update { check, force } => handle_update(check, force).await,
     }
     app_lib::core::agent::otel::shutdown().await;
+}
+
+// ── ACP server handler ─────────────────────────────────────────────────────
+
+/// `jan acp`. Refused before anything reads stdin unless the experimental
+/// opt-in is on, so a client pointed at it by mistake gets a clear error on
+/// stderr and an exit rather than a half-open protocol channel.
+async fn handle_acp(login: bool) {
+    use app_lib::core::cli::acp;
+    if !acp::enabled() {
+        eprintln!("Error: {}", acp::DISABLED_MESSAGE);
+        std::process::exit(2);
+    }
+    // The terminal auth method: the client relaunches `jan acp --login` in a
+    // terminal it shows the user, and a zero exit means signed in.
+    let result = if login {
+        app_lib::core::cli::login::run_login(false).await
+    } else {
+        acp::serve().await
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        app_lib::core::agent::otel::shutdown().await;
+        std::process::exit(1);
+    }
 }
 
 // ── MCP server handler ─────────────────────────────────────────────────────
@@ -1026,6 +1110,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     worktree: worktree.into_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
@@ -1056,6 +1141,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     ..Default::default()
                 },
             )
@@ -1196,7 +1282,7 @@ async fn handle_auth(cmd: AuthCommands) -> Result<(), String> {
                 tokamak::Logout::ClearedOnly => println!(
                     "Signed out of Tokamak locally. The key could not be revoked upstream - \
                      remove it at {}",
-                    tokamak::API_KEYS_URL
+                    tokamak::api_keys_url()
                 ),
                 tokamak::Logout::NothingToDo => println!("Not signed in to Tokamak."),
             }
@@ -1296,7 +1382,7 @@ async fn handle_models(cmd: ModelsCommands) {
         ModelsCommands::List { provider, project } => {
             let configs = match load_provider_configs(
                 Some(std::path::Path::new(&project)),
-                &ProviderOverrides::default().with_env(),
+                &ProviderOverrides::session(),
             ) {
                 Ok(c) => c,
                 Err(e) => {
@@ -1304,7 +1390,7 @@ async fn handle_models(cmd: ModelsCommands) {
                     std::process::exit(1);
                 }
             };
-            let catalog = app_lib::core::cli::model_catalog::load();
+            let catalog = app_lib::core::cli::model_catalog::effective();
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
@@ -1684,6 +1770,17 @@ mod tests {
             panic!("expected `cli agent schema --out`");
         };
         assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
+    }
+
+    #[test]
+    fn acp_parses_and_stays_out_of_help() {
+        let cli = Cli::parse_from(["jan", "acp"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: false })));
+        let cli = Cli::parse_from(["jan", "acp", "--login"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: true })));
+        // Experimental: callable, but not offered in `--help` until it graduates.
+        let help = Cli::command().render_help().to_string();
+        assert!(!help.contains("Agent Client Protocol"), "{help}");
     }
 
     /// `rpc` and `rpc-schema` are the long-lived session transport and its
@@ -2103,5 +2200,61 @@ mod tests {
         );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
+    }
+
+    /// `--base-url` sits beside `--provider` / `--api-key` on the TUI and on
+    /// `run` / `step`, scopes to an explicitly named provider only (so it
+    /// requires one), and never takes a plaintext remote URL.
+    #[test]
+    fn base_url_parses_beside_provider_and_requires_it() {
+        let cli = Cli::parse_from([
+            "jan",
+            "--provider",
+            "tokamak",
+            "--base-url",
+            "https://api-stag.tokamak.sh/v1/",
+        ]);
+        assert_eq!(
+            cli.providers.base_url.as_deref(),
+            Some("https://api-stag.tokamak.sh/v1"),
+            "normalized: the trailing slash is dropped"
+        );
+        for sub in ["run", "step"] {
+            let cli = Cli::parse_from([
+                "jan",
+                "cli",
+                "agent",
+                sub,
+                "task",
+                "--provider",
+                "gw",
+                "--base-url",
+                "http://localhost:8080/v1",
+            ]);
+            let providers = match cli.command {
+                Some(Commands::Cli {
+                    cmd:
+                        CliCommands::Agent {
+                            cmd:
+                                AgentCommands::Run { providers, .. }
+                                | AgentCommands::Step { providers, .. },
+                        },
+                }) => providers,
+                _ => panic!("expected `cli agent {sub}`"),
+            };
+            assert_eq!(providers.base_url.as_deref(), Some("http://localhost:8080/v1"));
+        }
+        assert!(
+            Cli::try_parse_from(["jan", "--base-url", "https://gw.example/v1"]).is_err(),
+            "no --provider to scope it to"
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "--provider",
+            "gw",
+            "--base-url",
+            "http://gw.example/v1"
+        ])
+        .is_err());
     }
 }

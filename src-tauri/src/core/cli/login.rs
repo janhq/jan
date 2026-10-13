@@ -100,7 +100,7 @@ async fn device_login_interactive() -> Result<(), DeviceLogin> {
 async fn login_by_paste() -> Result<(), String> {
     println!();
     println!("Sign in to Tokamak and create an API key:");
-    println!("  {}", tokamak::API_KEYS_URL);
+    println!("  {}", tokamak::api_keys_url());
     match tokamak::open_api_keys_page() {
         Ok(()) => println!("  (opening that page in your browser)"),
         Err(e) => println!("  (open that URL yourself: {e})"),

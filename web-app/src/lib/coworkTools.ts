@@ -20,7 +20,7 @@ import {
 export const PLAN_DENIED_TOOLS = new Set([
   'write',
   'edit',
-  'bash',
+  'shell',
   'memory_write',
   'skill_write',
   'task',
@@ -170,7 +170,7 @@ function taskTool(subagentNames: string[]): Tool {
                 type: 'array',
                 items: { type: 'string' },
                 description:
-                  "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs bash, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted.",
+                  "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted.",
               },
             },
             required: ['name', 'task'],

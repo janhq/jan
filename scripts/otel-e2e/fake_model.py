@@ -1,5 +1,5 @@
 """An OpenAI-compatible /v1/chat/completions stub: the first request answers
-with one bash tool call, every later one with plain text. Streams SSE."""
+with one shell tool call, every later one with plain text. Streams SSE."""
 import json, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -32,7 +32,7 @@ class H(BaseHTTPRequestHandler):
                  "prompt_tokens_details": {"cached_tokens": 64}}
         if calls == 1:
             call = {"index": 0, "id": "call_1", "type": "function",
-                    "function": {"name": "bash", "arguments": json.dumps({"command": "echo otel-e2e"})}}
+                    "function": {"name": "shell", "arguments": json.dumps({"command": "echo otel-e2e"})}}
             out = chunk({"role": "assistant", "tool_calls": [call]}) + chunk({}, "tool_calls", usage)
         else:
             out = chunk({"role": "assistant", "content": "done"}) + chunk({}, "stop", usage)

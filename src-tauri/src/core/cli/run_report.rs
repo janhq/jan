@@ -122,9 +122,23 @@ pub(crate) struct RunReport {
     /// to one billing record; the `usage` above is only an estimate of the same
     /// requests.
     execution_ids: Vec<String>,
+    /// Whether inline `<think>` tags in the model's content are reasoning, as the
+    /// serving provider has it set. A report has no session to ask, so the run
+    /// that built it says.
+    parse_think_tags: bool,
 }
 
 impl RunReport {
+    /// A report for a run whose serving provider has its inline `<think>` tags
+    /// parsed (`parse_think_tags`) or not, which decides whether the result it
+    /// carries has reasoning stripped.
+    pub(crate) fn for_run(parse_think_tags: bool) -> Self {
+        Self {
+            parse_think_tags,
+            ..Self::default()
+        }
+    }
+
     /// A run that failed before the event stream existed (bad config, no
     /// reachable provider): no turns, no usage, just the failure.
     pub(crate) fn setup_failure(message: &str) -> Self {
@@ -195,7 +209,10 @@ StreamEvent::TurnUsage {
             kind: "result",
             protocol_version: crate::core::agent::events::PROTOCOL_VERSION,
             is_error,
-            result: super::tui::answer_without_reasoning(final_text.unwrap_or(&self.partial)),
+            result: super::tui::answer_without_reasoning(
+                final_text.unwrap_or(&self.partial),
+                self.parse_think_tags,
+            ),
             stop_reason: if is_error {
                 "error".to_string()
             } else {
@@ -220,7 +237,7 @@ StreamEvent::TurnUsage {
                 // prices, rather than reported as zero.
                 estimated_cost_usd: self
                     .usage
-                    .cost_usd(super::model_catalog::load().get(provider, model)),
+                    .cost_usd(super::model_catalog::effective().get(provider, model)),
                 execution_ids: (!self.execution_ids.is_empty())
                     .then(|| self.execution_ids.clone()),
             },
@@ -846,9 +863,19 @@ mod tests {
         assert_eq!(out["usage"]["total_tokens"], 8123);
     }
 
+    // A report strips the result by the setting of the provider that served the
+    // run, which a headless run has no session to ask.
+    #[test]
+    fn result_keeps_think_tags_when_the_provider_does_not_parse_them() {
+        let mut report = RunReport::for_run(false);
+        report.observe(&token("<think>kept</think>answer"));
+        let out = value(report.finish(None, None, "m", 1, Some("<think>kept</think>answer")));
+        assert_eq!(out["result"], "<think>kept</think>answer");
+    }
+
     #[test]
     fn partial_answer_is_the_last_turn_only_and_drops_reasoning() {
-        let mut report = RunReport::default();
+        let mut report = RunReport::for_run(true);
         for ev in [
             StreamEvent::Step { index: 1, max: 0 },
             token("first turn prose"),

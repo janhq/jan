@@ -25,15 +25,22 @@ describe('toolActivityText', () => {
     ).toBe('Writing report.html')
   })
 
-  it('formats bash with truncated command', () => {
+  it('formats shell with truncated command', () => {
+    expect(toolActivityText('shell', { command: 'ls -la' })).toBe(
+      'Running ls -la'
+    )
+  })
+
+  // Saved threads predate the rename and name the tool `bash`.
+  it('formats a saved bash call like shell', () => {
     expect(toolActivityText('bash', { command: 'ls -la' })).toBe(
       'Running ls -la'
     )
   })
 
-  it('truncates long bash commands to 60 chars', () => {
+  it('truncates long shell commands to 60 chars', () => {
     const long = 'echo ' + 'x'.repeat(100)
-    const text = toolActivityText('bash', { command: long })
+    const text = toolActivityText('shell', { command: long })
     expect(text.startsWith('Running echo ')).toBe(true)
     expect(text.length).toBeLessThanOrEqual('Running '.length + 60)
   })
@@ -66,7 +73,7 @@ describe('toolActivityText', () => {
 
   it('falls back gracefully when path/command arg is missing', () => {
     expect(toolActivityText('write', {})).toBe('Writing')
-    expect(toolActivityText('bash', {})).toBe('Running')
+    expect(toolActivityText('shell', {})).toBe('Running')
   })
 })
 
@@ -99,7 +106,7 @@ describe('awaitsModel', () => {
     role: 'tool',
     content: '',
     callId: 'c1',
-    name: 'bash',
+    name: 'shell',
     status,
   })
 

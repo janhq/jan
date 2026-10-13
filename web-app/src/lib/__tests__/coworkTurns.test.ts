@@ -94,7 +94,7 @@ describe('coworkTurnsToUIMessages', () => {
         role: 'tool',
         content: '',
         callId: 'c',
-        name: 'bash',
+        name: 'shell',
         status: 'running',
       },
     ])
@@ -109,7 +109,7 @@ describe('coworkTurnsToUIMessages', () => {
         role: 'tool',
         content: '',
         callId: 'c',
-        name: 'bash',
+        name: 'shell',
         result: 'boom',
         isError: true,
         status: 'done',

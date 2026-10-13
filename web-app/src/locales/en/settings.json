@@ -210,7 +210,7 @@
     "shell": "Shell Commands",
     "shellChecking": "Checking for a sandbox...",
     "shellSandboxed": "Commands run confined by {{backend}}: they can only write inside the session workspace, and files in your home folder are not readable.",
-    "shellUnavailable": "No sandbox is available on this system, so the bash tool is not offered. Commands are never run unconfined.",
+    "shellUnavailable": "No sandbox is available on this system, so the shell tool is not offered. Commands are never run unconfined.",
     "network": "Allow Network Access",
     "networkDesc": "Let Cowork commands reach the network, for things like installing packages or fetching a repository. On by default. The main chat's shell never has network access.",
     "openFolder": "Open Folder",

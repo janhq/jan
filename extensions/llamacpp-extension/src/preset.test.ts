@@ -275,6 +275,95 @@ describe('generatePreset 0.4.0 keys', () => {
   })
 })
 
+// A slot of a hybrid model with speculative decoding holds (1 + n_max) rows
+// of recurrent state, so auto's 4 slots overflowed a 12 GB card in 0.8.5.
+describe('generatePreset parallel with speculative decoding', () => {
+  const section = (ini: string, id: string) =>
+    ini.split(`[${id}]`)[1].split('load-on-startup')[0]
+
+  it('pins an embedded-MTP model to one slot when parallel is auto', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: 0 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(section(ini, 'qwen')).toContain('parallel = 1')
+    expect(section(ini, 'qwen')).toContain('kv-unified = true')
+    expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
+  })
+
+  it('pins a draft-companion model to one slot when parallel is unset', async () => {
+    setupModel('qwen', {
+      mtp: true,
+      mtp_layers: 0,
+      mtp_model_path: 'models/qwen/mtp.gguf',
+    })
+    await generatePreset('/p', '/jan', {} as any)
+    expect(section(writtenFiles['/p/router.preset.ini'], 'qwen')).toContain(
+      'parallel = 1'
+    )
+  })
+
+  it('leaves models without speculative decoding on auto', async () => {
+    setupModel('off', { mtp: false, mtp_layers: 1 })
+    setupModel('plain', {})
+    await generatePreset('/p', '/jan', { parallel: 0 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('parallel =')
+    expect(ini).not.toContain('kv-unified')
+  })
+
+  it('keeps an explicit global parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: 2 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
+    expect(section(ini, 'qwen')).not.toContain('parallel =')
+  })
+
+  // The gate and the [*] emission must read the string the same way: if only
+  // the gate accepted it, nothing would be emitted and auto's 4 slots return.
+  it('emits a legacy string parallel and does not pin the MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: '2' } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
+    expect(section(ini, 'qwen')).not.toContain('parallel =')
+  })
+
+  it('treats a zero or non-numeric string parallel as auto and pins', async () => {
+    for (const parallel of ['0', '', 'auto']) {
+      setupModel('qwen', { mtp: true, mtp_layers: 1 })
+      await generatePreset('/p', '/jan', { parallel } as any)
+      const ini = writtenFiles['/p/router.preset.ini']
+      expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
+      expect(section(ini, 'qwen')).toContain('parallel = 1')
+    }
+  })
+
+  it('keeps a legacy string per-model parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: '2' })
+    await generatePreset('/p', '/jan', {} as any)
+    const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
+    expect(qwen).toContain('parallel = 2')
+    expect(qwen).not.toContain('parallel = 1')
+  })
+
+  it('keeps an explicit per-model parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: 2 })
+    await generatePreset('/p', '/jan', {} as any)
+    const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
+    expect(qwen).toContain('parallel = 2')
+    expect(qwen).not.toContain('parallel = 1')
+  })
+
+  it('respects an explicit kv-unified off', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { kv_unified: 'off' } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(section(ini, 'qwen')).toContain('parallel = 1')
+    expect(section(ini, 'qwen')).not.toContain('kv-unified')
+  })
+})
+
 describe('generatePreset kv-unified', () => {
   it('enables unified KV on auto when an explicit parallel is emitted', async () => {
     setupModel('llama', {})
