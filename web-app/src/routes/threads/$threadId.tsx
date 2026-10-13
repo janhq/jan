@@ -400,9 +400,15 @@ function ThreadDetail() {
         : finishedMessage
       // The live copy too, for every aborted turn: one stopped before its tool
       // call had any input has nothing meaningful to persist below, but its
-      // card still reads "Running".
+      // card still reads "Running". Only this turn's message: the setter is the
+      // open thread's, and a background thread's turn can abort while another
+      // thread is in front.
       if (isAbort) {
-        setChatMessagesRef.current?.((prev) => settleStoppedToolCalls(prev))
+        setChatMessagesRef.current?.((prev) =>
+          prev.map((m) =>
+            m.id === finishedMessage.id ? settleStoppedToolCalls([m])[0] : m
+          )
+        )
       }
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined

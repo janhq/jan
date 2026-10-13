@@ -1000,16 +1000,24 @@ describe('ThreadDetail route', () => {
       const updater = h.mockSetChatMessages.mock.calls
         .map((c: any[]) => c[0])
         .find((a: unknown) => typeof a === 'function')
+      // The open thread's own last message is still mid-call; it is not the
+      // aborted turn, so it must be left alone.
+      const other = {
+        id: 'a-other',
+        role: 'assistant',
+        parts: [{ type: 'tool-fetch', toolCallId: 'tcO', state: 'input-available' }],
+      }
       const live = [
         {
           id: 'a-early',
           role: 'assistant',
           parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
         },
+        other,
       ]
-      expect(updater(live)[0].parts[0]).toMatchObject({
-        state: 'output-error',
-      })
+      const out = updater(live)
+      expect(out[0].parts[0]).toMatchObject({ state: 'output-error' })
+      expect(out[1]).toBe(other)
     })
   })
 
@@ -1400,10 +1408,9 @@ describe('ThreadDetail route', () => {
         }
       })
 
-      // The tool-loop controller is one ref shared by every thread's loop. A
-      // loop left behind by a thread switch finishing later must not clear the
-      // controller of the thread now in front: that thread's reply would never
-      // continue after its tool result.
+      // A loop left behind by a thread switch finishes later. It must not take
+      // the controller of the thread now in front with it, or that thread's reply
+      // would never continue after its tool result.
       it('a left thread\'s loop ending does not stop the current thread continuing', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         const results: Array<(r: unknown) => void> = []
