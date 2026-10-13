@@ -20,20 +20,22 @@ const remarkMermaid = () => (tree: any) => {
   })
 }
 
-// Headings inside <Tabs> were not in the old "On This Page" list (Nextra only
-// rendered the active panel). Mark them [!toc] so Fumadocs skips them.
+// Nextra 2's rule (remark-headings): a heading that is a direct child of
+// <Tabs.Tab> is left out of "On This Page". Headings nested deeper (e.g. in
+// <Steps> inside a tab) stay. Record the ids so the page drops them.
 // biome-ignore lint/suspicious/noExplicitAny: mdast types are loose here
-const remarkTabsNoToc = () => (tree: any) => {
+const remarkTabsNoToc = () => (tree: any, file: any) => {
+  const ids: string[] = []
   // biome-ignore lint/suspicious/noExplicitAny: mdast node
   visit(tree, (node: any) => {
-    if (node.type !== 'mdxJsxFlowElement' || node.name !== 'Tabs') return
-    // biome-ignore lint/suspicious/noExplicitAny: mdast node
-    visit(node, 'heading', (h: any) => {
-      const last = h.children[h.children.length - 1]
-      if (last?.type === 'text') last.value = `${last.value} [!toc]`
-      else h.children.push({ type: 'text', value: ' [!toc]' })
-    })
+    if (node.type !== 'mdxJsxFlowElement' || (node.name !== 'Tabs.Tab' && node.name !== 'Tab')) return
+    for (const child of node.children ?? []) {
+      const id = child.type === 'heading' && child.data?.hProperties?.id
+      if (id) ids.push(`#${id}`)
+    }
   })
+  file.data.frontmatter ??= {}
+  file.data.frontmatter.tocExclude = ids
 }
 
 export const docs = defineDocs({
@@ -48,6 +50,8 @@ export const docs = defineDocs({
       ogImage: z.string().optional(),
       // 'standalone': no sidebar, TOC or breadcrumb (Nextra `type: "page"`).
       layout: z.enum(['docs', 'standalone']).optional(),
+      // Set by remarkTabsNoToc, not by authors.
+      tocExclude: z.array(z.string()).optional(),
     }),
     postprocess: {
       includeProcessedMarkdown: true,
@@ -64,7 +68,7 @@ export default defineConfig({
     rehypeCodeOptions: {
       themes: { light: 'dark-plus', dark: 'dark-plus' },
     },
-    remarkPlugins: (v) => [remarkMath, remarkMermaid, remarkTabsNoToc, ...v],
+    remarkPlugins: (v) => [remarkMath, remarkMermaid, ...v, remarkTabsNoToc],
     rehypePlugins: (v) => [rehypeKatex, ...v],
   },
 })

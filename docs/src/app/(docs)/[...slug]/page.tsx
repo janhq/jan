@@ -18,6 +18,8 @@ export default async function Page(props: Props) {
   if (!page) notFound()
 
   const MDX = page.data.body
+  const tocExclude = new Set(page.data.tocExclude ?? [])
+  const toc = page.data.toc.filter((item) => !tocExclude.has(item.url))
   const footer = (
     <TocFooter
       title={page.data.title}
@@ -52,7 +54,7 @@ export default async function Page(props: Props) {
       sidebar={{ defaultOpenLevel: 0, collapsible: false }}
     >
     <DocsPage
-      toc={page.data.toc}
+      toc={toc}
       full={page.data.full}
       breadcrumb={{ enabled: false }}
       // One active heading at a time, like Nextra.

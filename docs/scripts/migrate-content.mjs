@@ -57,6 +57,8 @@ const LINK_FIXES = [
   ['(/windows#compatibility)', '(/desktop/install/windows#compatibility)'],
   ['(/desktop/install/windows#step-2-handle-jan-data)', '(/desktop/install/windows#step-2-clean-up-remaining-files)'],
   ['(/desktop/model-parameters#model-capabilities-edit-button)', '(/desktop/model-parameters#how-to-access-settings)'],
+  // Relative to the page itself; Nextra resolved it against /docs/desktop/.
+  ['[hardware requirements](troubleshooting)', '[hardware requirements](/desktop/troubleshooting)'],
   // Fumadocs makes every heading a link; a link inside it nests <a> in <a>
   // (invalid HTML, React hydration error). Move the link into the text.
   [
