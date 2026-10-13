@@ -226,7 +226,7 @@ function Get-PathWarning {
 
   $msg = "``jan`` in a new terminal will run $($winner.File), not $Dest, because $($winner.Dir) comes earlier on your $($winner.Scope) PATH. "
   if ($winner.Dir -match '\\Programs\\Jan[^\\]*\\resources\\bin$') {
-    $msg += "Jan desktop 0.8.0-0.8.4 added that entry; remove it from your PATH as described at https://jan.ai/docs/desktop/troubleshooting#jan-is-not-recognized-after-updating-the-desktop-app"
+    $msg += "Jan desktop 0.8.0-0.8.4 added that entry; remove it from your PATH as described at https://docs.jan.ai/desktop/troubleshooting#jan-is-not-recognized-after-updating-the-desktop-app"
   } elseif ($winner.Dir -match '\\Programs\\Jan[^\\]*$') {
     $msg += 'An earlier version of this installer added that entry; remove it from your PATH. The jan.exe there may be the 0.8.4 desktop app itself, so do not delete files from it.'
   } else {
