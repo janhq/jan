@@ -40,6 +40,11 @@ import {
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
 import {
+  settleStoppedToolCalls,
+  untilAborted,
+  type ToolRunResult,
+} from '@/lib/stopped-tool-calls'
+import {
   computeActivePath,
   backfillParentIds,
   makeSibling,
@@ -332,7 +337,12 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
-    onFinish: ({ message, isAbort, isError }) => {
+    onFinish: ({ message: finishedMessage, isAbort, isError }) => {
+      // A stopped turn can end with a tool call that never got to run; settle
+      // it before it is persisted so its card does not read "Running" forever.
+      const message = isAbort
+        ? settleStoppedToolCalls([finishedMessage])[0]
+        : finishedMessage
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
       // Consume once per generation so a skipped persist (error/empty) can't
@@ -412,6 +422,9 @@ function ThreadDetail() {
           ...(isStoppedTurn ? { stopped: true } : {}),
         }
 
+        if (isAbort) {
+          setChatMessagesRef.current?.((prev) => settleStoppedToolCalls(prev))
+        }
         if (isStoppedTurn) {
           setChatMessagesRef.current?.((prev) =>
             prev.map((m) =>
@@ -518,6 +531,16 @@ function ThreadDetail() {
         }
       }
 
+      // Stopped: none of this turn's tools will run. Left alone, their approval
+      // prompts stay up, and a late "Allow" would run the tool and resume the
+      // reply the user just stopped.
+      if (isAbort) {
+        sessionData.tools = []
+        toolApprovalPromises.current.clear()
+        useToolApprovalRequests.getState().clearPendingForThread(threadId)
+        return
+      }
+
       // Execute tool calls here, after the assistant message has completed, so
       // each addToolOutput lands on a finished message and the SDK's
       // auto-resubmit (sendAutomaticallyWhen) fires. Approval is requested
@@ -559,6 +582,7 @@ function ThreadDetail() {
                       serverForTool(toolName)
                     ))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
+            if (signal.aborted) break
 
             if (!approved) {
               addToolOutput({
@@ -574,55 +598,63 @@ function ThreadDetail() {
             // not reported as the tool being slow.
             useToolCallRuntime.getState().markRunning(toolCall.toolCallId)
 
-            let result
-
-            if (WEB_TOOL_NAMES.has(toolName)) {
-              result = await executeWebTool(toolName, toolCall.input)
-            } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
-              // Chat's shell runs with the sandbox network closed: the default
-              // `allowNetwork = false` is the contract here, not an accident.
-              const agentResult = await executeAgentTool(
-                toolName,
-                toolCall.input,
-                threadId
-              )
-              // The diff is display-only, so it goes to the runtime store rather
-              // than into `result`: anything in `result` reaches the model, and a
-              // full diff there would duplicate the file it just wrote.
-              const { diff, ...rest } = agentResult
-              if (diff) {
-                useToolCallRuntime
-                  .getState()
-                  .recordDiff(toolCall.toolCallId, diff)
-              }
-              result = rest
-            } else if (ragToolNames.has(toolName)) {
-              result = await serviceHub.rag().callTool({
-                toolName,
-                arguments: toolCall.input,
-                threadId,
-                projectId: projectId,
-                scope: projectId ? 'project' : 'thread',
-              })
-            } else if (mcpToolNames.has(toolName)) {
-              // An MCP result is injected into conversation history verbatim, so
-              // a page-sized one can exhaust the context on its own. Give the
-              // backend a budget scaled to the window this model actually has;
-              // it narrows that against the user's configured ceiling.
-              const ctxLen = useModelProvider.getState().selectedModel?.settings
-                ?.ctx_len?.controller_props?.value
-              result = await serviceHub.mcp().callTool({
-                toolName,
-                arguments: toolCall.input,
-                maxOutputChars: deriveToolOutputCap(
-                  typeof ctxLen === 'number' ? ctxLen : undefined
-                ),
-              })
-            } else {
-              result = {
-                error: `Tool '${toolName}' not found in any service`,
-              }
-            }
+            // Raced against Stop: a call that never returns (a runaway shell,
+            // a hung MCP server) must not hold the loop, and the thread, busy.
+            const result = await untilAborted<ToolRunResult>(
+              (async () => {
+                if (WEB_TOOL_NAMES.has(toolName)) {
+                  return await executeWebTool(toolName, toolCall.input)
+                } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+                  // Chat's shell runs with the sandbox network closed: the
+                  // default `allowNetwork = false` is the contract here, not an
+                  // accident.
+                  const agentResult = await executeAgentTool(
+                    toolName,
+                    toolCall.input,
+                    threadId
+                  )
+                  // The diff is display-only, so it goes to the runtime store
+                  // rather than into `result`: anything in `result` reaches the
+                  // model, and a full diff there would duplicate the file it
+                  // just wrote.
+                  const { diff, ...rest } = agentResult
+                  if (diff) {
+                    useToolCallRuntime
+                      .getState()
+                      .recordDiff(toolCall.toolCallId, diff)
+                  }
+                  return rest
+                } else if (ragToolNames.has(toolName)) {
+                  return await serviceHub.rag().callTool({
+                    toolName,
+                    arguments: toolCall.input,
+                    threadId,
+                    projectId: projectId,
+                    scope: projectId ? 'project' : 'thread',
+                  })
+                } else if (mcpToolNames.has(toolName)) {
+                  // An MCP result is injected into conversation history
+                  // verbatim, so a page-sized one can exhaust the context on its
+                  // own. Give the backend a budget scaled to the window this
+                  // model actually has; it narrows that against the user's
+                  // configured ceiling.
+                  const ctxLen = useModelProvider.getState().selectedModel
+                    ?.settings?.ctx_len?.controller_props?.value
+                  return await serviceHub.mcp().callTool({
+                    toolName,
+                    arguments: toolCall.input,
+                    maxOutputChars: deriveToolOutputCap(
+                      typeof ctxLen === 'number' ? ctxLen : undefined
+                    ),
+                  })
+                } else {
+                  return {
+                    error: `Tool '${toolName}' not found in any service`,
+                  }
+                }
+              })(),
+              signal
+            )
 
             if (result.error) {
               addToolOutput({
@@ -771,6 +803,46 @@ function ThreadDetail() {
   const hasBannerError = !!(oomError || backendError || contextLimitError)
   const effectiveStatus = hasBannerError ? 'ready' : status
 
+  // The stream has ended but the turn's tools are still running or waiting on
+  // approval. `status` is `ready` then, so without this the composer offers a
+  // send arrow and no way to stop a runaway command.
+  const toolsBusy = useAppState((s) => !!s.busyThreads[threadId])
+  const toolsRunning = toolsBusy && !processingEmbeddings
+
+  // Read at send or stop time without making those callbacks depend on every
+  // streamed token.
+  const chatMessagesRef = useRef(chatMessages)
+  chatMessagesRef.current = chatMessages
+
+  // Stop ends the whole turn, not just the stream: it aborts the tool loop,
+  // drops the approval prompts, and settles whatever tool call never got to
+  // finish so its card stops saying "Running" (and stays settled on reload).
+  const handleStop = useCallback(() => {
+    toolCallAbortController.current?.abort()
+    useToolApprovalRequests.getState().clearPendingForThread(threadId)
+    stop()
+
+    const current = chatMessagesRef.current
+    const settled = settleStoppedToolCalls(current)
+    if (settled === current) return
+    setChatMessages(settled)
+    // A turn that was still streaming is persisted by onFinish; one that is
+    // already stored (its tools were running) has to be rewritten here.
+    settled.forEach((message, i) => {
+      if (message === current[i]) return
+      const stored = useMessages
+        .getState()
+        .getMessages(threadId)
+        .find((m) => m.id === message.id)
+      if (!stored) return
+      updateMessage({
+        ...stored,
+        content: extractContentPartsFromUIMessage(message),
+        metadata: { ...stored.metadata, stopped: true },
+      })
+    })
+  }, [threadId, stop, setChatMessages, updateMessage])
+
   // Global disabled-tools set; re-run the effect below when it changes.
   const disabledTools = useToolAvailable((state) => state.disabledTools)
 
@@ -826,11 +898,6 @@ function ThreadDetail() {
     forceScrollToBottom: forceScrollReasoningToBottom,
     reset: resetReasoningScroll,
   } = useAutoScroll()
-
-  // Read at send time without making the send callbacks depend on every
-  // streamed token.
-  const chatMessagesRef = useRef(chatMessages)
-  chatMessagesRef.current = chatMessages
 
   const lastIsAssistant = useMemo(() => {
     const last = chatMessages[chatMessages.length - 1]
@@ -2002,8 +2069,9 @@ function ThreadDetail() {
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
-            onStop={stop}
+            onStop={handleStop}
             chatStatus={effectiveStatus}
+            toolsRunning={toolsRunning}
           />
         </div>
       </div>

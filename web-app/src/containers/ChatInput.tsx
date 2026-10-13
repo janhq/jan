@@ -145,6 +145,13 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  /**
+   * The turn's tools are still running or awaiting approval after the stream
+   * ended (`chatStatus` is already `ready`). Stop must stay reachable then: a
+   * runaway command otherwise leaves a send arrow and no way to end it. Unlike
+   * `chatStatus`, it does not queue what the user types.
+   */
+  toolsRunning?: boolean
   // Overrides the conversation scope this input belongs to — both its message
   // queue and its pending attachments (default: useThreads' currentThreadId).
   // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
@@ -254,6 +261,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  toolsRunning,
   scopeKey,
   ownsToolSet = true,
   surfaceControls,
@@ -2932,7 +2940,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               )}
 
-              {isStreaming ? (
+              {isStreaming || toolsRunning ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
