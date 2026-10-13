@@ -138,6 +138,8 @@ const h = vi.hoisted(() => {
   useMessageQueueMock.getState = () => messageQueueState
 
   return {
+    // The route's thread id, which the tests move to simulate a thread switch.
+    routeParams: { threadId: 'thread-1' },
     mockSendMessage,
     mockRegenerate,
     mockStop,
@@ -178,7 +180,7 @@ const h = vi.hoisted(() => {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
-  useParams: () => ({ threadId: 'thread-1' }),
+  useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
 }))
 
@@ -1333,6 +1335,46 @@ describe('ThreadDetail route', () => {
         unmount()
 
         expect(cancel).not.toHaveBeenCalled()
+      })
+
+      // The route component is reused across thread switches, so a Stop must
+      // reach only the thread it is pressed in, and still work after returning.
+      it('Stop reaches only its own thread\'s running call, also after returning', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          expect(cancel).not.toHaveBeenCalled()
+
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          expect(cancel).toHaveBeenCalledTimes(1)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
       })
 
       // The turn was stored before any tool ran, so a call that finished while

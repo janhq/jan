@@ -120,6 +120,14 @@ const CHAT_STATUS = {
 
 const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 
+// What an explicit Stop aborts to end a thread's running tool call, by thread.
+// Aborted only by Stop: leaving a thread ends its tool loop (see the cleanup in
+// ThreadDetail) but must not cancel a call that is running, whose result still
+// lands in the retained session. Keyed by thread because the route component is
+// reused across thread switches, so a Stop in one thread can never reach
+// another's call, and the Stop button still works after coming back.
+const toolStopControllers = new Map<string, AbortController>()
+
 // The MCP server a tool belongs to, so an approval prompt can offer to trust
 // the whole server rather than this one tool.
 function serverForTool(toolName: string): string | undefined {
@@ -209,11 +217,6 @@ function ThreadDetail() {
 
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
-  // Aborted only by an explicit Stop. Leaving the thread aborts
-  // `toolCallAbortController` too (it ends the loop and the auto follow-up), but
-  // must not cancel a call that is running: its result still lands in the
-  // retained session.
-  const toolStopController = useRef<AbortController | null>(null)
 
   // Approval promises started in onToolCall (so the popup appears immediately)
   // and awaited by the onFinish execution loop, keyed by toolCallId. Executing
@@ -559,8 +562,9 @@ function ThreadDetail() {
       // we await that already-started promise here rather than prompting again.
       toolCallAbortController.current = new AbortController()
       const signal = toolCallAbortController.current.signal
-      toolStopController.current = new AbortController()
-      const stopSignal = toolStopController.current.signal
+      const stopController = new AbortController()
+      toolStopControllers.set(threadId, stopController)
+      const stopSignal = stopController.signal
 
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
@@ -711,6 +715,9 @@ function ThreadDetail() {
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
+        if (toolStopControllers.get(threadId) === stopController) {
+          toolStopControllers.delete(threadId)
+        }
         useAppState.getState().setThreadBusy(threadId, false)
       })().catch((error) => {
         if (error.name !== 'AbortError') {
@@ -720,6 +727,9 @@ function ThreadDetail() {
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
+        if (toolStopControllers.get(threadId) === stopController) {
+          toolStopControllers.delete(threadId)
+        }
         useAppState.getState().setThreadBusy(threadId, false)
       })
 
@@ -840,7 +850,7 @@ function ThreadDetail() {
   // finish so its card stops saying "Running" (and stays settled on reload).
   const handleStop = useCallback(() => {
     toolCallAbortController.current?.abort()
-    toolStopController.current?.abort()
+    toolStopControllers.get(threadId)?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
 
