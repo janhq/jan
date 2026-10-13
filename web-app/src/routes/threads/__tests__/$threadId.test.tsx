@@ -1637,6 +1637,63 @@ describe('ThreadDetail route', () => {
         )
       })
 
+      // No reply follows once the thread is left, and a reply is what rewrites a
+      // stored turn. Without a rewrite here the call reloads as "Running".
+      it('stores the outcome of a call cut short by leaving the thread', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let decide: (approved: boolean) => void = () => {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>((resolve) => (decide = resolve))
+        )
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'output-error',
+                      errorText: 'Tool call cancelled: the chat was closed before it ran.',
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+
+        try {
+          const { unmount } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+          unmount()
+          await act(async () => {
+            decide(false)
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('chat was closed'),
+        })
+        expect(stored.metadata.stopped).toBeUndefined()
+      })
+
       // The approval promises are shared by every thread's loop. A thread whose
       // turn is cut off must forget only its own, or the thread in front would
       // be asked again about a call the user may already have allowed.

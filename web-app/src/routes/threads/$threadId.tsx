@@ -160,6 +160,31 @@ const forgetApprovals = (threadId: string) => {
 const CHAT_CLOSED_TOOL_ERROR =
   'Tool call cancelled: the chat was closed before it ran.'
 
+// Rewrites a turn that is already stored with what its live copy holds now. A
+// turn is stored before its tools run, so a call's outcome (result, error,
+// stopped) only reaches storage when a later reply rewrites the turn; when no
+// reply follows (Stop, or the thread was left) it has to be written here, or the
+// call reloads as "Running" after a restart.
+function rewriteStoredTurn(
+  threadId: string,
+  message: UIMessage,
+  stopped: boolean
+) {
+  const { getMessages, updateMessage } = useMessages.getState()
+  const stored = getMessages(threadId).find((m) => m.id === message.id)
+  if (!stored) return
+  const toolErrors = toolErrorsOf(message)
+  updateMessage({
+    ...stored,
+    content: extractContentPartsFromUIMessage(message),
+    metadata: {
+      ...stored.metadata,
+      ...(stopped ? { stopped: true } : {}),
+      ...(toolErrors ? { toolErrors } : {}),
+    },
+  })
+}
+
 // The MCP server a tool belongs to, so an approval prompt can offer to trust
 // the whole server rather than this one tool.
 function serverForTool(toolName: string): string | undefined {
@@ -600,6 +625,13 @@ function ThreadDetail() {
         .getState()
         .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
 
+      // The outcomes handed to the chat, so a loop that ends after the thread was
+      // left can wait for them to land before it persists the turn.
+      const outputs: Promise<unknown>[] = []
+      const record = (output: Parameters<typeof addToolOutput>[0]) => {
+        outputs.push(Promise.resolve(addToolOutput(output)))
+      }
+
       ;(async () => {
         for (const toolCall of sessionData.tools) {
           // Stop settles the turn's calls itself (see handleStop).
@@ -607,7 +639,7 @@ function ThreadDetail() {
           // The thread was left before this call's turn came: it will not run,
           // and without an outcome its card would read "Running" on return.
           if (signal.aborted) {
-            addToolOutput({
+            record({
               state: 'output-error',
               tool: toolCall.toolName,
               toolCallId: toolCall.toolCallId,
@@ -638,7 +670,7 @@ function ThreadDetail() {
             if (stopSignal.aborted) break
 
             if (!approved) {
-              addToolOutput({
+              record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
@@ -722,14 +754,14 @@ function ThreadDetail() {
             )
 
             if (result.error) {
-              addToolOutput({
+              record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
                 errorText: `Error: ${result.error}`,
               })
             } else {
-              addToolOutput({
+              record({
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
                 output: result.content,
@@ -738,7 +770,7 @@ function ThreadDetail() {
           } catch (error) {
             if ((error as Error).name !== 'AbortError') {
               console.error('Tool call error:', error)
-              addToolOutput({
+              record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
@@ -751,6 +783,14 @@ function ThreadDetail() {
           }
         }
 
+        // The thread was left: no follow-up reply will run to rewrite the stored
+        // turn, so write what the live copy holds (results and errors included).
+        if (signal.aborted && !stopSignal.aborted) {
+          await Promise.allSettled(outputs)
+          const live = useChatSessions.getState().sessions[threadId]?.chat.messages
+          const last = live?.[live.length - 1]
+          if (last?.role === 'assistant') rewriteStoredTurn(threadId, last, false)
+        }
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
         sessionData.tools = []
@@ -915,22 +955,8 @@ function ThreadDetail() {
     // stored before any tool ran, so the output of a call that did finish is
     // only in the rendered message, and the follow-up reply that would have
     // persisted it never happens.
-    const stored = useMessages
-      .getState()
-      .getMessages(threadId)
-      .find((m) => m.id === last.id)
-    if (!stored) return
-    const settledLast = settled[settled.length - 1]
-    updateMessage({
-      ...stored,
-      content: extractContentPartsFromUIMessage(settledLast),
-      metadata: {
-        ...stored.metadata,
-        stopped: true,
-        toolErrors: toolErrorsOf(settledLast),
-      },
-    })
-  }, [threadId, stop, setChatMessages, updateMessage])
+    rewriteStoredTurn(threadId, settled[settled.length - 1], true)
+  }, [threadId, stop, setChatMessages])
 
   // Global disabled-tools set; re-run the effect below when it changes.
   const disabledTools = useToolAvailable((state) => state.disabledTools)
