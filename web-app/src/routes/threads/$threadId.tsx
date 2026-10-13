@@ -128,6 +128,13 @@ const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 // another's call, and the Stop button still works after coming back.
 const toolStopControllers = new Map<string, AbortController>()
 
+// What ends a thread's tool loop: aborted when the thread is left or stopped, it
+// stops the loop between calls and the auto follow-up of the turn. Keyed by
+// thread for the same reason as the Stop controllers; a ref on the component
+// would be shared by every thread's loop and let one thread's Stop, or one
+// thread's loop finishing, end another's.
+const toolLoopControllers = new Map<string, AbortController>()
+
 // The MCP server a tool belongs to, so an approval prompt can offer to trust
 // the whole server rather than this one tool.
 function serverForTool(toolName: string): string | undefined {
@@ -215,9 +222,6 @@ function ThreadDetail() {
   const getSessionData = useChatSessions((state) => state.getSessionData)
   const sessionData = getSessionData(threadId)
 
-  // AbortController for cancelling tool calls
-  const toolCallAbortController = useRef<AbortController | null>(null)
-
   // Approval promises started in onToolCall (so the popup appears immediately)
   // and awaited by the onFinish execution loop, keyed by toolCallId. Executing
   // stays in onFinish so the tool result lands on a completed assistant message
@@ -229,15 +233,13 @@ function ThreadDetail() {
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
     ({ messages }: { messages: UIMessage[] }) => {
-      if (
-        !toolCallAbortController.current ||
-        toolCallAbortController.current?.signal.aborted
-      ) {
+      const controller = toolLoopControllers.get(threadId)
+      if (!controller || controller.signal.aborted) {
         return false
       }
       return lastAssistantMessageIsCompleteWithToolCalls({ messages })
     },
-    []
+    [threadId]
   )
 
   // Subscribe directly to the thread data to ensure updates when model changes
@@ -561,7 +563,7 @@ function ThreadDetail() {
       // earlier in onToolCall (popup appears without waiting for this callback);
       // we await that already-started promise here rather than prompting again.
       const callController = new AbortController()
-      toolCallAbortController.current = callController
+      toolLoopControllers.set(threadId, callController)
       const signal = callController.signal
       const stopController = new AbortController()
       toolStopControllers.set(threadId, stopController)
@@ -729,9 +731,9 @@ function ThreadDetail() {
         useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
-        // The ref is shared by every thread's loop: only clear this loop's own.
-        if (toolCallAbortController.current === callController) {
-          toolCallAbortController.current = null
+        // Only this loop's own: a later loop of the thread may have replaced it.
+        if (toolLoopControllers.get(threadId) === callController) {
+          toolLoopControllers.delete(threadId)
         }
         if (toolStopControllers.get(threadId) === stopController) {
           toolStopControllers.delete(threadId)
@@ -744,8 +746,8 @@ function ThreadDetail() {
         useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
-        if (toolCallAbortController.current === callController) {
-          toolCallAbortController.current = null
+        if (toolLoopControllers.get(threadId) === callController) {
+          toolLoopControllers.delete(threadId)
         }
         if (toolStopControllers.get(threadId) === stopController) {
           toolStopControllers.delete(threadId)
@@ -869,7 +871,7 @@ function ThreadDetail() {
   // drops the approval prompts, and settles whatever tool call never got to
   // finish so its card stops saying "Running" (and stays settled on reload).
   const handleStop = useCallback(() => {
-    toolCallAbortController.current?.abort()
+    toolLoopControllers.get(threadId)?.abort()
     toolStopControllers.get(threadId)?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
@@ -1115,8 +1117,8 @@ function ThreadDetail() {
     // Stable ref object (never reassigned) — capture for the cleanup closure.
     const approvalPromises = toolApprovalPromises.current
     return () => {
-      toolCallAbortController.current?.abort()
-      toolCallAbortController.current = null
+      toolLoopControllers.get(threadId)?.abort()
+      toolLoopControllers.delete(threadId)
       approvalPromises.clear()
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
       // Drop per-thread timing/progress/diff state from the shared runtime

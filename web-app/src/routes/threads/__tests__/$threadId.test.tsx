@@ -1338,6 +1338,68 @@ describe('ThreadDetail route', () => {
         expect(cancel).not.toHaveBeenCalled()
       })
 
+      // A turn of a thread that was left can finish in the background, after
+      // another thread is shown. A Stop there is that thread's, and must not end
+      // the background thread's loop: its queued calls still run.
+      it('Stop in the thread in front does not end another thread\'s loop', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+        const started: string[] = []
+        const finish: Array<(r: unknown) => void> = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: (args: any) => {
+              started.push(args.arguments.id)
+              return {
+                promise: new Promise((resolve) => finish.push(resolve)),
+                cancel: vi.fn().mockResolvedValue(undefined),
+                token: 't',
+              }
+            },
+          }) as never
+        h.mockAddToolOutput.mockClear()
+        const Component = Route.component as React.ComponentType
+        const call = (id: string) => ({
+          toolCall: { toolCallId: id, toolName: 'fetch', input: { id } },
+        })
+
+        try {
+          const { rerender } = renderComponent()
+          const onToolCallA = (h as any).capturedOnToolCall
+          const onFinishA = (h as any).capturedOnFinish
+          await act(async () => {
+            await onToolCallA(call('tcA'))
+            await onToolCallA(call('tcB'))
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            await onFinishA({
+              message: {
+                id: 'a-tc',
+                role: 'assistant',
+                parts: [{ type: 'text', text: '' }],
+                metadata: { finishReason: 'tool-calls' },
+              },
+              isAbort: false,
+            })
+          })
+          expect(started).toEqual(['tcA'])
+
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          await act(async () => {
+            finish[0]({ error: '', content: [] })
+          })
+
+          expect(started).toEqual(['tcA', 'tcB'])
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+      })
+
       // The tool-loop controller is one ref shared by every thread's loop. A
       // loop left behind by a thread switch finishing later must not clear the
       // controller of the thread now in front: that thread's reply would never
