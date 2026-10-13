@@ -134,8 +134,9 @@ const toolStopControllers = new Map<string, AbortController>()
 // would be shared by every thread's loop and let one thread's Stop, or one
 // thread's loop finishing, end another's.
 const toolLoopControllers = new Map<string, AbortController>()
-// The message each thread's running tool loop belongs to, so a Stop settles that
-// turn even when the user has sent another one since.
+// The message each thread's running tool call belongs to, keyed by its Stop
+// controller, so a Stop settles that turn even when the user has sent another
+// one since or left and came back.
 const toolLoopTurns = new WeakMap<AbortController, string>()
 
 // Approval promises started in onToolCall (so the popup appears immediately) and
@@ -617,10 +618,10 @@ function ThreadDetail() {
       // we await that already-started promise here rather than prompting again.
       const callController = new AbortController()
       toolLoopControllers.set(threadId, callController)
-      toolLoopTurns.set(callController, message.id)
       const signal = callController.signal
       const stopController = new AbortController()
       toolStopControllers.set(threadId, stopController)
+      toolLoopTurns.set(stopController, message.id)
       const stopSignal = stopController.signal
 
       const ragToolNames = useAppState.getState().ragToolNames
@@ -947,12 +948,16 @@ function ThreadDetail() {
   // drops the approval prompts, and settles whatever tool call never got to
   // finish so its card stops saying "Running" (and stays settled on reload).
   const handleStop = useCallback(() => {
-    const loop = toolLoopControllers.get(threadId)
-    // The turn whose loop this aborts; with no loop (the reply is still
+    // The Stop controller outlives the thread-switch cleanup, which deletes the
+    // loop controller, so it is what says which turn is still running a call.
+    // One already aborted was stopped earlier; its loop is only winding down.
+    const stopping = toolStopControllers.get(threadId)
+    const running = stopping?.signal.aborted ? undefined : stopping
+    // The turn whose call this aborts; with none running (the reply is still
     // streaming) it is the last message.
-    const turnId = loop ? toolLoopTurns.get(loop) : undefined
-    loop?.abort()
-    toolStopControllers.get(threadId)?.abort()
+    const turnId = running ? toolLoopTurns.get(running) : undefined
+    toolLoopControllers.get(threadId)?.abort()
+    running?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
 

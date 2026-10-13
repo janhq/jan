@@ -1539,6 +1539,80 @@ describe('ThreadDetail route', () => {
         expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
       })
 
+      // Leaving the thread deletes the loop controller but leaves the call
+      // running. A Stop after coming back, with a newer turn sent since, must
+      // still settle the turn that owns the call.
+      it('Stop after returning to the thread still settles the turn that owns the call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'input-available',
+                    },
+                  ],
+                },
+                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
+                {
+                  id: 'a-newer',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('Stopped'),
+        })
+      })
+
       // The composer still sends while tools run, so the last message can be a
       // newer turn. Stop ends the older turn's loop, and that is the turn whose
       // call must be settled.
