@@ -580,8 +580,19 @@ function ThreadDetail() {
 
       ;(async () => {
         for (const toolCall of sessionData.tools) {
+          // Stop settles the turn's calls itself (see handleStop).
+          if (stopSignal.aborted) break
+          // The thread was left before this call's turn came: it will not run,
+          // and without an outcome its card would read "Running" on return.
           if (signal.aborted) {
-            break
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: 'Tool call cancelled: the chat was closed before it ran.',
+            })
+            useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
+            continue
           }
 
           try {

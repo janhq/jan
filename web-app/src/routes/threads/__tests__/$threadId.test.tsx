@@ -1530,6 +1530,35 @@ describe('ThreadDetail route', () => {
         )
       })
 
+      // The calls queued behind the one awaiting approval are cut short too.
+      it('settles the calls queued behind one whose approval was cut short', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const decide: Record<string, (approved: boolean) => void> = {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          (id: string) =>
+            new Promise<boolean>((resolve) => (decide[id] = resolve))
+        )
+        h.mockAddToolOutput.mockClear()
+
+        const { unmount } = renderComponent()
+        await arrive('tcA', 'tcB')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+        await act(async () => {
+          decide.tcA(false)
+        })
+
+        const settled = h.mockAddToolOutput.mock.calls.map(
+          (c: any[]) => c[0].toolCallId
+        )
+        expect(settled).toEqual(['tcA', 'tcB'])
+        expect(h.mockAddToolOutput).toHaveBeenLastCalledWith(
+          expect.objectContaining({ toolCallId: 'tcB', state: 'output-error' })
+        )
+      })
+
       it('keeps going when one call is denied', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         h.toolApprovalState.requestApproval = vi.fn((id: string) =>
