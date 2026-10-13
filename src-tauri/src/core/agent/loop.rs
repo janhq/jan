@@ -1569,7 +1569,8 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let plan = match parse_dispatch_plan(args, |name| ctx.bg.has_worker(name)) {
+                let scratch = self.subagent_scratch();
+                let plan = match parse_dispatch_plan(args, |name| ctx.bg.has_worker(name, scratch)) {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
@@ -3048,7 +3049,11 @@ fn advertise_local_tools(
         }
     }
     // Last, so the names a child may be given are drawn from the whole array.
-    crate::core::agent::subagent::constrain_tool_names(openai_tools);
+    crate::core::agent::subagent::constrain_tool_names(
+        openai_tools,
+        permissions,
+        allowed_names.is_some(),
+    );
 }
 
 /// The last completion of a run stopped by its money ceiling, rewritten into a

@@ -733,7 +733,7 @@ fn qualify_host_names(
 /// definition to run (any scope, built-ins included); its role, prompt and
 /// model are used, and `allowed_tools` narrows its tools. `name` is not chosen
 /// by the model: it is the agent's name, numbered for each repeat within one
-/// plan (`explore`, `explore-2`, see [`worker_names`]), and is the worker's
+/// plan (`explore`, `explore-2`, see [`number_workers`]), and is the worker's
 /// identity -- its run id, its blackboard file (`blackboard/<name>.md`), the
 /// name `message_subagent`/`stop_subagent` address and its transcript rows.
 #[derive(Debug, Clone)]
@@ -1116,9 +1116,15 @@ impl Default for BackgroundSubagents {
 
 impl BackgroundSubagents {
     /// Whether a worker of this session already goes by `name`; a new worker
-    /// is numbered past it (see [`parse_dispatch_plan`]).
-    pub(crate) fn has_worker(&self, name: &str) -> bool {
+    /// is numbered past it (see [`parse_dispatch_plan`]). Asks the scratch too:
+    /// a run that owns its own registry forgets its workers when it ends, but
+    /// their answers stay on the session's blackboard, and reusing a name
+    /// would truncate the earlier answer in place.
+    pub(crate) fn has_worker(&self, name: &str, scratch: Option<&Path>) -> bool {
         self.inner.lock().unwrap().values().any(|e| e.name == name)
+            || scratch.is_some_and(|s| {
+                tauri_plugin_agent_tools::tools::spill::blackboard_result_exists(s, name)
+            })
     }
 
     /// Create a registry admitting at most `cap` concurrently-running children.
@@ -2741,17 +2747,28 @@ fn never_delegated(name: &str) -> bool {
 /// nothing (`bash`, `search`, `read_file`), which silently narrowed the child
 /// to the forced skill tools. With the names fixed a strict provider cannot
 /// emit a stray one, and every other provider is at least shown the set.
-/// `offered` is the run's final tool array; the shell-free search tools are
+/// `offered` is the run's final tool array. The shell-free search tools are
 /// added because a child that names them is offered them even though the
-/// parent is not. Applied after the whole array is built so MCP, plugin and
-/// host tools are included, and derived from it alone so the array stays
-/// byte-identical across the run's turns.
-pub fn constrain_tool_names(offered: &mut [serde_json::Value]) {
+/// parent is not -- but only when nothing would take them away again: a deny
+/// rule drops them, and under a per-run allowlist (`ceiling`) a child gets
+/// only what the parent was offered, which `offered` already says. Applied
+/// after the whole array is built so MCP, plugin and host tools are included,
+/// and derived from per-run inputs alone so the array stays byte-identical
+/// across the run's turns.
+pub fn constrain_tool_names(
+    offered: &mut [serde_json::Value],
+    permissions: &ToolPermissions,
+    ceiling: bool,
+) {
     let search = tauri_plugin_agent_tools::tools::schema::search_tool_schemas();
+    let search = search
+        .iter()
+        .filter_map(|t| t["function"]["name"].as_str())
+        .filter(|n| !ceiling && !permissions.is_denied(n));
     let mut names: Vec<String> = offered
         .iter()
-        .chain(search.iter())
         .filter_map(|t| t["function"]["name"].as_str())
+        .chain(search)
         .filter(|n| !never_delegated(n))
         .map(str::to_string)
         .collect();
@@ -2794,7 +2811,7 @@ pub fn subagent_tool_schemas(
     let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
     let dispatch_desc = format!(
-        "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless you restrict it with allowed_tools."
+        "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it."
     );
     vec![
         json!({
@@ -5667,7 +5684,9 @@ pub(crate) mod tests {
         let mut tools = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
         tools.push(serde_json::json!({ "type": "function", "function": { "name": "shell" } }));
         tools.push(serde_json::json!({ "type": "function", "function": { "name": "ask" } }));
-        constrain_tool_names(&mut tools);
+        let mut ceiling = tools.clone();
+        let mut denied = tools.clone();
+        constrain_tool_names(&mut tools, &ToolPermissions::allow_all(), false);
         let expected = serde_json::json!(["find", "grep", "ls", "shell"]);
         let dispatch = &tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]
             ["properties"]["allowed_tools"]["items"];
@@ -5678,6 +5697,33 @@ pub(crate) mod tests {
             .unwrap();
         let items = &create["function"]["parameters"]["properties"]["allowed_tools"]["items"];
         assert_eq!(items["enum"], expected);
+
+        // A search tool the child could not be given is not offered either.
+        let enum_of = |tools: &[serde_json::Value]| {
+            tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]["properties"]
+                ["allowed_tools"]["items"]["enum"]
+                .clone()
+        };
+        constrain_tool_names(&mut ceiling, &ToolPermissions::allow_all(), true);
+        assert_eq!(enum_of(&ceiling), serde_json::json!(["shell"]));
+        constrain_tool_names(&mut denied, &perms_denying(&["find"]), false);
+        assert_eq!(enum_of(&denied), serde_json::json!(["grep", "ls", "shell"]));
+    }
+
+    /// A worker whose answer is still on the blackboard holds its name even
+    /// after the registry that ran it is gone, so a later dispatch numbers
+    /// past it instead of truncating that answer.
+    #[test]
+    fn a_name_with_an_answer_on_the_blackboard_is_taken() {
+        let root = unique_root("bb_taken");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(blackboard_dir_path(&scratch)).unwrap();
+        std::fs::write(blackboard_dir_path(&scratch).join("explore.md"), "earlier").unwrap();
+        let bg = BackgroundSubagents::new(1);
+        assert!(bg.has_worker("explore", Some(&scratch)));
+        assert!(!bg.has_worker("explore", None), "no scratch, nothing on disk to keep");
+        assert!(!bg.has_worker("general", Some(&scratch)));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
