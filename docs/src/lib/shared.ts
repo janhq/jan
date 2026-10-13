@@ -8,7 +8,7 @@ export const defaultOgImage = '/assets/images/general/og-image-docs.png'
 export const gitConfig = {
   user: 'janhq',
   repo: 'jan',
-  branch: 'dev',
+  branch: 'main',
   contentDir: 'docs/content',
 }
 

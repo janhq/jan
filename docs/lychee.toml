@@ -1,0 +1,30 @@
+# lychee link-checker config for docs.jan.ai.
+# See .github/workflows/jan-docs-link-check.yml. Runs against the built site
+# (docs/out), not content/**.mdx: only the Fumadocs build maps files to routes.
+
+max_concurrency = 8
+timeout = 30
+max_retries = 3
+retry_wait_time = 5
+
+# Some sites 403 a default tool user-agent.
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+# 401/403: the host is up and the URL is real but gated.
+accept = ["200..=299", "401", "403", "429"]
+
+exclude = [
+  # Local API server addresses used in examples.
+  "^https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)",
+  # Deep links into the desktop app.
+  "^jan://",
+  # Next.js runtime assets and the search index endpoint.
+  "/_next/",
+  # Social sites that block crawlers.
+  "^https://(x|twitter)\\.com",
+  "^https://(www\\.)?linkedin\\.com",
+]
+
+cache = true
+max_cache_age = "2d"
+cache_exclude_status = ["429", "500..=599"]

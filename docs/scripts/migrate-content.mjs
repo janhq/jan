@@ -44,6 +44,21 @@ const ROOT_SECTIONS = {
 const GLOBAL_IMPORT =
   /^import\s+[^;\n]*?from\s+['"](nextra\/components|nextra-theme-docs|@\/components\/(DocCard|DownloadButton|FaqBox))['"];?[ \t]*\n/gm
 
+// Links that were already broken on jan.ai/docs (found by lychee), and
+// marketing pages that now live on jan.ai.
+const LINK_FIXES = [
+  ['](/download)', '](https://jan.ai/download)'],
+  ['](/changelog/', '](https://jan.ai/changelog/'],
+  ['#add-models-1)', '#cloud-models)'],
+  ['](docs/desktop/install/linux#uninstall-jan)', '](/desktop/install/linux#uninstall-jan)'],
+  ['(#agentsmd-and-claudemd)', '(#janmd-and-claudemd)'],
+  ['(https://www.jan.ai/docs/desktop/install/mac#minimum-requirements)', '(/desktop/install/mac#minimum-requirements)'],
+  ['(https://www.jan.ai/docs/desktop/install/linux#compatibility)', '(/desktop/install/linux#compatibility)'],
+  ['(/windows#compatibility)', '(/desktop/install/windows#compatibility)'],
+  ['(/desktop/install/windows#step-2-handle-jan-data)', '(/desktop/install/windows#step-2-clean-up-remaining-files)'],
+  ['(/desktop/model-parameters#model-capabilities-edit-button)', '(/desktop/model-parameters#how-to-access-settings)'],
+]
+
 let stats = { pages: 0, assets: 0, metas: 0, links: 0, titles: 0 }
 
 fs.rmSync(OUT, { recursive: true, force: true })
@@ -85,6 +100,8 @@ function transformMdx(src, relPath) {
     stats.links++
     return `${pre}${rest || '/'}`
   })
+
+  for (const [from, to] of LINK_FIXES) out = out.split(from).join(to)
 
   // Nextra showed the page's first `# H1` and used the frontmatter title only
   // for <title>/sidebar. Fumadocs renders the frontmatter title as the H1, so

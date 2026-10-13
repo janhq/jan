@@ -1,0 +1,112 @@
+name: Jan Docs Link Check
+
+# Two passes over the built docs (docs/out), adapted from menloresearch/docs:
+#
+#   1. Internal (offline, blocking): routes, images and heading anchors,
+#      checked against the static export. Cannot flake, so a failure is a real
+#      broken link introduced by the PR.
+#   2. External (network, advisory): third-party sites go down and rate-limit
+#      CI runners, so this never blocks a merge. The weekly run files or
+#      updates a single issue instead.
+#
+# Links are checked in out/ rather than content/**/*.mdx because only the
+# Fumadocs build knows how content/desktop/x.mdx maps to the /desktop/x route.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/jan-docs-link-check.yml'
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jan-docs-link-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  link-check:
+    name: Check links
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # only used by the scheduled run
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Build docs
+        working-directory: docs
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+          yarn install
+          yarn build
+
+      # ---- Pass 1: internal. Blocking. ----
+      - name: Check internal links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # --offline: file:// targets only. --fallback-extensions html: the
+          # export writes /desktop/quickstart as out/desktop/quickstart.html.
+          args: >-
+            --config docs/lychee.toml
+            --offline
+            --include-fragments
+            --root-dir ${{ github.workspace }}/docs/out
+            --fallback-extensions html
+            --no-progress
+            'docs/out/**/*.html'
+          output: internal-links.md
+          fail: true
+
+      # ---- Pass 2: external. Advisory. ----
+      - name: Check external links
+        id: external
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --config docs/lychee.toml
+            --scheme http
+            --scheme https
+            --root-dir ${{ github.workspace }}/docs/out
+            --no-progress
+            'docs/out/**/*.html'
+          output: external-links.md
+          fail: false
+          jobSummary: true
+
+      - name: Flag dead external links on the PR
+        if: github.event_name == 'pull_request' && steps.external.outputs.exit_code != 0
+        run: |
+          echo "::warning title=Dead external links::lychee could not reach one or more external links. This does not block the merge; see the job summary."
+
+      - name: Find the existing link-rot issue
+        id: existing
+        if: github.event_name == 'schedule' && steps.external.outputs.exit_code != 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: Dead external links in docs.jan.ai
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title --jq "[.[] | select(.title == env.TITLE)][0].number // empty")
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+
+      - name: File or update the dead-link issue
+        if: github.event_name == 'schedule' && steps.external.outputs.exit_code != 0
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
+        with:
+          title: Dead external links in docs.jan.ai
+          content-filepath: external-links.md
+          issue-number: ${{ steps.existing.outputs.number }}
+          labels: documentation

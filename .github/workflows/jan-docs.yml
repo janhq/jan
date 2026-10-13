@@ -1,5 +1,12 @@
 name: Jan Docs
 
+# Builds docs/ (Fumadocs, static export) and deploys it to the Cloudflare Pages
+# project behind docs.jan.ai.
+#
+# IMPORTANT: this deploys to `jan-docs` (docs.jan.ai) ONLY. The old `docs`
+# project serves jan.ai and is now deployed from janhq/jan.ai (#434); never
+# point this workflow at it, or jan.ai's marketing site is replaced by the docs.
+
 on:
   push:
     branches:
@@ -11,85 +18,88 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
-    # Review gh actions docs if you want to further define triggers, paths, etc
-    # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  group: jan-docs-${{ github.ref }}
+  # Cancel superseded PR previews; leave production deploys alone.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   deploy:
-    name: Deploy to CloudFlare Pages
+    name: Build and deploy docs.jan.ai
     env:
-      CLOUDFLARE_PROJECT_NAME: docs
+      CLOUDFLARE_PROJECT_NAME: jan-docs
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       deployments: write
       pull-requests: write
+    defaults:
+      run:
+        working-directory: docs
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-
-      - name: Install jq      
-        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
 
       - name: Config Yarn
         run: |
           corepack enable
           corepack prepare yarn@4.5.3 --activate
-          yarn --version
           yarn config set -H enableImmutableInstalls false
 
-      - name: Fill env vars
-        working-directory: docs
-        run: |
-          env_example_file=".env.example"
-          touch .env
-          while IFS= read -r line || [[ -n "$line" ]]; do
-            if [[ "$line" == *"="* ]]; then
-              var_name=$(echo $line | cut -d '=' -f 1)
-              echo $var_name
-              var_value="$(jq -r --arg key "$var_name" '.[$key]' <<< "$SECRETS")"
-              echo "$var_name=$var_value" >> .env
-            fi
-          done < "$env_example_file"
-        env:
-          SECRETS: '${{ toJson(secrets) }}'
-
       - name: Install dependencies
-        working-directory: docs
         run: yarn install
-      - name: Clean output directory
-        working-directory: docs
-        run: rm -rf out/* .next/*
-      - name: Build website
-        working-directory: docs
-        run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
 
-      - name: Publish to Cloudflare Pages PR Preview and Staging
-        if: github.event_name == 'pull_request'
+      # Only the variables the build reads; nothing else from `secrets`.
+      - name: Build
+        env:
+          NODE_ENV: production
+          GTM_ID: ${{ secrets.GTM_ID }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          node scripts/build-redirects.mjs --check
+          yarn build
+
+      - name: Check redirects
+        run: node scripts/check-redirects.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docs-out
+          path: docs/out
+          retention-days: 3
+
+      # PR number, not head_ref: branch names are attacker-controlled and this
+      # value is interpolated into a shell command.
+      - name: Publish PR preview
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        id: deployPreview
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: "4"
-          command: pages deploy ./docs/out --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }} --branch=${{ github.head_ref }}
-        id: deployCloudflarePages
+          command: pages deploy ./docs/out --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }} --branch=pr-${{ github.event.pull_request.number }}
 
       - uses: mshick/add-pr-comment@b8f338c590a895d50bcbfa6c5859251edc8952fc # v2
-        if: github.event_name == 'pull_request'
+        if: steps.deployPreview.outputs.deployment-url != ''
         with:
           message: |
-              Preview URL: ${{ steps.deployCloudflarePages.outputs.deployment-url }}
+              Docs preview: ${{ steps.deployPreview.outputs.deployment-url }}
 
-      - name: Publish to Cloudflare Pages Production
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/release/'))
+      - name: Publish to production (docs.jan.ai)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

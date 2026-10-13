@@ -56,9 +56,11 @@ function TabsImpl(props: TabsProps) {
   return <FdTabs {...props} />
 }
 
-// Nextra tabs are matched by position, not by value.
+// Nextra tabs are matched by position, not by value. Every panel is mounted
+// (inactive ones hidden by CSS), as in Nextra, so headings inside tabs keep
+// their anchors (#cpu-only-1) and the text is in the static HTML.
 function NextraTab(props: ComponentProps<typeof Tab>) {
-  return <Tab {...props} />
+  return <Tab forceMount {...props} />
 }
 
 export const Tabs = Object.assign(TabsImpl, { Tab: NextraTab })
