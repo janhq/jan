@@ -49,8 +49,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare yarn@4.5.3 --activate
-          yarn config set -H enableImmutableInstalls false
-          yarn install
+          yarn install --immutable
           yarn build
 
       # ---- Pass 1: internal. Blocking. ----

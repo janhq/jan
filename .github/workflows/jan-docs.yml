@@ -54,10 +54,11 @@ jobs:
         run: |
           corepack enable
           corepack prepare yarn@4.5.3 --activate
-          yarn config set -H enableImmutableInstalls false
 
+      # docs/ is its own Yarn project with a committed docs/yarn.lock;
+      # --immutable fails the job if it is out of date.
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       # Only the variables the build reads; nothing else from `secrets`.
       - name: Build
