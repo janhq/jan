@@ -8,6 +8,7 @@ import {
 import {
   convertThreadMessageToUIMessage,
   extractContentPartsFromUIMessage,
+  toolErrorsOf,
 } from '../messages'
 
 const assistant = (parts: unknown[], metadata?: object): UIMessage =>
@@ -55,25 +56,30 @@ describe('settleStoppedToolCalls', () => {
     expect(message.parts[1]).toMatchObject({ state: 'output-error' })
   })
 
-  it('keeps the reason through persistence and a reload', () => {
+  it('reloads a stopped call as an error, not as running or as a result', () => {
     const [stopped] = settleStoppedToolCalls([
       assistant([tool('input-streaming')]),
     ])
-    const content = extractContentPartsFromUIMessage(stopped)
-    expect(content[0]).toMatchObject({
-      type: 'tool_call',
-      output: STOPPED_TOOL_ERROR,
-    })
-
     const reloaded = convertThreadMessageToUIMessage({
       id: 'a1',
       role: 'assistant',
-      content,
+      content: extractContentPartsFromUIMessage(stopped),
+      metadata: { toolErrors: toolErrorsOf(stopped) },
     } as Parameters<typeof convertThreadMessageToUIMessage>[0])
-    // Not `input-available`: that is what renders "Running".
-    expect(reloaded?.parts[0]).toMatchObject({
-      state: 'output-available',
-      output: STOPPED_TOOL_ERROR,
+    // `input-available` is what renders "Running"; `output-available` would
+    // present the stop as a result the tool returned.
+    expect(reloaded.parts[0]).toMatchObject({
+      state: 'output-error',
+      errorText: STOPPED_TOOL_ERROR,
+    })
+  })
+
+  it('reloads a denied call as an error too', () => {
+    const denied = assistant([
+      tool('output-error', { errorText: 'Tool execution denied by user' }),
+    ])
+    expect(toolErrorsOf(denied)).toEqual({
+      c1: 'Tool execution denied by user',
     })
   })
 })

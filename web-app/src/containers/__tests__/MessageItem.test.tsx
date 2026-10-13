@@ -252,6 +252,33 @@ describe('MessageItem', () => {
     expect(onContinue).toHaveBeenCalledWith('msg-1')
   })
 
+  // Continue extends partial text; with none there is nothing to resume.
+  it('hides Continue on a stopped turn that never wrote any text', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            metadata: { createdAt: new Date(), stopped: true },
+            parts: [
+              {
+                type: 'tool-slow_wait',
+                toolCallId: 'c1',
+                state: 'output-error',
+                input: {},
+                errorText: 'Stopped by the user before the tool finished.',
+              },
+            ],
+          }) as any
+        }
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+        onContinue={vi.fn()}
+      />
+    )
+    expect(screen.queryByTitle('chat:actions.continue')).not.toBeInTheDocument()
+  })
+
   it('hides Continue button when the turn finished normally', () => {
     render(
       <MessageItem

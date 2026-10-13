@@ -322,7 +322,15 @@ vi.mock('@/lib/messages', () => ({
       .map((p: any) => ({ type: 'text', text: { value: p.text, annotations: [] } })),
   uiMessageHasMeaningfulContent: (msg: any) =>
     !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
+  toolErrorsOf: () => undefined,
 }))
+
+// The chat runs MCP tools through the cancellable API so Stop can end the call.
+const cancellable = (run: (args: any) => Promise<unknown>) => (args: any) => ({
+  promise: run(args),
+  cancel: vi.fn().mockResolvedValue(undefined),
+  token: 'test-token',
+})
 
 vi.mock('@/lib/completion', () => ({
   newUserThreadContent: (threadId: string, text: string, _a: any, id: string) => ({
@@ -1102,7 +1110,8 @@ describe('ThreadDetail route', () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () => ({ callTool }) as never
+      hub.mcp = () =>
+        ({ callToolWithCancellation: cancellable(callTool) }) as never
       renderComponent()
 
       const onToolCall = (
@@ -1129,7 +1138,8 @@ describe('ThreadDetail route', () => {
       const previousSettings = h.modelProviderState.selectedModel.settings
       h.modelProviderState.selectedModel.settings = {}
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () => ({ callTool }) as never
+      hub.mcp = () =>
+        ({ callToolWithCancellation: cancellable(callTool) }) as never
 
       try {
         renderComponent()
@@ -1187,7 +1197,8 @@ describe('ThreadDetail route', () => {
           }
           return Promise.resolve({ error: '', content: [] })
         })
-        hub.mcp = () => ({ callTool }) as never
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(callTool) }) as never
 
         renderComponent()
         await act(async () => {
@@ -1216,6 +1227,45 @@ describe('ThreadDetail route', () => {
           releaseFirst?.()
         })
         expect(started).toEqual(['tcA', 'tcB'])
+      })
+
+      // A call that never returns must not hold the loop, the thread, or the
+      // backend: Stop ends all three, and the stopped call's output is dropped.
+      it('Stop cancels a running MCP call and frees the thread', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        const never = new Promise(() => {})
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: never,
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        h.appStateState.setThreadBusy.mockClear()
+        h.mockAddToolOutput.mockClear()
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
+          'thread-1',
+          true
+        )
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
+          'thread-1',
+          false
+        )
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
       })
 
       it('drains the runtime queue and times every call', async () => {

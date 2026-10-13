@@ -35,6 +35,7 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
+  toolErrorsOf,
   uiMessageHasMeaningfulContent,
   threadMessageIsEmpty,
 } from '@/lib/messages'
@@ -420,6 +421,9 @@ function ThreadDetail() {
         const messageMetadata = {
           ...((message.metadata || {}) as Record<string, unknown>),
           ...(isStoppedTurn ? { stopped: true } : {}),
+          ...(toolErrorsOf(message)
+            ? { toolErrors: toolErrorsOf(message) }
+            : {}),
         }
 
         if (isAbort) {
@@ -637,16 +641,24 @@ function ThreadDetail() {
                   // verbatim, so a page-sized one can exhaust the context on its
                   // own. Give the backend a budget scaled to the window this
                   // model actually has; it narrows that against the user's
-                  // configured ceiling.
+                  // configured ceiling. Cancellable, so Stop ends the call on
+                  // the backend as well as in this loop.
                   const ctxLen = useModelProvider.getState().selectedModel
                     ?.settings?.ctx_len?.controller_props?.value
-                  return await serviceHub.mcp().callTool({
+                  const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
                     arguments: toolCall.input,
                     maxOutputChars: deriveToolOutputCap(
                       typeof ctxLen === 'number' ? ctxLen : undefined
                     ),
                   })
+                  const cancel = () => void call.cancel().catch(() => {})
+                  signal.addEventListener('abort', cancel, { once: true })
+                  try {
+                    return await call.promise
+                  } finally {
+                    signal.removeEventListener('abort', cancel)
+                  }
                 } else {
                   return {
                     error: `Tool '${toolName}' not found in any service`,
@@ -838,7 +850,11 @@ function ThreadDetail() {
       updateMessage({
         ...stored,
         content: extractContentPartsFromUIMessage(message),
-        metadata: { ...stored.metadata, stopped: true },
+        metadata: {
+          ...stored.metadata,
+          stopped: true,
+          toolErrors: toolErrorsOf(message),
+        },
       })
     })
   }, [threadId, stop, setChatMessages, updateMessage])
