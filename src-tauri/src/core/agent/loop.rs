@@ -1556,7 +1556,7 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
             SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
@@ -1569,8 +1569,7 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let scratch = self.subagent_scratch();
-                let plan = match parse_dispatch_plan(args, |name| ctx.bg.has_worker(name, scratch)) {
+                let plan = match ctx.bg.plan_dispatch(args, self.subagent_scratch()) {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };

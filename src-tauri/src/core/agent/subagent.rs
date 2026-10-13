@@ -1058,6 +1058,11 @@ pub(crate) struct Collected {
 /// was never collected so a finished/cancelled parent leaves no orphan runs.
 pub(crate) struct BackgroundSubagents {
     inner: std::sync::Mutex<std::collections::HashMap<String, BackgroundEntry>>,
+    /// Every worker name a dispatch has handed out in this registry's life.
+    /// A later-phase worker is not in `inner` until its phase starts, so
+    /// without this a second dispatch made meanwhile could be given the same
+    /// name and share its blackboard file and handle.
+    reserved_names: std::sync::Mutex<std::collections::HashSet<String>>,
     /// Admission gate: `max_parallel_subagents` permits, one per child that is
     /// *running* (as opposed to merely dispatched). A dispatch beyond the cap
     /// parks on `acquire_owned` in FIFO order inside its spawned task, so the
@@ -1115,16 +1120,32 @@ impl Default for BackgroundSubagents {
 }
 
 impl BackgroundSubagents {
-    /// Whether a worker of this session already goes by `name`; a new worker
-    /// is numbered past it (see [`parse_dispatch_plan`]). Asks the scratch too:
-    /// a run that owns its own registry forgets its workers when it ends, but
-    /// their answers stay on the session's blackboard, and reusing a name
-    /// would truncate the earlier answer in place.
-    pub(crate) fn has_worker(&self, name: &str, scratch: Option<&Path>) -> bool {
-        self.inner.lock().unwrap().values().any(|e| e.name == name)
-            || scratch.is_some_and(|s| {
-                tauri_plugin_agent_tools::tools::spill::blackboard_result_exists(s, name)
-            })
+    /// Parse a dispatch and hold every name it hands out, as one step under
+    /// the reservation lock so two dispatches cannot be given the same name.
+    ///
+    /// A name is taken when this registry ever handed it out -- including to
+    /// a later-phase worker that has not started yet -- or when the scratch
+    /// holds an answer under it: a run that owns its own registry forgets its
+    /// workers when it ends, but their answers stay on the session's
+    /// blackboard, and reusing a name would truncate one in place.
+    pub(crate) fn plan_dispatch(
+        &self,
+        args: &serde_json::Value,
+        scratch: Option<&Path>,
+    ) -> Result<DispatchPlan, SubagentError> {
+        let mut reserved = self.reserved_names.lock().unwrap();
+        let plan = parse_dispatch_plan(args, |name| {
+            reserved.contains(name)
+                || scratch.is_some_and(|s| {
+                    tauri_plugin_agent_tools::tools::spill::blackboard_result_exists(s, name)
+                })
+        })?;
+        reserved.extend(
+            plan.phases
+                .iter()
+                .flat_map(|p| p.subagents.iter().map(|s| s.name.clone())),
+        );
+        Ok(plan)
     }
 
     /// Create a registry admitting at most `cap` concurrently-running children.
@@ -1133,6 +1154,7 @@ impl BackgroundSubagents {
     pub(crate) fn new(cap: u32) -> Self {
         Self {
             inner: std::sync::Mutex::new(std::collections::HashMap::new()),
+            reserved_names: std::sync::Mutex::new(std::collections::HashSet::new()),
             semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(cap.max(1) as usize)),
             queued: std::sync::atomic::AtomicUsize::new(0),
             notices: std::sync::Mutex::new(Vec::new()),
@@ -2660,7 +2682,7 @@ pub fn stop_subagent_tool_schema() -> serde_json::Value {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": { "type": "string", "description": "The name you gave this subagent in dispatch_subagent. If the name was dispatched more than once, the newest still-running one is stopped." }
+                    "name": { "type": "string", "description": "The subagent's name as dispatch_subagent reported it: its agent, numbered on repeat (e.g. `explore`, `explore-2`). If several runs answer to it, the newest still-running one is stopped." }
                 },
                 "required": ["name"]
             }
@@ -2686,7 +2708,7 @@ pub fn message_subagent_tool_schema() -> serde_json::Value {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": { "type": "string", "description": "The name you gave this subagent in dispatch_subagent. If the name was dispatched more than once, the newest still-running one is addressed." },
+                    "name": { "type": "string", "description": "The subagent's name as dispatch_subagent reported it: its agent, numbered on repeat (e.g. `explore`, `explore-2`). If several runs answer to it, the newest still-running one is addressed." },
                     "message": { "type": "string", "description": "What to tell the subagent. Be specific: it sees your message, not this conversation." }
                 },
                 "required": ["name", "message"]
@@ -2916,6 +2938,12 @@ fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
         .filter(|list| !list.is_empty())
 }
 
+/// Longest agent name a dispatch accepts. Kept well under the blackboard
+/// stem's own 80-char cap so every numbered worker name (`<agent>-<n>`) maps to
+/// a distinct `blackboard/<name>.md`: past the cap they would all truncate to
+/// one stem, and numbering could never find a free name.
+const MAX_AGENT_NAME_LEN: usize = 64;
+
 /// Parse a `dispatch_subagent` tool-call argument object into an ordered plan.
 ///
 /// The wire shape is a flat `subagents` array of `{ agent, task, phase? }`.
@@ -2959,6 +2987,11 @@ pub fn parse_dispatch_plan(
         .map(|sub| {
             let agent = required_str(sub, "agent")?.trim().to_string();
             validate_name(&agent)?;
+            if agent.len() > MAX_AGENT_NAME_LEN {
+                return Err(SubagentError::PermissionDenied(format!(
+                    "agent name '{agent}' is too long (max {MAX_AGENT_NAME_LEN} characters)"
+                )));
+            }
             Ok(agent)
         })
         .collect::<Result<Vec<_>, SubagentError>>()?;
@@ -5710,20 +5743,53 @@ pub(crate) mod tests {
         assert_eq!(enum_of(&denied), serde_json::json!(["grep", "ls", "shell"]));
     }
 
-    /// A worker whose answer is still on the blackboard holds its name even
-    /// after the registry that ran it is gone, so a later dispatch numbers
-    /// past it instead of truncating that answer.
+    /// A name is held from the moment a dispatch hands it out -- a later-phase
+    /// worker that has not started included -- and by an answer still on the
+    /// blackboard after the registry that ran it is gone.
     #[test]
-    fn a_name_with_an_answer_on_the_blackboard_is_taken() {
+    fn a_handed_out_or_answered_name_is_not_given_again() {
         let root = unique_root("bb_taken");
         let scratch = root.join("scratch");
         std::fs::create_dir_all(blackboard_dir_path(&scratch)).unwrap();
         std::fs::write(blackboard_dir_path(&scratch).join("explore.md"), "earlier").unwrap();
         let bg = BackgroundSubagents::new(1);
-        assert!(bg.has_worker("explore", Some(&scratch)));
-        assert!(!bg.has_worker("explore", None), "no scratch, nothing on disk to keep");
-        assert!(!bg.has_worker("general", Some(&scratch)));
+        let names = |plan: DispatchPlan| -> Vec<String> {
+            plan.phases.into_iter().flat_map(|p| p.subagents).map(|s| s.name).collect()
+        };
+        let first = bg
+            .plan_dispatch(
+                &serde_json::json!({ "subagents": [
+                    { "agent": "explore", "task": "a" },
+                    { "agent": "general", "task": "b", "phase": 1 }
+                ]}),
+                Some(&scratch),
+            )
+            .unwrap();
+        assert_eq!(names(first), ["explore-2", "general"]);
+        // Nothing has been spawned, yet the later-phase `general` is held.
+        let second = bg
+            .plan_dispatch(
+                &serde_json::json!({ "subagents": [
+                    { "agent": "general", "task": "c" },
+                    { "agent": "explore", "task": "d" }
+                ]}),
+                Some(&scratch),
+            )
+            .unwrap();
+        assert_eq!(names(second), ["general-2", "explore-3"]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A name long enough to share a blackboard stem with its own numbered
+    /// variants is refused up front instead of numbering forever.
+    #[test]
+    fn an_over_long_agent_name_is_refused() {
+        let long = "a".repeat(MAX_AGENT_NAME_LEN + 1);
+        let err = parse_dispatch_plan_fresh(&serde_json::json!({
+            "subagents": [ { "agent": long, "task": "x" } ]
+        }))
+        .unwrap_err();
+        assert!(err.to_string().contains("too long"), "{err}");
     }
 
     #[test]
