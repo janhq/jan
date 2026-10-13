@@ -836,13 +836,16 @@ function ThreadDetail() {
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
 
-    // Only the turn being stopped, from the last message the UI rendered. The
-    // SDK state is updated through a functional update, since this snapshot is
-    // throttled and can lag the stream by a few chunks.
-    const rendered = chatMessagesRef.current
-    const last = rendered[rendered.length - 1]
-    const settled = settleStoppedToolCalls(rendered)
-    if (settled === rendered || !last) return
+    // Only the turn being stopped. Taken from the SDK's own chat state, which
+    // is current: the rendered snapshot is throttled and can lag the stream, so
+    // a call whose result just landed would still look unfinished there and be
+    // saved as stopped while the live copy holds its result.
+    const live =
+      useChatSessions.getState().sessions[threadId]?.chat.messages ??
+      chatMessagesRef.current
+    const last = live[live.length - 1]
+    const settled = settleStoppedToolCalls(live)
+    if (settled === live || !last) return
     setChatMessages((prev) => settleStoppedToolCalls(prev))
     // A turn that was still streaming is persisted by onFinish; one that is
     // already stored (its tools were running) has to be rewritten here. It was

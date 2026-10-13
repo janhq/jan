@@ -1360,6 +1360,65 @@ describe('ThreadDetail route', () => {
         expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
       })
 
+      // The rendered messages are throttled; the SDK's chat state is current.
+      // A result that landed inside the throttle window must not be saved as a
+      // stopped call while the live copy holds it.
+      it('Stop saves from the live chat state, not the throttled snapshot', async () => {
+        const part = (state: string, extra: object = {}) => ({
+          type: 'tool-fetch',
+          toolCallId: 'tcA',
+          input: {},
+          state,
+          ...extra,
+        })
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tools', role: 'assistant', content: [], metadata: {} },
+        ])
+        // Stale: still waiting on the call.
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          { id: 'a-tools', role: 'assistant', parts: [part('input-available')] },
+        ]
+        // Live: the result has just landed, and a second call is unfinished.
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+                {
+                  id: 'a-tools',
+                  role: 'assistant',
+                  parts: [
+                    part('output-available', { output: 'result A' }),
+                    { ...part('input-available'), toolCallId: 'tcB' },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+        renderComponent()
+
+        try {
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const rewritten = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tools')
+        expect(rewritten.content[0]).toMatchObject({
+          tool_call_id: 'tcA',
+          output: 'result A',
+        })
+        expect(rewritten.metadata.toolErrors).toEqual({
+          tcB: expect.stringContaining('Stopped'),
+        })
+      })
+
       it('drains the runtime queue and times every call', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         renderComponent()
