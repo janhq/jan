@@ -125,7 +125,7 @@ fn catalog_window(model_id: &str) -> Option<u64> {
 /// list the same id with different deployments, so an unqualified lookup can
 /// report a window the request will not get.
 pub(crate) fn reported_window(provider: Option<&str>, model_id: &str) -> Option<u64> {
-    super::model_catalog::load()
+    super::model_catalog::effective()
         .get(provider, model_id)
         .and_then(|info| info.context_length)
         .filter(|tokens| *tokens > 0)

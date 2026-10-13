@@ -1401,7 +1401,7 @@ function CoworkPage() {
 
   const handleStop = useCallback(() => {
     // Aborting the JS run only discards the pending tool result; a running or
-    // backgrounded bash keeps executing until this kills the session's shells.
+    // backgrounded shell keeps executing until this kills the session's shells.
     if (session?.id) {
       abortRun(session.id)
       void cancelAgentThreadBash(session.id)

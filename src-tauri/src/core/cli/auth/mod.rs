@@ -26,8 +26,9 @@ pub enum Transport {
 /// Non-secret guidance for minting an API key.
 #[derive(Debug, Clone)]
 pub struct ApiKeyMetadata {
-    /// Human-facing page where the user creates/views keys.
-    pub keys_url: &'static str,
+    /// Human-facing page where the user creates/views keys. Owned because
+    /// Tokamak's follows the deployment this run signs in to.
+    pub keys_url: String,
     /// Short hint shown above the masked input.
     pub hint: &'static str,
     /// Whether the TUI should open the keys page automatically for this provider.
@@ -56,7 +57,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             default_base_url: "https://api.openai.com/v1".to_string(),
             transport: Transport::OpenAi,
             api_key: ApiKeyMetadata {
-                keys_url: "https://platform.openai.com/account/api-keys",
+                keys_url: "https://platform.openai.com/account/api-keys".to_string(),
                 hint: "get a key at platform.openai.com/account/api-keys",
                 open_in_browser: false,
             },
@@ -67,7 +68,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             default_base_url: "https://api.anthropic.com/v1".to_string(),
             transport: Transport::Anthropic,
             api_key: ApiKeyMetadata {
-                keys_url: "https://console.anthropic.com/settings/keys",
+                keys_url: "https://console.anthropic.com/settings/keys".to_string(),
                 hint: "get a key at console.anthropic.com/settings/keys",
                 open_in_browser: false,
             },
@@ -78,7 +79,7 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             default_base_url: "https://opencode.ai/zen/v1".to_string(),
             transport: Transport::OpenAi,
             api_key: ApiKeyMetadata {
-                keys_url: "https://opencode.ai/auth",
+                keys_url: "https://opencode.ai/auth".to_string(),
                 hint: "sign in at opencode.ai/auth to copy your OpenCode API key",
                 open_in_browser: true,
             },
@@ -89,18 +90,22 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
             default_base_url: "https://api.deepseek.com/v1".to_string(),
             transport: Transport::OpenAi,
             api_key: ApiKeyMetadata {
-                keys_url: "https://platform.deepseek.com/api_keys",
+                keys_url: "https://platform.deepseek.com/api_keys".to_string(),
                 hint: "get a key at platform.deepseek.com/api_keys",
                 open_in_browser: false,
             },
         },
+        // Not a fixed endpoint: the deployment this run signs in to (a dev
+        // stack's `TOKAMAK_BASE_URL`, or where the last sign-in went), so a
+        // paste sign-in verifies and stores the key against the same host the
+        // browser flow would, and sends the user to that host's keys page.
         ProviderDefinition {
             id: "tokamak",
             name: "Tokamak",
-            default_base_url: "https://api.tokamak.sh/v1".to_string(),
+            default_base_url: super::tokamak::base_url(),
             transport: Transport::OpenAi,
             api_key: ApiKeyMetadata {
-                keys_url: "https://tokamak.sh/settings/api-keys",
+                keys_url: super::tokamak::api_keys_url(),
                 hint: "get a key at tokamak.sh/settings/api-keys",
                 open_in_browser: false,
             },

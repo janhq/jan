@@ -377,12 +377,14 @@ impl Query {
 /// Perform `query` against the configured Tokamak deployment and return the raw
 /// body.
 ///
-/// Honours `TOKAMAK_BASE_URL` through [`super::base_url`], so a dev stack is
-/// reachable without a rebuild, and shapes failures through the same
-/// [`super::describe_failure`] the sign-in path uses -- one voice for upstream
-/// problems regardless of which endpoint hit them.
+/// Honours `TOKAMAK_BASE_URL` (and a launched session's own Tokamak endpoint)
+/// through [`super::base_url`], so a dev stack is reachable without a rebuild,
+/// and shapes failures through the same [`super::describe_failure`] the sign-in
+/// path uses -- one voice for upstream problems regardless of which endpoint
+/// hit them. The key is [`super::account_api_key`]: the session's only when the
+/// session named Tokamak, so another provider's key never reaches this API.
 pub async fn fetch(query: &Query) -> Result<Payload, UsageError> {
-    let api_key = super::stored_api_key().ok_or(UsageError::NotSignedIn)?;
+    let api_key = super::account_api_key().ok_or(UsageError::NotSignedIn)?;
     let client = reqwest::Client::builder()
         .timeout(USAGE_TIMEOUT)
         .build()

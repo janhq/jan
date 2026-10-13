@@ -39,6 +39,7 @@ jan <COMMAND>
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--sandbox` | Run shell commands under OS confinement. Off by default |
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
+| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` still asks once). See [Running a command outside the sandbox](/docs/agent/permissions#running-a-command-outside-the-sandbox) |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
@@ -46,6 +47,7 @@ jan <COMMAND>
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--provider <ID>` | Target a specific provider for this run |
 | `--api-key <KEY>` | API key for that provider |
+| `--base-url <URL>` | Base URL for the `--provider` named, e.g. a gateway. Requires `--provider`. See [Using a gateway](/docs/agent/providers#using-a-gateway) |
 
 ```bash
 jan                                     # current directory
@@ -99,6 +101,7 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--sandbox` | Run shell commands under OS confinement. Off by default |
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
+| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` still asks once). See [Running a command outside the sandbox](/docs/agent/permissions#running-a-command-outside-the-sandbox) |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
@@ -107,7 +110,7 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--max-turns <N>` | Hard cap on agentic turns. If the model is still calling tools at N the run fails with `reached the N-turn limit...` and exits `53`; with `--output-format json` the partial answer is still in `result`. Bounds the parent run only - subagent turns are not counted. `0` means unbounded, which is the default |
 | `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Triggers compaction and a recorded note when passed; it does not terminate the run. `0` means no ceiling |
 | `--max-budget-usd <USD>` | Stop the run once it has spent this much, overriding `[budget].max_usd`. Priced from the provider's published rates, so a model with no published price is **refused** rather than run uncapped - including a subagent whose definition names its own model. Subagents inherit the ceiling. Compaction is billed against it like any other request. Stopping this way exits `0` with `stop_reason: budget_exceeded`; `0` as a limit stops at the first billed request |
-| `--provider`, `--api-key` | Credential overrides for this run |
+| `--provider`, `--api-key`, `--base-url` | Provider overrides for this run. `--base-url` requires `--provider`; see [Using a gateway](/docs/agent/providers#using-a-gateway) |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
 | `--input-format <FORMAT>` | `text` (default) ignores stdin; `stream-json` reads client messages while the run is in flight. Requires `--output-format stream-json` |
 | `--host-tools <FILE>` | JSON file declaring tools **the client executes**, as a list of `{"name", "description", "parameters", "capability"}`. The model calls them as `host__<name>` (see [name mapping](#host-tools)); each call arrives as a `tool_request` on stdout and must be answered with a `tool_result` on stdin, so this requires `--input-format stream-json`. Validated before the run starts |
@@ -294,7 +297,7 @@ Each tool is advertised to the model as `host__<name>`. A name that is not ASCII
 original name is appended so names that sanitize alike stay distinct. `yam.move_ee_ik` is
 advertised as `host__yam_move_ee_ik_<hash>`. The mapping is deterministic, and `init.tool_specs`
 shows the name the model will call. Still refused: an empty name, a name with a control character,
-a built-in's name (`bash`, `read`, ...), and two declarations that land on the same advertised name.
+a built-in's name (`shell`, `read`, ...), and two declarations that land on the same advertised name.
 
 When the model calls one, the run emits a `tool_request` and waits:
 
@@ -393,7 +396,7 @@ The first line of a `stream-json` run is always an `init` record, printed before
 event:
 
 ```json
-{"type":"init","protocol_version":1,"session_id":"3f7a91c2-4e5d-4a6b-8c7d-0e1f2a3b4c5d","model":"tokamak-1-preview","cwd":"/home/me/app","tools":["read","write","bash","host__robot_arm_move"],"tool_specs":[{"type":"function","function":{"name":"host__robot_arm_move","description":"Move the arm.","parameters":{"type":"object"}}}],"input_kinds":["user","abort","permission","tool_result"],"input_content_parts":{"mime_types":["image/png","image/jpeg","image/gif","image/webp"],"max_image_bytes":5242880,"max_message_image_bytes":10485760,"max_images":8,"max_line_bytes":16777216,"max_echo_bytes":4096}}
+{"type":"init","protocol_version":1,"session_id":"3f7a91c2-4e5d-4a6b-8c7d-0e1f2a3b4c5d","model":"tokamak-1-preview","cwd":"/home/me/app","tools":["read","write","shell","host__robot_arm_move"],"tool_specs":[{"type":"function","function":{"name":"host__robot_arm_move","description":"Move the arm.","parameters":{"type":"object"}}}],"input_kinds":["user","abort","permission","tool_result"],"input_content_parts":{"mime_types":["image/png","image/jpeg","image/gif","image/webp"],"max_image_bytes":5242880,"max_message_image_bytes":10485760,"max_images":8,"max_line_bytes":16777216,"max_echo_bytes":4096}}
 ```
 
 | Field | Notes |
@@ -443,7 +446,13 @@ Print the resolved project config and available providers as JSON.
 ```bash
 jan cli agent status
 jan cli agent status --project ~/code/app
+jan cli agent status --provider tokamak   # as a launched session would resolve it
 ```
+
+It takes the same `--provider`, `--api-key` and `--base-url` flags as `run`. The top-level
+`capabilities` array lists what this build supports, and each provider entry names its
+`header_names` (never their values) and its `base_url_source`. See
+[Checking what a build supports](/docs/agent/providers#checking-what-a-build-supports).
 
 ### `rpc`
 
@@ -508,7 +517,8 @@ byte-identical rather than a diff.
 
 Print the RPC surface as a JSON Schema document, generated from the Rust types that deserialize each
 request. Like `schema`, no project and no provider are involved. It describes this surface only: the
-`stream-json` records are in `protocol/schema.json`, and ACP has no document yet.
+`stream-json` records are in `protocol/schema.json`, and ACP (`jan acp`) uses the
+upstream [ACP schema](https://agentclientprotocol.com) rather than one of its own.
 
 ```bash
 jan cli agent rpc-schema                                  # stdout
@@ -728,7 +738,7 @@ jan mcp serve --tool read --tool grep       # narrow the set
 | `--port <PORT>` | Port for `http`. Defaults to an ephemeral one |
 | `--token <TOKEN>` | Bearer token for `http`. One is generated and printed if omitted |
 | `--allow-write` | Offer `write` and `edit`, confined to the project root |
-| `--allow-exec` | Offer `bash`, under the same OS sandbox the agent's shell uses |
+| `--allow-exec` | Offer `shell`, under the same OS sandbox the agent's shell uses |
 | `--tool <NAME>` | Serve only these tools. Repeatable; never widens what the flags above permit |
 
 The default set touches no project file, and the two classes that can change the machine are opt-in:
@@ -736,6 +746,20 @@ the caller is another program, so anything that would wait for an approval retur
 than blocking. On `http` the listener is loopback-only and every request must carry the token.
 
 See [Serving Jan's own tools](/docs/agent/mcp#serving-jans-own-tools).
+
+## `jan acp`
+
+**Experimental.** Serves the agent over the [Agent Client Protocol](https://agentclientprotocol.com)
+on stdio, so Zed, JetBrains and other ACP editors can run it. The command is hidden from `--help`
+and is off unless you set `JAN_EXPERIMENTAL_ACP=1` or add `[experimental] acp = true` to
+`~/.jan/config.toml`. Without either, it exits with status 2.
+
+```bash
+JAN_EXPERIMENTAL_ACP=1 jan acp           # what an editor spawns
+JAN_EXPERIMENTAL_ACP=1 jan acp --login   # the sign-in an ACP client runs in a terminal
+```
+
+See [Editors (ACP)](/docs/agent/acp) for editor setup and the supported surface.
 
 ## `jan update`
 
@@ -758,7 +782,12 @@ doing anything. Re-run the installer with `--source` to rebuild.
 | --- | --- |
 | `JAN_API_KEY` | API key for the target provider |
 | `<PROVIDER>_API_KEY` | Per-provider key, e.g. `ANTHROPIC_API_KEY` |
+| `JAN_BASE_URL` | Base URL for the provider named with `--provider`. Ignored without it |
+| `JAN_CUSTOM_HEADERS` | Extra request headers for that provider, one `Name: Value` per line. Ignored without `--provider` |
+| `TOKAMAK_BASE_URL` | Tokamak deployment for sign-in and account calls; `/v1` is appended to a bare origin |
+| `TOKAMAK_WEB_URL` | Tokamak web app for the sign-in and API-keys pages, when it can't be derived from the API host |
 | `JAN_INSTALL_DIR` | Install directory used by the install script |
+| `JAN_EXPERIMENTAL_ACP` | `1` allows the experimental `jan acp` server; `0` blocks it even if `[experimental] acp` is set |
 
 ## Using it in CI
 

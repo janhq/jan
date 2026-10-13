@@ -41,22 +41,72 @@ pub const BASE_URL: &str = "https://api.tokamak.sh/v1";
 /// against a dev stack before it reaches production.
 pub const BASE_URL_ENV: &str = "TOKAMAK_BASE_URL";
 
-/// The API root this run talks to: `$TOKAMAK_BASE_URL` when set, else
-/// [`BASE_URL`].
+/// The API root this run's account calls (sign-in, `/usage`, `auth status`)
+/// talk to, first match wins:
+///
+/// 1. the session's base URL, when this session named `--provider tokamak` and
+///    gave it one (`--base-url` / `JAN_BASE_URL`), so a launched session reads
+///    the band it runs on rather than production;
+/// 2. `$TOKAMAK_BASE_URL`, with `/v1` appended when it names only a host -- the
+///    form the Tokamak CLI itself uses;
+/// 3. the stored `[providers.tokamak].base_url`, where the last sign-in went;
+/// 4. [`BASE_URL`].
 pub fn base_url() -> String {
-    resolve_base_url(std::env::var(BASE_URL_ENV).ok().as_deref())
+    resolve_base_url(
+        super::session_provider::tokamak_base_url().as_deref(),
+        std::env::var(BASE_URL_ENV).ok().as_deref(),
+        stored_base_url().as_deref(),
+    )
 }
 
 /// Split from [`base_url`] so the precedence is testable without mutating the
 /// process environment (which every other test in this binary shares).
-fn resolve_base_url(from_env: Option<&str>) -> String {
-    from_env
-        .map(|v| v.trim().trim_end_matches('/'))
+fn resolve_base_url(session: Option<&str>, from_env: Option<&str>, stored: Option<&str>) -> String {
+    let clean = |v: &str| v.trim().trim_end_matches('/').to_string();
+    session
+        .map(clean)
         .filter(|v| !v.is_empty())
-        .map_or_else(|| BASE_URL.to_string(), str::to_string)
+        .or_else(|| {
+            from_env
+                .map(clean)
+                .filter(|v| !v.is_empty())
+                .map(|v| with_api_prefix(&v))
+        })
+        .or_else(|| stored.map(clean).filter(|v| !v.is_empty()))
+        .unwrap_or_else(|| BASE_URL.to_string())
 }
-/// Where the user signs in and mints a key.
+
+/// `https://api.tokamak.sh` -> `https://api.tokamak.sh/v1`: a bare origin gets
+/// the OpenAI-compatible prefix every caller appends paths to. A URL with any
+/// path is taken as given.
+fn with_api_prefix(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(parsed) if parsed.path().trim_matches('/').is_empty() => format!("{url}/v1"),
+        _ => url.to_string(),
+    }
+}
+
+fn stored_base_url() -> Option<String> {
+    crate::core::agent::global_config::load_global_config()
+        .ok()?
+        .get(PROVIDER)?
+        .base_url
+        .clone()
+}
+
+/// The production API-keys page. Read through [`api_keys_url`], which follows
+/// the deployment this run signs in to.
 pub const API_KEYS_URL: &str = "https://tokamak.sh/settings/api-keys";
+
+/// Where the user signs in and mints a key, on the web app of the deployment
+/// [`base_url`] points at (see [`super::device_auth::web_root`]).
+pub fn api_keys_url() -> String {
+    api_keys_url_for(&super::device_auth::web_root(&base_url()))
+}
+
+fn api_keys_url_for(web_root: &str) -> String {
+    format!("{}/settings/api-keys", web_root.trim_end_matches('/'))
+}
 
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -105,8 +155,11 @@ async fn verify_key(api_key: &str) -> Result<Roster, String> {
         .build()
         .map_err(|e| e.to_string())?;
     let root = base_url();
-    let response = client
-        .get(format!("{root}/models"))
+    let mut request = client.get(format!("{root}/models"));
+    for (name, value) in super::providers::listing_headers_for(PROVIDER) {
+        request = request.header(name, value);
+    }
+    let response = request
         .header("Authorization", format!("Bearer {api_key}"))
         .send()
         .await
@@ -121,8 +174,12 @@ async fn verify_key(api_key: &str) -> Result<Roster, String> {
         .map_err(|e| format!("Tokamak returned a response we could not read: {e}"))?;
     // The listing carries per-model `context_length` and pricing; caching it
     // here is what lets `/context` and `/usage` report the real window and an
-    // actual cost rather than a catalog guess.
-    super::model_catalog::cache_listing(PROVIDER, &parsed);
+    // actual cost rather than a catalog guess. Never for a session-scoped
+    // Tokamak: that listing describes the session's endpoint, not the one the
+    // cache is kept for.
+    if !super::session_provider::tokamak_is_session_scoped() {
+        super::model_catalog::cache_listing(PROVIDER, &parsed);
+    }
     Ok(roster_of(&parsed))
 }
 
@@ -280,6 +337,15 @@ pub async fn logout() -> Result<Logout, String> {
     })
 }
 
+/// The key account calls authenticate with: the session's, when this session
+/// named `--provider tokamak` with a key; otherwise the stored one. Never the
+/// key of any other provider (`--provider openrouter --api-key ...`, or a
+/// `JAN_API_KEY` that reached a Desktop-selected provider): that one is not
+/// Tokamak's to see.
+pub(crate) fn account_api_key() -> Option<String> {
+    super::session_provider::tokamak_key().or_else(stored_api_key)
+}
+
 fn stored_api_key() -> Option<String> {
     use crate::core::agent::global_config::load_global_config;
     load_global_config()
@@ -317,12 +383,28 @@ pub struct AuthStatus {
     pub account: Option<String>,
     pub key_id: Option<String>,
     pub key_expires_at: Option<u64>,
+    /// Where the key comes from: `"session"` when this session's environment
+    /// (a launcher) supplied Tokamak's provider, `"config"` otherwise.
+    pub source: &'static str,
 }
 
 /// Read the local auth state for Tokamak.
+///
+/// While Tokamak is the session-scoped provider, the stored entry says nothing
+/// about the credential in use, so none of its metadata (account, key id,
+/// expiry) is mixed in: that would describe a different key, possibly for a
+/// different deployment.
 pub fn auth_status() -> AuthStatus {
     use crate::core::agent::global_config::provider_key_meta;
 
+    if super::session_provider::tokamak_is_session_scoped() {
+        return AuthStatus {
+            signed_in: account_api_key().is_some(),
+            endpoint: base_url(),
+            source: "session",
+            ..Default::default()
+        };
+    }
     let meta = provider_key_meta(PROVIDER).unwrap_or_default();
     AuthStatus {
         signed_in: stored_api_key().is_some(),
@@ -330,6 +412,7 @@ pub fn auth_status() -> AuthStatus {
         account: meta.account,
         key_id: meta.key_id,
         key_expires_at: meta.key_expires_at,
+        source: "config",
     }
 }
 
@@ -339,8 +422,13 @@ pub const EXPIRY_WARNING_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60
 
 /// A one-line warning when the stored key is expired or about to be. `None` when
 /// there is no key, no recorded expiry (a legacy paste login records none), or
-/// the expiry is comfortably far off.
+/// the expiry is comfortably far off -- and while Tokamak is the session-scoped
+/// provider, whose key is not the stored one: telling a launched session to run
+/// `jan login` would only overwrite the native sign-in to no effect.
 pub fn expiry_warning() -> Option<String> {
+    if super::session_provider::tokamak_is_session_scoped() {
+        return None;
+    }
     let expires_at = auth_status().key_expires_at?;
     describe_expiry(expires_at, unix_now())
 }
@@ -388,11 +476,16 @@ pub fn account() -> Option<String> {
 /// in), otherwise the pass/fail. A network the CLI cannot reach is reported as
 /// `None` so a blip does not read as an invalid key.
 pub async fn live_valid() -> Option<bool> {
-    use crate::core::agent::global_config::load_global_config;
-    let key = load_global_config()
-        .ok()
-        .and_then(|c| c.get(PROVIDER).cloned())
-        .and_then(|c| c.api_key)?;
+    let key = match super::session_provider::tokamak_key() {
+        Some(key) => key,
+        None => {
+            use crate::core::agent::global_config::load_global_config;
+            load_global_config()
+                .ok()
+                .and_then(|c| c.get(PROVIDER).cloned())
+                .and_then(|c| c.api_key)?
+        }
+    };
     if key.is_empty() {
         return Some(false);
     }
@@ -453,7 +546,7 @@ pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
 /// unconditionally anyway, since a spawned launcher reports nothing about
 /// whether a page actually appeared.
 pub fn open_api_keys_page() -> Result<(), String> {
-    super::browser::open(API_KEYS_URL)
+    super::browser::open(&api_keys_url())
 }
 
 #[cfg(test)]
@@ -764,17 +857,61 @@ mod tests {
     /// an unset/blank var must not produce an empty base url.
     #[test]
     fn base_url_prefers_the_env_override() {
-        assert_eq!(resolve_base_url(None), BASE_URL);
-        assert_eq!(resolve_base_url(Some("")), BASE_URL);
-        assert_eq!(resolve_base_url(Some("   ")), BASE_URL);
+        assert_eq!(resolve_base_url(None, None, None), BASE_URL);
+        assert_eq!(resolve_base_url(None, Some(""), None), BASE_URL);
+        assert_eq!(resolve_base_url(None, Some("   "), None), BASE_URL);
         assert_eq!(
-            resolve_base_url(Some("https://api.dev.tokamak.sh/v1")),
+            resolve_base_url(None, Some("https://api.dev.tokamak.sh/v1"), None),
             "https://api.dev.tokamak.sh/v1"
         );
         // A trailing slash would double up in `{base}/models`.
         assert_eq!(
-            resolve_base_url(Some(" http://localhost:8080/v1/ ")),
+            resolve_base_url(None, Some(" http://localhost:8080/v1/ "), None),
             "http://localhost:8080/v1"
+        );
+    }
+
+    /// The Tokamak CLI's own `TOKAMAK_BASE_URL` names only the origin; every
+    /// caller here appends an OpenAI-compatible path to the base, so a bare
+    /// origin gets `/v1` rather than a `/models` that 404s.
+    #[test]
+    fn a_bare_origin_in_the_env_gets_the_api_prefix() {
+        assert_eq!(
+            resolve_base_url(None, Some("https://api-stag.tokamak.sh"), None),
+            "https://api-stag.tokamak.sh/v1"
+        );
+        assert_eq!(
+            resolve_base_url(None, Some("http://localhost:8080/"), None),
+            "http://localhost:8080/v1"
+        );
+        // A path of any kind is taken as given.
+        assert_eq!(
+            resolve_base_url(None, Some("https://gw.example/tokamak/v1"), None),
+            "https://gw.example/tokamak/v1"
+        );
+    }
+
+    /// Account calls go where the session runs, then where the environment
+    /// points, then where the last sign-in went -- never to production just
+    /// because nothing said otherwise.
+    #[test]
+    fn base_url_precedence_is_session_env_stored_default() {
+        let session = Some("https://api-stag.tokamak.sh/v1");
+        let env = Some("https://api-dev.tokamak.sh");
+        let stored = Some("https://api.self-hosted.example/v1/");
+        assert_eq!(resolve_base_url(session, env, stored), "https://api-stag.tokamak.sh/v1");
+        assert_eq!(resolve_base_url(None, env, stored), "https://api-dev.tokamak.sh/v1");
+        assert_eq!(resolve_base_url(None, None, stored), "https://api.self-hosted.example/v1");
+        assert_eq!(resolve_base_url(None, None, None), BASE_URL);
+    }
+
+    /// The keys page is on the web app of the deployment signed in to.
+    #[test]
+    fn the_keys_page_follows_the_web_root() {
+        assert_eq!(api_keys_url_for("https://tokamak.sh"), API_KEYS_URL);
+        assert_eq!(
+            api_keys_url_for("https://stag.tokamak.sh/"),
+            "https://stag.tokamak.sh/settings/api-keys"
         );
     }
 
@@ -864,6 +1001,137 @@ mod tests {
             persist_minted(&minted(Some("k-1"), None), roster(&["m-a"])).expect("persist");
             assert_eq!(run_logout(), Logout::ClearedOnly);
             assert!(!auth_status().signed_in);
+        });
+    }
+
+    // ── Account calls under session overrides ───────────────────────────────
+
+    fn session(provider: &str, explicit: bool, base_url: Option<String>) -> super::super::providers::ProviderOverrides {
+        super::super::providers::ProviderOverrides {
+            provider: Some(provider.to_string()),
+            api_key: Some(format!("{provider}-session-key")),
+            base_url,
+            explicit_provider: explicit,
+            ..Default::default()
+        }
+    }
+
+    /// Only a session that named `--provider tokamak` may hand its key to
+    /// Tokamak's account API. `--provider openrouter --api-key ...` and a key
+    /// that reached a Desktop-selected `tokamak` by default both fall back to
+    /// the stored Tokamak key.
+    #[test]
+    fn account_calls_use_the_session_key_only_for_an_explicit_tokamak() {
+        use super::super::session_provider::with_session;
+        let stored = || persist("tk-stored", roster(&["m"])).expect("persist");
+        with_session(session("openrouter", true, None), |_| {
+            stored();
+            assert_eq!(account_api_key().as_deref(), Some("tk-stored"));
+            assert_eq!(auth_status().source, "config");
+        });
+        with_session(session("tokamak", false, None), |_| {
+            stored();
+            assert_eq!(account_api_key().as_deref(), Some("tk-stored"));
+        });
+        with_session(
+            session("tokamak", true, Some("https://api-stag.tokamak.sh/v1".into())),
+            |_| {
+                stored();
+                assert_eq!(account_api_key().as_deref(), Some("tokamak-session-key"));
+                assert_eq!(base_url(), "https://api-stag.tokamak.sh/v1");
+            },
+        );
+    }
+
+    /// Against a live endpoint: the key that reaches `/usage` is Tokamak's own,
+    /// never the one a session was given for another provider.
+    #[test]
+    fn usage_never_carries_another_providers_key() {
+        use super::super::session_provider::with_session;
+        fn stub() -> (std::net::SocketAddr, std::sync::mpsc::Receiver<String>) {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                let mut buf = [0u8; 8192];
+                let n = std::io::Read::read(&mut stream, &mut buf).unwrap_or(0);
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase());
+                let body = "{}";
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            });
+            (addr, rx)
+        }
+        let fetch = || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(usage::fetch(&usage::Query::Summary))
+                .expect("usage")
+        };
+
+        let (addr, seen) = stub();
+        with_session(session("openrouter", true, None), |_| {
+            crate::core::agent::global_config::set_provider(
+                PROVIDER,
+                ProviderUpdate {
+                    api_key: Some("tk-stored".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            fetch();
+            let request = seen.recv().unwrap();
+            assert!(request.contains("authorization: bearer tk-stored\r\n"), "{request}");
+            assert!(!request.contains("openrouter-session-key"), "{request}");
+        });
+
+        let (addr, seen) = stub();
+        with_session(session("tokamak", true, Some(format!("http://{addr}/v1"))), |_| {
+            fetch();
+            let request = seen.recv().unwrap();
+            assert!(
+                request.contains("authorization: bearer tokamak-session-key\r\n"),
+                "{request}"
+            );
+        });
+    }
+
+    /// While the session provides Tokamak, the stored entry describes some
+    /// other key: none of its metadata may be reported, and its expiry must not
+    /// tell a launched session to run `jan login`.
+    #[test]
+    fn a_session_tokamak_reports_its_own_source_and_no_stored_expiry() {
+        use super::super::session_provider::with_session;
+        let soon = unix_now() + 2 * 24 * 60 * 60;
+        with_session(
+            session("tokamak", true, Some("https://api-stag.tokamak.sh/v1".into())),
+            |_| {
+                persist_minted(&minted(Some("k-native"), Some(soon)), roster(&[])).expect("persist");
+                let status = auth_status();
+                assert!(status.signed_in);
+                assert_eq!(status.source, "session");
+                assert_eq!(status.endpoint, "https://api-stag.tokamak.sh/v1");
+                assert_eq!(status.key_id, None);
+                assert_eq!(status.key_expires_at, None);
+                assert_eq!(status.account, None);
+                assert_eq!(expiry_warning(), None);
+            },
+        );
+        // The same stored key outside such a session still warns.
+        with_temp_home(|_| {
+            persist_minted(&minted(Some("k-native"), Some(soon)), roster(&[])).expect("persist");
+            assert!(expiry_warning().is_some());
+            assert_eq!(auth_status().source, "config");
         });
     }
 }

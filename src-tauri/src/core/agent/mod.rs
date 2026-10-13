@@ -46,9 +46,12 @@ pub mod project;
 pub mod prompt;
 pub mod provenance;
 pub mod reminder;
+pub mod request_headers;
+pub mod secrets;
 pub mod session;
 pub mod skill_hub;
 pub mod skills;
+pub mod run_record;
 pub mod store_migration;
 pub mod subagent;
 pub mod todo;
@@ -61,12 +64,9 @@ mod prefix_stability;
 
 /// Render a path for embedding in a hook/plugin-tool shell command in tests.
 ///
-/// The hook runner hands the command to the resolved shell, which on the
-/// Windows CI runner is git-bash: a native `C:\Users\...` path reaches it as a
-/// backslash-escaped string and those escapes are eaten, so the command writes
-/// to a mangled name and the file the test asserts on never appears. Bash
-/// accepts forward slashes on Windows, and the quotes keep a path containing
-/// spaces a single word.
+/// Forward slashes and single quotes read the same in bash and PowerShell, so
+/// a `C:\Users\...` temp path survives either shell, and the quotes keep a path
+/// containing spaces a single word.
 #[cfg(test)]
 pub(crate) fn shell_quoted_path(path: &std::path::Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\\', "/"))

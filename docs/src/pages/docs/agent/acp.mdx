@@ -1,0 +1,125 @@
+---
+title: Editors (ACP)
+description: Drive Jan Agent from Zed, JetBrains and other editors over the Agent Client Protocol with the experimental `jan acp` server.
+keywords: [Jan, Jan Agent, ACP, Agent Client Protocol, Zed, JetBrains, editor, IDE, external agent]
+---
+
+import { Callout } from 'nextra/components'
+
+# Editors (ACP)
+
+`jan acp` serves Jan Agent over the [Agent Client Protocol](https://agentclientprotocol.com)
+(ACP), a JSON-RPC protocol that editors use to run coding agents. Once an editor is pointed at
+`jan acp`, you can pick Jan in its agent panel, send prompts, and watch the answer, reasoning,
+tool calls and plan stream in. The agent still uses Jan's own providers, tools and permissions.
+
+<Callout type="warning">
+`jan acp` is **experimental**. It's off by default, hidden from `jan --help`, and may change
+between releases.
+</Callout>
+
+## Turn it on
+
+Pick one of these. The environment variable takes precedence over the config file, so
+`JAN_EXPERIMENTAL_ACP=0` turns it off again:
+
+```bash
+export JAN_EXPERIMENTAL_ACP=1          # per process
+```
+
+```toml
+# ~/.jan/config.toml                    # every process
+[experimental]
+acp = true
+```
+
+If you run `jan acp` without turning it on, it prints how to enable it and exits with status 2.
+It writes nothing to stdout.
+
+Jan needs a working provider before any editor can use it. Run `jan login`, or
+`jan config set --provider <name> --api-key <key> --base-url <url> --model <id>`. The model is
+resolved the same way as in the TUI: `agent.toml`, then `default_model` in `~/.jan/config.toml`.
+
+## Zed
+
+Add Jan under `agent_servers` in Zed's `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Jan": {
+      "type": "custom",
+      "command": "jan",
+      "args": ["acp"],
+      "env": { "JAN_EXPERIMENTAL_ACP": "1" }
+    }
+  }
+}
+```
+
+Open the agent panel, start a new thread and choose **Jan**. To see the raw traffic, run
+`dev: open acp logs`.
+
+## JetBrains
+
+In **AI Chat**, open the menu and choose **Add Custom Agent**. This opens `~/.jetbrains/acp.json`.
+Add Jan there. Use the absolute path to the binary:
+
+```json
+{
+  "agent_servers": {
+    "Jan": {
+      "command": "/absolute/path/to/jan",
+      "args": ["acp"],
+      "env": { "JAN_EXPERIMENTAL_ACP": "1" }
+    }
+  }
+}
+```
+
+## What is supported
+
+Jan speaks stable ACP protocol version **1**. It doesn't enable any draft or unstable features.
+
+| ACP | Jan |
+| --- | --- |
+| `initialize` | Advertises `loadSession`, image and embedded-context prompts. Nothing else is advertised. |
+| `authenticate` | Checks that a provider is configured. Clients that can run a terminal get a sign-in method that runs `jan acp --login`. |
+| `session/new` | Opens a session in `cwd`, which must be absolute. The session id is a Jan thread id. MCP servers the editor passes over stdio are connected as well as the project's own. |
+| `session/load` | Replays a saved thread, including ones started in the TUI or with `jan cli agent run`, then replies. Refused while that session has a prompt running. |
+| `session/prompt` | Runs one turn. The reply's `stopReason` is `end_turn`, `max_tokens`, `max_turn_requests` (the session's cost ceiling was reached), `refusal` or `cancelled`. If the run fails, the error is shown in the reply text and the turn ends with `end_turn`. |
+| `session/cancel` | Stops the turn. A tool call waiting for your permission never runs. The work done before the cancel is kept, so the next prompt continues from it. |
+| `session/request_permission` | Sent for every gated tool call. You get **Allow**, **Always allow** where Jan offers it, and **Reject**. |
+
+The session id is the thread id, so `jan --resume <id>` in the terminal opens a conversation that
+you started in the editor.
+
+How Jan's events appear in the editor:
+
+| Jan | ACP `session/update` |
+| --- | --- |
+| Answer text / reasoning | `agent_message_chunk` / `agent_thought_chunk` |
+| Tool call starts, runs, streams output, ends | `tool_call` then `tool_call_update` (`pending`, `in_progress`, `completed`, `failed`) |
+| The `todo` list | `plan` |
+| Token usage for a turn | `usage_update` |
+
+These have no standard ACP update, so they are left out rather than sent through a made-up
+extension: subagent progress (a subagent's permission prompts still reach you), notices,
+compaction and retry status, and background monitors. The `ask` tool isn't offered in an ACP
+session.
+
+## Permissions
+
+An ACP session always asks before writes, shell commands and MCP tool calls. It's never
+auto-approved. It uses the same tool gate and project rules (`[tools]` in `agent.toml`) as the TUI.
+If you reject a call, or cancel the prompt, the call is refused just as it would be in the terminal.
+**Always allow** covers that tool for the rest of the session.
+
+## Not yet supported
+
+- Jan uses its own filesystem and shell tools. It doesn't read the editor's unsaved buffers or run
+  commands in the editor's terminal, so `fs/*` and `terminal/*` are never requested.
+- Editor MCP servers over HTTP or SSE are skipped. Only stdio servers are connected, alongside the
+  servers set up for the project (see [MCP](/docs/agent/mcp)).
+- There's no `session/set_mode` yet, so plan mode and model switching aren't available from the
+  editor.

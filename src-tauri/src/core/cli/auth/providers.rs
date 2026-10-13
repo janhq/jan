@@ -69,6 +69,11 @@ pub(crate) async fn discover_models(
         definition.default_base_url.trim_end_matches('/')
     );
     let mut request = client.get(&url);
+    // The provider's configured headers, as inference sends them: a gateway
+    // that requires one for inference usually requires it to list models too.
+    for (name, value) in crate::core::cli::providers::listing_headers_for(definition.id) {
+        request = request.header(name, value);
+    }
     request = match definition.transport {
         // An API-key credential identifies itself with `x-api-key`; an OAuth
         // access token must go as `Authorization: Bearer` (with the oauth beta

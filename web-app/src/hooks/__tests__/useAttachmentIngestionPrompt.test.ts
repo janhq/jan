@@ -9,7 +9,6 @@ describe('useAttachmentIngestionPrompt', () => {
       currentAttachment: null,
       currentIndex: 0,
       totalCount: 0,
-      sizeThreshold: 0,
       resolver: null,
     })
   })
@@ -26,14 +25,13 @@ describe('useAttachmentIngestionPrompt', () => {
     // Don't await — it blocks until choose/cancel is called
     const promise = useAttachmentIngestionPrompt
       .getState()
-      .showPrompt(attachment, 512_000, 0, 3)
+      .showPrompt(attachment, 0, 3)
 
     const state = useAttachmentIngestionPrompt.getState()
     expect(state.isModalOpen).toBe(true)
     expect(state.currentAttachment).toEqual(attachment)
     expect(state.currentIndex).toBe(0)
     expect(state.totalCount).toBe(3)
-    expect(state.sizeThreshold).toBe(512_000)
 
     // Resolve it so the test doesn't hang
     act(() => {
@@ -47,7 +45,7 @@ describe('useAttachmentIngestionPrompt', () => {
   it('choose resolves the promise with the selected mode', async () => {
     const promise = useAttachmentIngestionPrompt
       .getState()
-      .showPrompt({ name: 'doc.pdf', size: 100 }, 1000, 0, 1)
+      .showPrompt({ name: 'doc.pdf', size: 100 }, 0, 1)
 
     act(() => {
       useAttachmentIngestionPrompt.getState().choose('embeddings')
@@ -60,7 +58,7 @@ describe('useAttachmentIngestionPrompt', () => {
   it('cancel resolves with undefined', async () => {
     const promise = useAttachmentIngestionPrompt
       .getState()
-      .showPrompt({ name: 'doc.pdf', size: 100 }, 1000, 0, 1)
+      .showPrompt({ name: 'doc.pdf', size: 100 }, 0, 1)
 
     act(() => {
       useAttachmentIngestionPrompt.getState().cancel()
@@ -80,7 +78,7 @@ describe('useAttachmentIngestionPrompt', () => {
     for (let i = 0; i < docs.length; i++) {
       const promise = useAttachmentIngestionPrompt
         .getState()
-        .showPrompt(docs[i], 1000, i, docs.length)
+        .showPrompt(docs[i], i, docs.length)
 
       expect(useAttachmentIngestionPrompt.getState().currentIndex).toBe(i)
       expect(useAttachmentIngestionPrompt.getState().totalCount).toBe(

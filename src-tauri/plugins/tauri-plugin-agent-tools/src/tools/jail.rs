@@ -254,14 +254,12 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
         Backend::Bubblewrap => Some(ShellConfig {
             program: bwrap_path()?,
             args: bwrap_args(policy, cfg),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         Backend::Seatbelt => Some(ShellConfig {
             program: PathBuf::from(seatbelt_program()),
             args: seatbelt_args(policy, cfg),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         // AppContainer is a token attribute on the spawn rather than an argv
         // prefix, and `tokio::process::Command` cannot set one, so the wrapper is
@@ -277,8 +275,7 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
                 &cfg.program,
                 &cfg.args,
             ),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         Backend::None => None,
     }
@@ -720,8 +717,7 @@ mod tests {
         ShellConfig {
             program: PathBuf::from("/bin/bash"),
             args: vec!["-c".to_string()],
-            via_stdin: false,
-            description: "bash",
+            kind: super::super::proc::ShellKind::Posix,
         }
     }
 

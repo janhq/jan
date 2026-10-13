@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› run the tests                                                                 |
+|                                                                                |
+|                                                                                |
+|• Ran cargo test --lib parser                                                   |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..15 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 15..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 fg=#98C379 mod=BOLD
+ 4 2..5 mod=BOLD

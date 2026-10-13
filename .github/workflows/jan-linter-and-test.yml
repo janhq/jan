@@ -261,6 +261,14 @@ jobs:
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
 
+      # The agent-tools unit tests run the shell tool inside its Linux sandbox,
+      # bubblewrap, which needs unprivileged user namespaces; Ubuntu 24.04's
+      # AppArmor default refuses those.
+      - name: Install the shell sandbox
+        run: |
+          sudo apt install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: 'Cleanup cache'
         continue-on-error: true
         run: |

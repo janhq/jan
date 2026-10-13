@@ -13,12 +13,15 @@ import {
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
 import {
+  encodeMcpToolImages,
   hasToolImageSentinel,
   stripToolImageSentinels,
+  toContentToolOutputs,
 } from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
+import { buildsOwnToolImageRequest } from './providerCaps'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
@@ -61,9 +64,18 @@ import {
 } from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
-import { encodeAudioSentinel, parseAudioDataUrl } from '@/lib/audio-sentinel'
-import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
+import {
+  encodeAudioSentinel,
+  hasAudioSentinel,
+  parseAudioDataUrl,
+} from '@/lib/audio-sentinel'
+import {
+  encodeVideoSentinel,
+  hasVideoSentinel,
+  parseVideoDataUrl,
+} from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
+import { PING_OPEN } from '@/lib/coworkPing'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
 import { createStepMetadata } from '@/lib/stepMetadata'
@@ -374,34 +386,40 @@ function isAssistantMessageEmpty(message: UIMessage): boolean {
 }
 
 /**
- * Merge `b`'s parts onto `a`'s parts. When adjacent text parts meet at the
- * boundary, they're concatenated with a blank-line separator so the merged
- * message reads as one continuous turn rather than two.
+ * Parts of an unanswered user turn to keep when a newer user turn replaces it:
+ * its attachments, but not its question. The UI still shows those attachments
+ * in the earlier bubble, so a follow-up like "what is in it?" must still reach
+ * the model with them. By this point images are `file` parts, audio and video
+ * are sentinel-only text parts, and documents are an [ATTACHED_FILES] block
+ * (plus any inlined contents) appended after the question text. Cowork pings
+ * are carried too.
  */
-function mergeMessageParts(
-  a: UIMessage['parts'],
-  b: UIMessage['parts']
+function carryAttachmentsForward(
+  dropped: UIMessage['parts'],
+  kept: UIMessage['parts']
 ): UIMessage['parts'] {
-  const aParts = Array.isArray(a) ? [...a] : []
-  const bParts = Array.isArray(b) ? b : []
-  for (const part of bParts) {
-    const last = aParts[aParts.length - 1]
-    if (
-      last &&
-      (last as { type?: string }).type === 'text' &&
-      (part as { type?: string }).type === 'text' &&
-      typeof (last as { text?: string }).text === 'string' &&
-      typeof (part as { text?: string }).text === 'string'
-    ) {
-      aParts[aParts.length - 1] = {
-        ...(last as object),
-        text: `${(last as { text: string }).text}\n\n${(part as { text: string }).text}`,
-      } as (typeof aParts)[number]
-    } else {
-      aParts.push(part)
+  const attachments: UIMessage['parts'] = []
+  for (const part of Array.isArray(dropped) ? dropped : []) {
+    if (part.type === 'file') {
+      attachments.push(part)
+    } else if (part.type === 'text' && typeof part.text === 'string') {
+      // Cowork's <SYSTEM> pings (finished subagents) ride as their own user
+      // turn; they are context the model has not seen yet, not a question.
+      if (
+        hasAudioSentinel(part.text) ||
+        hasVideoSentinel(part.text) ||
+        part.text.trimStart().startsWith(PING_OPEN)
+      ) {
+        attachments.push(part)
+        continue
+      }
+      const filesAt = part.text.indexOf('[ATTACHED_FILES]')
+      if (filesAt !== -1) {
+        attachments.push({ ...part, text: part.text.slice(filesAt) })
+      }
     }
   }
-  return aParts as UIMessage['parts']
+  return [...attachments, ...(Array.isArray(kept) ? kept : [])]
 }
 
 /**
@@ -417,9 +435,10 @@ function mergeMessageParts(
  * server side. We fix that here by:
  *
  * 1. Dropping assistant placeholders with no content (failed turns).
- * 2. Merging any remaining adjacent user messages by concatenating their
- *    text parts and appending their non-text parts. This preserves all of
- *    the user's content — nothing is silently dropped.
+ * 2. Keeping only the last of any adjacent user messages. The earlier ones
+ *    were never answered; merging their text would resend a failed question
+ *    inside the next one while the UI shows them as separate bubbles. Their
+ *    attachments are carried forward (see carryAttachmentsForward).
  *
  * Adjacent assistant messages are intentionally left alone: the Anthropic
  * serial-tool-use wave-split in `sendMessages` deliberately produces them.
@@ -654,14 +673,47 @@ export function coalesceMessagesForAlternation(
     const cur = filtered[i]
     if (prev.role === 'user' && cur.role === 'user') {
       out[out.length - 1] = {
-        ...prev,
-        parts: mergeMessageParts(prev.parts, cur.parts),
+        ...cur,
+        parts: carryAttachmentsForward(prev.parts, cur.parts),
       }
     } else {
       out.push(cur)
     }
   }
   return out
+}
+
+const LOCAL_ENGINE_PROVIDERS: Record<string, true> = {
+  llamacpp: true,
+  mlx: true,
+}
+
+const LOOPBACK_HOSTS: Record<string, true> = {
+  localhost: true,
+  // What some local servers print as their listen address.
+  '0.0.0.0': true,
+  // URL.hostname keeps the brackets on IPv6 literals.
+  '[::1]': true,
+}
+
+/**
+ * Jan's own engines and any server on this machine (Ollama, LM Studio, a
+ * local llama-server). Their 5xx is deterministic and a retry re-runs the
+ * whole prompt, so such requests are not retried.
+ */
+export function isLocalChatServer(
+  providerId: string,
+  baseUrl: string | undefined
+): boolean {
+  if (LOCAL_ENGINE_PROVIDERS[providerId]) return true
+  if (!baseUrl) return false
+  try {
+    const host = new URL(baseUrl).hostname
+    // URL has already normalised IPv4, so 127.0.0.0/8 is a prefix match.
+    return !!LOOPBACK_HOSTS[host] || /^127\.\d+\.\d+\.\d+$/.test(host)
+  } catch {
+    return false
+  }
 }
 
 const TOOL_RESPONSE_ONLY = /^<tool_response>[\s\S]*<\/tool_response>$/
@@ -1127,7 +1179,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds bash when no sandbox backend can confine it.
+      // already withholds shell when no sandbox backend can confine it.
       try {
         for (const schema of await getAgentToolSchemas()) {
           if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
@@ -1345,6 +1397,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ...(inferenceParams ?? {}),
         ...reasoningParams,
       }
+      // This only strips the raw-body injection. The output cap still reaches
+      // these providers through streamText's maxOutputTokens, which lets each
+      // SDK map it (Anthropic adds the thinking budget, OpenAI reasoning
+      // models need max_completion_tokens); a body max_tokens would clobber
+      // that. The context budget params are read client-side only.
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
@@ -1477,13 +1534,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
-    const baseMessages = await convertToModelMessages(
+    const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
           this.encodeVideoAttachments(
             this.encodeAudioAttachments(
               stripUnsupportedImageParts(
-                this.mapUserInlineAttachments(effectiveMessages),
+                encodeMcpToolImages(
+                  this.mapUserInlineAttachments(effectiveMessages)
+                ),
                 modelSupportsVision
               )
             )
@@ -1491,6 +1550,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         )
       )
     )
+    // Anthropic, Gemini and OpenAI Responses build their own request, so a tool
+    // image sentinel would reach them as text; the others decode it in the fetch.
+    const baseMessages = buildsOwnToolImageRequest(provider)
+      ? toContentToolOutputs(convertedMessages)
+      : convertedMessages
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.
@@ -1539,10 +1603,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       model: this.model,
       messages: modelMessages,
       abortSignal: options.abortSignal,
+      // Hosted providers keep the SDK's two backoff retries for transient
+      // 429/5xx; local servers fail at once (see isLocalChatServer).
+      maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
-      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
+      ...(maxOutputTokens !== undefined && maxOutputTokens >= 1
+        ? { maxOutputTokens }
+        : {}),
       ...(reasoningProviderOptions
         ? { providerOptions: reasoningProviderOptions }
         : {}),
@@ -1742,7 +1812,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   /**
    * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces, because bash is then
+   * shell. Empty when no sandbox backend enforces, because shell is then
    * withheld too — stating limits for a tool that is not offered would only
    * confuse the model, and an empty string keeps the prompt prefix stable.
    */
@@ -1770,7 +1840,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // them by having a command refused.
     return [
       '# Shell',
-      'bash runs commands in an isolated scratch workspace under an OS',
+      'shell runs commands in an isolated scratch workspace under an OS',
       'sandbox: it starts there, can only write there, and cannot read files',
       "in the user's home directory. The workspace belongs to this",
       'conversation alone and is deleted with it, so do not keep anything',

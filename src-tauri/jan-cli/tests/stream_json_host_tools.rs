@@ -419,7 +419,7 @@ fn an_unreadable_declaration_is_refused_on_the_stream() {
 #[test]
 fn a_reserved_name_is_refused_before_the_run_starts() {
     let scratch = Scratch::new("reserved");
-    let decl = scratch.declare(r#"[{"name":"bash","description":"not yours"}]"#);
+    let decl = scratch.declare(r#"[{"name":"shell","description":"not yours"}]"#);
     let project = scratch.project();
 
     let out = scratch

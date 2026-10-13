@@ -202,6 +202,9 @@ async fn main() {
             "port": server.port,
             "pid": std::process::id(),
             "models": models,
+            // Set by build.rs for a CUDA engine; null otherwise. The app sets it
+            // against the NVIDIA driver to explain a driver that is too old.
+            "cuda_toolkit": option_env!("JAN_ENGINE_CUDA_TOOLKIT"),
         })
     );
     // stdout is a pipe to the supervisor, so it is block-buffered.

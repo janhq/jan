@@ -9,6 +9,48 @@
 
 use serde_json::{json, Value};
 
+/// The `bash` tool's description before any shell-specific note.
+const BASH_DESCRIPTION: &str = "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output.";
+
+/// The `bash` description for a shell of `kind`. The model writes POSIX by
+/// default, so a PowerShell or cmd host says so up front rather than letting the
+/// first command fail. Fixed per process (the shell is resolved once), so the
+/// tool array stays byte-identical across turns.
+pub fn bash_description(kind: super::proc::ShellKind) -> String {
+    match kind.syntax_note() {
+        Some(note) => format!("{note} {BASH_DESCRIPTION}"),
+        None => BASH_DESCRIPTION.to_string(),
+    }
+}
+
+/// Appended to the shell description when the run offers escalation.
+const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command that matters to the task fails because of the sandbox (a read-only file system or permission error outside the project, such as a package manager writing its cache, or a blocked download), rerun the same command with `escalate: true` and a one-line `justification`: the user is asked to approve running it outside the sandbox. Never escalate pre-emptively, and never to work around a denial the user gave.";
+
+/// Add the escalation arguments to the `shell` schema in `schemas`, for a run
+/// whose shell is sandboxed and whose user can be asked to lift it. Applied
+/// once per run by the caller, so the array stays byte-identical across turns;
+/// a run without escalation keeps the plain schema.
+pub fn offer_escalation(schemas: &mut [Value]) {
+    for schema in schemas.iter_mut() {
+        let function = &mut schema["function"];
+        if function["name"] != super::SHELL_TOOL {
+            continue;
+        }
+        if let Some(description) = function["description"].as_str() {
+            function["description"] = Value::String(format!("{description}{ESCALATE_NOTE}"));
+        }
+        let properties = &mut function["parameters"]["properties"];
+        properties[super::gate::ESCALATE_ARG] = json!({
+            "type": "boolean",
+            "description": "Ask the user to run this command outside the sandbox. Only after it failed inside it."
+        });
+        properties[super::gate::JUSTIFICATION_ARG] = json!({
+            "type": "string",
+            "description": "Required with escalate: why the command needs to leave the sandbox, shown to the user."
+        });
+    }
+}
+
 /// OpenAI function schemas for the built-in tools, one per `BUILTIN_TOOLS`
 /// entry. `screenshot` is desktop-only (`feature = "tauri"`), so the headless
 /// CLI advertises one fewer.
@@ -97,8 +139,8 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "bash",
-                "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background instead of erroring or being killed, and this call returns the path to a file where its full output will be written once it finishes; read that file (with the read tool) to collect the result. The file appears only when the command is done, so its presence means the output is complete.",
+                "name": super::SHELL_TOOL,
+                "description": bash_description(super::proc::shell().kind),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -286,6 +328,28 @@ mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
 
+    /// The plain array never mentions escalation; offering it touches only the
+    /// shell entry, adding both arguments and the when-to-use note.
+    #[test]
+    fn escalation_is_offered_only_on_request_and_only_on_the_shell() {
+        let plain = builtin_tool_schemas();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("escalate"));
+        let mut offered = plain.clone();
+        offer_escalation(&mut offered);
+        for (before, after) in plain.iter().zip(&offered) {
+            if before["function"]["name"] == crate::tools::SHELL_TOOL {
+                let props = &after["function"]["parameters"]["properties"];
+                assert_eq!(props["escalate"]["type"], "boolean");
+                assert_eq!(props["justification"]["type"], "string");
+                assert!(after["function"]["description"].as_str().unwrap().contains("escalate: true"));
+                // Still optional: an ordinary call needs only `command`.
+                assert_eq!(after["function"]["parameters"]["required"], json!(["command"]));
+            } else {
+                assert_eq!(before, after);
+            }
+        }
+    }
+
     /// ls/find/grep stay in BUILTIN_TOOLS (recognized + executable) but are not
     /// advertised -- bash covers listing and searching -- so the offered set is
     /// BUILTIN_TOOLS minus that trio. Every other builtin must be advertised, in
@@ -342,6 +406,19 @@ mod tests {
         let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         assert_eq!(once, twice);
+    }
+
+    /// A PowerShell or cmd host says so before the generic text, so the model
+    /// reads it before writing a command; a POSIX host is unchanged.
+    #[test]
+    fn the_bash_description_leads_with_the_shells_syntax() {
+        use crate::tools::proc::ShellKind;
+        assert_eq!(bash_description(ShellKind::Posix), BASH_DESCRIPTION);
+        for kind in [ShellKind::PowerShell, ShellKind::Cmd] {
+            let d = bash_description(kind);
+            assert!(d.starts_with(kind.syntax_note().unwrap()), "{d}");
+            assert!(d.ends_with(BASH_DESCRIPTION));
+        }
     }
 
     /// The search schemas name the arguments the handlers actually read; a

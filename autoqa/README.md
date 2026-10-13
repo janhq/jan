@@ -161,7 +161,7 @@ autoqa/
 ├── test_runner.py         # Test execution logic
 ├── screen_recorder.py     # Screen recording functionality
 ├── reportportal_handler.py # ReportPortal integration
-├── checklist.md           # Manual QA checklist the automated suite mirrors
+│   (checklist.md removed — see tests/checklist.md)
 ├── requirements.txt       # Python dependencies
 ├── scripts/               # Platform install/cleanup scripts used by CI (see scripts/README.md)
 ├── tests/                 # Test files directory

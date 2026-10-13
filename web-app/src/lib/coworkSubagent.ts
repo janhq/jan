@@ -457,6 +457,24 @@ export function injectInputs(
 }
 
 /**
+ * A list naming the shell's old name would silently give the child no shell,
+ * so it is refused with the rename, as the Rust port does. `where` names the
+ * list the model can actually fix.
+ */
+function renamedShellError(
+  list: string[] | null | undefined,
+  where: string
+): { error: string } | undefined {
+  const old = list?.find((t) => t.trim().toLowerCase() === 'bash')
+  if (old === undefined) return undefined
+  return {
+    error:
+      `${where} names \`${old.trim()}\`, which matches nothing: the shell tool is ` +
+      'now `shell`. Rename it to `shell` for it to apply.',
+  }
+}
+
+/**
  * The child's effective allowlist: the definition's list, narrowed by the
  * call-site list, narrowed by what the parent itself can call.
  *
@@ -471,6 +489,10 @@ export function intersectAllowedTools(
   request: string[] | null | undefined,
   parentTools: string[]
 ): { tools: string[] | null } | { error: string } {
+  const renamed =
+    renamedShellError(definition, "the subagent definition's allowed_tools") ??
+    renamedShellError(request, 'allowed_tools')
+  if (renamed) return renamed
   const parent = new Set(parentTools)
   const withSkills = (tools: string[]) => {
     const out = [...tools]
@@ -515,6 +537,12 @@ export function resolveSubagent(
   parentTools: string[]
 ): ResolvedSubagent | { error: string } {
   const saved = definitions.find((d) => d.name === req.name)
+  // With no saved definition the list came from the model's own call, so a
+  // stale entry is reported as that, not as a definition's.
+  if (!saved) {
+    const renamed = renamedShellError(req.allowed_tools, 'allowed_tools')
+    if (renamed) return renamed
+  }
   const narrowed = intersectAllowedTools(
     saved ? saved.allowed_tools : (req.allowed_tools ?? null),
     // An inline allowlist *is* the ephemeral agent's definition, so it is not
@@ -705,7 +733,7 @@ export async function runSubagent(
       {
         workspacePath: opts.system.workspacePath,
         readOnlyFolder: opts.system.readOnlyFolder,
-        bashAvailable: opts.system.bashAvailable && 'bash' in tools,
+        bashAvailable: opts.system.bashAvailable && 'shell' in tools,
         // Derived, not passed: the intersection above may have dropped them.
         webSearch: 'web_search' in tools,
         environment: opts.system.environment,

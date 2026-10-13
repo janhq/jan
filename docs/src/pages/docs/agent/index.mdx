@@ -74,6 +74,12 @@ curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
+
+Installs to `%USERPROFILE%\.local\bin`. To also add it to your user `PATH`:
+
+```powershell
+& ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
+```
   </Tabs.Tab>
 </Tabs>
 
