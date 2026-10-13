@@ -209,6 +209,11 @@ function ThreadDetail() {
 
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
+  // Aborted only by an explicit Stop. Leaving the thread aborts
+  // `toolCallAbortController` too (it ends the loop and the auto follow-up), but
+  // must not cancel a call that is running: its result still lands in the
+  // retained session.
+  const toolStopController = useRef<AbortController | null>(null)
 
   // Approval promises started in onToolCall (so the popup appears immediately)
   // and awaited by the onFinish execution loop, keyed by toolCallId. Executing
@@ -554,6 +559,8 @@ function ThreadDetail() {
       // we await that already-started promise here rather than prompting again.
       toolCallAbortController.current = new AbortController()
       const signal = toolCallAbortController.current.signal
+      toolStopController.current = new AbortController()
+      const stopSignal = toolStopController.current.signal
 
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
@@ -655,11 +662,11 @@ function ThreadDetail() {
                     ),
                   })
                   const cancel = () => void call.cancel().catch(() => {})
-                  signal.addEventListener('abort', cancel, { once: true })
+                  stopSignal.addEventListener('abort', cancel, { once: true })
                   try {
                     return await call.promise
                   } finally {
-                    signal.removeEventListener('abort', cancel)
+                    stopSignal.removeEventListener('abort', cancel)
                   }
                 } else {
                   return {
@@ -667,7 +674,7 @@ function ThreadDetail() {
                   }
                 }
               })(),
-              signal
+              stopSignal
             )
 
             if (result.error) {
@@ -833,6 +840,7 @@ function ThreadDetail() {
   // finish so its card stops saying "Running" (and stays settled on reload).
   const handleStop = useCallback(() => {
     toolCallAbortController.current?.abort()
+    toolStopController.current?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
 

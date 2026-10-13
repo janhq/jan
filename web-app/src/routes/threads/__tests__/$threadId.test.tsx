@@ -1311,6 +1311,30 @@ describe('ThreadDetail route', () => {
         expect(h.mockAddToolOutput).not.toHaveBeenCalled()
       })
 
+      // Leaving the thread ends the loop but is not a Stop: a call already
+      // running keeps going and its result still lands in the retained session.
+      it('leaving the thread does not cancel a running MCP call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+
+        const { unmount } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+
+        expect(cancel).not.toHaveBeenCalled()
+      })
+
       // The turn was stored before any tool ran, so a call that finished while
       // another was still running has its output only in the rendered message.
       it('Stop keeps a finished call\'s output and settles only the running one', async () => {
