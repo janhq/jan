@@ -57,7 +57,7 @@ Context share is the one to watch: an agent climbing toward 100% is about to run
 | Tool | Purpose |
 | --- | --- |
 | `dispatch_subagent` | Start one or more subagents and return immediately, listing each one's name, `run_id` and answer file |
-| `message_subagent` | Send a running subagent a correction or extra context, by the name it was dispatched with |
+| `message_subagent` | Send a running subagent a correction or extra context, by its worker name |
 | `stop_subagent` | Stop one running subagent by name; its work in progress is discarded |
 | `create_subagent` | Save a reusable subagent definition |
 | `list_subagents` | List the subagents available here |
@@ -77,7 +77,8 @@ Several messages are delivered together, in order.
 - A subagent that already finished is reported as such: dispatch a follow-up instead.
 - A message is only text. It cannot widen the subagent's tools, answer a permission prompt, or change
   its sandbox or model.
-- If one name was dispatched more than once, the newest still-running subagent is the one addressed.
+- Workers are named after their agent, numbered on repeat (`explore`, `explore-2`), and a name is
+  never handed out twice in a session, so each name addresses one worker.
 
 `stop_subagent` ends one subagent without touching the others. Esc still stops all of them along
 with the turn.
@@ -101,8 +102,8 @@ status.
   row with the same arguments it turns into `⚠ looping ×4`, since that usually means it is stuck.
 
 In the conversation, a dispatch is one row naming every subagent with each brief under it
-(`• Dispatched kv-review, docs-writer`), and each subagent that ends leaves a row such as
-`• Finished kv-review · 3 tools` with its status under it.
+(`• Dispatched explore, general`), and each subagent that ends leaves a row such as
+`• Finished explore · 3 tools` with its status under it.
 
 ## Watching a subagent with `/agents`
 
@@ -162,28 +163,36 @@ costs you only its final answer.
 
 ## Built-in subagents
 
-Jan ships four subagents, ready to dispatch with no setup:
+Jan ships five subagents, ready to dispatch with no setup:
 
-| Name | Model | Tools | What it does |
-| --- | --- | --- | --- |
-| `explore` | `smol` | `read`, `ls`, `find`, `grep` | Codebase exploration: finds where things are and reports `path:line` evidence. Read-only by construction: it has no shell and no write tools |
-| `research` | `smol` | `web_search`, `web_fetch`, `read` | Answers a question from current web sources, with citations |
-| `review` | `inherit` | `read`, `shell` | Reviews a change for correctness, risk and missing tests, and reports instead of editing. It keeps the shell for `git` and the project's checks |
-| `debug` | `inherit` | all | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
+| Name | Model | What it does |
+| --- | --- | --- |
+| `explore` | `smol` | Codebase exploration: finds where things are and reports `path:line` evidence. Told to only read |
+| `research` | `smol` | Answers a question from current web sources, with citations |
+| `review` | `inherit` | Reviews a change for correctness, risk and missing tests, and reports instead of editing |
+| `debug` | `inherit` | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
+| `general` | `inherit` | Any task no other agent fits |
 
-The main agent picks one by setting `agent` on a dispatch entry; `name` stays the worker's own
-unique label, so one dispatch can run several workers on the same agent:
+Every built-in has the session's full toolset; its role is its prompt and model. `explore` is
+read-only by instruction, not by construction: on the cheap `smol` model under an auto-approving
+policy it could still write or run commands. To hold it to reading, give it a definition of your own
+(see below) with `allowed_tools = ["read", "ls", "find", "grep"]`.
+
+Each dispatch entry names an `agent`, one of the predefined agents, and the task. Workers are named
+after their agent, numbered when one agent runs more than once (`explore`, `explore-2`); the
+dispatch result lists each name, which is what `message_subagent`, `stop_subagent` and the answer
+file `blackboard/<name>.md` use:
 
 ```json
 { "subagents": [
-  { "name": "explore-api", "agent": "explore", "task": "Where is request auth checked?" },
-  { "name": "explore-db",  "agent": "explore", "task": "Which tables does the migration touch?" }
+  { "agent": "explore", "task": "Where is request auth checked?" },
+  { "agent": "explore", "task": "Which tables does the migration touch?" }
 ] }
 ```
 
-It sees each agent with its model in the `dispatch_subagent` description, so it can send lookups to
-`explore` and keep your main model for the work that needs it. A worker without `agent` is a one-off,
-whatever it is named: a worker called `research` does not pick up the built-in.
+The main agent sees each agent with its model and purpose in its system prompt, so it can send
+lookups to `explore` and keep your main model for the work that needs it. An `agent` that is not one
+of the predefined agents is refused, with the valid ones listed.
 
 A saved subagent with the same name replaces a built-in one (see below), and the model of any of them
 can be changed per project.
@@ -260,21 +269,16 @@ and never edits files.
 That writes to the project scope by default, so it applies only in this project. Ask for the user
 scope to use it everywhere.
 
-Once saved, it is dispatched with `agent` set to its name (or, as before, by a worker `name` equal to
-it) and picks up its stored prompt, permissions and model.
-
-## One-off subagents
-
-A subagent doesn't need a saved definition. The agent can invent one for a single task by supplying
-a name and a system prompt together in the same call. Useful for a fan-out where each worker differs
-only slightly.
+Once saved, it is dispatched with `agent` set to its name and picks up its stored prompt,
+permissions and model. Names are at most 64 characters of letters, digits, `-` and `_`.
 
 ## Tool permissions
 
-A subagent's tools are narrowed, never widened:
+A subagent gets the session's full toolset unless something narrows it, and it is never widened:
 
-- For a **saved** subagent, the allowlist further restricts its own stored allowlist.
-- For a **one-off**, the allowlist is its toolset.
+- A definition's own `allowed_tools` restricts every dispatch of it.
+- A dispatch entry's `allowed_tools` restricts that one worker further. Its values are limited to
+  the tools the session can actually hand a subagent.
 
 Either way it can only ever reach a subset of what the parent could reach, so delegation cannot be
 used to escape your project's [tool policy](/docs/agent/permissions#project-policy).

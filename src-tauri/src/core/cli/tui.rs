@@ -2112,30 +2112,50 @@ impl AgentRow {
     }
 }
 
-/// The worker names a `dispatch_subagent` call gives its children, numbered
-/// the way dispatch numbers them (`explore`, `explore-2`). Only the call is
-/// known here, so a name an earlier worker still holds is not skipped; the
-/// panel's own `SubagentStart` carries the name the worker actually got.
-fn dispatched_workers(args: &serde_json::Value) -> Vec<(String, &serde_json::Value)> {
+/// The worker names a `dispatch_subagent` call gives its children. While the
+/// call is in flight only its arguments are known, so they are numbered the
+/// way dispatch numbers them (`explore`, `explore-2`) without the names the
+/// session already holds; `reported`, the names the dispatch result lists,
+/// replaces that guess once it lands. A call saved before workers were named
+/// after their agent carries its own `name`, kept so an old transcript replays
+/// readable.
+fn dispatched_workers<'a>(
+    args: &'a serde_json::Value,
+    reported: Option<&[String]>,
+) -> Vec<(String, &'a serde_json::Value)> {
     let subs: Vec<(&str, &serde_json::Value)> = args
         .get("subagents")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|s| Some((s.get("agent").and_then(|v| v.as_str())?, s)))
+                .filter_map(|s| {
+                    let label = s.get("agent").or_else(|| s.get("name"))?.as_str()?;
+                    Some((label, s))
+                })
                 .collect()
         })
         .unwrap_or_default();
-    crate::core::agent::subagent::number_workers(subs.iter().map(|(agent, _)| *agent), |_| false)
+    let names = match reported {
+        Some(names) if names.len() == subs.len() => names.to_vec(),
+        _ if subs.iter().all(|(_, s)| s.get("agent").is_none()) => {
+            subs.iter().map(|(name, _)| (*name).to_string()).collect()
+        }
+        _ => crate::core::agent::subagent::number_workers(
+            subs.iter().map(|(agent, _)| *agent),
+            |_| false,
+        ),
+    };
+    names
         .into_iter()
         .zip(subs.into_iter().map(|(_, sub)| sub))
         .collect()
 }
 
 /// The dispatch row for a `dispatch_subagent` call: every child it names, each
-/// brief's first line under it (named, when there are several).
-fn dispatch_row(args: &serde_json::Value) -> AgentRow {
-    let subagents: Vec<(String, String)> = dispatched_workers(args)
+/// brief's first line under it (named, when there are several). `reported` is
+/// the worker names from the dispatch result, once it has landed.
+fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentRow {
+    let subagents: Vec<(String, String)> = dispatched_workers(args, reported)
         .into_iter()
         .map(|(name, s)| {
             let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
@@ -2407,6 +2427,9 @@ struct Transcript {
     /// Standalone (edit/write) call rows still awaiting their result. Several
     /// can be open at once: a batch emits every `ToolCall` before any result.
     pending_rows: Vec<PendingToolRow>,
+    /// The arguments of each dispatch whose result has not landed, so the row
+    /// can be relabeled with the worker names that result reports.
+    dispatch_args: HashMap<String, serde_json::Value>,
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
@@ -2608,7 +2631,8 @@ impl Transcript {
             self.finalize_tool_group();
             self.gap(Kind::Tool);
             if name == "dispatch_subagent" {
-                self.push_row(RowKind::Agent(Box::new(dispatch_row(args))));
+                self.push_row(RowKind::Agent(Box::new(dispatch_row(args, None))));
+                self.dispatch_args.insert(id.clone(), args.clone());
             } else {
                 self.push_row(RowKind::Tool {
                     state: ToolState::Running,
@@ -3404,13 +3428,25 @@ impl Transcript {
             Some(path) if created => format!("Created {path}"),
             _ => row.done,
         };
+        let dispatch_args = self.dispatch_args.remove(id);
         let call = match &self.rows[row.idx].kind {
             // A dispatch keeps its row; the result only confirms what the row
-            // already says unless it failed.
+            // already says unless it failed -- and names each worker as the
+            // dispatch actually named it, which only the result knows.
             RowKind::Agent(agent) => {
+                let reported = match &result {
+                    RowKind::Result { content: Some(text), .. } if !is_error => {
+                        crate::core::agent::subagent::worker_names_in(text)
+                    }
+                    _ => None,
+                };
+                let relabeled = dispatch_args
+                    .as_ref()
+                    .zip(reported.as_deref())
+                    .map(|(args, names)| dispatch_row(args, Some(names)));
                 let call = RowKind::Agent(Box::new(AgentRow {
                     state: ToolState::of(is_error),
-                    ..(**agent).clone()
+                    ..relabeled.unwrap_or_else(|| (**agent).clone())
                 }));
                 if !is_error {
                     self.rows[row.idx] = call.into();
@@ -5207,6 +5243,7 @@ impl App {
         self.starting.clear();
         self.transcript.groups.clear();
         self.transcript.pending_rows.clear();
+        self.transcript.dispatch_args.clear();
         self.transcript.reasoning_blocks.clear();
         self.transcript.expanded_traces.clear();
         self.transcript.subagent_blocks.clear();
@@ -10066,7 +10103,8 @@ fn collapse_command(cmd: &str) -> String {
 /// for a fan-out. Every name is listed, since once the live dock has scrolled
 /// away this row is the only on-screen account of what was dispatched.
 fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
-    let names: Vec<String> = dispatched_workers(args).into_iter().map(|(name, _)| name).collect();
+    let names: Vec<String> =
+        dispatched_workers(args, None).into_iter().map(|(name, _)| name).collect();
     match names.as_slice() {
         [] => format!("{verb} subagent"),
         [one] => format!("{verb} subagent {one}"),
@@ -24815,6 +24853,58 @@ mod tests {
         );
         assert!(!text.contains("dispatched\n"), "a clean result adds no row: {text}");
         assert!(has_dispatch_state(&app, ToolState::Success));
+    }
+
+    /// The row names each worker as the dispatch actually named it: an
+    /// earlier `explore` in the session makes this one `explore-2`, which only
+    /// the dispatch result knows.
+    #[test]
+    fn a_dispatch_row_takes_the_worker_names_the_result_reports() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the store." },
+                { "agent": "general", "task": "Write the docs." },
+            ] }),
+        });
+        assert!(transcript_text(&app).contains("• Dispatching explore, general"));
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: format!(
+                "Dispatched 2 subagent(s).\n{}",
+                crate::core::agent::subagent::worker_names_line(&[
+                    "explore-2".to_string(),
+                    "general".to_string(),
+                ])
+            ),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(
+            text.contains(concat!(
+                "• Dispatched explore-2, general\n",
+                "  └ explore-2: Find the store.\n",
+                "    general: Write the docs."
+            )),
+            "{text}"
+        );
+    }
+
+    /// A dispatch saved before workers were named after their agent carries
+    /// its own `name`; replayed, it still shows those names and briefs.
+    #[test]
+    fn a_legacy_named_dispatch_replays_with_its_names() {
+        let dispatch = json!({ "subagents": [
+            { "name": "kv-review", "task": "x" },
+            { "name": "docs-writer", "task": "y" },
+        ] });
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched 2 subagents kv-review, docs-writer"
+        );
     }
 
     /// A dispatch the run never resolved reads as interrupted, not running.

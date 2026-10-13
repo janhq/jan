@@ -174,8 +174,15 @@ pub fn desktop_subagents_dir(jan_data_folder: &Path) -> PathBuf {
     workspace::store_dir(&workspace::permanent_store(jan_data_folder), SUBAGENTS)
 }
 
+/// Longest subagent name. Kept well under the blackboard stem's own 80-char
+/// cap so every numbered worker name (`<agent>-<n>`) maps to a distinct
+/// `blackboard/<name>.md`: past the cap they would all truncate to one stem,
+/// and numbering could never find a free name.
+const MAX_AGENT_NAME_LEN: usize = 64;
+
 /// A subagent name is used to build a filename, so it must be a single path
-/// component of `[A-Za-z0-9_-]`. Rejects empty, separators, and dots.
+/// component of `[A-Za-z0-9_-]`, at most [`MAX_AGENT_NAME_LEN`] long. Rejects
+/// empty, separators, and dots.
 fn validate_name(name: &str) -> Result<(), SubagentError> {
     if name.is_empty()
         || !name
@@ -184,6 +191,11 @@ fn validate_name(name: &str) -> Result<(), SubagentError> {
     {
         return Err(SubagentError::PermissionDenied(format!(
             "invalid subagent name '{name}': use only letters, digits, '-' and '_'"
+        )));
+    }
+    if name.len() > MAX_AGENT_NAME_LEN {
+        return Err(SubagentError::PermissionDenied(format!(
+            "subagent name '{name}' is too long (max {MAX_AGENT_NAME_LEN} characters)"
         )));
     }
     Ok(())
@@ -249,9 +261,17 @@ impl SubagentRegistry {
         self.defs.iter().collect()
     }
 
-    /// Each distinct name, sorted: the values `agent` may take.
+    /// Each distinct name, sorted: the values `agent` may take. A hand-written
+    /// definition file whose name a dispatch would refuse (too long, a bad
+    /// character) is left out, so the model is never offered an agent it
+    /// cannot run.
     fn dispatchable_names(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.defs.iter().map(|d| d.name.as_str()).collect();
+        let mut names: Vec<&str> = self
+            .defs
+            .iter()
+            .map(|d| d.name.as_str())
+            .filter(|name| validate_name(name).is_ok())
+            .collect();
         names.sort_unstable();
         names.dedup();
         names
@@ -759,6 +779,10 @@ pub struct Phase {
 #[derive(Debug, Clone)]
 pub struct DispatchPlan {
     pub phases: Vec<Phase>,
+    /// Every worker's name in the order the call listed them, which the
+    /// phases reorder. The dispatch result reports them in this order so the
+    /// TUI's dispatch row can label each of the call's entries.
+    pub names: Vec<String>,
 }
 
 /// The resolved plan for a dispatch: the winning definition plus the effective
@@ -2158,6 +2182,31 @@ pub(crate) struct DispatchedPlan {
     /// The blackboard directory in the model's spelling, or `None` when the run
     /// is unconfined (no scratch: answers ride the completion pings inline).
     pub(crate) blackboard_dir: Option<String>,
+    /// Every worker's name, in the order the call listed them (see
+    /// [`DispatchPlan::names`]).
+    pub(crate) names: Vec<String>,
+}
+
+/// Lead of the dispatch result line naming every worker in the call's order.
+const WORKER_NAMES_LEAD: &str = "Worker names, in the order listed: ";
+
+/// The dispatch result line naming every worker, in the call's order.
+pub(crate) fn worker_names_line(names: &[String]) -> String {
+    format!("{WORKER_NAMES_LEAD}{}.", names.join(", "))
+}
+
+/// The worker names a dispatch result reports (see [`worker_names_line`]), or
+/// `None` for a result that carries none: a failed dispatch, or one saved
+/// before the names were reported. Only the TUI's dispatch row reads it back.
+#[cfg(feature = "cli")]
+pub(crate) fn worker_names_in(result: &str) -> Option<Vec<String>> {
+    let line = result.lines().find_map(|l| l.strip_prefix(WORKER_NAMES_LEAD))?;
+    Some(
+        line.trim_end_matches('.')
+            .split(", ")
+            .map(str::to_string)
+            .collect(),
+    )
 }
 
 /// One started child as the dispatch reports it: the name the parent chose and
@@ -2281,6 +2330,7 @@ pub(crate) fn spawn_dispatch_plan(
 
     let phase_count = plan.phases.len();
     let total_subagents = plan.phases.iter().map(|p| p.subagents.len()).sum();
+    let names = plan.names.clone();
     let blackboard_dir = scratch.map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)));
 
     let multi = phase_count > 1;
@@ -2355,6 +2405,7 @@ pub(crate) fn spawn_dispatch_plan(
         total_subagents,
         first_phase: first_children,
         blackboard_dir,
+        names,
     })
 }
 
@@ -2938,12 +2989,6 @@ fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
         .filter(|list| !list.is_empty())
 }
 
-/// Longest agent name a dispatch accepts. Kept well under the blackboard
-/// stem's own 80-char cap so every numbered worker name (`<agent>-<n>`) maps to
-/// a distinct `blackboard/<name>.md`: past the cap they would all truncate to
-/// one stem, and numbering could never find a free name.
-const MAX_AGENT_NAME_LEN: usize = 64;
-
 /// Parse a `dispatch_subagent` tool-call argument object into an ordered plan.
 ///
 /// The wire shape is a flat `subagents` array of `{ agent, task, phase? }`.
@@ -2987,16 +3032,11 @@ pub fn parse_dispatch_plan(
         .map(|sub| {
             let agent = required_str(sub, "agent")?.trim().to_string();
             validate_name(&agent)?;
-            if agent.len() > MAX_AGENT_NAME_LEN {
-                return Err(SubagentError::PermissionDenied(format!(
-                    "agent name '{agent}' is too long (max {MAX_AGENT_NAME_LEN} characters)"
-                )));
-            }
             Ok(agent)
         })
         .collect::<Result<Vec<_>, SubagentError>>()?;
     let names = number_workers(agents.iter().map(String::as_str), taken);
-    for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names) {
+    for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names.iter().cloned()) {
         let description = required_str(sub, "task")?;
         let phase = match sub.get("phase") {
             None | Some(serde_json::Value::Null) => 0,
@@ -3021,7 +3061,7 @@ pub fn parse_dispatch_plan(
         .into_iter()
         .map(|(number, subagents)| Phase { number, subagents })
         .collect();
-    Ok(DispatchPlan { phases })
+    Ok(DispatchPlan { phases, names })
 }
 
 /// Name each worker after its agent, in order: the agent's own name the first
@@ -4815,6 +4855,7 @@ pub(crate) mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         let plan = DispatchPlan {
+            names: Vec::new(),
             phases: vec![
                 Phase {
                     number: 0,
@@ -4891,6 +4932,7 @@ pub(crate) mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         let plan = DispatchPlan {
+            names: Vec::new(),
             phases: vec![
                 Phase {
                     number: 0,
@@ -5155,6 +5197,7 @@ pub(crate) mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
         let plan = DispatchPlan {
+            names: Vec::new(),
             phases: vec![
                 Phase {
                     number: 0,
@@ -5219,6 +5262,7 @@ pub(crate) mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
         let plan = DispatchPlan {
+            names: Vec::new(),
             phases: vec![
                 Phase {
                     number: 0,
@@ -5781,7 +5825,8 @@ pub(crate) mod tests {
     }
 
     /// A name long enough to share a blackboard stem with its own numbered
-    /// variants is refused up front instead of numbering forever.
+    /// variants is refused up front instead of numbering forever: at dispatch,
+    /// at creation, and in the enum a hand-written file would otherwise reach.
     #[test]
     fn an_over_long_agent_name_is_refused() {
         let long = "a".repeat(MAX_AGENT_NAME_LEN + 1);
@@ -5790,6 +5835,11 @@ pub(crate) mod tests {
         }))
         .unwrap_err();
         assert!(err.to_string().contains("too long"), "{err}");
+        let mut reg = registry_with("ok", None);
+        assert!(reg.create(SubagentDefinition { name: long.clone(), ..reg.defs[0].clone() },
+            SubagentScope::User, false).is_err());
+        reg.defs.push(SubagentDefinition { name: long, ..reg.defs[0].clone() });
+        assert_eq!(reg.dispatchable_names(), ["ok"]);
     }
 
     #[test]
