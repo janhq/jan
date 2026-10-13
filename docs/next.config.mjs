@@ -1,40 +1,20 @@
+import { createMDX } from 'fumadocs-mdx/next'
+
+const withMDX = createMDX()
+
 /** @type {import('next').NextConfig} */
-
-import nextra from 'nextra'
-import { remarkCodeHike } from '@code-hike/mdx'
-
-const withNextra = nextra({
-  theme: 'nextra-theme-docs',
-  themeConfig: './theme.config.tsx',
-  defaultShowCopyCode: true,
-  latex: true,
-  mdxOptions: {
-    remarkPlugins: [
-      [
-        remarkCodeHike,
-        {
-          theme: 'dark-plus',
-          showCopyButton: true,
-          skipLanguages: ['mermaid'],
-        },
-      ],
-    ],
-  },
-})
-
-const nextConfig = {
-  reactStrictMode: true,
+const config = {
+  // Fully static: deployed to Cloudflare Pages (docs.jan.ai).
   output: 'export',
+  reactStrictMode: true,
+  // One URL per page, no trailing slash; `_redirects` matches this policy.
+  trailingSlash: false,
+  images: { unoptimized: true },
   env: {
     GTM_ID: process.env.GTM_ID,
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
   },
-  transpilePackages: ['@scalar', 'react-tweet'],
-  images: {
-    formats: ['image/webp'],
-    unoptimized: true,
-  },
 }
 
-export default withNextra(nextConfig)
+export default withMDX(config)

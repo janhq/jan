@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'katex/dist/katex.min.css';
+
+@source '../../node_modules/fumadocs-ui/dist/**/*.js';
+
+/* ---- Jan brand fonts (same files as the old jan.ai/docs) ---- */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Light.otf') format('opentype');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Book.otf') format('opentype');
+  font-weight: 350;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans:
+    'StudioFeixenSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Oxygen-Sans', Ubuntu, Cantarell, Helvetica, sans-serif;
+  /* `font-serif` resolved to Studio Feixen Sans on the old site too. */
+  --font-serif: var(--font-sans);
+  --font-inter:
+    var(--font-inter-loaded), -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Helvetica, sans-serif;
+
+  /* Jan palette: white page, near-black text, Jan blue accents. */
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #0a0a0a;
+  --color-fd-muted: #f7f7f7;
+  --color-fd-muted-foreground: #5c5c5c;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #0a0a0a;
+  --color-fd-card: #fafafa;
+  --color-fd-card-foreground: #0a0a0a;
+  --color-fd-border: rgba(0, 0, 0, 0.1);
+  --color-fd-primary: #0668d5;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f4f4f5;
+  --color-fd-secondary-foreground: #0a0a0a;
+  --color-fd-accent: #e0eefe;
+  --color-fd-accent-foreground: #0668d5;
+  --color-fd-ring: #0668d5;
+
+  --color-jan-blue: #0668d5;
+  --color-jan-blue-soft: #e0eefe;
+
+  --animate-wave: wave 2.4s ease-in-out infinite;
+  @keyframes wave {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0deg);
+    }
+    10%,
+    30% {
+      transform: rotate(14deg);
+    }
+    20% {
+      transform: rotate(-8deg);
+    }
+    40% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(10deg);
+    }
+  }
+}
+
+/* Height of the Jan navbar that sits above the Fumadocs layout. */
+:root {
+  --jan-nav-height: 60px;
+  --fd-banner-height: var(--jan-nav-height);
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+}
+
+/* Fumadocs' layout width matches the old `nextra-wrap-container` (90rem). */
+#nd-docs-layout {
+  --fd-layout-width: 90rem;
+}
+
+.jan-container {
+  margin-inline: auto;
+  max-width: 90rem;
+  padding-left: max(env(safe-area-inset-left), 1.5rem);
+  padding-right: max(env(safe-area-inset-right), 1.5rem);
+}
+
+/* Content images keep the old rounded look. */
+.prose img {
+  border-radius: 12px;
+}
+
+.img-rounded-shadow {
+  padding: 8px;
+}
+.img-rounded-shadow img {
+  border-radius: 12px;
+  box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.42);
+}
