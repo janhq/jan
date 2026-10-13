@@ -29,11 +29,10 @@ export function LeftSidebar() {
   if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
   const surfacePath = inSettings ? lastSurfacePath : pathname
   const isCowork = isCoworkRoute(surfacePath) && isCoworkEnabled()
-  // Right-align the header when native controls own the top-left (macOS, or a Linux
-  // DE placing buttons left); "Jan" moves into the right cluster except on macOS.
+  // Right-align the header and hide "Jan" when native controls own the top-left
+  // (macOS, or a Linux DE placing buttons left).
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
-  const controlsOnLeft = !IS_MACOS && leftButtons > 0
-  const reserveLeft = IS_MACOS || controlsOnLeft
+  const reserveLeft = IS_MACOS || leftButtons > 0
   return (
     <div className='relative z-50'>
       <Sidebar variant="floating" collapsible="offcanvas">
@@ -41,9 +40,6 @@ export function LeftSidebar() {
           <div className={cn("flex items-center w-full justify-between", reserveLeft && "justify-end")}>
             {!reserveLeft && <span className="ml-2 font-medium font-studio">Jan</span>}
             <div className="flex items-center">
-              {controlsOnLeft && (
-                <span className="mr-2 font-medium font-studio">Jan</span>
-              )}
               {isLeftPanelOpen && <DownloadManagement />}
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
