@@ -599,7 +599,10 @@ function ThreadDetail() {
                       serverForTool(toolName)
                     ))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
-            if (signal.aborted) break
+            // Only an explicit Stop skips the result. Leaving the thread also
+            // resolves a pending approval as denied; that denial must still be
+            // recorded, or the call stays "Running" with nothing running.
+            if (stopSignal.aborted) break
 
             if (!approved) {
               addToolOutput({

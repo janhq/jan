@@ -1501,6 +1501,35 @@ describe('ThreadDetail route', () => {
         }
       })
 
+      // Leaving the thread resolves a pending approval as denied. The denial
+      // must be recorded, or the call stays "Running" with nothing running.
+      it('records the denial when leaving the thread cuts an approval short', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let decide: (approved: boolean) => void = () => {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>((resolve) => (decide = resolve))
+        )
+        h.mockAddToolOutput.mockClear()
+
+        const { unmount } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+        await act(async () => {
+          decide(false)
+        })
+
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            toolCallId: 'tcA',
+            state: 'output-error',
+            errorText: 'Tool execution denied by user',
+          })
+        )
+      })
+
       it('keeps going when one call is denied', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         h.toolApprovalState.requestApproval = vi.fn((id: string) =>
