@@ -1081,9 +1081,10 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         )
     };
     format!(
-        "{head}\n{where_answers} Steer one by name with message_subagent, or stop it with \
+        "{head}\n{}\n{where_answers} Steer one by name with message_subagent, or stop it with \
          stop_subagent. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
-         each finishes."
+         each finishes.",
+        crate::core::agent::subagent::worker_names_line(&d.names)
     )
 }
 
@@ -1556,7 +1557,7 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
             SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
@@ -1569,10 +1570,13 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let plan = match parse_dispatch_plan(args) {
+                let plan = match ctx.bg.plan_dispatch(args, self.subagent_scratch()) {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
+                // Rejected before any child started (an unknown agent, a tool
+                // the parent denies), the names go back for the retry.
+                let reserved = plan.names.clone();
                 match spawn_dispatch_plan(
                     &ctx.bg,
                     ctx.bg_generation,
@@ -1593,7 +1597,10 @@ impl CompositeToolInvoker {
                     self.subagent_scratch(),
                 ) {
                     Ok(d) => format_dispatched_plan(&d),
-                    Err(e) => format!("ERROR: {e}"),
+                    Err(e) => {
+                        ctx.bg.release_names(&reserved);
+                        format!("ERROR: {e}")
+                    }
                 }
             }
             "message_subagent" => {
@@ -3047,6 +3054,12 @@ fn advertise_local_tools(
             openai_tools.push(tool.schema());
         }
     }
+    // Last, so the names a child may be given are drawn from the whole array.
+    crate::core::agent::subagent::constrain_tool_names(
+        openai_tools,
+        permissions,
+        allowed_names.is_some(),
+    );
 }
 
 /// The last completion of a run stopped by its money ceiling, rewritten into a
@@ -11624,6 +11637,7 @@ mod tests {
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
+            names: vec!["explorer-a".to_string(), "explorer-b".to_string()],
         });
         assert!(out.contains("sub-explorer-a-1"), "{out}");
         assert!(out.contains("sub-explorer-b-2"), "{out}");
@@ -11644,8 +11658,17 @@ mod tests {
                 run_id: "sub-researcher-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["researcher".to_string(), "writer".to_string()],
         });
         assert!(out.contains("sub-researcher-1"), "{out}");
+        // Every worker is named, the later phase's included, in listed order.
+        assert!(
+            out.contains(&crate::core::agent::subagent::worker_names_line(&[
+                "researcher".to_string(),
+                "writer".to_string(),
+            ])),
+            "{out}"
+        );
         assert_eq!(out.matches("run_id:").count(), 1, "{out}");
         assert!(out.contains("reported as they start"), "{out}");
     }
@@ -11775,6 +11798,7 @@ mod tests {
                 run_id: "sub-w-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["w".to_string()],
         });
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");

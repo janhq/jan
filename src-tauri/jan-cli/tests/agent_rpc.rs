@@ -1392,7 +1392,7 @@ fn a_host_only_session_delegates_to_a_child_held_to_its_host_tools() {
     let home = scratch.join("home");
     let dispatch = tool_call_reply(
         "dispatch_subagent",
-        serde_json::json!({"subagents":[{"name":"mover","task":"move the arm to bin","allowed_tools":["robot_arm_move"]}]}),
+        serde_json::json!({"subagents":[{"agent":"general","task":"move the arm to bin","allowed_tools":["robot_arm_move"]}]}),
     );
     let (url, seen) = routed_provider(move |_, body| {
         let answered = body["messages"]
@@ -1435,7 +1435,7 @@ fn a_host_only_session_delegates_to_a_child_held_to_its_host_tools() {
     let event = &request["params"]["event"];
     assert_eq!(event["tool_name"], "robot_arm_move", "{request}");
     assert!(
-        event["run_id"].as_str().is_some_and(|id| id.starts_with("sub-mover")),
+        event["run_id"].as_str().is_some_and(|id| id.starts_with("sub-general")),
         "the call is attributed to the child: {request}"
     );
     let request_id = event["request_id"].as_str().unwrap().to_owned();
@@ -1474,7 +1474,7 @@ fn a_child_dispatched_without_an_allowlist_inherits_the_host_only_set() {
     let home = scratch.join("home");
     let dispatch = tool_call_reply(
         "dispatch_subagent",
-        serde_json::json!({"subagents":[{"name":"mover","task":"say hi"}]}),
+        serde_json::json!({"subagents":[{"agent":"general","task":"say hi"}]}),
     );
     let (url, seen) = routed_provider(move |_, body| {
         let answered = body["messages"]
@@ -1653,7 +1653,7 @@ fn a_child_keeps_the_parents_tool_over_a_host_tool_of_the_same_name() {
     .unwrap();
     let dispatch = tool_call_reply(
         "dispatch_subagent",
-        serde_json::json!({"subagents":[{"name":"mover","task":"say hi",
+        serde_json::json!({"subagents":[{"agent":"general","task":"say hi",
             "allowed_tools":["plugin__p__echo","robot_arm_move"]}]}),
     );
     let (url, seen) = routed_provider(move |_, body| {
