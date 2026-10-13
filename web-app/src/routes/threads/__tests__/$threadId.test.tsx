@@ -1672,6 +1672,12 @@ describe('ThreadDetail route', () => {
                     },
                   ],
                 },
+                // The user came back and started another turn meanwhile.
+                {
+                  id: 'a-new',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
               ],
             },
           },

@@ -791,11 +791,14 @@ function ThreadDetail() {
 
         // The thread was left: no follow-up reply will run to rewrite the stored
         // turn, so write what the live copy holds (results and errors included).
+        // This turn by its id, not the last message: the user may have come back
+        // and started another turn before this one's calls returned.
         if (signal.aborted && !stopSignal.aborted) {
           await Promise.allSettled(outputs)
-          const live = useChatSessions.getState().sessions[threadId]?.chat.messages
-          const last = live?.[live.length - 1]
-          if (last?.role === 'assistant') rewriteStoredTurn(threadId, last, false)
+          const turn = useChatSessions
+            .getState()
+            .sessions[threadId]?.chat.messages.find((m) => m.id === message.id)
+          if (turn?.role === 'assistant') rewriteStoredTurn(threadId, turn, false)
         }
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
