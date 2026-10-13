@@ -24,33 +24,36 @@ const isUnsettled = (part: unknown): boolean => {
 /**
  * After a Stop nothing will ever resolve a tool call that is still streaming
  * its arguments or waiting to run, so its card would keep saying "Running"
- * (live, and after every reload, once persisted). Settles each such call as an
- * error and marks its message `stopped`.
+ * (live, and after every reload, once persisted). Settles each such call in the
+ * last message, the turn that was stopped, as an error and marks that message
+ * `stopped`. Earlier messages are history and are never touched.
  *
  * Returns the same array when there is nothing to settle, so callers can tell
  * by identity whether to write anything back.
  */
 export function settleStoppedToolCalls(messages: UIMessage[]): UIMessage[] {
-  let changed = false
-  const next = messages.map((message) => {
-    if (message.role !== 'assistant' || !message.parts?.some(isUnsettled)) {
-      return message
-    }
-    changed = true
-    return {
-      ...message,
-      parts: message.parts.map((part) =>
-        isUnsettled(part)
-          ? { ...part, state: 'output-error', errorText: STOPPED_TOOL_ERROR }
-          : part
-      ),
-      metadata: {
-        ...((message.metadata as Record<string, unknown> | undefined) ?? {}),
-        stopped: true,
-      },
-    } as UIMessage
-  })
-  return changed ? next : messages
+  const lastIndex = messages.length - 1
+  const message = messages[lastIndex]
+  if (
+    !message ||
+    message.role !== 'assistant' ||
+    !message.parts?.some(isUnsettled)
+  ) {
+    return messages
+  }
+  const settled = {
+    ...message,
+    parts: message.parts.map((part) =>
+      isUnsettled(part)
+        ? { ...part, state: 'output-error', errorText: STOPPED_TOOL_ERROR }
+        : part
+    ),
+    metadata: {
+      ...((message.metadata as Record<string, unknown> | undefined) ?? {}),
+      stopped: true,
+    },
+  } as UIMessage
+  return [...messages.slice(0, lastIndex), settled]
 }
 
 /**

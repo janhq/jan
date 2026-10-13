@@ -834,28 +834,36 @@ function ThreadDetail() {
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
     stop()
 
-    const current = chatMessagesRef.current
-    const settled = settleStoppedToolCalls(current)
-    if (settled === current) return
-    setChatMessages(settled)
+    // Only the turn being stopped, from the last message the UI rendered. The
+    // SDK state is updated through a functional update, since this snapshot is
+    // throttled and can lag the stream by a few chunks.
+    const rendered = chatMessagesRef.current
+    const last = rendered[rendered.length - 1]
+    const settled = settleStoppedToolCalls(rendered)
+    if (settled === rendered || !last) return
+    setChatMessages((prev) => settleStoppedToolCalls(prev))
     // A turn that was still streaming is persisted by onFinish; one that is
-    // already stored (its tools were running) has to be rewritten here.
-    settled.forEach((message, i) => {
-      if (message === current[i]) return
-      const stored = useMessages
-        .getState()
-        .getMessages(threadId)
-        .find((m) => m.id === message.id)
-      if (!stored) return
-      updateMessage({
-        ...stored,
-        content: extractContentPartsFromUIMessage(message),
-        metadata: {
-          ...stored.metadata,
-          stopped: true,
-          toolErrors: toolErrorsOf(message),
+    // already stored (its tools were running) has to be rewritten here. Its
+    // content already has no output for the unfinished calls, so only the
+    // errors and the stopped flag change.
+    const stored = useMessages
+      .getState()
+      .getMessages(threadId)
+      .find((m) => m.id === last.id)
+    if (!stored) return
+    const storedErrors = (
+      stored.metadata as { toolErrors?: Record<string, string> } | undefined
+    )?.toolErrors
+    updateMessage({
+      ...stored,
+      metadata: {
+        ...stored.metadata,
+        stopped: true,
+        toolErrors: {
+          ...storedErrors,
+          ...toolErrorsOf(settled[settled.length - 1]),
         },
-      })
+      },
     })
   }, [threadId, stop, setChatMessages, updateMessage])
 

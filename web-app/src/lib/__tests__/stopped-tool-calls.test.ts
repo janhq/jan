@@ -36,6 +36,20 @@ describe('settleStoppedToolCalls', () => {
     }
   )
 
+  // Older messages hold calls that failed or were denied before this release
+  // saved their error; relabelling them "stopped" would be wrong, and the model
+  // reads them on later turns.
+  it('settles only the last message, never earlier history', () => {
+    const old = { ...assistant([tool('input-available')]), id: 'old' }
+    const current = {
+      ...assistant([tool('input-streaming', { toolCallId: 'c2' })]),
+      id: 'cur',
+    }
+    const out = settleStoppedToolCalls([old, current])
+    expect(out[0]).toBe(old)
+    expect(out[1].parts[0]).toMatchObject({ state: 'output-error' })
+  })
+
   it('leaves finished calls and their message alone', () => {
     const done = assistant([
       tool('output-available', { output: 'ok' }),
