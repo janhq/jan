@@ -473,19 +473,31 @@ async fn summarize(
     // the cheap model's job. Any failure there, an overflow of its smaller
     // window included, falls back to the run's own model rather than to a
     // note, so a misconfigured smol model never costs the user their history.
+    // An empty smol reply was still billed: its usage rides along with the
+    // retry's so the run's budget is charged for both requests.
+    let mut smol_usage = None;
     if let Some((smol_id, smol)) = model.summarizer() {
         match request_summary(&transcript, smol_id, smol).await {
             Ok((Some(summary), usage)) => return Ok((summary, usage)),
-            Ok((None, _)) => log::warn!(
-                "agent: compaction summary from {smol_id} was empty, retrying on {model_id}"
-            ),
+            Ok((None, usage)) => {
+                smol_usage = usage;
+                log::warn!(
+                    "agent: compaction summary from {smol_id} was empty, retrying on {model_id}"
+                );
+            }
             Err(e) => log::warn!(
                 "agent: compaction summary from {smol_id} failed, retrying on {model_id}: {e}"
             ),
         }
     }
     match request_summary(&transcript, model_id, model).await {
-        Ok((summary, usage)) => Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage)),
+        Ok((summary, usage)) => {
+            let usage = match (smol_usage, usage) {
+                (Some(smol), Some(run)) => Some(smol.plus(&run)),
+                (smol, run) => smol.or(run),
+            };
+            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
+        }
         Err(e) => {
             // A model-switch compaction targets the (smaller) new model: if the
             // summarizer itself overflows, a note is not safe -- the request
@@ -493,7 +505,7 @@ async fn summarize(
             if crate::core::agent::upstream::is_context_overflow_error(&e) {
                 Err(e)
             } else {
-                Ok((FALLBACK_NOTE.to_string(), None))
+                Ok((FALLBACK_NOTE.to_string(), smol_usage))
             }
         }
     }
@@ -932,6 +944,44 @@ mod tests {
         }
         let requests = overflowing.run.requests.lock().await;
         assert_eq!(requests[0]["model"], "m", "the retry is on the run's own model");
+    }
+
+    /// A model answering `content` and reporting `prompt`/`completion` tokens.
+    struct Billed(&'static str, u64, u64);
+    #[async_trait]
+    impl ModelInvoker for Billed {
+        async fn invoke(
+            &self,
+            _request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            Ok(json!({
+                "choices": [{ "message": { "content": self.0 } }],
+                "usage": {
+                    "prompt_tokens": self.1,
+                    "completion_tokens": self.2,
+                    "total_tokens": self.1 + self.2,
+                },
+            }))
+        }
+    }
+
+    /// An empty smol reply was still billed, so its usage is charged along
+    /// with the run model's retry rather than dropped with the empty text.
+    #[tokio::test]
+    async fn an_empty_smol_reply_is_still_charged() {
+        let model = WithSmol { run: Billed("RUN", 1_000, 50), smol: Billed(" ", 900, 7) };
+        let (_, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        let usage = usage.expect("both requests reported usage");
+        assert_eq!(usage.prompt_tokens, Some(1_900));
+        assert_eq!(usage.completion_tokens, Some(57));
+        assert_eq!(usage.total_tokens, Some(1_957));
+
+        // Still charged when the run model's retry then fails into the note.
+        let model = WithSmol { run: FailingModel, smol: Billed("", 900, 7) };
+        let (note, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        assert!(note["content"].as_str().unwrap().contains(FALLBACK_NOTE));
+        assert_eq!(usage.expect("the smol request was billed").completion_tokens, Some(7));
     }
 
     /// One prompt driving a long agentic run is the normal shape here: a single
