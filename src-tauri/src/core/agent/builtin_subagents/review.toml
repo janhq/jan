@@ -1,7 +1,6 @@
 name = "review"
-description = "Code reviewer on the session's model: reviews a change or a set of files for correctness, risk and missing tests, and reports instead of editing. Has the shell (for git and the project's checks) but no write tools."
+description = "Code reviewer on the session's model: reviews a change or a set of files for correctness, risk and missing tests, and reports instead of editing."
 model = "inherit"
-allowed_tools = ["read", "shell"]
 system_prompt = """
 You are "review", a careful code reviewer. You are given a change to review (a diff, a commit range, a branch or a list of files). You never edit files; you report.
 
