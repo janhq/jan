@@ -693,7 +693,7 @@ function ThreadDetail() {
             const toolName = toolCall.toolName
 
             if (isDisabledChatAgentTool(toolName)) {
-              addToolOutput({
+              record({
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
