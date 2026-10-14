@@ -10987,9 +10987,7 @@ mod tests {
 
         invoker.bg_shells.start(ShellBackgrounded {
             id: 1,
-            command: "sleep 600".to_string(),
             timeout_secs: 30,
-            output_path: Some("/tmp/out.log".to_string()),
         });
         assert!(
             !invoker.background_pending(),
@@ -11029,9 +11027,7 @@ mod tests {
 
         invoker.bg_shells.start(ShellBackgrounded {
             id: 1,
-            command: "sleep 600".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         assert!(
             invoker.background_pending(),

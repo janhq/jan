@@ -276,16 +276,10 @@ pub struct ShellBackgrounded {
     /// tracking several commands needs the pairing to be exact: matching on the
     /// command line would confuse two runs of the same build.
     pub id: u64,
-    /// The command line, for the ping the user and model read.
-    pub command: String,
     /// The timeout the call was given, which is what the caller sizes its park
     /// budget from (see [`shell_park_budget_secs`]): a command handed 600s is
     /// expected to be slow, one handed 5s is not.
     pub timeout_secs: u64,
-    /// Where the output will be published, if a file could be created. Known
-    /// here as well as in [`ShellDone`] so a caller that gives up waiting can
-    /// still tell the model where to collect the result later.
-    pub output_path: Option<String>,
 }
 
 /// A backgrounded `bash` command that has finished: what the caller needs to
@@ -335,8 +329,9 @@ pub type ShellDoneSink = std::sync::Arc<dyn Fn(ShellEvent) + Send + Sync>;
 /// unbounded would park the run forever. The budget is sized from the call's
 /// own timeout (a command given a long one is expected to be slow) and clamped
 /// at both ends: never less than a minute, never more than the ceiling a
-/// monitor gets. Quoted to the model by `bash` and enforced by the caller, so
-/// both describe the same bound.
+/// monitor gets. Enforced by the caller, which stops waiting silently: the
+/// model already knows the command runs in the background, and a late
+/// completion still reaches it.
 pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
     const MIN_PARK_SECS: u64 = 60;
     /// The same ceiling `monitor::DEFAULT_TIMEOUT_SECS` gives a watcher.
