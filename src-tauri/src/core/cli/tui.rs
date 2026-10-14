@@ -16666,7 +16666,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
-        desc: "cheap model for subagents with model = \"smol\" and /goal checks",
+        desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
         // Unset falls back to the session's model; there is no fixed id to show.
         kind: AgentSettingKind::Text {
             default: "the main model",

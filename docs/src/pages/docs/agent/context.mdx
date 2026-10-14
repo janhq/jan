@@ -172,6 +172,12 @@ name = "small-window"
 compaction_ratio = 0.6
 ```
 
+The summary is written by `smol_model` from `~/.jan/config.toml` when one is set, so the session's
+own model is not spent on condensing its history. If the smol model fails (its smaller window
+overflows, it is unreachable, or it returns nothing), the session's model writes the summary
+instead. A run under a `[budget]` money limit always summarizes on its own model, so every request
+is charged at the rates the limit was priced against.
+
 The check runs on the request itself, before it is dispatched, so the break lands at a point the
 session chose rather than after a provider rejects an oversized prompt and the run retries. When it
 runs, the session history is replaced with the compacted version, the transcript is told, and the
