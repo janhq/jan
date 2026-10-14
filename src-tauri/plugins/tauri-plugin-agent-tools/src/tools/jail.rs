@@ -212,9 +212,10 @@ fn detect() -> Backend {
     }
     #[cfg(target_os = "linux")]
     {
-        match bwrap_path() {
-            Some(path) if bwrap_usable(&path) => Backend::Bubblewrap,
-            _ => Backend::None,
+        if bwrap_path().is_some() {
+            Backend::Bubblewrap
+        } else {
+            Backend::None
         }
     }
     #[cfg(windows)]
@@ -285,22 +286,89 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
 // bubblewrap (Linux)
 // ---------------------------------------------------------------------------
 
-/// The fixed FHS locations are preferred so a directory prepended to `PATH`
-/// cannot shadow the system bwrap; `PATH` is the fallback for distros with no
-/// FHS layout at all (NixOS keeps bwrap only at a Nix-store path). A planted
-/// `bwrap` found via `PATH` gains nothing: it runs as the same user, and
-/// [`bwrap_usable`]'s live probe still has to pass before it is trusted.
+/// The local override is trusted only when the resolved target is a regular
+/// file owned by `owner_uid`, neither group- nor world-writable, and every
+/// directory on both its lookup path and resolved path up to `trust_root` is
+/// owned by that uid and neither group- nor world-writable. Checking both
+/// paths prevents a writable symlink target or lookup directory from replacing
+/// an otherwise protected binary. Production uses `/` and uid 0.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn trusted_local_bwrap(path: &Path, trust_root: &Path, owner_uid: u32) -> bool {
+    fn protected(path: &Path, owner_uid: u32, directory: bool) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(meta) = std::fs::metadata(path) else {
+            return false;
+        };
+        (if directory {
+            meta.is_dir()
+        } else {
+            meta.is_file()
+        }) && meta.uid() == owner_uid
+            && meta.mode() & 0o022 == 0
+    }
+
+    fn protected_parents(path: &Path, root: &Path, owner_uid: u32) -> bool {
+        let mut parent = path.parent();
+        while let Some(dir) = parent {
+            if !protected(dir, owner_uid, true) {
+                return false;
+            }
+            if dir == root {
+                return true;
+            }
+            parent = dir.parent();
+        }
+        false
+    }
+
+    let Ok(resolved) = path.canonicalize() else {
+        return false;
+    };
+    let Ok(root) = trust_root.canonicalize() else {
+        return false;
+    };
+    protected(&resolved, owner_uid, false)
+        && protected_parents(path, trust_root, owner_uid)
+        && protected_parents(&resolved, &root, owner_uid)
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn select_bwrap(
+    candidates: [&Path; 3],
+    trust_root: &Path,
+    owner_uid: u32,
+    usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let [local, system, bin] = candidates;
+    let trusted = trusted_local_bwrap(local, trust_root, owner_uid);
+    if trusted && local.is_file() && usable(local) {
+        return Some(local.to_path_buf());
+    }
+    [system, bin]
+        .into_iter()
+        .chain((!trusted).then_some(local))
+        .find(|path| path.is_file() && usable(path))
+        .map(Path::to_path_buf)
+}
+
+/// Prefer a root-owned local override only if its binary and every directory
+/// reachable on both its original and symlink-resolved paths are root-owned and
+/// not group/world-writable. This prevents an unprivileged user from planting
+/// a local override ahead of `/usr/bin` or `/bin`. An untrusted local binary is
+/// only a last resort, as before, followed by `PATH` for non-FHS distros.
+/// Every candidate must pass the live sandbox probe before selection.
 #[cfg(target_os = "linux")]
 fn bwrap_path() -> Option<PathBuf> {
-    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
-    PATH.get_or_init(|| {
-        ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
-            .into_iter()
-            .map(PathBuf::from)
-            .find(|p| p.is_file())
-            .or_else(|| super::proc::which("bwrap"))
-    })
-    .clone()
+    static PATH: std::sync::LazyLock<Option<PathBuf>> = std::sync::LazyLock::new(|| {
+        let candidates = [
+            Path::new("/usr/local/bin/bwrap"),
+            Path::new("/usr/bin/bwrap"),
+            Path::new("/bin/bwrap"),
+        ];
+        select_bwrap(candidates, Path::new("/"), 0, bwrap_usable)
+            .or_else(|| super::proc::which("bwrap").filter(|path| bwrap_usable(path)))
+    });
+    PATH.clone()
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -723,6 +791,215 @@ mod tests {
 
     fn policy() -> Policy {
         Policy::new(Path::new("/data/agent-workspace/threads/t1"), false)
+    }
+
+    #[cfg(unix)]
+    struct BwrapFixture(PathBuf);
+
+    #[cfg(unix)]
+    impl BwrapFixture {
+        fn new() -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "jan_bwrap_{}_{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).expect("create fixture");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            Self(path)
+        }
+
+        fn candidates(&self) -> [PathBuf; 3] {
+            use std::os::unix::fs::PermissionsExt;
+            let local = self.0.join("usr/local/bin/bwrap");
+            let system = self.0.join("usr/bin/bwrap");
+            let bin = self.0.join("bin/bwrap");
+            for path in [&local, &system, &bin] {
+                std::fs::create_dir_all(path.parent().unwrap()).expect("create bin directory");
+                std::fs::write(path, b"bwrap").expect("create candidate");
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap();
+                let mut dir = path.parent();
+                while let Some(parent) = dir.filter(|parent| *parent != self.0) {
+                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o755))
+                        .unwrap();
+                    dir = parent.parent();
+                }
+            }
+            [local, system, bin]
+        }
+
+        fn owner(&self) -> u32 {
+            use std::os::unix::fs::MetadataExt;
+            std::fs::metadata(&self.0).expect("fixture owner").uid()
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for BwrapFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove fixture");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trusted_local_bwrap_wins_over_system() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let selected = select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+            true
+        });
+        assert_eq!(selected.as_deref(), Some(local.as_path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn group_writable_local_bwrap_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o664)).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn world_writable_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            local.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writable_parent_of_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            fixture.0.join("usr/local"),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_bwrap_with_wrong_owner_is_rejected() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner() + 1,
+                |_| true
+            ),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_symlink_to_untrusted_target_is_rejected() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let target = fixture.0.join("untrusted/bwrap");
+        std::fs::create_dir(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, b"untrusted").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o666)).unwrap();
+        std::fs::remove_file(&local).unwrap();
+        symlink(&target, &local).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_symlink_through_writable_target_directory_is_rejected() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let target = fixture.0.join("untrusted/bwrap");
+        std::fs::create_dir(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, b"untrusted").unwrap();
+        std::fs::set_permissions(
+            target.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        std::fs::remove_file(&local).unwrap();
+        symlink(&target, &local).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn untrusted_local_remains_last_resort() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o666)).unwrap();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner(),
+                |path| path == local
+            ),
+            Some(local)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unusable_local_bwrap_falls_through_to_system() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner(),
+                |path| path != local
+            ),
+            Some(system)
+        );
     }
 
     fn joined(args: &[String]) -> String {
