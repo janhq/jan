@@ -37,11 +37,12 @@ async fn engine_endpoint<R: Runtime>(
     Ok((h.port, h.api_key.clone(), h.pid))
 }
 
+/// Loopback only, so never through a proxy; see `loopback_client_builder`.
 async fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
+    crate::engine::worker::loopback_client_builder()
         .timeout(Duration::from_secs(600))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|_| crate::engine::worker::loopback_client())
 }
 
 /// Payload for the `llamacpp-model-load-progress` event, mirrored from the

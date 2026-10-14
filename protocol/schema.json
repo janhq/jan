@@ -656,6 +656,13 @@
             "offers_always": {
               "type": "boolean"
             },
+            "justification": {
+              "description": "The model's reason for an `escalate` prompt (running a shell command\noutside the sandbox), shown beside the command; `None` otherwise.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "permission_request"

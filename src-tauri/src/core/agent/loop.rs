@@ -164,6 +164,11 @@ pub(crate) struct OrchestrationArgs {
     /// by dispatched subagents via the cloned parent args, so a child shell is
     /// confined exactly as its parent's was.
     pub sandbox: Option<bool>,
+    /// Per-invocation `--allow-escalation`: let a sandboxed `shell` call that
+    /// asks to escalate run unconfined without a prompt. `None` falls through
+    /// to `[tools].allow_escalation`, then off. Inherited by subagents like
+    /// `sandbox`, so a child can escalate exactly when its parent could.
+    pub allow_escalation: Option<bool>,
     /// A monitor set owned by the session rather than by this run. When set,
     /// a running monitor does not park the run: the model's turn ends and the
     /// owner starts a new turn when a match lands. `None` (a headless run, a
@@ -696,6 +701,8 @@ struct CompositeToolInvoker {
     /// Whether `bash` is confined at all. Resolved once per run by
     /// [`resolve_sandbox`]; always true on the desktop.
     sandbox: bool,
+    /// How a `shell` call asking to escalate is answered; see [`Escalation`].
+    escalation: Escalation,
     /// The Jan home, refused to the general tools and masked from the shell
     /// while sandboxed (`project::hidden_root`). Kept beside `sandbox` and set
     /// with it, so the two cannot disagree.
@@ -863,6 +870,40 @@ fn ask_timeout_setting() -> Option<std::time::Duration> {
     None
 }
 
+/// How this run answers a `shell` call that asks to run outside the sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Escalation {
+    /// Not offered: the shell is unconfined already, or the surface (the
+    /// desktop's throwaway chat sandbox) never lifts it. A call that asks
+    /// anyway is refused.
+    Off,
+    /// Offered, and each request waits for a human answer. Auto-approval does
+    /// not cover it, and a headless run with no terminal denies it.
+    Prompt,
+    /// Offered and granted without an escalation prompt (`--allow-escalation`
+    /// or `[tools].allow_escalation`), for unattended runs that accept the
+    /// risk. The exec approval underneath still applies: a command this run
+    /// would have asked about confined (`--safe`) is asked about once.
+    Allow,
+}
+
+impl Escalation {
+    fn offered(self) -> bool {
+        self != Escalation::Off
+    }
+}
+
+/// Escalation is a CLI capability of a sandboxed shell: there is nothing to
+/// escalate out of when the shell is unconfined, and the desktop's chat
+/// sandbox is throwaway by design, so it is never lifted there.
+fn resolve_escalation(sandbox: bool, allow: bool) -> Escalation {
+    match (cfg!(feature = "cli") && sandbox, allow) {
+        (false, _) => Escalation::Off,
+        (true, false) => Escalation::Prompt,
+        (true, true) => Escalation::Allow,
+    }
+}
+
 /// Whether `bash` would be confined in `project_root` with no `--sandbox` flag
 /// passed: the answer `jan cli agent status` reports and the TUI notices on.
 pub fn effective_sandbox(project_root: &std::path::Path) -> bool {
@@ -879,6 +920,7 @@ struct ResolvedSettings {
     allow_network: bool,
     allow_home_read: bool,
     sandbox: bool,
+    escalation: Escalation,
     env_passthrough: Vec<String>,
     env_set: Vec<(String, String)>,
     /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
@@ -894,13 +936,19 @@ struct ResolvedSettings {
 fn resolve_run_settings(
     project_root: &std::path::Path,
     sandbox_flag: Option<bool>,
+    escalation_flag: Option<bool>,
 ) -> ResolvedSettings {
     let settings = crate::core::agent::project::run_settings(project_root);
+    let sandbox = resolve_sandbox(sandbox_flag, settings.sandbox);
     ResolvedSettings {
         enabled_skills: settings.enabled_skills,
         allow_network: resolve_allow_network(settings.allow_network),
         allow_home_read: resolve_allow_home_read(settings.allow_home_read),
-        sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
+        sandbox,
+        escalation: resolve_escalation(
+            sandbox,
+            escalation_flag.or(settings.allow_escalation).unwrap_or(false),
+        ),
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
         prompt: settings.prompt,
@@ -1033,9 +1081,10 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         )
     };
     format!(
-        "{head}\n{where_answers} Steer one by name with message_subagent, or stop it with \
+        "{head}\n{}\n{where_answers} Steer one by name with message_subagent, or stop it with \
          stop_subagent. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
-         each finishes."
+         each finishes.",
+        crate::core::agent::subagent::worker_names_line(&d.names)
     )
 }
 
@@ -1099,6 +1148,7 @@ impl CompositeToolInvoker {
         ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
@@ -1168,6 +1218,76 @@ impl CompositeToolInvoker {
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         self.tool_context()
             .with_output_sink(output_sink(&self.events, id))
+    }
+
+    /// Whether this run would have approved `args` as a plain, confined exec
+    /// without asking: auto-approval, a `[tools]` allow rule naming the shell,
+    /// or a session grant covering every command it runs.
+    fn exec_preapproved(&self, name: &str, args: &serde_json::Value) -> bool {
+        let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
+        self.auto_approve
+            || self.permissions.is_allowed(name)
+            || self.grants.lock().unwrap().covers_command(command)
+    }
+
+    /// Answer a `shell` call that asks to run outside the sandbox, and run it
+    /// unconfined when allowed. Only a fresh human answer, or the explicit
+    /// opt-in on a command the run would have run confined without asking,
+    /// lets it through: auto-approval or a session grant alone never does, and
+    /// "allow always" is not offered. The gate has already refused the hard
+    /// denies (the Jan home, a denied shell) before this is reached.
+    async fn escalate(
+        &self,
+        name: &str,
+        tool: &tauri_plugin_agent_tools::tools::BuiltinTool,
+        args: &serde_json::Value,
+        id: &str,
+    ) -> String {
+        let approved = match self.escalation {
+            Escalation::Off => return escalation_unavailable_msg(name, self.sandbox),
+            Escalation::Allow if self.exec_preapproved(name, args) => true,
+            // The opt-in drops the escalation prompt, not the exec approval
+            // under it: under `--safe` the command would have been asked about
+            // anyway, so one prompt covers both.
+            Escalation::Allow | Escalation::Prompt => {
+                let request_id = next_permission_id();
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                self.permission_requests
+                    .lock()
+                    .await
+                    .insert(request_id.clone(), tx);
+                let _ = self.events.send(StreamEvent::PermissionRequest {
+                    request_id: request_id.clone(),
+                    tool_name: name.to_string(),
+                    capability: "exec outside the sandbox".to_string(),
+                    path: None,
+                    command: args.get("command").and_then(|v| v.as_str()).map(String::from),
+                    diff: None,
+                    prompt_kind: "escalate".to_string(),
+                    offers_always: false,
+                    justification: args
+                        .get(tauri_plugin_agent_tools::tools::gate::JUSTIFICATION_ARG)
+                        .and_then(|v| v.as_str())
+                        .map(str::trim)
+                        .filter(|j| !j.is_empty())
+                        .map(String::from),
+                });
+                // No timeout, like every other prompt: cancelling the run
+                // drops the sender, which reads as Deny.
+                let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+                self.permission_requests.lock().await.remove(&request_id);
+                // `AllowAlways` is not offered; a client that sends it anyway
+                // gets this one call, never a lasting grant.
+                decision != PermissionDecision::Deny
+            }
+        };
+        if !approved {
+            return escalation_denied_msg(name);
+        }
+        let ctx = self.streaming_tool_context(id).with_sandbox(false);
+        tauri_plugin_agent_tools::tools::handlers::execute_builtin_with_diff(tool, args, &ctx)
+            .await
+            .0
     }
 
     /// Fire the hooks for `event` and fold their answers into the run: a
@@ -1391,6 +1511,7 @@ impl CompositeToolInvoker {
             diff: None,
             prompt_kind: "mcp".to_string(),
             offers_always: true,
+            justification: None,
         });
         let decision = rx.await.unwrap_or(PermissionDecision::Deny);
         self.permission_requests.lock().await.remove(&request_id);
@@ -1415,6 +1536,7 @@ impl CompositeToolInvoker {
             diff: None,
             prompt_kind: "subagent_create".to_string(),
             offers_always: false,
+            justification: None,
         });
         let decision = rx.await.unwrap_or(PermissionDecision::Deny);
         self.permission_requests.lock().await.remove(&request_id);
@@ -1435,7 +1557,7 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
             SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
@@ -1448,10 +1570,13 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let plan = match parse_dispatch_plan(args) {
+                let plan = match ctx.bg.plan_dispatch(args, self.subagent_scratch()) {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
+                // Rejected before any child started (an unknown agent, a tool
+                // the parent denies), the names go back for the retry.
+                let reserved = plan.names.clone();
                 match spawn_dispatch_plan(
                     &ctx.bg,
                     ctx.bg_generation,
@@ -1472,7 +1597,10 @@ impl CompositeToolInvoker {
                     self.subagent_scratch(),
                 ) {
                     Ok(d) => format_dispatched_plan(&d),
-                    Err(e) => format!("ERROR: {e}"),
+                    Err(e) => {
+                        ctx.bg.release_names(&reserved);
+                        format!("ERROR: {e}")
+                    }
                 }
             }
             "message_subagent" => {
@@ -1578,6 +1706,7 @@ impl CompositeToolInvoker {
             diff: None,
             prompt_kind: "monitor".to_string(),
             offers_always: false,
+            justification: None,
         });
         let decision = rx.await.unwrap_or(PermissionDecision::Deny);
         self.permission_requests.lock().await.remove(&request_id);
@@ -1839,6 +1968,32 @@ fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path)
 /// is the part the user wrote to be read.
 fn hook_denied_msg(name: &str, reason: &str) -> String {
     format!("ERROR: tool '{name}' {HOOK_DENIED}{reason}")
+}
+
+/// A refused escalation. The command did not run at all, inside or outside the
+/// sandbox, and the model is told so along with the way a user enables it --
+/// a non-interactive run lands here too, where nobody could have approved.
+fn escalation_denied_msg(name: &str) -> String {
+    format!(
+        "ERROR: tool '{name}' escalation {DENIED_BY_USER}: the command was not run. Do not \
+         retry it outside the sandbox. If no one could answer (a non-interactive run), the \
+         user can allow escalation with --allow-escalation or [tools].allow_escalation."
+    )
+}
+
+/// An escalation request where escalation is not offered at all.
+fn escalation_unavailable_msg(name: &str, sandboxed: bool) -> String {
+    if sandboxed {
+        format!(
+            "ERROR: tool '{name}' cannot run outside the sandbox here; the command was not run. \
+             Run it without `escalate`, inside the sandbox."
+        )
+    } else {
+        format!(
+            "ERROR: tool '{name}' got `escalate`, but the shell is not sandboxed; the command \
+             was not run. Run it again without `escalate`."
+        )
+    }
 }
 
 fn plan_mode_read_only_msg(name: &str) -> String {
@@ -2341,6 +2496,14 @@ impl ToolInvoker for CompositeToolInvoker {
                 &self.permissions,
                 &snapshot,
             );
+            // Escalation is settled here, before auto-approval can touch it:
+            // approving every prompt is a statement about tools running inside
+            // the sandbox, and this one asks to leave it.
+            if decision == Decision::Prompt(PromptKind::Escalate) {
+                let text = self.escalate(name, tool, &args, &id).await;
+                out.push(ToolOutcome::plain(id, text));
+                continue;
+            }
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
             // still honors HardDeny, so explicit agent.toml denies hold.
             let decision = match decision {
@@ -2423,6 +2586,8 @@ impl ToolInvoker for CompositeToolInvoker {
                         PromptKind::Write => "write",
                         PromptKind::WriteEscape => "write_escape",
                         PromptKind::Exec => "exec",
+                        // Settled by `escalate` above; labelled for completeness.
+                        PromptKind::Escalate => "escalate",
                     };
                     let path = tool
                         .path_args
@@ -2444,6 +2609,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         diff,
                         prompt_kind: prompt_kind.to_string(),
                         offers_always: true,
+                        justification: None,
                     });
                     // Sender dropped (client gone / run cancelled) => Deny. No timeout:
                     // the run is cancellable via agent_cancel, which drops this future.
@@ -2598,6 +2764,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // The top-level run is not a child: no dispatch gave it an id.
         run_id: None,
         sandbox: None,
+        allow_escalation: None,
         monitors: None,
         // Run-owned: the proxy has no conversation to deliver a later ping
         // into, so background work must be settled before the run returns.
@@ -2887,6 +3054,12 @@ fn advertise_local_tools(
             openai_tools.push(tool.schema());
         }
     }
+    // Last, so the names a child may be given are drawn from the whole array.
+    crate::core::agent::subagent::constrain_tool_names(
+        openai_tools,
+        permissions,
+        allowed_names.is_some(),
+    );
 }
 
 /// The last completion of a run stopped by its money ceiling, rewritten into a
@@ -3061,7 +3234,7 @@ pub(crate) fn context_system_prompt_preview(
     sandbox_flag: Option<bool>,
     session_start: Option<&crate::core::agent::context::SessionStart>,
 ) -> Option<String> {
-    let settings = resolve_run_settings(project_root, sandbox_flag);
+    let settings = resolve_run_settings(project_root, sandbox_flag, None);
     let policy = crate::core::agent::project::prompt_policy(project_root);
     build_run_system_prompt(
         None,
@@ -3253,6 +3426,7 @@ async fn orchestrate_inner(
         bg_shells: session_bg_shells,
         subagent_bg: session_subagent_bg,
         sandbox,
+        allow_escalation,
         compaction,
         session_start,
     } = args;
@@ -3289,7 +3463,7 @@ async fn orchestrate_inner(
     // nothing binds.
     let settings = project_root
         .as_deref()
-        .map(|root| resolve_run_settings(root, *sandbox));
+        .map(|root| resolve_run_settings(root, *sandbox, *allow_escalation));
 
     // The stable system prompt: identity, guidelines, environment, skills and
     // the memory catalog. Byte-identical across the turns of a session, so it
@@ -3434,9 +3608,11 @@ async fn orchestrate_inner(
         if model_id.is_none() {
             // The llama.cpp router is a desktop-only listing call on the app's
             // reqwest 0.12 stack, not agent upstream traffic, so it does not use
-            // the genai client threaded through `OrchestrationArgs`.
+            // the genai client threaded through `OrchestrationArgs`. It only
+            // ever reaches the worker on 127.0.0.1, so it never goes through a
+            // proxy: a system or env proxy would otherwise capture loopback too.
             static ROUTER_CLIENT: std::sync::LazyLock<reqwest::Client> =
-                std::sync::LazyLock::new(reqwest::Client::new);
+                std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
             if let Some(first) = router_first_model(llama_state, &ROUTER_CLIENT).await {
                 model_id = Some(first);
             }
@@ -3498,6 +3674,10 @@ async fn orchestrate_inner(
         #[cfg(feature = "cli")]
         host_tools,
     );
+    // Resolved once per run, so the array is byte-identical across its turns.
+    if settings.as_ref().is_some_and(|s| s.escalation.offered()) {
+        tauri_plugin_agent_tools::tools::schema::offer_escalation(&mut openai_tools);
+    }
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
@@ -3615,6 +3795,7 @@ async fn orchestrate_inner(
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
+            escalation: settings.escalation,
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
@@ -5799,7 +5980,7 @@ mod tests {
         // ...and the run's resolved settings carry the same policy, which is
         // what `orchestrate_inner` composes with.
         assert_eq!(
-            resolve_run_settings(&root, None)
+            resolve_run_settings(&root, None, None)
                 .prompt
                 .prefix_allow()
                 .map(<[String]>::len),
@@ -8453,6 +8634,7 @@ mod tests {
     ) -> CompositeToolInvoker {
         CompositeToolInvoker {
             sandbox: true,
+            escalation: Escalation::Off,
             hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
                 tool_to_server: HashMap::new(),
@@ -9670,19 +9852,19 @@ mod tests {
         };
 
         write("[tools]\nallow_network = false\n[skills]\nenabled = [\"deploy\"]\n");
-        let denied = resolve_run_settings(&root, None);
+        let denied = resolve_run_settings(&root, None, None);
         assert!(!denied.allow_network, "explicit false must be honoured");
         assert_eq!(denied.enabled_skills, vec!["deploy".to_string()]);
 
         write("[tools]\nallow_network = true\n");
         assert!(
-            resolve_run_settings(&root, None).allow_network,
+            resolve_run_settings(&root, None, None).allow_network,
             "explicit true must be honoured"
         );
 
         write("[tools]\ndefault = \"read-only\"\n");
         assert_eq!(
-            resolve_run_settings(&root, None).allow_network,
+            resolve_run_settings(&root, None, None).allow_network,
             DEFAULT_ALLOW_NETWORK,
             "unset must fall back to the surface default"
         );
@@ -10838,6 +11020,185 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A `shell` call asking to escalate, writing `marker` -- a path outside
+    /// the project, which only an unconfined shell can create on the host.
+    fn escalated_shell_call(marker: &std::path::Path) -> serde_json::Value {
+        let args = json!({
+            "command": format!("touch '{}'", marker.display()),
+            "escalate": true,
+            "justification": "  write outside the project  ",
+        });
+        json!({
+            "id": "esc",
+            "type": "function",
+            "function": { "name": "shell", "arguments": args.to_string() }
+        })
+    }
+
+    fn escalation_marker(root: &std::path::Path) -> std::path::PathBuf {
+        let marker = root.with_extension("escalated");
+        let _ = std::fs::remove_file(&marker);
+        marker
+    }
+
+    /// Auto-approval covers everything that runs inside the sandbox, never a
+    /// request to leave it: the prompt still goes out, without "allow always"
+    /// and with the model's reason, and an approved command runs unconfined.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn escalation_prompts_even_under_auto_approve_and_runs_unconfined() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        invoker.auto_approve = true;
+        invoker.escalation = Escalation::Prompt;
+        let responder = tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(StreamEvent::PermissionRequest {
+                        request_id,
+                        prompt_kind,
+                        offers_always,
+                        justification,
+                        command,
+                        ..
+                    }) => {
+                        if let Some(tx) = registry.lock().await.remove(&request_id) {
+                            let _ = tx.send(PermissionDecision::AllowOnce);
+                        }
+                        return (prompt_kind, offers_always, justification, command);
+                    }
+                    Some(_) => continue,
+                    None => panic!("no prompt was sent"),
+                }
+            }
+        });
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        let (kind, always, justification, command) = responder.await.unwrap();
+        assert_eq!(kind, "escalate");
+        assert!(!always, "an escalation is never remembered");
+        assert_eq!(justification.as_deref(), Some("write outside the project"));
+        assert!(command.unwrap().starts_with("touch "));
+        assert!(out[0].content.contains("[exit 0]"), "{}", out[0].content);
+        assert!(marker.exists(), "the approved command ran on the host");
+        let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A denied escalation runs nothing, inside the sandbox or out, and tells
+    /// the model not to retry it -- the same answer a headless run without a
+    /// terminal gets, which is why it names the opt-in.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn denied_escalation_runs_nothing() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        invoker.escalation = Escalation::Prompt;
+        let responder = tokio::spawn(async move {
+            respond_once(&mut rx, &registry, PermissionDecision::Deny).await;
+        });
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("denied by user"), "{}", out[0].content);
+        assert!(out[0].content.contains("--allow-escalation"));
+        assert!(!marker.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The explicit opt-in runs an escalation without asking anyone.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn allowed_escalation_runs_without_a_prompt() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        invoker.escalation = Escalation::Allow;
+        invoker.auto_approve = true;
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        assert!(out[0].content.contains("[exit 0]"), "{}", out[0].content);
+        assert!(marker.exists());
+        while let Ok(ev) = rx.try_recv() {
+            assert!(!matches!(ev, StreamEvent::PermissionRequest { .. }), "prompted");
+        }
+        let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The opt-in drops only the escalation prompt, never the exec approval
+    /// underneath it: under `--safe`, adding `escalate: true` must not turn a
+    /// command that would have been asked about into one that runs unasked.
+    /// The user is asked once, and a Deny runs nothing.
+    #[tokio::test]
+    #[cfg(feature = "cli")]
+    async fn allowed_escalation_still_asks_under_safe() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry.clone());
+        invoker.escalation = Escalation::Allow;
+        let responder = tokio::spawn(async move {
+            let mut kinds = Vec::new();
+            while let Some(ev) = rx.recv().await {
+                if let StreamEvent::PermissionRequest { request_id, prompt_kind, .. } = ev {
+                    kinds.push(prompt_kind);
+                    if let Some(tx) = registry.lock().await.remove(&request_id) {
+                        let _ = tx.send(PermissionDecision::Deny);
+                    }
+                }
+            }
+            kinds
+        });
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        drop(invoker);
+        assert_eq!(responder.await.unwrap(), ["escalate"], "asked exactly once");
+        assert!(out[0].content.contains("denied by user"), "{}", out[0].content);
+        assert!(!marker.exists(), "--safe was bypassed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Where escalation is not offered (the desktop, an unconfined shell) a
+    /// request for it is refused without running or prompting, even under
+    /// auto-approval.
+    #[tokio::test]
+    async fn escalation_is_refused_where_it_is_not_offered() {
+        let root = unique_project_root();
+        let marker = escalation_marker(&root);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        invoker.auto_approve = true;
+        let out = invoker.invoke(&[escalated_shell_call(&marker)]).await.unwrap();
+        assert!(out[0].content.starts_with("ERROR"), "{}", out[0].content);
+        assert!(out[0].content.contains("was not run"));
+        assert!(!marker.exists());
+        while let Ok(ev) = rx.try_recv() {
+            assert!(!matches!(ev, StreamEvent::PermissionRequest { .. }), "prompted");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Escalation exists only for a sandboxed CLI shell, and the opt-in only
+    /// skips the prompt.
+    #[test]
+    fn escalation_resolves_from_sandbox_and_opt_in() {
+        #[cfg(feature = "cli")]
+        {
+            assert_eq!(resolve_escalation(false, true), Escalation::Off);
+            assert_eq!(resolve_escalation(true, false), Escalation::Prompt);
+            assert_eq!(resolve_escalation(true, true), Escalation::Allow);
+        }
+        #[cfg(not(feature = "cli"))]
+        for (sandbox, allow) in [(true, true), (true, false), (false, true)] {
+            assert_eq!(resolve_escalation(sandbox, allow), Escalation::Off);
+        }
+    }
+
     #[tokio::test]
     async fn auto_approve_writes_without_prompting() {
         let root = unique_project_root();
@@ -11276,6 +11637,7 @@ mod tests {
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
+            names: vec!["explorer-a".to_string(), "explorer-b".to_string()],
         });
         assert!(out.contains("sub-explorer-a-1"), "{out}");
         assert!(out.contains("sub-explorer-b-2"), "{out}");
@@ -11296,8 +11658,17 @@ mod tests {
                 run_id: "sub-researcher-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["researcher".to_string(), "writer".to_string()],
         });
         assert!(out.contains("sub-researcher-1"), "{out}");
+        // Every worker is named, the later phase's included, in listed order.
+        assert!(
+            out.contains(&crate::core::agent::subagent::worker_names_line(&[
+                "researcher".to_string(),
+                "writer".to_string(),
+            ])),
+            "{out}"
+        );
         assert_eq!(out.matches("run_id:").count(), 1, "{out}");
         assert!(out.contains("reported as they start"), "{out}");
     }
@@ -11427,6 +11798,7 @@ mod tests {
                 run_id: "sub-w-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["w".to_string()],
         });
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");

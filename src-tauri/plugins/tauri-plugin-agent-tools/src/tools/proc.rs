@@ -145,6 +145,15 @@ fn config_for(program: PathBuf) -> ShellConfig {
 const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
      Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security, Microsoft.PowerShell.Archive";
 
+/// The assemblies behind the Management, Utility and Security cmdlets on
+/// PowerShell 7, as a PowerShell array literal. pwsh finds an inbox module
+/// through the `C:` drive, which an AppContainer whose token cannot open the
+/// drive root never gets, so nothing autoloads and `Write-Output` is "not
+/// recognized"; a cmdlet assembly loads without that lookup. Archive has no
+/// assembly, so it is not here.
+const POWERSHELL_CORE_ASSEMBLIES: &str = "'Microsoft.PowerShell.Commands.Management.dll', \
+     'Microsoft.PowerShell.Commands.Utility.dll', 'Microsoft.PowerShell.Security.dll'";
+
 /// The script PowerShell is given for `command`. PowerShell's own exit code is
 /// only 0 or 1, so it is made to report a failing native command's real code,
 /// which the tool output's `[exit N]` line and the model both rely on.
@@ -171,9 +180,15 @@ const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
 /// because it is noise in captured output.
 ///
 /// Inside the AppContainer two things need help:
-/// - Windows PowerShell 5.1 cannot autoload modules: `Write-Output` is "not
-///   recognized" although `Import-Module` of the same module succeeds, so on
-///   5.1 the core inbox modules are imported explicitly. pwsh 7 autoloads.
+/// - Neither PowerShell can always load its inbox modules. Windows PowerShell
+///   5.1 cannot autoload: `Write-Output` is "not recognized" although
+///   `Import-Module` of the same module succeeds, so the core modules are
+///   imported explicitly. pwsh 7 autoloads when its token can open the `C:`
+///   drive root; on a machine where it cannot, no module loads and even
+///   `Set-Location` is missing, so, only then, the cmdlet assemblies are
+///   loaded directly (a load that fails is reported on stderr). That
+///   restores everything but `Expand-Archive` and `Compress-Archive`: pwsh 7's
+///   Archive module is a script file, found through the same drive.
 /// - PowerShell starts at `C:\` rather than the working directory it was
 ///   given, because it cannot read the workspace's parent folders to resolve
 ///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
@@ -192,6 +207,7 @@ pub fn powershell_script(command: &str) -> String {
     format!(
         "$ProgressPreference = 'SilentlyContinue'\n\
          if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
+         elseif (-not (Get-Command Write-Output -ErrorAction SilentlyContinue)) {{ foreach ($dll in {POWERSHELL_CORE_ASSEMBLIES}) {{ try {{ Import-Module -Assembly ([System.Reflection.Assembly]::LoadFrom([System.IO.Path]::Combine($PSHOME, $dll))) -ErrorAction Stop }} catch {{ [Console]::Error.WriteLine('jan: could not load ' + $dll + ': ' + $_.Exception.Message) }} }} }}\n\
          try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
          $JanWs = [Environment]::CurrentDirectory\n\
@@ -983,6 +999,11 @@ mod shell_kind_tests {
         assert!(
             setup.contains("Major -lt 6) { Import-Module Microsoft.PowerShell.Management,"),
             "5.1 imports the core modules it cannot autoload in the sandbox"
+        );
+        assert!(
+            setup.contains("elseif (-not (Get-Command Write-Output")
+                && setup.contains("Import-Module -Assembly"),
+            "pwsh 7 loads its cmdlet assemblies only when its modules did not autoload"
         );
         assert!(setup.contains("OutputEncoding"));
         assert!(setup.contains("Set-Location -LiteralPath $JanWs"), "real path first");

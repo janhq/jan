@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
+  applyIngestionChoices,
   needsIngestionChoice,
   processAttachmentsForSend,
+  promptIngestionChoices,
   resolveAutoInlineBudget,
   type AttachmentProcessingResult,
 } from '../attachmentProcessing'
 import type { Attachment } from '@/types/attachment'
+import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 
 // Minimal mock for ServiceHub methods used by processAttachmentsForSend
 const createMockServiceHub = (overrides: Record<string, unknown> = {}) => ({
@@ -331,6 +334,12 @@ describe('processAttachmentsForSend', () => {
       expect(needsIngestionChoice(docAttachment(), 'auto', false)).toBe(true)
     })
 
+    it('asks for a document recorded as auto when the budget is gone', () => {
+      expect(
+        needsIngestionChoice(docAttachment({ parseMode: 'auto' }), 'inline', false)
+      ).toBe(true)
+    })
+
     it('never asks for explicit modes or already-routed documents', () => {
       expect(needsIngestionChoice(docAttachment(), 'inline', false)).toBe(false)
       expect(
@@ -339,6 +348,55 @@ describe('processAttachmentsForSend', () => {
       expect(
         needsIngestionChoice(docAttachment({ injectionMode: 'inline' }), 'prompt', false)
       ).toBe(false)
+    })
+  })
+
+  describe('promptIngestionChoices', () => {
+    const answerNextPrompt = async (choice: 'inline' | 'embeddings' | undefined) => {
+      await vi.waitFor(() =>
+        expect(useAttachmentIngestionPrompt.getState().isModalOpen).toBe(true)
+      )
+      const state = useAttachmentIngestionPrompt.getState()
+      if (choice) state.choose(choice)
+      else state.cancel()
+    }
+
+    it('collects one choice per document, keyed by path', async () => {
+      const docs = [
+        docAttachment({ path: '/a.pdf' }),
+        docAttachment({ path: '/b.pdf' }),
+      ]
+      const pending = promptIngestionChoices(docs)
+      await answerNextPrompt('inline')
+      await answerNextPrompt('embeddings')
+      const choices = await pending
+      expect([...(choices ?? [])]).toEqual([
+        ['/a.pdf', 'inline'],
+        ['/b.pdf', 'embeddings'],
+      ])
+    })
+
+    it('is undefined as soon as the user cancels', async () => {
+      const pending = promptIngestionChoices([
+        docAttachment({ path: '/a.pdf' }),
+        docAttachment({ path: '/b.pdf' }),
+      ])
+      await answerNextPrompt(undefined)
+      await expect(pending).resolves.toBeUndefined()
+      expect(useAttachmentIngestionPrompt.getState().isModalOpen).toBe(false)
+    })
+
+    it('records each choice as the document parse mode', () => {
+      const docs = [
+        docAttachment({ path: '/a.pdf', parseMode: 'auto' }),
+        docAttachment({ path: '/b.pdf', parseMode: 'auto' }),
+        imageAttachment(),
+      ]
+      const applied = applyIngestionChoices(
+        docs,
+        new Map([['/a.pdf', 'inline' as const]])
+      )
+      expect(applied.map((a) => a.parseMode)).toEqual(['inline', 'auto', undefined])
     })
   })
 })

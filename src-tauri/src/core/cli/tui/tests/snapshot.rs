@@ -264,6 +264,7 @@ fn permission(app: &mut App, id: &str, command: &str) {
         diff: None,
         prompt_kind: "exec".into(),
         offers_always: true,
+        justification: None,
     });
 }
 
@@ -274,6 +275,29 @@ fn permission_prompt_for_a_command() {
     permission(&mut app, "p1", "git status && cargo test --lib");
     assert_buffer(
         "permission_prompt_exec",
+        &frame(&mut app, DARK, 80, 20),
+    );
+}
+
+/// An escalation shows the model's reason under the command and offers no
+/// "allow always".
+#[test]
+fn permission_prompt_to_escalate_out_of_the_sandbox() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    app.apply(StreamEvent::PermissionRequest {
+        request_id: "e1".into(),
+        tool_name: "shell".into(),
+        capability: "exec outside the sandbox".into(),
+        path: None,
+        command: Some("cargo build".into()),
+        diff: None,
+        prompt_kind: "escalate".into(),
+        offers_always: false,
+        justification: Some("cargo needs to write ~/.cargo/registry to fetch crates".into()),
+    });
+    assert_buffer(
+        "permission_prompt_escalate",
         &frame(&mut app, DARK, 80, 20),
     );
 }
@@ -294,6 +318,7 @@ fn permission_prompt_from_a_subagent_with_a_queue() {
             diff: None,
             prompt_kind: "write".into(),
             offers_always: false,
+            justification: None,
         }),
     });
     permission(&mut app, "p2", "ls");
@@ -326,6 +351,7 @@ fn permission_prompt_with_a_diff_on_ansi16() {
         ),
         prompt_kind: "write".into(),
         offers_always: true,
+        justification: None,
     });
     assert_buffer(
         "permission_prompt_diff_ansi16",

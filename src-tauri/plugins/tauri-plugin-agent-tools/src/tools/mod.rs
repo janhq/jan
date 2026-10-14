@@ -135,6 +135,12 @@ pub struct ToolContext<'a> {
     /// gate is then the only thing between the model and the machine, which is
     /// why nothing else about the gate changes when this is off.
     pub sandbox: bool,
+    /// Whether this run offers `shell` escalation (see
+    /// [`gate::requests_escalation`]). Only tells a sandbox denial to mention
+    /// it: the handler never reads `escalate` itself, so a call reaches the
+    /// unconfined shell only through a caller that got the user's approval and
+    /// cleared [`Self::sandbox`] for it.
+    pub escalation: bool,
     /// Where a tool sends output as it is produced, when the caller wants to
     /// show it live. `None` means "collect and return only", which is what every
     /// non-interactive caller wants.
@@ -222,6 +228,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
             .field("sandbox", &self.sandbox)
+            .field("escalation", &self.escalation)
             .field("on_output", &self.on_output.is_some())
             .field("read_roots", &self.read_roots)
             .field("write_roots", &self.write_roots)
@@ -375,6 +382,7 @@ impl<'a> ToolContext<'a> {
             home_readonly: false,
             scratch_root: None,
             sandbox: true,
+            escalation: false,
             on_output: None,
             read_roots: &[],
             write_roots: &[],
@@ -553,6 +561,12 @@ impl<'a> ToolContext<'a> {
         if self.sandbox {
             self.scratch_root = Some(scratch_root);
         }
+        self
+    }
+
+    /// Mention escalation in sandbox denials. See [`Self::escalation`].
+    pub fn with_escalation(mut self, escalation: bool) -> Self {
+        self.escalation = escalation;
         self
     }
 

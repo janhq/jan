@@ -90,7 +90,6 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
-import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -104,7 +103,9 @@ import {
   createVideoAttachment,
 } from '@/types/attachment'
 import {
+  applyIngestionChoices,
   needsIngestionChoice,
+  promptIngestionChoices,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { activePathTokens } from '@/lib/message-branching'
@@ -139,10 +140,20 @@ type ChatInputProps = {
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
     /** Document attachments, for surfaces that do not read them back out of
      * the attachments store themselves. */
-    documents?: Attachment[]
+    documents?: Attachment[],
+    /** What the user typed, before @path references were expanded into
+     * `text`, so a cancelled send can hand it back unchanged. */
+    draft?: string
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  /**
+   * The turn's tools are still running or awaiting approval after the stream
+   * ended (`chatStatus` is already `ready`). Stop must stay reachable then: a
+   * runaway command otherwise leaves a send arrow and no way to end it. Like
+   * `chatStatus`, it queues what the user types until the turn ends.
+   */
+  toolsRunning?: boolean
   // Overrides the conversation scope this input belongs to — both its message
   // queue and its pending attachments (default: useThreads' currentThreadId).
   // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
@@ -252,6 +263,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  toolsRunning,
   scopeKey,
   ownsToolSet = true,
   surfaceControls,
@@ -685,8 +697,10 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
-      // When the model is still streaming, queue the message for later
-      if (isStreaming && queueId) {
+      // While the model is still streaming, or the turn's tools are still
+      // running, queue the message for later. The queue waits for the tools, so
+      // a second turn never starts under a tool loop that Stop still has to end.
+      if ((isStreaming || toolsRunning) && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
@@ -725,7 +739,8 @@ const ChatInput = memo(function ChatInput({
       onSubmit(
         effectivePrompt,
         files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined
+        documents.length > 0 ? documents : undefined,
+        prompt
       )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
@@ -742,6 +757,7 @@ const ChatInput = memo(function ChatInput({
 
       const messagePayload = {
         text: effectivePrompt,
+        draft: prompt,
         files: [] as Array<{ type: string; mediaType: string; url: string }>,
       }
 
@@ -915,8 +931,8 @@ const ChatInput = memo(function ChatInput({
       // (processAttachmentsForSend inside processAndSendMessage), where
       // 'auto' documents are routed by size when the model's window is known.
       // Same conversation-aware budget as the send path (the active branch,
-      // which is what gets sent), so 'auto' asks here exactly when send time
-      // would have no budget to decide by.
+      // which is what gets sent). If the budget is gone by send time, the
+      // send path asks for the remaining 'auto' documents itself.
       const hasInlineBudget =
         (await resolveAutoInlineBudget(
           selectedModel,
@@ -935,39 +951,26 @@ const ChatInput = memo(function ChatInput({
       )
 
       if (docsNeedingPrompt.length > 0) {
-        const choices = new Map<string, 'inline' | 'embeddings'>()
-        for (let i = 0; i < docsNeedingPrompt.length; i++) {
-          const doc = docsNeedingPrompt[i]
-          const choice = await useAttachmentIngestionPrompt
-            .getState()
-            .showPrompt(doc, i, docsNeedingPrompt.length)
+        const choices = await promptIngestionChoices(docsNeedingPrompt)
 
-          if (!choice) {
-            // User cancelled — remove all pending docs
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter(
-                (att) =>
-                  !docsNeedingPrompt.some(
-                    (d) => d.path && att.path && d.path === att.path
-                  )
-              )
+        if (!choices) {
+          // User cancelled — remove all pending docs
+          setAttachmentsForThread(attachmentsKey, (prev) =>
+            prev.filter(
+              (att) =>
+                !docsNeedingPrompt.some(
+                  (d) => d.path && att.path && d.path === att.path
+                )
             )
-            return
-          }
-
-          if (doc.path) {
-            choices.set(doc.path, choice)
-          }
+          )
+          return
         }
 
         // Persist each document's chosen mode so processAttachmentsForSend
         // can pick it up at send time.
         if (choices.size > 0) {
           setAttachmentsForThread(attachmentsKey, (prev) =>
-            prev.map((att) => {
-              const mode = att.path ? choices.get(att.path) : undefined
-              return mode ? { ...att, parseMode: mode } : att
-            })
+            applyIngestionChoices(prev, choices)
           )
         }
       }
@@ -2987,7 +2990,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               )}
 
-              {isStreaming ? (
+              {isStreaming || toolsRunning ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

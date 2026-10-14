@@ -76,6 +76,7 @@ export interface MCPService {
     serverName?: string
     arguments: object
     cancellationToken?: string
+    maxOutputChars?: number
   }): ToolCallWithCancellationResult
   cancelToolCall(cancellationToken: string): Promise<void>
 

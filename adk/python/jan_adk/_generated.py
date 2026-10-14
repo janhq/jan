@@ -473,6 +473,8 @@ class PermissionRequestEvent(TypedDict):
     diff: NotRequired[Union[str, None]]
     prompt_kind: str
     offers_always: bool
+    # The model's reason for an `escalate` prompt (running a shell command outside the sandbox), shown beside the command; `None` otherwise.
+    justification: NotRequired[Union[str, None]]
     type: Literal["permission_request"]
 
 class ToolRequestEvent(TypedDict):
