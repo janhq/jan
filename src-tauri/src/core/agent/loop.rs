@@ -214,6 +214,14 @@ pub(crate) trait ModelInvoker: Send + Sync {
         request: &serde_json::Value,
         events: &mpsc::UnboundedSender<StreamEvent>,
     ) -> Result<serde_json::Value, String>;
+
+    /// The model id and invoker that write this run's compaction summaries in
+    /// its place, or `None` to summarize on the run's own model. Set to the
+    /// `smol` role model when one is configured: condensing a transcript does
+    /// not need the run's model, and it is the largest side request a run makes.
+    fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+        None
+    }
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
@@ -467,6 +475,9 @@ struct HttpModelInvoker {
     /// just before it leaves, and the completion is mapped back. `None` = off,
     /// and then nothing in the request or the reply changes.
     secrets: Option<Arc<crate::core::agent::secrets::SecretFilter>>,
+    /// The `smol` model's id and invoker, which compaction summaries go to
+    /// first (see [`ModelInvoker::summarizer`]). `None` summarizes on this one.
+    summarizer: Option<Box<(String, HttpModelInvoker)>>,
 }
 
 /// [`crate::core::agent::provenance::RequestIdentity`] as the invoker stores it:
@@ -537,6 +548,12 @@ fn converter_http_client() -> reqwest::Client {
 
 #[async_trait]
 impl ModelInvoker for HttpModelInvoker {
+    fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+        self.summarizer
+            .as_deref()
+            .map(|(id, model)| (id.as_str(), model as &dyn ModelInvoker))
+    }
+
     async fn invoke(
         &self,
         request: &serde_json::Value,
@@ -3690,6 +3707,7 @@ async fn orchestrate_inner(
     .await?;
 
     let max_turns = body_turn_cap(json_body);
+    let cost_ceiling = body_cost_ceiling(json_body);
 
     let provenance = request_identity(&model_id, provider_configs, run_id.as_deref()).await;
     let converter = provenance
@@ -3711,6 +3729,13 @@ async fn orchestrate_inner(
         provenance,
         provenance_events: Some(events.clone()),
         secrets: crate::core::agent::secrets::for_run(),
+        // A metered run charges every side request at its own model's rates, so
+        // a summary billed on another model would be costed at a price nobody
+        // quoted for it: under a money ceiling the run summarizes on itself.
+        summarizer: match cost_ceiling {
+            Some(_) => None,
+            None => smol_summarizer(args, &model_id, Some(events.clone())).await,
+        },
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -3719,7 +3744,6 @@ async fn orchestrate_inner(
     };
 
     let max_session_tokens = body_session_budget(json_body);
-    let cost_ceiling = body_cost_ceiling(json_body);
     let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
 
     if let Some(root) = project_root {
@@ -4148,42 +4172,11 @@ pub(crate) async fn compact_history(
             .with_hooks(&hooks, false, None);
         crate::core::agent::compaction::fire_pre_compact(&hooks, &ctx, messages.len()).await;
     }
-    let (upstream_url, api_keys) = resolve_upstream_for_model(
-        model_id,
-        args.provider_configs.clone(),
-        #[cfg(not(feature = "cli"))]
-        args.llama_state.clone(),
-        #[cfg(not(feature = "cli"))]
-        args.mlx_sessions.clone(),
-    )
-    .await?;
-    let provenance =
-        request_identity(model_id, &args.provider_configs, args.run_id.as_deref()).await;
-    let converter = provenance
-        .api_type
-        .as_deref()
-        .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
-    let model = HttpModelInvoker {
-        client: args.client.clone(),
-        upstream_url,
-        api_keys,
-        provider_configs: args.provider_configs.clone(),
-        converter,
-        converter_client: converter_http_client(),
-        // A compaction call is billed to the same session as the turn that
-        // triggered it, so it carries the same correlation id: leaving it out
-        // would make the session's recorded spend smaller than the bill.
-        client_request_id: crate::core::agent::correlation::session_request_id(
-            args.session_id.as_deref(),
-        ),
-        session_id: args.session_id.clone(),
-        provenance,
-        // A `/compact` runs between turns: there is no run stream in existence
-        // to carry the record, so this request is reported nowhere rather than
-        // somewhere a client cannot read.
-        provenance_events: None,
-        secrets: crate::core::agent::secrets::for_run(),
-    };
+    // A `/compact` runs between turns: there is no run stream in existence to
+    // carry the provenance record, so this request is reported nowhere rather
+    // than somewhere a client cannot read.
+    let mut model = side_call_invoker(args, model_id, None).await?;
+    model.summarizer = smol_summarizer(args, model_id, None).await;
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
 }
@@ -4199,7 +4192,7 @@ pub(crate) async fn evaluate_goal(
     condition: &str,
     messages: &[serde_json::Value],
 ) -> Result<crate::core::agent::goal::GoalVerdict, String> {
-    let model = side_call_invoker(args, smol_model_id).await?;
+    let model = side_call_invoker(args, smol_model_id, None).await?;
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
 
@@ -4213,7 +4206,7 @@ pub(crate) async fn side_completion(
     model_id: &str,
     request: &serde_json::Value,
 ) -> Result<String, String> {
-    let model = side_call_invoker(args, model_id).await?;
+    let model = side_call_invoker(args, model_id, None).await?;
     // Nothing streams to the user: a dropped receiver keeps the tokens internal.
     let (sink, _rx) = mpsc::unbounded_channel();
     let completion = model.invoke(request, &sink).await?;
@@ -4224,12 +4217,34 @@ pub(crate) async fn side_completion(
         .to_string())
 }
 
-/// The invoker a between-turns side call uses: `model_id`'s upstream, billed to
-/// this session, with no run stream to report provenance on.
-#[cfg(feature = "cli")]
+/// The `smol` model's invoker for compaction summaries, or `None` when no smol
+/// model is configured, it is `model_id` itself, or it cannot be resolved (the
+/// summary then goes to `model_id`, which is what it did before smol existed).
+async fn smol_summarizer(
+    args: &OrchestrationArgs,
+    model_id: &str,
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
+) -> Option<Box<(String, HttpModelInvoker)>> {
+    let smol = crate::core::agent::subagent::configured_smol_model()?;
+    if smol == model_id {
+        return None;
+    }
+    match side_call_invoker(args, &smol, provenance_events).await {
+        Ok(model) => Some(Box::new((smol, model))),
+        Err(e) => {
+            log::warn!("agent: smol_model {smol} cannot summarize, compacting on {model_id}: {e}");
+            None
+        }
+    }
+}
+
+/// The invoker a side call uses: `model_id`'s upstream, billed to this session.
+/// `provenance_events` is the run stream its provenance rides, `None` between
+/// turns where no run stream exists.
 async fn side_call_invoker(
     args: &OrchestrationArgs,
     smol_model_id: &str,
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
 ) -> Result<HttpModelInvoker, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         smol_model_id,
@@ -4257,15 +4272,17 @@ async fn side_call_invoker(
         provider_configs: args.provider_configs.clone(),
         converter,
         converter_client: converter_http_client(),
-        // Same session, same bill (see `compact_history`).
+        // A side call is billed to the same session as the turn it serves, so
+        // it carries the same correlation id: leaving it out would make the
+        // session's recorded spend smaller than the bill.
         client_request_id: crate::core::agent::correlation::session_request_id(
             args.session_id.as_deref(),
         ),
         session_id: args.session_id.clone(),
         provenance,
-        // Between turns, like `/compact`: no run stream exists to carry it.
-        provenance_events: None,
+        provenance_events,
         secrets: crate::core::agent::secrets::for_run(),
+        summarizer: None,
     };
     Ok(model)
 }
@@ -5598,6 +5615,7 @@ mod tests {
             },
             provenance_events: Some(run),
             secrets: None,
+            summarizer: None,
         };
 
         let request =
@@ -5690,6 +5708,7 @@ mod tests {
             },
             provenance_events: None,
             secrets: Some(filter),
+            summarizer: None,
         };
         let request = json!({"model":"m","messages":[
             {"role":"user","content":format!("my key is {SECRET}")}]});
@@ -5778,6 +5797,7 @@ mod tests {
             provenance: RequestIdentityOwned::default(),
             provenance_events: Some(run),
             secrets: None,
+            summarizer: None,
         };
         let (tx, _rx) = mpsc::unbounded_channel();
         invoker

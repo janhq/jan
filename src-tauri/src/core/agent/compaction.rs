@@ -469,29 +469,23 @@ async fn summarize(
     if transcript.trim().is_empty() {
         return Ok((FALLBACK_NOTE.to_string(), None));
     }
-    let request = json!({
-        "model": model_id,
-        "messages": [
-            { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
-            { "role": "user", "content": transcript },
-        ],
-    });
-    // Discard the summarizer's streamed tokens: a dropped receiver means these
-    // never reach the user-facing event stream.
-    let (sink, _rx) = mpsc::unbounded_channel();
-    match model.invoke(&request, &sink).await {
-        Ok(completion) => {
-            let summary = extract_choice_message(&completion)
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            // Charged whatever the body said: a completion whose text was empty
-            // still cost what the provider reported for it.
-            let usage = crate::core::agent::events::Usage::from_completion(&completion);
-            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
+    // The smol model writes the summary when one is configured: summarizing is
+    // the cheap model's job. Any failure there, an overflow of its smaller
+    // window included, falls back to the run's own model rather than to a
+    // note, so a misconfigured smol model never costs the user their history.
+    if let Some((smol_id, smol)) = model.summarizer() {
+        match request_summary(&transcript, smol_id, smol).await {
+            Ok((Some(summary), usage)) => return Ok((summary, usage)),
+            Ok((None, _)) => log::warn!(
+                "agent: compaction summary from {smol_id} was empty, retrying on {model_id}"
+            ),
+            Err(e) => log::warn!(
+                "agent: compaction summary from {smol_id} failed, retrying on {model_id}: {e}"
+            ),
         }
+    }
+    match request_summary(&transcript, model_id, model).await {
+        Ok((summary, usage)) => Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage)),
         Err(e) => {
             // A model-switch compaction targets the (smaller) new model: if the
             // summarizer itself overflows, a note is not safe -- the request
@@ -503,6 +497,36 @@ async fn summarize(
             }
         }
     }
+}
+
+/// One summarizer request for an already rendered `transcript`: the summary
+/// text (`None` when the completion carried none) and the reported usage.
+async fn request_summary(
+    transcript: &str,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<(Option<String>, Option<crate::core::agent::events::Usage>), String> {
+    let request = json!({
+        "model": model_id,
+        "messages": [
+            { "role": "system", "content": SUMMARY_SYSTEM_PROMPT },
+            { "role": "user", "content": transcript },
+        ],
+    });
+    // Discard the summarizer's streamed tokens: a dropped receiver means these
+    // never reach the user-facing event stream.
+    let (sink, _rx) = mpsc::unbounded_channel();
+    let completion = model.invoke(&request, &sink).await?;
+    let summary = extract_choice_message(&completion)
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    // Charged whatever the body said: a completion whose text was empty still
+    // cost what the provider reported for it.
+    let usage = crate::core::agent::events::Usage::from_completion(&completion);
+    Ok((summary, usage))
 }
 
 #[cfg(test)]
@@ -851,6 +875,63 @@ mod tests {
             .await
             .expect_err("a summarizer context overflow must not be swallowed");
         assert!(crate::core::agent::upstream::is_context_overflow_error(&error));
+    }
+
+    /// A run model whose summaries go to a configured smol model first.
+    struct WithSmol<M, S> {
+        run: M,
+        smol: S,
+    }
+    #[async_trait]
+    impl<M: ModelInvoker, S: ModelInvoker> ModelInvoker for WithSmol<M, S> {
+        async fn invoke(
+            &self,
+            request: &Value,
+            events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            self.run.invoke(request, events).await
+        }
+        fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+            Some(("smol", &self.smol))
+        }
+    }
+
+    fn stub(summary: &str) -> StubModel {
+        StubModel {
+            summary: summary.into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// With a smol model configured the summary is its job: the run's model is
+    /// never called, and the request names the smol model's id.
+    #[tokio::test]
+    async fn a_configured_smol_model_writes_the_summary() {
+        let model = WithSmol { run: stub("RUN"), smol: stub("SMOL") };
+        let out = compact_conversation(&convo(20), "m", &model, 4).await.unwrap();
+        assert!(out[1]["content"].as_str().unwrap().contains("SMOL"));
+        assert_eq!(*model.run.calls.lock().unwrap(), 0);
+        assert_eq!(model.smol.requests.lock().await[0]["model"], "smol");
+    }
+
+    /// A smol model that fails, by overflowing its smaller window or otherwise,
+    /// or answers nothing, hands the summary back to the run's model instead
+    /// of costing the history a fallback note or the request an error.
+    #[tokio::test]
+    async fn a_failing_smol_model_falls_back_to_the_run_model() {
+        let overflowing = WithSmol { run: stub("RUN"), smol: OverflowingModel };
+        let failing = WithSmol { run: stub("RUN"), smol: FailingModel };
+        let empty = WithSmol { run: stub("RUN"), smol: stub("  ") };
+        for out in [
+            compact_conversation(&convo(20), "m", &overflowing, 4).await,
+            compact_conversation(&convo(20), "m", &failing, 4).await,
+            compact_conversation(&convo(20), "m", &empty, 4).await,
+        ] {
+            assert!(out.unwrap()[1]["content"].as_str().unwrap().contains("RUN"));
+        }
+        let requests = overflowing.run.requests.lock().await;
+        assert_eq!(requests[0]["model"], "m", "the retry is on the run's own model");
     }
 
     /// One prompt driving a long agentic run is the normal shape here: a single
