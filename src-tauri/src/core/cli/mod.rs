@@ -2915,6 +2915,14 @@ async fn resolve_permission_silently(
     registry: &PermissionRegistry,
     duplex: bool,
 ) -> Option<(String, PermissionDecision)> {
+    // A background subagent's prompt arrives wrapped in `Subagent` (see
+    // `StreamEvent::Subagent`) and waits on the same registry as the parent's, so
+    // it needs the same answer. Left unanswered it parks the run forever: the
+    // loop is waiting on a reply no one was ever going to send.
+    let ev = match ev {
+        StreamEvent::Subagent { event, .. } => *event,
+        other => other,
+    };
     let StreamEvent::PermissionRequest {
         request_id,
         tool_name,
@@ -3271,6 +3279,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
             ),
+            // The same prompt the parent's request gets: auto-denied with no
+            // terminal, answered on stdin when a client owns the decision.
+            permission @ StreamEvent::PermissionRequest { .. } => {
+                Box::pin(print_event(permission, registry, duplex)).await
+            }
             _ => {}
         },
         StreamEvent::Done { stop_reason, usage } => {
@@ -3396,6 +3409,48 @@ mod tests {
             " (cargo build) because: fetch crates"
         );
         assert_eq!(permission_detail(None, None, None), "");
+    }
+
+    /// A subagent's prompt reaches the printer wrapped in `Subagent`. With no
+    /// terminal and no client it has to be denied like the parent's own prompt:
+    /// the child's loop is waiting on that reply, and a run that never gets one
+    /// parks forever.
+    #[tokio::test]
+    async fn a_subagent_permission_prompt_is_denied_when_nobody_can_answer() {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            // `prompt_permission` would block on the developer's terminal.
+            return;
+        }
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
+        let prompt = || StreamEvent::Subagent {
+            run_id: "sub-explore-1".to_string(),
+            name: "explore".to_string(),
+            event: Box::new(StreamEvent::PermissionRequest {
+                request_id: "perm-1".to_string(),
+                tool_name: "write".to_string(),
+                capability: "write".to_string(),
+                path: Some("child.txt".to_string()),
+                command: None,
+                diff: None,
+                prompt_kind: "write".to_string(),
+                offers_always: true,
+                justification: None,
+            }),
+        };
+
+        // A client on stdin owns the decision: nothing is answered here.
+        assert!(resolve_permission_silently(prompt(), &registry, true).await.is_none());
+        assert!(registry.lock().await.contains_key("perm-1"));
+
+        let decided = resolve_permission_silently(prompt(), &registry, false).await;
+        assert_eq!(decided, Some(("perm-1".to_string(), PermissionDecision::Deny)));
+        assert_eq!(
+            answer.await.expect("the child's wait is answered"),
+            PermissionDecision::Deny
+        );
     }
 
     /// The duplex channel end to end over a pipe: a follow-up is queued for the
