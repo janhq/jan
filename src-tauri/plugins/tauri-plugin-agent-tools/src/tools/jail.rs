@@ -359,7 +359,9 @@ fn select_bwrap(
 /// Every candidate must pass the live sandbox probe before selection.
 #[cfg(target_os = "linux")]
 fn bwrap_path() -> Option<PathBuf> {
-    static PATH: std::sync::LazyLock<Option<PathBuf>> = std::sync::LazyLock::new(|| {
+    // OnceLock, not LazyLock: this crate's MSRV is 1.77.2 and LazyLock needs 1.80.
+    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    PATH.get_or_init(|| {
         let candidates = [
             Path::new("/usr/local/bin/bwrap"),
             Path::new("/usr/bin/bwrap"),
@@ -367,8 +369,8 @@ fn bwrap_path() -> Option<PathBuf> {
         ];
         select_bwrap(candidates, Path::new("/"), 0, bwrap_usable)
             .or_else(|| super::proc::which("bwrap").filter(|path| bwrap_usable(path)))
-    });
-    PATH.clone()
+    })
+    .clone()
 }
 
 #[cfg(not(target_os = "linux"))]
