@@ -2919,9 +2919,9 @@ async fn resolve_permission_silently(
     // `StreamEvent::Subagent`) and waits on the same registry as the parent's, so
     // it needs the same answer. Left unanswered it parks the run forever: the
     // loop is waiting on a reply no one was ever going to send.
-    let ev = match ev {
-        StreamEvent::Subagent { event, .. } => *event,
-        other => other,
+    let (from, ev) = match ev {
+        StreamEvent::Subagent { name, event, .. } => (Some(name), *event),
+        other => (None, other),
     };
     let StreamEvent::PermissionRequest {
         request_id,
@@ -2941,7 +2941,7 @@ async fn resolve_permission_silently(
         return None;
     }
     let detail = permission_detail(command, path, justification);
-    let decision = prompt_permission(tool_name, capability, detail).await;
+    let decision = prompt_permission(tool_name, capability, detail, from).await;
     if let Some(sender) = registry.lock().await.remove(&request_id) {
         let _ = sender.send(decision);
     }
@@ -3282,7 +3282,7 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             // The same prompt the parent's request gets: auto-denied with no
             // terminal, answered on stdin when a client owns the decision.
             permission @ StreamEvent::PermissionRequest { .. } => {
-                Box::pin(print_event(permission, registry, duplex)).await
+                text_permission(permission, Some(name), registry, duplex).await
             }
             _ => {}
         },
@@ -3302,30 +3302,8 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::TodoUpdate { .. } => {}
         // The event collector adopts this history before it reaches the printer.
         StreamEvent::MessagesUpdated { .. } => {}
-        StreamEvent::PermissionRequest {
-            request_id,
-            tool_name,
-            capability,
-            path,
-            command,
-            diff,
-            justification,
-            ..
-        } => {
-            let detail = permission_detail(command, path, justification);
-            if let Some(diff) = diff {
-                eprintln!("\x1b[2m{diff}\x1b[0m");
-            }
-            if duplex {
-                eprintln!(
-                    "\x1b[33m[permission] {capability} via '{tool_name}'{detail} - awaiting '{request_id}' on stdin\x1b[0m"
-                );
-                return;
-            }
-            let decision = prompt_permission(tool_name, capability, detail).await;
-            if let Some(sender) = registry.lock().await.remove(&request_id) {
-                let _ = sender.send(decision);
-            }
+        permission @ StreamEvent::PermissionRequest { .. } => {
+            text_permission(permission, None, registry, duplex).await
         }
         // Only a host process can answer this, and only over the duplex
         // channel; a text-format run cannot declare host tools at all (the
@@ -3344,6 +3322,53 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         }
         // Structured data for a host's own display; text output has none.
         StreamEvent::ToolDetails { .. } => {}
+    }
+}
+
+/// ` from subagent 'name'` for a prompt a subagent raised, empty for the
+/// parent's own, so a person at the terminal can tell whose call they are
+/// being asked to approve.
+fn from_subagent(from: Option<&str>) -> String {
+    from.map(|name| format!(" from subagent '{name}'"))
+        .unwrap_or_default()
+}
+
+/// The text format's handling of a permission prompt: shown with its diff,
+/// then either left to a client on stdin (`duplex`) or answered at the terminal
+/// (denied with none). `from` names the subagent that raised it, if any.
+async fn text_permission(
+    ev: StreamEvent,
+    from: Option<String>,
+    registry: &PermissionRegistry,
+    duplex: bool,
+) {
+    let StreamEvent::PermissionRequest {
+        request_id,
+        tool_name,
+        capability,
+        path,
+        command,
+        diff,
+        justification,
+        ..
+    } = ev
+    else {
+        return;
+    };
+    let detail = permission_detail(command, path, justification);
+    if let Some(diff) = diff {
+        eprintln!("\x1b[2m{diff}\x1b[0m");
+    }
+    if duplex {
+        let origin = from_subagent(from.as_deref());
+        eprintln!(
+            "\x1b[33m[permission] {capability} via '{tool_name}'{detail}{origin} - awaiting '{request_id}' on stdin\x1b[0m"
+        );
+        return;
+    }
+    let decision = prompt_permission(tool_name, capability, detail, from).await;
+    if let Some(sender) = registry.lock().await.remove(&request_id) {
+        let _ = sender.send(decision);
     }
 }
 
@@ -3372,14 +3397,16 @@ async fn prompt_permission(
     tool_name: String,
     capability: String,
     detail: String,
+    from: Option<String>,
 ) -> PermissionDecision {
     use std::io::IsTerminal;
+    let origin = from_subagent(from.as_deref());
     if !std::io::stdin().is_terminal() {
-        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}' (non-interactive)\x1b[0m");
+        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}'{origin} (non-interactive)\x1b[0m");
         return PermissionDecision::Deny;
     }
     tokio::task::spawn_blocking(move || {
-        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}? [y/N] \x1b[0m");
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}{origin}? [y/N] \x1b[0m");
         let _ = std::io::stderr().flush();
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line).is_err() {
@@ -3411,21 +3438,10 @@ mod tests {
         assert_eq!(permission_detail(None, None, None), "");
     }
 
-    /// A subagent's prompt reaches the printer wrapped in `Subagent`. With no
-    /// terminal and no client it has to be denied like the parent's own prompt:
-    /// the child's loop is waiting on that reply, and a run that never gets one
-    /// parks forever.
-    #[tokio::test]
-    async fn a_subagent_permission_prompt_is_denied_when_nobody_can_answer() {
-        use std::io::IsTerminal;
-        if std::io::stdin().is_terminal() {
-            // `prompt_permission` would block on the developer's terminal.
-            return;
-        }
-        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
-        let (answer_tx, answer) = tokio::sync::oneshot::channel();
-        registry.lock().await.insert("perm-1".to_string(), answer_tx);
-        let prompt = || StreamEvent::Subagent {
+    /// A prompt a subagent raised, as the printer receives it: wrapped in
+    /// `Subagent`, waiting on the same registry as the parent's own prompts.
+    fn subagent_prompt() -> StreamEvent {
+        StreamEvent::Subagent {
             run_id: "sub-explore-1".to_string(),
             name: "explore".to_string(),
             event: Box::new(StreamEvent::PermissionRequest {
@@ -3439,18 +3455,71 @@ mod tests {
                 offers_always: true,
                 justification: None,
             }),
-        };
+        }
+    }
+
+    /// With no terminal and no client a subagent's prompt has to be denied like
+    /// the parent's own: the child's loop is waiting on that reply, and a run
+    /// that never gets one parks forever. `prompt_permission` would block on a
+    /// developer's terminal, so a test run from one stands down.
+    #[tokio::test]
+    async fn a_subagent_permission_prompt_is_denied_when_nobody_can_answer() {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
 
         // A client on stdin owns the decision: nothing is answered here.
-        assert!(resolve_permission_silently(prompt(), &registry, true).await.is_none());
+        assert!(resolve_permission_silently(subagent_prompt(), &registry, true)
+            .await
+            .is_none());
         assert!(registry.lock().await.contains_key("perm-1"));
 
-        let decided = resolve_permission_silently(prompt(), &registry, false).await;
+        let decided = resolve_permission_silently(subagent_prompt(), &registry, false).await;
         assert_eq!(decided, Some(("perm-1".to_string(), PermissionDecision::Deny)));
         assert_eq!(
-            answer.await.expect("the child's wait is answered"),
+            tokio::time::timeout(std::time::Duration::from_secs(10), answer)
+                .await
+                .expect("the child's wait was never answered")
+                .expect("the child's wait is answered"),
             PermissionDecision::Deny
         );
+    }
+
+    /// The text format reaches the same answer through `print_event`.
+    #[tokio::test]
+    async fn the_text_printer_denies_a_subagent_prompt_when_nobody_can_answer() {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
+
+        // A client on stdin owns the decision: the request stays pending.
+        print_event(subagent_prompt(), &registry, true).await;
+        assert!(registry.lock().await.contains_key("perm-1"));
+
+        print_event(subagent_prompt(), &registry, false).await;
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), answer)
+                .await
+                .expect("the child's wait was never answered")
+                .expect("the child's wait is answered"),
+            PermissionDecision::Deny
+        );
+    }
+
+    /// The prompt says whose call it is, so a person at the terminal is not
+    /// asked to approve a write without knowing a child raised it.
+    #[test]
+    fn a_subagent_prompt_names_the_subagent_and_the_parents_does_not() {
+        assert_eq!(from_subagent(None), "");
+        assert_eq!(from_subagent(Some("explore")), " from subagent 'explore'");
     }
 
     /// The duplex channel end to end over a pipe: a follow-up is queued for the
