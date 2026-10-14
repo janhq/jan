@@ -357,6 +357,29 @@ fn select_bwrap(
         .map(Path::to_path_buf)
 }
 
+/// [`select_bwrap`], then `PATH` as a last resort for distros with no FHS
+/// layout at all (NixOS keeps bwrap only at a Nix-store path). `PATH` is
+/// consulted only when none of the fixed locations holds a bwrap, as before:
+/// an installed but unusable system bwrap (userns blocked) must not hand the
+/// choice to whatever a user prepended to `PATH`.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn select_bwrap_or_path(
+    candidates: [&Path; 3],
+    trust_root: &Path,
+    owner_uid: u32,
+    usable: impl Fn(&Path) -> bool,
+    which: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let any_installed = candidates.iter().any(|path| path.is_file());
+    select_bwrap(candidates, trust_root, owner_uid, &usable).or_else(|| {
+        if any_installed {
+            None
+        } else {
+            which().filter(|path| usable(path))
+        }
+    })
+}
+
 /// Prefer a root-owned local override only if its binary and every directory
 /// reachable on both its original and symlink-resolved paths are root-owned and
 /// not group/world-writable. This prevents an unprivileged user from planting
@@ -373,8 +396,9 @@ fn bwrap_path() -> Option<PathBuf> {
             Path::new("/usr/bin/bwrap"),
             Path::new("/bin/bwrap"),
         ];
-        select_bwrap(candidates, Path::new("/"), 0, bwrap_usable)
-            .or_else(|| super::proc::which("bwrap").filter(|path| bwrap_usable(path)))
+        select_bwrap_or_path(candidates, Path::new("/"), 0, bwrap_usable, || {
+            super::proc::which("bwrap")
+        })
     })
     .clone()
 }
@@ -895,6 +919,56 @@ mod tests {
             }),
             Some(system)
         );
+    }
+
+    // An installed system bwrap that fails the probe (userns blocked) must not
+    // pass the choice to whatever sits earlier in PATH.
+    #[cfg(unix)]
+    #[test]
+    fn path_is_not_consulted_when_a_fixed_bwrap_is_installed() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let planted = fixture.0.join("planted/bwrap");
+        std::fs::create_dir_all(planted.parent().unwrap()).unwrap();
+        std::fs::write(&planted, b"bwrap").unwrap();
+        let planted_on_path = planted.clone();
+        let selected = select_bwrap_or_path(
+            [&local, &system, &bin],
+            &fixture.0,
+            fixture.owner(),
+            |path| path == planted,
+            move || Some(planted_on_path),
+        );
+        assert_eq!(selected, None);
+    }
+
+    // No fixed location holds a bwrap (NixOS): PATH is the only source, and the
+    // live probe still has to pass.
+    #[cfg(unix)]
+    #[test]
+    fn path_is_used_when_no_fixed_bwrap_is_installed() {
+        let fixture = BwrapFixture::new();
+        let missing = fixture.0.join("nowhere/bwrap");
+        let on_path = fixture.0.join("nix/bwrap");
+        std::fs::create_dir_all(on_path.parent().unwrap()).unwrap();
+        std::fs::write(&on_path, b"bwrap").unwrap();
+        let found = on_path.clone();
+        let selected = select_bwrap_or_path(
+            [&missing, &missing, &missing],
+            &fixture.0,
+            fixture.owner(),
+            |path| path == on_path,
+            move || Some(found),
+        );
+        assert_eq!(selected.as_deref(), Some(on_path.as_path()));
+        let unusable = select_bwrap_or_path(
+            [&missing, &missing, &missing],
+            &fixture.0,
+            fixture.owner(),
+            |_| false,
+            || Some(on_path.clone()),
+        );
+        assert_eq!(unusable, None);
     }
 
     #[cfg(unix)]
