@@ -1,16 +1,11 @@
 name: Jan Docs
 
-# Builds docs/ (Fumadocs, static export) and deploys it to the Cloudflare Pages
-# project behind docs.jan.ai.
-#
-# IMPORTANT: this deploys to `jan-docs` (docs.jan.ai) ONLY. The old `docs`
-# project serves jan.ai and is now deployed from janhq/jan.ai (#434); never
-# point this workflow at it, or jan.ai's marketing site is replaced by the docs.
-
+# Two public content channels, deployed by Direct Upload to separate Pages
+# projects. Never deploy to the old `docs` project serving jan.ai marketing.
+# GitHub environments track deployments; no extra approval gate is required.
 on:
   push:
-    branches:
-      - main
+    branches: [main, docs-stable]
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
@@ -25,19 +20,17 @@ permissions:
 
 concurrency:
   group: jan-docs-${{ github.ref }}
-  # Cancel superseded PR previews; leave production deploys alone.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  deploy:
-    name: Build and deploy docs.jan.ai
-    env:
-      CLOUDFLARE_PROJECT_NAME: jan-docs
+  build:
+    name: Build and validate docs
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
-      pull-requests: write
+    outputs:
+      channel: ${{ steps.target.outputs.channel }}
+      project: ${{ steps.target.outputs.project }}
+      branch: ${{ steps.target.outputs.branch }}
+      environment: ${{ steps.target.outputs.environment }}
     defaults:
       run:
         working-directory: docs
@@ -45,6 +38,37 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: false
+
+      # Select using the PR base, not attacker-controlled head branch names.
+      # Manual runs from other branches build but cannot deploy.
+      - name: Select content channel
+        id: target
+        env:
+          TARGET_REF: ${{ github.base_ref || github.ref_name }}
+          IS_PREVIEW: ${{ github.event_name == 'pull_request' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$TARGET_REF" = "docs-stable" ]; then
+            channel=stable
+            project=jan-docs
+            environment='docs (Production)'
+            branch=docs-stable
+          else
+            channel=nightly
+            project=jan-docs-nightly
+            environment='docs-nightly (Production)'
+            branch=main
+          fi
+          if [ "$IS_PREVIEW" = "true" ]; then
+            branch="pr-$PR_NUMBER"
+            if [ "$channel" = "stable" ]; then
+              environment='docs (Preview)'
+            else
+              environment='docs-nightly (Preview)'
+            fi
+          fi
+          printf 'channel=%s\nproject=%s\nbranch=%s\nenvironment=%s\n' \
+            "$channel" "$project" "$branch" "$environment" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -55,15 +79,13 @@ jobs:
           corepack enable
           corepack prepare yarn@4.5.3 --activate
 
-      # docs/ is its own Yarn project with a committed docs/yarn.lock;
-      # --immutable fails the job if it is out of date.
       - name: Install dependencies
         run: yarn install --immutable
 
-      # Only the variables the build reads; nothing else from `secrets`.
       - name: Build
         env:
           NODE_ENV: production
+          DOCS_CHANNEL: ${{ steps.target.outputs.channel }}
           GTM_ID: ${{ secrets.GTM_ID }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
@@ -71,8 +93,12 @@ jobs:
           node scripts/build-redirects.mjs --check
           yarn build
 
-      - name: Check redirects
-        run: node scripts/check-redirects.mjs
+      - name: Check redirects and channel output
+        env:
+          DOCS_CHANNEL: ${{ steps.target.outputs.channel }}
+        run: |
+          node scripts/check-redirects.mjs
+          node scripts/check-channel.mjs
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -80,31 +106,71 @@ jobs:
           path: docs/out
           retention-days: 3
 
-      # PR number, not head_ref: branch names are attacker-controlled and this
-      # value is interpolated into a shell command.
-      - name: Publish PR preview
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        id: deployPreview
+  deploy:
+    name: Deploy ${{ needs.build.outputs.channel }} docs
+    needs: build
+    # Untrusted fork PRs and manual runs on arbitrary branches never deploy.
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/docs-stable'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    environment:
+      name: ${{ needs.build.outputs.environment }}
+      url: ${{ steps.publish.outputs.deployment-url }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: docs-out
+          path: docs/out
+
+      # Pages decides production vs preview from its configured production
+      # branch, not the GitHub environment. Fail rather than silently publishing
+      # a production-labelled job as a preview when infra is misconfigured.
+      - name: Verify Cloudflare production branch
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ needs.build.outputs.project }}
+          EXPECTED_BRANCH: ${{ needs.build.outputs.channel == 'stable' && 'docs-stable' || 'main' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = ('https://api.cloudflare.com/client/v4/accounts/'
+                 + os.environ['CLOUDFLARE_ACCOUNT_ID'] + '/pages/projects/'
+                 + os.environ['PROJECT'])
+          request = urllib.request.Request(url, headers={
+              'Authorization': 'Bearer ' + os.environ['CLOUDFLARE_API_TOKEN'],
+          })
+          with urllib.request.urlopen(request, timeout=30) as response:
+              data = json.load(response)
+          if not data.get('success'):
+              raise SystemExit('Unable to read Cloudflare Pages project configuration')
+          actual = data['result']['production_branch']
+          expected = os.environ['EXPECTED_BRANCH']
+          if actual != expected:
+              raise SystemExit(f'Configure {os.environ["PROJECT"]} production branch '
+                               f'as {expected!r}; currently {actual!r}')
+          print(f'Verified {os.environ["PROJECT"]}: production branch {actual}')
+          PY
+
+      - name: Publish to Cloudflare Pages
+        id: publish
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          # The job environment records the deployment. Do not pass
+          # gitHubToken: Wrangler would create duplicate generic records.
           wranglerVersion: "4"
-          command: pages deploy ./docs/out --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }} --branch=pr-${{ github.event.pull_request.number }}
+          command: pages deploy ./docs/out --project-name=${{ needs.build.outputs.project }} --branch=${{ needs.build.outputs.branch }}
 
       - uses: mshick/add-pr-comment@b8f338c590a895d50bcbfa6c5859251edc8952fc # v2
-        if: steps.deployPreview.outputs.deployment-url != ''
+        if: github.event_name == 'pull_request' && steps.publish.outputs.deployment-url != ''
         with:
           message: |
-              Docs preview: ${{ steps.deployPreview.outputs.deployment-url }}
-
-      - name: Publish to production (docs.jan.ai)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          wranglerVersion: "4"
-          command: pages deploy ./docs/out --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }} --branch=main
+            Docs preview (${{ needs.build.outputs.channel }}): ${{ steps.publish.outputs.deployment-url }}

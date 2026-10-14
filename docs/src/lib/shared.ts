@@ -1,5 +1,8 @@
 export const siteName = 'Jan'
-export const siteUrl = 'https://docs.jan.ai'
+// Set by the build/development command, not by the deployed static host.
+export const docsChannel = process.env.DOCS_CHANNEL ?? 'stable'
+export const isNightly = docsChannel === 'nightly'
+export const siteUrl = isNightly ? 'https://docs-nightly.jan.ai' : 'https://docs.jan.ai'
 export const marketingUrl = 'https://jan.ai'
 export const defaultDescription =
   'Documentation for Jan Desktop and Jan Agent: run models locally or in the cloud, build and embed agents.'
@@ -8,7 +11,7 @@ export const defaultOgImage = '/assets/images/general/og-image-docs.png'
 export const gitConfig = {
   user: 'janhq',
   repo: 'jan',
-  branch: 'main',
+  branch: isNightly ? 'main' : 'docs-stable',
   contentDir: 'docs/content',
 }
 
