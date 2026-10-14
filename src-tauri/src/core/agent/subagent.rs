@@ -3321,10 +3321,13 @@ pub(crate) mod tests {
                 );
             }
         }
-        // Every built-in inherits the dispatching run's full toolset: a role is
-        // its prompt and model, never a narrower tool set the model cannot see.
+        // `explore` is read-only by construction, so it is the one built-in with
+        // an allowlist. The rest inherit the dispatching run's full toolset: a
+        // role is its prompt and model.
         for def in &defs {
-            assert_eq!(def.allowed_tools, None, "{}", def.name);
+            let expected = (def.name == "explore")
+                .then(|| ["read", "ls", "find", "grep"].map(String::from).to_vec());
+            assert_eq!(def.allowed_tools, expected, "{}", def.name);
         }
         assert_eq!(defs[1].model.as_deref(), Some(SMOL_ROLE));
         assert_eq!(defs[0].model.as_deref(), Some(INHERIT_ROLE));
@@ -4101,6 +4104,45 @@ pub(crate) mod tests {
         let err =
             resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["shell".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
+    }
+
+    /// `explore` is read-only by construction: dispatched with no allowlist of
+    /// its own it is offered the read and search tools and nothing that writes
+    /// or runs a command, a call can narrow that but never widen it, and the
+    /// other built-ins still inherit everything.
+    #[test]
+    fn the_builtin_explore_is_dispatched_read_only() {
+        let reg = SubagentRegistry::load(&unique_root("explore_read_only"));
+        let p = ToolPermissions::allow_all();
+        let offered = resolve_dispatch_plain(&reg, &req("explore", None), &p)
+            .unwrap()
+            .allowed_tools
+            .expect("explore carries an allowlist");
+        for tool in ["read", "ls", "find", "grep"] {
+            assert!(offered.iter().any(|t| t == tool), "{tool} missing: {offered:?}");
+        }
+        for tool in ["shell", "write", "edit"] {
+            assert!(!offered.iter().any(|t| t == tool), "{tool} offered: {offered:?}");
+        }
+        let widened = req("explore", Some(vec!["shell".to_string()]));
+        assert!(matches!(
+            resolve_dispatch_plain(&reg, &widened, &p).unwrap_err(),
+            SubagentError::PermissionDenied(_)
+        ));
+        let narrowed = req("explore", Some(vec!["grep".to_string()]));
+        let narrowed = resolve_dispatch_plain(&reg, &narrowed, &p).unwrap().allowed_tools;
+        assert_eq!(
+            narrowed,
+            Some(vec![
+                "grep".to_string(),
+                "skill_list".to_string(),
+                "skill_read".to_string(),
+            ])
+        );
+        assert_eq!(
+            resolve_dispatch_plain(&reg, &req("general", None), &p).unwrap().allowed_tools,
+            None
+        );
     }
 
     // ── event forwarding + final text ───────────────────────────────────────
@@ -5751,7 +5793,10 @@ pub(crate) mod tests {
         assert_eq!(second.definition.name, "explore-2", "the worker keeps its own name");
         assert_eq!(second.definition.scope, SubagentScope::Builtin);
         assert_eq!(second.definition.model.as_deref(), Some(SMOL_ROLE));
-        assert_eq!(second.allowed_tools, None, "inherits the full toolset");
+        // A numbered worker keeps its agent's own tools: `explore` stays read-only.
+        let offered = second.allowed_tools.expect("explore carries an allowlist");
+        assert!(offered.iter().all(|t| t != "shell" && t != "write" && t != "edit"), "{offered:?}");
+        assert!(offered.iter().any(|t| t == "grep"), "{offered:?}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
