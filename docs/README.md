@@ -86,6 +86,25 @@ gates. After the docs migration lands on `main`, bootstrap the `docs-stable`
 branch from that migrated revision before the first stable deployment; subsequent
 stable documentation updates should be promoted to `docs-stable`.
 
+### Preview-first rollout
+
+Same-repository PR previews are enabled. Live deployments are **disabled by
+ default**, including manual workflow runs. After reviewing previews and finishing
+infra/cutover setup, enable each channel independently with GitHub **repository
+variables** (not secrets):
+
+- `DOCS_NIGHTLY_DEPLOY_ENABLED=true`: permits `main` to deploy to
+  `jan-docs-nightly` / `docs-nightly.jan.ai`.
+- `DOCS_STABLE_DEPLOY_ENABLED=true`: permits `docs-stable` to deploy to
+  `jan-docs` / `docs.jan.ai`.
+
+Unset variables, or any value other than exactly `true`, disable live deployment.
+Changing a variable does not deploy by itself: dispatch the workflow on the
+matching branch or push a matching docs change. Builds/checks still run when
+live deployment is disabled. Preview uploads require the target Pages project
+to exist with the expected production branch, but custom domains are not needed
+to review the `pages.dev` preview URL.
+
 - `.github/workflows/jan-docs.yml` owns builds, redirect checks and deployments,
   including PR previews (`pr-<number>`). Channel/branch selection is the
   workflow's responsibility.
