@@ -1118,6 +1118,9 @@ describe('ThreadDetail route', () => {
           toolCallId: 'sh2',
           tool: 'shell',
           state: 'output-error',
+          // What the model reads on its next turn: why the call did not run, and
+          // that calling it again cannot succeed.
+          errorText: expect.stringMatching(/turned off.*Do not call the shell again/s),
         })
       )
     })

@@ -169,6 +169,13 @@ const forgetApprovals = (threadId: string) => {
 const CHAT_CLOSED_TOOL_ERROR =
   'Tool call cancelled: the chat was closed before it ran.'
 
+// Recorded for a call to the built-in shell while the user has the shell switch
+// off. The model reads it on its next turn, so it says why the call did not run
+// and that calling it again cannot succeed.
+const SHELL_DISABLED_TOOL_ERROR =
+  'Shell is turned off: the user disabled it, so this command was not run. ' +
+  'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
+
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
 // stopped) only reaches storage when a later reply rewrites the turn; when no
@@ -702,7 +709,7 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: 'Shell is turned off',
+                errorText: SHELL_DISABLED_TOOL_ERROR,
               })
               continue
             }
