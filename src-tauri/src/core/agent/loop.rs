@@ -1129,6 +1129,17 @@ impl CompositeToolInvoker {
         }
     }
 
+    /// Whether any background source has a notice ready to deliver now, as
+    /// opposed to work that is merely still running.
+    fn has_queued_background(&self) -> bool {
+        self.subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_queued_notices())
+            || self.monitors.has_queued_notices()
+            || self.bg_shells.has_queued_notices()
+            || !self.hook_notices_queue.lock().unwrap().is_empty()
+    }
+
     /// Whether the background subagents owe the model something the run must
     /// stay alive for, on the same terms as [`Self::monitors_owed`].
     fn subagents_owed(&self) -> bool {
@@ -2103,23 +2114,37 @@ impl ToolInvoker for CompositeToolInvoker {
         // (subagent, monitor, shell): with three sources the arms would be
         // eight, and a fourth would double them again. `select_all` keeps the
         // same guarantee with one rule.
-        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> =
-            Vec::new();
-        if let Some(ctx) = self
-            .subagents
-            .as_ref()
-            .filter(|ctx| ctx.bg.has_pending_work())
-        {
-            waits.push(Box::pin(ctx.bg.wait_for_notice()));
-        }
-        if self.monitors.has_pending_work() {
-            waits.push(Box::pin(self.monitors.wait_for_notice()));
-        }
-        if self.bg_shells.has_pending_work() {
-            waits.push(Box::pin(self.bg_shells.wait_for_notice()));
-        }
-        if !waits.is_empty() {
+        //
+        // Looped because a side can wake with nothing to deliver: a shell
+        // abandoned at its park budget, a child aborted, a plan between phases.
+        // Returning then while another side still holds the run open would
+        // resume it and spend a model turn reacting to nothing. A woken side
+        // either queued something (we return) or has nothing left (it drops out
+        // of the next round), so this cannot spin.
+        loop {
+            let mut waits: Vec<
+                std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>,
+            > = Vec::new();
+            if let Some(ctx) = self
+                .subagents
+                .as_ref()
+                .filter(|ctx| ctx.bg.has_pending_work())
+            {
+                waits.push(Box::pin(ctx.bg.wait_for_notice()));
+            }
+            if self.monitors.has_pending_work() {
+                waits.push(Box::pin(self.monitors.wait_for_notice()));
+            }
+            if self.bg_shells.has_pending_work() {
+                waits.push(Box::pin(self.bg_shells.wait_for_notice()));
+            }
+            if waits.is_empty() {
+                return;
+            }
             let _ = futures::future::select_all(waits).await;
+            if self.has_queued_background() || !self.background_pending() {
+                return;
+            }
         }
     }
 
@@ -11711,6 +11736,36 @@ mod tests {
             bg,
         });
         invoker
+    }
+
+    /// A shell abandoned at its park budget wakes its own wait with nothing to
+    /// deliver. While a subagent still holds the run open, that empty wake must
+    /// not end the park: the run would resume and spend a model turn reacting
+    /// to nothing.
+    #[cfg(feature = "cli")]
+    #[tokio::test(start_paused = true)]
+    async fn a_silently_abandoned_shell_does_not_end_the_park_while_a_child_runs() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        crate::core::agent::subagent::tests::hold_running(&bg);
+        let invoker = invoker_with_registry(root.clone(), bg);
+        // Clamped to the 60s floor.
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            timeout_secs: 0,
+        });
+
+        let parked = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            invoker.await_background(),
+        )
+        .await;
+        assert!(parked.is_err(), "the empty shell wake must not end the park");
+        assert!(!invoker.bg_shells.has_pending_work(), "the shell was abandoned");
+        assert!(invoker.background_notices().is_empty(), "and said nothing");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The whole model-facing path: `stop_subagent {name}` reaches the registry

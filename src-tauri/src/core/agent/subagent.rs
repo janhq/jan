@@ -4524,6 +4524,13 @@ pub(crate) mod tests {
         inbox
     }
 
+    /// Count a child as running without spawning one, so a test can hold the
+    /// registry's park open for as long as it needs.
+    #[cfg(feature = "cli")]
+    pub(crate) fn hold_running(bg: &Arc<BackgroundSubagents>) {
+        bg.running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     #[cfg(feature = "cli")]
     pub(crate) fn child_is_finished(bg: &Arc<BackgroundSubagents>, run_id: &str) -> bool {
         bg.inner.lock().unwrap()[run_id]
