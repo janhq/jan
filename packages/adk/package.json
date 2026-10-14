@@ -9,7 +9,7 @@
     "json-rpc"
   ],
   "homepage": "https://jan.ai",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "author": "Jan <service@jan.ai>",
   "type": "module",
   "main": "src/index.js",
