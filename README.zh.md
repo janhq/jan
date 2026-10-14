@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/desktop">快速开始</a>
+  <a href="https://docs.jan.ai/desktop">快速开始</a>
   - <a href="https://discord.gg/Exe46xPMbK">社区</a>
   - <a href="https://jan.ai/changelog">更新日志</a>
   - <a href="https://github.com/janhq/jan/issues">问题反馈</a>
@@ -142,13 +142,13 @@ yarn dev
 - **Windows**: 10+，支持 NVIDIA/AMD/Intel Arc GPU 加速
 - **Linux**: 大多数发行版均可，支持 GPU 加速
 
-有关详细的兼容性说明，请查看我们的[安装指南](https://jan.ai/docs/desktop/mac)。
+有关详细的兼容性说明，请查看我们的[安装指南](https://docs.jan.ai/desktop/install/mac)。
 
 ## 故障排除 (Troubleshooting)
 
 如果运行出现问题：
 
-1. 查看我们的[故障排除文档](https://jan.ai/docs/desktop/troubleshooting)
+1. 查看我们的[故障排除文档](https://docs.jan.ai/desktop/troubleshooting)
 2. 复制您的错误日志和系统规格信息
 3. 在我们的 Discord `#🆘|jan-help` 频道寻求帮助：[Discord](https://discord.gg/FTk2MvZwJH)
 
@@ -159,7 +159,7 @@ yarn dev
 
 ## 相关链接 (Links)
 
-- [文档](https://jan.ai/docs) - 建议阅读的操作手册
+- [文档](https://docs.jan.ai) - 建议阅读的操作手册
 - [API 参考](https://jan.ai/api-reference) - 供开发者参考
 - [更新日志](https://jan.ai/changelog) - 了解修复和变更内容
 - [Discord](https://discord.gg/FTk2MvZwJH) - 社区所在地

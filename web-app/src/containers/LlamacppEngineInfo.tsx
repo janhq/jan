@@ -10,7 +10,7 @@ const SHORT_SHA = 8
 // The escape hatch for a regression in the bundled version: any llama.cpp
 // build, served by the user's own llama-server and added as a custom provider.
 const OTHER_VERSION_DOCS =
-  'https://jan.ai/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
+  'https://docs.jan.ai/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (

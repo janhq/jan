@@ -13,7 +13,7 @@
 /// or a field is not a bump -- the contract requires a consumer to ignore what
 /// it does not know, which is what lets a provider-neutral field land without
 /// breaking anyone. The full rule is documented next to the channel it governs,
-/// in `docs/src/pages/docs/agent/cli.mdx` under `jan cli agent run`.
+/// in `docs/content/agent/cli.mdx` under `jan cli agent run`.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// `Deserialize` as well as `Serialize`: a consumer validates what it received

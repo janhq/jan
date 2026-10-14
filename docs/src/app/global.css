@@ -1,0 +1,476 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+@source '../../node_modules/fumadocs-ui/dist/**/*.js';
+
+/* ---- Jan brand fonts (same files as the old jan.ai/docs) ---- */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Light.otf') format('opentype');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Book.otf') format('opentype');
+  font-weight: 350;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'StudioFeixenSans';
+  src: url('/assets/fonts/StudioFeixenSans-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans:
+    'StudioFeixenSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Oxygen-Sans', Ubuntu, Cantarell, Helvetica, sans-serif;
+  /* `font-serif` resolved to Studio Feixen Sans on the old site too. */
+  --font-serif: var(--font-sans);
+
+  /* Jan palette: white page, near-black text, Jan blue accents. */
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #0a0a0a;
+  --color-fd-muted: #f7f7f7;
+  --color-fd-muted-foreground: #5c5c5c;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #0a0a0a;
+  --color-fd-card: #fafafa;
+  --color-fd-card-foreground: #0a0a0a;
+  --color-fd-border: rgba(0, 0, 0, 0.1);
+  --color-fd-primary: #0668d5;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f4f4f5;
+  --color-fd-secondary-foreground: #0a0a0a;
+  --color-fd-accent: #e0eefe;
+  --color-fd-accent-foreground: #0668d5;
+  --color-fd-ring: #0668d5;
+
+  --color-jan-blue: #0668d5;
+  --color-jan-blue-soft: #e0eefe;
+
+  --animate-wave: wave 2.4s ease-in-out infinite;
+  @keyframes wave {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0deg);
+    }
+    10%,
+    30% {
+      transform: rotate(14deg);
+    }
+    20% {
+      transform: rotate(-8deg);
+    }
+    40% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(10deg);
+    }
+  }
+}
+
+/* Height of the Jan navbar that sits above the Fumadocs layout. */
+:root {
+  --jan-nav-height: 60px;
+  --fd-banner-height: var(--jan-nav-height);
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+}
+
+/* Fumadocs' layout width matches the old `nextra-wrap-container` (90rem). */
+#nd-docs-layout {
+  --fd-layout-width: 90rem;
+}
+#nd-page {
+  max-width: 880px;
+}
+
+.jan-container {
+  margin-inline: auto;
+  max-width: 90rem;
+  padding-left: max(env(safe-area-inset-left), 1.5rem);
+  padding-right: max(env(safe-area-inset-right), 1.5rem);
+}
+
+/* Code blocks: dark, as with Code Hike `dark-plus`. */
+.prose figure.shiki {
+  background: #1e1e1e;
+  border-color: #1e1e1e;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.prose figure.shiki button {
+  color: #c8c8c8;
+}
+/* Lines are flex items (`*:flex-col`), so an empty line collapses to 0px
+   and blank lines vanish from code samples. Keep one line of height. */
+figure.shiki .line {
+  min-height: 1lh;
+}
+
+/* ---------------------------------------------------------------------------
+   Nextra 2 (jan.ai/docs) typography, measured from the live site, applied to
+   the Fumadocs page body so the docs read exactly as before.
+   --------------------------------------------------------------------------- */
+#nd-page {
+  --jan-text: #334155; /* slate-700 */
+  --jan-heading: #0f172a; /* slate-900 */
+  --jan-link: #006be6;
+}
+#nd-page h1 {
+  font-size: 2.25rem;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--jan-heading);
+}
+#nd-page .prose {
+  font-size: 1rem;
+  line-height: 1.75rem;
+  color: var(--jan-text);
+}
+#nd-page .prose :where(p):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+  line-height: 1.75rem;
+}
+#nd-page .prose :where(h2, h3, h4, h5, h6):not(:where(.not-prose, .not-prose *)) {
+  color: var(--jan-heading);
+  font-weight: 600;
+  margin-bottom: 0;
+}
+#nd-page .prose :where(h2):not(:where(.not-prose, .not-prose *)) {
+  font-size: 1.875rem;
+  line-height: 1.5;
+  letter-spacing: -0.015em;
+  margin-top: 2.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgba(230, 230, 230, 0.7);
+}
+#nd-page .prose :where(h3):not(:where(.not-prose, .not-prose *)) {
+  font-size: 1.5rem;
+  line-height: 1.5;
+  letter-spacing: -0.015em;
+  margin-top: 2rem;
+}
+#nd-page .prose :where(h4):not(:where(.not-prose, .not-prose *)) {
+  font-size: 1.25rem;
+  margin-top: 2rem;
+}
+#nd-page .prose :where(h5, h6):not(:where(.not-prose, .not-prose *)) {
+  font-size: 1.125rem;
+  margin-top: 2rem;
+}
+#nd-page .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+  line-height: 1.5rem;
+}
+#nd-page .prose :where(li):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+#nd-page .prose :where(li p):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.5rem;
+}
+#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *, h1 a, h2 a, h3 a, h4 a, h5 a, h6 a)) {
+  color: var(--jan-link);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: auto;
+  border: 0;
+}
+#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *)):hover {
+  text-decoration-thickness: 2px;
+}
+#nd-page .prose :where(:not(pre) > code):not(:where(.not-prose, .not-prose *)) {
+  font-size: 0.9em;
+  padding: 0.125rem 0.25em;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--jan-text);
+}
+/* Tables: full grid with zebra rows, as on the old site. */
+#nd-page .prose :where(table):not(:where(.not-prose, .not-prose *)) {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  margin-top: 1.5rem;
+  display: block;
+  overflow-x: auto;
+  width: max-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#nd-page .prose :where(th, td):not(:where(.not-prose, .not-prose *)) {
+  border: 1px solid #d1d5db;
+  padding: 0.5rem 1rem;
+  color: var(--jan-text);
+}
+#nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
+  font-weight: 600;
+  background: transparent;
+}
+#nd-page .prose :where(tbody tr:nth-child(even)):not(:where(.not-prose, .not-prose *)) {
+  background: #f3f4f6;
+}
+#nd-page .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1.5rem;
+  border-inline-start: 2px solid #e5e7eb;
+  padding-inline-start: 1.5rem;
+  font-style: italic;
+  color: #4b5563;
+}
+#nd-page .prose :where(img):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1.5rem;
+}
+
+/* Callout body paragraphs: Nextra's first:mt-0 spacing. */
+.jan-callout-body > p {
+  margin-top: 1.5rem;
+  line-height: 1.75rem;
+}
+.jan-callout-body > :first-child {
+  margin-top: 0;
+}
+.jan-callout-body ul,
+.jan-callout-body ol {
+  margin-top: 0.75rem;
+  list-style: disc;
+  padding-inline-start: 1.5rem;
+}
+.jan-callout-body a {
+  color: var(--jan-link, #006be6);
+  text-decoration: underline;
+}
+.jan-callout-body code {
+  font-size: 0.9em;
+  padding: 0.125rem 0.25em;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* <Steps>: every h3 is a numbered step, like Nextra's Steps. */
+.jan-steps {
+  counter-reset: step;
+  margin-inline-start: 1rem;
+  margin-bottom: 3rem;
+  padding-inline-start: 1.5rem;
+  border-inline-start: 1px solid #e5e7eb;
+}
+#nd-page .prose .jan-steps h3 {
+  counter-increment: step;
+}
+#nd-page .prose .jan-steps h3::before {
+  content: counter(step);
+  position: absolute;
+  width: 33px;
+  height: 33px;
+  margin-inline-start: -41px;
+  margin-top: 3px;
+  border: 4px solid #fff;
+  border-radius: 9999px;
+  background: #f3f4f6;
+  color: #a3a3a3;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+  text-align: center;
+  text-indent: -1px;
+  letter-spacing: normal;
+}
+#nd-page .prose .jan-steps h3 {
+  position: relative;
+}
+#nd-page .prose .jan-steps h3::before {
+  left: 0;
+  top: 0;
+}
+
+/* Content images keep the old rounded look. */
+.prose img {
+  border-radius: 12px;
+}
+
+.img-rounded-shadow {
+  padding: 8px;
+}
+.img-rounded-shadow img {
+  border-radius: 12px;
+  box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.42);
+}
+
+/* ---------------------------------------------------------------------------
+   Sidebar and table of contents in the old Nextra look (measured from
+   jan.ai/docs): 14px items in gray-500, active item light blue, bold
+   separators, white background.
+   --------------------------------------------------------------------------- */
+#nd-sidebar {
+  background: #fff;
+  border-inline-end: 0;
+  font-size: 0.875rem;
+}
+/* Sidebar items (links and folder triggers) */
+#nd-sidebar a[style*='padding-inline-start'],
+#nd-sidebar button[style*='padding-inline-start'] {
+  font-size: 0.875rem;
+  line-height: 1.3125rem;
+  font-weight: 400;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  border-radius: 0.25rem;
+  color: #6b7280;
+}
+#nd-sidebar a[style*='padding-inline-start']:hover,
+#nd-sidebar button[style*='padding-inline-start']:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+#nd-sidebar a[data-active='true'],
+#nd-sidebar a[data-active='true']:hover {
+  background: #e0efff;
+  color: #004ca3;
+  font-weight: 600;
+}
+#nd-sidebar a[data-active='true']::before {
+  display: none;
+}
+/* Section separators ("Get started", "Core concepts", ...). */
+#nd-sidebar p[style*='padding-inline-start'] {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+  margin-top: 1.25rem;
+  margin-bottom: 0;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+#nd-sidebar p[style*='padding-inline-start']:first-child {
+  margin-top: 0;
+}
+/* Nested folders: no guide line (Nextra had none). */
+#nd-sidebar div[data-state].relative::before {
+  display: none;
+}
+
+
+/* Page top spacing as on the old site: breadcrumb ~22px under the navbar. */
+@media (min-width: 768px) {
+  #nd-page {
+    padding-top: 1rem;
+  }
+}
+#nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
+  text-align: center;
+}
+/* TOC entries are plain text, like Nextra (no inline-code chips). */
+#nd-toc code {
+  all: unset;
+}
+
+/* Table wrapper: no background band beside narrow tables (old site had none). */
+#nd-page .prose div.relative.overflow-auto:has(> table) {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+}
+#nd-page .prose div.relative.overflow-auto > table {
+  margin-top: 0;
+  width: auto;
+}
+
+/* Raw <a style={...}> buttons in MDX (e.g. "Open in Jan"): the prose link
+   style must not override their own colours, and the label must be centred. */
+#nd-page .prose a[style] {
+  color: inherit;
+}
+#nd-page .prose a[style*='background'] {
+  text-decoration: none;
+}
+#nd-page .prose a[style] > p,
+#nd-page .prose a[style*='display'] > p {
+  margin: 0;
+}
+
+/* Code blocks: right padding so the copy button doesn't cover the text, and
+   the old Code Hike drop shadow. */
+#nd-page figure.shiki pre {
+  padding-right: 2.75rem;
+}
+#nd-page figure.shiki button[aria-label] {
+  background: transparent;
+}
+
+/* <kbd>: plain monospace text, as on the old site (no chip). */
+#nd-page .prose kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1em;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+
+#nd-page .prose blockquote p::before,
+#nd-page .prose blockquote p::after {
+  content: none;
+}
+
+/* Footer content inset as on the old site (Nextra footer: container padding +
+   an inner 1.5rem). */
+@media (min-width: 1024px) {
+  .jan-footer-inner {
+    padding-left: max(env(safe-area-inset-left), 3rem);
+    padding-right: max(env(safe-area-inset-right), 3rem);
+  }
+}

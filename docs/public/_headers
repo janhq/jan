@@ -1,0 +1,9 @@
+/*
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+# Static export writes the Orama index without an extension. Serve it as JSON so
+# Cloudflare compresses it (~4.4 MB raw, ~0.5 MB brotli).
+/api/search
+  Content-Type: application/json

@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/desktop">はじめに</a>
+  <a href="https://docs.jan.ai/desktop">はじめに</a>
   - <a href="https://discord.gg/Exe46xPMbK">コミュニティ</a>
   - <a href="https://jan.ai/changelog">変更履歴</a>
   - <a href="https://github.com/janhq/jan/issues">バグ報告</a>
@@ -139,13 +139,13 @@ yarn dev
 - **Windows**: 10以上、NVIDIA/AMD/Intel ArcのGPUサポート
 - **Linux**: ほとんどのディストリビューションで動作、GPUアクセラレーション対応
 
-詳細な互換性については[インストールガイド](https://jan.ai/docs/desktop/mac)をご確認ください。
+詳細な互換性については[インストールガイド](https://docs.jan.ai/desktop/install/mac)をご確認ください。
 
 ## トラブルシューティング
 
 問題が発生した場合：
 
-1. [トラブルシューティングドキュメント](https://jan.ai/docs/desktop/troubleshooting)を確認
+1. [トラブルシューティングドキュメント](https://docs.jan.ai/desktop/troubleshooting)を確認
 2. エラーログとシステムスペックをコピー
 3. [Discord](https://discord.gg/FTk2MvZwJH)の`#🆘|jan-help`チャンネルでヘルプを依頼
 
@@ -155,7 +155,7 @@ yarn dev
 
 ## リンク
 
-- [ドキュメント](https://jan.ai/docs) - ぜひ読んでいただきたいマニュアル
+- [ドキュメント](https://docs.jan.ai) - ぜひ読んでいただきたいマニュアル
 - [APIリファレンス](https://jan.ai/api-reference) - 技術的な詳細
 - [変更履歴](https://jan.ai/changelog) - 修正と変更の記録
 - [Discord](https://discord.gg/FTk2MvZwJH) - コミュニティの拠点

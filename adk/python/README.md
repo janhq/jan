@@ -23,7 +23,7 @@ python -m pip install "$(python -c "import json, urllib.request as r; p = json.l
 The URL is versioned and digest-pinned. That build's manifest also pins its
 matching runtime:
 `install_runtime(manifest_url=manifest["runtime"]["manifestUrl"], version=manifest["runtime"]["version"])`.
-See [nightly installation](https://jan.ai/docs/agent/adk-nightly) for PowerShell
+See [nightly installation](https://docs.jan.ai/agent/adk-nightly) for PowerShell
 and the source-install fallback.
 
 The runtime binary is separate, and there are three ways to have one: on `PATH`,
@@ -68,7 +68,7 @@ found = find_runtime("0.8.4-50")               # reads the cache, no network
 ```
 
 The nightly channel also publishes a shell installer, which is what the
-[jan.ai ADK pages](https://jan.ai/docs/agent/adk) use:
+[Jan ADK docs](https://docs.jan.ai/agent/adk) use:
 
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash

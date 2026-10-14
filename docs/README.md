@@ -1,62 +1,137 @@
-# Website & Docs
+# Jan Docs (stable and nightly)
 
-This website is built using [Nextra](https://nextra.site/), a modern static website generator.
+Documentation for Jan Desktop and Jan Agent, built with
+[Fumadocs](https://fumadocs.dev) on Next.js and exported as a static site to
+Cloudflare Pages. The marketing site (jan.ai: home, download, blog, research,
+changelog, handbook) lives in `janhq/jan.ai`.
 
-### Information Architecture
-
-We try to **keep routes consistent** to maintain SEO.
-
-- **`/docs/`**: Product documentation (Jan Desktop, Jan Agent).
-
-- **`/handbook/`**: Handbook pages.
-
-- **`/research/`**: Research content.
-
-- **`/changelog/`**: A list of changes made to the Jan application with each release.
-
-- **`/blog/`**: The blog index; individual posts live under `/post/`.
-
-- **`/download/`**: Download page.
-
-- **`/support/`**: Support page.
-
-- **`/privacy/`**: Privacy policy.
-
-- **`/tokamak/`**: Tokamak landing page.
-
-## How to Contribute
-
-Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/main/CONTRIBUTING.md) for more comprehensive information on how to contribute to the Jan project.
-
-### Pre-requisites and Installation
-
-- [Node.js](https://nodejs.org/en/) (version 20.0.0 or higher)
-- [yarn](https://yarnpkg.com/) (version 4.x; the repo pins 4.5.3 via corepack)
-
-#### Installation
+## Develop
 
 ```bash
-cd jan/docs
+cd docs
 yarn install
-yarn dev
+yarn dev          # stable, http://localhost:3000
+yarn build        # static site in out/ (regenerates public/_redirects first)
+yarn types:check
+DOCS_CHANNEL=stable node scripts/check-channel.mjs  # after the matching build
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+### Channels
 
-#### Build
+`DOCS_CHANNEL` is a build-time setting: `stable` (the default when unset) or
+`nightly`. Other values fail configuration validation. It is inlined for both
+server and client code, so changing it requires restarting development or
+rebuilding the static export; setting it only on the deployed host has no effect.
 
 ```bash
-yarn build
+DOCS_CHANNEL=nightly yarn dev
+DOCS_CHANNEL=stable yarn build   # out/ for https://docs.jan.ai
+DOCS_CHANNEL=nightly yarn build  # out/ for https://docs-nightly.jan.ai
 ```
 
-This command generates static content into the `out` directory (`next.config.mjs` sets `output: 'export'`) and can be served using any static contents hosting service.
+Build channels sequentially: each build replaces `out/`. The channel selects
+absolute canonical, Open Graph and sitemap URLs. Nightly shows a site-wide
+warning linking to stable docs, permits crawling so crawlers can read the
+page-level exclusion directives, omits the sitemap from `robots.txt`, and emits
+`noindex, nofollow` metadata on every page. Stable remains indexable except for
+pages with `noindex` frontmatter, which stay excluded from the sitemap in both
+channels.
 
-### Deployment
+## Write docs
 
-There is no `yarn deploy` script; the `jan-docs.yml` workflow builds the site and publishes `out` to Cloudflare Pages.
+- Pages are MDX in `content/`. `content/desktop/x.mdx` is served at
+  `https://docs.jan.ai/desktop/x`.
+- Sidebar order, separators (`---Title---`) and hidden pages (`!page`) are in
+  each folder's `meta.json`. `desktop/` and `agent/` are `root` sections and
+  show as the sidebar switcher.
+- The frontmatter `title` is the page H1. Use `sidebarTitle` for a shorter
+  sidebar label. `description`, `keywords`, `noindex` and `ogImage` are supported.
+- Put images next to the page in `_assets/` and reference them relatively:
+  `![Alt](./_assets/x.png)`.
+- These components work without an import: `Callout`, `Steps` (each `###` is
+  a step), `Tabs` with `Tabs.Tab`, `DocCard`/`DocCards`, `DownloadButton`,
+  `FAQBox`, plus Fumadocs' defaults. ```` ```mermaid ```` blocks render too.
+- Link to other pages with absolute paths (`/agent/skills`) or relative file
+  paths. Don't link to private repos or internal issues.
 
-### Preview URL, Pre-release and Publishing Documentation
+## Redirects
 
-- When a pull request is created, the preview URL will be automatically commented on the pull request.
+`public/_redirects` is generated. Don't edit it by hand.
 
-- The documentation will then be published to [https://jan.ai/](https://jan.ai/) when the pull request is merged to `main`.
+- `redirects/legacy-jan.ai.txt` is the old jan.ai `_redirects`, kept as input.
+- `node scripts/build-redirects.mjs` writes `public/_redirects`, which is
+  served by docs.jan.ai, and `redirects/jan.ai.txt`. That second file is the
+  block janhq/jan.ai must ship so that every old `jan.ai/docs/*` URL reaches
+  its final page in one 301.
+- `node scripts/check-redirects.mjs` (after `yarn build`) follows every old URL
+  through both sites offline and fails on dead ends or chains longer than 2 hops.
+
+When you rename or delete a page, add `/docs/<old> /docs/<new> 301` to
+`redirects/legacy-jan.ai.txt` and rebuild.
+
+## Deployment and CI
+
+The deployment workflow supplies `DOCS_CHANNEL` to the build and uploads `out/`
+to the matching Cloudflare Pages project/domain. Stable release documentation
+belongs on `docs.jan.ai`; development documentation from `main` belongs on
+`docs-nightly.jan.ai`, not on the stable domain. PR previews should explicitly
+select the appropriate channel too; the site does not infer a channel from the
+branch name or hostname. Edit/source links target `docs-stable` for stable
+builds and `main` for nightly builds. Deploy each channel's output before another
+build replaces it.
+
+Stable uses the existing `docs` Cloudflare deployment records (`Preview` and
+`Production`); nightly uses new `docs-nightly` records (`Preview` and
+`Production`) at `docs-nightly.jan.ai`. Neither channel has deployment approval
+gates. After the docs migration lands on `main`, bootstrap the `docs-stable`
+branch from that migrated revision before the first stable deployment; subsequent
+stable documentation updates should be promoted to `docs-stable`. Do not rely
+on branch creation to start the first build: path-filtered push workflows may
+not run when creating a branch at an existing commit. Use manual workflow
+dispatch from `docs-stable` after bootstrap (live deployment still requires the
+explicit enable variable below).
+
+The marketing site is deployed separately. This workflow does not deploy
+`jan.ai` or install its legacy-docs redirects. Ship `redirects/jan.ai.txt` in
+the marketing site's deployed `_redirects` only after Stable is live. Keep the
+cutover coordinated, and do not publish a Desktop release containing the new
+`docs.jan.ai` links until that domain serves Stable docs.
+
+### Preview-first rollout
+
+Same-repository PR previews are enabled. Live deployments are **disabled by
+ default**, including manual workflow runs. After reviewing previews and finishing
+infra/cutover setup, enable each channel independently with GitHub **repository
+variables** (not secrets):
+
+- `DOCS_NIGHTLY_DEPLOY_ENABLED=true`: permits `main` to deploy to
+  `jan-docs-nightly` / `docs-nightly.jan.ai`.
+- `DOCS_STABLE_DEPLOY_ENABLED=true`: permits `docs-stable` to deploy to
+  `jan-docs` / `docs.jan.ai`.
+
+Unset variables, or any value other than exactly `true`, disable live deployment.
+Changing a variable does not deploy by itself: dispatch the workflow on the
+matching branch or push a matching docs change. Builds/checks still run when
+live deployment is disabled. Preview uploads require the target Pages project
+to exist with the expected production branch, but custom domains are not needed
+to review the `pages.dev` preview URL.
+
+- `.github/workflows/jan-docs.yml` owns builds, redirect checks and deployments,
+  including PR previews (`pr-<number>`). Channel/branch selection is the
+  workflow's responsibility.
+- `.github/workflows/jan-docs-link-check.yml` runs lychee on the built site.
+  Internal links block the PR. External links run on weekly/manual checks;
+  weekly failures are reported in one issue by a separate issue-write job.
+  PR link-check jobs have read-only permissions.
+
+Mermaid is pinned to `~10.9.4` to preserve the previous site's diagram layout
+and multiline label rendering during migration. Treat a major upgrade as a
+separate change with desktop/mobile diagram regression checks.
+
+## History
+
+`scripts/migrate-content.mjs` converted the Nextra 2 site (`src/pages/docs`,
+see git history before the Fumadocs move) into `content/`. It is kept for
+reference; content is now edited directly. It refuses to run while `content/`
+exists, because regenerating would discard every edit made since; `--force`
+overrides that.
