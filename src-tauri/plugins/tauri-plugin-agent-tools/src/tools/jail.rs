@@ -292,6 +292,12 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
 /// owned by that uid and neither group- nor world-writable. Checking both
 /// paths prevents a writable symlink target or lookup directory from replacing
 /// an otherwise protected binary. Production uses `/` and uid 0.
+///
+/// Debian ships `/usr/local` as `root:root 0755` unless the admin opted into
+/// the staff group (`/etc/staff-group-for-usr-local`), which makes it
+/// `root:staff 2775`. Such a directory is rejected on purpose: the mode alone
+/// cannot say who is in that group, and anyone who is can swap the binary. The
+/// sandbox then starts with the system bwrap, as it did before this lookup.
 #[cfg(any(target_os = "linux", all(test, unix)))]
 fn trusted_local_bwrap(path: &Path, trust_root: &Path, owner_uid: u32) -> bool {
     fn protected(path: &Path, owner_uid: u32, directory: bool) -> bool {
@@ -881,6 +887,25 @@ mod tests {
         std::fs::set_permissions(
             local.parent().unwrap(),
             std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn setgid_group_writable_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            local.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o2775),
         )
         .unwrap();
         assert_eq!(
