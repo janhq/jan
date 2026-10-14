@@ -469,6 +469,55 @@ async fn summarize(
     if transcript.trim().is_empty() {
         return Ok((FALLBACK_NOTE.to_string(), None));
     }
+    // The smol model writes the summary when one is configured: summarizing is
+    // the cheap model's job. Any failure there, an overflow of its smaller
+    // window included, falls back to the run's own model rather than to a
+    // note, so a misconfigured smol model never costs the user their history.
+    // An empty smol reply was still billed: its usage rides along with the
+    // retry's so the run's budget is charged for both requests.
+    let mut smol_usage = None;
+    if let Some((smol_id, smol)) = model.summarizer() {
+        match request_summary(&transcript, smol_id, smol).await {
+            Ok((Some(summary), usage)) => return Ok((summary, usage)),
+            Ok((None, usage)) => {
+                smol_usage = usage;
+                log::warn!(
+                    "agent: compaction summary from {smol_id} was empty, retrying on {model_id}"
+                );
+            }
+            Err(e) => log::warn!(
+                "agent: compaction summary from {smol_id} failed, retrying on {model_id}: {e}"
+            ),
+        }
+    }
+    match request_summary(&transcript, model_id, model).await {
+        Ok((summary, usage)) => {
+            let usage = match (smol_usage, usage) {
+                (Some(smol), Some(run)) => Some(smol.plus(&run)),
+                (smol, run) => smol.or(run),
+            };
+            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
+        }
+        Err(e) => {
+            // A model-switch compaction targets the (smaller) new model: if the
+            // summarizer itself overflows, a note is not safe -- the request
+            // could still overflow and the dropped span would be lost. Propagate.
+            if crate::core::agent::upstream::is_context_overflow_error(&e) {
+                Err(e)
+            } else {
+                Ok((FALLBACK_NOTE.to_string(), smol_usage))
+            }
+        }
+    }
+}
+
+/// One summarizer request for an already rendered `transcript`: the summary
+/// text (`None` when the completion carried none) and the reported usage.
+async fn request_summary(
+    transcript: &str,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<(Option<String>, Option<crate::core::agent::events::Usage>), String> {
     let request = json!({
         "model": model_id,
         "messages": [
@@ -479,30 +528,17 @@ async fn summarize(
     // Discard the summarizer's streamed tokens: a dropped receiver means these
     // never reach the user-facing event stream.
     let (sink, _rx) = mpsc::unbounded_channel();
-    match model.invoke(&request, &sink).await {
-        Ok(completion) => {
-            let summary = extract_choice_message(&completion)
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            // Charged whatever the body said: a completion whose text was empty
-            // still cost what the provider reported for it.
-            let usage = crate::core::agent::events::Usage::from_completion(&completion);
-            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
-        }
-        Err(e) => {
-            // A model-switch compaction targets the (smaller) new model: if the
-            // summarizer itself overflows, a note is not safe -- the request
-            // could still overflow and the dropped span would be lost. Propagate.
-            if crate::core::agent::upstream::is_context_overflow_error(&e) {
-                Err(e)
-            } else {
-                Ok((FALLBACK_NOTE.to_string(), None))
-            }
-        }
-    }
+    let completion = model.invoke(&request, &sink).await?;
+    let summary = extract_choice_message(&completion)
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    // Charged whatever the body said: a completion whose text was empty still
+    // cost what the provider reported for it.
+    let usage = crate::core::agent::events::Usage::from_completion(&completion);
+    Ok((summary, usage))
 }
 
 #[cfg(test)]
@@ -851,6 +887,101 @@ mod tests {
             .await
             .expect_err("a summarizer context overflow must not be swallowed");
         assert!(crate::core::agent::upstream::is_context_overflow_error(&error));
+    }
+
+    /// A run model whose summaries go to a configured smol model first.
+    struct WithSmol<M, S> {
+        run: M,
+        smol: S,
+    }
+    #[async_trait]
+    impl<M: ModelInvoker, S: ModelInvoker> ModelInvoker for WithSmol<M, S> {
+        async fn invoke(
+            &self,
+            request: &Value,
+            events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            self.run.invoke(request, events).await
+        }
+        fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+            Some(("smol", &self.smol))
+        }
+    }
+
+    fn stub(summary: &str) -> StubModel {
+        StubModel {
+            summary: summary.into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// With a smol model configured the summary is its job: the run's model is
+    /// never called, and the request names the smol model's id.
+    #[tokio::test]
+    async fn a_configured_smol_model_writes_the_summary() {
+        let model = WithSmol { run: stub("RUN"), smol: stub("SMOL") };
+        let out = compact_conversation(&convo(20), "m", &model, 4).await.unwrap();
+        assert!(out[1]["content"].as_str().unwrap().contains("SMOL"));
+        assert_eq!(*model.run.calls.lock().unwrap(), 0);
+        assert_eq!(model.smol.requests.lock().await[0]["model"], "smol");
+    }
+
+    /// A smol model that fails, by overflowing its smaller window or otherwise,
+    /// or answers nothing, hands the summary back to the run's model instead
+    /// of costing the history a fallback note or the request an error.
+    #[tokio::test]
+    async fn a_failing_smol_model_falls_back_to_the_run_model() {
+        let overflowing = WithSmol { run: stub("RUN"), smol: OverflowingModel };
+        let failing = WithSmol { run: stub("RUN"), smol: FailingModel };
+        let empty = WithSmol { run: stub("RUN"), smol: stub("  ") };
+        for out in [
+            compact_conversation(&convo(20), "m", &overflowing, 4).await,
+            compact_conversation(&convo(20), "m", &failing, 4).await,
+            compact_conversation(&convo(20), "m", &empty, 4).await,
+        ] {
+            assert!(out.unwrap()[1]["content"].as_str().unwrap().contains("RUN"));
+        }
+        let requests = overflowing.run.requests.lock().await;
+        assert_eq!(requests[0]["model"], "m", "the retry is on the run's own model");
+    }
+
+    /// A model answering `content` and reporting `prompt`/`completion` tokens.
+    struct Billed(&'static str, u64, u64);
+    #[async_trait]
+    impl ModelInvoker for Billed {
+        async fn invoke(
+            &self,
+            _request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            Ok(json!({
+                "choices": [{ "message": { "content": self.0 } }],
+                "usage": {
+                    "prompt_tokens": self.1,
+                    "completion_tokens": self.2,
+                    "total_tokens": self.1 + self.2,
+                },
+            }))
+        }
+    }
+
+    /// An empty smol reply was still billed, so its usage is charged along
+    /// with the run model's retry rather than dropped with the empty text.
+    #[tokio::test]
+    async fn an_empty_smol_reply_is_still_charged() {
+        let model = WithSmol { run: Billed("RUN", 1_000, 50), smol: Billed(" ", 900, 7) };
+        let (_, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        let usage = usage.expect("both requests reported usage");
+        assert_eq!(usage.prompt_tokens, Some(1_900));
+        assert_eq!(usage.completion_tokens, Some(57));
+        assert_eq!(usage.total_tokens, Some(1_957));
+
+        // Still charged when the run model's retry then fails into the note.
+        let model = WithSmol { run: FailingModel, smol: Billed("", 900, 7) };
+        let (note, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        assert!(note["content"].as_str().unwrap().contains(FALLBACK_NOTE));
+        assert_eq!(usage.expect("the smol request was billed").completion_tokens, Some(7));
     }
 
     /// One prompt driving a long agentic run is the normal shape here: a single
