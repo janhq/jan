@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
+import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { marketingUrl } from '@/lib/shared'
@@ -47,6 +48,11 @@ const FOOTER_MENUS: FooterMenu[] = [
   },
 ]
 
+function FooterNavigationLink({ href, ...props }: ComponentProps<'a'> & { href: string }) {
+  const Component = href.startsWith('/') && !href.startsWith('//') ? Link : 'a'
+  return <Component href={href} {...props} />
+}
+
 export function Footer() {
   const [openSections, setOpenSections] = useState<string[]>([])
   const toggle = (title: string) =>
@@ -84,14 +90,14 @@ export function Footer() {
                 <ul className={cn('space-y-2 lg:block lg:pb-0', isOpen ? 'block pb-4' : 'hidden')}>
                   {menu.links.map((link) => (
                     <li key={link.name}>
-                      <a
+                      <FooterNavigationLink
                         href={link.href}
                         className="text-base hover:text-gray-900"
                         target={link.external ? '_blank' : undefined}
                         rel={link.external ? 'noopener noreferrer' : undefined}
                       >
                         {link.name}
-                      </a>
+                      </FooterNavigationLink>
                     </li>
                   ))}
                 </ul>

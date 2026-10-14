@@ -1,14 +1,14 @@
 'use client'
 import { Fragment, useMemo } from 'react'
+import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
-import { useTreeContext, useTreePath } from 'fumadocs-ui/contexts/tree'
+import { useTreePath } from 'fumadocs-ui/contexts/tree'
 import { cn } from '@/lib/cn'
 
 // Same breadcrumb as jan.ai/docs: "Docs > Jan Desktop > Install 👋 Jan > Linux".
 // Folders without an index page are plain text; the current page is gray-700.
 export function Breadcrumb() {
   const path = useTreePath()
-  const { root } = useTreeContext()
 
   const items = useMemo(() => {
     const out: { name: React.ReactNode; url?: string }[] = [{ name: 'Docs', url: '/' }]
@@ -23,22 +23,23 @@ export function Breadcrumb() {
       }
     }
     return out
-  }, [path, root])
+  }, [path])
 
   return (
     <div className="mt-1.5 flex items-center gap-1 overflow-hidden text-sm text-[#6b7280]">
       {items.map((item, i) => {
         const last = i === items.length - 1
+        const Component = item.url?.startsWith('/') && !item.url.startsWith('//') ? Link : 'a'
         return (
           <Fragment key={i}>
             {i > 0 && <ChevronRight className="size-3.5 shrink-0" />}
             {item.url && !last ? (
-              <a
+              <Component
                 href={item.url}
                 className="min-w-[24px] truncate transition-colors hover:text-[#111827]"
               >
                 {item.name}
-              </a>
+              </Component>
             ) : (
               <span className={cn('truncate', last && 'font-medium text-[#374151]')}>
                 {item.name}

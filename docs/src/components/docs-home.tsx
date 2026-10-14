@@ -1,4 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
+import Link from 'next/link'
 import { Bot, Computer, Rocket, type LucideIcon } from 'lucide-react'
 import { SearchField } from '@/components/search-field'
 
@@ -54,7 +55,7 @@ export function DocsHome() {
 
       <div className="mx-auto mt-16 grid max-w-3xl gap-5 px-4 md:grid-cols-2 lg:mt-20">
         {SECTIONS.map((section) => (
-          <a
+          <Link
             key={section.title}
             href={section.href}
             className="group flex flex-col rounded-2xl border border-black/10 bg-black/[0.02] p-7 transition-all duration-200 hover:-translate-y-0.5 hover:border-black hover:bg-white hover:shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]"
@@ -80,7 +81,7 @@ export function DocsHome() {
                 </span>
               </span>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
 
@@ -90,7 +91,7 @@ export function DocsHome() {
         </h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           {COMMON_PATHS.map((path) => (
-            <a
+            <Link
               key={path.href}
               href={path.href}
               className="group flex items-center gap-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:border-black hover:bg-white hover:shadow-[0px_3px_0px_0px_rgba(0,0,0,1)]"
@@ -105,7 +106,7 @@ export function DocsHome() {
               >
                 →
               </span>
-            </a>
+            </Link>
           ))}
         </div>
       </div>

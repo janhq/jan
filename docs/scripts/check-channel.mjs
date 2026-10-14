@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const channel = process.env.DOCS_CHANNEL ?? 'stable'
 assert.ok(['stable', 'nightly'].includes(channel), 'DOCS_CHANNEL must be stable or nightly')
@@ -8,8 +9,13 @@ const nightly = channel === 'nightly'
 const origin = nightly ? 'https://docs-nightly.jan.ai' : 'https://docs.jan.ai'
 const out = new URL('../out/', import.meta.url)
 const robots = await readFile(new URL('robots.txt', out), 'utf8')
-assert.ok(robots.includes(nightly ? 'Disallow: /' : 'Allow: /'), 'Incorrect crawler rule')
-assert.ok(robots.includes(`Sitemap: ${origin}/sitemap.xml`), 'Incorrect robots sitemap URL')
+assert.match(robots, /^Allow:\s*\/\s*$/m, 'Crawlers must be allowed to read meta noindex')
+assert.doesNotMatch(robots, /^Disallow:\s*\//m, 'Crawlers must not be blocked')
+if (nightly) {
+  assert.doesNotMatch(robots, /^Sitemap:/im, 'Nightly robots must not advertise a sitemap')
+} else {
+  assert.ok(robots.includes(`Sitemap: ${origin}/sitemap.xml`), 'Incorrect robots sitemap URL')
+}
 const sitemap = await readFile(new URL('sitemap.xml', out), 'utf8')
 const locations = [...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map((match) => match[1])
 assert.ok(locations.includes(origin), 'Home must appear in the sitemap')
@@ -26,7 +32,7 @@ async function* htmlFiles(directory) {
 let pages = 0
 let home = false
 let docs = false
-for await (const path of htmlFiles(out.pathname)) {
+for await (const path of htmlFiles(fileURLToPath(out))) {
   const html = await readFile(path, 'utf8')
   const canonical = html.match(/<link rel="canonical" href="([^"]+)"/)
   // Redirect stubs and the not-found page do not have canonical URLs.

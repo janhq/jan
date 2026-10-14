@@ -45,7 +45,6 @@ function BackToTop() {
     <button
       ref={ref}
       type="button"
-      aria-hidden="true"
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       className={cn('flex items-center gap-1.5 opacity-0 transition', linkClassName)}
     >

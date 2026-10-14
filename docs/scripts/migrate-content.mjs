@@ -24,13 +24,14 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const SRC = process.argv[2]
 if (!SRC || !fs.existsSync(SRC)) {
   console.error('usage: migrate-content.mjs <old src/pages/docs dir>')
   process.exit(1)
 }
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.join(ROOT, 'content')
 
 // The old docs home (DocsHome) is now app/(home)/page.tsx.

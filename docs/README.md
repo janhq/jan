@@ -31,7 +31,8 @@ DOCS_CHANNEL=nightly yarn build  # out/ for https://docs-nightly.jan.ai
 
 Build channels sequentially: each build replaces `out/`. The channel selects
 absolute canonical, Open Graph and sitemap URLs. Nightly shows a site-wide
-warning linking to stable docs, blocks crawlers in `robots.txt`, and emits
+warning linking to stable docs, permits crawling so crawlers can read the
+page-level exclusion directives, omits the sitemap from `robots.txt`, and emits
 `noindex, nofollow` metadata on every page. Stable remains indexable except for
 pages with `noindex` frontmatter, which stay excluded from the sitemap in both
 channels.
@@ -84,7 +85,17 @@ Stable uses the existing `docs` Cloudflare deployment records (`Preview` and
 `Production`) at `docs-nightly.jan.ai`. Neither channel has deployment approval
 gates. After the docs migration lands on `main`, bootstrap the `docs-stable`
 branch from that migrated revision before the first stable deployment; subsequent
-stable documentation updates should be promoted to `docs-stable`.
+stable documentation updates should be promoted to `docs-stable`. Do not rely
+on branch creation to start the first build: path-filtered push workflows may
+not run when creating a branch at an existing commit. Use manual workflow
+dispatch from `docs-stable` after bootstrap (live deployment still requires the
+explicit enable variable below).
+
+The marketing site is deployed separately. This workflow does not deploy
+`jan.ai` or install its legacy-docs redirects. Ship `redirects/jan.ai.txt` in
+the marketing site's deployed `_redirects` only after Stable is live. Keep the
+cutover coordinated, and do not publish a Desktop release containing the new
+`docs.jan.ai` links until that domain serves Stable docs.
 
 ### Preview-first rollout
 
@@ -109,8 +120,13 @@ to review the `pages.dev` preview URL.
   including PR previews (`pr-<number>`). Channel/branch selection is the
   workflow's responsibility.
 - `.github/workflows/jan-docs-link-check.yml` runs lychee on the built site.
-  Internal links block the PR. External links are checked weekly and reported
-  in one issue.
+  Internal links block the PR. External links run on weekly/manual checks;
+  weekly failures are reported in one issue by a separate issue-write job.
+  PR link-check jobs have read-only permissions.
+
+Mermaid is pinned to `~10.9.4` to preserve the previous site's diagram layout
+and multiline label rendering during migration. Treat a major upgrade as a
+separate change with desktop/mobile diagram regression checks.
 
 ## History
 

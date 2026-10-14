@@ -1,6 +1,7 @@
 'use client'
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentProps } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ChevronDown } from 'lucide-react'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
@@ -50,6 +51,13 @@ const SOCIALS = [
     label: 'LinkedIn',
   },
 ]
+
+// Only local routes use client navigation; external URLs and hash anchors stay native.
+function MenuLink({ href, ...props }: ComponentProps<'a'> & { href: string }) {
+  if (href === '#') return <span className={props.className}>{props.children}</span>
+  const Component = href.startsWith('/') && !href.startsWith('//') ? Link : 'a'
+  return <Component href={href} {...props} />
+}
 
 function Socials({ className }: { className?: string }) {
   return (
@@ -108,10 +116,10 @@ export function Navbar() {
       className="sticky top-0 z-50 h-(--jan-nav-height) w-full border-b border-black/10 bg-white text-black lg:px-6"
     >
       <div className="jan-container flex h-full items-center justify-between">
-        <a href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <img src="/assets/logo-jan.svg" alt="Jan" className="h-6 w-6" />
           <span className="text-xl font-bold">Jan</span>
-        </a>
+        </Link>
 
         <nav className="hidden lg:block">
           <ul className="flex items-center space-x-8">
@@ -120,7 +128,7 @@ export function Navbar() {
                 key={item.name}
                 className={cn(item.children && 'group relative py-2')}
               >
-                <a
+                <MenuLink
                   href={item.href}
                   target={item.external ? '_blank' : undefined}
                   rel={item.external ? 'noopener noreferrer' : undefined}
@@ -133,12 +141,12 @@ export function Navbar() {
                   {item.children && (
                     <ChevronDown className="size-3.5 transition-transform duration-200 group-hover:rotate-180" />
                   )}
-                </a>
+                </MenuLink>
                 {item.children && (
                   <div className="invisible absolute left-0 top-full z-50 translate-y-1 pt-2 opacity-0 transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
                     <div className="min-w-[180px] overflow-hidden rounded-xl border border-black bg-white shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
                       {item.children.map((child) => (
-                        <a
+                        <MenuLink
                           key={child.name}
                           href={child.href}
                           target={child.external ? '_blank' : undefined}
@@ -146,7 +154,7 @@ export function Navbar() {
                           className="block whitespace-nowrap px-4 py-2 text-black transition-colors hover:bg-jan-blue-soft hover:text-jan-blue"
                         >
                           {child.name}
-                        </a>
+                        </MenuLink>
                       ))}
                     </div>
                   </div>
@@ -222,7 +230,7 @@ export function Navbar() {
                 <ul className="space-y-4">
                   {MENU_ITEMS.map((item) => (
                     <li key={item.name}>
-                      <a
+                      <MenuLink
                         href={item.href}
                         className={cn(
                           'block py-2 text-lg font-medium text-black transition-colors hover:text-gray-600',
@@ -231,12 +239,12 @@ export function Navbar() {
                         onClick={() => setMobileOpen(false)}
                       >
                         {item.name}
-                      </a>
+                      </MenuLink>
                       {item.children && (
                         <ul className="space-y-2 pl-4">
                           {item.children.map((child) => (
                             <li key={child.name}>
-                              <a
+                              <MenuLink
                                 href={child.href}
                                 target={child.external ? '_blank' : undefined}
                                 rel={child.external ? 'noopener noreferrer' : undefined}
@@ -244,7 +252,7 @@ export function Navbar() {
                                 onClick={() => setMobileOpen(false)}
                               >
                                 {child.name}
-                              </a>
+                              </MenuLink>
                             </li>
                           ))}
                         </ul>

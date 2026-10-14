@@ -6,6 +6,7 @@
  * Nextra's `isUnderCurrentDocsTree` did. Replaces Fumadocs' description cards.
  */
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTreeContext } from 'fumadocs-ui/contexts/tree'
 import type * as PageTree from 'fumadocs-core/page-tree'
@@ -44,19 +45,21 @@ export function NavLinks() {
   }, [root, pathname])
 
   if (!prev && !next) return null
+  const PrevLink = prev?.url.startsWith('/') && !prev.url.startsWith('//') ? Link : 'a'
+  const NextLink = next?.url.startsWith('/') && !next.url.startsWith('//') ? Link : 'a'
   return (
     <div className="not-prose mb-8 mt-16 flex items-center border-t border-[#e5e7eb] pt-8 print:hidden">
       {prev && (
-        <a href={prev.url} title={String(prev.name)} className={cn(linkClass, 'pr-4')}>
+        <PrevLink href={prev.url} title={typeof prev.name === 'string' ? prev.name : undefined} className={cn(linkClass, 'pr-4')}>
           <ArrowRightIcon className="inline h-5 shrink-0 rotate-180" />
           {prev.name}
-        </a>
+        </PrevLink>
       )}
       {next && (
-        <a href={next.url} title={String(next.name)} className={cn(linkClass, 'ml-auto pl-4 text-right')}>
+        <NextLink href={next.url} title={typeof next.name === 'string' ? next.name : undefined} className={cn(linkClass, 'ml-auto pl-4 text-right')}>
           {next.name}
           <ArrowRightIcon className="inline h-5 shrink-0" />
-        </a>
+        </NextLink>
       )}
     </div>
   )

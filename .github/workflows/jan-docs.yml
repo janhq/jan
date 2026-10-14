@@ -97,6 +97,7 @@ jobs:
         env:
           DOCS_CHANNEL: ${{ steps.target.outputs.channel }}
         run: |
+          node --test scripts/test-checks.mjs
           node scripts/check-redirects.mjs
           node scripts/check-channel.mjs
 
