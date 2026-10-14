@@ -5,11 +5,11 @@ import { siteUrl } from '@/lib/shared'
 export const dynamic = 'force-static'
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return source
-    .getPages()
-    .filter((page) => !page.data.noindex)
-    .map((page) => ({
-      url: `${siteUrl}${page.url === '/' ? '' : page.url}`,
-      changeFrequency: 'daily',
-    }))
+  return [
+    { url: siteUrl },
+    ...source
+      .getPages()
+      .filter((page) => !page.data.noindex && page.url !== '/')
+      .map((page) => ({ url: `${siteUrl}${page.url}` })),
+  ]
 }
