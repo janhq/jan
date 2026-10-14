@@ -8,14 +8,14 @@ version = "0.1.0"
 description = "Python client for the Jan agent runtime: sessions, streamed turns, and host tools over `jan cli agent rpc`"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "AGPL-3.0" }
+license = { text = "Apache-2.0" }
 authors = [{ name = "Jan", email = "service@jan.ai" }]
 keywords = ["jan", "agent", "adk", "json-rpc"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "License :: OSI Approved :: Apache Software License",
 ]
 # No dependencies on purpose: the runtime is a process, the channel is JSON, and
 # a host that has to install a tree to embed an agent will not.
