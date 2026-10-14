@@ -145,6 +145,13 @@ type ChatInputProps = {
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  /**
+   * The turn's tools are still running or awaiting approval after the stream
+   * ended (`chatStatus` is already `ready`). Stop must stay reachable then: a
+   * runaway command otherwise leaves a send arrow and no way to end it. Like
+   * `chatStatus`, it queues what the user types until the turn ends.
+   */
+  toolsRunning?: boolean
   // Overrides the conversation scope this input belongs to — both its message
   // queue and its pending attachments (default: useThreads' currentThreadId).
   // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
@@ -254,6 +261,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  toolsRunning,
   scopeKey,
   ownsToolSet = true,
   surfaceControls,
@@ -673,8 +681,10 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
-      // When the model is still streaming, queue the message for later
-      if (isStreaming && queueId) {
+      // While the model is still streaming, or the turn's tools are still
+      // running, queue the message for later. The queue waits for the tools, so
+      // a second turn never starts under a tool loop that Stop still has to end.
+      if ((isStreaming || toolsRunning) && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
@@ -2932,7 +2942,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               )}
 
-              {isStreaming ? (
+              {isStreaming || toolsRunning ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
