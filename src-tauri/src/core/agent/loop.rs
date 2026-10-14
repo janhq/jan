@@ -681,6 +681,12 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
+    /// The run's `allowed_tools` allowlist, when the request set one (a
+    /// subagent always does). Advertising already hides every other tool from
+    /// the model, but a model can still name one it was not offered, so the
+    /// same set is enforced where a call is dispatched: a name outside it never
+    /// reaches a built-in, the shell or an MCP server.
+    allowed_names: Option<std::collections::HashSet<String>>,
     /// Where `memory/` and `skills/` live: the project's store under
     /// `~/.jan/projects`. The desktop points this at its permanent store.
     store_root: std::path::PathBuf,
@@ -1996,6 +2002,18 @@ fn escalation_unavailable_msg(name: &str, sandboxed: bool) -> String {
     }
 }
 
+/// The refusal for a call to a tool outside the run's `allowed_tools`. Same
+/// `ERROR: tool '<name>' ...` shape as every other refusal, and it names what
+/// the run may call so the model can recover instead of retrying.
+fn not_in_allowlist_msg(name: &str, allowed: &std::collections::HashSet<String>) -> String {
+    let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
+    names.sort_unstable();
+    format!(
+        "ERROR: tool '{name}' is not available to this run (allowed tools: {})",
+        names.join(", ")
+    )
+}
+
 fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
@@ -2147,6 +2165,17 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            if let Some(allowed) = &self.allowed_names {
+                if !allowed.contains(name) {
+                    let id = tc
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    out.push(ToolOutcome::plain(id, not_in_allowlist_msg(name, allowed)));
+                    continue;
+                }
+            }
             if name == "ask" {
                 let id = tc
                     .get("id")
@@ -3801,6 +3830,7 @@ async fn orchestrate_inner(
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
             project_root: root.clone(),
+            allowed_names: allowed_names.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
@@ -8651,6 +8681,7 @@ mod tests {
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             project_root: root,
+            allowed_names: None,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             events,
@@ -12058,6 +12089,61 @@ mod tests {
         // The edit ran in the sequential pass and the read after it, so the
         // announcements follow completion.
         assert_eq!(*heard.lock().unwrap(), ["e", "r"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A model can name a tool it was never offered (a hallucinated name, or one
+    /// steered by text it read), so `allowed_tools` has to hold where a call is
+    /// dispatched and not only where tools are advertised.
+    #[tokio::test]
+    async fn a_call_outside_the_allowlist_is_refused_and_does_not_run() {
+        let root = hooks_root("allowlist_dispatch");
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        let call = |id: &str, name: &str, args: serde_json::Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() }
+            })
+        };
+        let calls = [
+            call("sh", "shell", json!({ "command": "touch SHELL_RAN" })),
+            call("wr", "write", json!({ "path": "WRITE_RAN", "content": "x" })),
+            call("rd", "read", json!({ "path": "a.txt" })),
+        ];
+
+        // Control: with no allowlist the same calls run, so the refusals below
+        // come from the allowlist and not from a broken fixture.
+        let open = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        open.invoke_streaming(&calls, &|_| {}).await.unwrap();
+        assert!(root.join("SHELL_RAN").exists(), "control: the shell runs");
+        assert!(root.join("WRITE_RAN").exists(), "control: the write runs");
+        std::fs::remove_file(root.join("SHELL_RAN")).unwrap();
+        std::fs::remove_file(root.join("WRITE_RAN")).unwrap();
+
+        let mut restricted = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        restricted.allowed_names = Some(["read".to_string()].into_iter().collect());
+        let out = restricted.invoke_streaming(&calls, &|_| {}).await.unwrap();
+
+        let by_id = |id: &str| out.iter().find(|o| o.id == id).expect("outcome").content.clone();
+        for refused in ["sh", "wr"] {
+            let text = by_id(refused);
+            assert!(text.contains("not available to this run"), "{refused}: {text}");
+            assert!(text.contains("allowed tools: read"), "{refused}: {text}");
+        }
+        assert!(!root.join("SHELL_RAN").exists(), "the shell must not run");
+        assert!(!root.join("WRITE_RAN").exists(), "the write must not run");
+        assert!(by_id("rd").contains("one"), "an allowed read still runs");
         let _ = std::fs::remove_dir_all(&root);
     }
 
