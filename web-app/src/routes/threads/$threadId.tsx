@@ -201,16 +201,21 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
-// A chat agent tool the user has switched off. The switch is enforced where the
-// command would run, not only where the tool is offered: a call can still
+// How a call to a chat agent tool name is served. The switch is enforced where
+// the command would run, not only where the tool is offered: a call can still
 // arrive from replayed history or from a turn in flight when it flips. Such a
 // call is refused outright, before any approval prompt, because a prompt for a
-// tool the user turned off could save a permission for it.
+// tool the user turned off could save a permission for it. With the switch off
+// the built-in is not offered, so an MCP tool of the same name is the user's
+// own: it is served as an MCP tool and prompts like any other.
+function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
+  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+  if (useChatShell.getState().shellEnabled) return 'builtin'
+  return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
+}
+
 function isDisabledChatAgentTool(toolName: string): boolean {
-  return (
-    CHAT_AGENT_TOOL_NAMES.has(toolName) &&
-    !useChatShell.getState().shellEnabled
-  )
+  return chatShellRoute(toolName) === 'disabled'
 }
 
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
@@ -220,7 +225,7 @@ function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     WEB_TOOL_NAMES.has(toolName) ||
-    (CHAT_AGENT_TOOL_NAMES.has(toolName) && !isDisabledChatAgentTool(toolName))
+    chatShellRoute(toolName) === 'builtin'
   )
 }
 
@@ -743,7 +748,7 @@ function ThreadDetail() {
               (async () => {
                 if (WEB_TOOL_NAMES.has(toolName)) {
                   return await executeWebTool(toolName, toolCall.input)
-                } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+                } else if (chatShellRoute(toolName) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.

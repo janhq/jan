@@ -1139,6 +1139,37 @@ describe('ThreadDetail route', () => {
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(shell.execute).not.toHaveBeenCalled()
     })
+
+    // Turning the built-in off must not break a user's own MCP tool that happens
+    // to be called `shell`: it is not offered by the built-in any more, so the
+    // call is served by the MCP server and prompts like any MCP call.
+    it('serves an MCP tool named shell while the switch is off', async () => {
+      shell.enabled = false
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () =>
+        ({
+          callToolWithCancellation: (args: unknown) => ({
+            promise: callTool(args),
+            cancel: vi.fn().mockResolvedValue(undefined),
+            token: 't',
+          }),
+        }) as never
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh4'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(callTool).toHaveBeenCalledTimes(1)
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
+    })
   })
 
   describe('tool-call approval requested early, execution stays in onFinish', () => {
