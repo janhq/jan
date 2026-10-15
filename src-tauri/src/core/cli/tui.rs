@@ -515,7 +515,7 @@ enum NoticeKind {
     MonitorTimedOut,
     ShellFinished,
     ShellFailed,
-    /// Anything else (a hook notice, a still-running shell): a plain note.
+    /// Anything else (a hook notice): a plain note.
     Other,
 }
 
@@ -25457,7 +25457,7 @@ mod tests {
     /// quietly turning a failure back into a dim note.
     #[test]
     fn notice_kinds_classify_the_real_headlines() {
-        use crate::core::agent::bg_shell::{headline, still_running_headline};
+        use crate::core::agent::bg_shell::headline;
         use tauri_plugin_agent_tools::tools::monitor::headline as monitor_headline;
         use tauri_plugin_agent_tools::tools::ShellDone;
         let done = |failed| ShellDone {
@@ -25477,7 +25477,6 @@ mod tests {
             ),
             (headline(&done(false)), NoticeKind::ShellFinished),
             (headline(&done(true)), NoticeKind::ShellFailed),
-            (still_running_headline("npm run dev"), NoticeKind::Other),
             ("hook 'fmt' failed: exit 2".to_string(), NoticeKind::Other),
         ];
         for (text, kind) in cases {
@@ -43245,9 +43244,7 @@ mod tests {
         app.submit_user("start the build".into());
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         // The model answered and the run ended: background work no longer
         // holds it open, so the session is idle.
@@ -43284,9 +43281,7 @@ mod tests {
             .push(serde_json::json!({ "role": "assistant", "content": "building" }));
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: Some("/tmp/build.log".to_string()),
         });
         app.shell_set.finish(ShellDone {
             id: 1,
@@ -43325,9 +43320,7 @@ mod tests {
 
         set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         set.finish(ShellDone {
             id: 1,

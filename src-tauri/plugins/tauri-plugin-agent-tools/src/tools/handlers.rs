@@ -997,17 +997,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                 .as_ref()
                 .map(|p| crate::tools::sandbox::scratch_display_path(ctx.scratch_root, p));
             // Raised before this call returns, so the caller is already owed a
-            // result by the time the turn that made the call can end. It
-            // carries the path too, so a caller that stops waiting can still
-            // say where the output will land.
+            // result by the time the turn that made the call can end.
             if let Some(sink) = &done_sink {
                 sink(crate::tools::ShellEvent::Backgrounded(
-                    crate::tools::ShellBackgrounded {
-                        id,
-                        command: command_owned.clone(),
-                        timeout_secs,
-                        output_path: display.clone(),
-                    },
+                    crate::tools::ShellBackgrounded { id, timeout_secs },
                 ));
             }
             match (temp, display) {
@@ -1034,21 +1027,11 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         }
                     });
                     let ping = if ctx.shell_done_sink.is_some() {
-                        // The bound is quoted alongside the promise: the model
-                        // needs to know both when it will be told and when the
-                        // run stops holding itself open for a command that may
-                        // never end.
-                        format!(
-                            " You do not have to wait or poll for it: you are notified \
-                             automatically when it finishes, so carry on with other work \
-                             or end your turn. \
-                             If it is still running after about {}s you are told that \
-                             instead, and the run is free to end -- the file still appears \
-                             when the command eventually finishes.",
-                            crate::tools::shell_park_budget_secs(timeout_secs)
-                        )
+                        " You do not have to wait or poll for it: you are notified \
+                         automatically when it finishes, so carry on with other work \
+                         or end your turn."
                     } else {
-                        String::new()
+                        ""
                     };
                     format!(
                         "Command exceeded {timeout_secs}s and is still running in the \
@@ -3301,10 +3284,6 @@ mod tests {
         assert_eq!(
             handoff.timeout_secs, 0,
             "the park budget is sized from this"
-        );
-        assert!(
-            handoff.output_path.is_some(),
-            "the hand-off names the file, so a caller that gives up can still say where"
         );
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         let got = events.lock().unwrap().clone();
