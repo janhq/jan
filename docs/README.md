@@ -83,13 +83,12 @@ build replaces it.
 Stable uses the existing `docs` Cloudflare deployment records (`Preview` and
 `Production`); nightly uses new `docs-nightly` records (`Preview` and
 `Production`) at `docs-nightly.jan.ai`. Neither channel has deployment approval
-gates. After the docs migration lands on `main`, bootstrap the `docs-stable`
-branch from that migrated revision before the first stable deployment; subsequent
-stable documentation updates should be promoted to `docs-stable`. Do not rely
+gates. The migration is hosted on `docs-stable` independently of the existing
+marketing site on `main`; stable documentation updates should be promoted to
+`docs-stable`. Do not rely
 on branch creation to start the first build: path-filtered push workflows may
 not run when creating a branch at an existing commit. Use manual workflow
-dispatch from `docs-stable` after bootstrap (live deployment still requires the
-explicit enable variable below).
+dispatch from `docs-stable` when a deployment is needed without a matching push.
 
 The marketing site is deployed separately. This workflow does not deploy
 `jan.ai` or install its legacy-docs redirects. Ship `redirects/jan.ai.txt` in
@@ -97,24 +96,22 @@ the marketing site's deployed `_redirects` only after Stable is live. Keep the
 cutover coordinated, and do not publish a Desktop release containing the new
 `docs.jan.ai` links until that domain serves Stable docs.
 
-### Preview-first rollout
+### Deployment triggers
 
-Same-repository PR previews are enabled. Live deployments are **disabled by
- default**, including manual workflow runs. After reviewing previews and finishing
-infra/cutover setup, enable each channel independently with GitHub **repository
-variables** (not secrets):
+Same-repository PR previews are enabled. Matching docs/workflow pushes to
+`docs-stable`, and manual runs from that branch, automatically deploy Stable
+to `jan-docs` / `docs.jan.ai`. No Stable enable variable is required: merging a
+matching PR into `docs-stable` is the publication decision.
 
-- `DOCS_NIGHTLY_DEPLOY_ENABLED=true`: permits `main` to deploy to
-  `jan-docs-nightly` / `docs-nightly.jan.ai`.
-- `DOCS_STABLE_DEPLOY_ENABLED=true`: permits `docs-stable` to deploy to
-  `jan-docs` / `docs.jan.ai`.
+Nightly live deployment remains disabled unless the GitHub repository variable
+`DOCS_NIGHTLY_DEPLOY_ENABLED` equals exactly `true`. Once enabled, matching
+pushes/manual runs from `main` deploy to `jan-docs-nightly` /
+`docs-nightly.jan.ai`. This routing applies when this workflow is installed on
+`main`; the existing marketing workflow there is unchanged by a docs-stable PR.
 
-Unset variables, or any value other than exactly `true`, disable live deployment.
-Changing a variable does not deploy by itself: dispatch the workflow on the
-matching branch or push a matching docs change. Builds/checks still run when
-live deployment is disabled. Preview uploads require the target Pages project
-to exist with the expected production branch, but custom domains are not needed
-to review the `pages.dev` preview URL.
+Builds/checks still run when Nightly deployment is disabled. Preview uploads
+require the target Pages project to exist with the expected production branch,
+but custom domains are not needed to review the `pages.dev` preview URL.
 
 - `.github/workflows/jan-docs.yml` owns builds, redirect checks and deployments,
   including PR previews (`pr-<number>`). Channel/branch selection is the

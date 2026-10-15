@@ -110,15 +110,15 @@ jobs:
   deploy:
     name: Deploy ${{ needs.build.outputs.channel }} docs
     needs: build
-    # Preview-first rollout: same-repo PR previews remain enabled. Live sites
-    # require explicit repository variables, independently for each channel.
-    # Unset variables mean disabled; manual runs cannot bypass this guard.
+    # Stable publishes on matching docs-stable pushes/manual runs. Nightly
+    # remains opt-in; an unset variable disables its live deployment.
+    # Same-repo PR previews remain enabled.
     # Untrusted fork PRs and manual runs on arbitrary branches never deploy.
     if: >-
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       ((github.ref == 'refs/heads/main' && vars.DOCS_NIGHTLY_DEPLOY_ENABLED == 'true') ||
-      (github.ref == 'refs/heads/docs-stable' && vars.DOCS_STABLE_DEPLOY_ENABLED == 'true')))
+      github.ref == 'refs/heads/docs-stable'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
