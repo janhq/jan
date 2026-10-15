@@ -4883,9 +4883,13 @@ async fn run_turn_cycle(
                 }
             }
             let awaiting_user = final_text.trim_end().ends_with('?');
+            // Held back while background work is owed: the model is legitimately
+            // waiting on it, and the park below resumes it when it lands, so the
+            // nudge then fires at the real stop instead of pestering a wait.
             if !closeout_nudged
                 && run_mode == crate::core::agent::plan::RunMode::Normal
                 && !awaiting_user
+                && !tools.background_pending()
             {
                 if let Some(summary) = open_todo_summary(todo_registry).await {
                     closeout_nudged = true;
@@ -5233,6 +5237,7 @@ async fn run_turn_cycle(
         } else if mutations_since_todo_touch >= MID_RUN_NUDGE_MUTATION_THRESHOLD
             && mid_run_nudge_count < MID_RUN_NUDGE_MAX_PER_CYCLE
             && run_mode == crate::core::agent::plan::RunMode::Normal
+            && !tools.background_pending()
         {
             let open_count = match todo_registry {
                 Some(registry) => {
