@@ -228,7 +228,7 @@ export type WebFetchPage = {
   truncated: boolean
 }
 
-const TRUNCATION_MARKER = '\n\n[content truncated]'
+export const TRUNCATION_MARKER = '\n\n[content truncated]'
 const FETCH_HEADER = /^Title: (.*)\nURL: (.*)\n\n([\s\S]*)$/
 
 /**
