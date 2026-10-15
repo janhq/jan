@@ -6,5 +6,7 @@ module.exports = {
   priority: 1.0,
   // /tokamak is intentionally hidden (kept reachable but unlinked); keep it out
   // of the sitemap so it isn't surfaced for indexing.
-  exclude: ['/tokamak'],
+  // Documentation now has its own canonical sitemap at docs.jan.ai.
+  // Do not advertise old URLs that permanently redirect to the new host.
+  exclude: ['/tokamak', '/docs', '/docs/*'],
 }

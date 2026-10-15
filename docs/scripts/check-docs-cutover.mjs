@@ -70,5 +70,7 @@ if (process.argv[2]) {
     const response = await fetch(new URL(path, process.argv[2]), { redirect: 'manual' })
     assert.equal(response.status, path === '/' ? 200 : 301, `${path}: existing asset precedence`)
   }
-  console.log('PASS: all rules through Pages, including existing docs HTML assets; homepage still 200')
+  const query = await fetch(new URL('/docs/desktop/quickstart?utm_source=cutover&x=1', process.argv[2]), { redirect: 'manual' })
+  assert.equal(query.headers.get('location'), 'https://docs.jan.ai/desktop/quickstart?utm_source=cutover&x=1', 'Query parameters must survive migration')
+  console.log('PASS: all rules through Pages, including existing docs HTML assets and query strings; homepage still 200')
 }
