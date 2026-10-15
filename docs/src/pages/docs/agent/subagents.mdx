@@ -167,16 +167,17 @@ Jan ships five subagents, ready to dispatch with no setup:
 
 | Name | Model | What it does |
 | --- | --- | --- |
-| `explore` | `smol` | Codebase exploration: finds where things are and reports `path:line` evidence. Told to only read |
+| `explore` | `smol` | Codebase exploration: finds where things are and reports `path:line` evidence. Read-only: `read`, `ls`, `find`, `grep` only |
 | `research` | `smol` | Answers a question from current web sources, with citations |
 | `review` | `inherit` | Reviews a change for correctness, risk and missing tests, and reports instead of editing |
 | `debug` | `inherit` | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
 | `general` | `inherit` | Any task no other agent fits |
 
-Every built-in has the session's full toolset; its role is its prompt and model. `explore` is
-read-only by instruction, not by construction: on the cheap `smol` model under an auto-approving
-policy it could still write or run commands. To hold it to reading, give it a definition of your own
-(see below) with `allowed_tools = ["read", "ls", "find", "grep"]`.
+`explore` is read-only by construction: it is offered only `read`, `ls`, `find` and `grep`, with no
+shell and no write tools, so even on the cheap `smol` model under an auto-approving policy it cannot
+change anything. Every other built-in has the session's full toolset; its role is its prompt and
+model. To widen or narrow any of them, give it a definition of your own (see below) with the
+`allowed_tools` you want.
 
 Each dispatch entry names an `agent`, one of the predefined agents, and the task. Workers are named
 after their agent, numbered when one agent runs more than once (`explore`, `explore-2`); the
