@@ -2,6 +2,9 @@
 module.exports = {
   siteUrl: 'https://jan.ai/',
   generateRobotsTxt: true,
+  // postbuild runs after the static export; emit into the uploaded directory,
+  // not public/ (which Next already copied before this script runs).
+  outDir: './out',
   changefreq: 'daily',
   priority: 1.0,
   // /tokamak is intentionally hidden (kept reachable but unlinked); keep it out

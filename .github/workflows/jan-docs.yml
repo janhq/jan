@@ -69,7 +69,15 @@ jobs:
         run: rm -rf out/* .next/*
       - name: Build website
         working-directory: docs
-        run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
+        run: export NODE_ENV=production && yarn build && yarn postbuild && cp _redirects out/_redirects && cp _headers out/_headers
+
+      - name: Validate docs cutover and sitemap
+        run: node docs/scripts/check-docs-cutover.mjs --out docs/out
+
+      # Live readiness is a production cutover gate, not a flaky PR check.
+      - name: Verify Stable destination readiness
+        if: github.event_name != 'pull_request'
+        run: node docs/scripts/check-docs-cutover.mjs --live
 
       - name: Publish to Cloudflare Pages PR Preview and Staging
         if: github.event_name == 'pull_request'
