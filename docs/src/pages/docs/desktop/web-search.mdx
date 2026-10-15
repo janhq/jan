@@ -43,7 +43,10 @@ You can toggle web search for a chat from the input toolbar - the globe icon sho
 
 A typical flow is `web_search` to find sources, then `web_fetch` to read a specific result in full.
 `web_search` takes a `query` and an optional `count` (default 5, max 20); `web_fetch` takes an
-http(s) `url`. Fetched content is length-bounded so it doesn't flood the model's context.
+http(s) `url`. Fetched content is length-bounded so it doesn't flood the model's context: a page is
+cut to a fraction of the model's context window, and never past **Max tool output characters** in
+**Settings > MCP Servers** (40,000 by default). With that setting at `0` only the fetch's own
+40,000-character bound applies. A page that was cut ends with `[content truncated]`.
 
 ## Requirements
 
