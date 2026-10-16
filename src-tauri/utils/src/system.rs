@@ -108,6 +108,14 @@ pub fn setup_library_path(
 
 /// Computes the same overrides `setup_library_path` applies.
 pub fn library_path_env(library_path: Option<&Path>, cuda: &CudaPaths) -> LibraryEnv {
+    library_path_env_with_current(library_path, cuda, None)
+}
+
+pub fn library_path_env_with_current(
+    library_path: Option<&Path>,
+    cuda: &CudaPaths,
+    current_ld_library_path: Option<&str>,
+) -> LibraryEnv {
     let mut env = LibraryEnv::default();
     let command = &mut env;
 
@@ -119,7 +127,10 @@ pub fn library_path_env(library_path: Option<&Path>, cuda: &CudaPaths) -> Librar
         all_lib_dirs.extend(cuda.lib_paths.iter().cloned());
 
         if !all_lib_dirs.is_empty() {
-            let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+            let current = current_ld_library_path
+                .map(str::to_owned)
+                .or_else(|| std::env::var("LD_LIBRARY_PATH").ok())
+                .unwrap_or_default();
             let current = current.trim_end_matches(':');
             let new_val = if current.is_empty() {
                 all_lib_dirs.join(":")
