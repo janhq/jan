@@ -6,5 +6,27 @@
   "increaseContextSize": "コンテキストサイズを増やす",
   "lastRequestOverflowed": "前回のリクエストがコンテキストウィンドウを超過しました。",
   "contextOverflowDetail": "このリクエストには {{request}} token が必要でしたが、モデルのコンテキストウィンドウは {{context}} token しか保持できません。",
-  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。"
+  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。",
+  "engine": {
+    "unknown": "モデルエンジンが予期しないエラーを報告しました。",
+    "MODEL_LOAD_FAILED": "モデルを読み込めませんでした。",
+    "MODEL_ARCH_NOT_SUPPORTED": "このモデルのアーキテクチャは、現在のエンジンではサポートされていません。設定からエンジンを更新すると、対応が追加される場合があります。",
+    "MODEL_LOAD_TIMED_OUT": "モデルの読み込みに時間がかかりすぎたため、停止しました。より小さなモデルか、より小さなコンテキストサイズにすると改善することが多いです。",
+    "MISSING_SHARED_LIBRARY": "エンジンに必要なライブラリが見つからないため、起動できません。",
+    "GPU_DRIVER_TOO_OLD": "GPUドライバーがこのエンジンには古すぎます。ドライバーを更新するか、設定でCPUエンジンに切り替えると解消します。",
+    "OUT_OF_MEMORY": "このモデルを実行するのに十分なメモリがありません。より小さなモデルか、より小さなコンテキストサイズにすると改善することが多いです。",
+    "INVALID_ARGUMENT": "モデルの設定のいずれかが無効です。",
+    "IO_ERROR": "モデルの起動中に、ファイルを読み書きできませんでした。",
+    "INTERNAL_ERROR": "モデルの起動中に、Janの内部で問題が発生しました。"
+  },
+  "engineMissingLibraries": "不足: {{libraries}}",
+  "engineReportedDetail": "エンジンの報告: {{detail}}",
+  "startModelFailed": "モデルの起動に失敗しました: {{reason}}",
+  "createModelFailed": "モデルの作成に失敗しました: {{reason}}",
+  "noRunningSession": "モデル {{model}} の実行中セッションが見つかりません",
+  "serverPortOccupied": "ポートは使用中です",
+  "serverPortOccupiedDescription": "ポート{{port}}はすでに使用されています。別のポートをお試しください。",
+  "serverInvalidModelPath": "モデルのパスが無効か、アクセスできません",
+  "serverStartModelFailed": "モデルの起動に失敗しました",
+  "serverStartFailed": "サーバーの起動に失敗しました"
 }

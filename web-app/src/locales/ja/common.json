@@ -2,7 +2,9 @@
   "htmlArtifact": {
     "code": "コード",
     "preview": "プレビュー",
-    "previewStreaming": "生成が完了すると利用できます"
+    "previewStreaming": "生成が完了すると利用できます",
+    "unresolvedAssets_one": "プレビューで読み込めないアセット参照が1件あります。相対パスには、解決するためのベースURLがありません。",
+    "unresolvedAssets_other": "プレビューで読み込めないアセット参照が{{count}}件あります。相対パスには、解決するためのベースURLがありません。"
   },
   "assistants": "アシスタント",
   "hardware": "ハードウェア",
@@ -13,6 +15,11 @@
   "experimental": "実験的",
   "claude_code": "Claude Code",
   "https_proxy": "HTTPSプロキシ",
+  "web_search": "ウェブ検索",
+  "browse": "ブラウズ",
+  "moreControls": "その他の操作",
+  "starting": "起動中...",
+  "activeSuffix": "（有効）",
   "extensions": "拡張機能",
   "attachments": "添付ファイル",
   "general": "全般",
@@ -28,6 +35,60 @@
   "appearance": "外観",
   "privacy": "プライバシー",
   "keyboardShortcuts": "ショートカット",
+  "home": "ホーム",
+  "cowork": "Cowork",
+  "newSession": "新しいセッション",
+  "artifacts": "アーティファクト",
+  "customize": "カスタマイズ",
+  "local": "ローカル",
+  "selectFolder": "フォルダを選択",
+  "selectModel": "先にモデルを選択してください",
+  "commands": "コマンド",
+  "cmdHelp": "利用できるコマンドを表示",
+  "cmdClear": "このセッションをクリア",
+  "cmdModels": "使用中のモデルを切り替える",
+  "cmdModelsHint": "/models と入力し、一覧からモデルを選んでください",
+  "cmdModelSwitched": "{{name}}に切り替えました",
+  "cmdUnknown": "不明なコマンド: {{name}}。/help を試してください",
+  "cmdBusy": "エージェントの実行中は、この操作はできません",
+  "cmdCompact": "セッションのコンテキストを要約して圧縮する",
+  "cmdCompacted": "{{before}}件のメッセージを{{after}}件に圧縮しました",
+  "cmdNothingToCompact": "圧縮できる内容はまだありません",
+  "cmdCompactFailed": "圧縮に失敗しました: {{error}}",
+  "cmdPlan": "プランモードを切り替える（読み取り専用。エージェントは提案するだけで、書き込みません）",
+"cmdPlanOn": "プランモードをオンにしました。エージェントは読み取りと提案のみを行い、書き込みません。",
+    "cmdPlanOff": "プランモードをオフにしました。通常どおり実行します。",
+  "cmdTodo": "進捗パネルを開く",
+  "cmdTasks": "バックグラウンドタスクのパネルを開く",
+  "cmdInit": "プロジェクトを調べ、スキルとメモリを書き出す",
+  "cmdInitRunning": "このプロジェクトを調べています",
+  "skills": "スキル",
+  "skillsInContext": "この実行でエージェントが使えるスキル",
+  "skillsTitle": "スキルを管理",
+  "skillsScopeProject": "{{folder}}のスキル",
+  "skillsScopeGlobal": "すべてのセッションで使えるグローバルスキル",
+  "skillsScopeMerged": "{{folder}}のスキルと、すべてのセッションで共有するグローバルスキル",
+  "skillOriginFolder": "フォルダ",
+  "skillOriginGlobal": "グローバル",
+  "skillsEmpty": "スキルはまだありません",
+  "skillsPickOrNew": "編集するスキルを選ぶか、新しく作成してください。",
+  "skillNew": "新しいスキル",
+  "skillDelete": "スキルを削除",
+  "skillSave": "保存",
+  "skillSaved": "スキルを保存しました",
+  "skillNameRequired": "スキル名は必須です",
+  "skillNamePlaceholder": "スキル名",
+  "skillContentPlaceholder": "再利用する手順をMarkdownで記述…",
+  "skillHubImport": "ハブからインポート",
+  "skillHubTitle": "Anthropicスキルハブ",
+  "skillHubEmpty": "ハブにスキルが見つかりません",
+  "skillImport": "インポート",
+  "skillReimport": "再インポート",
+  "skillImported": "{{name}}をインポートしました",
+  "sessions": "セッション",
+  "deleteSession": "セッションを削除",
+  "deleteSessionTitle": "セッションを削除しますか？",
+  "deleteSessionBody": "「{{title}}」とその会話記録は完全に削除されます。この操作は元に戻せません。",
   "newChat": "新しいチャット",
   "newAgentChat": "新しいエージェントチャット",
   "chats": "チャット",
@@ -36,6 +97,8 @@
   "hub": "ハブ",
   "helpSupport": "ヘルプとサポート",
   "helpUsImproveJan": "Janの改善にご協力ください",
+  "analyticsConsentDetail": "機能の使用状況を把握するため、匿名データを収集します。チャットや個人情報を追跡することはありません。設定 > プライバシーから、いつでも変更できます。",
+  "analyticsConsentQuestion": "Janの改善にご協力いただけますか？",
   "unstarAll": "すべてのスターを解除",
   "unstar": "スターを解除",
   "deleteAll": "すべて削除",
@@ -78,7 +141,39 @@
   "deny": "拒否",
   "start": "開始",
   "stop": "停止",
-  "preview": "プレビュー",
+  "preview": {
+    "loading": "開いています…",
+    "unsupported": "Janはこの種類のファイルを表示できません。別のアプリで開いて確認してください。",
+    "outside": "このファイルは、セッションのワークスペース内にありません。",
+    "tooLarge": "大きすぎてプレビューできません。別のアプリで開いて確認してください。",
+    "reload": "再読み込み",
+    "allowNetwork": "ネットワークを許可",
+    "unsandboxed": "サンドボックスなしで実行: 保存したデータとローカルファイルが使えます",
+    "unresolvedRefs_one": "このページがリンクしているファイルのうち1件を、プレビューで読み込めません。ブラウザで開いて確認してください。",
+    "unresolvedRefs_other": "このページがリンクしているファイルのうち{{count}}件を、プレビューで読み込めません。ブラウザで開いて確認してください。",
+    "externalRefs_one": "このページがウェブから読み込むリソース1件がブロックされています。「ネットワークを許可」をオンにすると読み込めます。",
+    "externalRefs_other": "このページがウェブから読み込むリソース{{count}}件がブロックされています。「ネットワークを許可」をオンにすると読み込めます。",
+    "scriptErrors_one": "ページがエラーを報告しました: {{message}}",
+    "scriptErrors_other": "ページが{{count}}件のエラーを報告しました。最初のエラー: {{message}}"
+  },
+  "changes": {
+    "title": "エージェントの変更",
+    "empty": "エージェントが書き込んだり編集したりしたファイルが、ここに表示されます。",
+    "a11y": "エージェントの変更: ファイル{{files}}件、追加{{additions}}行、削除{{deletions}}行"
+  },
+  "modelPanel": {
+    "title": "モデル設定",
+    "a11y": "モデル設定を開く",
+    "contextTooltip": "コンテキストウィンドウ: {{value}} / {{max}}トークン"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "スキル「{{name}}」は利用できません",
+    "kind": {
+      "skill": "スキル",
+      "command": "コマンド",
+      "model": "モデル"
+    }
+  },
   "compactWidth": "コンパクト幅",
   "fullWidth": "全幅",
   "dark": "ダーク",
@@ -246,19 +341,35 @@
   "modelSettings": {
     "title": "モデル設定 - {{modelId}}",
     "description": "パフォーマンスと動作を最適化するためにモデル設定を構成します。",
-    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
+    "nglDisabledByFit": "GPUレイヤー数は自動フィットが決めています。手動で設定するには、自動フィットをオフにしてください。",
     "samplingDefaults": {
       "title": "デフォルトのサンプリングパラメータ",
       "description": "このモデルのデフォルトのサンプラー設定です。アシスタントごとまたはリクエストごとの値で上書きされない限り使用されます。"
     },
     "specDraft": {
+      "section": "投機的デコーディング",
+      "enable": "投機的デコーディングを有効にする",
+      "enableDescription": "1ステップで複数のトークンを下書きし、まとめて検証することで生成が速くなります。モデルに内蔵されたMTPヘッド、または一緒にダウンロードされたドラフトモデル（MTP、Eagle3、DFlash、DSpark）を使います。",
       "nMax": "最大下書きトークン数",
       "nMaxDescription": "ステップごとに下書きするトークンの最大数。デフォルトは16です。",
       "nMin": "最小下書きトークン数",
       "nMinDescription": "ステップごとに下書きするトークンの最小数。デフォルトは0です。",
       "pMin": "最小下書き確率",
       "pMinDescription": "貪欲な下書きの最小確率（0〜1）。デフォルトは0.75です。"
+    },
+    "templateKwargs": {
+      "section": "チャットテンプレートのオプション",
+      "description": "このモデルのチャットテンプレートが受け付ける追加のオプションです。リクエストごとに chat_template_kwargs として送られます。値を既定のままにすると、テンプレートの判断に任せます。",
+      "addCustom": "カスタムオプションを追加",
+      "keyPlaceholder": "名前",
+      "valuePlaceholder": "値",
+      "add": "追加",
+      "cancel": "キャンセル",
+      "remove": "削除"
     }
+  },
+  "modelControls": {
+    "updateFailed": "モデル設定を更新できませんでした"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -428,6 +539,19 @@
       "title": "ダウンロードに失敗しました",
       "description": "{{item}}のダウンロードに失敗しました"
     },
+    "openSettings": "設定を開く",
+    "downloadTokenRequired": {
+      "title": "Hugging Faceトークンが必要です",
+      "description": "このモデルにはHugging Faceのアクセストークンが必要です。設定でトークンを追加して、もう一度お試しください。"
+    },
+    "downloadLicenseRequired": {
+      "title": "Hugging Faceでモデルのライセンスに同意してください",
+      "description": "ダウンロードする前に、Hugging Faceのモデルページでライセンスに同意する必要があります。"
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Faceのレート制限に達しました",
+      "description": "レート制限に達しました。トークンを追加すると、上限が上がることがあります。しばらくしてからもう一度お試しください。"
+    },
     "modelValidationStarted": {
       "title": "モデルを検証中",
       "description": "ダウンロードしたモデル「{{modelId}}」を正常に完了しました。整合性を検証しています..."
@@ -479,6 +603,7 @@
       "pdfMalformedXref": "{{subject}}のPDF相互参照テーブルが不正なため、解析できませんでした。PDFビューアで開いて保存し直し（ファイル → 印刷 → PDFとして保存）、もう一度アップロードしてください。",
       "pdfScanned": "{{subject}}はスキャンまたは画像ベースのPDFのようです。OCRはまだサポートされていません。テキストベースのPDFをアップロードしてください。",
       "pdfEncrypted": "{{subject}}はパスワードで保護されています。パスワードを解除してもう一度お試しください。",
+      "pdfUnsupportedFeature": "{{subject}}は、Janがまだ解析できないPDF機能を使っています（例: PostScriptのカラー／シェーディング関数）。再保存して内容をフラットにしてから、もう一度アップロードしてください（ファイル → 印刷 → PDFとして保存）。",
       "pdfGeneric": "{{subject}}をPDFとして解析できませんでした。ファイルが破損しているか、サポートされていないPDF機能を使用している可能性があります。",
       "fileTooLarge": "{{subject}}は大きすぎます。{{message}}。",
       "unsupportedType": "ファイル形式「{{type}}」はサポートされていません。",
@@ -512,7 +637,12 @@
     "fileTooLargeDescription": "{{fileName}}は{{maxFileSizeMB}}MBの上限を超えています"
   },
   "files": {
-    "chunksCount": "{{count}}個のチャンク"
+    "chunksCount": "{{count}}個のチャンク",
+    "title": "ファイル",
+    "empty": "添付したファイルと、エージェントが作成したファイルがここに表示されます。",
+    "a11y": "ファイル: {{count}}件",
+    "attachments": "添付ファイル",
+    "notImported": "ワークスペース外"
   },
   "llamacppBusyOnExit": {
     "title": "llama.cppはまだビジー状態です",
@@ -520,5 +650,129 @@
     "forceQuit": "強制終了",
     "forcing": "強制終了しています…",
     "shuttingDown": "シャットダウンしています…"
-  }
+  },
+  "duration": {
+    "seconds": "{{count}}秒",
+    "minutes": "{{count}}分",
+    "hours": "{{count}}時間"
+  },
+  "collapse": "折りたたむ",
+  "expand": "展開",
+  "todoPanelTitle": "進捗",
+  "todoPanelEmpty": "やることリストはまだありません。",
+  "backgroundTasks": "バックグラウンドタスク",
+  "subagentsRunning_one": "{{count}}件のサブエージェントを実行中",
+  "subagentsRunning_other": "{{count}}件のサブエージェントを実行中",
+  "monitorsRunning_one": "{{count}}件のモニターを実行中",
+  "monitorsRunning_other": "{{count}}件のモニターを実行中",
+  "backgroundRunning_one": "{{count}}件のバックグラウンドタスクを実行中",
+  "backgroundRunning_other": "{{count}}件のバックグラウンドタスクを実行中",
+  "monitors": "モニター",
+  "monitorPolling": "ポーリング中",
+  "monitorMatched": "一致",
+  "monitorTimedOut": "タイムアウト",
+  "monitorStopped": "停止",
+  "monitorEnded": "終了",
+  "coworkWatching_one": "{{count}}件のモニターを監視中…",
+  "coworkWatching_other": "{{count}}件のモニターを監視中…",
+  "coworkWaitingBackground": "バックグラウンドタスクを待っています…",
+  "noBackgroundTasks": "バックグラウンドタスクはまだありません。",
+  "running": "実行中",
+  "queued": "キュー待ち",
+  "waiting": "待機中",
+  "finished": "完了",
+  "subagentPhase": "フェーズ {{phase}}",
+  "subagentWaiting": "待機中",
+  "viewTranscript": "記録を表示",
+  "taskWorking": "作業中…",
+  "taskNoOutput": "サブエージェントは、表示できる出力を生成しませんでした。",
+  "subagentToolUses_one": "ツール使用 {{count}}件",
+  "subagentToolUses_other": "ツール使用 {{count}}件",
+  "artifactGroupCode": "コード",
+  "artifactGroupImage": "画像",
+  "artifactGroupDocument": "ドキュメント",
+  "artifactGroupVideo": "動画",
+  "artifactGroupAudio": "音声",
+  "artifactOpenPreview": "プレビューを開く",
+  "artifactOpenExternal": "開く",
+  "artifactMoreActions": "その他の操作",
+  "artifactShowInFolder": "フォルダで表示",
+  "skillsUsedLabel": "使用したスキル",
+  "skillsUsed": "使用したスキル: {{skills}}",
+  "artifactsAll": "すべて",
+  "artifactsEmpty": "まだ何も生成されていません。Coworkの実行で作られたアーティファクトがここに表示されます。",
+  "artifactsNoMatch": "一致するアーティファクトはありません。",
+  "artifactsSearch": "アーティファクトを検索",
+  "artifactsShowMore": "さらに{{count}}件を表示",
+  "workspace": {
+    "readsFrom": "作業場所",
+    "writable": "読み書き",
+    "footnote": "エージェントはこのフォルダを直接読み取り、編集します。差分パネルで変更内容を確認してください。",
+    "footnoteEmpty": "フォルダを添付すると、エージェントがそのプロジェクトで作業できます。フォルダ内のファイルを読み取り、編集できます。",
+    "attach": "フォルダを添付",
+    "change": "フォルダを変更",
+    "detach": "フォルダを外す",
+    "open": "開く",
+    "reveal": "場所を表示",
+    "unavailable": "ワークスペースを利用できません",
+    "missing": "ワークスペースのフォルダ {{folder}} はもう利用できません。別のフォルダを選んでください。",
+    "openFailed": "ワークスペースを開けませんでした",
+    "revealFailed": "ワークスペースの場所を表示できませんでした",
+    "a11yWithFolder": "プロジェクトフォルダ {{folder}}。読み書き権限で添付されています。変更するか、外すことができます。",
+    "a11yNoFolder": "プロジェクトフォルダは添付されていません。添付してください。"
+  },
+  "coworkEmpty": {
+    "title": "何に取り組みますか？",
+    "subtitleSandbox": "Janに作業を任せてください。ファイルの読み書き、コマンドの実行、手順の処理を、自分で進めます。",
+    "subtitleFolder": "Janに作業を任せてください。{{folder}}の中で直接、ファイルの読み取りと編集を自分で進めます。",
+    "try": "試す",
+    "sandbox": {
+      "first": "撮影日に基づいてファイル名を変えるPythonスクリプトを書いて",
+      "second": "貼り付けるCSVから、1ページのダッシュボードを作って",
+      "third": "これから説明するプロジェクトのREADMEを下書きして"
+    },
+    "folder": {
+      "first": "{{folder}}がどう構成されているか説明して",
+      "second": "{{folder}}内のTODOをすべて見つけ、領域ごとにまとめて",
+      "third": "これから指定する{{folder}}の箇所のテストを書いて"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "ターミナルなし",
+    "a11y": "コマンドの実行はオフです。詳細。",
+    "title": "コマンドの実行はオフです",
+    "body": "Janは、システムがコマンドを隔離できる場合にのみ、エージェントにシェルコマンドの実行を許可します。ここではサンドボックスが利用できないため、エージェントは作業用フォルダ内のファイルを読み取り、書き込み、編集できますが、コマンドは実行できません。",
+    "fixLinux": "Linuxではbubblewrapを使います。インストールしてから、Janを再起動してください。",
+    "fixMac": "macOSでは、組み込みのサンドボックス /usr/bin/sandbox-exec を使います。利用できるようになったら、Janを再起動してください。",
+    "fixWindows": "WindowsではAppContainerを使います。Janを再起動して、もう一度お試しください。",
+    "recheck": "再確認"
+  },
+  "planMode": {
+    "label": "プラン",
+    "tooltipOff": "まず計画します。エージェントは読み取りと提案のみを行い、書き込みません。",
+    "tooltipOn": "計画中です。オフにすると、エージェントがファイルを書き込めます。",
+    "onAnnounce": "プランモードをオンにしました",
+    "placeholder": "計画を依頼してください。エージェントはファイルを変更しません。"
+  },
+  "budget": {
+    "stoppedSteps": "{{max}}ステップで停止しました。エージェントはまだ完了していません。",
+    "keepGoing": "続ける",
+    "stoppedTokens": "停止しました。このセッションはトークンの予算に達しました。",
+    "compact": "圧縮",
+    "newSession": "新しいセッション"
+  },
+  "run": {
+    "stopped": "停止しました。",
+    "failed": "実行が途中で停止しました。",
+    "tryAgain": "もう一度試す"
+  },
+  "modelNoTools": "{{model}}はツールを呼び出せないため、エージェントとして動作できません。ツール呼び出しに対応したモデルを選んでください。",
+  "askContinue": "続ける",
+  "askNext": "次の質問",
+  "askPrev": "前の質問",
+  "askRecommended": "推奨",
+  "askSelectedCount": "{{count}}件選択中",
+  "askSomethingElse": "その他",
+  "askSomethingElsePlaceholder": "自分の回答を入力",
+  "submit": "送信"
 }

@@ -10,5 +10,9 @@
   "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
   "apiKeyLabel": "APIキー",
   "apiKeyPlaceholder": "APIキーを貼り付け",
-  "invalidBaseUrl": "ベースURLは有効なhttp(s) URLである必要があります"
+  "invalidBaseUrl": "ベースURLは有効なhttp(s) URLである必要があります",
+  "globalSettings": "グローバル設定",
+  "stripReasoning": "コンテキストから推論を除く",
+  "stripReasoningDesc": "履歴を送り直す前に、過去のターンの思考や推論を、すべてのプロバイダーで取り除きます。ローカルモデルではKVキャッシュを再利用しやすくなりますが、一部のモデル（新しいQwenなど）は、複数ターンの推論の質を上げるために残すことを推奨しています。",
+  "providerAlreadyExists": "「{{name}}」という名前のプロバイダーはすでに存在します。"
 }
