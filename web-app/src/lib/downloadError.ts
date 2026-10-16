@@ -24,8 +24,11 @@ const RULES: ReadonlyArray<readonly [DownloadFailureReason, RegExp]> = [
 export function classifyDownloadError(
   error: string
 ): DownloadFailureReason | undefined {
+  // reqwest embeds the requested URL: "error sending request for url (https://…)".
+  // A model path such as /proxy/ or /connection-reset/ must not read as a cause.
+  const cause = error.replace(/https?:\/\/[^\s)]*/gi, '')
   for (const [reason, pattern] of RULES) {
-    if (pattern.test(error)) return reason
+    if (pattern.test(cause)) return reason
   }
   return undefined
 }

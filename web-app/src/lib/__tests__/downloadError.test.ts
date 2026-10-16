@@ -28,6 +28,19 @@ describe('classifyDownloadError', () => {
     ).toBe('refused')
   })
 
+  it('never reads the requested URL as a cause', () => {
+    expect(
+      classifyDownloadError(
+        'Error: error sending request for url (https://huggingface.co/org/proxy-tls-timeout-model/resolve/main/m.gguf?download=true): client error (Connect): tcp connect error: connection refused (os error 10061)'
+      )
+    ).toBe('refused')
+    expect(
+      classifyDownloadError(
+        'Error: error sending request for url (https://hf.co/proxy/connection-reset/m.gguf)'
+      )
+    ).toBe('unreachable')
+  })
+
   it('falls back to a generic unreachable reason for a bare request failure', () => {
     expect(
       classifyDownloadError('Error: error sending request for url (https://x)')
