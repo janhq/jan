@@ -80,8 +80,8 @@ on:
         value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
       MSI_FILE_NAME:
         value: ${{ jobs.build-windows-x64.outputs.MSI_FILE_NAME }}
-      # PORTABLE_FILE_NAME:
-      #   value: ${{ jobs.build-windows-x64.outputs.PORTABLE_FILE_NAME }}
+      PORTABLE_FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.PORTABLE_FILE_NAME }}
 
 jobs:
   build-windows-x64:
@@ -90,7 +90,7 @@ jobs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
       MSI_FILE_NAME: ${{ steps.metadata.outputs.MSI_FILE_NAME }}
-      # PORTABLE_FILE_NAME: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+      PORTABLE_FILE_NAME: ${{ steps.portable.outputs.PORTABLE_FILE_NAME }}
     permissions:
       contents: write
     steps:
@@ -147,10 +147,18 @@ jobs:
       - name: Update app version base on tag
         id: version_update
         shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          PUBLIC_PROVIDER: ${{ inputs.public_provider }}
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          CREATE_UPDATER=true
+          if [ "$PUBLIC_PROVIDER" = "none" ] && [ -z "$UPDATE_SIGNING_KEY" ]; then
+            CREATE_UPDATER=false
+          fi
+          jq --arg version "${{ inputs.new_version }}" --argjson updater "$CREATE_UPDATER" '.version = $version | .bundle.createUpdaterArtifacts = $updater' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
@@ -181,8 +189,10 @@ jobs:
           fi
 
           # Add sign commands to tauri.windows.conf.json
-          jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
-          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          if [ "$PUBLIC_PROVIDER" != "none" ] || [ -n "$AZURE_KEY_VAULT_URI" ]; then
+            jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+            mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          fi
 
           # Update tauri plugin versions
 
@@ -338,7 +348,7 @@ jobs:
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
-          JAN_ENGINE_REQUIRE_SIGNING: '1'
+          JAN_ENGINE_REQUIRE_SIGNING: ${{ inputs.public_provider != 'none' && '1' || '0' }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -403,12 +413,17 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
 
-      # - name: Upload Portable Artifact
-      #   uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-      #   with:
-      #     name: jan-windows-portable-${{ inputs.new_version }}
-      #     path: |
-      #       ./src-tauri/target/release/Jan*.exe
+      - name: Package portable Windows app
+        id: portable
+        shell: pwsh
+        run: ./scripts/package-windows-portable.ps1
+
+      - name: Upload Portable Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: jan-windows-portable-${{ inputs.new_version }}
+          path: ${{ steps.portable.outputs.PORTABLE_PATH }}
+          if-no-files-found: error
 
       ## Set output filename for windows
       - name: Set output filename for windows
@@ -417,28 +432,27 @@ jobs:
           cd ./src-tauri/target/release/bundle/nsis
           if [ "${{ inputs.channel }}" != "stable" ]; then
             FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
-            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
-
             MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
-            # PORTABLE_FILE_NAME="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-portable.exe"
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
-            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
-
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
-            # PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
           fi
-
-          echo "::set-output name=WIN_SIG::$WIN_SIG"
-          echo "::set-output name=FILE_NAME::$FILE_NAME"
-          echo "::set-output name=MSI_FILE_NAME::$MSI_FILE"
-          # echo "::set-output name=PORTABLE_FILE_NAME::$PORTABLE_FILE_NAME"
+          WIN_SIG=""
+          if [ -f "$FILE_NAME.sig" ]; then
+            WIN_SIG=$(cat "$FILE_NAME.sig")
+          elif [ "${{ inputs.public_provider }}" != "none" ]; then
+            echo "Missing updater signature: $FILE_NAME.sig" >&2
+            exit 1
+          fi
+          echo "WIN_SIG=$WIN_SIG" >> "$GITHUB_OUTPUT"
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "MSI_FILE_NAME=$MSI_FILE" >> "$GITHUB_OUTPUT"
         id: metadata
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
         shell: bash
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: inputs.public_provider == 'aws-s3' || (inputs.channel == 'beta' && inputs.public_provider != 'none')
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
@@ -462,13 +476,13 @@ jobs:
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
           asset_content_type: application/octet-stream
 
-      # - name: Upload portable exe to release (github)
-      #   if: inputs.public_provider == 'github'
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
-      #   with:
-      #     upload_url: ${{ inputs.upload_url }}
-      #     asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-      #     asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-      #     asset_content_type: application/octet-stream
+      - name: Upload portable ZIP to release (github)
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ${{ steps.portable.outputs.PORTABLE_PATH }}
+          asset_name: ${{ steps.portable.outputs.PORTABLE_FILE_NAME }}
+          asset_content_type: application/zip
