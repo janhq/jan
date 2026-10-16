@@ -70,6 +70,13 @@ vi.mock('@/lib/provider-api-keys', () => ({
   API_KEY_FALLBACKS_SETTING_KEY: 'api-key-fallbacks',
 }))
 
+const platform = vi.hoisted(() => ({ mac: false }))
+vi.mock('@/lib/shortcuts/platform', () => ({
+  get isMac() {
+    return platform.mac
+  },
+}))
+
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { EngineManager } from '@janhq/core'
@@ -319,6 +326,53 @@ describe('TauriProvidersService', () => {
       await expect(svc.fetchModelsFromProvider(baseProvider))
         .rejects.toThrow('Unexpected error')
       errSpy.mockRestore()
+    })
+
+    // `@tauri-apps/plugin-http` rejects with a plain string, not an Error.
+    describe('when the request cannot be sent', () => {
+      const reject = (url: string) =>
+        vi
+          .mocked(fetchTauri)
+          .mockRejectedValueOnce(`error sending request for url (${url})`)
+      const lan = { ...baseProvider, base_url: 'http://10.1.0.211:11434/v1' }
+
+      beforeEach(() => {
+        platform.mac = false
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+      })
+
+      it('explains the failure instead of saying "Unknown error"', async () => {
+        reject('https://api.test.com/v1/models')
+        const err = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+        expect(err.message).toMatch(/couldn't reach the provider/i)
+        expect(err.message).toContain('https://api.test.com/v1/models')
+        expect(err.message).not.toContain('Unknown error')
+      })
+
+      it('names the macOS Local Network setting for a LAN host', async () => {
+        platform.mac = true
+        reject('http://10.1.0.211:11434/v1/models')
+        const err = await svc.fetchModelsFromProvider(lan).catch((e) => e)
+        expect(err.message).toContain('Local Network')
+      })
+
+      it('does not mention it off macOS or for a public host', async () => {
+        reject('http://10.1.0.211:11434/v1/models')
+        const off = await svc.fetchModelsFromProvider(lan).catch((e) => e)
+        expect(off.message).not.toContain('Local Network')
+
+        platform.mac = true
+        reject('https://api.test.com/v1/models')
+        const pub = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+        expect(pub.message).not.toContain('Local Network')
+      })
+
+      it('keeps the text of a non-Error rejection in the fallback', async () => {
+        vi.mocked(fetchTauri).mockRejectedValueOnce('something odd')
+        await expect(svc.fetchModelsFromProvider(baseProvider)).rejects.toThrow(
+          'Unexpected error while fetching models from test-provider: something odd'
+        )
+      })
     })
 
     it('adds Origin header for localhost URLs', async () => {
