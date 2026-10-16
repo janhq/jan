@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Nascondi note di rilascio",
   "remindMeLater": "Ricordamelo più tardi",
   "downloading": "Download in corso...",
-  "updateNow": "Aggiorna ora"
+  "updateNow": "Aggiorna ora",
+  "retry": "Riprova",
+  "restartFailed": "Riavvio non riuscito"
 }

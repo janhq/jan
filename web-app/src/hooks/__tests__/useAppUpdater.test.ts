@@ -304,6 +304,76 @@ describe('useAppUpdater', () => {
       expect(mockRelaunch).toHaveBeenCalled()
     })
 
+    it('should report success only after the updater promise resolves', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '1.2.0' })
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      await act(async () => {
+        await result.current.checkForUpdate()
+      })
+      mockEvents.emit.mockClear()
+
+      let resolveInstall!: () => void
+      mockUpdaterDownloadAndInstallWithProgress.mockImplementation(
+        async (progressCallback) => {
+          progressCallback({ event: 'Finished' })
+          await new Promise<void>((resolve) => {
+            resolveInstall = resolve
+          })
+        }
+      )
+
+      let downloadPromise!: Promise<void>
+      act(() => {
+        downloadPromise = result.current.downloadAndInstallUpdate()
+      })
+
+      expect(mockEvents.emit).not.toHaveBeenCalledWith(
+        'onAppUpdateDownloadSuccess',
+        {}
+      )
+
+      await act(async () => {
+        resolveInstall()
+        await downloadPromise
+      })
+
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'onAppUpdateDownloadSuccess',
+        {}
+      )
+    })
+
+    it('should not offer an update retry when relaunch fails after installation', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '1.2.0' })
+      mockUpdaterDownloadAndInstallWithProgress.mockResolvedValue(undefined)
+      mockRelaunch.mockRejectedValueOnce(new Error('Relaunch failed'))
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      await act(async () => {
+        await result.current.checkForUpdate()
+      })
+      mockEvents.emit.mockClear()
+
+      await act(async () => {
+        await result.current.downloadAndInstallUpdate()
+      })
+
+      expect(mockEvents.emit).not.toHaveBeenCalledWith(
+        'onAppUpdateDownloadSuccess',
+        {}
+      )
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        'onAppUpdateDownloadError',
+        {
+          message: 'Update installed, but the app could not restart: Relaunch failed',
+          retryable: false,
+        }
+      )
+    })
+
     it('should handle download errors', async () => {
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const mockDownloadAndInstall = vi.fn()
