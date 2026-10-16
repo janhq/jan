@@ -30,7 +30,7 @@
           ],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ]
   },

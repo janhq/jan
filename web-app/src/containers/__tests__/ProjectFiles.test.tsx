@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---------- Module mocks (must come before importing the component) ----------
@@ -17,7 +17,24 @@ const toastMock = vi.hoisted(() => ({
   info: vi.fn(),
   dismiss: vi.fn(),
 }))
+const nativeDrop = vi.hoisted(() => ({
+  enabled: false,
+  listener: null as null | ((event: any) => void),
+}))
 vi.mock('sonner', () => ({ toast: toastMock }))
+vi.mock('@/lib/platform/utils', () => ({
+  isPlatformTauri: () => nativeDrop.enabled,
+}))
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: () => ({
+    onDragDropEvent: async (listener: (event: any) => void) => {
+      nativeDrop.listener = listener
+      return () => {
+        nativeDrop.listener = null
+      }
+    },
+  }),
+}))
 
 // useAttachments selector mock
 const hoisted = vi.hoisted(() => ({
@@ -112,6 +129,8 @@ import ProjectFiles from '../ProjectFiles'
 describe('ProjectFiles', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    nativeDrop.enabled = false
+    nativeDrop.listener = null
     attachmentsStateRef.attachmentsState = { enabled: true, maxFileSizeMB: 10 }
     extMock.listAttachmentsForProject = listAttachmentsForProjectMock
     extMock.deleteFileForProject = deleteFileForProjectMock
@@ -386,6 +405,38 @@ describe('ProjectFiles', () => {
     })
     await waitFor(() => expect(ingestMock).toHaveBeenCalled())
     await waitFor(() => expect(toastMock.success).toHaveBeenCalled())
+  })
+
+  it('processes native Tauri drops only when the cursor is inside the ProjectFiles zone', async () => {
+    nativeDrop.enabled = true
+    ingestMock.mockImplementation(async (_pid, atts, _fn, opts) => {
+      expect(atts[0]).toMatchObject({ path: '/dropped/native.pdf', fileType: 'pdf' })
+      opts.onSuccess()
+    })
+    const { container, unmount } = render(<ProjectFiles projectId="p1" lng="en" />)
+    await waitFor(() => expect(nativeDrop.listener).toBeTruthy())
+    const zone = container.firstElementChild as HTMLElement
+    vi.spyOn(zone, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 100,
+      width: 100, height: 100, toJSON: () => ({}),
+    })
+
+    await act(async () => {
+      nativeDrop.listener?.({
+        payload: { type: 'drop', position: { x: 50, y: 50 }, paths: ['/dropped/native.pdf'] },
+      })
+    })
+    await waitFor(() => expect(ingestMock).toHaveBeenCalled())
+
+    ingestMock.mockClear()
+    await act(async () => {
+      nativeDrop.listener?.({
+        payload: { type: 'drop', position: { x: 150, y: 150 }, paths: ['/dropped/outside.pdf'] },
+      })
+    })
+    expect(ingestMock).not.toHaveBeenCalled()
+    unmount()
+    expect(nativeDrop.listener).toBeNull()
   })
 
   it('falls back to dataTransfer.files when items are unavailable', async () => {

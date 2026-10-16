@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
 import { useProjectUploads } from '@/stores/project-uploads-store'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProjectFilesProps = {
   projectId: string
@@ -309,6 +310,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
   const [isDragging, setIsDragging] = useState(false)
+  const dropZoneRef = useRef<HTMLDivElement>(null)
 
   const uploadProgress = useProjectUploads((s) => s.progress[projectId])
   const completedTick = useProjectUploads(
@@ -449,6 +451,47 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     [files, ingestFiles, maxFileSizeMB, projectId, serviceHub, t]
   )
 
+  const processFilePathsRef = useRef(processFilePaths)
+  processFilePathsRef.current = processFilePaths
+
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    void import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
+      if (disposed) return
+      return getCurrentWebviewWindow().onDragDropEvent((event) => {
+        if (event.payload.type === 'leave') {
+          setIsDragging(false)
+          return
+        }
+        const bounds = dropZoneRef.current?.getBoundingClientRect()
+        const { x, y } = event.payload.position
+        const scale = window.devicePixelRatio || 1
+        const inside = !!bounds && x / scale >= bounds.left && x / scale <= bounds.right &&
+          y / scale >= bounds.top && y / scale <= bounds.bottom
+        if (event.payload.type === 'enter' || event.payload.type === 'over') {
+          setIsDragging(inside)
+          return
+        }
+        setIsDragging(false)
+        if (!inside || !event.payload.paths.length) return
+        if (!attachmentsEnabled) {
+          toast.info(t('common:toast.attachmentsDisabledInfo.title') ?? 'Attachments are disabled in Settings')
+          return
+        }
+        void processFilePathsRef.current(event.payload.paths)
+      }).then((cleanup) => {
+        if (disposed) cleanup()
+        else unlisten = cleanup
+      })
+    }).catch((error) => console.warn('Failed to register native project file drop listener:', error))
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [attachmentsEnabled, t])
+
   const handleUpload = async () => {
     if (!attachmentsEnabled) {
       toast.info(
@@ -570,7 +613,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const isEmpty = !loading && files.length === 0
 
   return (
-    <div className="p-4">
+    <div ref={dropZoneRef} className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">{t('common:projects.files')}</h3>
         <Button
