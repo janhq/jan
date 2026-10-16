@@ -18,26 +18,31 @@ keywords:
   ]
 ---
 
-Jan provides a built-in, OpenAI-compatible API server that runs entirely on your computer, powered by `llama.cpp`. Use it as a drop-in replacement for cloud APIs to build private, offline-capable AI applications.
+Jan provides a built-in, OpenAI-compatible API server that runs entirely on your computer, with local models powered by `llama.cpp` or MLX (on Apple Silicon Macs). Use it as a drop-in replacement for cloud APIs to build private, offline-capable AI applications.
 
 ![Jan's Local API Server Settings UI](./_assets/local-api-server.png)
+
+## Prerequisites
+
+The server needs a local model that Jan can load to start. The default-model picker offers llama.cpp and MLX models. On macOS, this requires Apple Silicon: the bundled llama.cpp engine does not load models on Intel Macs as of v0.8.5, and MLX also requires Apple Silicon. Once running, the server can also route requests to configured remote or custom providers, but those providers do not replace the local-model startup requirement. Requests routed to remote providers are not offline or confined to your computer. See [Mac installation](/desktop/install/mac).
 
 ## Quick Start
 
 <Steps>
 ### Start the Server
-1.  Navigate to **Settings** > **Local API Server**.
-2.  Click **Start Server**.
+1.  Download or import a local model into Jan before starting the server. Use a llama.cpp model, or an MLX model on an Apple Silicon Mac.
+2.  Navigate to **Settings** > **Local API Server** and select your model under **Default Model Local API Server**.
+3.  Click **Start Server**. Jan uses an already-loaded model if one is running; otherwise, it loads the selected default model before starting the server.
 
-The server is ready when the logs show `JAN API listening at http://127.0.0.1:1337`.
+Wait for **Server Status** to show that the server is running. With the default settings, the API base URL is `http://127.0.0.1:1337/v1`.
 
 ### Test with cURL
-Open a terminal and make a request. Replace `YOUR_MODEL_ID` with the ID of an available model in Jan.
+Open a terminal and make a request. Replace `YOUR_MODEL_ID` with your local model's ID and `YOUR_API_KEY` with the key configured in **Configuration** > **API Key**. If no key is configured, omit the `Authorization` header. The example uses the default host, port, and API prefix.
 
 ```bash
 curl http://127.0.0.1:1337/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer secret-key-123" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "model": "YOUR_MODEL_ID",
     "messages": [{"role": "user", "content": "Tell me a joke."}]
@@ -64,7 +69,7 @@ The port number for the API server.
 ### API Prefix
 The base path for all API endpoints.
 - **`/v1`** (Default): Follows OpenAI's convention. The chat completions endpoint would be `http://127.0.0.1:1337/v1/chat/completions`.
-- You can change this or leave it empty if desired.
+- Use `/` to serve endpoints at the root, such as `http://127.0.0.1:1337/chat/completions`. If you clear the field, Jan resets it to `/`.
 
 ### API Key
 A secret key used to authenticate requests.
@@ -80,7 +85,7 @@ How long (in seconds) the server waits for a response from the local model befor
 ## Advanced Settings
 
 ### Execute Tools on Server
-- **(Disabled by default)** When enabled, MCP tool calls triggered through the `/v1/chat/completions` endpoint are executed server-side rather than being returned to the client to dispatch. Leave this off if your client app handles tool execution itself.
+- **(Disabled by default)** When enabled, MCP tool calls triggered through the chat completions endpoint (`/v1/chat/completions` with the default API prefix) are executed server-side rather than being returned to the client to dispatch. Leave this off if your client app handles tool execution itself.
 
 ### Cross-Origin Resource Sharing (CORS)
 - **(Enabled by default)** Allows web applications (like a custom web UI you are building) running on different domains to make requests to the API server.
@@ -96,6 +101,7 @@ How long (in seconds) the server waits for a response from the local model befor
 Ensure **Verbose Server Logs** are enabled to get detailed error messages in the "Server Logs" view.
 </Callout>
 
+- **Server fails to start because no model is available:** Download or import a local model, then select it under **Default Model Local API Server**. If a model fails to load, check the server logs for the cause.
 - **Connection Refused:** The server is not running, or your application is pointing to the wrong host or port.
 - **401 Unauthorized:** Your API Key is missing from the `Authorization` header or is incorrect.
 - **404 Not Found:**

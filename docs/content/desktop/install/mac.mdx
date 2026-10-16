@@ -27,7 +27,9 @@ twitter:
   description: "Download Jan on Mac to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
 ---
 
-Jan runs natively on Apple Silicon Macs. Intel-based Macs are not supported.
+Jan runs natively on Apple Silicon Macs, which are required for local model inference.
+
+The [v0.8.5 release notes](https://github.com/janhq/jan/releases/tag/v0.8.5) explain that the bundled llama.cpp engine does not load models on Intel Macs. They describe remote or [custom providers](/desktop/remote-models/custom-endpoint) as an alternative on Intel Macs, not a guarantee of full app support. These providers do not enable local inference or satisfy the [Local API Server](/desktop/api-server#prerequisites)'s local-model startup requirement.
 
 ## Install Jan
 
@@ -58,13 +60,7 @@ Jan runs natively on Apple Silicon Macs. Intel-based Macs are not supported.
 
 ### Mac Performance Guide
 
-<Callout type="info">
-**Apple Silicon Macs** use Metal for GPU acceleration. **Intel-based Macs are not supported.**
-</Callout>
-
 **Apple Silicon (M1, M2, M3, M4)** — Supported, with Metal acceleration enabled by default. **M4 and newer** chips deliver the best performance.
-
-**Intel-based Macs are not supported.**
 
 _Check your Mac's processor: Apple menu → About This Mac_
 

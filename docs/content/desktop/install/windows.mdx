@@ -84,26 +84,20 @@ Verify GPU is recognized:
 - Right-click desktop > NVIDIA Control Panel
 - Or check Device Manager > Display Adapters
 
-**1.2. Install Required components**
-**NVIDIA Driver:**
-1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) (version **470.63.01 or higher**)
-2. Verify installation:
+**1.2. Install the NVIDIA driver**
+
+Install a current [NVIDIA driver](https://www.nvidia.com/en-us/drivers/) supported by your GPU, then verify detection:
 
 ```sh
 nvidia-smi
 ```
 
-**CUDA Toolkit:**
-1. Install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**11.7 or higher**)
-2. Verify installation:
+Jan bundles its CUDA 13 engine and runtime libraries. You do not need to install the CUDA Toolkit or run `nvcc`. GPUs or drivers that cannot use CUDA 13 use Vulkan instead; keep your GPU's Vulkan-capable driver installed. See [Hardware Backends](/desktop/local-engine/llama-cpp#hardware-backends).
 
-```sh
-nvcc --version
-```
 ### Step 2: Enable GPU Acceleration
 
 Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-and toggle the **ON** switch if not enabled.
+and turn on your GPU's switch if disabled.
 
 </Steps>
 
@@ -111,53 +105,11 @@ and toggle the **ON** switch if not enabled.
 
 <Tabs.Tab>
 
-Jan supports AMD GPUs via two backends: **Vulkan** (default) and **llama.cpp HIP** (ROCm-accelerated). The HIP backend provides significantly better performance than Vulkan for supported AMD GPUs.
+Jan uses the bundled Vulkan backend for AMD GPUs. Install a current AMD graphics driver with Vulkan support; no separate HIP/ROCm backend download is needed.
 
-<Steps>
+If you need HIP on a supported AMD GPU, run a HIP build of `llama-server` separately and connect it as an [OpenAI-compatible custom endpoint](/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version). This does not replace Jan's bundled engine; the old backend selector is no longer available.
 
-### Option A: Vulkan Backend (Default)
-
-Vulkan works out of the box with no additional setup.
-
-Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-and toggle the **ON** switch if not enabled.
-
-### Option B: llama.cpp HIP Backend (Recommended)
-
-For better performance, use the HIP backend with ROCm installed.
-
-**1. Check GPU Detection**
-
-Verify your AMD GPU is recognized:
-- Open Device Manager > Display Adapters
-- Or run `dxdiag` and check the Display tab
-
-**2. Install ROCm**
-
-1. Download and install [AMD ROCm for Windows](https://www.amd.com/en/developer/resources/rocm-hub/hip-sdk.html) (**6.0 or higher**)
-2. Follow the installer instructions and restart your computer when prompted
-3. Verify installation:
-
-```sh
-hipInfo
-```
-
-**3. Download and Install llama.cpp HIP Backend**
-
-Jan does not ship with a pre-built HIP backend. You need to download it manually from the official llama.cpp releases:
-
-1. Go to the [llama.cpp releases page](https://github.com/ggerganov/llama.cpp/releases)
-2. Download the latest release with `hip` in the filename (e.g., `llama-<version>-bin-win-hip-x64.zip`)
-3. Extract the downloaded archive
-4. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Providers** > **Llama.cpp**
-5. Use the backend version selector to point at the extracted folder
-6. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** and ensure GPU acceleration is enabled
-
-</Steps>
-
-<Callout type="info">
-The HIP backend requires a compatible AMD GPU (RX 6000 series or newer recommended) and ROCm installed. If you encounter issues, fall back to the Vulkan backend.
-</Callout>
+Verify your GPU appears in **Device Manager** > **Display Adapters**, then navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs** and turn on your GPU's switch if disabled.
 
 </Tabs.Tab>
 
@@ -165,7 +117,7 @@ The HIP backend requires a compatible AMD GPU (RX 6000 series or newer recommend
 Intel Arc GPUs require **Vulkan** support.
 
 Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-and toggle the **ON** switch if not enabled.
+and turn on your GPU's switch if disabled.
 </Tabs.Tab>
 </Tabs>
 

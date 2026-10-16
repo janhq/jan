@@ -219,16 +219,22 @@ stack on `http://localhost:3001`.
 ## Your own hardware
 
 Any OpenAI-compatible endpoint works, which includes a model running locally. Jan Desktop's
-[local API server](/desktop/api-server) is the easy path:
+[local API server](/desktop/api-server) is the easy path. Start it in Desktop, then configure
+Jan Agent with its address. With Desktop's default host, port, and API prefix:
 
 ```bash
 jan config set \
   --provider local \
-  --base-url http://localhost:6767/v1 \
+  --base-url http://127.0.0.1:1337/v1 \
   --model my-local-model
 ```
 
-Nothing leaves your machine in that setup - Jan Desktop runs the model, Jan Agent drives it.
+Replace `my-local-model` with your local model's ID. If you changed Desktop's host, port, or API
+prefix, use that address instead. If you configured an API key in Desktop, add
+`--api-key YOUR_API_KEY` to the command.
+
+Model requests stay on your machine in this setup: Jan Desktop runs the local model and Jan Agent
+connects to it. Agent tools such as web search or external MCP servers can still send data elsewhere.
 
 ## Per-project override
 

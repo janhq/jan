@@ -29,7 +29,7 @@ twitter:
 
 import { Settings } from 'lucide-react'
 
-Instructions for installing Jan on Linux.
+Instructions for installing Jan on Linux. In the `.deb` and AppImage commands below, replace `{version}` with the version in your downloaded filename (without a leading `v`). Run each command from the directory containing that file. For example, a file named `Jan_0.8.6_amd64.deb` uses `0.8.6` in place of `{version}`.
 
 ## Install Jan
 
@@ -65,13 +65,13 @@ flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flat
 [Download the `.deb`](https://app.jan.ai/download/latest/linux-amd64-deb), then install it:
 
 ```bash
-sudo apt-get install ./jan-linux-amd64-{version}.deb
+sudo apt-get install ./Jan_{version}_amd64.deb
 ```
 
 Or with `dpkg`:
 
 ```bash
-sudo dpkg -i jan-linux-amd64-{version}.deb
+sudo dpkg -i ./Jan_{version}_amd64.deb
 ```
 
 </Tabs.Tab>
@@ -81,8 +81,8 @@ sudo dpkg -i jan-linux-amd64-{version}.deb
 [Download the AppImage](https://app.jan.ai/download/latest/linux-amd64-appimage), then run it:
 
 ```bash
-chmod +x jan-linux-x86_64-{version}.AppImage
-./jan-linux-x86_64-{version}.AppImage
+chmod +x ./Jan_{version}_amd64.AppImage
+./Jan_{version}_amd64.AppImage
 ```
 
 </Tabs.Tab>
@@ -109,13 +109,13 @@ The AppImage supports Jan's **built-in auto-updater**. When a new release is ava
 </Tabs.Tab>
 <Tabs.Tab>
 
-The `.deb` package is **not updated by the in-app updater** — the auto-updater only ships the AppImage as the Linux update artifact. Update the `.deb` manually by downloading the latest package and reinstalling:
+The `.deb` package is **not updated by the in-app updater** — the auto-updater only ships the AppImage as the Linux update artifact. Update the `.deb` manually by downloading the latest package and reinstalling. Replace `{version}` with the version in the newly downloaded filename:
 
 ```bash
-sudo apt-get install ./jan-linux-amd64-{version}.deb
+sudo apt-get install ./Jan_{version}_amd64.deb
 ```
 
-Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are preserved across reinstalls.
+Your data and settings (by default under `~/.local/share/Jan`) are preserved across reinstalls.
 
 </Tabs.Tab>
 </Tabs>
@@ -132,13 +132,14 @@ Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are 
 
 Jan stores all your data locally — downloaded models, conversation threads, settings, and logs generated from using the app. Nothing is sent to the cloud.
 
-Default location (resolves via `XDG_DATA_HOME`):
+Default locations depend on the installation method:
 
-```bash
-~/.local/share/Jan/data
-```
+| Installation | Data folder | Configuration file (records the data folder location) |
+| --- | --- | --- |
+| Flatpak | `~/.var/app/ai.jan.Jan/data/Jan/data` | `~/.var/app/ai.jan.Jan/data/Jan/settings.json` |
+| `.deb` / AppImage | `~/.local/share/Jan/data` | `~/.local/share/Jan/settings.json` |
 
-The path to Jan's per-user configuration file (which records the data folder location) lives at `~/.config/Jan/`.
+Jan resolves these locations via `XDG_DATA_HOME` unless overridden. [Flatpak sets its own XDG directories](https://docs.flatpak.org/en/latest/conventions.html#xdg-base-directories) under `~/.var/app/ai.jan.Jan/`, including `data` and `config`. Older configuration files may be recovered from `~/.var/app/ai.jan.Jan/config/Jan/` (Flatpak) or `~/.config/Jan/` (native, via `XDG_CONFIG_HOME`). A custom data folder can be elsewhere; check its location in Jan before removing data.
 
 See [Jan Data Folder](/desktop/data-folder) for details.
 
@@ -169,50 +170,29 @@ lspci | grep -i nvidia
 nvidia-smi
 ```
 
-**CUDA Toolkit:**
-
-1. Install the [CUDA toolkit](https://developer.nvidia.com/cuda-downloads), ideally from your package manager (**11.7+**)
-2. Verify:
-
-```sh
-nvcc --version
-```
-
-**Additional Requirements:**
-
-```sh
-sudo apt update
-sudo apt install gcc-11 g++-11 cpp-11
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
-```
-[Documentation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
+Jan bundles its CUDA 13 engine and runtime libraries. Installing the CUDA Toolkit, GCC, or a custom `LD_LIBRARY_PATH` is not required to run the packaged app. GPUs or drivers that cannot use CUDA 13 use Vulkan instead. For Vulkan fallback, install your distribution's Vulkan loader and a Vulkan-capable NVIDIA driver; since v0.8.6, the AppImage uses your system's Vulkan loader.
 
 ### Step 2: Enable GPU Acceleration
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Providers** > **Llama.cpp**
-2. Select an appropriate backend in **Backend**. Details in our [llama.cpp guide](/desktop/local-engine/llama-cpp).
-
-<Callout type="info">
-CUDA offers better performance than Vulkan.
-</Callout>
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs** and turn on your GPU's switch if disabled. Jan uses the backends bundled with the app; there is no backend version to download or select in Model Providers. See [Hardware Backends](/desktop/local-engine/llama-cpp#hardware-backends).
 
 </Steps>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
-Requires Vulkan support.
+Install your distribution's Vulkan loader and a Vulkan-capable graphics driver. Since v0.8.6, the AppImage uses your system's Vulkan loader.
 
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/desktop/local-engine/llama-cpp).
+2. Turn on your GPU's switch if disabled. Jan uses its bundled Vulkan backend. Details in our [guide](/desktop/local-engine/llama-cpp#hardware-backends).
 
 </Tabs.Tab>
 
 <Tabs.Tab>
-Requires Vulkan support.
+Install your distribution's Vulkan loader and a Vulkan-capable graphics driver. Since v0.8.6, the AppImage uses your system's Vulkan loader.
 
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/desktop/local-engine/llama-cpp).
+2. Turn on your GPU's switch if disabled. Jan uses its bundled Vulkan backend. Details in our [guide](/desktop/local-engine/llama-cpp#hardware-backends).
 </Tabs.Tab>
 
 </Tabs>
@@ -223,11 +203,23 @@ Removal commands:
 <Tabs items={['Flatpak', '.deb (Ubuntu/Debian)', 'AppImage']}>
 <Tabs.Tab>
 
+To uninstall while keeping your data:
+
 ```bash
 flatpak uninstall ai.jan.Jan
-rm -rf ~/.local/share/Jan   # data folder (models, threads, logs)
-rm -rf ~/.config/Jan        # app configuration
 ```
+
+To also remove the current user's Flatpak data:
+
+<Callout type="warning">
+`--delete-data` permanently deletes `~/.var/app/ai.jan.Jan/`, including models, conversations, settings, and logs stored there, and resets the app's permissions. Back up anything you need first. Do not use it if you are keeping another Flatpak installation or branch of Jan with the same app ID: they share this data.
+</Callout>
+
+```bash
+flatpak uninstall --delete-data ai.jan.Jan
+```
+
+As explained in the [Flathub uninstall guide](https://docs.flathub.org/docs/for-users/uninstallation), data outside this directory is not removed. Leave native Jan directories (`~/.local/share/Jan` and `~/.config/Jan`) and any custom data folders intact unless you separately intend to delete them; they may be used by another installation.
 </Tabs.Tab>
 <Tabs.Tab>
 
@@ -240,7 +232,7 @@ rm -rf ~/.config/Jan        # app configuration
 <Tabs.Tab>
 
 ```bash
-rm jan-linux-x86_64-{version}.AppImage
+rm ./Jan_{version}_amd64.AppImage
 rm -rf ~/.local/share/Jan   # data folder (models, threads, logs)
 rm -rf ~/.config/Jan        # app configuration
 ```
@@ -248,5 +240,5 @@ rm -rf ~/.config/Jan        # app configuration
 </Tabs>
 
 <Callout type="warning">
-These commands permanently delete application data.
+The `rm -rf` commands in the native-install tabs permanently delete the default native data and configuration directories, which may be shared by `.deb` and AppImage installations. Omit them to preserve data or another installation. They do not cover custom data folders or overridden XDG paths.
 </Callout>
