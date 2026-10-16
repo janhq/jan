@@ -60,6 +60,12 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
       "env": {},
       "active": false
+    },
+    "you": {
+      "command": "npx",
+      "args": ["-y", "@youdotcom-oss/mcp"],
+      "env": { "YDC_API_KEY": "YOUR_YDC_API_KEY_HERE" },
+      "active": false
     }
   },
   "mcpSettings": {
