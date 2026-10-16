@@ -3,8 +3,37 @@ import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
+
+// Convert in slices: spreading a whole large file into String.fromCharCode
+// overflows the call stack.
+const BASE64_SLICE_BYTES = 0x8000
+
+// FileReader, like the image attachment path, rather than File.arrayBuffer:
+// it is available wherever attachments are read, including the test DOM.
+function readFileBytes(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += BASE64_SLICE_BYTES) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_SLICE_BYTES))
+  }
+  return btoa(binary)
+}
 
 export class DefaultUploadsService implements UploadsService {
+  async saveDroppedFile(file: File): Promise<string> {
+    const dataBase64 = toBase64(new Uint8Array(await readFileBytes(file)))
+    return invoke<string>('save_attachment_file', { fileName: file.name, dataBase64 })
+  }
+
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {
     if (attachment.type !== 'image') throw new Error('ingestImage: attachment is not image')
     // Placeholder upload flow; swap for real API call when backend is ready
