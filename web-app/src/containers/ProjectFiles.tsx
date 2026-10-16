@@ -127,6 +127,7 @@ const SUPPORTED_EXTENSIONS = [
   'pptx',
   'html',
   'htm',
+  'xhtml',
   // JavaScript / TypeScript
   'js',
   'mjs',
