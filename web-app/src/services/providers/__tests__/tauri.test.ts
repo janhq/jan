@@ -86,8 +86,19 @@ describe('TauriProvidersService', () => {
   })
 
   describe('fetch', () => {
-    it('returns Tauri fetch', () => {
-      expect(svc.fetch()).toBe(fetchTauri)
+    it('wraps Tauri fetch so Origin is omitted', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce(new Response('{}') as any)
+      const wrapped = svc.fetch()
+      expect(wrapped).not.toBe(fetchTauri)
+      await wrapped('https://example.com/v1/models', {
+        headers: { Origin: 'http://tauri.localhost' },
+      })
+      expect(fetchTauri).toHaveBeenCalledWith(
+        'https://example.com/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({ Origin: '' }),
+        })
+      )
     })
   })
 
@@ -321,7 +332,7 @@ describe('TauriProvidersService', () => {
       errSpy.mockRestore()
     })
 
-    it('adds Origin header for localhost URLs', async () => {
+    it('omits Origin for localhost URLs', async () => {
       const localProvider = { ...baseProvider, base_url: 'http://localhost:1234' }
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
@@ -333,9 +344,15 @@ describe('TauriProvidersService', () => {
       expect(fetchTauri).toHaveBeenCalledWith(
         'http://localhost:1234/models',
         expect.objectContaining({
-          headers: expect.objectContaining({ Origin: 'tauri://localhost' }),
+          headers: expect.objectContaining({ Origin: '' }),
         })
       )
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]?.headers as Record<
+        string,
+        string
+      >
+      expect(headers.Origin).not.toBe('http://tauri.localhost')
+      expect(headers.Origin).not.toBe('tauri://localhost')
     })
 
     it('adds auth headers when api key is available', async () => {

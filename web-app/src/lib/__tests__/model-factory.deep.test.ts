@@ -231,7 +231,7 @@ describe('model-factory deep coverage', () => {
       const opts = getOpts()
       expect(opts.url({ path: '/chat/completions' })).toBe('http://localhost:8080/v1/chat/completions')
       expect(opts.headers().Authorization).toBe('Bearer llama-key')
-      expect(opts.headers().Origin).toBe('tauri://localhost')
+      expect(opts.headers().Origin).toBeUndefined()
     })
 
     it('custom fetch merges params and strips client-side keys', async () => {
