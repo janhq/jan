@@ -20,6 +20,7 @@ import { mermaid } from '@streamdown/mermaid'
 
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import remarkBreaks from 'remark-breaks'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
@@ -58,7 +59,14 @@ interface MarkdownProps {
 // Hoisted so their identity is stable across renders — Streamdown is memoized
 // with a shallow prop compare, and fresh literals here would defeat it, forcing
 // a full re-parse + re-highlight on every streamed token.
-const REMARK_PLUGINS = [remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]
+// remarkBreaks stays unconditional: model output separates list-like lines with
+// single newlines, which CommonMark would otherwise fold into one paragraph.
+const REMARK_PLUGINS = [
+  remarkGfm,
+  remarkMath,
+  remarkBreaks,
+  disableIndentedCodeBlockPlugin,
+]
 const REHYPE_PLUGINS = [rehypeKatex, defaultRehypePlugins.harden]
 const STREAMDOWN_PLUGINS = { code, mermaid, cjk }
 const STREAMDOWN_CONTROLS = { mermaid: { fullscreen: false } }
