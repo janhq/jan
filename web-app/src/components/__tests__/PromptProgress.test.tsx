@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 import { PromptProgress } from '../PromptProgress'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -167,5 +167,34 @@ describe('PromptProgress', () => {
     const loader = container.querySelector('svg.animate-spin')
     expect(loader).not.toBeNull()
     expect(loader?.classList.contains('animate-spin')).toBe(true)
+  })
+})
+
+// While a reply has stalled, the time since its last output shows it is alive.
+describe('PromptProgress while a reply waits', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    mockUseAppState.mockImplementation((selector) =>
+      selector({ promptProgress: undefined, loadingModel: false })
+    )
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('counts the time since the reply last moved', () => {
+    render(<PromptProgress waitingSince={1_000_000 - 83_000} />)
+
+    expect(screen.getByText('Working… 1:23')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(1_000))
+    expect(screen.getByText('Working… 1:24')).toBeInTheDocument()
+  })
+
+  it('shows no time without a wait to measure', () => {
+    render(<PromptProgress />)
+
+    expect(screen.getByText('Working…')).toBeInTheDocument()
   })
 })

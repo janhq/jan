@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
@@ -111,8 +111,16 @@ vi.mock('@/components/PromptProgress', () => ({
   // `hideIdle` is what suppresses the generic "Working…" fallback, and the real
   // component renders nothing when it is set with no model load in flight, so
   // the stand-in has to honour it or every caller looks like it shows a card.
-  PromptProgress: ({ hideIdle }: { hideIdle?: boolean }) =>
-    hideIdle ? null : <div data-testid="prompt-progress" />,
+  PromptProgress: ({
+    hideIdle,
+    waitingSince,
+  }: {
+    hideIdle?: boolean
+    waitingSince?: number
+  }) =>
+    hideIdle ? null : (
+      <div data-testid="prompt-progress" data-waiting-since={waitingSince} />
+    ),
 }))
 
 const pendingApprovalsRef = vi.hoisted(() => ({ current: {} as any }))
@@ -122,7 +130,7 @@ vi.mock('@/hooks/useToolApprovalRequests', () => ({
 }))
 
 // Import after mocks
-import { MessageItem } from '../MessageItem'
+import { MessageItem, STALLED_STREAM_INDICATOR_DELAY_MS as STALL_MS } from '../MessageItem'
 
 const makeMsg = (overrides: any = {}) => ({
   id: 'msg-1',
@@ -781,5 +789,98 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.queryByTitle('chat:actions.regenerate')).not.toBeInTheDocument()
+  })
+})
+
+// A reply can stall mid-stream for minutes (a reasoning model thinking without
+// streaming its reasoning, say) with nothing arriving: the user must
+// still see that Jan is working rather than a frozen half-written answer.
+describe('MessageItem while a reply stalls', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    pendingApprovalsRef.current = {}
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const streaming = (parts: any[], status = 'streaming') => (
+    <MessageItem
+      message={makeMsg({ parts }) as any}
+      isFirstMessage
+      isLastMessage
+      status={status as any}
+    />
+  )
+  const text = (value: string) => [{ type: 'text', text: value }]
+
+  it('shows that it is working once nothing has arrived for a moment', () => {
+    render(streaming(text('Half an answer')))
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(STALL_MS))
+
+    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+  })
+
+  it('stays out of the way while output keeps arriving', () => {
+    const { rerender } = render(streaming(text('Half')))
+    act(() => vi.advanceTimersByTime(STALL_MS - 500))
+    rerender(streaming(text('Half an')))
+    act(() => vi.advanceTimersByTime(STALL_MS - 500))
+
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(500))
+    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+
+    rerender(streaming(text('Half an answer')))
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+  })
+
+  it('counts the wait from the last output', () => {
+    vi.setSystemTime(50_000)
+    const { rerender } = render(streaming(text('Half')))
+    act(() => vi.advanceTimersByTime(1_000))
+    rerender(streaming(text('Half an')))
+
+    act(() => vi.advanceTimersByTime(STALL_MS))
+
+    expect(screen.getByTestId('prompt-progress')).toHaveAttribute(
+      'data-waiting-since',
+      String(51_000)
+    )
+  })
+
+  it('shows it during a stalled tool call too', () => {
+    render(
+      streaming([
+        ...text('Searching first.'),
+        { type: 'tool-web_search', state: 'input-available', toolCallId: 'ws_1', input: {} },
+      ])
+    )
+
+    act(() => vi.advanceTimersByTime(STALL_MS))
+
+    expect(screen.getByTestId('prompt-progress')).toBeInTheDocument()
+  })
+
+  it('leaves a tool call awaiting approval to its own controls', () => {
+    pendingApprovalsRef.current = { tc1: {} }
+    render(
+      streaming([{ type: 'tool-search', state: 'input-available', toolCallId: 'tc1', input: {} }])
+    )
+
+    act(() => vi.advanceTimersByTime(STALL_MS * 10))
+
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
+  })
+
+  it('shows nothing once the reply has finished', () => {
+    render(streaming(text('A whole answer'), 'ready'))
+
+    act(() => vi.advanceTimersByTime(STALL_MS * 10))
+
+    expect(screen.queryByTestId('prompt-progress')).not.toBeInTheDocument()
   })
 })
