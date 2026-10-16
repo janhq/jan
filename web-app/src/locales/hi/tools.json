@@ -35,6 +35,7 @@
     "resultLimit": "शीर्ष {{count}}",
     "contentTruncated": "सामग्री छोटी की गई",
     "originWeb": "वेब",
+    "originProviderSearch": "प्रदाता खोज",
     "originDocuments": "दस्तावेज़",
     "originWorkspace": "वर्कस्पेस",
     "originSubagent": "सबएजेंट",

@@ -35,6 +35,7 @@
     "resultLimit": "top {{count}}",
     "contentTruncated": "Nội dung đã bị cắt bớt",
     "originWeb": "Web",
+    "originProviderSearch": "Tìm kiếm của nhà cung cấp",
     "originDocuments": "Tài liệu",
     "originWorkspace": "Không gian làm việc",
     "originSubagent": "Tác tử phụ",

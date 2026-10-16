@@ -107,6 +107,10 @@
     "title": "Base URL",
     "azureDescription": "Your Azure OpenAI endpoint. Replace YOUR-RESOURCE-NAME with your Azure resource name."
   },
+  "azureWebSearch": {
+    "title": "Search the web with Azure",
+    "description": "When web search is on, Azure models search with Azure's built-in web search (Grounding with Bing) instead of Jan's search provider. Bing searches are billed to your Azure subscription, and what is searched leaves your Azure compliance and geographic boundary. It is unavailable if your administrator has blocked the tool for the subscription."
+  },
   "apiKeys": {
     "title": "API keys",
     "description": "Enter your API key. You can add extra keys in Advanced, and Jan will try the next one automatically if a key fails.",

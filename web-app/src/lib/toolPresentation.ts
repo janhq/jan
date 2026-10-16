@@ -258,3 +258,19 @@ export function parseWebFetchOutput(output: unknown): WebFetchPage | undefined {
     truncated,
   }
 }
+
+/**
+ * The bar for a web search the provider runs itself (Azure's `web_search`).
+ * It streams no arguments; what it searched for, or the page it opened or
+ * searched in, arrives with the result as `action`.
+ */
+export function describeHostedWebSearchCall(
+  output: unknown
+): Extract<ToolCallBar, { variant: 'search' | 'address' }> {
+  const action = (output as { action?: Record<string, unknown> } | undefined)
+    ?.action
+  if (action?.type === 'openPage' || action?.type === 'findInPage') {
+    return { variant: 'address', url: asString(action.url) }
+  }
+  return { variant: 'search', query: asString(action?.query) }
+}

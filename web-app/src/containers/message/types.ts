@@ -18,6 +18,8 @@ export type MessagePartLike = {
   state?: ToolUIPart['state']
   toolCallId?: string
   input?: ToolUIPart['input']
+  /** Run by the model's provider (e.g. Azure's web_search), not by Jan. */
+  providerExecuted?: boolean
   output?: ToolUIPart['output']
   errorText?: string
   error?: string

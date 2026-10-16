@@ -35,6 +35,11 @@ import {
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
 import {
+  usesAzureWebSearch,
+  withHostedWebSearch,
+  withoutForeignHostedToolCalls,
+} from '@/lib/azureWebSearch'
+import {
   CHAT_AGENT_TOOL_NAMES,
   getAgentToolSchemas,
   memoryDigestNow,
@@ -985,13 +990,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * undefined so we don't send a useless system turn that some chat templates
    * still wrap into special tokens.
    */
-  protected buildSystemPrompt(messages: UIMessage[]): string | undefined {
+  protected buildSystemPrompt(
+    messages: UIMessage[],
+    provider?: ProviderObject
+  ): string | undefined {
     const raw =
       [
         this.systemMessage,
         this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
-        this.buildWebSearchSystemInstruction(),
+        this.buildWebSearchSystemInstruction(provider),
         this.buildAgentToolsSystemInstruction(),
       ]
         .filter((s) => typeof s === 'string' && s.trim().length > 0)
@@ -1441,12 +1449,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
     // it keeps the prompt prefix byte-identical across turns so llama.cpp reuses
     // the KV cache. See `splitAssistantToolWaves`.
-    const messagesToConvert = splitAssistantToolWaves(options.messages)
+    const messagesToConvert = splitAssistantToolWaves(
+      withoutForeignHostedToolCalls(options.messages, provider)
+    )
 
     const inferenceParams = this.getActiveInferenceParams()
 
 
-    const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
+    const effectiveSystem = this.buildSystemPrompt(messagesToConvert, provider)
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
@@ -1582,8 +1592,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ]
       : baseMessages
 
+    // Azure searches with its own web_search tool in place of Jan's web tools.
+    const requestTools = withHostedWebSearch(this.tools, provider)
+
     // Include tools only if we have tools loaded AND model supports them
-    const hasTools = Object.keys(this.tools).length > 0
+    const hasTools = Object.keys(requestTools).length > 0
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -1606,7 +1619,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Hosted providers keep the SDK's two backoff retries for transient
       // 429/5xx; local servers fail at once (see isLocalChatServer).
       maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
-      tools: shouldEnableTools ? this.tools : undefined,
+      tools: shouldEnableTools ? requestTools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
@@ -1795,8 +1808,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * added when web search is enabled so it doesn't affect prompt caching for
    * users who keep it off.
    */
-  buildWebSearchSystemInstruction(): string {
+  buildWebSearchSystemInstruction(provider?: ProviderObject): string {
     if (!useWebSearchConfig.getState().webSearchEnabled) return ''
+    // Azure runs the search itself and reads the pages it finds, so there is
+    // no web_fetch to mention.
+    if (usesAzureWebSearch(provider)) {
+      return [
+        '# Web Access',
+        'You can search the web with web_search.',
+        'Use it whenever the request needs current, external, or verifiable',
+        'information, then base your answer on what you find. When a statement',
+        'relies on a web source, cite it inline immediately after that statement',
+        'using the exact marker [[cite:URL]], where URL is the full source URL',
+        'from your search results (for example: [[cite:https://example.com/page]]).',
+        'Cite each distinct source you rely on; do not add a separate references',
+        'or sources section.',
+      ].join(' ')
+    }
     return [
       '# Web Access',
       'You can search the web with web_search and read pages with web_fetch.',

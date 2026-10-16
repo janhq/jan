@@ -91,6 +91,10 @@
     "title": "ベースURL",
     "azureDescription": "あなたのAzure OpenAIエンドポイント。YOUR-RESOURCE-NAMEをAzureリソース名に置き換えてください。"
   },
+  "azureWebSearch": {
+    "title": "Azure で Web 検索する",
+    "description": "Web 検索がオンのとき、Azure のモデルは Jan の検索プロバイダの代わりに、Azure の組み込みの Web 検索（Grounding with Bing）で検索します。Bing の検索料金は Azure のサブスクリプションに課金され、検索の内容は Azure のコンプライアンス境界と地理的境界の外に送られます。管理者がサブスクリプションでこのツールを無効にしている場合は使えません。"
+  },
   "apiKeys": {
     "title": "APIキー",
     "description": "APIキーを入力してください。詳細設定で追加のキーを登録でき、キーが失敗した場合はJanが自動的に次のキーを試します。",

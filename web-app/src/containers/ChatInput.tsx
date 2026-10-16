@@ -111,6 +111,7 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { webSearchEngineLabel } from '@/lib/azureWebSearch'
 import {
   parsePromptForReferences,
   resolvePathReference,
@@ -323,6 +324,7 @@ const ChatInput = memo(function ChatInput({
   const showToolControls = ownsToolSet && !effectiveAgentMode
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+  const searchProviderId = useWebSearchConfig((s) => s.searchProvider)
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -2596,7 +2598,13 @@ const ChatInput = memo(function ChatInput({
                     <TooltipContent>
                       <p>
                         {webSearchEnabled
-                          ? t('common:web_search') + t('common:activeSuffix')
+                          ? t('common:web_search') +
+                            t('common:activeWithProviderSuffix', {
+                              provider: webSearchEngineLabel(
+                                getProviderByName(selectedProvider),
+                                searchProviderId
+                              ),
+                            })
                           : t('common:web_search')}
                       </p>
                     </TooltipContent>

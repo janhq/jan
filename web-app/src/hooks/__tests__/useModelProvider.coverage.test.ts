@@ -227,6 +227,24 @@ describe('useModelProvider - coverage', () => {
       expect(provider?.models[0].id).toBe('model-1')
     })
 
+    // Startup rebuilds every provider from its definition, which has no
+    // azure_web_search; the user's choice must survive that.
+    it("keeps the user's Azure web search choice when providers are reloaded", () => {
+      const { result } = renderHook(() => useModelProvider())
+
+      act(() => {
+        useModelProvider.setState({
+          providers: [makeProvider('azure', [], { azure_web_search: false })],
+        })
+      })
+
+      act(() => {
+        result.current.setProviders([makeProvider('azure')])
+      })
+
+      expect(result.current.getProviderByName('azure')?.azure_web_search).toBe(false)
+    })
+
     it('merges non-persist provider preserving existing api_key/base_url', () => {
       const { result } = renderHook(() => useModelProvider())
 

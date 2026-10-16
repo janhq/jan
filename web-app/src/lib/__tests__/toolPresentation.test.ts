@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  describeHostedWebSearchCall,
   describeNativeToolCall,
   parseBashOutput,
   parseWebFetchOutput,
@@ -287,5 +288,38 @@ describe('parseBashOutput', () => {
     expect(parseBashOutput({ content: 'hi\n[exit 0]' }).text).toBe('hi')
     expect(parseBashOutput(undefined).text).toBe('')
     expect(parseBashOutput(undefined).exit).toBeUndefined()
+  })
+})
+
+// A search the provider runs itself (Azure's web_search) streams no arguments:
+// what it searched for or opened arrives with the result.
+describe('describeHostedWebSearchCall', () => {
+  it('shows the query the provider searched for', () => {
+    expect(
+      describeHostedWebSearchCall({
+        action: { type: 'search', query: 'tokyo weather' },
+        sources: [{ type: 'url', url: 'https://weathernews.jp/' }],
+      })
+    ).toEqual({ variant: 'search', query: 'tokyo weather' })
+  })
+
+  it('shows the page the provider opened or searched in', () => {
+    expect(
+      describeHostedWebSearchCall({
+        action: { type: 'openPage', url: 'https://weather.com/jp' },
+      })
+    ).toEqual({ variant: 'address', url: 'https://weather.com/jp' })
+    expect(
+      describeHostedWebSearchCall({
+        action: { type: 'findInPage', url: 'https://weather.com/jp', pattern: 'rain' },
+      })
+    ).toEqual({ variant: 'address', url: 'https://weather.com/jp' })
+  })
+
+  it('shows an empty search bar while the search is still running', () => {
+    expect(describeHostedWebSearchCall(undefined)).toEqual({
+      variant: 'search',
+      query: '',
+    })
   })
 })

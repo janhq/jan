@@ -242,7 +242,10 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, o?: { provider?: string }) =>
+      o?.provider ? `${k}:${o.provider}` : k,
+  }),
 }))
 
 vi.mock('sonner', () => ({
@@ -315,6 +318,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
 // Helpers -------------------------------------------------------------------
 
@@ -415,6 +419,32 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter', shiftKey: true })
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  // The tooltip says which engine will run the search, so a user can tell
+  // Azure's Bing from Jan's search provider.
+  describe('web search tooltip', () => {
+    beforeEach(() => {
+      useWebSearchConfig.setState({ webSearchEnabled: true, searchProvider: 'exa' })
+    })
+
+    it('names Bing for an Azure model', () => {
+      selectedProviderOverride = 'azure'
+      getProviderByNameMock.mockReturnValue({ provider: 'azure' })
+      renderInput()
+      expect(
+        screen.getByText('common:web_searchcommon:activeWithProviderSuffix:Bing')
+      ).toBeInTheDocument()
+    })
+
+    it("names Jan's search provider for other models", () => {
+      selectedProviderOverride = 'openai'
+      getProviderByNameMock.mockReturnValue({ provider: 'openai' })
+      renderInput()
+      expect(
+        screen.getByText('common:web_searchcommon:activeWithProviderSuffix:Exa')
+      ).toBeInTheDocument()
+    })
   })
 
   it('does nothing when Enter pressed with empty/whitespace prompt', async () => {

@@ -1,4 +1,6 @@
 {
+  "web_search": "Web 検索",
+  "activeWithProviderSuffix": "（有効: {{provider}}）",
   "htmlArtifact": {
     "code": "コード",
     "preview": "プレビュー",

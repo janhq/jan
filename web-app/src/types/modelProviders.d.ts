@@ -75,6 +75,8 @@ type ProviderObject = {
   custom_header?: ProviderCustomHeader[] | null
   /** Wire format of the provider's HTTP API. Missing = 'openai' (default). */
   api_type?: ProviderApiType
+  /** Azure: search with the resource's built-in web_search tool. Missing = true (default). */
+  azure_web_search?: boolean
 }
 
 /**

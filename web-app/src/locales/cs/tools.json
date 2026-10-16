@@ -35,6 +35,7 @@
     "resultLimit": "prvních {{count}}",
     "contentTruncated": "Obsah zkrácen",
     "originWeb": "Web",
+    "originProviderSearch": "Vyhledávání poskytovatele",
     "originDocuments": "Dokumenty",
     "originWorkspace": "Pracovní prostor",
     "originSubagent": "Subagent",

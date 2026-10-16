@@ -35,6 +35,7 @@
     "resultLimit": "Top {{count}}",
     "contentTruncated": "Inhalt gekürzt",
     "originWeb": "Web",
+    "originProviderSearch": "Anbietersuche",
     "originDocuments": "Dokumente",
     "originWorkspace": "Arbeitsbereich",
     "originSubagent": "Subagent",
