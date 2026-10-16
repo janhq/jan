@@ -128,11 +128,29 @@ make dev
 
 ```bash
 yarn install
-yarn build:tauri:plugin:api
-yarn build:core
-yarn build:extensions
+yarn build
 yarn dev
 ```
+
+### 在 Windows 上构建 (Building on Windows)
+
+在 **Git Bash**（随 Git for Windows 一起安装）中运行 `make dev` —— 因为 make 通过 `sh` 调度其执行规则，因此普通的 `cmd.exe` 无法使用。
+
+你**不需要**使用 "VS 2022 本机工具命令提示符 (Native Tools Command Prompt for VS 2022)"。内置的 llama.cpp 引擎使用 Ninja + `clang-cl` 构建，而 `clang-cl` 会自行定位 MSVC 工具链和 Windows SDK。系统必须安装以下组件（且 `ninja`/`clang-cl`/`cmake` 需位于 `PATH` 中）：
+
+- Visual Studio 2022 生成工具 (MSVC x64 工作负载 + Windows SDK)
+- LLVM（提供 `clang-cl`）
+- Ninja
+- CMake
+- CUDA Toolkit —— 仅在构建 `JAN_ENGINE_VARIANT=cuda12`/`cuda13` 时需要
+
+引擎变体通过 `JAN_ENGINE_VARIANT` 进行选择（可选 token 包括：`cpu`、`vulkan`、`metal`、`cuda12`、`cuda13`、`hip`/`rocm`，使用 `-` 连接），例如：
+
+```bash
+make dev JAN_ENGINE_VARIANT=cuda13
+```
+
+如果在执行 `tauri-plugin-llamacpp(build)` 期间遇到 **"nvcc fatal : Could not open output file ...fattn-...cu.obj.d"** 错误，这意味着构建路径超出了 Windows 260 字符的 `MAX_PATH` 长度限制 —— nvcc 并不遵循长路径配置。现在的构建脚本已能自动检测并把 llama.cpp 构建树重定向至 `%LOCALAPPDATA%\jan-engine` 下的简短目录。如果仍然遇到路径长度错误，可以将 `JAN_ENGINE_BUILD_DIR` 设置为一个短路径（例如 `C:\jb`）或将代码仓库移动到更靠近驱动器根目录的位置。
 
 ## 系统要求 (System Requirements)
 
@@ -156,6 +174,8 @@ yarn dev
 ## 贡献 (Contributing)
 
 欢迎参与贡献！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 以获取完整信息。
+
+> **注意：** 请[对你的提交进行签名 (sign your commits)](CONTRIBUTING.md#signed-commits)，以便我们验证你的贡献。
 
 ## 相关链接 (Links)
 
@@ -182,3 +202,7 @@ Apache 2.0 - 因为分享即是关爱。
 - [Llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
+
+---
+
+> 💡 **文档维护说明**：本中文文档由社区志愿者（@JasonYeYuhe）翻译维护，最后同步更新于 2026年10月4日。如发现内容与官方英文原版存在差异或新特性滞后，欢迎提交 PR 共同完善！
