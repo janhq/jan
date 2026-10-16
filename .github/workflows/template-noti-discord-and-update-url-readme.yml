@@ -18,11 +18,11 @@ on:
         required: true
         type: string
         default: ''
-    # secrets:
-    #   PAT_SERVICE_ACCOUNT:
-    #     required: false
-    #   DISCORD_WEBHOOK:
-    #     required: false
+    secrets:
+      PAT_SERVICE_ACCOUNT:
+        required: false
+      DISCORD_WEBHOOK:
+        required: false
 
 jobs:
   noti-discord-and-update-url-readme:
