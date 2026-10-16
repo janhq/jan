@@ -1,0 +1,38 @@
+{
+  "welcome": "Merhaba, nasılsınız?",
+  "description": "Bugün size nasıl yardımcı olabilirim?",
+  "temporaryChat": "Geçici Sohbet",
+  "temporaryChatDescription": "Sohbet geçmişinize kaydedilmeyecek geçici bir konuşma başlatın.",
+  "status": {
+    "empty": "Sohbet Bulunamadı"
+  },
+  "sendMessage": "Mesaj Gönder",
+  "newConversation": "Yeni Sohbet",
+  "clearHistory": "Geçmişi Temizle",
+  "embeddings": {
+    "title": "Belgeleriniz hazırlanıyor",
+    "description": "Eklenen dosyalar aranabilmesi ve alıntılanabilmesi için dizine ekleniyor. Büyük belgeler için bu işlem biraz zaman alabilir."
+  },
+  "actions": {
+    "regenerate": "Yanıtı yeniden oluştur",
+    "askAgain": "Tekrar sor",
+    "continue": "Oluşturmaya devam et",
+    "remember": "Bunu hatırla",
+    "rememberSaved": "\"{{name}}\" olarak hafızaya kaydedildi",
+    "rememberExists": "Zaten hafızada \"{{name}}\" olarak kayıtlı",
+    "rememberFailed": "Hafızaya kaydedilemedi"
+  },
+  "done": "Tamamlandı",
+  "webSources": "{{count}} kaynak(lar)",
+  "reasoning": {
+    "label": "Akıl yürütülüyor...",
+    "thinking": "Düşünüyor",
+    "working": "Çalışıyor...",
+    "showFullTimeline": "Tüm zaman çizelgesini göster",
+    "showCurrentStep": "Yalnızca geçerli adımı göster",
+    "thoughtForAWhile": "Birkaç saniye düşündü",
+    "thoughtFor": "{{duration}} boyunca düşündü",
+    "workedForAWhile": "Birkaç saniye çalıştı",
+    "workedFor": "{{duration}} boyunca çalıştı"
+  }
+}
