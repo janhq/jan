@@ -1,0 +1,127 @@
+---
+title: OpenAI-Compatible Providers
+description: Connect Jan to OpenAI-compatible APIs, with Baidu Qianfan as a complete worked example.
+keywords:
+  [
+    Jan,
+    OpenAI-compatible,
+    custom provider,
+    Baidu Qianfan,
+    Qianfan,
+    remote models,
+    OpenAI API compatibility,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# OpenAI-Compatible Providers
+
+Jan can connect to APIs that follow the OpenAI chat-completions pattern. This is useful when your provider is not one of Jan's built-in cloud integrations, but still exposes an OpenAI-compatible `base_url`, API key, and model IDs.
+
+This page covers the general setup flow, then shows a full [Baidu Qianfan](https://cloud.baidu.com/doc/qianfan/s/Hmh4suq26) example.
+
+## What Jan expects
+
+Jan works best when the provider offers:
+
+- an API key that can be sent as `Authorization: Bearer ...`
+- a versioned API base URL such as `/v1` or `/v2`
+- a `/models` endpoint that returns model IDs
+- chat-completions compatible model IDs
+
+<Callout type='info'>
+If your provider does not expose a compatible `/models` endpoint, you can still use Jan by adding the model ID manually after saving the provider.
+</Callout>
+
+## Connect a custom OpenAI-compatible provider
+
+<Steps>
+
+### Step 1: Collect the provider details
+
+Before opening Jan, gather:
+
+1. Your API key
+2. The provider's OpenAI-compatible `base_url`
+3. At least one model ID you are allowed to use
+
+### Step 2: Create the provider in Jan
+
+1. Open **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Providers**
+2. Click **Add Provider**
+3. Enter a provider name such as `qianfan`, `my-company-ai`, or `router`
+4. Paste your API key
+5. Paste the provider's OpenAI-compatible base URL
+
+### Step 3: Refresh the model list
+
+1. Open the provider you just created
+2. Click **Refresh**
+3. If the provider exposes `/models`, Jan will import any new model IDs it can discover
+
+### Step 4: Add a model manually if needed
+
+If the provider does not return models automatically:
+
+1. Click **Add Model**
+2. Paste the exact model ID from the provider docs
+3. Save the model and start chatting
+
+</Steps>
+
+## Example: Baidu Qianfan
+
+Baidu Qianfan documents an OpenAI-compatible access mode. The example below keeps the setup aligned with Jan's generic custom-provider flow instead of requiring a Baidu-specific preset.
+
+<Steps>
+
+### Step 1: Get your Qianfan API key
+
+Create or copy an API key from the [Baidu Qianfan console](https://cloud.baidu.com/doc/qianfan/s/Hmh4suq26).
+
+### Step 2: Create the provider in Jan
+
+Use these values:
+
+- **Provider name:** `qianfan`
+- **Base URL:** `https://qianfan.baidubce.com/v2`
+- **API key:** your Qianfan API key
+
+### Step 3: Import models
+
+Try **Refresh** first. If your account and endpoint return a compatible `/models` response, Jan will add the available model IDs automatically.
+
+If not, use **Add Model** and paste the exact model ID from Qianfan's model list.
+
+### Step 4: Start chatting
+
+Open any thread, select the imported Qianfan model, and start chatting as you would with any other remote provider in Jan.
+
+</Steps>
+
+## Troubleshooting
+
+**1. Authentication failed**
+
+- Double-check the API key
+- Make sure the key has permission to call the selected model
+
+**2. Models endpoint not found**
+
+- Re-check the base URL
+- Make sure the URL includes the provider's required version path, such as `/v1` or `/v2`
+- For Qianfan, confirm you are using `https://qianfan.baidubce.com/v2`
+
+**3. Unexpected response format**
+
+- The provider may support chat completions but not expose `/models` in a Jan-readable format
+- Save the provider anyway and add the model ID manually
+
+**4. No new models found**
+
+- Jan only adds models that are not already present under that provider
+- If the provider returns an empty list, add the model manually from the provider docs
+
+Need more help? Check your provider's OpenAI-compatible API reference and Jan's [troubleshooting guide](/docs/desktop/troubleshooting#how-to-get-error-logs).
