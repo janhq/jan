@@ -109,12 +109,16 @@ export const providerModels = {
     supportsN: true,
   },
   minimax: {
-    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M3'],
     supportsCompletion: true,
-    supportsStreaming: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsStreaming: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M3'],
     supportsJSON: [],
-    supportsImages: [],
-    supportsToolCalls: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsImages: ['MiniMax-M3'],
+    // Video input is opt-in per model. `supportsVideo` is only declared for
+    // providers that accept video parts; a missing key reads as "no model here
+    // takes video input" (see getModelCapabilities).
+    supportsVideo: ['MiniMax-M3'],
+    supportsToolCalls: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M3'],
     supportsN: true,
   },
   openrouter: {
