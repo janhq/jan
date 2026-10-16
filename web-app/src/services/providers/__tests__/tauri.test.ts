@@ -216,6 +216,24 @@ describe('TauriProvidersService', () => {
       expect(result).toEqual(['model-1', 'model-2'])
     })
 
+    it('returns each model id once when the provider lists it more than once', async () => {
+      // Azure's /models lists some ids twice (one entry per model version).
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          data: [
+            { id: 'Llama-3.3-70B-Instruct' },
+            { id: 'gpt-4o' },
+            { id: 'Llama-3.3-70B-Instruct' },
+          ],
+        }),
+      } as any)
+
+      const result = await svc.fetchModelsFromProvider(baseProvider)
+      expect(result).toEqual(['Llama-3.3-70B-Instruct', 'gpt-4o'])
+    })
+
     it('returns model ids from array format', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
