@@ -115,7 +115,7 @@ The `.deb` package is **not updated by the in-app updater** — the auto-updater
 sudo apt-get install ./Jan_{version}_amd64.deb
 ```
 
-Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are preserved across reinstalls.
+Your data and settings (by default under `~/.local/share/Jan`) are preserved across reinstalls.
 
 </Tabs.Tab>
 </Tabs>
@@ -132,13 +132,14 @@ Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are 
 
 Jan stores all your data locally — downloaded models, conversation threads, settings, and logs generated from using the app. Nothing is sent to the cloud.
 
-Default location (resolves via `XDG_DATA_HOME`):
+Default locations depend on the installation method:
 
-```bash
-~/.local/share/Jan/data
-```
+| Installation | Data folder | Configuration file (records the data folder location) |
+| --- | --- | --- |
+| Flatpak | `~/.var/app/ai.jan.Jan/data/Jan/data` | `~/.var/app/ai.jan.Jan/data/Jan/settings.json` |
+| `.deb` / AppImage | `~/.local/share/Jan/data` | `~/.local/share/Jan/settings.json` |
 
-The path to Jan's per-user configuration file (which records the data folder location) lives at `~/.config/Jan/`.
+Jan resolves these locations via `XDG_DATA_HOME` unless overridden. [Flatpak sets its own XDG directories](https://docs.flatpak.org/en/latest/conventions.html#xdg-base-directories) under `~/.var/app/ai.jan.Jan/`, including `data` and `config`. Older configuration files may be recovered from `~/.var/app/ai.jan.Jan/config/Jan/` (Flatpak) or `~/.config/Jan/` (native, via `XDG_CONFIG_HOME`). A custom data folder can be elsewhere; check its location in Jan before removing data.
 
 See [Jan Data Folder](/desktop/data-folder) for details.
 
@@ -202,11 +203,23 @@ Removal commands:
 <Tabs items={['Flatpak', '.deb (Ubuntu/Debian)', 'AppImage']}>
 <Tabs.Tab>
 
+To uninstall while keeping your data:
+
 ```bash
 flatpak uninstall ai.jan.Jan
-rm -rf ~/.local/share/Jan   # data folder (models, threads, logs)
-rm -rf ~/.config/Jan        # app configuration
 ```
+
+To also remove the current user's Flatpak data:
+
+<Callout type="warning">
+`--delete-data` permanently deletes `~/.var/app/ai.jan.Jan/`, including models, conversations, settings, and logs stored there, and resets the app's permissions. Back up anything you need first. Do not use it if you are keeping another Flatpak installation or branch of Jan with the same app ID: they share this data.
+</Callout>
+
+```bash
+flatpak uninstall --delete-data ai.jan.Jan
+```
+
+As explained in the [Flathub uninstall guide](https://docs.flathub.org/docs/for-users/uninstallation), data outside this directory is not removed. Leave native Jan directories (`~/.local/share/Jan` and `~/.config/Jan`) and any custom data folders intact unless you separately intend to delete them; they may be used by another installation.
 </Tabs.Tab>
 <Tabs.Tab>
 
@@ -227,5 +240,5 @@ rm -rf ~/.config/Jan        # app configuration
 </Tabs>
 
 <Callout type="warning">
-These commands permanently delete application data.
+The `rm -rf` commands in the native-install tabs permanently delete the default native data and configuration directories, which may be shared by `.deb` and AppImage installations. Omit them to preserve data or another installation. They do not cover custom data folders or overridden XDG paths.
 </Callout>
