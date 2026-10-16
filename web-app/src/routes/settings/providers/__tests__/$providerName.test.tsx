@@ -328,6 +328,7 @@ vi.mock('zustand/shallow', () => ({
 
 // Import AFTER mocks
 import { Route } from '../$providerName'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -415,6 +416,37 @@ describe('ProviderDetail route', () => {
     it('shows favorite action for predefined provider with api key', () => {
       renderComponent()
       expect(screen.getByTestId('fav-gpt-4')).toBeInTheDocument()
+    })
+
+    it('lists the provider’s models by name by default', () => {
+      act(() => useInterfaceSettings.setState({ sortModelsByName: true }))
+      h.openaiProvider.models = ['gpt-4o', 'chatgpt-4o-latest', 'o3'].map(
+        (id) => ({ id, model: id, name: id, capabilities: ['completion'], version: '1' })
+      )
+
+      renderComponent()
+
+      const order = screen
+        .getAllByTestId(/^edit-/)
+        .map((el) => el.getAttribute('data-testid'))
+      expect(order).toEqual(['edit-chatgpt-4o-latest', 'edit-gpt-4o', 'edit-o3'])
+    })
+
+    it('keeps the stored order once the user turns sorting off', () => {
+      act(() => useInterfaceSettings.setState({ sortModelsByName: true }))
+      h.openaiProvider.models = ['gpt-4o', 'chatgpt-4o-latest', 'o3'].map(
+        (id) => ({ id, model: id, name: id, capabilities: ['completion'], version: '1' })
+      )
+      renderComponent()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'common:sortModelsByName' })
+      )
+
+      const order = screen
+        .getAllByTestId(/^edit-/)
+        .map((el) => el.getAttribute('data-testid'))
+      expect(order).toEqual(['edit-gpt-4o', 'edit-chatgpt-4o-latest', 'edit-o3'])
     })
 
     it('renders no-models placeholder when provider has empty models', () => {
