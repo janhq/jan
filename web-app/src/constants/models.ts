@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  flexai: {
+    models: ['DeepSeek-V4.1-Flash', 'GLM-5.3-Flash', 'GLM-5.2', 'Qwen3.8-27B', 'Qwen3.6-35B-A3B-FP8', 'Qwen3-Coder-30B-A3B-Instruct-FP8', 'gpt-oss-120b', 'gemma-4-31b-it', 'Llama-3.3-70B-Instruct-FP8', 'MiniMax-M2.7', 'Step-3.7-Flash', 'Qwen3.8-Flash-Next'],
+    supportsCompletion: true,
+    supportsStreaming: ['DeepSeek-V4.1-Flash', 'GLM-5.3-Flash', 'GLM-5.2', 'Qwen3.8-27B', 'Qwen3.6-35B-A3B-FP8', 'Qwen3-Coder-30B-A3B-Instruct-FP8', 'gpt-oss-120b', 'gemma-4-31b-it', 'Llama-3.3-70B-Instruct-FP8', 'MiniMax-M2.7', 'Step-3.7-Flash', 'Qwen3.8-Flash-Next'],
+    supportsJSON: ['DeepSeek-V4.1-Flash', 'GLM-5.3-Flash', 'GLM-5.2', 'Qwen3.8-27B', 'Qwen3.6-35B-A3B-FP8', 'Qwen3-Coder-30B-A3B-Instruct-FP8', 'gpt-oss-120b', 'gemma-4-31b-it', 'Llama-3.3-70B-Instruct-FP8', 'MiniMax-M2.7', 'Step-3.7-Flash', 'Qwen3.8-Flash-Next'],
+    supportsImages: ['DeepSeek-V4.1-Flash', 'GLM-5.3-Flash', 'Qwen3.8-27B', 'Qwen3.6-35B-A3B-FP8', 'gemma-4-31b-it', 'Step-3.7-Flash', 'Qwen3.8-Flash-Next'],
+    supportsToolCalls: ['DeepSeek-V4.1-Flash', 'GLM-5.3-Flash', 'GLM-5.2', 'Qwen3.8-27B', 'Qwen3.6-35B-A3B-FP8', 'Qwen3-Coder-30B-A3B-Instruct-FP8', 'gpt-oss-120b', 'gemma-4-31b-it', 'Llama-3.3-70B-Instruct-FP8', 'MiniMax-M2.7', 'Step-3.7-Flash', 'Qwen3.8-Flash-Next'],
+    supportsN: false,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
