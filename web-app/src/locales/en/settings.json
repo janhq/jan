@@ -49,6 +49,8 @@
   "others": {
     "spellCheck": "Spell Check",
     "spellCheckDesc": "Enable spell check for your threads.",
+    "enterKeyNewline": "Enter Adds a New Line",
+    "enterKeyNewlineDesc": "Pressing Enter in the chat box adds a new line instead of sending. Send with the send button. Useful when you type with an input method (IME), where Enter confirms a conversion.",
     "resetFactory": "Reset To Factory Settings",
     "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
   },

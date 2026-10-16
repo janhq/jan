@@ -57,10 +57,13 @@ vi.mock('@/containers/dialogs/ChangeDataFolderLocation', () => ({
   ),
 }))
 
+const setEnterKeyInsertsNewline = vi.fn()
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
     spellCheckChatInput: true,
     setSpellCheckChatInput: vi.fn(),
+    enterKeyInsertsNewline: false,
+    setEnterKeyInsertsNewline,
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
     autoUpdateCheck: true,
@@ -367,6 +370,25 @@ describe('General Settings Route', () => {
       fireEvent.click(switches[0])
     })
     expect(switches[0]).toBeInTheDocument()
+  })
+
+  it('turns on adding a new line with Enter', async () => {
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    const item = screen
+      .getAllByTestId('card-item')
+      .find((el) => el.dataset.title === 'settings:others.enterKeyNewline')
+    expect(item).toBeDefined()
+    const toggle = item!.querySelector('[data-testid="switch"]') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(toggle)
+    })
+    expect(setEnterKeyInsertsNewline).toHaveBeenCalledWith(true)
   })
 
   it('should handle huggingface token change', async () => {

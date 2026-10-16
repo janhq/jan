@@ -9,12 +9,15 @@ export const HUGGINGFACE_TOKEN_SECRET_KEY = 'huggingface'
 type GeneralSettingState = {
   currentLanguage: Language
   spellCheckChatInput: boolean
+  /** Enter adds a new line in the chat input; only the send button sends. */
+  enterKeyInsertsNewline: boolean
   tokenCounterCompact: boolean
   autoUpdateCheck: boolean
   stripReasoningFromContext: boolean
   huggingfaceToken?: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
+  setEnterKeyInsertsNewline: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
   setAutoUpdateCheck: (value: boolean) => void
   setStripReasoningFromContext: (value: boolean) => void
@@ -26,11 +29,14 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     (set) => ({
       currentLanguage: 'en',
       spellCheckChatInput: true,
+      enterKeyInsertsNewline: false,
       tokenCounterCompact: true,
       autoUpdateCheck: true,
       stripReasoningFromContext: false,
       huggingfaceToken: undefined,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
+      setEnterKeyInsertsNewline: (value) =>
+        set({ enterKeyInsertsNewline: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setAutoUpdateCheck: (value) => set({ autoUpdateCheck: value }),
       setStripReasoningFromContext: (value) =>
@@ -77,6 +83,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       partialize: (state) => ({
         currentLanguage: state.currentLanguage,
         spellCheckChatInput: state.spellCheckChatInput,
+        enterKeyInsertsNewline: state.enterKeyInsertsNewline,
         tokenCounterCompact: state.tokenCounterCompact,
         autoUpdateCheck: state.autoUpdateCheck,
         stripReasoningFromContext: state.stripReasoningFromContext,
