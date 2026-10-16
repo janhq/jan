@@ -91,6 +91,15 @@ const MINIMAX: ProviderCaps = {
   maybe: new Set(),
 }
 
+// Eden AI is an aggregator: a single base_url routes to many underlying
+// providers (openai/*, mistral/*, ...), so the accepted sampler surface
+// depends on the selected model. Mark the common OpenAI-compatible samplers
+// as "maybe" rather than guaranteeing them.
+const EDENAI: ProviderCaps = {
+  supported: set(),
+  maybe: new Set(['penalties', 'json_schema']),
+}
+
 const LLAMACPP: ProviderCaps = {
   supported: set(
     'penalties',
@@ -159,6 +168,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  edenai: EDENAI,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
