@@ -29,7 +29,7 @@ twitter:
 
 import { Settings } from 'lucide-react'
 
-Instructions for installing Jan on Linux. In the `.deb` and AppImage commands below, replace `VERSION` with the version in your downloaded filename (without a leading `v`). Run each command from the directory containing that file. For example, a file named `Jan_0.8.6_amd64.deb` uses `0.8.6` in place of `VERSION`.
+Instructions for installing Jan on Linux. In the `.deb` and AppImage commands below, replace `{version}` with the version in your downloaded filename (without a leading `v`). Run each command from the directory containing that file. For example, a file named `Jan_0.8.6_amd64.deb` uses `0.8.6` in place of `{version}`.
 
 ## Install Jan
 
@@ -65,13 +65,13 @@ flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flat
 [Download the `.deb`](https://app.jan.ai/download/latest/linux-amd64-deb), then install it:
 
 ```bash
-sudo apt-get install ./Jan_VERSION_amd64.deb
+sudo apt-get install ./Jan_{version}_amd64.deb
 ```
 
 Or with `dpkg`:
 
 ```bash
-sudo dpkg -i ./Jan_VERSION_amd64.deb
+sudo dpkg -i ./Jan_{version}_amd64.deb
 ```
 
 </Tabs.Tab>
@@ -81,8 +81,8 @@ sudo dpkg -i ./Jan_VERSION_amd64.deb
 [Download the AppImage](https://app.jan.ai/download/latest/linux-amd64-appimage), then run it:
 
 ```bash
-chmod +x ./Jan_VERSION_amd64.AppImage
-./Jan_VERSION_amd64.AppImage
+chmod +x ./Jan_{version}_amd64.AppImage
+./Jan_{version}_amd64.AppImage
 ```
 
 </Tabs.Tab>
@@ -109,10 +109,10 @@ The AppImage supports Jan's **built-in auto-updater**. When a new release is ava
 </Tabs.Tab>
 <Tabs.Tab>
 
-The `.deb` package is **not updated by the in-app updater** — the auto-updater only ships the AppImage as the Linux update artifact. Update the `.deb` manually by downloading the latest package and reinstalling. Replace `VERSION` with the version in the newly downloaded filename:
+The `.deb` package is **not updated by the in-app updater** — the auto-updater only ships the AppImage as the Linux update artifact. Update the `.deb` manually by downloading the latest package and reinstalling. Replace `{version}` with the version in the newly downloaded filename:
 
 ```bash
-sudo apt-get install ./Jan_VERSION_amd64.deb
+sudo apt-get install ./Jan_{version}_amd64.deb
 ```
 
 Your data folder (`~/.local/share/Jan`) and configuration (`~/.config/Jan`) are preserved across reinstalls.
@@ -169,7 +169,7 @@ lspci | grep -i nvidia
 nvidia-smi
 ```
 
-Jan bundles its CUDA 13 engine and runtime libraries. Installing the CUDA Toolkit, GCC, or a custom `LD_LIBRARY_PATH` is not required to run the packaged app. GPUs or drivers that cannot use CUDA 13 use Vulkan instead.
+Jan bundles its CUDA 13 engine and runtime libraries. Installing the CUDA Toolkit, GCC, or a custom `LD_LIBRARY_PATH` is not required to run the packaged app. GPUs or drivers that cannot use CUDA 13 use Vulkan instead. For Vulkan fallback, install your distribution's Vulkan loader and a Vulkan-capable NVIDIA driver; since v0.8.6, the AppImage uses your system's Vulkan loader.
 
 ### Step 2: Enable GPU Acceleration
 
@@ -219,7 +219,7 @@ rm -rf ~/.config/Jan        # app configuration
 <Tabs.Tab>
 
 ```bash
-rm ./Jan_VERSION_amd64.AppImage
+rm ./Jan_{version}_amd64.AppImage
 rm -rf ~/.local/share/Jan   # data folder (models, threads, logs)
 rm -rf ~/.config/Jan        # app configuration
 ```
