@@ -18,15 +18,15 @@ keywords:
 
 import { SquareTerminal, Wrench, Settings, Users } from 'lucide-react'
 
-Get Jan Agent running and finish a real task in a few minutes. You need a terminal and an API key
-for one model provider.
+Get Jan Agent running and finish a real task in a few minutes. You need a terminal and access to
+a model provider or an OpenAI-compatible endpoint.
 
 <Steps>
 
 ### Install Nightly
 
 <Callout type="warning">
-Jan Agent is a preview. The installer on `dev` pulls from the `agent-nightly` channel - expect
+Jan Agent is a preview. The installers below pull from the `agent-nightly` channel - expect
 nightly-quality builds.
 </Callout>
 
@@ -67,7 +67,7 @@ stamped in by CI.
 
 ### Connect a provider
 
-Jan Agent has no local inference engine - it calls a remote provider. Point it at one:
+Jan Agent has no local inference engine - it calls a cloud provider or an HTTP endpoint. Point it at one:
 
 ```bash
 jan config set --provider anthropic --api-key sk-ant-...
@@ -86,20 +86,28 @@ jan config list
 ```
 
 <Callout type="info">
-Already using Jan Desktop? Jan Agent picks up the providers you configured there, so you can skip
-this step entirely.
+Already using Jan Desktop? You can skip provider setup if Agent inherits an enabled HTTP provider
+with a usable endpoint and any required credentials. Desktop local llama.cpp or MLX models alone
+are not enough: start Desktop's [Local API Server](/desktop/api-server), then
+[configure Agent to use its endpoint](/agent/providers#your-own-hardware). Agent does not start
+Desktop's inference engine.
 </Callout>
 
 ### Open the console
 
-Change into the project you want to work on, then:
+Change into the project you want to work on, then start with approval prompts enabled:
 
 ```bash
-jan
+jan --safe
 ```
 
 You get an interactive console: type a message, press <kbd>Enter</kbd>. The agent works in the
 directory you launched it from.
+
+Plain `jan` auto-approves tool calls. This walkthrough uses `--safe` so you can review writes,
+shell commands, and MCP tool calls before allowing them. This does not sandbox commands: the shell
+is unconfined by default and runs with your access. To enable both controls, use
+`jan --safe --sandbox`. See [Tools & permissions](/agent/permissions#the-shell-sandbox).
 
 ### Give it a task
 
@@ -109,7 +117,8 @@ Start with something small and verifiable:
 Read the README and tell me how to run the tests
 ```
 
-It will read files and answer. Nothing has changed on disk yet - reading is free.
+Built-in file reads do not need approval. If the agent proposes a shell command or a change while
+investigating, review the approval request before allowing it.
 
 Now ask for a change:
 
@@ -117,17 +126,14 @@ Now ask for a change:
 Add a --version flag to the CLI and update the README to document it
 ```
 
-This time the agent asks before it writes:
+With `--safe`, a write that is not already covered by a grant opens a permission prompt. Review
+its path and diff; shell requests show the command. Use the arrow keys to select **Allow once**
+or **Deny**, then press <kbd>Enter</kbd>. You can also press <kbd>y</kbd> to allow once or
+<kbd>n</kbd> to deny.
 
-```
-write src/cli.rs
-  y  yes, once
-  a  yes, and don't ask again this session
-  n  no
-```
-
-Press <kbd>y</kbd> to allow it once, <kbd>a</kbd> to stop being asked for that kind of call, or
-<kbd>n</kbd> to refuse. You stay in the loop for every write and every shell command.
+Some requests also offer a thread-level grant, selected with <kbd>a</kbd>. Read its label: for a
+shell command it may allow the named commands or only that exact command, not every future shell
+call. Choose **Allow once** throughout this walkthrough to keep reviewing subsequent requests.
 
 ### Watch it work
 
@@ -149,7 +155,7 @@ quit.
 Sessions are saved per project. To continue the most recent one:
 
 ```bash
-jan -c
+jan --safe -c
 ```
 
 Or choose from a list inside the console with `/resume`.
@@ -161,7 +167,7 @@ Three things worth doing on your first day:
 **Explore before changing.** Start read-only so the agent can investigate without touching anything:
 
 ```bash
-jan --plan
+jan --safe --plan
 ```
 
 It will study the project and propose a plan. Type `/plan exit` when you're ready to let it act.
@@ -174,10 +180,10 @@ It will study the project and propose a plan. Type `/plan exit` when you're read
 
 The agent keeps working and re-checking until that holds.
 
-**Seed a task from the shell.** Handy in a script or an alias:
+**Seed a task from the shell.** Start the interactive console with an initial task:
 
 ```bash
-jan --task "fix the failing test in tests/auth"
+jan --safe --task "fix the failing test in tests/auth"
 ```
 
 ## Where to go next

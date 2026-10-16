@@ -19,11 +19,13 @@ keywords:
 import { Rocket, Terminal, Wrench, Settings, Users, SquareTerminal } from 'lucide-react'
 
 Jan Agent is an AI agent that lives in your terminal. You give it a task in plain language, and it
-reads files, edits them, runs commands, and searches the web until the work is done - asking for
-your approval before anything touches your machine.
+reads files, edits them, runs commands, and searches the web until the work is done. Plain `jan`
+auto-approves tool calls; use `jan --safe` to ask for approval before writes, shell commands, and
+MCP tool calls. Approval and shell sandboxing are separate controls.
 
-It uses the providers you have already configured in Jan Desktop, so if you're a Jan user there is
-nothing new to sign up for.
+It can inherit enabled HTTP providers configured in Jan Desktop, provided their endpoints and
+required credentials are usable. To use a Desktop local model, start its
+[Local API Server](/desktop/api-server) and configure Agent to use that endpoint.
 
 ```bash
 jan
@@ -42,20 +44,22 @@ let it work.
 | Interface | Desktop app | Terminal, interactive or headless |
 | Where models run | Locally via llama.cpp or MLX, or a cloud provider | Cloud providers, or any OpenAI-compatible endpoint |
 | Works on | Conversations, projects, and files you attach | A project folder on disk |
-| Files and shell | Through MCP servers you add | Built in - read, write, edit, and run commands, each gated by approval |
+| Files and shell | Through MCP servers you add | Built in - read, write, edit, and run commands, auto-approved by default; use `--safe` for approval prompts |
 | MCP servers | Yes | Yes, the same ones |
-| Skills and memory | Yes | Yes, the same ones |
+| Skills and memory | Desktop agent workspace | Separate user and project stores |
 
 Neither replaces the other. A common setup is Jan Desktop serving a local model, with Jan Agent
 pointed at it - see [running against local models](/agent/providers#your-own-hardware).
 
-Provider settings, MCP servers, [skills, and memory](/agent/skills)
-are all shared, so anything you set up in one is already there in the other.
+Agent can inherit eligible Desktop HTTP provider settings and MCP servers, but
+[skills](/agent/skills) and [memory](/agent/memory) are not automatically shared. Desktop keeps its
+permanent agent store in `<data-folder>/agent-workspace`; Agent uses user and project stores
+under `~/.jan`.
 
 ## Install
 
 <Callout type="warning">
-Jan Agent is a preview. The installer on `dev` pulls from the `agent-nightly` channel - expect
+Jan Agent is a preview. The installers below pull from the `agent-nightly` channel - expect
 nightly-quality builds.
 </Callout>
 
@@ -125,9 +129,11 @@ Three ways to change that:
 
 - **Plan mode** (`jan --plan`) makes the session read-only. The agent investigates and proposes, but
   cannot change anything.
-- **Safe mode** (`jan --safe`) asks before every write and shell command, instead of auto-approving
-  them.
+- **Safe mode** (`jan --safe`) prompts for writes, shell commands, and MCP tool calls instead of
+  auto-approving them. Thread-level grants can allow later matching calls without another prompt.
+  It does not enable the shell sandbox.
 - **Sandbox** (`jan --sandbox`) confines shell commands to the project with an OS sandbox. Off by
-  default on the CLI, always on in the desktop app.
+  default on the CLI, always on for the desktop chat agent. Combine it with `--safe` to request
+  approval as well as confinement.
 
 See [Tools & permissions](/agent/permissions) for the full picture.

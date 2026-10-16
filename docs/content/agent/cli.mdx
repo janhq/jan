@@ -36,7 +36,7 @@ jan <COMMAND>
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--sandbox` | Run shell commands under OS confinement. Off by default |
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
-| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` still asks once). See [Running a command outside the sandbox](/agent/permissions#running-a-command-outside-the-sandbox) |
+| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` asks unless execution is already allowed or granted). See [Running a command outside the sandbox](/agent/permissions#running-a-command-outside-the-sandbox) |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
@@ -98,7 +98,7 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--safe` | Ask for approval before writes, shell commands, and MCP tool calls |
 | `--sandbox` | Run shell commands under OS confinement. Off by default |
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
-| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` still asks once). See [Running a command outside the sandbox](/agent/permissions#running-a-command-outside-the-sandbox) |
+| `--allow-escalation` | Let a sandboxed shell command that asks to leave the sandbox run without an escalation prompt (`--safe` asks unless execution is already allowed or granted). See [Running a command outside the sandbox](/agent/permissions#running-a-command-outside-the-sandbox) |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |

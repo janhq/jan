@@ -19,15 +19,16 @@ The agent writes memory itself when it learns something durable, and reads it ba
 prompt on later runs. It's scoped per project, with a separate user scope for notes that apply
 everywhere (see [Scopes](#scopes)).
 
-Three tools drive it, and only the write prompts for approval:
+Three dedicated workspace tools drive it. None prompts for approval, even with `--safe`:
 
 | Tool | Approval |
 | --- | --- |
 | `memory_list` | No |
 | `memory_read` | No |
-| `memory_write` | Yes |
+| `memory_write` | No |
 
-Because writes prompt, nothing enters memory without you seeing it.
+The agent can save notes without asking first. Explicit tool denies still apply; see
+[Tools & permissions](/agent/permissions).
 
 ## Where it lives
 
@@ -70,14 +71,8 @@ relevant. To keep other projects out of the prompt and refuse `project:` reads, 
 memory_cross_project = false   # default: true
 ```
 
-Retrieval is backed by the same store Jan Desktop uses for memory, so a fact learned in one is
-available in the other.
-
-<Callout type="info">
-Memory is shared with [Jan Desktop's Cowork surface](/desktop/cowork), which ships in the
-`nightly` channel only. Settings you change there apply to what the terminal agent recalls, and
-vice versa.
-</Callout>
+Jan Desktop uses a separate permanent store at `<data-folder>/agent-workspace`. Its memory is
+not automatically shared with the terminal agent's user and project stores.
 
 ## Keeping it useful
 

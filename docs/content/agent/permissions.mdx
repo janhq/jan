@@ -4,43 +4,71 @@ description: The approval model, capabilities, and how to widen or narrow what t
 keywords: [Jan, Jan Agent, permissions, approval, sandbox, capabilities, tool policy]
 ---
 
-The agent asks before it changes anything. This page covers how that works and how to change it.
+Plain `jan` auto-approves tool calls. Use `jan --safe` to review writes, shell commands, and
+MCP tool calls before allowing them. Approval and shell sandboxing are separate controls: `--safe`
+does not enable the sandbox, and `--sandbox` does not turn on ordinary approval prompts.
 
 ## Approval
 
-Reads are free. Writes and shell commands stop and ask:
-
-```
- write src/cli.rs
-   y  yes, once
-   a  yes, and don't ask again this session
-   n  no
+```bash
+jan                         # auto-approve ordinary tool calls; shell unconfined by default
+jan --safe                  # ask for approval; shell still unconfined by default
+jan --safe --sandbox        # ask for approval and confine shell commands
 ```
 
-For `write` and `edit` you see a diff first. For `shell` you see the exact command.
+These sandbox defaults apply unless you have changed the project or global configuration below.
+With `--safe`, built-in reads inside the project do not prompt. Writes and shell commands prompt
+unless a policy allow rule or an existing grant covers them; MCP calls prompt unless that tool
+already has a grant. Dedicated memory and skill tools do not prompt, including their write tools.
+Explicit tool denies still win.
 
-`a` grants that capability for the rest of the session. Nothing is written to disk, so a new session
-starts cautious again - a grant can't leak into tomorrow.
+The console shows **Allow once** and **Deny**, plus a thread-level option when available.
+Use the arrow keys and <kbd>Enter</kbd>, or press <kbd>y</kbd> to allow once,
+<kbd>n</kbd> or <kbd>Esc</kbd> to deny, and <kbd>a</kbd> for the thread-level option when offered.
+For `write` and `edit`, the request includes a diff preview; for `shell`, it shows the command.
+
+Read the thread-level option's label before choosing it:
+
+- **Allow always (this thread)** grants the relevant permission category for built-in file tools,
+  not just that path. Ordinary writes and writes outside the project are separate categories.
+  For MCP, the grant covers only the named tool.
+- **Allow all 'git' commands (this thread)** grants the named base command, not every shell call.
+  Compound commands list each base, for example **Allow all 'cargo', 'git' commands (this thread)**.
+  A later command is covered only when all of its bases are granted.
+- **Allow this exact command (this thread)** is used when Jan cannot safely decompose the command;
+  the grant matches its normalized command text rather than a base command.
+
+Grants are held in memory for the thread, not persisted to `agent.toml`. Choose **Allow once** when
+you only mean to authorize the current request. Sandbox escalation is handled separately below:
+it does not offer a thread-level grant.
 
 ## Capabilities
 
-Every tool maps to one capability, and approval applies at that level rather than per tool:
+Built-in tools have capability classes, but not every approval is capability-wide:
 
-| Capability | Tools | Default |
-| --- | --- | --- |
-| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
-| Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
-| Exec | `shell` | Prompts |
+| Capability or tool group | Examples | Plain `jan` | `jan --safe` |
+| --- | --- | --- | --- |
+| Read inside the project | `read`, `ls`, `find`, `grep` | Allowed | Allowed |
+| Network | `web_search`, `web_fetch` | Allowed | Allowed |
+| Write | `write`, `edit` | Auto-approved | Prompts unless allowed or granted |
+| Exec | `shell` | Auto-approved | Prompts unless allowed or command-granted |
+| Workspace tools | `memory_read`, `memory_list`, `memory_write`, `skill_read`, `skill_list`, `skill_write` | Allowed | Allowed |
+| MCP tools | Tools from configured MCP servers | Auto-approved | Prompts unless that tool is granted |
 
-So approving `a` on a shell command allows further shell commands, not just that one. That's the
-trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
-only meant one.
+This table describes ordinary calls, not overrides of tool denies, plan mode, or sandbox
+restrictions. Out-of-project file access has separate permission checks; sandbox escalation has
+its own approval rules below.
 
 ## Path checks
 
-Tools that take a path have it checked against the project root, so a write outside the project is
-refused before it happens. `shell` has no path argument and runs in the project root; a command you
-approve can still reach outside, which is why plan mode exists as the hard boundary.
+File-tool paths are checked against the project root and session scratch. Direct reads or writes
+outside those roots use separate escape permissions: `--safe` prompts unless already allowed or
+granted, while ordinary auto-approval also approves these requests. Path checks are therefore not
+a blanket guarantee that file tools cannot reach outside the project.
+
+`shell` starts in the project root, but its commands can reach outside it when unconfined.
+Approval decides whether a call may run; the shell sandbox limits what the command can access.
+Plan mode separately blocks write and exec tools before the approval gate.
 
 A symbolic link is followed only while it stays inside the project (or the session scratch). Links
 that point back into your own tree - the ones every `node_modules` is full of - work normally; a
@@ -60,7 +88,7 @@ default = "read-only"
 allow = []
 deny = []
 
-# Write tools are opt-in
+# Explicit pre-approval for matching built-in tools
 allow_write = []
 
 # Whether the sandboxed shell can reach the network
@@ -72,7 +100,7 @@ allow_write = []
 
 | `default` | Effect |
 | --- | --- |
-| `read-only` | The default. MCP tools and built-in reads available; built-in writes and exec go through the gate |
+| `read-only` | The default. MCP tools and built-in reads available; built-in writes and exec go through the approval gate (auto-approved unless `--safe`) |
 | `deny` | Locks down all MCP tools. Anything in `allow` is still exposed |
 | `allow` | Exposes everything not in `deny` |
 
@@ -110,11 +138,13 @@ Whether it is on depends on the surface:
 The CLI runs unconfined because it is a coding agent in your own project, started from your own
 terminal - the same trust `make`, `git push`, or any other tool you run there already has - and
 confinement breaks the toolchains projects actually build with often enough to be the wrong default.
-Note that approval prompts are also off by default, so out of the box nothing gates a shell command
-at all - `--safe`, `--sandbox`, or both are how you change that.
+Ordinary approval prompts are also off by default. Tool denies and plan-mode restrictions still
+apply, but ordinary shell calls do not pause for approval. Use `--safe` for prompts, `--sandbox`
+for confinement, or both.
 
 <Callout type="warning">
-With the sandbox off, a shell command you approve runs with exactly your access. Nothing confines it
+With the sandbox off, a shell command runs with your access, whether approved manually or
+automatically. Nothing confines it
 to the project. If that isn't the trade you want, turn it on.
 </Callout>
 
@@ -157,7 +187,7 @@ Some everyday commands write outside the project: `cargo build` fills `~/.cargo/
 `pip`, `npm` and `go` write their caches under your home directory. Inside the sandbox these fail
 with a read-only file system error. When that happens to a command the task needs, the agent can
 ask to rerun it **outside** the sandbox. It sets `escalate` on the shell call and gives a one-line
-reason, and you are asked:
+reason. Unless `allow_escalation` and an execution approval cover the command (see below), you are asked:
 
 ```
 shell wants exec outside the sandbox
@@ -168,12 +198,13 @@ why cargo needs to write ~/.cargo/registry to fetch crates
 ```
 
 An approved command runs with your own access, like a command you typed. The minimal environment
-(below) still applies. Escalation is deliberately stricter than every other prompt:
+(below) still applies. Escalation has additional approval rules:
 
-- **It is never auto-approved.** Running without `--safe` approves tools that run *inside* the
-  sandbox, not a request to leave it, so the prompt still appears.
-- **There is no "allow always".** Each escalation is answered on its own.
-- **Where nobody can answer, it is refused.** That covers a headless `jan cli agent run` reading
+- **Ordinary auto-approval does not approve escalation.** Even without `--safe`, a request to leave
+  the sandbox still prompts unless you explicitly enable `allow_escalation`, described below.
+- **The escalation prompt has no "allow always" option.** Without `allow_escalation`, each
+  escalation needs a fresh answer, even if the command already has an execution grant.
+- **Where approval is needed but nobody can answer, it is refused.** That covers a headless `jan cli agent run` reading
   from a pipe or CI, and a subagent whose parent cannot be asked. The command does not run at all,
   and the model is told how you could enable it.
 - **The desktop never escalates.** Its chat sandbox is throwaway by design.
@@ -195,9 +226,11 @@ jan cli agent run --sandbox --allow-escalation "..."
 allow_escalation = true
 ```
 
-This drops only the escalation prompt. With `--safe`, a shell command still needs your approval
-whether or not it escalates, so you are asked once (about running it outside the sandbox) rather
-than not at all. Adding `escalate` never gets a command past an approval it would otherwise need.
+With `allow_escalation`, an escalated command runs without a fresh prompt if ordinary execution
+is auto-approved, a policy allow rule covers `shell`, or an existing grant covers the command.
+This includes `--safe` sessions with a matching policy allow or command grant. Otherwise, `--safe`
+still asks once about running the command outside the sandbox. Enabling escalation does not
+bypass an execution approval the command would otherwise need.
 
 ### Which shell runs commands
 
@@ -274,8 +307,9 @@ a subset of what the parent could, so delegation can't be used to escape this po
 
 ## Turning the prompts on
 
-Approval prompts are opt-in: by default every call above is auto-approved. Start the session with
-`jan --safe` to be asked instead. See [run modes](/agent/run-modes).
+Ordinary approval prompts are opt-in: start with `jan --safe` to review writes, shell commands,
+and MCP calls that are not already allowed or granted. Add `--sandbox` if you also want shell
+confinement. See [run modes](/agent/run-modes).
 
 <Callout type="info">
 Auto-approval only removes the prompt. The path checks and `[tools] deny` all still apply, as does
