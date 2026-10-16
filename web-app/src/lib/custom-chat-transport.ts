@@ -44,6 +44,9 @@ import {
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
+import { i18n } from '@/i18n/react-i18next-compat'
+import { rateLimitRetryDelayMs } from '@/lib/rateLimit'
+import { useRateLimitRetry } from '@/stores/rate-limit-retry-store'
 import { ExtensionManager } from '@/lib/extension'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
@@ -1655,6 +1658,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ? unwrapped.message
               : JSON.stringify(unwrapped)
         const baseMessage = stripRetryErrorWrapper(rawMessage)
+
+        // The provider's rate limit: tell the thread how long to wait so it
+        // can retry on its own, and say why in the user's language.
+        const rateLimitWaitMs = rateLimitRetryDelayMs(error)
+        if (rateLimitWaitMs !== null) {
+          useRateLimitRetry.getState().report(threadId, rateLimitWaitMs)
+          return i18n.t('model-errors:rateLimited', { reason: baseMessage })
+        }
 
         const contextInfo = extractContextInfoFromError(unwrapped)
         if (contextInfo) {

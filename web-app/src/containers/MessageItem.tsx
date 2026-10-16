@@ -19,6 +19,7 @@ import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useMessageErrors } from '@/stores/message-errors'
+import { RateLimitRetryNotice } from './message/RateLimitRetryNotice'
 import {
   IconRefresh,
   IconPlayerPlay,
@@ -612,9 +613,10 @@ export const MessageItem = memo(
               <div className="font-medium text-destructive">
                 Generation failed
               </div>
-              <div className="text-muted-foreground break-words">
+              <div className="text-muted-foreground break-words whitespace-pre-line">
                 {messageError}
               </div>
+              <RateLimitRetryNotice messageId={message.id} />
             </div>
             {selectedModel &&
               onRegenerate &&

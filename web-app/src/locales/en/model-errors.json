@@ -29,5 +29,9 @@
   "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",
   "serverInvalidModelPath": "Invalid or inaccessible model path",
   "serverStartModelFailed": "Failed to start model",
-  "serverStartFailed": "Failed to start server"
+  "serverStartFailed": "Failed to start server",
+  "rateLimited": "The provider's rate limit was reached: {{reason}}",
+  "rateLimitRetrying": "Retrying automatically in {{seconds}} s ({{attempt}} of {{max}})",
+  "rateLimitCancelRetry": "Don't retry",
+  "rateLimitGaveUp": "Jan stopped retrying. Wait a minute and regenerate, or raise this deployment's tokens-per-minute quota with your provider (for Azure, in the Azure AI Foundry portal)."
 }
