@@ -6,6 +6,7 @@ import path from 'path'
 import unzipper from 'unzipper'
 import tar from 'tar'
 import { copySync } from 'cpx'
+import { execFileSync } from 'child_process'
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
@@ -135,32 +136,44 @@ async function fetchLatestSqliteVecUrl(platform, arch) {
 }
 
 function getPlatformArch() {
-  const platform = os.platform() // 'darwin', 'linux', 'win32'
-  const arch = os.arch() // 'x64', 'arm64', etc.
+  const rustPlatform = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
+    .split('\n')
+    .find((line) => line.startsWith('host:'))
+    .slice('host:'.length)
+    .trim()
+  const [arch, vendor, os, abi] = rustPlatform.split('-')
+  // handle cases without abi
+  const abiSuffix = abi ? `-${abi}` : ''
 
-  let bunPlatform, uvPlatform
+  let bunArch = arch
+  let bunAbiSuffix = ''
+  let uvVendor = vendor
+ 
+  switch(arch) {
+    case 'x86_64': bunArch = 'x64'; break
+  }
+  switch(os) {
+    case 'linux':
+      // uv linux alpine case:
+      // rustPlatform: ${arch}-alpine-linux-musl
+      // uvPlatform:  ${arch}-unknown-linux-musl
+      uvVendor = 'unknown'
 
-  if (platform === 'darwin') {
-    bunPlatform = arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x64'
-    uvPlatform =
-      arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
-  } else if (platform === 'linux') {
-    bunPlatform = arch === 'arm64' ? 'linux-aarch64' : 'linux-x64'
-    uvPlatform =
-      arch === 'arm64'
-        ? 'aarch64-unknown-linux-gnu'
-        : 'x86_64-unknown-linux-gnu'
-  } else if (platform === 'win32') {
-    bunPlatform = arch === 'arm64' ? 'windows-aarch64' : 'windows-x64'
-    uvPlatform =
-      arch === 'arm64'
-        ? 'aarch64-pc-windows-msvc'
-        : 'x86_64-pc-windows-msvc'
-  } else {
-    throw new Error(`Unsupported platform: ${platform}`)
+      // glibc : linux-${arch}
+      // musl  : linux-${arch}-musl
+      switch(abiSuffix) {
+        case '-musl': bunAbiSuffix = '-musl'; break
+      }
+      break
+    case 'windows': break
+    case 'darwin':  break
+    default: throw new Error(`Unsupported platform: ${os}`)
   }
 
-  return { bunPlatform, uvPlatform }
+  const bunPlatform = `${os}-${bunArch}${bunAbiSuffix}`
+  const uvPlatform  = `${arch}-${uvVendor}-${os}${abiSuffix}`
+  
+  return { bunPlatform, uvPlatform, rustPlatform }
 }
 
 async function main() {
@@ -170,8 +183,10 @@ async function main() {
   }
   console.log('Starting main function')
   const platform = os.platform()
-  const { bunPlatform, uvPlatform } = getPlatformArch()
-  console.log(`bunPlatform: ${bunPlatform}, uvPlatform: ${uvPlatform}`)
+  const { bunPlatform, uvPlatform, rustPlatform } = getPlatformArch()
+  console.log(`bunPlatform : ${bunPlatform}`)
+  console.log(`uvPlatform  : ${uvPlatform}`)
+  console.log(`rustPlatform: ${rustPlatform}`)
 
   const binDir = 'src-tauri/resources/bin'
   const tempBinDir = 'scripts/dist'
@@ -241,7 +256,7 @@ async function main() {
     } else if (platform === 'linux') {
       copyFile(
         path.join(binDir, 'bun'),
-        path.join(binDir, 'bun-x86_64-unknown-linux-gnu'),
+        path.join(binDir, `bun-${rustPlatform}`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
@@ -320,7 +335,7 @@ async function main() {
     } else if (platform === 'linux') {
       copyFile(
         path.join(binDir, 'uv'),
-        path.join(binDir, 'uv-x86_64-unknown-linux-gnu'),
+        path.join(binDir, `uv-${uvPlatform}`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
