@@ -14,7 +14,7 @@ export const defaultModel = (provider?: string) => {
 /**
  * Determines model capabilities based on provider configuration from token.js
  * @param providerName - The provider name (e.g., 'openai', 'anthropic', 'openrouter')
- * @param modelId - The model ID to check capabilities for
+ * @param model - The model ID to check capabilities for
  * @returns Array of model capabilities
  */
 export const getModelCapabilities = (
@@ -75,7 +75,7 @@ export const removeYamlFrontMatter = (content: string): string => {
 
 /**
  * Extract model name from repo path, e.g. cortexso/tinyllama -> tinyllama
- * @param modelId
+ * @param model
  * @returns
  */
 export const extractModelName = (model?: string) => {
@@ -84,7 +84,7 @@ export const extractModelName = (model?: string) => {
 
 /**
  * Extract model name from repo path, e.g. https://huggingface.co/cortexso/tinyllama -> cortexso/tinyllama
- * @param modelId
+ * @param model
  * @returns
  */
 export const extractModelRepo = (model?: string) => {
