@@ -15,7 +15,7 @@ export interface ModelInterface {
 
   /**
    * Cancels the download of a specific model.
-   * @param {string} modelId - The ID of the model to cancel the download for.
+   * @param {string} model - The ID of the model to cancel the download for.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   cancelModelPull(model: string): Promise<void>
