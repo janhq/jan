@@ -24,8 +24,6 @@ keywords:
   ]
 ---
 
-import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
-
 ## What is llama.cpp?
 
 llama.cpp is the engine that runs AI models locally on your computer. Think of it as the software that takes an AI model file and makes it actually work on your hardware - whether that's your CPU, graphics card, or Apple's M-series chips.
@@ -41,13 +39,11 @@ Originally created by Georgi Gerganov and now maintained by the [ggml-org/llama.
 
 ## Engine version
 
-The llama.cpp engine is built into Jan and updates together with the app, so there is no separate engine version to download or pick. **Settings** > **Llama.cpp** shows the version, build and commit; quote them when you report a model that fails to load. To run a model on a different llama.cpp version, run your own `llama-server` and connect it as a [custom endpoint](/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
+The llama.cpp engine is built into Jan and updates together with the app, so there is no separate engine version to download or pick. **Settings** > **Model Providers** > **Llama.cpp** shows the version, build and commit; quote them when you report a model that fails to load. To run a model on a different llama.cpp version, run your own `llama-server` and connect it as a [custom endpoint](/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
 
 ## Accessing Engine Settings
 
-Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Llama.cpp** under Model Providers:
-
-The page includes your local models, bundled engine version information, and engine-wide settings. The engine information panel links to upstream release notes and instructions for using a different llama.cpp version through a custom endpoint.
+Open **Settings** > **Model Providers** > **Llama.cpp**. The page includes your local models, bundled engine information, and engine-wide settings.
 
 ## Model Management
 
@@ -76,7 +72,6 @@ These are advanced settings. You typically only need to adjust them if models ar
 | Feature | What It Does | When You Need It |
 |---------|-------------|------------------|
 | **Engine Version** | Shows which version of llama.cpp you're running | Check compatibility with newer models |
-| **App Updates** | Update Jan to update its bundled llama.cpp engine | When a newer Jan release includes engine fixes or model support |
 | **Max Concurrent Models** | Maximum models the router keeps loaded at once | Set to 1 if you want strict single-model operation; 0 means unlimited |
 
 <Callout type="info">
@@ -88,17 +83,15 @@ Jan v0.8.0 introduced a router that loads and unloads models on demand. Since v0
 Jan bundles the engine backends with the app:
 
 - **Windows and Linux, NVIDIA:** CUDA 13 where supported. GPUs or drivers that cannot run CUDA 13 (for example, Pascal/GTX 10-series cards) use Vulkan instead. Install a current driver supported by your GPU; the CUDA Toolkit is not required.
-- **Windows and Linux, AMD and Intel:** Vulkan, with a Vulkan-capable graphics driver. On Linux, the v0.8.6 AppImage uses the system Vulkan loader.
+- **Windows and Linux, AMD and Intel:** Vulkan, with a Vulkan-capable graphics driver. Since v0.8.6, the Linux AppImage uses your system's Vulkan loader.
 - **Apple Silicon:** Metal acceleration, with no separate backend installation.
-- **Intel Macs:** The bundled local engine does not support Intel Macs. Remote and custom providers remain available.
+- **Intel Macs:** The bundled local engine does not support Intel Macs. See [Mac installation](/desktop/install/mac) for the v0.8.5 remote/custom-provider alternative and its limits.
 
 Under **Settings** > **Hardware** > **GPUs**, enable or disable GPUs with their switches. If a GPU exposes multiple backends, its card lets you select among the available backends (for example, CUDA and Vulkan). These are bundled device choices, not downloads or engine-version selectors. To run without GPU offload on Windows or Linux, turn off the GPU switches.
 
 <Callout type="info">
 If a Turing GPU (GTX 16xx or RTX 20xx) reports "the provided PTX was compiled with an unsupported toolchain" on v0.8.5, update Jan to v0.8.6 or later. That release includes native Turing code; the fix does not require a driver update. See the [v0.8.6 release notes](https://github.com/janhq/jan/releases/tag/v0.8.6).
 </Callout>
-
-To test another engine version, run your own `llama-server` and add a [custom endpoint](/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version). You cannot replace the bundled engine through the old backend selector.
 
 ## Performance Settings (Engine-wide)
 
@@ -146,7 +139,7 @@ The default KV cache type was temporarily set to `q8_0` in a prior release and h
 These settings are for fine-tuning model behavior and advanced use cases.
 
 <Callout type="info">
-**Custom Jinja Chat Template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+**Custom Jinja Chat Template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide **Settings** > **Model Providers** > **Llama.cpp** page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
 </Callout>
 
 ### Text Generation Control

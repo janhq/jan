@@ -41,7 +41,7 @@ Error logs are essential for troubleshooting issues and getting help from Jan te
 tail -n 50 ~/Library/Application\ Support/Jan/data/logs/app.log
 ```
 
-Check `logs/app.log` for application errors and engine startup failures. Since v0.8.5, the bundled engine runs in a separate `jan-llama-worker` process; look for that name when investigating a model that fails to load or crashes.
+Check `logs/app.log` for application errors and engine startup failures. Since v0.8.5, the bundled engine runs in a separate `jan-llama-worker` process; look for `jan-llama-worker` entries in `logs/app.log` when investigating a model that fails to load or crashes.
 
 The `logs/app.log` file lives inside your Jan data folder:
 
@@ -190,7 +190,9 @@ Install a current [NVIDIA driver](https://www.nvidia.com/en-us/drivers/) support
 nvidia-smi
 ```
 
-The output should show your GPU model and driver version. Jan bundles its CUDA 13 engine and runtime libraries; you do not need to install the CUDA Toolkit, run `nvcc`, install GCC, or set `LD_LIBRARY_PATH` to use the packaged app. GPUs or drivers that cannot run CUDA 13 use Vulkan instead, which requires a Vulkan-capable driver. On Linux, ensure your system Vulkan loader is installed.
+The output should show your GPU model and driver version. Jan bundles CUDA 13 and its runtime libraries, so the packaged app does not require the CUDA Toolkit, GCC, or a custom `LD_LIBRARY_PATH`.
+
+GPUs or drivers that cannot run CUDA 13 use Vulkan instead, which requires a Vulkan-capable driver. On Linux, ensure your system Vulkan loader is installed.
 
 If a GTX 16xx or RTX 20xx GPU reports "the provided PTX was compiled with an unsupported toolchain" on v0.8.5, update Jan to v0.8.6 or later. The [v0.8.6 fix](https://github.com/janhq/jan/releases/tag/v0.8.6) includes native Turing code and does not require a driver update.
 
@@ -204,7 +206,7 @@ These controls use the bundled engine; there is no separate backend download or 
 
 ### Step 3: Restart Jan
 
-Restart Jan to make sure it works.
+Restart Jan, then load a model and retry your request.
 
 </Steps>
 
@@ -455,7 +457,7 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 
 ### `jan` is not recognized after updating the desktop app
 
-Since v0.8.5 the desktop app no longer includes the `jan` CLI or adds it to your `Path`. Updating from an earlier version removes the CLI that was bundled with the app. Install the CLI separately by following the [agent quickstart](/agent/quickstart).
+Since v0.8.5, Jan Desktop no longer includes the `jan` CLI or adds it to your `PATH`. On Windows, updating from v0.8.4 removes the bundled CLI. On macOS and Linux, an older installed CLI can remain on your `PATH`. Follow [Jan CLI and Desktop](/desktop/cli#upgrading-from-a-bundled-cli) to migrate and install Jan Agent separately.
 
 On Windows, the update leaves an old entry in your user `Path` that points at a folder with no CLI in it any more. You can remove it:
 

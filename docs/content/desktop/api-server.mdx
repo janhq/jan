@@ -24,7 +24,7 @@ Jan provides a built-in, OpenAI-compatible API server that runs entirely on your
 
 ## Prerequisites
 
-You need a local model that Jan can load. On macOS, this requires Apple Silicon: the bundled llama.cpp engine does not load models on Intel Macs as of v0.8.5, and MLX also requires Apple Silicon. Remote or custom providers are not a substitute for a local model in the built-in Local API Server. See [Mac installation](/desktop/install/mac).
+The server needs a local model that Jan can load to start. The default-model picker offers llama.cpp and MLX models. On macOS, this requires Apple Silicon: the bundled llama.cpp engine does not load models on Intel Macs as of v0.8.5, and MLX also requires Apple Silicon. Once running, the server can also route requests to configured remote or custom providers, but those providers do not replace the local-model startup requirement. Requests routed to remote providers are not offline or confined to your computer. See [Mac installation](/desktop/install/mac).
 
 ## Quick Start
 
@@ -69,7 +69,7 @@ The port number for the API server.
 ### API Prefix
 The base path for all API endpoints.
 - **`/v1`** (Default): Follows OpenAI's convention. The chat completions endpoint would be `http://127.0.0.1:1337/v1/chat/completions`.
-- Use `/` to serve endpoints at the root, such as `http://127.0.0.1:1337/chat/completions`. Clearing the field is normalized to `/` when you leave it; an empty prefix is not persisted.
+- Use `/` to serve endpoints at the root, such as `http://127.0.0.1:1337/chat/completions`. If you clear the field, Jan resets it to `/`.
 
 ### API Key
 A secret key used to authenticate requests.

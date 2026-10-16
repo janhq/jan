@@ -12,7 +12,7 @@ it to your `PATH`. There is no Desktop **Settings > General > Jan CLI** installa
 
 The current CLI is **Jan Agent**, a terminal agent installed separately from Desktop. It is a
 **preview**, distributed through the `agent-nightly` channel, not a stable Desktop feature.
-Follow the [Agent quickstart](/agent/quickstart) for installation and provider setup, and the
+Follow the [Jan Agent quickstart](/agent/quickstart) for installation and provider setup, and the
 [CLI reference](/agent/cli) for supported flags and subcommands.
 
 After installing, check which version runs:
@@ -31,24 +31,24 @@ The [Desktop 0.8.5 migration notes](https://github.com/janhq/jan/releases/tag/v0
 happens to older installations:
 
 - **macOS and Linux:** a CLI installed by Desktop 0.8.4 in `/usr/local/bin` or `~/.local/bin` is
-  left in place but stays at 0.8.4. Install the current Agent separately. If the installer warns
+  left in place but stays at 0.8.4. Install the current Jan Agent separately. If the installer warns
   that another `jan` comes first on your `PATH`, resolve that conflict before using it.
 - **Windows:** the Desktop update removes the old `jan.exe` from the app's `resources\bin`
-  folder. Install Agent separately into `%USERPROFILE%\.local\bin` and follow the quickstart's
+  folder. Install Jan Agent separately into `%USERPROFILE%\.local\bin` and follow the quickstart's
   `-AddToPath` instructions. The old app `resources\bin` entry may remain in your user `PATH`;
   you can remove that obsolete entry.
 
-Updating Desktop does not update a separately installed Agent. The desktop executable is now
+Updating Desktop does not update a separately installed Jan Agent. The desktop executable is now
 `Jan-Desktop`; it is not the `jan` terminal agent.
 
 ## Local models and legacy commands
 
 Older versions of this page documented a local-inference CLI with `jan serve`, `jan launch`,
-`jan models load`, and `jan models load-mlx`. Those are not commands in the current Agent CLI.
+`jan models load`, and `jan models load-mlx`. Those are not commands in the current Jan Agent CLI.
 The current model and thread commands live under `jan cli models` and `jan cli threads`;
 `jan cli models list` lists models exposed by configured providers, rather than loading a Desktop
-model. Use the [Agent CLI reference](/agent/cli) instead of legacy command examples.
+model. Use the [Jan Agent CLI reference](/agent/cli) instead of legacy command examples.
 
 Jan Agent does not include a local inference engine. To use your own hardware, download a model
-in Desktop and start its [Local API Server](/desktop/api-server), then configure Agent to use
-that OpenAI-compatible endpoint. See [Agent provider setup for local models](/agent/providers#your-own-hardware).
+in Desktop and start its [Local API Server](/desktop/api-server), then configure Jan Agent to use
+that OpenAI-compatible endpoint. See [Jan Agent provider setup for local models](/agent/providers#your-own-hardware).

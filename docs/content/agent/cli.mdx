@@ -313,10 +313,9 @@ and can try again. The check covers `type`, `properties`, `required`, `additiona
 `items`, `minItems`, `maxItems`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`,
 `exclusiveMinimum`, `exclusiveMaximum` and `pattern`; any other keyword is ignored, never failed.
 
-A host tool is gated exactly as an MCP tool is: auto-approved in a default run like every other
-call, prompted under `--safe` (its `permission_request` carries `prompt_kind: "mcp"`, the class for
-any opaque third-party capability, naming the qualified `host__<name>`), withheld entirely in
-read-only plan mode, and subject to the same deny list. The `init` handshake echoes the schemas
+Host-tool approval and plan-mode availability depend on the declared `capability`; see the table
+below. All host tools remain subject to the deny list. Permission requests use `prompt_kind: "mcp"`
+and name the advertised `host__<name>` tool. The `init` handshake echoes the schemas
 actually advertised in `tool_specs`, so a tool you declared but that is missing there was withheld
 by policy and will never be called.
 

@@ -86,10 +86,10 @@ jan config list
 ```
 
 <Callout type="info">
-Already using Jan Desktop? You can skip provider setup if Agent inherits an enabled HTTP provider
+Already using Jan Desktop? You can skip provider setup if Jan Agent inherits an enabled HTTP provider
 with a usable endpoint and any required credentials. Desktop local llama.cpp or MLX models alone
 are not enough: start Desktop's [Local API Server](/desktop/api-server), then
-[configure Agent to use its endpoint](/agent/providers#your-own-hardware). Agent does not start
+[configure Jan Agent to use its endpoint](/agent/providers#your-own-hardware). Jan Agent does not start
 Desktop's inference engine.
 </Callout>
 
@@ -117,8 +117,9 @@ Start with something small and verifiable:
 Read the README and tell me how to run the tests
 ```
 
-Built-in file reads do not need approval. If the agent proposes a shell command or a change while
-investigating, review the approval request before allowing it.
+Built-in file reads inside the project do not need approval. Reads outside the project may prompt.
+If the agent requests approval for a shell command or a change while investigating, review it
+before allowing it.
 
 Now ask for a change:
 
@@ -126,14 +127,15 @@ Now ask for a change:
 Add a --version flag to the CLI and update the README to document it
 ```
 
-With `--safe`, a write that is not already covered by a grant opens a permission prompt. Review
-its path and diff; shell requests show the command. Use the arrow keys to select **Allow once**
+With `--safe`, file writes prompt unless a policy allow rule or an existing grant covers them.
+Dedicated memory and skill tools do not prompt, including writes. Review a file-write request's
+path and diff; shell requests show the command. Use the arrow keys to select **Allow once**
 or **Deny**, then press <kbd>Enter</kbd>. You can also press <kbd>y</kbd> to allow once or
 <kbd>n</kbd> to deny.
 
 Some requests also offer a thread-level grant, selected with <kbd>a</kbd>. Read its label: for a
 shell command it may allow the named commands or only that exact command, not every future shell
-call. Choose **Allow once** throughout this walkthrough to keep reviewing subsequent requests.
+call. Choose **Allow once** throughout this walkthrough to avoid granting approval to later calls.
 
 ### Watch it work
 
@@ -171,6 +173,8 @@ jan --safe --plan
 ```
 
 It will study the project and propose a plan. Type `/plan exit` when you're ready to let it act.
+Safe mode stays on after you exit plan mode: writes, shell commands, and MCP calls still follow
+its approval rules.
 
 **Set a finish line.** Instead of babysitting turn by turn, tell it what "done" means:
 
