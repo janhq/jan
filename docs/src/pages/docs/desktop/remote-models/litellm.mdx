@@ -1,0 +1,86 @@
+---
+title: LiteLLM
+description: A step-by-step guide on integrating Jan with a LiteLLM proxy.
+keywords:
+  [
+    Jan,
+    LiteLLM,
+    LiteLLM Proxy,
+    LLM gateway,
+    local AI,
+    privacy focus,
+    free and open source,
+    conversational AI,
+    large language models,
+    LiteLLM integration,
+    API integration
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# LiteLLM
+
+[LiteLLM Proxy](https://docs.litellm.ai/docs/providers/litellm_proxy) is an open source gateway that you host yourself. It gives one OpenAI-compatible endpoint for more than 100 model providers, with virtual keys, spend tracking, budgets, and fallbacks.
+
+Jan has a LiteLLM provider. It connects to your proxy, loads the models that the proxy lists, and sends chat requests to it.
+
+## Integrate LiteLLM with Jan
+
+<Steps>
+
+### Step 1: Run a LiteLLM proxy
+
+Follow the [LiteLLM quick start](https://docs.litellm.ai/docs/proxy/quick_start) to start a proxy. A minimal `config.yaml` looks like this:
+
+```yaml
+model_list:
+  - model_name: gpt-6-luna
+    litellm_params:
+      model: openai/gpt-6-luna
+      api_key: os.environ/OPENAI_API_KEY
+```
+
+Start the proxy with `litellm --config config.yaml`. It listens on `http://localhost:4000` by default.
+
+<Callout type='info'>
+The model names in `model_name` are aliases that you choose. Jan shows the same names in its model selector.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **LiteLLM**
+3. Set the **Base URL** to your proxy address, including `/v1` (the default is `http://localhost:4000/v1`)
+4. Add an **API Key** if your proxy needs one. Use a [virtual key](https://docs.litellm.ai/docs/proxy/virtual_keys) or the master key. Leave it empty if your proxy runs without authentication.
+5. Select the refresh button in the **Models** section. Jan loads the model list from `/v1/models` on your proxy.
+
+### Step 3: Start Using LiteLLM Models
+
+1. In any existing **Chat** or create a new one
+2. Select a model from the **LiteLLM** group in the **model selector**
+3. Start chatting
+
+</Steps>
+
+<Callout type='info'>
+Jan keeps no fixed model list for LiteLLM. Select the refresh button again after you add or remove models in your proxy config. You can also add a model by hand with the **+** button.
+</Callout>
+
+## Troubleshooting
+
+**1. No models appear**
+- Make sure the proxy is running and the Base URL ends with `/v1`
+- Open `http://localhost:4000/v1/models` in a browser, or run `curl http://localhost:4000/v1/models`, to check that the proxy lists your models
+- If the proxy uses a key, add it in Jan. The `/v1/models` call needs the same key as chat requests.
+
+**2. Authentication errors (401)**
+- Verify that the virtual key or master key is correct and has not expired
+- Check that the key is allowed to use the model you selected
+
+**3. Connection problems**
+- Check that the proxy host and port are reachable from the machine that runs Jan
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [LiteLLM documentation](https://docs.litellm.ai/docs/proxy/quick_start).
