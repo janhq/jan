@@ -20,17 +20,17 @@ type MenuItem = {
 const MENU_ITEMS: MenuItem[] = [
   {
     name: 'Jan',
-    href: '/docs/desktop/quickstart',
+    href: 'https://docs.jan.ai/desktop/quickstart',
     children: [
       {
         name: 'Jan Desktop',
-        href: '/docs/desktop/quickstart',
+        href: 'https://docs.jan.ai/desktop/quickstart',
       },
-      { name: 'Jan Agent', href: '/docs/agent/quickstart' },
+      { name: 'Jan Agent', href: 'https://docs.jan.ai/agent/quickstart' },
     ],
   },
   { name: 'Research', href: '/research' },
-  { name: 'Docs', href: '/docs' },
+  { name: 'Docs', href: 'https://docs.jan.ai/' },
   {
     name: 'Company',
     href: '#',
