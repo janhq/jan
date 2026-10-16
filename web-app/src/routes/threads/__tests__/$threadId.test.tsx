@@ -453,6 +453,14 @@ vi.mock('@/utils/error', async (importOriginal) => ({
   OUT_OF_CONTEXT_SIZE: 'OUT_OF_CONTEXT_SIZE',
 }))
 
+// The built-in web tools run in the webview rather than through the service
+// hub, so a test can see what they were handed.
+const webTool = vi.hoisted(() => ({ executeWebTool: vi.fn() }))
+vi.mock('@/lib/webSearchTool', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/webSearchTool')>()),
+  executeWebTool: webTool.executeWebTool,
+}))
+
 // -----------------------------------------------------------------------------
 // Import component AFTER mocks
 // -----------------------------------------------------------------------------
@@ -1211,6 +1219,38 @@ describe('ThreadDetail route', () => {
       } finally {
         h.modelProviderState.selectedModel.settings = previousSettings
       }
+    })
+
+    // A page is a tool result like any other: held to the budget the window
+    // affords, not the 40,000 characters it used to be allowed (#9170).
+    it('hands a built-in web tool the budget of the active model context window', async () => {
+      webTool.executeWebTool.mockReset()
+      webTool.executeWebTool.mockResolvedValue({ content: 'page' })
+      renderComponent()
+
+      const onToolCall = (
+        h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
+      ).capturedOnToolCall
+      await act(async () => {
+        await onToolCall({
+          toolCall: {
+            toolCallId: 'tcw',
+            toolName: 'web_fetch',
+            input: { url: 'https://example.com' },
+          },
+        })
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
+      const [name, input, options] = webTool.executeWebTool.mock.calls[0]
+      expect(name).toBe('web_fetch')
+      expect(input).toEqual({ url: 'https://example.com' })
+      // 4096-token window in the harness: a fraction of it, not the whole thing.
+      expect(options.maxOutputChars).toBeGreaterThan(0)
+      expect(options.maxOutputChars).toBeLessThan(4096 * 3.5)
     })
 
     // A model can request several tools in one turn. They arrive together but

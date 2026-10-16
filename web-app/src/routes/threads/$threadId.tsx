@@ -714,12 +714,24 @@ function ThreadDetail() {
             // not reported as the tool being slow.
             useToolCallRuntime.getState().markRunning(toolCall.toolCallId)
 
+            // A tool result is injected into conversation history verbatim, so a
+            // page-sized one can exhaust the context on its own. This is the
+            // budget the window this model actually has affords; it is narrowed
+            // against the user's configured ceiling where the result is built.
+            const ctxLen = useModelProvider.getState().selectedModel?.settings
+              ?.ctx_len?.controller_props?.value
+            const maxOutputChars = deriveToolOutputCap(
+              typeof ctxLen === 'number' ? ctxLen : undefined
+            )
+
             // Raced against Stop: a call that never returns (a runaway shell,
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
                 if (WEB_TOOL_NAMES.has(toolName)) {
-                  return await executeWebTool(toolName, toolCall.input)
+                  return await executeWebTool(toolName, toolCall.input, {
+                    maxOutputChars,
+                  })
                 } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
@@ -749,20 +761,13 @@ function ThreadDetail() {
                     scope: projectId ? 'project' : 'thread',
                   })
                 } else if (mcpToolNames.has(toolName)) {
-                  // An MCP result is injected into conversation history
-                  // verbatim, so a page-sized one can exhaust the context on its
-                  // own. Give the backend a budget scaled to the window this
-                  // model actually has; it narrows that against the user's
-                  // configured ceiling. Cancellable, so Stop ends the call on
-                  // the backend as well as in this loop.
-                  const ctxLen = useModelProvider.getState().selectedModel
-                    ?.settings?.ctx_len?.controller_props?.value
+                  // Give the backend the budget scaled to the window; it narrows
+                  // that against the user's configured ceiling. Cancellable, so
+                  // Stop ends the call on the backend as well as in this loop.
                   const call = serviceHub.mcp().callToolWithCancellation({
                     toolName,
                     arguments: toolCall.input,
-                    maxOutputChars: deriveToolOutputCap(
-                      typeof ctxLen === 'number' ? ctxLen : undefined
-                    ),
+                    maxOutputChars,
                   })
                   const cancel = () => void call.cancel().catch(() => {})
                   stopSignal.addEventListener('abort', cancel, { once: true })
