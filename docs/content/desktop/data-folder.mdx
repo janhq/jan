@@ -93,12 +93,19 @@ Inside the data folder you will typically find:
 ```
 
 ### `agent-workspace/`
-The agent workspace, shared by the [Cowork](/desktop/cowork) surface
-(`nightly` channel only) and the [Jan Agent](/agent). Memories (`memory/`),
-skills (`skills/`), and saved subagent definitions (`subagents/`) live here
-permanently. Each Cowork session gets an ephemeral sandbox under
+Desktop's agent workspace, used by [Cowork](/desktop/cowork) (`nightly` channel only)
+and Desktop chat agent tools. Desktop memories (`memory/`), skills (`skills/`),
+and saved subagent definitions (`subagents/`) live here permanently.
+
+[Jan Agent](/agent) uses separate user and project stores under `~/.jan/`;
+its skills and memory are not automatically shared with this folder. See
+[Agent configuration](/agent/project-config) for its storage layout.
+
+Each Cowork session gets an ephemeral sandbox under
 `sessions/<session_id>/`, and chat threads that use agent tools get one under
-`threads/<thread_id>/` — the agent can only write inside its own sandbox.
+`threads/<thread_id>/`. General file and shell tools are confined to permitted workspace locations,
+including writable project folders attached in Cowork; dedicated memory and skill tools use the
+permanent store.
 
 ### `assistants/`
 Where AI personalities live. The default one (`/assistants/jan/`):
