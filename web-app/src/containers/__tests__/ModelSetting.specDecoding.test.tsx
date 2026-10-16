@@ -27,27 +27,35 @@ describe('SpecDecodingPanel', () => {
     hoisted.updateSpecDecodingSettings.mockResolvedValue(undefined)
   })
 
-  it('offers the toggle for a model with MTP heads', async () => {
-    hoisted.getSpecDecodingSettings.mockResolvedValue({ mtp_layers: 2, mtp: false })
-    render(<SpecDecodingPanel modelId="glm" />)
-
-    const toggle = await screen.findByRole('switch')
-    expect(toggle).toBeEnabled()
-  })
-
-  it('reports a model whose MTP is already on as on', async () => {
-    hoisted.getSpecDecodingSettings.mockResolvedValue({ mtp_layers: 2, mtp: true })
-    render(<SpecDecodingPanel modelId="glm" />)
+  it('reports spec decoding as on for model with spec decoding parameter', async () => {
+    hoisted.getSpecDecodingSettings.mockResolvedValue({
+      mtp_layers: 0,
+      spec_type: 'ngram-simple',
+    })
+    render(<SpecDecodingPanel modelId="llama" />)
 
     const toggle = await screen.findByRole('switch')
     expect(toggle).toBeChecked()
   })
 
-  it('renders nothing for a model with no MTP heads', async () => {
-    hoisted.getSpecDecodingSettings.mockResolvedValue({ mtp_layers: 0, mtp: false })
+  it('reports spec decoding as off for model without spec decoding parameter', async () => {
+    hoisted.getSpecDecodingSettings.mockResolvedValue({ mtp_layers: 0 })
     render(<SpecDecodingPanel modelId="llama" />)
 
-    await waitFor(() => expect(hoisted.getSpecDecodingSettings).toHaveBeenCalled())
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    const toggle = await screen.findByRole('switch')
+    expect(toggle).not.toBeChecked()
+  })
+
+  it('offers spec draft option for model with spec draft parameter', async () => {
+    hoisted.getSpecDecodingSettings.mockResolvedValue({
+      mtp_layers: 0,
+      spec_type: 'draft-simple',
+      spec_draft_type: 'draft-simple',
+    })
+    render(<SpecDecodingPanel modelId="llama" />)
+
+    expect(
+      await screen.findByRole('radio', { name: /draft.simple/i })
+    ).toBeInTheDocument()
   })
 })

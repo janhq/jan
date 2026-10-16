@@ -13,8 +13,9 @@
  * `common/common.h` at the pinned build.
  */
 
-import { fs, 
-  joinPath, 
+import {
+  fs,
+  joinPath,
   type SpecConfigKey,
   isSpecType,
   isSpecDraftType,
@@ -22,10 +23,7 @@ import { fs,
   specConfig,
 } from '@janhq/core'
 import type { LlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
-import { 
-  type LlamaCppModelConfig,
-  loadModelConfig,
-} from './util'
+import { type LlamaCppModelConfig, loadModelConfig } from './util'
 
 // ModelConfig is intentionally widened — model.yml may carry extra fields like
 // `chat_template` that aren't yet in the strict typing.
@@ -143,7 +141,9 @@ function explicitParallel(v: unknown): number | undefined {
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
   // and strip stray newlines that would break parsing.
-  return String(v).replace(/[\r\n]+/g, ' ').trim()
+  return String(v)
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
 }
 
 /**
@@ -373,7 +373,9 @@ export async function generatePreset(
     config.checkpoint_min_step >= 0 &&
     config.checkpoint_min_step !== 8192
   ) {
-    lines.push(`checkpoint-min-step = ${Math.floor(config.checkpoint_min_step)}`)
+    lines.push(
+      `checkpoint-min-step = ${Math.floor(config.checkpoint_min_step)}`
+    )
   }
   // device default = empty (auto-pick)
   if (typeof config.device === 'string' && config.device.trim().length > 0) {
@@ -488,7 +490,9 @@ export async function generatePreset(
     Number.isFinite(config.kv_unified_per_slot) &&
     config.kv_unified_per_slot > 0
   ) {
-    lines.push(`kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`)
+    lines.push(
+      `kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`
+    )
   }
   // reasoning-preserve defaults to on since 0.4.0, for any template advertising
   // `supports_preserve_reasoning`. Emitted only to turn it off, which restores
@@ -614,7 +618,7 @@ export async function generatePreset(
     ) {
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
-    
+
     const modelParallel = explicitParallel(mc.parallel)
     if (modelParallel !== undefined) {
       lines.push(`parallel = ${modelParallel}`)
@@ -668,7 +672,10 @@ export async function generatePreset(
       // Writing `no-kv-offload = true` => kv-offload disabled.
       lines.push('no-kv-offload = true')
     }
-    if (typeof mc.override_tensor === 'string' && mc.override_tensor.trim().length > 0) {
+    if (
+      typeof mc.override_tensor === 'string' &&
+      mc.override_tensor.trim().length > 0
+    ) {
       lines.push(`override-tensor = ${escapeIniValue(mc.override_tensor)}`)
     }
     // mmproj-offload defaults to on; only emit when explicitly disabled.
@@ -676,40 +683,42 @@ export async function generatePreset(
       lines.push('mmproj-offload = false')
     }
 
-    function isValidString(value: String): value is string{
-      return (typeof value === 'string' && value.trim().length > 0)
+    function isValidString(value: String): value is string {
+      return typeof value === 'string' && value.trim().length > 0
     }
-    function isValidNumber(value: Number): value is number{
-      return (typeof value === 'number' && Number.isFinite(value))
+    function isValidNumber(value: Number): value is number {
+      return typeof value === 'number' && Number.isFinite(value)
     }
 
     // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
     // draft gguf (spec_draft_model), which is passed to the engine as the draft.
-    if (isSpecType(mc.spec_type)){
+    if (isSpecType(mc.spec_type)) {
       lines.push(`spec-type = ${mc.spec_type}`)
-      
+
       if (isValidString(mc.spec_draft_model) && isSpecDraftType(mc.spec_type)) {
-        const specDraftModelPath = await joinPath([janDataFolderPath, mc.spec_draft_model!])
+        const specDraftModelPath = await joinPath([
+          janDataFolderPath,
+          mc.spec_draft_model!,
+        ])
         lines.push(`spec-draft-model = ${escapeIniValue(specDraftModelPath)}`)
       }
 
       function getLlamaCppParam(configKey: SpecConfigKey) {
         return configKey.replace(/_/g, '-')
       }
-      for (const param of specTypeParameters[mc.spec_type]){
+      for (const param of specTypeParameters[mc.spec_type]) {
         const type = specConfig[param.key]
         const value = mc[param.key.toString()]
 
-        if (type === Number && (isValidNumber(value))) {
+        if (type === Number && isValidNumber(value)) {
           const step = param.step
           const validValue = Math.floor(value / step) * step
-          
-          if (validValue >= param.min && validValue !== param.default){
+
+          if (validValue >= param.min && validValue !== param.default) {
             if (param.max === undefined || validValue <= param.max) {
               lines.push(`${getLlamaCppParam(param.key)} = ${validValue}`)
             }
           }
-        
         } else if (type === String && isValidString(value)) {
           lines.push(`${getLlamaCppParam(param.key)} = ${value}`)
         }

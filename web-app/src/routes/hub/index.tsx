@@ -77,15 +77,13 @@ function getQuantTier(modelId: string): QuantTier | null {
   if (/(^|[-_.])(f32|bf16|f16|q8|q6)([-_.]|$)/.test(id)) {
     return {
       label: 'Large',
-      className:
-        'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+      className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
     }
   }
   if (/(^|[-_.])(q5|q4_k|iq4)/.test(id)) {
     return {
       label: 'Balanced',
-      className:
-        'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+      className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     }
   }
   if (/(^|[-_.])(iq2|iq3|q2|q3|q4_0|q4_1)/.test(id)) {
@@ -233,7 +231,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             const isMlxDownloaded = useModelProvider
@@ -242,7 +241,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             return isLlamaCppDownloaded || isMlxDownloaded
@@ -287,7 +287,8 @@ function HubContent() {
           getScrollElement: () => parentRef.current,
           estimateSize,
           overscan: 8,
-          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
+          measureElement: (el: HTMLElement) =>
+            el.getBoundingClientRect().height,
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
@@ -440,7 +441,12 @@ function HubContent() {
     <div className="flex flex-col h-svh w-full">
       <div className="flex flex-col h-full w-full ">
         <HeaderPage>
-          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
+          <div
+            className={cn(
+              'pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
             <div className="flex items-center gap-2 w-full">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
@@ -462,10 +468,13 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
+        <div
+          ref={parentRef}
+          className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider"
+        >
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
-            {(isInitialLoad || (loading && !filteredModels.length)) ? (
+            {isInitialLoad || (loading && !filteredModels.length) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
                 {[...Array(5)].map((_, i) => (
@@ -550,16 +559,14 @@ function HubContent() {
                                 className={cn(
                                   'text-foreground font-medium text-base capitalize sm:max-w-none',
                                   isRecommendedModel(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
+                                    filteredModels[virtualItem.index].model_name
                                   )
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
                                 title={
                                   extractModelName(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
+                                    filteredModels[virtualItem.index].model_name
                                   ) || ''
                                 }
                               >
@@ -578,7 +585,8 @@ function HubContent() {
                                         ) || undefined
                                       )
                                     : selectDefaultQuant(
-                                        filteredModels[virtualItem.index].quants,
+                                        filteredModels[virtualItem.index]
+                                          .quants,
                                         DEFAULT_MODEL_QUANTIZATIONS
                                       )?.file_size}
                                 </span>
@@ -640,8 +648,8 @@ function HubContent() {
                                 title={t('hub:downloads')}
                               />
                               <span className="text-foreground">
-                                {filteredModels[virtualItem.index]
-                                  .downloads || 0}
+                                {filteredModels[virtualItem.index].downloads ||
+                                  0}
                               </span>
                             </div>
                             {!filteredModels[virtualItem.index].is_mlx && (
@@ -665,13 +673,15 @@ function HubContent() {
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Requires MLX engine (Apple Silicon only)</p>
+                                  <p>
+                                    Requires MLX engine (Apple Silicon only)
+                                  </p>
                                 </TooltipContent>
                               </Tooltip>
                             )}
                             <div className="flex gap-1.5 items-center">
-                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
-                                0 && (
+                              {(filteredModels[virtualItem.index].num_mmproj ??
+                                0) > 0 && (
                                 <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-foreground/80">
                                   <IconEye size={13} />
                                   {t('multimodal')}
@@ -685,14 +695,13 @@ function HubContent() {
                               )}
                             </div>
                           </div>
-                          {(filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            1 && (
+                          {(filteredModels[virtualItem.index].quants?.length ??
+                            0) > 1 && (
                             <button
                               className="flex items-center gap-1 hub-show-variants-step ml-auto"
                               onClick={() =>
                                 toggleModelExpansion(
-                                  filteredModels[virtualItem.index]
-                                    .model_name
+                                  filteredModels[virtualItem.index].model_name
                                 )
                               }
                             >
@@ -718,8 +727,8 @@ function HubContent() {
                         {expandedModels[
                           filteredModels[virtualItem.index].model_name
                         ] &&
-                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            0 &&
+                          (filteredModels[virtualItem.index].quants?.length ??
+                            0) > 0 &&
                           (() => {
                             const quants =
                               filteredModels[virtualItem.index].quants ?? []
@@ -728,9 +737,8 @@ function HubContent() {
                               DEFAULT_MODEL_QUANTIZATIONS
                             )?.model_id
                             return (
-                            <div className="mt-5">
-                              {quants.map(
-                                (variant) => (
+                              <div className="mt-5">
+                                {quants.map((variant) => (
                                   <CardItem
                                     key={variant.model_id}
                                     title={
@@ -790,9 +798,8 @@ function HubContent() {
                                       </div>
                                     }
                                   />
-                                )
-                              )}
-                            </div>
+                                ))}
+                              </div>
                             )
                           })()}
                       </Card>

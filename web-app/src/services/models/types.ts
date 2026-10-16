@@ -2,7 +2,12 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import {
+  SessionInfo,
+  modelInfo,
+  ThreadMessage,
+  UnloadResult,
+} from '@janhq/core'
 import type { SpecDraftKind } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import { type SpecConfig } from '@janhq/core'
@@ -98,7 +103,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-
 export type PreflightReason =
   | 'AUTH_REQUIRED'
   | 'LICENSE_NOT_ACCEPTED'
@@ -109,7 +113,10 @@ export type PreflightReason =
 
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
-  getModelContextLimit(modelId: string, provider: string): Promise<number | undefined>
+  getModelContextLimit(
+    modelId: string,
+    provider: string
+  ): Promise<number | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>

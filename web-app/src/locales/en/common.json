@@ -391,7 +391,7 @@
         "nMinDescription": "Sets the minimum number of matching tokens required for an N-gram entry to be considered. Default 48.",
         "nMax": "Maximum Match",
         "nMaxDescription": "Sets the maximum number of matching tokens considered when looking up an N-gram entry. Default 64.",
-        "cacheStatic": "Static Cache", 
+        "cacheStatic": "Static Cache",
         "cacheStaticDescription": "Specifies a cache file containing precomputed N-gram statistics that are loaded and reused during generation.",
         "cacheDynamic": "Dynamic Cache",
         "cacheDynamicDescription": "Specifies a cache file containing N-gram statistics that can be updated with newly generated tokens."

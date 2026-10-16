@@ -16,11 +16,7 @@ import {
   UnloadResult,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
-import type { 
-  SpecDraftKind, 
-  SpecConfig,
-  SpecConfigPatch, 
-} from '@janhq/core'
+import type { SpecDraftKind, SpecConfig, SpecConfigPatch } from '@janhq/core'
 import type {
   ModelsService,
   ModelCatalog,
@@ -49,12 +45,19 @@ export class DefaultModelsService implements ModelsService {
     return this.getEngine()?.get(modelId)
   }
 
-  async getModelContextLimit(modelId: string, provider: string): Promise<number | undefined> {
-    const engine = this.getEngine(provider) as (AIEngine & {
-      getModelContextLimit?: (id: string) => Promise<number | undefined>
-    }) | undefined
+  async getModelContextLimit(
+    modelId: string,
+    provider: string
+  ): Promise<number | undefined> {
+    const engine = this.getEngine(provider) as
+      | (AIEngine & {
+          getModelContextLimit?: (id: string) => Promise<number | undefined>
+        })
+      | undefined
     if (!engine?.getModelContextLimit)
-      throw new Error('This provider cannot read model context limits. Update its extension or check provider settings.')
+      throw new Error(
+        'This provider cannot read model context limits. Update its extension or check provider settings.'
+      )
     return engine.getModelContextLimit(modelId)
   }
 
@@ -357,10 +360,11 @@ export class DefaultModelsService implements ModelsService {
     const llamacppEngine = this.getEngine('llamacpp')
     const mlxEngine = this.getEngine('mlx')
     try {
-      await Promise.allSettled([
-        llamacppEngine?.abortImport(id),
-        mlxEngine?.abortImport(id),
-      ].filter(Boolean))
+      await Promise.allSettled(
+        [llamacppEngine?.abortImport(id), mlxEngine?.abortImport(id)].filter(
+          Boolean
+        )
+      )
     } finally {
       events.emit(DownloadEvent.onFileDownloadStopped, {
         modelId: id,
@@ -450,10 +454,7 @@ export class DefaultModelsService implements ModelsService {
       })
   }
 
-  private reloadingModels = new Map<
-    string,
-    Promise<SessionInfo | undefined>
-  >()
+  private reloadingModels = new Map<string, Promise<SessionInfo | undefined>>()
 
   // Force unload first: a crashed model still reports "loaded", so load() alone no-ops.
   async reloadModel(
@@ -601,7 +602,7 @@ export class DefaultModelsService implements ModelsService {
     return false
   }
 
-  async getSpecDecodingSettings(modelId: string): Promise<SpecConfig>{
+  async getSpecDecodingSettings(modelId: string): Promise<SpecConfig> {
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
         getSpecDecodingSettings?: (id: string) => Promise<SpecConfig>
@@ -612,7 +613,7 @@ export class DefaultModelsService implements ModelsService {
     } catch (error) {
       console.error(`Error reading MTP info for ${modelId}:`, error)
     }
-    return { mtp_layers: 0}
+    return { mtp_layers: 0 }
   }
 
   async updateSpecDecodingSettings(
@@ -868,12 +869,16 @@ export class DefaultModelsService implements ModelsService {
               }
             }
 
-            const toolContextFromContent = extractToolContextFromContent(message)
+            const toolContextFromContent =
+              extractToolContextFromContent(message)
             const toolContextFromMetadata =
               toolContextFromContent.length > 0
                 ? ''
                 : extractToolContextFromMetadata(message)
-            const toolContext = [toolContextFromContent, toolContextFromMetadata]
+            const toolContext = [
+              toolContextFromContent,
+              toolContextFromMetadata,
+            ]
               .filter((entry) => entry.length > 0)
               .join('\n\n')
             if (toolContext.length > 0) {

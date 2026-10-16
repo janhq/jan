@@ -32,7 +32,6 @@ import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
-import { number } from 'zod'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -76,9 +75,9 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
   const pendingPatchesRef = useRef<
     Map<string, Record<string, string | number | boolean | null | undefined>>
   >(new Map())
-  const rollbackSettingsRef = useRef<Map<string, Model['settings'] | undefined>>(
-    new Map()
-  )
+  const rollbackSettingsRef = useRef<
+    Map<string, Model['settings'] | undefined>
+  >(new Map())
   const flushPendingPatches = useMemo(
     () =>
       debounce(() => {
@@ -107,9 +106,11 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
                     ...revertedModels[modelIndex],
                     settings: previousSettings,
                   } as Model
-                  useModelProvider.getState().updateProvider(provider.provider, {
-                    models: revertedModels,
-                  })
+                  useModelProvider
+                    .getState()
+                    .updateProvider(provider.provider, {
+                      models: revertedModels,
+                    })
                 }
               }
               console.error('Failed to persist model settings', e)
@@ -204,7 +205,11 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
       // mappable keys to disk + restart the router so the next load uses the
       // new args. Non-mappable keys are filtered inside the extension.
       if (provider.provider === 'llamacpp') {
-        debouncedPersistModelSettings(model.id, { [key]: value }, model.settings)
+        debouncedPersistModelSettings(
+          model.id,
+          { [key]: value },
+          model.settings
+        )
       }
     }
   }
@@ -284,49 +289,49 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
 
   return (
     <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
-          {provider.provider === 'llamacpp' && (
-            <SpecDecodingPanel modelId={model.id} />
-          )}
-          {provider.provider === 'llamacpp' && model.embedding !== true && (
-            <ChatTemplateKwargs
-              model={model}
-              onChange={handleTemplateKwargsChange}
-            />
-          )}
-          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
-            model.embedding !== true && (
-              <SamplerDefaults
-                model={model}
-                keys={samplerKeysForProvider(provider.provider)}
-                onChange={handleSettingChange}
-              />
-            )}
-          {fitEnabled && fitCtxSetting && (
-            <div key="fit_ctx" className="space-y-2">
-              <div className="flex items-start justify-between gap-8">
-                <div className="mb-1 truncate">
-                  <span title={fitCtxSetting.title} className="font-medium">
-                    {fitCtxSetting.title}
-                  </span>
-                </div>
-                <DynamicControllerSetting
-                  key={fitCtxSetting.key}
-                  title={fitCtxSetting.title}
-                  description={fitCtxSetting.description}
-                  controllerType={fitCtxSetting.controller_type}
-                  controllerProps={fitCtxSetting.controller_props}
-                  onChange={(newValue) =>
-                    handleEngineSettingChange('fit_ctx', newValue)
-                  }
-                />
-              </div>
-              <p className="text-muted-foreground leading-normal text-xs">
-                {fitCtxSetting.description}
-              </p>
+      {provider.provider === 'llamacpp' && (
+        <SpecDecodingPanel modelId={model.id} />
+      )}
+      {provider.provider === 'llamacpp' && model.embedding !== true && (
+        <ChatTemplateKwargs
+          model={model}
+          onChange={handleTemplateKwargsChange}
+        />
+      )}
+      {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
+        model.embedding !== true && (
+          <SamplerDefaults
+            model={model}
+            keys={samplerKeysForProvider(provider.provider)}
+            onChange={handleSettingChange}
+          />
+        )}
+      {fitEnabled && fitCtxSetting && (
+        <div key="fit_ctx" className="space-y-2">
+          <div className="flex items-start justify-between gap-8">
+            <div className="mb-1 truncate">
+              <span title={fitCtxSetting.title} className="font-medium">
+                {fitCtxSetting.title}
+              </span>
             </div>
-          )}
-          {(() => {
-            return Object.entries(model.settings || {})
+            <DynamicControllerSetting
+              key={fitCtxSetting.key}
+              title={fitCtxSetting.title}
+              description={fitCtxSetting.description}
+              controllerType={fitCtxSetting.controller_type}
+              controllerProps={fitCtxSetting.controller_props}
+              onChange={(newValue) =>
+                handleEngineSettingChange('fit_ctx', newValue)
+              }
+            />
+          </div>
+          <p className="text-muted-foreground leading-normal text-xs">
+            {fitCtxSetting.description}
+          </p>
+        </div>
+      )}
+      {(() => {
+        return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'reasoning') return acc
             // Rendered by the dedicated ChatTemplateKwargs section above.
@@ -361,7 +366,9 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
                   )}
                 >
                   <div className="mb-1 truncate">
-                    <span title={config.title} className="font-medium">{config.title}</span>
+                    <span title={config.title} className="font-medium">
+                      {config.title}
+                    </span>
                   </div>
                   <DynamicControllerSetting
                     key={config.key}
@@ -386,7 +393,7 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
               </div>
             )
           })
-          })()}
+      })()}
     </div>
   )
 }
@@ -421,7 +428,7 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const [info, setInfo] = useState<SpecConfigPatch | null>(null)
-  
+
   useEffect(() => {
     let active = true
     serviceHub
@@ -431,7 +438,7 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
         if (active) setInfo(v)
       })
       .catch(() => {
-        if (active) setInfo({ mtp_layers: 0})
+        if (active) setInfo({ mtp_layers: 0 })
       })
     return () => {
       active = false
@@ -440,7 +447,7 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
 
   const persist = useCallback(
     async (patch: {
-       [K in SpecConfigKey]?: SpecConfig[K] | null
+      [K in SpecConfigKey]?: SpecConfig[K] | null
     }) => {
       try {
         await serviceHub.models().updateSpecDecodingSettings(modelId, patch)
@@ -450,14 +457,14 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
     },
     [modelId, serviceHub]
   )
-  
+
   if (!info) return null
-  const enabled = !!(isSpecType(info.spec_type))
+  const enabled = !!isSpecType(info.spec_type)
 
   const specOptions = [
-    ...isSpecDraftType(info.spec_draft_type)
-      ? [{ id: info.spec_draft_type }] 
-      : [],
+    ...(isSpecDraftType(info.spec_draft_type)
+      ? [{ id: info.spec_draft_type }]
+      : []),
     { id: 'ngram-simple' },
     { id: 'ngram-cache' },
     { id: 'ngram-map-k' },
@@ -466,31 +473,38 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
   ].map((item) => ({
     ...item,
     label: t(`common:modelSettings.specSettings.${item.id}`),
-    description: t(`common:modelSettings.specSettings.${item.id}Description`)
-  }));
+    description: t(`common:modelSettings.specSettings.${item.id}Description`),
+  }))
 
-  
-const parameters =
-  specTypeParameters[info.spec_type as keyof typeof specTypeParameters] ?? []
+  const parameters =
+    specTypeParameters[info.spec_type as keyof typeof specTypeParameters] ?? []
 
-const sliderParameters = parameters.filter(
-  (param): param is SpecTypeParameter & {
-    step: number
-    min: number
-    max: number
-  } => (param.step !== undefined && param.min !== undefined && param.max !== undefined)
-)
+  const sliderParameters = parameters.filter(
+    (
+      param
+    ): param is SpecTypeParameter & {
+      step: number
+      min: number
+      max: number
+    } =>
+      param.step !== undefined &&
+      param.min !== undefined &&
+      param.max !== undefined
+  )
 
-const numberParameters = parameters.filter(
-  (param): param is SpecTypeParameter & {
-    step: number
-    min: number
-  } => (param.step !== undefined && param.min !== undefined && param.max === undefined)
-)
+  const numberParameters = parameters.filter(
+    (
+      param
+    ): param is SpecTypeParameter & {
+      step: number
+      min: number
+    } =>
+      param.step !== undefined &&
+      param.min !== undefined &&
+      param.max === undefined
+  )
 
-const fileParameters = parameters.filter(
-  (param) => param.min === undefined
-)
+  const fileParameters = parameters.filter((param) => param.min === undefined)
 
   const handleFileSelect = async (key: SpecConfigKey) => {
     const selectedFile = await serviceHub.dialog().open({
@@ -513,18 +527,17 @@ const fileParameters = parameters.filter(
         <div className="flex items-start justify-between gap-8">
           <div className="mb-1 truncate">
             <span className="font-medium">
-              {t('common:modelSettings.specSettings.enable')} 
+              {t('common:modelSettings.specSettings.enable')}
             </span>
           </div>
           <Switch
             checked={enabled}
             onCheckedChange={(v) => {
               let newSpecType = null
-              if (v){
-                if (info.spec_draft_type !== undefined){
+              if (v) {
+                if (info.spec_draft_type !== undefined) {
                   newSpecType = info.spec_draft_type
-                }
-                else{
+                } else {
                   newSpecType = 'ngram-simple'
                 }
               }
@@ -542,7 +555,7 @@ const fileParameters = parameters.filter(
         <div className="space-y-4 pt-2">
           <div className="space-y-4 pt-2">
             <RadioGroup
-              value={ info.spec_type.toString()}
+              value={info.spec_type.toString()}
               onValueChange={(value) => {
                 setInfo({ ...info, spec_type: value })
                 void persist({ spec_type: value })
@@ -555,10 +568,7 @@ const fileParameters = parameters.filter(
                   htmlFor={`spec-type-${item.id}`}
                   className="flex cursor-pointer items-center space-x-3 rounded-md p-2 text-sm hover:bg-accent"
                 >
-                  <RadioGroupItem
-                    id={`spec-type-${item.id}`}
-                    value={item.id}
-                  />
+                  <RadioGroupItem id={`spec-type-${item.id}`} value={item.id} />
                   <div className="flex flex-col">
                     <span>{item.label}</span>
                     {item.description && (
@@ -566,62 +576,86 @@ const fileParameters = parameters.filter(
                         {item.description}
                       </span>
                     )}
-                </div>
+                  </div>
                 </label>
               ))}
             </RadioGroup>
           </div>
           {numberParameters.map((numberRow) => (
-                <SettingRow
-                  {...numberRow}
-                  controllerType='input'
-                  value={info[numberRow.key] === undefined ? Number(numberRow.default) : Number(info[numberRow.key])}
-                  onChange={(value) => {
-                    setInfo({
-                      ...info,
-                      [numberRow.key]: value === undefined ? numberRow.default : value,
-                    })
+            <SettingRow
+              {...numberRow}
+              controllerType="input"
+              value={
+                info[numberRow.key] === undefined
+                  ? Number(numberRow.default)
+                  : Number(info[numberRow.key])
+              }
+              onChange={(value) => {
+                setInfo({
+                  ...info,
+                  [numberRow.key]:
+                    value === undefined ? numberRow.default : value,
+                })
 
-                    void persist({
-                      [numberRow.key]: value === numberRow.default ? null: Number(Math.floor(value / numberRow.step ) * numberRow.step),
-                    })
-                  }}
-                />
+                void persist({
+                  [numberRow.key]:
+                    value === numberRow.default
+                      ? null
+                      : Number(
+                          Math.floor(value / numberRow.step) * numberRow.step
+                        ),
+                })
+              }}
+            />
           ))}
           {sliderParameters.map((sliderRow) => (
-                <SettingRow
-                  {...sliderRow}
-                  controllerType='slider'
-                  value={info[sliderRow.key] === undefined ? Number(sliderRow.default) : Number(info[sliderRow.key])}
-                  onChange={(value) => {
-                    setInfo({
-                      ...info,
-                      [sliderRow.key]: value === undefined ? sliderRow.default : value,
-                    })
+            <SettingRow
+              {...sliderRow}
+              controllerType="slider"
+              value={
+                info[sliderRow.key] === undefined
+                  ? Number(sliderRow.default)
+                  : Number(info[sliderRow.key])
+              }
+              onChange={(value) => {
+                setInfo({
+                  ...info,
+                  [sliderRow.key]:
+                    value === undefined ? sliderRow.default : value,
+                })
 
-                    void persist({
-                      [sliderRow.key]: value === sliderRow.default ? null: Number(Math.floor(value / sliderRow.step ) * sliderRow.step),
-                    })
-                  }}
-                />
+                void persist({
+                  [sliderRow.key]:
+                    value === sliderRow.default
+                      ? null
+                      : Number(
+                          Math.floor(value / sliderRow.step) * sliderRow.step
+                        ),
+                })
+              }}
+            />
           ))}
           {fileParameters.map((fileSelectRow) => (
-                <FileSelectRow
-                  {...fileSelectRow}
-                  value={typeof info[fileSelectRow.key] === 'string' ? String(info[fileSelectRow.key]) : ""}
-                  onClick={() => handleFileSelect(fileSelectRow.key)}
-                  onChange={(value) => {
-                    const newValue = value === "" ? null: String(value)
-                    setInfo({
-                      ...info,
-                      [fileSelectRow.key]: newValue,
-                    })
+            <FileSelectRow
+              {...fileSelectRow}
+              value={
+                typeof info[fileSelectRow.key] === 'string'
+                  ? String(info[fileSelectRow.key])
+                  : ''
+              }
+              onClick={() => handleFileSelect(fileSelectRow.key)}
+              onChange={(value) => {
+                const newValue = value === '' ? null : String(value)
+                setInfo({
+                  ...info,
+                  [fileSelectRow.key]: newValue,
+                })
 
-                    void persist({
-                      [fileSelectRow.key]: newValue,
-                    })
-                  }}
-                />
+                void persist({
+                  [fileSelectRow.key]: newValue,
+                })
+              }}
+            />
           ))}
         </div>
       )}
@@ -639,13 +673,15 @@ function SettingRow({
   step,
   onChange,
 }: SpecTypeParameter & {
-  controllerType: string,
-  value: number,
+  controllerType: string
+  value: number
   onChange: (value: number) => void
-}){
+}) {
   const { t } = useTranslation()
   const title = t(`common:modelSettings.specSettings.${translationPath}`)
-  const description = t(`common:modelSettings.specSettings.${translationPath}Description`)
+  const description = t(
+    `common:modelSettings.specSettings.${translationPath}Description`
+  )
   return (
     <div className="sliderRow space-y-2">
       <div className="flex items-start justify-between flex-col gap-1 w-full">
@@ -687,32 +723,30 @@ function FileSelectRow({
   value: string
   onClick: () => void
   onChange: (newValue: string) => void
-}){
+}) {
   const { t } = useTranslation()
   const title = t(`common:modelSettings.specSettings.${translationPath}`)
-  const description = t(`common:modelSettings.specSettings.${translationPath}Description`)
+  const description = t(
+    `common:modelSettings.specSettings.${translationPath}Description`
+  )
   return (
     <div className="w-full">
       <div className="mb-1 truncate">
-          <span title={title} className="font-medium">
-            {title}
-          </span>
-        </div>
-    <div className="flex items-center gap-3">
-      <div className="flex-1 min-w-0 flex items-center gap-2">
-        <Input
-          value={value !== undefined ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder='File path'
-        />
-        <Button
-              variant="outline"
-              size='sm'
-              onClick={() => onClick()}
-            >
-              Select
-        </Button>
+        <span title={title} className="font-medium">
+          {title}
+        </span>
       </div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <Input
+            value={value !== undefined ? value : ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="File path"
+          />
+          <Button variant="outline" size="sm" onClick={() => onClick()}>
+            Select
+          </Button>
+        </div>
       </div>
       <p className="text-muted-foreground leading-normal text-xs">
         {description}
