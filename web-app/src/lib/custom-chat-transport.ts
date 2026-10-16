@@ -78,7 +78,7 @@ import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { PING_OPEN } from '@/lib/coworkPing'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
-import { createStepMetadata } from '@/lib/stepMetadata'
+import { createStepMetadata, type TokenSpeedMeta } from '@/lib/stepMetadata'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -575,6 +575,24 @@ const RESOLVED_TOOL_STATES = new Set([
  * with a brief explanation, preserving the user's intent and the assistant's
  * reasoning instead of dropping the whole turn.
  */
+/**
+ * The speed block of the reply this request continues, if it continues one: a
+ * request that ends on an assistant message (sent after a tool Jan ran) adds
+ * to that reply; one that ends on a user message starts a new reply.
+ */
+function earlierTokenSpeed(messages: UIMessage[]): TokenSpeedMeta | undefined {
+  const last = messages[messages.length - 1]
+  if (last?.role !== 'assistant') return undefined
+  const speed = (last.metadata as { tokenSpeed?: Partial<TokenSpeedMeta> } | undefined)
+    ?.tokenSpeed
+  if (typeof speed?.tokenCount !== 'number') return undefined
+  return {
+    tokenSpeed: typeof speed.tokenSpeed === 'number' ? speed.tokenSpeed : 0,
+    tokenCount: speed.tokenCount,
+    durationMs: typeof speed.durationMs === 'number' ? speed.durationMs : 0,
+  }
+}
+
 export function resolveOrphanToolCalls(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => {
     if (message.role !== 'assistant') return message
@@ -1627,7 +1645,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    const stepMetadata = createStepMetadata()
+    const stepMetadata = createStepMetadata(earlierTokenSpeed(options.messages))
 
     const uiStream = result.toUIMessageStream({
       // Usage and token speed, assembled by the one implementation every

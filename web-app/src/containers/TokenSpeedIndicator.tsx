@@ -45,7 +45,8 @@ export const TokenSpeedIndicator = memo(
     const usage = metadata?.usage as TokenUsage | undefined
     const rawSpeed = toNumber(persisted?.tokenSpeed ?? 0)
     const displaySpeed = Math.round(rawSpeed)
-    const displayTokenCount = usage?.outputTokens ?? persisted?.tokenCount ?? 0
+    // The speed block counts the whole reply; `usage` is only its last request.
+    const displayTokenCount = persisted?.tokenCount || usage?.outputTokens || 0
     const promptSpeed = persisted?.promptSpeed
 
     if (displaySpeed === 0 && displayTokenCount === 0) return null
