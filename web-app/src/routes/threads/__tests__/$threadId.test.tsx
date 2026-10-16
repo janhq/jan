@@ -418,6 +418,17 @@ vi.mock('@/hooks/useChatAttachments', () => ({
 }))
 vi.mock('@/hooks/useAttachments', () => ({ useAttachments: h.useAttachmentsMock }))
 vi.mock('@/hooks/useToolAvailable', () => ({ useToolAvailable: h.useToolAvailableMock }))
+const shell = vi.hoisted(() => ({
+  enabled: true,
+  execute: vi.fn(async () => ({ output: 'ok' })),
+}))
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: shell.enabled }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  executeAgentTool: shell.execute,
+}))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
@@ -1053,6 +1064,114 @@ describe('ThreadDetail route', () => {
       ]
       renderComponent()
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
+  })
+
+  // #9222: the shell switch is enforced where the command would run, so a call
+  // that still arrives while it is off (replayed history, a turn in flight when
+  // the switch flipped) is refused rather than auto-approved.
+  describe('the chat shell switch at execution time', () => {
+    const shellCall = (id: string) => ({
+      toolCall: { toolCallId: id, toolName: 'shell', input: { command: 'ls' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-sh',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+
+    beforeEach(() => {
+      shell.enabled = true
+      shell.execute.mockClear()
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+    })
+
+    it('runs the shell without a prompt while the switch is on', async () => {
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh1'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not run the shell, and says why, once the switch is off', async () => {
+      shell.enabled = false
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh2'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'sh2',
+          tool: 'shell',
+          state: 'output-error',
+          // What the model reads on its next turn: why the call did not run, and
+          // that calling it again cannot succeed.
+          errorText: expect.stringMatching(/turned off.*Do not call the shell again/s),
+        })
+      )
+    })
+
+    // A prompt for a tool the user turned off is itself wrong: an "always allow"
+    // answer could save a permission for it. It is refused before any prompt,
+    // on both paths that can open one.
+    it('never prompts for a shell call while the switch is off', async () => {
+      shell.enabled = false
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh3'))
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    // Turning the built-in off must not break a user's own MCP tool that happens
+    // to be called `shell`: it is not offered by the built-in any more, so the
+    // call is served by the MCP server and prompts like any MCP call.
+    it('serves an MCP tool named shell while the switch is off', async () => {
+      shell.enabled = false
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () =>
+        ({
+          callToolWithCancellation: (args: unknown) => ({
+            promise: callTool(args),
+            cancel: vi.fn().mockResolvedValue(undefined),
+            token: 't',
+          }),
+        }) as never
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh4'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(callTool).toHaveBeenCalledTimes(1)
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
     })
   })
 
