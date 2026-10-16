@@ -73,7 +73,7 @@ const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
 /**
  * Gets the list of gguf files in a directory
  *
- * @param path - The paths to the file.
+ * @param paths - The directories to scan.
  * @returns {Promise<{any}>} - A promise that resolves with the list of gguf and non-gguf files
  */
 const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
