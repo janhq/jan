@@ -107,6 +107,11 @@
     "title": "Base URL",
     "azureDescription": "Your Azure OpenAI endpoint. Replace YOUR-RESOURCE-NAME with your Azure resource name."
   },
+  "azureDeployedOnly": {
+    "title": "Show deployed models only",
+    "description": "List only the deployments on your Azure resource. They are added automatically; models you have not deployed are hidden, not deleted.",
+    "fetchFailed": "Could not read the deployments on your Azure resource, so all models are shown."
+  },
   "apiKeys": {
     "title": "API keys",
     "description": "Enter your API key. You can add extra keys in Advanced, and Jan will try the next one automatically if a key fails.",

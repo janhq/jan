@@ -75,6 +75,10 @@ type ProviderObject = {
   custom_header?: ProviderCustomHeader[] | null
   /** Wire format of the provider's HTTP API. Missing = 'openai' (default). */
   api_type?: ProviderApiType
+  /** Azure: list only the resource's deployments. Missing = true (default). */
+  deployed_models_only?: boolean
+  /** Azure: deployment names last fetched from the resource. Missing = unknown. */
+  deployments?: string[]
 }
 
 /**
