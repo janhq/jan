@@ -1,4 +1,4 @@
-use rmcp::model::{CallToolRequestParams, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult, GetPromptRequestParam};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_opener::OpenerExt;
@@ -12,7 +12,7 @@ use super::{
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
-    mcp::models::{McpSettings, ServerSummary},
+    mcp::models::{McpSettings, ServerSummary, PromptWithServer, PromptArgument},
     mcp::oauth,
     state::AppState,
 };
@@ -98,12 +98,16 @@ async fn collect_mcp_tools<R: Runtime>(
             }
             Some(Ok(Err(e))) => {
                 let err_str = e.to_string();
-                log::warn!("MCP server {server_name} failed to list tools: {err_str}");
-                if is_transport_error(&err_str) {
-                    state.mcp_reconnect_notify.notify_waiters();
-                }
-                if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
-                    removed_any = true;
+                if err_str.contains("-32601") || err_str.to_lowercase().contains("method not found") {
+                    log::debug!("MCP server {server_name} does not support prompts, skipping");
+                } else {
+                    log::warn!("MCP server {server_name} failed to list tools: {err_str}");
+                    if is_transport_error(&err_str) {
+                        state.mcp_reconnect_notify.notify_waiters();
+                        if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
+                            removed_any = true;
+                        }
+                    }
                 }
                 None
             }
@@ -320,6 +324,137 @@ pub async fn get_tools<R: Runtime>(
     state: State<'_, AppState>,
 ) -> Result<Vec<ToolWithServer>, String> {
     collect_mcp_tools(&app, &state, None).await
+}
+
+// Returns all prompts available across all connected MCP servers
+#[tauri::command]
+pub async fn get_prompts<R: Runtime>(
+  app: AppHandle<R>,
+  state: State<'_, AppState>
+) -> Result<Vec<PromptWithServer>, String> {
+    let timeout_duration = tool_call_timeout(&*state).await;
+    let mut all_prompts: Vec<PromptWithServer> = Vec::new();
+    let mut removed_any = false;
+
+    let server_names: Vec<String> = {
+        let servers = state.mcp_servers.lock().await;
+        servers.keys().cloned().collect()
+    };
+
+    for server_name in server_names {
+        let list_result = {
+            let servers = state.mcp_servers.lock().await;
+            // A server can be deactivate or cleaned up, so guard
+            // before listing all of its prompts
+            if let Some(service) = servers.get(&server_name) {
+                timeout(timeout_duration, service.list_all_prompts()).await
+            } else {
+                continue;
+            }
+        };
+        match list_result {
+            // Success - get the prompts
+            Ok(Ok(prompts)) => {
+                for prompt in prompts {
+                    all_prompts.push(PromptWithServer {
+                        name: prompt.name.to_string(),
+                        description: prompt.description.map(|d| d.to_string()),
+                        server: server_name.clone(),
+                        arguments: prompt.arguments.map(|args: Vec<rmcp::model::PromptArgument>| {
+                            args.iter()
+                                .map(|a| PromptArgument {
+                                    name: a.name.to_string(),
+                                    description: a.description.as_deref().map(|d| d.to_string()),
+                                    required: a.required,
+                                })
+                                .collect()
+                        }),
+                    });
+                }
+            }
+
+            // Completed in time, but rmcp returned an error
+            Ok(Err(e)) => {
+                let err_str = e.to_string();
+                if err_str.contains("-32601") || err_str.to_lowercase().contains("method not found") {
+                    log::debug!("MCP server {server_name} does not support prompts, skipping");
+                } else {
+                    log::warn!("MCP server {server_name} failed to list prompts: {err_str}");
+                    if is_transport_error(&err_str) {
+                        state.mcp_reconnect_notify.notify_waiters();
+                        if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
+                            removed_any = true;
+                        }
+                    }
+                }
+            }
+
+            // Timed out - rmcp never finished
+            Err(_) => {
+                log::warn!(
+                    "MCP server {server_name}: listing prompts timed out after {} seconds",
+                    timeout_duration.as_secs()
+                )
+            }
+        }
+    }
+    if removed_any {
+        if let Err(e) = app.emit("mcp-update", json!({ "server": "prompts-refresh" })) {
+           log::error!("Failed to emit mcp-update-event: {e}"); 
+        }
+    }
+    
+    Ok(all_prompts)
+}
+
+/// Retrieves a specific prompt from an MCP server by name.
+/// Returns the prompt result containing description and messages with content.
+#[tauri::command]
+pub async fn get_prompt(
+    state: State<'_, AppState>,
+    server_name: String,
+    prompt_name: String,
+    arguments: Option<Map<String, Value>>,
+) -> Result<rmcp::model::GetPromptResult, String> {
+    let timeout_duration = tool_call_timeout(&*state).await;
+
+    let servers = state.mcp_servers.lock().await;
+
+    let service = servers
+        .get(&server_name)
+        .ok_or_else(|| format!("Server '{server_name}' not found"))?;
+
+    let result = timeout(
+        timeout_duration,
+        service.get_prompt(GetPromptRequestParam {
+            name: prompt_name.clone().into(),
+            arguments: arguments.map(|m| {
+                let mut map = serde_json::Map::new();
+                for (k, v) in m {
+                    map.insert(k, v);
+                }
+                map
+            }),
+        }),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "Prompt '{prompt_name}' on server '{server_name}' timed out after {} seconds",
+            timeout_duration.as_secs()
+        )
+    })?;
+
+    match result {
+        Ok(prompt_result) => Ok(prompt_result),
+        Err(e) => {
+            let err_str = e.to_string();
+            if is_transport_error(&err_str) {
+                state.mcp_reconnect_notify.notify_waiters();
+            }
+            Err(err_str)
+        }
+    }
 }
 
 /// Retrieves tools from a specific subset of MCP servers by name.
