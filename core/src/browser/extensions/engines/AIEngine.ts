@@ -220,7 +220,7 @@ export interface chatOptions {
  * values minus their `draft-` prefix (common/speculative.cpp). `dspark` is
  * `dflash` plus a Markov head.
  */
-export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark'
+export type SpecDraftKind = 'mtp' | 'eagle3' | 'dflash' | 'dspark' | 'simple'
 
 // 7. /import
 export interface ImportOptions {
@@ -364,7 +364,12 @@ export abstract class AIEngine extends BaseExtension {
    * @param isEmbedding - Whether this is an embedding model (skips auto-unload)
    * @param bypassAutoUnload - When true, prevents unloading other models (useful for API server)
    */
-  abstract load(modelId: string, settings?: any, isEmbedding?: boolean, bypassAutoUnload?: boolean): Promise<SessionInfo>
+  abstract load(
+    modelId: string,
+    settings?: any,
+    isEmbedding?: boolean,
+    bypassAutoUnload?: boolean
+  ): Promise<SessionInfo>
 
   /**
    * Unloads a model from memory

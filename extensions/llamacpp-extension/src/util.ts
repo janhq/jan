@@ -1,10 +1,16 @@
-import { logger } from '@janhq/core'
-import type { SpecDraftKind } from '@janhq/core'
+import {
+  logger,
+  type SpecDraftKind,
+  isSpecDraftType,
+  type SpecConfig,
+} from '@janhq/core'
 import type {
   TemplateKwarg,
   TemplateKwargType,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getBackendSetting, setBackendSetting } from './backend-settings'
+import { ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import { invoke } from '@tauri-apps/api/core'
 
 // Zustand proxy state structure
 interface ProxyState {
@@ -182,6 +188,41 @@ export function detectEmbeddingFromGgufMeta(
   return Number.isFinite(n) && n > 0
 }
 
+export type LlamaCppModelConfig = ModelConfig & SpecConfig
+export async function loadModelConfig(
+  path: string
+): Promise<LlamaCppModelConfig> {
+  const cfg = (await invoke<ModelConfig>('read_yaml', {
+    path,
+  })) as LlamaCppModelConfig & {
+    mtp?: boolean
+    mtp_model_path: string
+  }
+
+  // backward compatibility
+  if (cfg.mtp !== undefined) {
+    if (isSpecDraftType(cfg.spec_type)) {
+      cfg.spec_draft_type = cfg.spec_type
+    } else {
+      cfg.spec_draft_type = 'draft-mtp'
+    }
+
+    if (cfg.mtp === true) {
+      cfg.spec_type = cfg.spec_draft_type
+    } else {
+      delete cfg.spec_type
+    }
+
+    if (cfg.mtp_model_path !== undefined) {
+      cfg.spec_draft_model = cfg.mtp_model_path
+      delete cfg.mtp_model_path
+    }
+
+    delete cfg.mtp
+  }
+  return cfg
+}
+
 /**
  * Which speculative-decoding flavour a draft gguf implements.
  *
@@ -193,7 +234,11 @@ export function detectEmbeddingFromGgufMeta(
  */
 export function resolveSpecDraftKind(
   meta: Record<string, unknown> | undefined,
-  opts: { hasMarkovHead?: boolean; hint?: SpecDraftKind } = {}
+  opts: {
+    hasMarkovHead?: boolean
+    hint?: SpecDraftKind
+    mtpLayers?: number
+  } = {}
 ): SpecDraftKind {
   const arch = meta?.['general.architecture']
   if (arch === 'eagle3') return 'eagle3'
@@ -201,7 +246,10 @@ export function resolveSpecDraftKind(
     const isDspark = opts.hasMarkovHead ?? opts.hint === 'dspark'
     return isDspark ? 'dspark' : 'dflash'
   }
-  return 'mtp'
+  if (opts.mtpLayers > 0) {
+    return 'mtp'
+  }
+  return 'simple'
 }
 
 export function detectMtpLayersFromGgufMeta(
@@ -277,7 +325,10 @@ export function detectTemplateKwargsFromChatTemplate(
   return out
 }
 
-export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {
+export function estimateTokensFromText(
+  text: string,
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN
+): number {
   return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
 }
 
@@ -337,7 +388,7 @@ export function buildEmbedBatches(
 
   push()
 
-  if (batches.some(b => b.batch.length === 0)) {
+  if (batches.some((b) => b.batch.length === 0)) {
     throw new Error('Internal error: empty batch detected')
   }
 

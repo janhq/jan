@@ -4,47 +4,67 @@ const writtenFiles: Record<string, string> = {}
 const modelYamls: Record<string, unknown> = {}
 const existingPaths = new Set<string>()
 
-vi.mock('@janhq/core', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-  fs: {
-    existsSync: vi.fn(
-      async (p: string) =>
-        p === '/p/models' || p in modelYamls || existingPaths.has(p)
-    ),
-    mkdir: vi.fn(async () => undefined),
-    readdirSync: vi.fn(async (dir: string) => {
-      if (dir === '/p/models') {
-        const ids = new Set(
-          Object.keys(modelYamls).map((k) =>
-            k.slice('/p/models/'.length).split('/')[0]
+vi.mock('@janhq/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@janhq/core')>()
+
+  return {
+    isSpecType: actual.isSpecType,
+    isSpecDraftType: actual.isSpecDraftType,
+    specTypeParameters: actual.specTypeParameters,
+    specConfig: actual.specConfig,
+    logger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+    fs: {
+      existsSync: vi.fn(
+        async (p: string) =>
+          p === '/p/models' || p in modelYamls || existingPaths.has(p)
+      ),
+      mkdir: vi.fn(async () => undefined),
+      readdirSync: vi.fn(async (dir: string) => {
+        if (dir === '/p/models') {
+          const ids = new Set(
+            Object.keys(modelYamls).map(
+              (k) => k.slice('/p/models/'.length).split('/')[0]
+            )
           )
-        )
-        return Array.from(ids).map((id) => `/p/models/${id}`)
-      }
-      return []
-    }),
-    fileStat: vi.fn(async (p: string) => ({
-      isDirectory: !p.endsWith('model.yml'),
-    })),
-    writeFileSync: vi.fn(async (p: string, body: string) => {
-      writtenFiles[p] = body
-    }),
-    mv: vi.fn(async (from: string, to: string) => {
-      writtenFiles[to] = writtenFiles[from]
-      delete writtenFiles[from]
-    }),
-    rm: vi.fn(async () => undefined),
-  },
-  joinPath: vi.fn(async (parts: string[]) => parts.join('/')),
-}))
+          return Array.from(ids).map((id) => `/p/models/${id}`)
+        }
+        return []
+      }),
+      fileStat: vi.fn(async (p: string) => ({
+        isDirectory: !p.endsWith('model.yml'),
+      })),
+      writeFileSync: vi.fn(async (p: string, body: string) => {
+        writtenFiles[p] = body
+      }),
+      mv: vi.fn(async (from: string, to: string) => {
+        writtenFiles[to] = writtenFiles[from]
+        delete writtenFiles[from]
+      }),
+      rm: vi.fn(async () => undefined),
+      isSpecType: vi.fn(
+        (value: unknown) =>
+          typeof value === 'string' &&
+          ['mtp', 'eagle3', 'dflash', 'dspark'].includes(value)
+      ),
+      isSpecDraftType: vi.fn(
+        (value: unknown) =>
+          typeof value === 'string' &&
+          ['simple', 'mtp', 'eagle3', 'dflash', 'dspark'].includes(value)
+      ),
+    },
+    joinPath: vi.fn(async (parts: string[]) => parts.join('/')),
+  }
+})
 
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(async (_cmd: string, args: { path: string }) => modelYamls[args.path]),
+  invoke: vi.fn(
+    async (_cmd: string, args: { path: string }) => modelYamls[args.path]
+  ),
 }))
 
 import { generatePreset, threadCacheDir } from './preset'
@@ -64,55 +84,144 @@ function setupModel(id: string, yaml: Record<string, unknown>) {
   }
 }
 
-describe('generatePreset MTP emission', () => {
-  it('emits spec-type = draft-mtp when mtp is on, layers > 0, and backend supports it', async () => {
-    setupModel('glm', {
-      mtp: true,
-      mtp_layers: 1,
-      spec_draft_n_max: 8,
-      spec_draft_n_min: 0,
-      spec_draft_p_min: 0.8,
-    })
+describe('generatePreset speculative decoding emission', () => {
+  it('emits spec-type when valid spec_type parameter is in model config', async () => {
+    setupModel('llama', { mtp_layers: 0, spec_type: 'draft-simple' })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('spec-type = draft-mtp')
-    expect(ini).toContain('spec-draft-n-max = 8')
-    expect(ini).toContain('spec-draft-n-min = 0')
-    expect(ini).toContain('spec-draft-p-min = 0.8')
+    expect(ini).toContain('spec-type')
   })
 
-  it('omits MTP lines when model has no MTP heads (mtp_layers = 0)', async () => {
-    setupModel('llama', { mtp: true, mtp_layers: 0 })
+  it('omits spec-type when no valid spec_type parameter is in model config', async () => {
+    setupModel('llama', { mtp_layers: 0, spec_type: 'draft-other' })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('spec-type')
   })
 
-  it('omits MTP lines when mtp flag is off even if heads exist', async () => {
-    setupModel('glm', { mtp: false, mtp_layers: 1 })
+  it('omits spec-type when no spec_type parameter is in model config', async () => {
+    setupModel('llama', { mtp_layers: 0 })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini).not.toContain('spec-type')
   })
 
-  it('emits spec-draft-model for a separate MTP gguf even when main reports 0 heads', async () => {
-    setupModel('gemma', {
-      mtp: true,
+  it('emits spec-draft-model when spec_type is valid draft type and spec_draft_model is in model config', async () => {
+    setupModel('llama', {
       mtp_layers: 0,
-      mtp_model_path: 'models/gemma/mtp.gguf',
+      spec_type: 'draft-mtp',
+      spec_draft_model: 'models/gemma/mtp.gguf',
     })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('spec-type = draft-mtp')
-    expect(ini).toContain('spec-draft-model = /jan/models/gemma/mtp.gguf')
+    expect(ini).toContain('spec-type')
+    expect(ini).toContain('spec-draft-model')
   })
 
-  it('does not emit spec-draft-model for embedded MTP (no draft path)', async () => {
-    setupModel('glm', { mtp: true, mtp_layers: 1 })
+  it('omits spec-draft-model when spec_type is no valid draft type', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_type: 'ngram-simple',
+      spec_draft_model: 'models/gemma/mtp.gguf',
+    })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('spec-type = draft-mtp')
+    expect(ini).toContain('spec-type')
     expect(ini).not.toContain('spec-draft-model')
+  })
+
+  it('omits spec-draft-model when no spec_type is in model config', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_draft_model: 'models/gemma/mtp.gguf',
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-type')
+    expect(ini).not.toContain('spec-draft-model')
+  })
+
+  it('emits only speculative decoding options that are valid for spec_type and in model config', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_type: 'draft-mtp',
+      spec_draft_model: 'models/gemma/mtp.gguf',
+      spec_draft_n_min: 1,
+      spec_draft_n_max: 1,
+      spec_draft_p_min: 1,
+      spec_ngram_simple_size_n: 1,
+      spec_ngram_map_k_size_m: 4,
+      spec_ngram_map_k4v_min_hits: 2,
+      spec_ngram_mod_n_match: 1,
+      lookup_cache_static: 'models/gemma/mtp.gguf',
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type')
+    expect(ini).toContain('spec-draft-model')
+    expect(ini).toContain('spec-draft-n-min')
+    expect(ini).toContain('spec-draft-n-max')
+    expect(ini).toContain('spec-draft-p-min')
+    expect(ini).not.toContain('spec-ngram-simple-size-n')
+    expect(ini).not.toContain('spec-ngram-map-k-size-m')
+    expect(ini).not.toContain('spec-ngram-map-k4v-min-hits')
+    expect(ini).not.toContain('spec-ngram-mod-n-match')
+    expect(ini).not.toContain('lookup-cache-static')
+  })
+
+  it('omits speculative decoding options with default values', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_type: 'draft-mtp',
+      spec_draft_model: 'models/gemma/mtp.gguf',
+      spec_draft_n_min: 0,
+      spec_draft_n_max: 3,
+      spec_draft_p_min: 0.75,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type')
+    expect(ini).toContain('spec-draft-model')
+    expect(ini).not.toContain('spec-draft-n-min')
+    expect(ini).not.toContain('spec-draft-n-max')
+    expect(ini).not.toContain('spec-draft-p-min')
+  })
+
+  it('omits speculative decoding options with values that dont fit the min and max requirements', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_type: 'draft-mtp',
+      spec_draft_model: 'models/gemma/mtp.gguf',
+      spec_draft_n_min: -1,
+      spec_draft_n_max: -1,
+      spec_draft_p_min: 1.5,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type')
+    expect(ini).toContain('spec-draft-model')
+    expect(ini).not.toContain('spec-draft-n-min')
+    expect(ini).not.toContain('spec-draft-n-max')
+    expect(ini).not.toContain('spec-draft-p-min')
+  })
+
+  it('normalizes speculative decoding options with defined step requirements', async () => {
+    setupModel('llama', {
+      mtp_layers: 0,
+      spec_type: 'draft-mtp',
+      spec_draft_model: 'models/gemma/mtp.gguf',
+      spec_draft_n_min: 1.5,
+      spec_draft_n_max: 3.5,
+      spec_draft_p_min: 0.84,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-type')
+    expect(ini).toContain('spec-draft-model')
+
+    expect(ini).toContain('spec-draft-n-min = 1')
+    expect(ini).not.toContain('spec-draft-n-max')
+    expect(ini).toContain('spec-draft-p-min = 0.8')
   })
 
   // Values are chosen to differ from llama.cpp's defaults: an equal value is
@@ -149,20 +258,6 @@ describe('generatePreset MTP emission', () => {
     expect(ini).toContain('temperature = 0.7')
     expect(ini).not.toContain('top-p')
     expect(ini).not.toContain('min-p')
-  })
-
-  it('skips out-of-range spec tunables', async () => {
-    setupModel('glm', {
-      mtp: true,
-      mtp_layers: 1,
-      spec_draft_n_max: -5,
-      spec_draft_p_min: 1.5,
-    })
-    await generatePreset('/p', '/jan', CONFIG)
-    const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('spec-type = draft-mtp')
-    expect(ini).not.toContain('spec-draft-n-max')
-    expect(ini).not.toContain('spec-draft-p-min')
   })
 })
 
@@ -282,7 +377,7 @@ describe('generatePreset parallel with speculative decoding', () => {
     ini.split(`[${id}]`)[1].split('load-on-startup')[0]
 
   it('pins an embedded-MTP model to one slot when parallel is auto', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1 })
     await generatePreset('/p', '/jan', { parallel: 0 } as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(section(ini, 'qwen')).toContain('parallel = 1')
@@ -292,9 +387,9 @@ describe('generatePreset parallel with speculative decoding', () => {
 
   it('pins a draft-companion model to one slot when parallel is unset', async () => {
     setupModel('qwen', {
-      mtp: true,
+      spec_type: 'draft-mtp',
       mtp_layers: 0,
-      mtp_model_path: 'models/qwen/mtp.gguf',
+      spec_draft_model: 'models/qwen/mtp.gguf',
     })
     await generatePreset('/p', '/jan', {} as any)
     expect(section(writtenFiles['/p/router.preset.ini'], 'qwen')).toContain(
@@ -312,7 +407,7 @@ describe('generatePreset parallel with speculative decoding', () => {
   })
 
   it('keeps an explicit global parallel for an MTP model', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1 })
     await generatePreset('/p', '/jan', { parallel: 2 } as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
@@ -322,7 +417,7 @@ describe('generatePreset parallel with speculative decoding', () => {
   // The gate and the [*] emission must read the string the same way: if only
   // the gate accepted it, nothing would be emitted and auto's 4 slots return.
   it('emits a legacy string parallel and does not pin the MTP model', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1 })
     await generatePreset('/p', '/jan', { parallel: '2' } as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
@@ -331,7 +426,7 @@ describe('generatePreset parallel with speculative decoding', () => {
 
   it('treats a zero or non-numeric string parallel as auto and pins', async () => {
     for (const parallel of ['0', '', 'auto']) {
-      setupModel('qwen', { mtp: true, mtp_layers: 1 })
+      setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1 })
       await generatePreset('/p', '/jan', { parallel } as any)
       const ini = writtenFiles['/p/router.preset.ini']
       expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
@@ -340,7 +435,7 @@ describe('generatePreset parallel with speculative decoding', () => {
   })
 
   it('keeps a legacy string per-model parallel for an MTP model', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: '2' })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1, parallel: '2' })
     await generatePreset('/p', '/jan', {} as any)
     const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
     expect(qwen).toContain('parallel = 2')
@@ -348,7 +443,7 @@ describe('generatePreset parallel with speculative decoding', () => {
   })
 
   it('keeps an explicit per-model parallel for an MTP model', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: 2 })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1, parallel: 2 })
     await generatePreset('/p', '/jan', {} as any)
     const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
     expect(qwen).toContain('parallel = 2')
@@ -356,7 +451,7 @@ describe('generatePreset parallel with speculative decoding', () => {
   })
 
   it('respects an explicit kv-unified off', async () => {
-    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    setupModel('qwen', { spec_type: 'draft-mtp', mtp_layers: 1 })
     await generatePreset('/p', '/jan', { kv_unified: 'off' } as any)
     const ini = writtenFiles['/p/router.preset.ini']
     expect(section(ini, 'qwen')).toContain('parallel = 1')
@@ -584,7 +679,14 @@ describe('generatePreset upstream-default skipping', () => {
     })
     await generatePreset('/p', '/jan', {} as any)
     const sec = modelSection('m')
-    for (const k of ['temperature', 'top-k', 'top-p', 'min-p', 'repeat-last-n', 'repeat-penalty']) {
+    for (const k of [
+      'temperature',
+      'top-k',
+      'top-p',
+      'min-p',
+      'repeat-last-n',
+      'repeat-penalty',
+    ]) {
       expect(sec, k).not.toContain(`${k} = `)
     }
   })
@@ -719,16 +821,12 @@ describe('generatePreset upstream-default skipping', () => {
     expect(g).not.toContain('ctx-checkpoints')
     expect(g).not.toContain('checkpoint-min-step')
 
-    await generatePreset(
-      '/p',
-      '/jan',
-      {
-        tensor_split: ' 3,1 ',
-        no_op_offload: true,
-        ctx_checkpoints: 8,
-        checkpoint_min_step: 4096,
-      } as any,
-    )
+    await generatePreset('/p', '/jan', {
+      tensor_split: ' 3,1 ',
+      no_op_offload: true,
+      ctx_checkpoints: 8,
+      checkpoint_min_step: 4096,
+    } as any)
     g = globalSection()
     expect(g).toContain('tensor-split = 3,1')
     expect(g).toContain('no-op-offload = true')
@@ -737,11 +835,10 @@ describe('generatePreset upstream-default skipping', () => {
   })
 
   it('omits the checkpoint options at their upstream defaults', async () => {
-    await generatePreset(
-      '/p',
-      '/jan',
-      { ctx_checkpoints: 32, checkpoint_min_step: 8192 } as any,
-    )
+    await generatePreset('/p', '/jan', {
+      ctx_checkpoints: 32,
+      checkpoint_min_step: 8192,
+    } as any)
     const g = globalSection()
     expect(g).not.toContain('ctx-checkpoints')
     expect(g).not.toContain('checkpoint-min-step')
@@ -751,11 +848,10 @@ describe('generatePreset upstream-default skipping', () => {
   // (common/arg.cpp), and settings.json puts no `min` on the field, so 0 is
   // reachable from the UI and has to reach the preset.
   it('emits an explicit checkpoint-min-step of 0, which means no minimum', async () => {
-    await generatePreset(
-      '/p',
-      '/jan',
-      { ctx_checkpoints: 0, checkpoint_min_step: 0 } as any,
-    )
+    await generatePreset('/p', '/jan', {
+      ctx_checkpoints: 0,
+      checkpoint_min_step: 0,
+    } as any)
     const g = globalSection()
     expect(g).toContain('checkpoint-min-step = 0')
     expect(g).toContain('ctx-checkpoints = 0')
@@ -767,7 +863,7 @@ describe('generatePreset upstream-default skipping', () => {
 // is not a plain built-in name goes to a file instead.
 describe('generatePreset chat template', () => {
   it('writes a multi-line template to a file and points the preset at it', async () => {
-    const template = "{%- if x %}\n<|im_start|>\n{%- endif %}"
+    const template = '{%- if x %}\n<|im_start|>\n{%- endif %}'
     setupModel('glm', { chat_template: template })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
@@ -856,62 +952,9 @@ describe('generatePreset grammar', () => {
   })
 })
 
-// The four draft flavours differ only in the `spec-type` value; a draft that
-// cannot implement the type it is given fails the load with an unrelated
-// message, so the type recorded at import is what must be emitted.
-describe('generatePreset spec type', () => {
-  it('emits the recorded spec type for a dflash draft', async () => {
-    setupModel('dsv4', {
-      mtp: true,
-      mtp_layers: 1,
-      mtp_model_path: 'models/dsv4/mtp.gguf',
-      spec_type: 'draft-dflash',
-    })
-    await generatePreset('/p', '/jan', CONFIG)
-    const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).toContain('spec-type = draft-dflash')
-    expect(ini).toContain('spec-draft-model = /jan/models/dsv4/mtp.gguf')
-    expect(ini).not.toContain('draft-mtp')
-  })
-
-  it('emits draft-dspark when that is what was detected', async () => {
-    setupModel('dsv4', {
-      mtp: true,
-      mtp_layers: 1,
-      mtp_model_path: 'models/dsv4/mtp.gguf',
-      spec_type: 'draft-dspark',
-    })
-    await generatePreset('/p', '/jan', CONFIG)
-    expect(writtenFiles['/p/router.preset.ini']).toContain(
-      'spec-type = draft-dspark'
-    )
-  })
-
-  // Models imported before the type was recorded, and every embedded-MTP
-  // model, carry no spec_type.
-  it('falls back to draft-mtp when no type was recorded', async () => {
-    setupModel('glm', { mtp: true, mtp_layers: 1 })
-    await generatePreset('/p', '/jan', CONFIG)
-    expect(writtenFiles['/p/router.preset.ini']).toContain(
-      'spec-type = draft-mtp'
-    )
-  })
-
-  it('ignores a spec type that is not one llama.cpp accepts', async () => {
-    setupModel('glm', {
-      mtp: true,
-      mtp_layers: 1,
-      spec_type: 'draft-nonsense',
-    })
-    await generatePreset('/p', '/jan', CONFIG)
-    expect(writtenFiles['/p/router.preset.ini']).toContain(
-      'spec-type = draft-mtp'
-    )
-  })
-})
-
 describe('threadCacheDir separator handling', () => {
-  const WIN_EXT = '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data\\llamacpp'
+  const WIN_EXT =
+    '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data\\llamacpp'
 
   it('joins a POSIX path with a forward slash', () => {
     expect(threadCacheDir('/p')).toBe('/p/thread-cache')

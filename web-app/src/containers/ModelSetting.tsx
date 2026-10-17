@@ -1,6 +1,15 @@
 import { IconSettings } from '@tabler/icons-react'
 import debounce from 'lodash.debounce'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type SpecConfig,
+  type SpecConfigKey,
+  type SpecConfigPatch,
+  type SpecTypeParameter,
+  isSpecType,
+  isSpecDraftType,
+  specTypeParameters,
+} from '@janhq/core'
 
 import {
   Sheet,
@@ -13,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { SamplerDefaults } from '@/containers/SamplerDefaults'
 import { ChatTemplateKwargs } from '@/containers/ChatTemplateKwargs'
@@ -65,9 +75,9 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
   const pendingPatchesRef = useRef<
     Map<string, Record<string, string | number | boolean | null | undefined>>
   >(new Map())
-  const rollbackSettingsRef = useRef<Map<string, Model['settings'] | undefined>>(
-    new Map()
-  )
+  const rollbackSettingsRef = useRef<
+    Map<string, Model['settings'] | undefined>
+  >(new Map())
   const flushPendingPatches = useMemo(
     () =>
       debounce(() => {
@@ -96,9 +106,11 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
                     ...revertedModels[modelIndex],
                     settings: previousSettings,
                   } as Model
-                  useModelProvider.getState().updateProvider(provider.provider, {
-                    models: revertedModels,
-                  })
+                  useModelProvider
+                    .getState()
+                    .updateProvider(provider.provider, {
+                      models: revertedModels,
+                    })
                 }
               }
               console.error('Failed to persist model settings', e)
@@ -193,7 +205,11 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
       // mappable keys to disk + restart the router so the next load uses the
       // new args. Non-mappable keys are filtered inside the extension.
       if (provider.provider === 'llamacpp') {
-        debouncedPersistModelSettings(model.id, { [key]: value }, model.settings)
+        debouncedPersistModelSettings(
+          model.id,
+          { [key]: value },
+          model.settings
+        )
       }
     }
   }
@@ -273,49 +289,49 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
 
   return (
     <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
-          {provider.provider === 'llamacpp' && (
-            <SpecDraftPanel modelId={model.id} />
-          )}
-          {provider.provider === 'llamacpp' && model.embedding !== true && (
-            <ChatTemplateKwargs
-              model={model}
-              onChange={handleTemplateKwargsChange}
-            />
-          )}
-          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
-            model.embedding !== true && (
-              <SamplerDefaults
-                model={model}
-                keys={samplerKeysForProvider(provider.provider)}
-                onChange={handleSettingChange}
-              />
-            )}
-          {fitEnabled && fitCtxSetting && (
-            <div key="fit_ctx" className="space-y-2">
-              <div className="flex items-start justify-between gap-8">
-                <div className="mb-1 truncate">
-                  <span title={fitCtxSetting.title} className="font-medium">
-                    {fitCtxSetting.title}
-                  </span>
-                </div>
-                <DynamicControllerSetting
-                  key={fitCtxSetting.key}
-                  title={fitCtxSetting.title}
-                  description={fitCtxSetting.description}
-                  controllerType={fitCtxSetting.controller_type}
-                  controllerProps={fitCtxSetting.controller_props}
-                  onChange={(newValue) =>
-                    handleEngineSettingChange('fit_ctx', newValue)
-                  }
-                />
-              </div>
-              <p className="text-muted-foreground leading-normal text-xs">
-                {fitCtxSetting.description}
-              </p>
+      {provider.provider === 'llamacpp' && (
+        <SpecDecodingPanel modelId={model.id} />
+      )}
+      {provider.provider === 'llamacpp' && model.embedding !== true && (
+        <ChatTemplateKwargs
+          model={model}
+          onChange={handleTemplateKwargsChange}
+        />
+      )}
+      {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
+        model.embedding !== true && (
+          <SamplerDefaults
+            model={model}
+            keys={samplerKeysForProvider(provider.provider)}
+            onChange={handleSettingChange}
+          />
+        )}
+      {fitEnabled && fitCtxSetting && (
+        <div key="fit_ctx" className="space-y-2">
+          <div className="flex items-start justify-between gap-8">
+            <div className="mb-1 truncate">
+              <span title={fitCtxSetting.title} className="font-medium">
+                {fitCtxSetting.title}
+              </span>
             </div>
-          )}
-          {(() => {
-            return Object.entries(model.settings || {})
+            <DynamicControllerSetting
+              key={fitCtxSetting.key}
+              title={fitCtxSetting.title}
+              description={fitCtxSetting.description}
+              controllerType={fitCtxSetting.controller_type}
+              controllerProps={fitCtxSetting.controller_props}
+              onChange={(newValue) =>
+                handleEngineSettingChange('fit_ctx', newValue)
+              }
+            />
+          </div>
+          <p className="text-muted-foreground leading-normal text-xs">
+            {fitCtxSetting.description}
+          </p>
+        </div>
+      )}
+      {(() => {
+        return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'reasoning') return acc
             // Rendered by the dedicated ChatTemplateKwargs section above.
@@ -350,7 +366,9 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
                   )}
                 >
                   <div className="mb-1 truncate">
-                    <span title={config.title} className="font-medium">{config.title}</span>
+                    <span title={config.title} className="font-medium">
+                      {config.title}
+                    </span>
                   </div>
                   <DynamicControllerSetting
                     key={config.key}
@@ -375,7 +393,7 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
               </div>
             )
           })
-          })()}
+      })()}
     </div>
   )
 }
@@ -406,29 +424,21 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
   )
 }
 
-type SpecDraftInfo = {
-  mtp_layers: number
-  mtp: boolean
-  spec_draft_n_max?: number
-  spec_draft_n_min?: number
-  spec_draft_p_min?: number
-}
-
-export function SpecDraftPanel({ modelId }: { modelId: string }) {
+export function SpecDecodingPanel({ modelId }: { modelId: string }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const [info, setInfo] = useState<SpecDraftInfo | null>(null)
+  const [info, setInfo] = useState<SpecConfigPatch | null>(null)
 
   useEffect(() => {
     let active = true
     serviceHub
       .models()
-      .getMtpInfo(modelId)
+      .getSpecDecodingSettings(modelId)
       .then((v) => {
         if (active) setInfo(v)
       })
       .catch(() => {
-        if (active) setInfo({ mtp_layers: 0, mtp: false })
+        if (active) setInfo({ mtp_layers: 0 })
       })
     return () => {
       active = false
@@ -437,137 +447,301 @@ export function SpecDraftPanel({ modelId }: { modelId: string }) {
 
   const persist = useCallback(
     async (patch: {
-      mtp?: boolean
-      spec_draft_n_max?: number | null
-      spec_draft_n_min?: number | null
-      spec_draft_p_min?: number | null
+      [K in SpecConfigKey]?: SpecConfig[K] | null
     }) => {
       try {
-        await serviceHub.models().updateMtpSettings(modelId, patch)
+        await serviceHub.models().updateSpecDecodingSettings(modelId, patch)
       } catch (e) {
-        console.error('Failed to update MTP settings', e)
+        console.error('Failed to update speculative decoding settings', e)
       }
     },
     [modelId, serviceHub]
   )
 
-  if (!info || info.mtp_layers <= 0) return null
+  if (!info) return null
+  const enabled = !!isSpecType(info.spec_type)
 
-  const enabled = info.mtp === true
+  const specOptions = [
+    ...(isSpecDraftType(info.spec_draft_type)
+      ? [{ id: info.spec_draft_type }]
+      : []),
+    { id: 'ngram-simple' },
+    { id: 'ngram-cache' },
+    { id: 'ngram-map-k' },
+    { id: 'ngram-map-k4v' },
+    { id: 'ngram-mod' },
+  ].map((item) => ({
+    ...item,
+    label: t(`common:modelSettings.specSettings.${item.id}`),
+    description: t(`common:modelSettings.specSettings.${item.id}Description`),
+  }))
 
-  const updateNumber = (
-    key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
-    raw: string
-  ) => {
-    const trimmed = raw.trim()
-    if (trimmed.length === 0) {
-      setInfo({ ...info, [key]: undefined })
-      void persist({ [key]: null })
-      return
+  const parameters =
+    specTypeParameters[info.spec_type as keyof typeof specTypeParameters] ?? []
+
+  const sliderParameters = parameters.filter(
+    (
+      param
+    ): param is SpecTypeParameter & {
+      step: number
+      min: number
+      max: number
+    } =>
+      param.step !== undefined &&
+      param.min !== undefined &&
+      param.max !== undefined
+  )
+
+  const numberParameters = parameters.filter(
+    (
+      param
+    ): param is SpecTypeParameter & {
+      step: number
+      min: number
+    } =>
+      param.step !== undefined &&
+      param.min !== undefined &&
+      param.max === undefined
+  )
+
+  const fileParameters = parameters.filter((param) => param.min === undefined)
+
+  const handleFileSelect = async (key: SpecConfigKey) => {
+    const selectedFile = await serviceHub.dialog().open({
+      multiple: false,
+      directory: false,
+    })
+    if (selectedFile && typeof selectedFile === 'string') {
+      setInfo({ ...info, [key]: selectedFile })
+      void persist({ [key]: selectedFile })
     }
-    const n = Number(trimmed)
-    if (!Number.isFinite(n)) return
-    setInfo({ ...info, [key]: n })
-    void persist({ [key]: n })
   }
 
   return (
     <div className="space-y-3">
       <div className="font-medium">
-        {t('common:modelSettings.specDraft.section')}
+        {t('common:modelSettings.specSettings.section')}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-8">
           <div className="mb-1 truncate">
             <span className="font-medium">
-              {t('common:modelSettings.specDraft.enable')}
+              {t('common:modelSettings.specSettings.enable')}
             </span>
           </div>
           <Switch
             checked={enabled}
             onCheckedChange={(v) => {
-              setInfo({ ...info, mtp: v })
-              void persist({ mtp: v })
+              let newSpecType = null
+              if (v) {
+                if (info.spec_draft_type !== undefined) {
+                  newSpecType = info.spec_draft_type
+                } else {
+                  newSpecType = 'ngram-simple'
+                }
+              }
+              setInfo({ ...info, spec_type: newSpecType })
+              void persist({ spec_type: newSpecType })
             }}
           />
         </div>
         <p className="text-muted-foreground leading-normal text-xs">
-          {t('common:modelSettings.specDraft.enableDescription')}
+          {t('common:modelSettings.specSettings.enableDescription')}
         </p>
       </div>
 
-      {enabled && (
-        <>
-          <NumberRow
-            label={t('common:modelSettings.specDraft.nMax')}
-            description={t('common:modelSettings.specDraft.nMaxDescription')}
-            placeholder="16"
-            value={info.spec_draft_n_max}
-            min={1}
-            step={1}
-            onChange={(raw) => updateNumber('spec_draft_n_max', raw)}
-          />
-          <NumberRow
-            label={t('common:modelSettings.specDraft.nMin')}
-            description={t('common:modelSettings.specDraft.nMinDescription')}
-            placeholder="0"
-            value={info.spec_draft_n_min}
-            min={0}
-            step={1}
-            onChange={(raw) => updateNumber('spec_draft_n_min', raw)}
-          />
-          <NumberRow
-            label={t('common:modelSettings.specDraft.pMin')}
-            description={t('common:modelSettings.specDraft.pMinDescription')}
-            placeholder="0.75"
-            value={info.spec_draft_p_min}
-            min={0}
-            max={1}
-            step={0.05}
-            onChange={(raw) => updateNumber('spec_draft_p_min', raw)}
-          />
-        </>
+      {info.spec_type && (
+        <div className="space-y-4 pt-2">
+          <div className="space-y-4 pt-2">
+            <RadioGroup
+              value={info.spec_type.toString()}
+              onValueChange={(value) => {
+                setInfo({ ...info, spec_type: value })
+                void persist({ spec_type: value })
+              }}
+              className="grid grid-cols-1 gap-2"
+            >
+              {specOptions.map((item) => (
+                <label
+                  key={item.id}
+                  htmlFor={`spec-type-${item.id}`}
+                  className="flex cursor-pointer items-center space-x-3 rounded-md p-2 text-sm hover:bg-accent"
+                >
+                  <RadioGroupItem id={`spec-type-${item.id}`} value={item.id} />
+                  <div className="flex flex-col">
+                    <span>{item.label}</span>
+                    {item.description && (
+                      <span className="text-xs text-muted-foreground">
+                        {item.description}
+                      </span>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+          {numberParameters.map(({ key, ...numberRow }) => (
+            <SettingRow
+              key={key}
+              {...numberRow}
+              controllerType="input"
+              value={
+                info[key] === undefined
+                  ? Number(numberRow.default)
+                  : Number(info[key])
+              }
+              onChange={(value) => {
+                setInfo({
+                  ...info,
+                  [key]: value === undefined ? numberRow.default : value,
+                })
+
+                void persist({
+                  [key]:
+                    value === numberRow.default
+                      ? null
+                      : Number(
+                          Math.floor(value / numberRow.step) * numberRow.step
+                        ),
+                })
+              }}
+            />
+          ))}
+          {sliderParameters.map(({ key, ...sliderRow }) => (
+            <SettingRow
+              key={key}
+              {...sliderRow}
+              controllerType="slider"
+              value={
+                info[key] === undefined
+                  ? Number(sliderRow.default)
+                  : Number(info[key])
+              }
+              onChange={(value) => {
+                setInfo({
+                  ...info,
+                  [key]: value === undefined ? sliderRow.default : value,
+                })
+
+                void persist({
+                  [key]:
+                    value === sliderRow.default
+                      ? null
+                      : Number(
+                          Math.floor(value / sliderRow.step) * sliderRow.step
+                        ),
+                })
+              }}
+            />
+          ))}
+          {fileParameters.map(({ key, ...fileSelectRow }) => (
+            <FileSelectRow
+              key={key}
+              {...fileSelectRow}
+              value={typeof info[key] === 'string' ? String(info[key]) : ''}
+              onClick={() => handleFileSelect(key)}
+              onChange={(value) => {
+                const newValue = value === '' ? null : String(value)
+                setInfo({
+                  ...info,
+                  [key]: newValue,
+                })
+
+                void persist({
+                  [key]: newValue,
+                })
+              }}
+            />
+          ))}
+        </div>
       )}
     </div>
   )
 }
 
-function NumberRow({
-  label,
-  description,
-  placeholder,
+function SettingRow({
+  controllerType,
+  translationPath,
   value,
   min,
   max,
   step,
   onChange,
-}: {
-  label: string
-  description: string
-  placeholder: string
-  value: number | undefined
-  min?: number
-  max?: number
-  step?: number
-  onChange: (raw: string) => void
+}: SpecTypeParameter & {
+  controllerType: string
+  value: number
+  onChange: (value: number) => void
 }) {
+  const { t } = useTranslation()
+  const title = t(`common:modelSettings.specSettings.${translationPath}`)
+  const description = t(
+    `common:modelSettings.specSettings.${translationPath}Description`
+  )
   return (
-    <div className="space-y-2">
-      <div className="flex items-start justify-between gap-8">
+    <div className="sliderRow space-y-2">
+      <div className="flex items-start justify-between flex-col gap-1 w-full">
         <div className="mb-1 truncate">
-          <span className="font-medium">{label}</span>
+          <span title={title} className="font-medium">
+            {title}
+          </span>
         </div>
-        <Input
-          type="number"
-          className="w-32"
-          placeholder={placeholder}
-          value={value ?? ''}
-          min={min}
-          max={max}
-          step={step}
-          onChange={(e) => onChange(e.target.value)}
+
+        <DynamicControllerSetting
+          title={title}
+          description={description}
+          controllerType={controllerType}
+          controllerProps={{
+            value,
+            step,
+            min,
+            max,
+          }}
+          onChange={(value) => onChange(Number(value))}
         />
+      </div>
+
+      <p className="text-muted-foreground leading-normal text-xs">
+        {description}
+      </p>
+    </div>
+  )
+}
+
+function FileSelectRow({
+  translationPath,
+  value,
+  onClick,
+  onChange,
+}: {
+  translationPath: string
+  value: string
+  onClick: () => void
+  onChange: (newValue: string) => void
+}) {
+  const { t } = useTranslation()
+  const title = t(`common:modelSettings.specSettings.${translationPath}`)
+  const description = t(
+    `common:modelSettings.specSettings.${translationPath}Description`
+  )
+  return (
+    <div className="w-full">
+      <div className="mb-1 truncate">
+        <span title={title} className="font-medium">
+          {title}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <Input
+            value={value !== undefined ? value : ''}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="File path"
+          />
+          <Button variant="outline" size="sm" onClick={() => onClick()}>
+            Select
+          </Button>
+        </div>
       </div>
       <p className="text-muted-foreground leading-normal text-xs">
         {description}
