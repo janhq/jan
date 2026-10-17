@@ -581,24 +581,24 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
               ))}
             </RadioGroup>
           </div>
-          {numberParameters.map((numberRow) => (
+          {numberParameters.map(({ key, ...numberRow }) => (
             <SettingRow
+              key={key}
               {...numberRow}
               controllerType="input"
               value={
-                info[numberRow.key] === undefined
+                info[key] === undefined
                   ? Number(numberRow.default)
-                  : Number(info[numberRow.key])
+                  : Number(info[key])
               }
               onChange={(value) => {
                 setInfo({
                   ...info,
-                  [numberRow.key]:
-                    value === undefined ? numberRow.default : value,
+                  [key]: value === undefined ? numberRow.default : value,
                 })
 
                 void persist({
-                  [numberRow.key]:
+                  [key]:
                     value === numberRow.default
                       ? null
                       : Number(
@@ -608,24 +608,24 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
               }}
             />
           ))}
-          {sliderParameters.map((sliderRow) => (
+          {sliderParameters.map(({ key, ...sliderRow }) => (
             <SettingRow
+              key={key}
               {...sliderRow}
               controllerType="slider"
               value={
-                info[sliderRow.key] === undefined
+                info[key] === undefined
                   ? Number(sliderRow.default)
-                  : Number(info[sliderRow.key])
+                  : Number(info[key])
               }
               onChange={(value) => {
                 setInfo({
                   ...info,
-                  [sliderRow.key]:
-                    value === undefined ? sliderRow.default : value,
+                  [key]: value === undefined ? sliderRow.default : value,
                 })
 
                 void persist({
-                  [sliderRow.key]:
+                  [key]:
                     value === sliderRow.default
                       ? null
                       : Number(
@@ -635,24 +635,21 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
               }}
             />
           ))}
-          {fileParameters.map((fileSelectRow) => (
+          {fileParameters.map(({ key, ...fileSelectRow }) => (
             <FileSelectRow
+              key={key}
               {...fileSelectRow}
-              value={
-                typeof info[fileSelectRow.key] === 'string'
-                  ? String(info[fileSelectRow.key])
-                  : ''
-              }
-              onClick={() => handleFileSelect(fileSelectRow.key)}
+              value={typeof info[key] === 'string' ? String(info[key]) : ''}
+              onClick={() => handleFileSelect(key)}
               onChange={(value) => {
                 const newValue = value === '' ? null : String(value)
                 setInfo({
                   ...info,
-                  [fileSelectRow.key]: newValue,
+                  [key]: newValue,
                 })
 
                 void persist({
-                  [fileSelectRow.key]: newValue,
+                  [key]: newValue,
                 })
               }}
             />
@@ -665,7 +662,6 @@ export function SpecDecodingPanel({ modelId }: { modelId: string }) {
 
 function SettingRow({
   controllerType,
-  key,
   translationPath,
   value,
   min,
@@ -692,7 +688,6 @@ function SettingRow({
         </div>
 
         <DynamicControllerSetting
-          key={key}
           title={title}
           description={description}
           controllerType={controllerType}
