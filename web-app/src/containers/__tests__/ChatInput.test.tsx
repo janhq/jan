@@ -398,7 +398,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'hello world',
+        undefined,
+        undefined,
+        'hello world'
+      )
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
@@ -432,7 +437,12 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'button submit',
+        undefined,
+        undefined,
+        'button submit'
+      )
     )
   })
 
@@ -483,6 +493,22 @@ describe('ChatInput', () => {
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  // Tools running means the stream is over (`ready`), but the turn is not: a new
+  // message must wait for it like one sent mid-stream.
+  it('queues the message while the turn\'s tools are still running', async () => {
+    promptState = 'queued msg'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('shows "please select a model" inline message when no model selected', () => {
@@ -547,7 +573,8 @@ describe('ChatInput', () => {
             url: 'data:image/png;base64,xxx',
           }),
         ]),
-        undefined
+        undefined,
+        'with image'
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
@@ -562,9 +589,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('read this', undefined, [
-        expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' }),
-      ])
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read this',
+        undefined,
+        [expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' })],
+        'read this'
+      )
     )
   })
 

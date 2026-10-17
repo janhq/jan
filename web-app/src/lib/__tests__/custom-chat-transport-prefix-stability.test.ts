@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import type { UIMessage } from '@ai-sdk/react'
 import type * as ProviderCaps from '@/lib/providerCaps'
 
@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   assistantParameters: null as Record<string, unknown> | null,
   providerId: 'openai',
   serviceHub: null as unknown,
+  predefinedRemote: false,
 }))
 
 const mcpService = {
@@ -125,7 +126,7 @@ vi.mock('@/lib/reasoningProviderOptions', () => ({
 }))
 vi.mock('@/lib/providerCaps', async (importOriginal) => ({
   ...(await importOriginal<typeof ProviderCaps>()),
-  isPredefinedRemoteProvider: () => false,
+  isPredefinedRemoteProvider: () => h.predefinedRemote,
   getProviderApiType: () => 'openai',
 }))
 vi.mock('../model-factory', () => ({
@@ -377,6 +378,42 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
       role: string
     }).role
     expect(last).toBe('user')
+  })
+})
+
+// Anthropic falls back to the model's maximum max_tokens when no cap reaches
+// the SDK, and counts it against the context window (janhq/jan#9227).
+describe('CustomChatTransport output-token cap', () => {
+  beforeEach(() => {
+    streamTextCalls.length = 0
+    h.providerId = 'anthropic'
+    h.predefinedRemote = true
+    provider.provider = 'anthropic'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    h.getRelevantTools.mockReset()
+    h.getRelevantTools.mockResolvedValue([])
+  })
+
+  it('passes the assistant cap to streamText as maxOutputTokens for a predefined remote provider', async () => {
+    h.assistantParameters = { max_output_tokens: '4096' }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0].maxOutputTokens).toBe(4096)
+    expect(streamTextCalls[0]).not.toHaveProperty('maxTokens')
+  })
+
+  it('omits maxOutputTokens when the cap is 0 ("no cap") so the SDK does not reject it', async () => {
+    h.assistantParameters = { max_output_tokens: 0 }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0]).not.toHaveProperty('maxOutputTokens')
+  })
+
+  afterAll(() => {
+    h.predefinedRemote = false
   })
 })
 

@@ -285,6 +285,10 @@ pub enum StreamEvent {
         diff: Option<String>,
         prompt_kind: String,
         offers_always: bool,
+        /// The model's reason for an `escalate` prompt (running a shell command
+        /// outside the sandbox), shown beside the command; `None` otherwise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        justification: Option<String>,
     },
     /// A host-registered tool was called and the run is waiting for the host to
     /// execute it. The client replies with a `tool_result` line carrying this
@@ -507,6 +511,22 @@ impl Usage {
             cached_tokens,
             cache_write_tokens,
         })
+    }
+
+    /// Two requests' usage as one charge: each count is the sum of whatever
+    /// either side reported, and stays `None` only when neither reported it.
+    pub(crate) fn plus(&self, other: &Self) -> Self {
+        let sum = |a: Option<u64>, b: Option<u64>| match (a, b) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
+        };
+        Self {
+            prompt_tokens: sum(self.prompt_tokens, other.prompt_tokens),
+            completion_tokens: sum(self.completion_tokens, other.completion_tokens),
+            total_tokens: sum(self.total_tokens, other.total_tokens),
+            cached_tokens: sum(self.cached_tokens, other.cached_tokens),
+            cache_write_tokens: sum(self.cache_write_tokens, other.cache_write_tokens),
+        }
     }
 }
 
@@ -750,6 +770,7 @@ pub(crate) mod tests {
                     diff: None,
                     prompt_kind: "exec".into(),
                     offers_always: true,
+                    justification: None,
                 },
             ),
             (
@@ -999,6 +1020,7 @@ pub(crate) mod tests {
             diff: Some("@@ created file @@\n+ hi".into()),
             prompt_kind: "write".into(),
             offers_always: true,
+            justification: None,
         })
         .unwrap();
         assert_eq!(

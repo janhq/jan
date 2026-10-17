@@ -38,6 +38,7 @@ mod highlight;
 mod markdown;
 mod motion;
 mod theme;
+pub(super) use theme::fg_sgr;
 mod vibe_setting;
 
 use markdown::{
@@ -514,7 +515,7 @@ enum NoticeKind {
     MonitorTimedOut,
     ShellFinished,
     ShellFailed,
-    /// Anything else (a hook notice, a still-running shell): a plain note.
+    /// Anything else (a hook notice): a plain note.
     Other,
 }
 
@@ -613,6 +614,9 @@ struct Pending {
     /// with the change in view; `None` for other tools.
     diff: Option<String>,
     offers_always: bool,
+    /// Why the model asks to run the command outside the sandbox, for an
+    /// escalation prompt; `None` for every other prompt.
+    justification: Option<String>,
     /// Highlighted option in the docked prompt (index into `options()`).
     selected: usize,
     /// Name of the subagent that requested this, when the call originated inside
@@ -694,6 +698,15 @@ impl Pending {
             vec![Span::styled(lead, dim)],
             vec![Span::raw("  ")],
         ));
+        // The model's own words, set apart from the command so it is read as
+        // its claim rather than as part of what will run.
+        if let Some(why) = &self.justification {
+            out.extend(gutter_lines(
+                wrap_text(why, Style::new().italic(), max.saturating_sub(5).max(1)),
+                vec![Span::styled("why ", dim)],
+                vec![Span::raw("    ")],
+            ));
+        }
         out
     }
 
@@ -1568,6 +1581,9 @@ struct ToolGroup {
     /// collapsed row reports. Results can land out of dispatch order, so this
     /// can't be read back off `calls`.
     last_result_error: Option<bool>,
+    /// The expanded group before wrapping, kept once the group is closed (see
+    /// `flat_detail`); reset when a late result lands on it.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl ToolGroup {
@@ -1575,6 +1591,16 @@ impl ToolGroup {
     /// as an `Explored` row listing them rather than a counted summary.
     fn explored(&self) -> bool {
         self.calls.iter().all(|c| c.explore.is_some())
+    }
+
+    /// What the expanded group says before wrapping (see `find::flat_text`),
+    /// laid out once. Only for a closed group, whose calls change just when a
+    /// late result lands (which resets it); the open group is never kept.
+    fn flat_detail(&self) -> std::borrow::Cow<'_, [String]> {
+        std::borrow::Cow::Borrowed(
+            self.flat
+                .get_or_init(|| find::flat_text(&group_detail_lines(self, find::FLAT_WIDTH))),
+        )
     }
 
     /// Whether any call is still awaiting its `ToolResult`. A group can stay
@@ -1769,7 +1795,8 @@ const BANNER_HINTS: &[(&str, &str)] = &[
 ];
 
 fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
-    let accent = Style::new().yellow().bold();
+    let (r, g, b) = brand::LOGO_RGB;
+    let accent = Style::new().fg(theme::Theme::current().fit(Color::Rgb(r, g, b))).bold();
     let label = Style::new().dark_gray();
     let dim = Style::new().dim();
     let indent = " ".repeat(BANNER_INDENT as usize);
@@ -1961,6 +1988,8 @@ struct Row {
     /// re-parse its markdown and re-highlight its diffs 20 times a second;
     /// only a width change invalidates the entry.
     cache: std::cell::RefCell<Option<RowRender>>,
+    /// The row's text before wrapping, filled on first use by `flat`.
+    flat: std::cell::RefCell<Option<Vec<String>>>,
 }
 
 /// A row's rendered lines plus the height they occupy once the body
@@ -2083,23 +2112,57 @@ impl AgentRow {
     }
 }
 
-/// The dispatch row for a `dispatch_subagent` call: every child it names, each
-/// brief's first line under it (named, when there are several).
-fn dispatch_row(args: &serde_json::Value) -> AgentRow {
-    let subagents: Vec<(String, String)> = args
+/// The worker names a `dispatch_subagent` call gives its children. While the
+/// call is in flight only its arguments are known, so they are numbered the
+/// way dispatch numbers them (`explore`, `explore-2`) without the names the
+/// session already holds; `reported`, the names the dispatch result lists,
+/// replaces that guess once it lands. A call saved before workers were named
+/// after their agent carries its own `name`, kept so an old transcript replays
+/// readable.
+fn dispatched_workers<'a>(
+    args: &'a serde_json::Value,
+    reported: Option<&[String]>,
+) -> Vec<(String, &'a serde_json::Value)> {
+    let subs: Vec<(&str, &serde_json::Value)> = args
         .get("subagents")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|s| {
-                    let name = s.get("name").and_then(|v| v.as_str())?;
-                    let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
-                    let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
-                    Some((name.to_string(), brief.unwrap_or("").to_string()))
+                    let label = s.get("agent").or_else(|| s.get("name"))?.as_str()?;
+                    Some((label, s))
                 })
                 .collect()
         })
         .unwrap_or_default();
+    let names = match reported {
+        Some(names) if names.len() == subs.len() => names.to_vec(),
+        _ if subs.iter().all(|(_, s)| s.get("agent").is_none()) => {
+            subs.iter().map(|(name, _)| (*name).to_string()).collect()
+        }
+        _ => crate::core::agent::subagent::number_workers(
+            subs.iter().map(|(agent, _)| *agent),
+            |_| false,
+        ),
+    };
+    names
+        .into_iter()
+        .zip(subs.into_iter().map(|(_, sub)| sub))
+        .collect()
+}
+
+/// The dispatch row for a `dispatch_subagent` call: every child it names, each
+/// brief's first line under it (named, when there are several). `reported` is
+/// the worker names from the dispatch result, once it has landed.
+fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentRow {
+    let subagents: Vec<(String, String)> = dispatched_workers(args, reported)
+        .into_iter()
+        .map(|(name, s)| {
+            let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
+            let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
+            (name, brief.unwrap_or("").to_string())
+        })
+        .collect();
     let dim = Style::new().fg(theme::muted());
     let several = subagents.len() > 1;
     let briefs = subagents
@@ -2129,6 +2192,7 @@ impl From<RowKind> for Row {
         Row {
             kind,
             cache: std::cell::RefCell::new(None),
+            flat: std::cell::RefCell::new(None),
         }
     }
 }
@@ -2155,6 +2219,20 @@ impl Row {
     fn height(&self, width: u16) -> u16 {
         self.fill(width);
         self.cache.borrow().as_ref().map_or(0, |r| r.height)
+    }
+
+    /// What the row says unwrapped (see `find::flat_text`), rendered once at
+    /// `find::FLAT_WIDTH` and kept: it does not depend on the terminal, and
+    /// `/find` reads it on every step. Rows are replaced rather than edited, so
+    /// it never goes stale.
+    fn flat(&self) -> std::cell::Ref<'_, Vec<String>> {
+        if self.flat.borrow().is_none() {
+            let lines = self.kind.render(find::FLAT_WIDTH);
+            *self.flat.borrow_mut() = Some(find::flat_text(&lines));
+        }
+        std::cell::Ref::map(self.flat.borrow(), |flat| {
+            flat.as_ref().expect("filled above")
+        })
     }
 
     fn fill(&self, width: u16) {
@@ -2349,6 +2427,9 @@ struct Transcript {
     /// Standalone (edit/write) call rows still awaiting their result. Several
     /// can be open at once: a batch emits every `ToolCall` before any result.
     pending_rows: Vec<PendingToolRow>,
+    /// The arguments of each dispatch whose result has not landed, so the row
+    /// can be relabeled with the worker names that result reports.
+    dispatch_args: HashMap<String, serde_json::Value>,
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
@@ -2409,6 +2490,11 @@ struct Transcript {
     /// main conversation is journaled for a resume; a child's transcript lives
     /// as long as the session does, so recording it would only grow memory.
     journal: bool,
+    /// Whether inline `<think>` tags in this run's model content are reasoning.
+    /// Per run rather than per process: a subagent definition can name its own
+    /// model, so a child may be served by a provider whose default differs from
+    /// the main model's, and its content must follow its own provider's setting.
+    parse_think_tags: bool,
 }
 
 impl Transcript {
@@ -2419,6 +2505,18 @@ impl Transcript {
             // Overwritten from the session config right after construction.
             stream_reasoning: true,
             journal: true,
+            parse_think_tags: INITIAL_THINK_TAGS,
+            ..Transcript::default()
+        }
+    }
+
+    /// A subagent's transcript, not journaled. It starts on the main
+    /// conversation's setting, since a child with no model of its own runs on
+    /// the parent's, and moves to its own provider's once its first request
+    /// reports which that is.
+    fn for_child(parse_think_tags: bool) -> Self {
+        Transcript {
+            parse_think_tags,
             ..Transcript::default()
         }
     }
@@ -2533,7 +2631,8 @@ impl Transcript {
             self.finalize_tool_group();
             self.gap(Kind::Tool);
             if name == "dispatch_subagent" {
-                self.push_row(RowKind::Agent(Box::new(dispatch_row(args))));
+                self.push_row(RowKind::Agent(Box::new(dispatch_row(args, None))));
+                self.dispatch_args.insert(id.clone(), args.clone());
             } else {
                 self.push_row(RowKind::Tool {
                     state: ToolState::Running,
@@ -2587,6 +2686,7 @@ impl Transcript {
                     call.diff = diff;
                     call.content = Some(content);
                     group.last_result_error = Some(is_error);
+                    group.flat = std::cell::OnceCell::new();
                     self.rows[group.idx] = group.row(GroupRow::Closed);
                     break;
                 }
@@ -2752,6 +2852,7 @@ impl Transcript {
                             idx: Some(i),
                             height: row.height(width),
                             lines: None,
+                            detail: false,
                         }
                     }
                 }
@@ -2759,6 +2860,7 @@ impl Transcript {
                     idx: Some(i),
                     height: row.height(width),
                     lines: None,
+                    detail: false,
                 },
             };
             if find_hit.is_some_and(|h| h.row == i && !h.detail) {
@@ -2808,7 +2910,10 @@ impl Transcript {
                             find_at = Some(content_h);
                         }
                     }
-                    let seg = Segment::eager(Some(i), detail, width);
+                    let mut seg = Segment::eager(Some(i), detail, width);
+                    // The lingering reasoning tail is a bounded view of the block,
+                    // not a wrapped copy of its detail, so it has no unwrapped form.
+                    seg.detail = !(active_reasoning && !expanded);
                     content_h = content_h.saturating_add(seg.height);
                     segs.push(seg);
                 }
@@ -2884,7 +2989,9 @@ impl Transcript {
     fn all_lines(&self, width: u16) -> Vec<Line<'static>> {
         let layout = self.layout_body(width, 0, false, true, None, Vec::new());
         let height = layout.content_h;
-        layout.window(&self.rows, width, 0, height, None).0
+        layout
+            .window(&self.rows, width, 0, height, None, &|_| None)
+            .0
     }
 
     /// Mark every edit/write row still awaiting a result as interrupted: the
@@ -2991,7 +3098,7 @@ impl Transcript {
         }
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only turn, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&prose, &segs) {
+        if !assistant_has_content(&prose, &segs, self.parse_think_tags) {
             return;
         }
         // Model prose ends the current run of tool calls.
@@ -3017,7 +3124,7 @@ impl Transcript {
         segs: &[ReasoningSeg],
         reasoning_dur: Option<Duration>,
     ) {
-        let runs = assistant_runs(prose, segs);
+        let runs = assistant_runs(prose, segs, self.parse_think_tags);
         // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
         // when the turn has one reasoning block; stamping it on each of several
         // would misreport all but one (per-block timing is not tracked). With
@@ -3058,6 +3165,7 @@ impl Transcript {
                         detail,
                         source: seg.clone(),
                         committed: Instant::now(),
+                        flat: std::cell::OnceCell::new(),
                     });
                 }
             } else {
@@ -3117,6 +3225,7 @@ impl Transcript {
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
+            flat: std::cell::OnceCell::new(),
         };
         self.push_row(group.row(GroupRow::Open));
         self.tool_group = Some(group);
@@ -3319,13 +3428,25 @@ impl Transcript {
             Some(path) if created => format!("Created {path}"),
             _ => row.done,
         };
+        let dispatch_args = self.dispatch_args.remove(id);
         let call = match &self.rows[row.idx].kind {
             // A dispatch keeps its row; the result only confirms what the row
-            // already says unless it failed.
+            // already says unless it failed -- and names each worker as the
+            // dispatch actually named it, which only the result knows.
             RowKind::Agent(agent) => {
+                let reported = match &result {
+                    RowKind::Result { content: Some(text), .. } if !is_error => {
+                        crate::core::agent::subagent::worker_names_in(text)
+                    }
+                    _ => None,
+                };
+                let relabeled = dispatch_args
+                    .as_ref()
+                    .zip(reported.as_deref())
+                    .map(|(args, names)| dispatch_row(args, Some(names)));
                 let call = RowKind::Agent(Box::new(AgentRow {
                     state: ToolState::of(is_error),
-                    ..(**agent).clone()
+                    ..relabeled.unwrap_or_else(|| (**agent).clone())
                 }));
                 if !is_error {
                     self.rows[row.idx] = call.into();
@@ -3450,6 +3571,37 @@ impl Transcript {
             })
     }
 
+    /// An expanded region's text before wrapping, one entry per logical line,
+    /// for `/find`. Kept on a finished region (a closed tool group, a reasoning
+    /// block, a finished subagent) and borrowed from it: laying one out wide is
+    /// the costly part, and a search asks again on every step and every frame.
+    /// The open tool group changes under the search, so its text is laid out
+    /// each time. Same precedence as `region_detail_in`.
+    fn region_flat<'a>(
+        &'a self,
+        index: &RegionIndex,
+        i: usize,
+    ) -> Option<std::borrow::Cow<'a, [String]>> {
+        use std::borrow::Cow;
+        if let Some(&pos) = index.groups.get(&i) {
+            return Some(self.groups[pos].flat_detail());
+        }
+        // The open group takes new calls and results, so nothing is kept for it.
+        if let Some(group) = self.tool_group.as_ref().filter(|g| g.idx == i) {
+            return Some(Cow::Owned(find::flat_text(&group_detail_lines(
+                group,
+                find::FLAT_WIDTH,
+            ))));
+        }
+        if let Some(&pos) = index.reasoning.get(&i) {
+            return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
+        }
+        index
+            .subagents
+            .get(&i)
+            .map(|&pos| Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()))
+    }
+
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
     /// `subagent_blocks`, so a caller asking about many rows (the search scan,
     /// a frame with many expanded rows) does one lookup per row instead of
@@ -3508,7 +3660,7 @@ impl Transcript {
     /// `buf_scan` brought up to date with `assistant_buf`.
     fn scan_buf(&self) -> BufScan {
         let mut scan = self.buf_scan.borrow_mut();
-        scan.sync(&self.assistant_buf);
+        scan.sync(&self.assistant_buf, self.parse_think_tags);
         scan.clone()
     }
 
@@ -3521,7 +3673,7 @@ impl Transcript {
             width,
             fold: !self.show_reasoning,
             stream: self.stream_reasoning,
-            gate: think_tags_parsed(),
+            gate: self.parse_think_tags,
             theme: theme::Theme::current(),
         };
         let mut cache = self.live_tail.borrow_mut();
@@ -3539,16 +3691,17 @@ impl Transcript {
                     width,
                     key.fold,
                     key.stream,
+                    key.gate,
                 ),
-                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs),
-                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs),
+                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs, key.gate),
+                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs, key.gate),
             });
         }
         let tail = cache.as_ref().expect("filled above");
         (tail.lines.clone(), tail.leading, tail.trailing)
     }
 
-    /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
+    /// `has_answer_text(&self.assistant_buf, ..)`, without rescanning the reply.
     fn answer_started(&self) -> bool {
         self.scan_buf().answer
     }
@@ -3622,6 +3775,15 @@ struct ReasoningBlock {
     /// `REASONING_FOLD_AFTER` before folding to its summary. Not journaled: a
     /// replayed block is history and folds immediately.
     committed: Instant,
+    /// What the block says before wrapping (see `find::flat_text`), laid out
+    /// once: `detail` never changes after the block is committed.
+    flat: std::cell::OnceCell<Vec<String>>,
+}
+
+impl ReasoningBlock {
+    fn flat_detail(&self) -> &[String] {
+        self.flat.get_or_init(|| find::flat_text(&self.detail))
+    }
 }
 
 /// A "trace": a maximal contiguous run of committed reasoning-summary and
@@ -4554,7 +4716,7 @@ impl SubagentPanel {
             waiting: 0,
             pending: false,
             phase: None,
-            transcript: Transcript::default(),
+            transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
 
@@ -4768,6 +4930,10 @@ struct SubagentBlock {
     idx: usize,
     panel: SubagentPanel,
     outcome: SubagentOutcome,
+    /// What the expanded run says before wrapping (see `find::flat_text`),
+    /// laid out once: a finished child's transcript does not change, and
+    /// laying it out wide refills every one of its rows' single-width caches.
+    flat: std::cell::OnceCell<Vec<String>>,
 }
 
 impl SubagentBlock {
@@ -4784,6 +4950,12 @@ impl SubagentBlock {
                 Line::from(spans).style(line.style)
             })
             .collect()
+    }
+
+    /// The run's text before wrapping, laid out once (see `flat`).
+    fn flat_detail(&self) -> &Vec<String> {
+        self.flat
+            .get_or_init(|| find::flat_text(&self.detail_lines(find::FLAT_WIDTH)))
     }
 }
 
@@ -5071,6 +5243,7 @@ impl App {
         self.starting.clear();
         self.transcript.groups.clear();
         self.transcript.pending_rows.clear();
+        self.transcript.dispatch_args.clear();
         self.transcript.reasoning_blocks.clear();
         self.transcript.expanded_traces.clear();
         self.transcript.subagent_blocks.clear();
@@ -5376,6 +5549,7 @@ impl App {
                 idx,
                 panel,
                 outcome,
+                flat: std::cell::OnceCell::new(),
             });
         }
     }
@@ -5629,17 +5803,31 @@ impl App {
         }
     }
 
-    /// Every committed line matching `needle`, top to bottom. Scans what the
-    /// rows render to, folded detail included, rather than only what is on
-    /// screen: the transcript is built from `display_log`, so this covers the
-    /// whole session. The streaming tail is not committed yet and is skipped.
+    /// Every committed logical line matching `needle`, top to bottom. Scans
+    /// what the rows render to, folded detail included, rather than only what
+    /// is on screen: the transcript is built from `display_log`, so this covers
+    /// the whole session. The streaming tail is not committed yet and is
+    /// skipped.
+    ///
+    /// Matching runs on each part's unwrapped text and a hit is a logical line
+    /// of it, so a term that word-wraps across two rendered lines is found and
+    /// the count is the same at any terminal width.
     fn find_hits(&self, needle: &str) -> Vec<find::Hit> {
         let width = self.transcript.render_width();
         let mut hits = Vec::new();
-        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>]| {
-            for (line, l) in lines.iter().enumerate() {
-                if !find::match_ranges(&find::line_text(l), needle).is_empty() {
-                    hits.push(find::Hit { row, detail, line });
+        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>], flat: &[String]| {
+            let mut last = None;
+            for found in find::occurrences(lines, Some(flat), needle) {
+                // One hit per logical line, however many times it matches (and
+                // one per rendered line inside a run that could not be lined up).
+                if last != Some((found.logical, found.sub)) {
+                    last = Some((found.logical, found.sub));
+                    hits.push(find::Hit {
+                        row,
+                        detail,
+                        line: found.logical,
+                        sub: found.sub,
+                    });
                 }
             }
         };
@@ -5649,10 +5837,12 @@ impl App {
             // on each `/find` and step was most of the scan's cost.
             row.fill(width);
             if let Some(cached) = row.cache.borrow().as_ref() {
-                scan(i, false, &cached.lines);
+                scan(i, false, &cached.lines, &row.flat());
             }
-            if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
-                scan(i, true, &detail);
+            if let Some(flat) = self.transcript.region_flat(&index, i) {
+                if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
+                    scan(i, true, &detail, &flat);
+                }
             }
         }
         hits
@@ -7085,32 +7275,45 @@ impl App {
         resolved
     }
 
-    /// Point the `<think>` tag gate at whoever serves the current model. The
-    /// default differs per provider, so it follows the model across `/model`
-    /// switches and provider reloads; rows already built keep the split they
-    /// were built with.
+    /// Point the main conversation's `<think>` tag gate at whoever serves the
+    /// current model. The default differs per provider, so it follows the model
+    /// across `/model` switches and provider reloads; rows already built keep
+    /// the split they were built with. A subagent's gate is its own, set from
+    /// the provider its requests report (see `apply_subagent_event`).
     fn sync_think_tags(&mut self) {
-        let gate = self.think_tags_gate();
-        set_think_tags_parsed(gate);
+        self.transcript.parse_think_tags = self.think_tags_gate();
     }
 
-    /// Whether the current model's provider has its inline tags parsed.
+    /// Whether the current model's provider has its inline tags parsed. The
+    /// main gate resolves even when the config lock is busy, from the
+    /// provider's name alone, as it always has.
     fn think_tags_gate(&mut self) -> bool {
         let provider = self.serving_provider();
-        let (api_type, base_url) = provider
-            .as_deref()
-            .and_then(|name| {
-                let args = self.args.as_ref()?;
+        self.think_tags_for_provider(provider.as_deref(), None)
+            .unwrap_or_else(|| think_tags_for_run(provider.as_deref(), None, None))
+    }
+
+    /// Whether a run served by the configured provider `provider` has its
+    /// inline tags parsed: that provider's own `api_type` and `base_url` decide,
+    /// the way they do for the main model. `api_type` is the one a request
+    /// reported, used when the configuration does not name one. `None` when the
+    /// configuration cannot be read right now (its lock is held), so a caller
+    /// that already has an answer can keep it.
+    fn think_tags_for_provider(&self, provider: Option<&str>, api_type: Option<&str>) -> Option<bool> {
+        let (configured_api_type, base_url) = match (provider, self.args.as_ref()) {
+            (Some(name), Some(args)) => {
                 let pc = args.provider_configs.try_lock().ok()?;
-                let config = pc.get(name)?;
-                Some((config.api_type.clone(), config.base_url.clone()))
-            })
-            .unwrap_or_default();
-        crate::core::agent::global_config::think_tags_enabled_for(
-            provider.as_deref(),
-            api_type.as_deref(),
+                pc.get(name)
+                    .map(|config| (config.api_type.clone(), config.base_url.clone()))
+                    .unwrap_or_default()
+            }
+            _ => Default::default(),
+        };
+        Some(think_tags_for_run(
+            provider,
+            configured_api_type.as_deref().or(api_type),
             base_url.as_deref(),
-        )
+        ))
     }
 
     /// The `/usage` bucket one request bills against.
@@ -7468,6 +7671,7 @@ impl App {
                 command,
                 diff,
                 offers_always,
+                justification,
                 ..
             } => {
                 // Don't close the tool group here: the prompt renders docked
@@ -7481,6 +7685,7 @@ impl App {
                     command,
                     diff,
                     offers_always,
+                    justification,
                     selected: 0,
                     subagent: None,
                 });
@@ -7529,12 +7734,17 @@ impl App {
                 }
             }
             StreamEvent::SubagentStart { run_id, name, task } => {
+                // A child with no model of its own runs on the parent's, so it
+                // starts on the parent's tag setting; its first request moves it
+                // to its own provider's if that differs.
+                let inherited = self.transcript.parse_think_tags;
                 // A queued/pending dispatch already opened a panel; promote it to
                 // running instead of pushing a duplicate. A queued one matches by
                 // run_id; a pending later-phase one matches by name (no run_id
                 // yet). Otherwise open a fresh live panel (several may be active).
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.queued = false;
+                    panel.transcript.parse_think_tags = inherited;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -7543,14 +7753,16 @@ impl App {
                     panel.run_id = run_id;
                     panel.pending = false;
                     panel.queued = false;
+                    panel.transcript.parse_think_tags = inherited;
                     if let Some(t) = task {
                         panel.task = t;
                     }
                 } else {
                     self.transcript.finalize_tool_group();
                     self.transcript.flush_assistant();
-                    self.subagents
-                        .push(SubagentPanel::new(run_id, name, task.unwrap_or_default()));
+                    let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
+                    panel.transcript.parse_think_tags = inherited;
+                    self.subagents.push(panel);
                 }
             }
             StreamEvent::SubagentQueued {
@@ -7731,6 +7943,21 @@ impl App {
     /// dock row and, once it ends, its summary row. A permission request docks
     /// the shared prompt, attributed to the asking subagent.
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
+        // A request names the provider that serves it, before any of its
+        // content streams. That is how a child learns its own tag setting: a
+        // definition can name a model another provider serves, and its content
+        // must follow that provider's default, not the main model's.
+        if let StreamEvent::RequestProvenance { provider, api_type, .. } = &event {
+            // An unreadable config (another run holds the lock) leaves the
+            // child's gate as it was: guessing without the endpoint can read an
+            // `openai`-named entry pointed at vLLM as the official API.
+            if let Some(gate) = self.think_tags_for_provider(provider.as_deref(), api_type.as_deref()) {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    panel.transcript.parse_think_tags = gate;
+                }
+            }
+            return;
+        }
         let (show, stream) = (self.transcript.show_reasoning, self.transcript.stream_reasoning);
         let mut panel = self.subagents.iter_mut().find(|p| p.run_id == run_id);
         // A child's reasoning reads the way the parent's does, including after
@@ -7808,6 +8035,7 @@ impl App {
                 command,
                 diff,
                 offers_always,
+                justification,
                 ..
             } => {
                 self.pending_queue.push_back(Pending {
@@ -7818,6 +8046,7 @@ impl App {
                     command,
                     diff,
                     offers_always,
+                    justification,
                     selected: 0,
                     subagent: Some(name.to_string()),
                 });
@@ -8033,7 +8262,7 @@ impl App {
         // Preserved so the final assistant turn can be resent with its
         // reasoning (see below).
         let (reasoning, answer) = self.take_turn_answer();
-        let wire = answer_without_reasoning(&answer);
+        let wire = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
             // Resend the final answer's reasoning on the wire turn, mirroring
@@ -8111,7 +8340,7 @@ impl App {
         // truncated/filtered finish, or a "stop" that yielded no answer (an
         // empty/malformed upstream completion defaults to stop_reason=stop).
         let normal = matches!(stop_reason.as_str(), "stop" | "end_turn" | "stop_sequence");
-        let no_answer = !has_answer_text(&answer);
+        let no_answer = !has_answer_text(&answer, self.transcript.parse_think_tags);
         if !normal || no_answer {
             let msg = if no_answer {
                 format!("finished with no answer (stop_reason={stop_reason})")
@@ -8319,7 +8548,7 @@ impl App {
         // Like `on_done`, so a cancelled turn's partial answer keeps the
         // reasoning that produced it.
         let (reasoning, answer) = self.take_turn_answer();
-        let answer = answer_without_reasoning(&answer);
+        let answer = answer_without_reasoning(&answer, self.transcript.parse_think_tags);
         if !answer.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
             if !reasoning.is_empty() {
@@ -9870,22 +10099,12 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
-/// The name of the first subagent in a phased `dispatch_subagent` call. The
-/// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
-/// names the first, mirroring the web card (`firstPlannedSubagent`).
 /// The dispatch row's subject: the one child's name, or `N subagents: a, b, c`
 /// for a fan-out. Every name is listed, since once the live dock has scrolled
 /// away this row is the only on-screen account of what was dispatched.
 fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
-    let names: Vec<&str> = args
-        .get("subagents")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.get("name").and_then(|v| v.as_str()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let names: Vec<String> =
+        dispatched_workers(args, None).into_iter().map(|(name, _)| name).collect();
     match names.as_slice() {
         [] => format!("{verb} subagent"),
         [one] => format!("{verb} subagent {one}"),
@@ -11099,10 +11318,10 @@ fn pluralize(noun: &str, n: usize) -> String {
 /// decide when a tool group closes: reasoning streamed between tool calls must
 /// not end the run (a reasoning model thinks before every call), only real
 /// answer text does.
-fn has_answer_text(buf: &str) -> bool {
+fn has_answer_text(buf: &str, parse_tags: bool) -> bool {
     #[cfg(test)]
     tally(&ANSWER_SCANS);
-    split_reasoning(buf)
+    split_reasoning(buf, parse_tags)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
 }
@@ -11110,9 +11329,9 @@ fn has_answer_text(buf: &str) -> bool {
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning never belongs in `content`; it rides along on the message's
 /// `reasoning_content` instead (see `on_done`), and the display journal is what
-/// keeps it for a resume.
-pub(crate) fn answer_without_reasoning(text: &str) -> String {
-    split_reasoning(text)
+/// keeps it for a resume. `parse_tags` is the setting of the run that said it.
+pub(crate) fn answer_without_reasoning(text: &str, parse_tags: bool) -> String {
+    split_reasoning(text, parse_tags)
         .into_iter()
         .filter_map(|(reasoning, seg)| (!reasoning).then_some(seg))
         .collect::<String>()
@@ -11197,47 +11416,47 @@ fn think_re() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"</?[a-zA-Z:]*think>").unwrap())
 }
 
-/// Whether inline `<think>` tags in model content are parsed as reasoning.
-/// Process-wide rather than a session field because the split runs on every
-/// rendered row, from free functions a `Row` reaches with no session in hand.
-/// Set from the serving provider's setting by `set_think_tags_parsed`; `false`
-/// until then.
-static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// What a transcript parses before its serving provider has been resolved: off,
+/// so a run never treats tags as reasoning on a guess. Tests start on instead,
+/// as `THINK_TAGS_TEST_GATE` does, because the reasoning-fold tests feed inline
+/// tags.
+const INITIAL_THINK_TAGS: bool = cfg!(test);
+
+/// Whether inline `<think>` tags are parsed as reasoning for a run served by
+/// `provider`: the one place a run's setting is resolved, so the main
+/// conversation and each subagent can disagree. The default differs per
+/// provider, which is why it is a property of the run that renders the content
+/// and not of the process.
+fn think_tags_for_run(
+    provider: Option<&str>,
+    api_type: Option<&str>,
+    base_url: Option<&str>,
+) -> bool {
+    #[cfg(test)]
+    if let Some(forced) = THINK_TAGS_TEST_GATE.with(|c| c.get()) {
+        return forced;
+    }
+    crate::core::agent::global_config::think_tags_enabled_for(provider, api_type, base_url)
+}
 
 #[cfg(test)]
 thread_local! {
-    /// Per-test override. A test flips its own thread's answer instead of the
-    /// shared static, so a gate-off test cannot race the rest of the suite.
-    /// Starts on: the reasoning-fold tests feed inline tags, which production
-    /// only parses once `think_tags = true`. The shipped default (off) is
-    /// pinned by the `global_config` test.
-    static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
+    /// What `think_tags_for_run` answers in a test, instead of consulting the
+    /// config. Starts on: the reasoning-fold tests feed inline tags, which
+    /// production only parses once `think_tags = true`; the shipped default
+    /// (off) is pinned by the `global_config` test. `None` resolves for real,
+    /// for the tests that care which provider a run is served by.
+    static THINK_TAGS_TEST_GATE: std::cell::Cell<Option<bool>> =
         const { std::cell::Cell::new(Some(true)) };
 }
 
-/// Apply the tag gate for the process. Seeded by `prepare_agent_session` for
-/// every surface; `App::sync_think_tags` re-applies it in the TUI whenever the
-/// serving provider can change.
-pub(crate) fn set_think_tags_parsed(enabled: bool) {
-    PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
-}
-
-fn think_tags_parsed() -> bool {
-    #[cfg(test)]
-    {
-        if let Some(over) = PARSE_THINK_TAGS_OVERRIDE.with(|c| c.get()) {
-            return over;
-        }
-    }
-    PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Run `f` with `<think>` parsing off on this thread only.
+/// Run `f` with the tag gate resolved from the real provider settings, on this
+/// thread only.
 #[cfg(test)]
-fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
-    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
+fn with_real_think_tag_gate<T>(f: impl FnOnce() -> T) -> T {
+    let before = THINK_TAGS_TEST_GATE.with(|c| c.replace(None));
     let out = f();
-    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(true)));
+    THINK_TAGS_TEST_GATE.with(|c| c.set(before));
     out
 }
 
@@ -11248,8 +11467,8 @@ fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
 /// With `think_tags = false` in `~/.jan/config.toml` the tags carry no meaning:
 /// the whole text is one answer run, so it renders verbatim and stays in the
 /// answer that goes back as history.
-fn split_reasoning(text: &str) -> Vec<(bool, String)> {
-    if !think_tags_parsed() {
+fn split_reasoning(text: &str, parse_tags: bool) -> Vec<(bool, String)> {
+    if !parse_tags {
         return if text.is_empty() {
             Vec::new()
         } else {
@@ -11286,22 +11505,22 @@ fn split_reasoning(text: &str) -> Vec<(bool, String)> {
 ///
 /// Offsets come from `prose.len()` at emission time, so they are always char
 /// boundaries and always ascending.
-fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
+fn assistant_runs(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Vec<(bool, String)> {
     if segs.is_empty() {
-        return split_reasoning(prose);
+        return split_reasoning(prose, parse_tags);
     }
     let mut out = Vec::new();
     let mut last = 0;
     for seg in segs {
         let at = seg.at.min(prose.len()).max(last);
-        out.extend(split_reasoning(&prose[last..at]));
+        out.extend(split_reasoning(&prose[last..at], parse_tags));
         let text = seg.text.trim_end();
         if !text.is_empty() {
             out.push((true, text.to_string()));
         }
         last = at;
     }
-    out.extend(split_reasoning(&prose[last..]));
+    out.extend(split_reasoning(&prose[last..], parse_tags));
     out
 }
 
@@ -11336,8 +11555,7 @@ struct BufScan {
 const BUF_SCAN_TAIL: usize = 32;
 
 impl BufScan {
-    fn sync(&mut self, buf: &str) {
-        let gate = think_tags_parsed();
+    fn sync(&mut self, buf: &str, gate: bool) {
         let same = gate == self.gate
             && buf.len() >= self.len
             && buf.as_bytes()[self.len - self.tail.len()..self.len] == self.tail[..];
@@ -11489,9 +11707,9 @@ fn could_become_think_tag(s: &str) -> bool {
 /// matching close has not yet streamed). The live path folds this in token by
 /// token (`BufScan`); this full scan is the reference it is tested against.
 #[cfg(test)]
-fn thinking_open(text: &str) -> bool {
+fn thinking_open(text: &str, parse_tags: bool) -> bool {
     tally(&THINK_SCANS);
-    if !think_tags_parsed() {
+    if !parse_tags {
         return false;
     }
     let mut open = false;
@@ -11502,8 +11720,8 @@ fn thinking_open(text: &str) -> bool {
 }
 
 /// True if the turn has any non-whitespace content in any reasoning/answer run.
-fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
-    assistant_runs(prose, segs)
+fn assistant_has_content(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> bool {
+    assistant_runs(prose, segs, parse_tags)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
 }
@@ -11512,8 +11730,8 @@ fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
 /// separator can mirror `gap` exactly: reasoning shares the `Tool` band, so a
 /// tool call followed by streaming reasoning gets no blank, while streaming
 /// prose still opens with one.
-fn live_leading_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
-    assistant_runs(prose, segs)
+fn live_leading_kind(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Option<Kind> {
+    assistant_runs(prose, segs, parse_tags)
         .into_iter()
         .find(|(_, seg)| !seg.trim().is_empty())
         .map(|(reasoning, _)| if reasoning { Kind::Reasoning } else { Kind::Prose })
@@ -11522,8 +11740,8 @@ fn live_leading_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
 /// `Kind` of the last non-empty run the live tail renders, so a row appended
 /// below it (an awaiting/starting throbber) can gap against what actually
 /// precedes it rather than always inserting a blank.
-fn live_trailing_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
-    assistant_runs(prose, segs)
+fn live_trailing_kind(prose: &str, segs: &[ReasoningSeg], parse_tags: bool) -> Option<Kind> {
+    assistant_runs(prose, segs, parse_tags)
         .into_iter()
         .rev()
         .find(|(_, seg)| !seg.trim().is_empty())
@@ -12035,6 +12253,8 @@ pub async fn run(
         limits,
         show_reasoning,
         stream_reasoning,
+        // Re-resolved by `App::sync_think_tags` below and on every model switch.
+        parse_think_tags: _,
         send_reasoning,
         mcp_servers,
         mcp_task,
@@ -16446,7 +16666,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
-        desc: "cheap model for subagents with model = \"smol\" and /goal checks",
+        desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
         // Unset falls back to the session's model; there is no fixed id to show.
         kind: AgentSettingKind::Text {
             default: "the main model",
@@ -19040,8 +19260,14 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let max_back = layout.content_h.saturating_sub(body.height);
     app.agent_detail_scroll = app.agent_detail_scroll.min(max_back);
     let scroll = max_back - app.agent_detail_scroll;
-    let (lines, _, offset) =
-        layout.window(&panel.transcript.rows, width, scroll, body.height, None);
+    let (lines, _, offset) = layout.window(
+        &panel.transcript.rows,
+        width,
+        scroll,
+        body.height,
+        None,
+        &|_| None,
+    );
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -21160,6 +21386,23 @@ struct Segment {
     idx: Option<usize>,
     height: u16,
     lines: Option<Vec<Line<'static>>>,
+    /// Whether this is an expanded region's detail, whose unwrapped text a
+    /// search reads (see `detail_flat_text`) for the segments on screen.
+    detail: bool,
+}
+
+/// An expanded region's text before wrapping, read through a per-frame
+/// `RegionIndex` built on first use. Only called for the detail segments a
+/// search is about to paint (the ones on screen) and for the one it jumps to;
+/// a finished region's text is kept on it (see `Transcript::region_flat`), so
+/// a frame borrows it rather than laying the region out again.
+fn detail_flat_text<'a>(
+    transcript: &'a Transcript,
+    index: &std::cell::OnceCell<RegionIndex>,
+    row: usize,
+) -> Option<std::borrow::Cow<'a, [String]>> {
+    let index = index.get_or_init(|| transcript.region_index());
+    transcript.region_flat(index, row)
 }
 
 impl Segment {
@@ -21168,6 +21411,7 @@ impl Segment {
             idx,
             height: wrapped_height_of(&lines, width),
             lines: Some(lines),
+            detail: false,
         }
     }
 }
@@ -21200,6 +21444,7 @@ impl BodyLayout {
                 idx: None,
                 height: pad,
                 lines: Some(vec![Line::raw(""); pad as usize]),
+                detail: false,
             },
         );
         self.content_h = self.content_h.saturating_add(pad);
@@ -21215,13 +21460,14 @@ impl BodyLayout {
     /// paragraph wraps a viewport's worth of lines instead of the session.
     /// `find` paints the search term onto those lines, the current match
     /// brighter.
-    fn window(
+    fn window<'f>(
         self,
         rows: &[Row],
         width: u16,
         scroll: u16,
         height: u16,
         find: Option<(&str, Option<find::Hit>)>,
+        detail_flat: &dyn Fn(usize) -> Option<std::borrow::Cow<'f, [String]>>,
     ) -> (Vec<Line<'static>>, Vec<Option<usize>>, u16) {
         let end = scroll.saturating_add(height);
         let mut visible: Vec<Line<'static>> = Vec::new();
@@ -21235,6 +21481,7 @@ impl BodyLayout {
             let seg_end = at.saturating_add(seg.height);
             if seg_end > scroll && at < end {
                 first_start.get_or_insert(at);
+                let committed = seg.lines.is_none();
                 let lines = match seg.lines {
                     Some(lines) => lines,
                     // Committed rows are cloned out of the cache only here.
@@ -21249,11 +21496,26 @@ impl BodyLayout {
                 // cache never holds a highlighted copy.
                 match find {
                     Some((needle, hit)) => {
-                        visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
-                            let current =
-                                self.find_seg == Some(n) && hit.is_some_and(|h| h.line == li);
-                            find::highlight_line(line, needle, current)
-                        }))
+                        // Matched on the unwrapped text, so a term that wrapped
+                        // is painted on each line it lands on. A committed row
+                        // keeps that text itself; an expanded region's is read
+                        // here, for the segments on screen only.
+                        let row = seg.idx.filter(|_| committed).and_then(|i| rows.get(i));
+                        let kept = row.map(Row::flat);
+                        let region = seg
+                            .idx
+                            .filter(|_| seg.detail)
+                            .and_then(detail_flat);
+                        let flat = match (&kept, &region) {
+                            (Some(kept), _) => Some(kept.as_slice()),
+                            (None, Some(flat)) => Some(&**flat),
+                            (None, None) => None,
+                        };
+                        let found = find::occurrences(&lines, flat, needle);
+                        let current = hit
+                            .filter(|_| self.find_seg == Some(n))
+                            .map(|h| (h.line, h.sub));
+                        visible.extend(find::paint_lines(lines, &found, current));
                     }
                     None => visible.extend(lines),
                 }
@@ -21472,25 +21734,38 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     app.transcript.reveal = None;
     let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
-    if let (Some(start), Some(hit)) = (layout.find_at, find_hit) {
-        // Down to the matching line inside its segment, measured with the same
-        // wrap the body uses. Only on the jump frame, so the lines above it are
-        // cloned once per step, not every frame.
+    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
+    if let (Some(start), Some(hit), Some(needle)) =
+        (layout.find_at, find_hit, find_needle.as_deref())
+    {
+        // Down to the line the match starts on inside its segment (the match
+        // may have wrapped, so its logical line is not a rendered line), measured
+        // with the same wrap the body uses. Only on the jump frame, so the lines
+        // above it are cloned once per step, not every frame.
+        let flat_index = std::cell::OnceCell::new();
         let above = layout
             .segs
             .get(layout.find_seg.unwrap_or(usize::MAX))
-            .map(|seg| match &seg.lines {
-                Some(lines) => lines[..hit.line.min(lines.len())].to_vec(),
-                None => app
-                    .transcript
-                    .rows
-                    .get(hit.row)
-                    .map(|row| {
-                        let mut lines = row.lines(width);
-                        lines.truncate(hit.line);
-                        lines
-                    })
-                    .unwrap_or_default(),
+            .map(|seg| {
+                let (mut lines, kept) = match &seg.lines {
+                    Some(lines) => (lines.clone(), None),
+                    None => match app.transcript.rows.get(hit.row) {
+                        Some(row) => (row.lines(width), Some(row.flat())),
+                        None => (Vec::new(), None),
+                    },
+                };
+                let region = seg
+                    .detail
+                    .then(|| detail_flat_text(&app.transcript, &flat_index, hit.row))
+                    .flatten();
+                let flat = kept.as_deref().map(Vec::as_slice).or(region.as_deref());
+                let first = find::occurrences(&lines, flat, needle)
+                    .iter()
+                    .find(|o| (o.logical, o.sub) == (hit.line, hit.sub))
+                    .and_then(|o| o.pieces.first())
+                    .map_or(0, |(line, _)| *line);
+                lines.truncate(first);
+                lines
             })
             .map_or(0, |lines| wrapped_height(lines, width));
         // A third of the way down rather than the top edge, so what led up to
@@ -21498,18 +21773,20 @@ fn draw(f: &mut Frame, app: &mut App) {
         let target = start.saturating_add(above).saturating_sub(inner_h / 3);
         app.scrollback = max_back.saturating_sub(target);
     }
-    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
     if let Some(find) = app.find.as_mut() {
         find.jump = false;
     }
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
+    let flat_index = std::cell::OnceCell::new();
+    let detail_flat = |i: usize| detail_flat_text(&app.transcript, &flat_index, i);
     let (visible, row_index, offset) = layout.window(
         &app.transcript.rows,
         width,
         scroll,
         inner_h,
         find_needle.as_deref().map(|needle| (needle, find_hit)),
+        &detail_flat,
     );
     let body = Paragraph::new(visible)
         .wrap(Wrap { trim: false })
@@ -24254,7 +24531,7 @@ mod tests {
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        without_think_tags, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -24553,12 +24830,12 @@ mod tests {
             id: "d1".into(),
             name: "dispatch_subagent".into(),
             args: json!({ "subagents": [
-                { "name": "kv-review", "task": "Review the store.\nThen report." },
-                { "name": "docs-writer", "task": "Write the docs." },
+                { "agent": "review", "task": "Review the store.\nThen report." },
+                { "agent": "general", "task": "Write the docs." },
             ] }),
         });
         let text = transcript_text(&app);
-        assert!(text.contains("• Dispatching kv-review, docs-writer"), "{text}");
+        assert!(text.contains("• Dispatching review, general"), "{text}");
         app.apply(StreamEvent::ToolResult {
             id: "d1".into(),
             content: "dispatched".into(),
@@ -24568,14 +24845,66 @@ mod tests {
         let text = transcript_text(&app);
         assert!(
             text.contains(concat!(
-                "• Dispatched kv-review, docs-writer\n",
-                "  └ kv-review: Review the store.\n",
-                "    docs-writer: Write the docs."
+                "• Dispatched review, general\n",
+                "  └ review: Review the store.\n",
+                "    general: Write the docs."
             )),
             "{text}"
         );
         assert!(!text.contains("dispatched\n"), "a clean result adds no row: {text}");
         assert!(has_dispatch_state(&app, ToolState::Success));
+    }
+
+    /// The row names each worker as the dispatch actually named it: an
+    /// earlier `explore` in the session makes this one `explore-2`, which only
+    /// the dispatch result knows.
+    #[test]
+    fn a_dispatch_row_takes_the_worker_names_the_result_reports() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the store." },
+                { "agent": "general", "task": "Write the docs." },
+            ] }),
+        });
+        assert!(transcript_text(&app).contains("• Dispatching explore, general"));
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: format!(
+                "Dispatched 2 subagent(s).\n{}",
+                crate::core::agent::subagent::worker_names_line(&[
+                    "explore-2".to_string(),
+                    "general".to_string(),
+                ])
+            ),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(
+            text.contains(concat!(
+                "• Dispatched explore-2, general\n",
+                "  └ explore-2: Find the store.\n",
+                "    general: Write the docs."
+            )),
+            "{text}"
+        );
+    }
+
+    /// A dispatch saved before workers were named after their agent carries
+    /// its own `name`; replayed, it still shows those names and briefs.
+    #[test]
+    fn a_legacy_named_dispatch_replays_with_its_names() {
+        let dispatch = json!({ "subagents": [
+            { "name": "kv-review", "task": "x" },
+            { "name": "docs-writer", "task": "y" },
+        ] });
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched 2 subagents kv-review, docs-writer"
+        );
     }
 
     /// A dispatch the run never resolved reads as interrupted, not running.
@@ -24585,11 +24914,11 @@ mod tests {
         app.apply(StreamEvent::ToolCall {
             id: "d1".into(),
             name: "dispatch_subagent".into(),
-            args: json!({ "subagents": [{ "name": "solo", "task": "go" }] }),
+            args: json!({ "subagents": [{ "agent": "general", "task": "go" }] }),
         });
         app.transcript.settle(true);
         assert!(has_dispatch_state(&app, ToolState::Interrupted));
-        assert!(transcript_text(&app).contains("• Dispatching solo\n  └ go"));
+        assert!(transcript_text(&app).contains("• Dispatching general\n  └ go"));
     }
 
     fn has_dispatch_state(app: &App, state: ToolState) -> bool {
@@ -25128,7 +25457,7 @@ mod tests {
     /// quietly turning a failure back into a dim note.
     #[test]
     fn notice_kinds_classify_the_real_headlines() {
-        use crate::core::agent::bg_shell::{headline, still_running_headline};
+        use crate::core::agent::bg_shell::headline;
         use tauri_plugin_agent_tools::tools::monitor::headline as monitor_headline;
         use tauri_plugin_agent_tools::tools::ShellDone;
         let done = |failed| ShellDone {
@@ -25148,7 +25477,6 @@ mod tests {
             ),
             (headline(&done(false)), NoticeKind::ShellFinished),
             (headline(&done(true)), NoticeKind::ShellFailed),
-            (still_running_headline("npm run dev"), NoticeKind::Other),
             ("hook 'fmt' failed: exit 2".to_string(), NoticeKind::Other),
         ];
         for (text, kind) in cases {
@@ -25554,6 +25882,7 @@ mod tests {
             command: Some("git status".into()),
             diff: None,
             offers_always,
+            justification: None,
             selected: 0,
             subagent: None,
         }
@@ -26409,6 +26738,7 @@ mod tests {
             diff: Some("@@ created file @@\n+ hi".into()),
             prompt_kind: "write".into(),
             offers_always: true,
+            justification: None,
         });
         let p = app.pending().unwrap();
         assert_eq!(p.diff.as_deref(), Some("@@ created file @@\n+ hi"));
@@ -26443,6 +26773,7 @@ mod tests {
             diff: None,
             prompt_kind: "exec".into(),
             offers_always: true,
+            justification: None,
         });
         assert!(app.pending().unwrap().diff_preview(60).is_empty());
     }
@@ -26817,7 +27148,7 @@ mod tests {
 
     #[test]
     fn split_reasoning_separates_think_blocks() {
-        let segs = split_reasoning("before<think>hidden</think>after");
+        let segs = split_reasoning("before<think>hidden</think>after", true);
         assert_eq!(
             segs,
             vec![
@@ -26830,7 +27161,7 @@ mod tests {
 
     #[test]
     fn split_reasoning_handles_namespaced_and_unterminated_tags() {
-        let segs = split_reasoning("<mm:think>reasoning tail");
+        let segs = split_reasoning("<mm:think>reasoning tail", true);
         assert_eq!(segs, vec![(true, "reasoning tail".to_string())]);
     }
 
@@ -26839,7 +27170,7 @@ mod tests {
     #[test]
     fn think_tags_gate_off_makes_the_whole_text_answer_prose() {
         let text = "before<think>hidden</think>after";
-        let segs = without_think_tags(|| split_reasoning(text));
+        let segs = split_reasoning(text, false);
         assert_eq!(segs, vec![(false, text.to_string())]);
     }
 
@@ -26849,12 +27180,12 @@ mod tests {
     fn think_tags_gate_off_keeps_the_tags_in_the_wire_answer() {
         let text = "<think>hidden</think>answer";
         assert_eq!(
-            without_think_tags(|| answer_without_reasoning(text)),
+            answer_without_reasoning(text, false),
             text,
             "nothing is reasoning with the gate off"
         );
         assert_eq!(
-            answer_without_reasoning(text),
+            answer_without_reasoning(text, true),
             "answer",
             "the default still strips it"
         );
@@ -26864,8 +27195,8 @@ mod tests {
     /// badge and the folded live tail stay off.
     #[test]
     fn think_tags_gate_off_never_reports_an_open_block() {
-        assert!(thinking_open("<think>still going"));
-        assert!(!without_think_tags(|| thinking_open("<think>still going")));
+        assert!(thinking_open("<think>still going", true));
+        assert!(!thinking_open("<think>still going", false));
     }
 
     /// A journal written before reasoning was stored apart has its markers
@@ -26925,9 +27256,9 @@ mod tests {
             (true, "a thought".to_string()),
             (false, "answer".to_string()),
         ];
-        assert_eq!(assistant_runs("answer", &segs), expected);
+        assert_eq!(assistant_runs("answer", &segs, true), expected);
         assert_eq!(
-            without_think_tags(|| assistant_runs("answer", &segs)),
+            assistant_runs("answer", &segs, false),
             expected,
             "native reasoning is not encoded as tags, so the gate cannot hide it"
         );
@@ -26948,7 +27279,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            assistant_runs("prose tail", &segs),
+            assistant_runs("prose tail", &segs, true),
             vec![
                 (true, "first".to_string()),
                 (false, "prose ".to_string()),
@@ -26967,7 +27298,7 @@ mod tests {
             text: "the </think> tag closes a block".into(),
         }];
         assert_eq!(
-            assistant_runs("answer", &segs),
+            assistant_runs("answer", &segs, true),
             vec![
                 (true, "the </think> tag closes a block".to_string()),
                 (false, "answer".to_string()),
@@ -26979,20 +27310,19 @@ mod tests {
     /// as ordinary prose, with no reasoning block folded out of the transcript.
     #[test]
     fn think_tags_gate_off_commits_tagged_content_as_one_answer() {
-        without_think_tags(|| {
-            let mut app = test_app();
-            app.submit_user("go".into());
-            app.apply(StreamEvent::Token {
-                text: "<think>ponder</think>Answer.".into(),
-            });
-            app.on_done("stop".into(), None);
-            assert!(
-                app.transcript.reasoning_blocks.is_empty(),
-                "nothing may fold with the gate off"
-            );
-            let last = app.history.last().expect("assistant turn in history");
-            assert_eq!(last["content"], "<think>ponder</think>Answer.");
+        let mut app = test_app();
+        app.transcript.parse_think_tags = false;
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>ponder</think>Answer.".into(),
         });
+        app.on_done("stop".into(), None);
+        assert!(
+            app.transcript.reasoning_blocks.is_empty(),
+            "nothing may fold with the gate off"
+        );
+        let last = app.history.last().expect("assistant turn in history");
+        assert_eq!(last["content"], "<think>ponder</think>Answer.");
     }
 
     #[test]
@@ -27055,7 +27385,7 @@ mod tests {
     #[test]
     fn live_tail_bounds_streaming_reasoning_to_its_last_lines() {
         let body: String = (1..=20).map(|n| format!("step {n}\n")).collect();
-        let lines = super::live_assistant_lines(&format!("<think>{body}"), &[], 60, true, true);
+        let lines = super::live_assistant_lines(&format!("<think>{body}"), &[], 60, true, true, true);
         let text: Vec<String> = lines
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -27077,7 +27407,7 @@ mod tests {
         for n in (1..=words.len()).step_by(3) {
             let body = words[..n].join(" ");
             let lines =
-                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true);
+                super::live_assistant_lines(&format!("<think>{body}"), &[], width, true, true, true);
             let rows = lines.len() as u16;
             assert_eq!(
                 rows,
@@ -27102,6 +27432,7 @@ mod tests {
             "<think>weighed it\ntwice</think>Here is the answer.",
             &[],
             60,
+            true,
             true,
             true,
         );
@@ -28532,14 +28863,14 @@ mod tests {
 
     #[test]
     fn subagent_tool_rows_have_readable_labels() {
-        let dispatch = json!({ "subagents": [{ "name": "reviewer", "task": "x" }] });
+        let dispatch = json!({ "subagents": [{ "agent": "review", "task": "x" }] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching subagent reviewer"
+            "Dispatching subagent review"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched subagent reviewer"
+            "Dispatched subagent review"
         );
         let await_args = json!({ "run_id": "sub-sycl-cuda-gap-explorer-1" });
         assert_eq!(
@@ -28561,17 +28892,17 @@ mod tests {
     #[test]
     fn a_multi_dispatch_row_names_every_subagent() {
         let dispatch = json!({ "subagents": [
-            { "name": "counter", "task": "x" },
-            { "name": "waster", "task": "y" },
-            { "name": "reader", "task": "z" },
+            { "agent": "explore", "task": "x" },
+            { "agent": "general", "task": "y" },
+            { "agent": "explore", "task": "z" },
         ] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching 3 subagents counter, waster, reader"
+            "Dispatching 3 subagents explore, general, explore-2"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched 3 subagents counter, waster, reader"
+            "Dispatched 3 subagents explore, general, explore-2"
         );
     }
 
@@ -30510,52 +30841,58 @@ mod tests {
         });
     }
 
+    /// Two providers whose defaults disagree: a custom OpenAI-compatible one
+    /// (inline tags are reasoning) and tokamak on its own host (reasoning comes
+    /// in its own field, so tags are ordinary prose).
+    fn tag_gate_providers() -> std::collections::HashMap<String, crate::core::state::ProviderConfig>
+    {
+        let provider = |name: &str, model: &str| {
+            let base_url = match name {
+                "tokamak" => "https://api.tokamak.sh/v1",
+                _ => "http://127.0.0.1:1/v1",
+            };
+            (
+                name.to_string(),
+                crate::core::state::ProviderConfig {
+                    provider: name.into(),
+                    base_url: Some(base_url.into()),
+                    models: vec![model.into()],
+                    ..Default::default()
+                },
+            )
+        };
+        [provider("mine", "local-reasoner"), provider("tokamak", "tk-1")]
+            .into_iter()
+            .collect()
+    }
+
     /// The tag gate follows whoever serves the model: a custom OpenAI-compatible
     /// provider parses inline tags, tokamak (reasoning in its own field) does not,
     /// and switching models moves the gate with it.
     #[test]
     fn think_tag_gate_follows_the_serving_provider_across_a_model_switch() {
         crate::core::agent::global_config::with_temp_home(|_| {
-            // `tokamak` is only "separate reasoning" on its own host.
-            let provider = |name: &str, model: &str| {
-                let base_url = match name {
-                    "tokamak" => "https://api.tokamak.sh/v1",
-                    _ => "http://127.0.0.1:1/v1",
-                };
-                (
-                    name.to_string(),
-                    crate::core::state::ProviderConfig {
-                        provider: name.into(),
-                        base_url: Some(base_url.into()),
-                        models: vec![model.into()],
-                        ..Default::default()
-                    },
-                )
-            };
-            let mut app = test_app();
-            let args = test_args(
-                &app,
-                [provider("mine", "local-reasoner"), provider("tokamak", "tk-1")]
-                    .into_iter()
-                    .collect(),
-            );
-            app.args = Some(args);
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                let args = test_args(&app, tag_gate_providers());
+                app.args = Some(args);
 
-            app.model = "local-reasoner".into();
-            assert!(app.think_tags_gate(), "custom provider parses tags");
-            app.set_model("tk-1".into());
-            assert!(!app.think_tags_gate(), "tokamak sends reasoning separately");
-            assert!(!super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
-            app.set_model("local-reasoner".into());
-            assert!(super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
+                app.model = "local-reasoner".into();
+                assert!(app.think_tags_gate(), "custom provider parses tags");
+                app.set_model("tk-1".into());
+                assert!(!app.think_tags_gate(), "tokamak sends reasoning separately");
+                assert!(!app.transcript.parse_think_tags);
+                app.set_model("local-reasoner".into());
+                assert!(app.transcript.parse_think_tags);
+            });
         });
     }
 
     /// A headless run (`jan cli agent run`, rpc, acp) never builds an `App`, yet
-    /// its result strips reasoning through the same gate, so session setup has
-    /// to seed it from the provider that serves the model.
+    /// its result strips reasoning by the serving provider's setting, so session
+    /// setup has to resolve it from the provider that serves the model.
     #[test]
-    fn preparing_a_session_seeds_the_think_tag_gate_for_headless_runs() {
+    fn preparing_a_session_resolves_the_think_tag_gate_for_headless_runs() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let set = |name: &str, model: &str| {
                 let base_url = match name {
@@ -30575,7 +30912,7 @@ mod tests {
             set("mine", "local-reasoner");
             set("tokamak", "tk-1");
             let dir = tempfile::tempdir().unwrap();
-            let prepare = |model: &str| {
+            let gate = |model: &str| {
                 super::super::prepare_agent_session(
                     dir.path().to_str().unwrap(),
                     Some(model.to_string()),
@@ -30584,12 +30921,175 @@ mod tests {
                     None,
                 )
                 .expect("session")
+                .parse_think_tags
             };
-            let gate = || super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed);
-            prepare("local-reasoner");
-            assert!(gate(), "custom provider parses tags");
-            prepare("tk-1");
-            assert!(!gate(), "tokamak sends reasoning separately");
+            assert!(gate("local-reasoner"), "custom provider parses tags");
+            assert!(!gate("tk-1"), "tokamak sends reasoning separately");
+        });
+    }
+
+    /// A request a child makes, as its run reports it before any of its content.
+    fn child_request_on(provider: &str, model: &str) -> StreamEvent {
+        StreamEvent::Subagent {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            event: Box::new(StreamEvent::RequestProvenance {
+                run_id: Some("sub-a-1".into()),
+                session_id: None,
+                provider: Some(provider.into()),
+                model: model.into(),
+                api_type: None,
+                request_sha256: String::new(),
+                body_bytes: 0,
+                tools_sha256: None,
+                images: Vec::new(),
+            }),
+        }
+    }
+
+    /// Run a main model and a child that says `<think>child thought</think>
+    /// child answer`; the child's request (when `child_on` names one) says which
+    /// provider serves it. Returns what the child's panel shows and the main
+    /// conversation's own gate.
+    fn child_with_tagged_content(main_model: &str, child_on: Option<(&str, &str)>) -> (String, bool) {
+        let mut app = test_app();
+        let args = test_args(&app, tag_gate_providers());
+        app.args = Some(args);
+        app.model = main_model.into();
+        app.sync_think_tags();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            task: None,
+        });
+        if let Some((provider, model)) = child_on {
+            app.apply(child_request_on(provider, model));
+        }
+        app.apply(StreamEvent::Subagent {
+            run_id: "sub-a-1".into(),
+            name: "a".into(),
+            event: Box::new(StreamEvent::Token {
+                text: "<think>child thought</think>child answer".into(),
+            }),
+        });
+        let text = agent_detail_text(&mut app, "sub-a-1", 100, 40);
+        (text, app.transcript.parse_think_tags)
+    }
+
+    /// A subagent definition can name a model another provider serves, so the
+    /// child must treat inline tags by *its* provider's setting: here the main
+    /// model parses them and the child's provider does not.
+    #[test]
+    fn a_child_on_a_provider_that_does_not_parse_tags_shows_them_as_prose() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, main_parses) =
+                    child_with_tagged_content("local-reasoner", Some(("tokamak", "tk-1")));
+                assert!(main_parses, "the main model's provider parses tags");
+                assert!(
+                    child.contains("<think>child thought</think>child answer"),
+                    "the child's tags are prose: {child}"
+                );
+                assert!(!child.contains("Thought"), "no reasoning row folded: {child}");
+            });
+        });
+    }
+
+    /// The other direction: the main model's provider leaves tags alone and the
+    /// child's provider parses them.
+    #[test]
+    fn a_child_on_a_provider_that_parses_tags_folds_them_into_reasoning() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, main_parses) =
+                    child_with_tagged_content("tk-1", Some(("mine", "local-reasoner")));
+                assert!(!main_parses, "the main model's provider does not parse tags");
+                assert!(child.contains("┊ Thought"), "the child's reasoning folds: {child}");
+                assert!(!child.contains("<think>"), "its tags are consumed: {child}");
+            });
+        });
+    }
+
+    /// A child that names no model of its own runs on the parent's, so before
+    /// any request says otherwise it follows the parent's setting.
+    #[test]
+    fn a_child_with_no_model_of_its_own_follows_the_mains_setting() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let (child, _) = child_with_tagged_content("local-reasoner", None);
+                assert!(child.contains("┊ Thought"), "parsed like the main model: {child}");
+                let (child, _) = child_with_tagged_content("tk-1", None);
+                assert!(
+                    child.contains("<think>child thought</think>child answer"),
+                    "left alone like the main model: {child}"
+                );
+            });
+        });
+    }
+
+    /// Each run strips its own answer: the main run's history copy follows the
+    /// main model's provider, whatever a child on another provider does.
+    #[test]
+    fn a_childs_provider_does_not_change_how_the_main_answer_is_stripped() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                let args = test_args(&app, tag_gate_providers());
+                app.args = Some(args);
+                app.model = "local-reasoner".into();
+                app.sync_think_tags();
+                app.apply(StreamEvent::SubagentStart {
+                    run_id: "sub-a-1".into(),
+                    name: "a".into(),
+                    task: None,
+                });
+                app.apply(child_request_on("tokamak", "tk-1"));
+                app.submit_user("go".into());
+                app.apply(StreamEvent::Token {
+                    text: "<think>main thought</think>main answer".into(),
+                });
+                app.on_done("stop".into(), None);
+                let last = app.history.last().expect("assistant turn in history");
+                assert_eq!(last["content"], "main answer");
+            });
+        });
+    }
+
+    /// A request landing while the provider config is locked cannot say what
+    /// the child's provider is configured as. The child keeps the setting it
+    /// has rather than guessing: without the endpoint, a `tokamak` entry
+    /// pointed at some other host reads as the official one and would flip a
+    /// tags-parsing child off for that request.
+    #[test]
+    fn a_busy_config_lock_leaves_a_childs_tag_gate_as_it_was() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            with_real_think_tag_gate(|| {
+                let mut app = test_app();
+                // `tokamak` on a self-hosted endpoint: tags are reasoning there.
+                let mut providers = tag_gate_providers();
+                providers
+                    .get_mut("tokamak")
+                    .expect("seeded")
+                    .base_url = Some("http://127.0.0.1:1/v1".into());
+                let args = test_args(&app, providers);
+                app.args = Some(args.clone());
+                app.model = "tk-1".into();
+                app.sync_think_tags();
+                assert!(app.transcript.parse_think_tags, "self-hosted tokamak parses tags");
+                app.apply(StreamEvent::SubagentStart {
+                    run_id: "sub-a-1".into(),
+                    name: "a".into(),
+                    task: None,
+                });
+                let rt = tokio::runtime::Runtime::new().expect("runtime");
+                let held = rt.block_on(args.provider_configs.lock());
+                app.apply(child_request_on("tokamak", "tk-1"));
+                drop(held);
+                assert!(
+                    app.subagents[0].transcript.parse_think_tags,
+                    "an unreadable config must not turn the child's tags off"
+                );
+            });
         });
     }
 
@@ -30668,6 +31168,7 @@ mod tests {
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
+            allow_escalation: None,
             monitors: Some(app.monitor_set.clone()),
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
@@ -31341,7 +31842,7 @@ mod tests {
         assert_eq!(picker.kind, PickerKind::SubagentModels);
         let labels: Vec<_> = picker.items.iter().map(|i| i.value.as_str()).collect();
         // The saved explorer and reviewer sit beside the built-in catalog.
-        assert_eq!(labels, ["debug", "explore", "explorer", "research", "review", "reviewer"]);
+        assert_eq!(labels, ["debug", "explore", "explorer", "general", "research", "review", "reviewer"]);
         let hint = |name: &str| {
             let item = picker.items.iter().find(|i| i.value == name).unwrap();
             item.hint.clone().unwrap_or_default()
@@ -33082,6 +33583,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             },
         ));
         assert_eq!(
@@ -33120,6 +33622,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             },
         ));
         // Second subagent's request arrives while the first is still pending.
@@ -33135,6 +33638,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "read".into(),
                 offers_always: false,
+                justification: None,
             },
         ));
 
@@ -34760,6 +35264,49 @@ mod tests {
         );
     }
 
+    // /find reads a group's unwrapped text, kept once every call has resolved.
+    // A group that goes on to take another call must not answer from the text
+    // it kept before.
+    #[test]
+    fn an_open_groups_search_text_follows_the_calls_added_after_it_resolved() {
+        let mut app = test_app();
+        let flat_of = |app: &App, idx: usize| -> String {
+            let index = app.transcript.region_index();
+            app.transcript
+                .region_flat(&index, idx)
+                .expect("the group owns a region")
+                .join("\n")
+        };
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo alpha-marker" }),
+        });
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "alpha-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        assert!(flat_of(&app, idx).contains("alpha-marker"));
+
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "echo omega-marker" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "omega-marker".into(),
+            is_error: false,
+            diff: None,
+        });
+        let text = flat_of(&app, idx);
+        assert!(text.contains("omega-marker"), "{text}");
+        assert!(text.contains("alpha-marker"), "{text}");
+    }
+
     #[test]
     fn failed_grouped_row_shows_the_failure_before_the_group_closes() {
         let mut app = test_app();
@@ -35776,6 +36323,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: true,
+                justification: None,
             });
             app.pending_queue.clear(); // simulate approval
             app.apply(StreamEvent::ToolResult {
@@ -42340,6 +42888,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "write".into(),
                 offers_always: true,
+                justification: None,
             }),
         });
         assert_eq!(app.status, Status::Parked, "the parent is still parked");
@@ -42695,9 +43244,7 @@ mod tests {
         app.submit_user("start the build".into());
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         // The model answered and the run ended: background work no longer
         // holds it open, so the session is idle.
@@ -42734,9 +43281,7 @@ mod tests {
             .push(serde_json::json!({ "role": "assistant", "content": "building" }));
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: Some("/tmp/build.log".to_string()),
         });
         app.shell_set.finish(ShellDone {
             id: 1,
@@ -42775,9 +43320,7 @@ mod tests {
 
         set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         set.finish(ShellDone {
             id: 1,
@@ -45569,6 +46112,30 @@ mod tests {
         );
     }
 
+    /// The wordmark is brand `#FEC928` on truecolor and fitted to the palette
+    /// elsewhere, so a 256- or 16-colour terminal never receives RGB codes.
+    #[test]
+    fn banner_wordmark_is_brand_yellow_fitted_to_depth() {
+        use super::theme::{with_theme, ColorDepth, Theme};
+        use ratatui::style::Color;
+        let (r, g, b) = brand::LOGO_RGB;
+        let wordmark_fg = || {
+            let mut app = test_app();
+            app.push_banner("--safe", true);
+            app.transcript
+                .rows
+                .iter()
+                .flat_map(|row| row.lines(90))
+                .find(|l| l.spans.iter().any(|s| s.content.contains(brand::LOGO[0].trim())))
+                .and_then(|l| l.style.fg.or(l.spans[0].style.fg))
+        };
+        for depth in [ColorDepth::Truecolor, ColorDepth::Ansi256, ColorDepth::Ansi16] {
+            let theme = Theme { light: false, depth };
+            let fg = with_theme(theme, wordmark_fg);
+            assert_eq!(fg, Some(theme.fit(Color::Rgb(r, g, b))), "{depth:?}");
+        }
+    }
+
     /// The splash opens on the wordmark alone. The hand-wave block art that used
     /// to sit beside it spent 15 rows of a fresh screen on decoration and forced
     /// a 61-column floor before the splash would render at all.
@@ -47169,6 +47736,81 @@ mod tests {
         assert!(hit.detail, "the match is in the folded detail");
         let shown = frame_text(&find_frame(&mut app, 60, 20));
         assert!(shown.contains("secret-output-xyz"), "{shown}");
+    }
+
+    /// A turn whose answer has three paragraphs; "brown fox" is in the first and
+    /// the last, so where it wraps depends on the width.
+    fn wrapping_answer_app() -> TestApp {
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        app.apply(StreamEvent::Token {
+            text: "alpha the quick brown fox jumps over the lazy dog\n\n\
+                   nothing to see in this one\n\n\
+                   omega another quick brown fox leaps over a sleeping hound"
+                .into(),
+        });
+        app.on_done("stop".into(), None);
+        app
+    }
+
+    /// The text of every highlighted cell, in reading order.
+    fn lit_text(buf: &Buffer) -> String {
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let style = buf[(x, y)].style();
+                let reversed = style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::REVERSED);
+                if reversed || style.bg == Some(Color::Yellow) {
+                    out.push_str(buf[(x, y)].symbol());
+                }
+            }
+        }
+        out
+    }
+
+    // Regression for a term that word-wraps: matching ran on each rendered
+    // line, so "brown fox" was missed wherever the wrap fell between the words,
+    // and the hit count moved as the window was resized.
+    #[tokio::test]
+    async fn find_matches_a_term_that_wraps_at_any_width() {
+        let mut split_somewhere = false;
+        for width in 14..=100u16 {
+            let mut app = wrapping_answer_app();
+            run_command(&mut app, "find brown fox", &no_mcp()).await;
+            let buf = find_frame(&mut app, width, 70);
+            let hits = app.find.as_ref().unwrap().hits.len();
+            assert_eq!(hits, 2, "one hit per paragraph at width {width}");
+            // Stepping rescans at the new width; it must find the same two.
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+            let buf_after = find_frame(&mut app, width, 70);
+            assert_eq!(app.find.as_ref().unwrap().hits.len(), 2, "after a step at width {width}");
+
+            // Every occurrence is highlighted whole, on whichever lines it fell.
+            for b in [&buf, &buf_after] {
+                let lit: String = lit_text(b).split_whitespace().collect();
+                assert_eq!(lit, "brownfoxbrownfox", "highlighted at width {width}");
+            }
+            let text = frame_text(&buf);
+            let rows: Vec<&str> = text.lines().collect();
+            split_somewhere |= rows.windows(2).any(|p| {
+                p[0].trim_end().ends_with("brown") && p[1].trim_start().starts_with("fox")
+            });
+        }
+        assert!(split_somewhere, "no width wrapped between the words, so this proved nothing");
+    }
+
+    // The same session searched at two widths steps through the same hits.
+    #[tokio::test]
+    async fn the_hit_count_does_not_change_when_the_window_is_resized() {
+        let mut app = wrapping_answer_app();
+        run_command(&mut app, "find brown fox", &no_mcp()).await;
+        let wide = app.find.as_ref().unwrap().hits.clone();
+        let _ = find_frame(&mut app, 18, 70);
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
+        let narrow = app.find.as_ref().unwrap().hits.clone();
+        assert_eq!(wide, narrow);
     }
 
     #[test]

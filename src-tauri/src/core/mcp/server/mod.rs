@@ -283,6 +283,17 @@ impl JanToolServer {
                     Vec::new(),
                 );
             }
+            // The served shell runs under the sandbox the server was started
+            // with; an external caller cannot lift it, for the same reason.
+            Decision::Prompt(PromptKind::Escalate) => {
+                return (
+                    format!(
+                        "ERROR: tool '{name}' was refused: running outside the sandbox needs \
+                         the user's approval, which an external caller cannot give."
+                    ),
+                    Vec::new(),
+                );
+            }
         }
         let ctx = self.tool_context();
         let (content, images) = execute_builtin(tool, args, &ctx).await;

@@ -1315,6 +1315,7 @@ fn build_cli_orchestration_args(
     plan: bool,
     max_parallel_subagents: u32,
     sandbox: Option<bool>,
+    allow_escalation: Option<bool>,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: crate::core::agent::upstream::agent_http_client(),
@@ -1359,6 +1360,9 @@ fn build_cli_orchestration_args(
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
+        // `--allow-escalation` only when passed; unset falls through to
+        // `[tools].allow_escalation`, then off.
+        allow_escalation,
         // Filled in by `prepare_agent_session`, which is where the route's
         // context window is resolved. The desktop paths leave it `None`: their
         // window lives in the local engine's preset, not in a catalog this
@@ -1385,6 +1389,9 @@ pub(crate) struct PreparedRun {
     pub permission_requests: PermissionRegistry,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
+    /// Whether the serving provider's inline `<think>` tags are reasoning, for
+    /// stripping them out of the result a headless run reports.
+    pub parse_think_tags: bool,
     /// Where to write the conversation once the run finishes.
     persist: PersistTarget,
 }
@@ -1466,6 +1473,9 @@ pub(crate) struct AgentSession {
     /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
     /// of `show_reasoning`, which unfolds it for good.
     pub stream_reasoning: bool,
+    /// Whether inline `<think>` tags in the serving provider's content are
+    /// reasoning (see `think_tags` in `~/.jan/config.toml`).
+    pub parse_think_tags: bool,
     /// Whether to resend a prior assistant turn's reasoning to the model
     /// (default true). False drops `reasoning_content` from outgoing assistant
     /// messages; the display journal still keeps reasoning for a resume.
@@ -1558,6 +1568,12 @@ pub struct SessionFlags {
     /// to `[tools].sandbox`, then the global `sandbox`, then the CLI default of
     /// off.
     pub sandbox: Option<bool>,
+    /// `--allow-escalation`: run a sandboxed shell command that asks to leave
+    /// the sandbox without an escalation prompt (an exec approval `--safe`
+    /// requires anyway is still asked). `None` (not passed) defers to
+    /// `[tools].allow_escalation`, then off: escalation waits for a human
+    /// answer, which `auto_approve` does not give.
+    pub allow_escalation: Option<bool>,
     /// `--worktree`: work in a dedicated git checkout. `None` (not passed)
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
@@ -1819,17 +1835,18 @@ fn prepare_agent_session(
     let serving_provider =
         crate::core::cli::providers::provider_for_model(&model, &provider_configs);
 
-    // The tag gate is process-wide and read by free rendering functions, and a
-    // headless run strips reasoning through it too, so every surface seeds it
-    // here. The TUI re-applies it when the serving provider changes.
+    // Whether inline `<think>` tags are reasoning for this run, from the
+    // provider that serves its model. It rides on the session so each surface
+    // hands it to what renders or strips this run's content: the TUI keeps it
+    // on its transcript, a headless run on its report.
     let serving_config = serving_provider
         .as_deref()
         .and_then(|name| provider_configs.get(name));
-    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled_for(
+    let parse_think_tags = crate::core::agent::global_config::think_tags_enabled_for(
         serving_provider.as_deref(),
         serving_config.and_then(|config| config.api_type.as_deref()),
         serving_config.and_then(|config| config.base_url.as_deref()),
-    ));
+    );
 
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
@@ -1882,6 +1899,7 @@ fn prepare_agent_session(
         flags.plan,
         max_parallel_subagents,
         flags.sandbox,
+        flags.allow_escalation,
     );
 
     // Resolution order: configured `[agent].context_window` override, then what
@@ -1939,6 +1957,7 @@ fn prepare_agent_session(
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
+        parse_think_tags,
         send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
         mcp_servers,
         mcp_task,
@@ -2074,6 +2093,7 @@ fn prepare_agent_run(
         provider: session.provider,
         permission_requests: session.permission_requests,
         mcp_task: session.mcp_task,
+        parse_think_tags: session.parse_think_tags,
         // Non-interactive runs persist into the same per-project store the TUI
         // uses, so a run can later be continued with --resume from either side.
         persist: PersistTarget {
@@ -2211,6 +2231,7 @@ async fn run_agent_loop(
         provider,
         permission_requests,
         mcp_task,
+        parse_think_tags,
         persist,
     } = match prepared {
         Ok(prepared) => prepared,
@@ -2310,7 +2331,7 @@ async fn run_agent_loop(
     // The report is folded in both formats from the same stream the printer
     // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
-        let mut report = RunReport::default();
+        let mut report = RunReport::for_run(parse_think_tags);
         let mut updated_history = None;
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
@@ -2894,12 +2915,21 @@ async fn resolve_permission_silently(
     registry: &PermissionRegistry,
     duplex: bool,
 ) -> Option<(String, PermissionDecision)> {
+    // A background subagent's prompt arrives wrapped in `Subagent` (see
+    // `StreamEvent::Subagent`) and waits on the same registry as the parent's, so
+    // it needs the same answer. Left unanswered it parks the run forever: the
+    // loop is waiting on a reply no one was ever going to send.
+    let (from, ev) = match ev {
+        StreamEvent::Subagent { name, event, .. } => (Some(name), *event),
+        other => (None, other),
+    };
     let StreamEvent::PermissionRequest {
         request_id,
         tool_name,
         capability,
         path,
         command,
+        justification,
         ..
     } = ev
     else {
@@ -2910,11 +2940,8 @@ async fn resolve_permission_silently(
     if duplex {
         return None;
     }
-    let detail = command
-        .map(|c| format!(" ({c})"))
-        .or_else(|| path.map(|p| format!(" on {p}")))
-        .unwrap_or_default();
-    let decision = prompt_permission(tool_name, capability, detail).await;
+    let detail = permission_detail(command, path, justification);
+    let decision = prompt_permission(tool_name, capability, detail, from).await;
     if let Some(sender) = registry.lock().await.remove(&request_id) {
         let _ = sender.send(decision);
     }
@@ -3252,6 +3279,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
             ),
+            // The same prompt the parent's request gets: auto-denied with no
+            // terminal, answered on stdin when a client owns the decision.
+            permission @ StreamEvent::PermissionRequest { .. } => {
+                text_permission(permission, Some(name), registry, duplex).await
+            }
             _ => {}
         },
         StreamEvent::Done { stop_reason, usage } => {
@@ -3270,32 +3302,8 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::TodoUpdate { .. } => {}
         // The event collector adopts this history before it reaches the printer.
         StreamEvent::MessagesUpdated { .. } => {}
-        StreamEvent::PermissionRequest {
-            request_id,
-            tool_name,
-            capability,
-            path,
-            command,
-            diff,
-            ..
-        } => {
-            let detail = command
-                .map(|c| format!(" ({c})"))
-                .or_else(|| path.map(|p| format!(" on {p}")))
-                .unwrap_or_default();
-            if let Some(diff) = diff {
-                eprintln!("\x1b[2m{diff}\x1b[0m");
-            }
-            if duplex {
-                eprintln!(
-                    "\x1b[33m[permission] {capability} via '{tool_name}'{detail} - awaiting '{request_id}' on stdin\x1b[0m"
-                );
-                return;
-            }
-            let decision = prompt_permission(tool_name, capability, detail).await;
-            if let Some(sender) = registry.lock().await.remove(&request_id) {
-                let _ = sender.send(decision);
-            }
+        permission @ StreamEvent::PermissionRequest { .. } => {
+            text_permission(permission, None, registry, duplex).await
         }
         // Only a host process can answer this, and only over the duplex
         // channel; a text-format run cannot declare host tools at all (the
@@ -3317,6 +3325,71 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
     }
 }
 
+/// ` from subagent 'name'` for a prompt a subagent raised, empty for the
+/// parent's own, so a person at the terminal can tell whose call they are
+/// being asked to approve.
+fn from_subagent(from: Option<&str>) -> String {
+    from.map(|name| format!(" from subagent '{name}'"))
+        .unwrap_or_default()
+}
+
+/// The text format's handling of a permission prompt: shown with its diff,
+/// then either left to a client on stdin (`duplex`) or answered at the terminal
+/// (denied with none). `from` names the subagent that raised it, if any.
+async fn text_permission(
+    ev: StreamEvent,
+    from: Option<String>,
+    registry: &PermissionRegistry,
+    duplex: bool,
+) {
+    let StreamEvent::PermissionRequest {
+        request_id,
+        tool_name,
+        capability,
+        path,
+        command,
+        diff,
+        justification,
+        ..
+    } = ev
+    else {
+        return;
+    };
+    let detail = permission_detail(command, path, justification);
+    if let Some(diff) = diff {
+        eprintln!("\x1b[2m{diff}\x1b[0m");
+    }
+    if duplex {
+        let origin = from_subagent(from.as_deref());
+        eprintln!(
+            "\x1b[33m[permission] {capability} via '{tool_name}'{detail}{origin} - awaiting '{request_id}' on stdin\x1b[0m"
+        );
+        return;
+    }
+    let decision = prompt_permission(tool_name, capability, detail, from).await;
+    if let Some(sender) = registry.lock().await.remove(&request_id) {
+        let _ = sender.send(decision);
+    }
+}
+
+/// What a headless permission line names after the tool: the command or the
+/// path, then an escalation's reason, so a user approving a command outside
+/// the sandbox reads why the model wants it.
+fn permission_detail(
+    command: Option<String>,
+    path: Option<String>,
+    justification: Option<String>,
+) -> String {
+    let target = command
+        .map(|c| format!(" ({c})"))
+        .or_else(|| path.map(|p| format!(" on {p}")))
+        .unwrap_or_default();
+    match justification {
+        Some(why) => format!("{target} because: {why}"),
+        None => target,
+    }
+}
+
 /// Ask the terminal to approve a gated tool call. Non-interactive stdin (pipe,
 /// CI) auto-denies, matching the headless "safe default" contract; blocking
 /// stdin is confined to a blocking thread so the loop task keeps running.
@@ -3324,14 +3397,16 @@ async fn prompt_permission(
     tool_name: String,
     capability: String,
     detail: String,
+    from: Option<String>,
 ) -> PermissionDecision {
     use std::io::IsTerminal;
+    let origin = from_subagent(from.as_deref());
     if !std::io::stdin().is_terminal() {
-        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}' (non-interactive)\x1b[0m");
+        eprintln!("\x1b[33m[permission] auto-denied {capability} via '{tool_name}'{origin} (non-interactive)\x1b[0m");
         return PermissionDecision::Deny;
     }
     tokio::task::spawn_blocking(move || {
-        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}? [y/N] \x1b[0m");
+        eprint!("\x1b[33m[permission] allow {capability} via '{tool_name}'{detail}{origin}? [y/N] \x1b[0m");
         let _ = std::io::stderr().flush();
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line).is_err() {
@@ -3349,6 +3424,103 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The headless line names the command, then an escalation's reason.
+    #[test]
+    fn permission_detail_names_the_target_then_the_reason() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(permission_detail(s("ls"), None, None), " (ls)");
+        assert_eq!(permission_detail(None, s("a.txt"), None), " on a.txt");
+        assert_eq!(
+            permission_detail(s("cargo build"), None, s("fetch crates")),
+            " (cargo build) because: fetch crates"
+        );
+        assert_eq!(permission_detail(None, None, None), "");
+    }
+
+    /// A prompt a subagent raised, as the printer receives it: wrapped in
+    /// `Subagent`, waiting on the same registry as the parent's own prompts.
+    fn subagent_prompt() -> StreamEvent {
+        StreamEvent::Subagent {
+            run_id: "sub-explore-1".to_string(),
+            name: "explore".to_string(),
+            event: Box::new(StreamEvent::PermissionRequest {
+                request_id: "perm-1".to_string(),
+                tool_name: "write".to_string(),
+                capability: "write".to_string(),
+                path: Some("child.txt".to_string()),
+                command: None,
+                diff: None,
+                prompt_kind: "write".to_string(),
+                offers_always: true,
+                justification: None,
+            }),
+        }
+    }
+
+    /// With no terminal and no client a subagent's prompt has to be denied like
+    /// the parent's own: the child's loop is waiting on that reply, and a run
+    /// that never gets one parks forever. `prompt_permission` would block on a
+    /// developer's terminal, so a test run from one stands down.
+    #[tokio::test]
+    async fn a_subagent_permission_prompt_is_denied_when_nobody_can_answer() {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
+
+        // A client on stdin owns the decision: nothing is answered here.
+        assert!(resolve_permission_silently(subagent_prompt(), &registry, true)
+            .await
+            .is_none());
+        assert!(registry.lock().await.contains_key("perm-1"));
+
+        let decided = resolve_permission_silently(subagent_prompt(), &registry, false).await;
+        assert_eq!(decided, Some(("perm-1".to_string(), PermissionDecision::Deny)));
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), answer)
+                .await
+                .expect("the child's wait was never answered")
+                .expect("the child's wait is answered"),
+            PermissionDecision::Deny
+        );
+    }
+
+    /// The text format reaches the same answer through `print_event`.
+    #[tokio::test]
+    async fn the_text_printer_denies_a_subagent_prompt_when_nobody_can_answer() {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
+
+        // A client on stdin owns the decision: the request stays pending.
+        print_event(subagent_prompt(), &registry, true).await;
+        assert!(registry.lock().await.contains_key("perm-1"));
+
+        print_event(subagent_prompt(), &registry, false).await;
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), answer)
+                .await
+                .expect("the child's wait was never answered")
+                .expect("the child's wait is answered"),
+            PermissionDecision::Deny
+        );
+    }
+
+    /// The prompt says whose call it is, so a person at the terminal is not
+    /// asked to approve a write without knowing a child raised it.
+    #[test]
+    fn a_subagent_prompt_names_the_subagent_and_the_parents_does_not() {
+        assert_eq!(from_subagent(None), "");
+        assert_eq!(from_subagent(Some("explore")), " from subagent 'explore'");
+    }
 
     /// The duplex channel end to end over a pipe: a follow-up is queued for the
     /// steering handshake, a permission reply reaches the waiting run, a

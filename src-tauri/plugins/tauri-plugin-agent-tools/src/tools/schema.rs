@@ -23,6 +23,34 @@ pub fn bash_description(kind: super::proc::ShellKind) -> String {
     }
 }
 
+/// Appended to the shell description when the run offers escalation.
+const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command that matters to the task fails because of the sandbox (a read-only file system or permission error outside the project, such as a package manager writing its cache, or a blocked download), rerun the same command with `escalate: true` and a one-line `justification`: the user is asked to approve running it outside the sandbox. Never escalate pre-emptively, and never to work around a denial the user gave.";
+
+/// Add the escalation arguments to the `shell` schema in `schemas`, for a run
+/// whose shell is sandboxed and whose user can be asked to lift it. Applied
+/// once per run by the caller, so the array stays byte-identical across turns;
+/// a run without escalation keeps the plain schema.
+pub fn offer_escalation(schemas: &mut [Value]) {
+    for schema in schemas.iter_mut() {
+        let function = &mut schema["function"];
+        if function["name"] != super::SHELL_TOOL {
+            continue;
+        }
+        if let Some(description) = function["description"].as_str() {
+            function["description"] = Value::String(format!("{description}{ESCALATE_NOTE}"));
+        }
+        let properties = &mut function["parameters"]["properties"];
+        properties[super::gate::ESCALATE_ARG] = json!({
+            "type": "boolean",
+            "description": "Ask the user to run this command outside the sandbox. Only after it failed inside it."
+        });
+        properties[super::gate::JUSTIFICATION_ARG] = json!({
+            "type": "string",
+            "description": "Required with escalate: why the command needs to leave the sandbox, shown to the user."
+        });
+    }
+}
+
 /// OpenAI function schemas for the built-in tools, one per `BUILTIN_TOOLS`
 /// entry. `screenshot` is desktop-only (`feature = "tauri"`), so the headless
 /// CLI advertises one fewer.
@@ -299,6 +327,28 @@ pub fn search_tool_schemas() -> Vec<Value> {
 mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
+
+    /// The plain array never mentions escalation; offering it touches only the
+    /// shell entry, adding both arguments and the when-to-use note.
+    #[test]
+    fn escalation_is_offered_only_on_request_and_only_on_the_shell() {
+        let plain = builtin_tool_schemas();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("escalate"));
+        let mut offered = plain.clone();
+        offer_escalation(&mut offered);
+        for (before, after) in plain.iter().zip(&offered) {
+            if before["function"]["name"] == crate::tools::SHELL_TOOL {
+                let props = &after["function"]["parameters"]["properties"];
+                assert_eq!(props["escalate"]["type"], "boolean");
+                assert_eq!(props["justification"]["type"], "string");
+                assert!(after["function"]["description"].as_str().unwrap().contains("escalate: true"));
+                // Still optional: an ordinary call needs only `command`.
+                assert_eq!(after["function"]["parameters"]["required"], json!(["command"]));
+            } else {
+                assert_eq!(before, after);
+            }
+        }
+    }
 
     /// ls/find/grep stay in BUILTIN_TOOLS (recognized + executable) but are not
     /// advertised -- bash covers listing and searching -- so the offered set is

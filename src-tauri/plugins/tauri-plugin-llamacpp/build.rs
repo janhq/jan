@@ -252,6 +252,16 @@ mod engine {
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_LOG");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_DIR");
 
+        // The worker reports this in its handshake so the app can set it against
+        // the NVIDIA driver (#9189). Read on the prebuilt path too: the prebuilt
+        // key includes the full nvcc version, so a cache hit is built with the
+        // toolkit that is on this host.
+        if feature_enabled("engine-cuda") {
+            if let Some((_, v)) = nvcc_version() {
+                println!("cargo:rustc-env=JAN_ENGINE_CUDA_TOOLKIT={}.{}", v.0, v.1);
+            }
+        }
+
         // Headers are always needed: the shim is our code and is compiled
         // here even when the archives come prebuilt, so it cannot drift from
         // the crate.

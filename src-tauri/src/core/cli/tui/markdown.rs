@@ -12,9 +12,10 @@ pub(super) fn format_assistant_lines(
     prose: &str,
     segs: &[super::ReasoningSeg],
     width: u16,
+    parse_tags: bool,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    for (reasoning, seg) in super::assistant_runs(prose, segs) {
+    for (reasoning, seg) in super::assistant_runs(prose, segs, parse_tags) {
         let next = if reasoning {
             reasoning_detail_lines(&seg)
         } else {
@@ -101,11 +102,12 @@ pub(super) fn live_assistant_lines(
     width: u16,
     fold_reasoning: bool,
     stream_reasoning: bool,
+    parse_tags: bool,
 ) -> Vec<Line<'static>> {
     if !fold_reasoning {
-        return format_assistant_lines(prose, segs, width);
+        return format_assistant_lines(prose, segs, width, parse_tags);
     }
-    let runs = super::assistant_runs(prose, segs);
+    let runs = super::assistant_runs(prose, segs, parse_tags);
     let last = runs.len().saturating_sub(1);
     let mut lines = Vec::new();
     for (i, (reasoning, seg)) in runs.into_iter().enumerate() {
@@ -1095,7 +1097,7 @@ mod tests {
     fn live_answer_matches_the_committed_layout() {
         let md = "a long enough answer to wrap at this width\n\n- item";
         for fold in [false, true] {
-            assert_eq!(live_assistant_lines(md, &[], 24, fold, true), answer_lines(md, 24));
+            assert_eq!(live_assistant_lines(md, &[], 24, fold, true, true), answer_lines(md, 24));
         }
     }
 

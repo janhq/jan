@@ -92,6 +92,16 @@ export function estimateMessageTokens(message: UIMessage): number {
   return estimateTokens(text) + 4
 }
 
+/** Tokens a whole conversation already occupies in the context window. */
+export function estimateConversationTokens(
+  messages: readonly UIMessage[] | undefined
+): number {
+  return (messages ?? []).reduce(
+    (sum, message) => sum + estimateMessageTokens(message),
+    0
+  )
+}
+
 export interface ContextManagerConfig {
   maxContextTokens: number
   maxOutputTokens: number

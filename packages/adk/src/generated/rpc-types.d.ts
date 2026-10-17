@@ -441,6 +441,8 @@ export interface PermissionRequestEvent {
   "diff"?: string | null
   "prompt_kind": string
   "offers_always": boolean
+  /** The model's reason for an `escalate` prompt (running a shell command outside the sandbox), shown beside the command; `None` otherwise. */
+  "justification"?: string | null
   "type": "permission_request"
 }
 

@@ -3,6 +3,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   estimateTokens,
   estimateMessageTokens,
+  estimateConversationTokens,
   trimMessages,
   compactMessages,
   deriveToolOutputCap,
@@ -36,6 +37,21 @@ describe('estimateTokens', () => {
 
   it('should handle short text', () => {
     expect(estimateTokens('Hi')).toBeGreaterThan(0)
+  })
+})
+
+describe('estimateConversationTokens', () => {
+  it('sums every message, overhead included', () => {
+    const a = makeMessage('1', 'user', 'Hello world')
+    const b = makeMessage('2', 'assistant', 'Hi there')
+    expect(estimateConversationTokens([a, b])).toBe(
+      estimateMessageTokens(a) + estimateMessageTokens(b)
+    )
+  })
+
+  it('is 0 for an empty or missing conversation', () => {
+    expect(estimateConversationTokens([])).toBe(0)
+    expect(estimateConversationTokens(undefined)).toBe(0)
   })
 })
 
