@@ -108,7 +108,7 @@ export default memo(function DropdownToolsAvailable({
         .mcp()
         .getPrompt(prompt.server, prompt.name, args)
 
-      const attachmentsKey = currentThread?.id ?? NEW_THREAD_ATTACHMENT_KEY
+      const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
       const newAttachments: Attachment[] = []
 
       for (const msg of result.messages) {
@@ -182,7 +182,7 @@ export default memo(function DropdownToolsAvailable({
     }
   }
 
-  const { getCurrentThread } = useThreads()
+  const currentThreadId = useThreads((state) => state.currentThreadId)
 
   const handleToolToggle = (
     serverName: string,
