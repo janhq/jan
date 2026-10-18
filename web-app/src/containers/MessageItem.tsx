@@ -33,6 +33,8 @@ import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
+import AttachmentPreviewDialog from '@/components/AttachmentPreviewDialog'
+import type { Attachment } from '@/types/attachment'
 import { Button } from '@/components/ui/button'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -102,6 +104,7 @@ export const MessageItem = memo(
       url: string
       filename?: string
     } | null>(null)
+    const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
@@ -264,6 +267,33 @@ export const MessageItem = memo(
       return files
     }, [message.parts, message.role])
 
+    // Inline (e.g. MCP prompt) attachments carry their content in message
+    // metadata, so the sent-message chip can preview it like the composer does.
+    const inlineContentsByName = useMemo(() => {
+      const list = (metadata?.inline_file_contents ??
+        []) as Array<{ name?: string; content?: string }>
+      const map = new Map<string, string>()
+      for (const f of list) {
+        if (f?.name && typeof f.content === 'string') map.set(f.name, f.content)
+      }
+      return map
+    }, [metadata])
+
+    const handlePreviewInlineFile = useCallback(
+      (file: FileMetadata) => {
+        const content = inlineContentsByName.get(file.name)
+        if (!content) return
+        setPreviewAttachment({
+          name: file.name,
+          type: 'document',
+          fileType: file.type,
+          inlineContent: content,
+          injectionMode: file.injectionMode,
+        })
+      },
+      [inlineContentsByName]
+    )
+
     // Get full text content for copy button
     const getFullTextContent = useCallback(() => {
       return message.parts
@@ -314,23 +344,34 @@ export const MessageItem = memo(
                 {/* Show attached files if any */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {attachedFiles.map((file: FileMetadata, idx: number) => (
-                      <div
-                        key={`file-${idx}-${file.id}`}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-secondary text-secondary-foreground border text-xs"
-                      >
-                        <IconPaperclip
-                          size={14}
-                          className="text-muted-foreground"
-                        />
-                        <span className="font-medium">{file.name}</span>
-                        {file.injectionMode && (
-                          <span className="text-muted-foreground">
-                            ({file.injectionMode})
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                    {attachedFiles.map((file: FileMetadata, idx: number) => {
+                      const canPreview = inlineContentsByName.has(file.name)
+                      return (
+                        <div
+                          key={`file-${idx}-${file.id}`}
+                          onClick={
+                            canPreview
+                              ? () => handlePreviewInlineFile(file)
+                              : undefined
+                          }
+                          className={cn(
+                            'flex items-center gap-1.5 px-2 py-1 rounded-sm bg-secondary text-secondary-foreground border text-xs',
+                            canPreview && 'cursor-pointer hover:opacity-80'
+                          )}
+                        >
+                          <IconPaperclip
+                            size={14}
+                            className="text-muted-foreground"
+                          />
+                          <span className="font-medium">{file.name}</span>
+                          {file.injectionMode && (
+                            <span className="text-muted-foreground">
+                              ({file.injectionMode})
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
                 {displayText && (
@@ -741,6 +782,15 @@ export const MessageItem = memo(
             <TokenSpeedIndicator streaming={isStreaming} metadata={metadata} />
           </div>
         )}
+
+        {/* Inline attachment (e.g. MCP prompt) preview */}
+        <AttachmentPreviewDialog
+          attachment={previewAttachment}
+          open={!!previewAttachment}
+          onOpenChange={(open) =>
+            open ? null : setPreviewAttachment(null)
+          }
+        />
 
         {/* Image Preview Dialog */}
         {previewImage && (
