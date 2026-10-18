@@ -119,7 +119,7 @@ impl RunningServiceEnum {
 
     pub async fn get_prompt(
         &self,
-        params: rmcp::model::GetPromptRequestParam,
+        params: rmcp::model::GetPromptRequestParams,
     ) -> Result<rmcp::model::GetPromptResult, rmcp::ServiceError> {
         match self {
             Self::NoInit(s) => s.get_prompt(params).await,

@@ -1,4 +1,4 @@
-use rmcp::model::{CallToolRequestParams, CallToolResult, GetPromptRequestParam};
+use rmcp::model::{CallToolRequestParams, CallToolResult, GetPromptRequestParams};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_opener::OpenerExt;
@@ -424,21 +424,14 @@ pub async fn get_prompt(
         .get(&server_name)
         .ok_or_else(|| format!("Server '{server_name}' not found"))?;
 
-    let result = timeout(
-        timeout_duration,
-        service.get_prompt(GetPromptRequestParam {
-            name: prompt_name.clone().into(),
-            arguments: arguments.map(|m| {
-                let mut map = serde_json::Map::new();
-                for (k, v) in m {
-                    map.insert(k, v);
-                }
-                map
-            }),
-        }),
-    )
-    .await
-    .map_err(|_| {
+    let mut params = GetPromptRequestParams::new(prompt_name.clone());
+    if let Some(args) = arguments {
+        params = params.with_arguments(args);
+    }
+
+    let result = timeout(timeout_duration, service.get_prompt(params))
+        .await
+        .map_err(|_| {
         format!(
             "Prompt '{prompt_name}' on server '{server_name}' timed out after {} seconds",
             timeout_duration.as_secs()
