@@ -122,16 +122,17 @@ const CHAT_STATUS = {
 const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
 
 // What an explicit Stop aborts to end a thread's running tool call, by thread.
-// Aborted only by Stop: leaving a thread ends its tool loop (see the cleanup in
-// ThreadDetail) but must not cancel a call that is running, whose result still
-// lands in the retained session. Keyed by thread because the route component is
+// Aborted only by Stop: deleting the thread ends its tool loop but must not
+// cancel a call that is running. Keyed by thread because the route component is
 // reused across thread switches, so a Stop in one thread can never reach
 // another's call, and the Stop button still works after coming back.
 const toolStopControllers = new Map<string, AbortController>()
 
-// What ends a thread's tool loop: aborted when the thread is left or stopped, it
-// stops the loop between calls and the auto follow-up of the turn. Keyed by
-// thread for the same reason as the Stop controllers; a ref on the component
+// What ends a thread's tool loop: aborted when the thread is stopped or deleted,
+// it stops the loop between calls and the auto follow-up of the turn. Leaving
+// the thread does not abort it: the turn keeps running in the retained chat
+// session, as a reply without tools does, and is there when the user returns.
+// Keyed by thread for the same reason as the Stop controllers; a ref on the component
 // would be shared by every thread's loop and let one thread's Stop, or one
 // thread's loop finishing, end another's.
 const toolLoopControllers = new Map<string, AbortController>()
@@ -165,7 +166,7 @@ const forgetApprovals = (threadId: string) => {
 }
 
 // Recorded for a call that never ran because its chat was closed (the thread was
-// left) rather than because the user refused or stopped it.
+// deleted) rather than because the user refused or stopped it.
 const CHAT_CLOSED_TOOL_ERROR =
   'Tool call cancelled: the chat was closed before it ran.'
 
@@ -179,7 +180,7 @@ const SHELL_DISABLED_TOOL_ERROR =
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
 // stopped) only reaches storage when a later reply rewrites the turn; when no
-// reply follows (Stop, or the thread was left) it has to be written here, or the
+// reply follows (Stop, or the thread was deleted) it has to be written here, or the
 // call reloads as "Running" after a restart.
 function rewriteStoredTurn(
   threadId: string,
@@ -677,8 +678,23 @@ function ThreadDetail() {
           .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
       }
 
+      // Deleting the thread removes its chat session, and that ends the loop:
+      // nothing may run, prompt, or call the model again for a thread that is
+      // gone. Released approvals resolve as denied, so the loop is not left
+      // waiting on a prompt nobody can see. Leaving the thread ends nothing.
+      let released = false
+      const unwatchSession = hasTools
+        ? useChatSessions.subscribe((state) => {
+            if (released || state.sessions[threadId]) return
+            released = true
+            callController.abort()
+            forgetApprovals(threadId)
+            useToolApprovalRequests.getState().clearPendingForThread(threadId)
+          })
+        : undefined
+
       // The outcomes handed to the chat, so a loop that ends after the thread was
-      // left can wait for them to land before it persists the turn.
+      // deleted can wait for them to land before it persists the turn.
       const outputs: Promise<unknown>[] = []
       const record = (output: Parameters<typeof addToolOutput>[0]) => {
         outputs.push(Promise.resolve(addToolOutput(output)))
@@ -688,7 +704,7 @@ function ThreadDetail() {
         for (const toolCall of sessionData.tools) {
           // Stop settles the turn's calls itself (see handleStop).
           if (stopSignal.aborted) break
-          // The thread was left before this call's turn came: it will not run,
+          // The thread was deleted before this call's turn came: it will not run,
           // and without an outcome its card would read "Running" on return.
           if (signal.aborted) {
             record({
@@ -726,7 +742,7 @@ function ThreadDetail() {
                       serverForTool(toolName)
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
-            // Only an explicit Stop skips the result. Leaving the thread also
+            // Only an explicit Stop skips the result. Deleting the thread also
             // resolves a pending approval as denied; that denial must still be
             // recorded, or the call stays "Running" with nothing running.
             if (stopSignal.aborted) break
@@ -736,8 +752,8 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                // Leaving the thread resolves a pending approval as denied; that
-                // was not the user's decision and the model reads this later.
+                // Deleting the thread resolves a pending approval as denied; that
+                // was not the user's decision.
                 errorText: signal.aborted
                   ? CHAT_CLOSED_TOOL_ERROR
                   : 'Tool execution denied by user',
@@ -850,10 +866,10 @@ function ThreadDetail() {
           }
         }
 
-        // The thread was left: no follow-up reply will run to rewrite the stored
-        // turn, so write what the live copy holds (results and errors included).
-        // This turn by its id, not the last message: the user may have come back
-        // and started another turn before this one's calls returned.
+        // The loop was cut short without a Stop: no follow-up reply will run to
+        // rewrite the stored turn, so write what the live copy holds (results
+        // and errors included), if the session still holds it. This turn by its
+        // id, not the last message: a newer turn may have started since.
         if (signal.aborted && !stopSignal.aborted) {
           await Promise.allSettled(outputs)
           const turn = useChatSessions
@@ -861,6 +877,7 @@ function ThreadDetail() {
             .sessions[threadId]?.chat.messages.find((m) => m.id === message.id)
           if (turn?.role === 'assistant') rewriteStoredTurn(threadId, turn, false)
         }
+        unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
@@ -877,6 +894,7 @@ function ThreadDetail() {
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
+        unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining()
         forgetApprovals(threadId)
@@ -1248,16 +1266,13 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // The route component is reused across thread switches (no remount), so tear
-  // down the in-flight tool loop and release approvals waiting on the thread we
-  // are leaving. Cleanup captures the previous threadId; without this the
-  // unresolved approval promise keeps that thread marked busy forever.
+  // The route component is reused across thread switches (no remount). Leaving
+  // a thread must not end its turn: its tool loop, any approval it waits on and
+  // the follow-up reply live in module state and the retained chat session, so
+  // they carry on in the background and the approval prompt is still there on
+  // return (#9311). Only Stop or deleting the thread ends the loop.
   useEffect(() => {
     return () => {
-      toolLoopControllers.get(threadId)?.abort()
-      toolLoopControllers.delete(threadId)
-      forgetApprovals(threadId)
-      useToolApprovalRequests.getState().clearPendingForThread(threadId)
       // Drop per-thread timing/progress/diff state from the shared runtime
       // store. The cards for the thread we leave are unmounting, so a thread a
       // later visit cannot show another thread's diff. (code.tsx re-hydrates

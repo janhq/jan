@@ -94,6 +94,19 @@ const h = vi.hoisted(() => {
   }
   const useChatSessionsMock: any = (selector: any) => selector(chatSessionsState)
   useChatSessionsMock.getState = () => chatSessionsState
+  // Listeners the route registers to learn a thread's session was removed (the
+  // thread was deleted); removeChatSession below notifies them.
+  const chatSessionListeners = new Set<(state: any) => void>()
+  useChatSessionsMock.subscribe = (listener: (state: any) => void) => {
+    chatSessionListeners.add(listener)
+    return () => chatSessionListeners.delete(listener)
+  }
+  const removeChatSession = (threadId: string) => {
+    const rest = { ...chatSessionsState.sessions }
+    delete rest[threadId]
+    chatSessionsState.sessions = rest
+    for (const listener of [...chatSessionListeners]) listener(chatSessionsState)
+  }
 
   const attachmentsState: any = {
     getAttachments: vi.fn(() => []),
@@ -158,6 +171,7 @@ const h = vi.hoisted(() => {
     useModelProviderMock,
     chatSessionsState,
     useChatSessionsMock,
+    removeChatSession,
     attachmentsState,
     useChatAttachmentsMock,
     useAttachmentsState,
@@ -498,6 +512,10 @@ const renderComponent = () => {
 
 describe('ThreadDetail route', () => {
   beforeEach(() => {
+    // Leaving a thread no longer ends its tool loop, so a loop an earlier test
+    // left waiting would keep its approvals. Deleting the threads ends them.
+    h.removeChatSession('thread-1')
+    h.removeChatSession('thread-2')
     vi.clearAllMocks()
     h.chatState.messages = []
     h.chatState.status = 'ready'
@@ -568,10 +586,12 @@ describe('ThreadDetail route', () => {
     expect(h.threadsState.setCurrentThreadId).toHaveBeenLastCalledWith(undefined)
   })
 
-  it('clears this thread pending tool approvals on unmount', () => {
+  // Leaving is not Stop: an approval the thread waits on stays up, and is still
+  // there to answer on return (#9311).
+  it('keeps this thread pending tool approvals on unmount', () => {
     const { unmount } = renderComponent()
     unmount()
-    expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith('thread-1')
+    expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
   })
 
   it('renders messages passed through useChat', () => {
@@ -1280,11 +1300,11 @@ describe('ThreadDetail route', () => {
       renderComponent()
 
       await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc1'))
+        await (h as any).capturedOnToolCall(toolCall('tc-server'))
       })
 
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
-        'tc1',
+        'tc-server',
         'fetch',
         'thread-1',
         'fetch-server'
@@ -2033,9 +2053,9 @@ describe('ThreadDetail route', () => {
         }
       })
 
-      // Leaving the thread resolves a pending approval as denied. It must be
+      // Deleting the thread resolves a pending approval as denied. It must be
       // recorded, or the call stays "Running" with nothing running, but not as a
-      // refusal by the user: the model reads this on the next turn.
+      // refusal by the user.
       it('records a cut-short approval as the chat closing, not a user denial', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         let decide: (approved: boolean) => void = () => {}
@@ -2044,12 +2064,17 @@ describe('ThreadDetail route', () => {
         )
         h.mockAddToolOutput.mockClear()
 
-        const { unmount } = renderComponent()
+        renderComponent()
         await arrive('tcA')
         await act(async () => {
           await finishWithToolCalls()
         })
-        unmount()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
+        expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith(
+          'thread-1'
+        )
         await act(async () => {
           decide(false)
         })
@@ -2063,67 +2088,100 @@ describe('ThreadDetail route', () => {
         )
       })
 
-      // No reply follows once the thread is left, and a reply is what rewrites a
-      // stored turn. Without a rewrite here the call reloads as "Running".
-      it('stores the outcome of a call cut short by leaving the thread', async () => {
+      // #9311: leaving a thread while its tool call runs must not end the turn.
+      // The call's result lands and the reply continues: the follow-up check,
+      // which the SDK runs as the result lands, still says to send.
+      it('leaving the thread lets the turn continue after its tool call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let finish: (r: unknown) => void = () => {}
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise((resolve) => (finish = resolve)),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          const followUpA = (h as any).capturedSendAutomaticallyWhen
+          const followUps: boolean[] = []
+          h.mockAddToolOutput.mockImplementation(() => {
+            followUps.push(followUpA({ messages: [] }))
+          })
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            finish({ error: '', content: [{ type: 'text', text: 'ok' }] })
+          })
+
+          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+            expect.objectContaining({ toolCallId: 'tcA', output: expect.anything() })
+          )
+          expect(followUps).toEqual([true])
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+          h.mockAddToolOutput.mockReset()
+        }
+      })
+
+      // An approval the left thread waits on stays pending, so the user can
+      // answer it on return; the call then runs and the reply continues.
+      it('leaving the thread keeps its pending approval answerable', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         let decide: (approved: boolean) => void = () => {}
         h.toolApprovalState.requestApproval = vi.fn(
           () => new Promise<boolean>((resolve) => (decide = resolve))
         )
-        h.messagesState.getMessages = vi.fn(() => [
-          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
-        ])
-        h.chatSessionsState.sessions = {
-          'thread-1': {
-            chat: {
-              messages: [
-                {
-                  id: 'a-tc',
-                  role: 'assistant',
-                  parts: [
-                    {
-                      type: 'tool-fetch',
-                      toolCallId: 'tcA',
-                      input: {},
-                      state: 'output-error',
-                      errorText: 'Tool call cancelled: the chat was closed before it ran.',
-                    },
-                  ],
-                },
-                // The user came back and started another turn meanwhile.
-                {
-                  id: 'a-new',
-                  role: 'assistant',
-                  parts: [{ type: 'text', text: 'a newer turn' }],
-                },
-              ],
+        const started: string[] = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: (call: any) => {
+              started.push(call.toolName)
+              return {
+                promise: Promise.resolve({ error: '', content: [] }),
+                cancel: vi.fn().mockResolvedValue(undefined),
+                token: 't',
+              }
             },
-          },
-        }
-        h.messagesState.updateMessage.mockClear()
+          }) as never
+        h.mockAddToolOutput.mockClear()
+        const Component = Route.component as React.ComponentType
 
         try {
-          const { unmount } = renderComponent()
+          const { rerender } = renderComponent()
           await arrive('tcA')
           await act(async () => {
             await finishWithToolCalls()
           })
-          unmount()
-          await act(async () => {
-            decide(false)
-          })
-        } finally {
-          h.chatSessionsState.sessions = {}
-        }
 
-        const stored = h.messagesState.updateMessage.mock.calls
-          .map((c: any[]) => c[0])
-          .find((m: any) => m.id === 'a-tc')
-        expect(stored.metadata.toolErrors).toEqual({
-          tcA: expect.stringContaining('chat was closed'),
-        })
-        expect(stored.metadata.stopped).toBeUndefined()
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
+
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+          await act(async () => {
+            decide(true)
+          })
+
+          expect(started).toEqual(['fetch'])
+          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+            expect.objectContaining({ toolCallId: 'tcA' })
+          )
+          expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
+            expect.objectContaining({ state: 'output-error' })
+          )
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
       })
 
       // The approval promises are shared by every thread's loop. A thread whose
@@ -2177,12 +2235,14 @@ describe('ThreadDetail route', () => {
         )
         h.mockAddToolOutput.mockClear()
 
-        const { unmount } = renderComponent()
+        renderComponent()
         await arrive('tcA', 'tcB')
         await act(async () => {
           await finishWithToolCalls()
         })
-        unmount()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
         await act(async () => {
           decide.tcA(false)
         })
