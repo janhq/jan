@@ -948,9 +948,13 @@ function ThreadDetail() {
                 inputText,
                 controller.signal
               )
+              if (titleAbortRef.current === controller) titleAbortRef.current = null
               if (!title || controller.signal.aborted) return
+              // A rename or deletion can happen while the model is working.
+              // Recheck the live thread instead of the pre-request snapshot.
+              const latestThread = useThreads.getState().threads[threadId]
+              if (!latestThread || latestThread.metadata?.titleSetManually) return
               useThreads.getState().updateThread(threadId, { title })
-              titleAbortRef.current = null
             })()
           }
         }

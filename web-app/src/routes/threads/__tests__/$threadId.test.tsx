@@ -485,6 +485,7 @@ import {
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { usePrompt } from '@/hooks/usePrompt'
+import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -559,6 +560,30 @@ describe('ThreadDetail route', () => {
     expect(screen.getByTestId('model-dropdown')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('chat-status')).toHaveTextContent('ready')
+  })
+
+  it.each(['renamed', 'deleted'])('discards an automatic title if the thread was %s while generation was pending', async (change) => {
+    let finish!: (title: string) => void
+    vi.mocked(generateThreadTitle).mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    renderComponent()
+    act(() => {
+      ;(h as any).capturedOnFinish({ message: { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'reply' }], metadata: {} }, isAbort: false })
+    })
+    await waitFor(() => expect(generateThreadTitle).toHaveBeenCalled())
+    if (change === 'deleted') delete h.threadsState.threads['thread-1']
+    else h.threadsState.threads['thread-1'] = {
+      ...h.threadsState.threads['thread-1'], title: 'My chosen title', metadata: { titleSetManually: true },
+    }
+    await act(async () => { finish('Late automatic title') })
+    expect(h.threadsState.updateThread.mock.calls.filter(([, update]: any[]) => update.title === 'Late automatic title')).toEqual([])
+  })
+
+  it('still accepts a generated title for an unchanged automatic thread', async () => {
+    renderComponent()
+    await act(async () => {
+      ;(h as any).capturedOnFinish({ message: { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'reply' }], metadata: {} }, isAbort: false })
+    })
+    expect(h.threadsState.updateThread).toHaveBeenCalledWith('thread-1', { title: 'Short title' })
   })
 
   it('sets current thread id on mount and resets on unmount', () => {
