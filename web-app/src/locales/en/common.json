@@ -537,9 +537,19 @@
     },
     "downloadFailed": {
       "title": "Download Failed",
-      "description": "{{item}} download failed"
+      "description": "{{item}} download failed",
+      "descriptionWithReason": "{{item}} download failed: {{reason}}",
+      "reason": {
+        "dns": "the server name could not be resolved",
+        "refused": "the connection was refused",
+        "timeout": "the connection timed out",
+        "tls": "a secure connection could not be established",
+        "proxy": "the proxy could not be reached",
+        "unreachable": "the server could not be reached"
+      }
     },
     "openSettings": "Open Settings",
+    "openLogs": "Open logs",
     "downloadTokenRequired": {
       "title": "Hugging Face token required",
       "description": "This model requires a Hugging Face access token. Add your token in Settings and retry."
