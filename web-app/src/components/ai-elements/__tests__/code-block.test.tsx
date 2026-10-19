@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { codeToHtml } from 'shiki'
 
@@ -11,6 +11,48 @@ vi.mock('shiki', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(codeToHtml).mockResolvedValue('<pre><code>highlighted</code></pre>')
+})
+
+describe('CodeBlock overlapping highlighting', () => {
+  it.each(['code', 'language', 'line numbers'])('ignores an obsolete result after %s changes', async (change) => {
+    const finish: Array<(html: string) => void> = []
+    vi.mocked(codeToHtml).mockImplementation(() => new Promise<string>((resolve) => { finish.push(resolve) }))
+    const { container, rerender } = render(<CodeBlock code="old source" language="javascript" />)
+    rerender(<CodeBlock
+      code={change === 'code' ? 'new source' : 'old source'}
+      language={change === 'language' ? 'typescript' : 'javascript'}
+      showLineNumbers={change === 'line numbers'}
+    />)
+    expect(finish).toHaveLength(4)
+    await act(async () => {
+      finish[0]('<pre><code>obsolete highlight</code></pre>')
+      finish[1]('<pre><code>obsolete highlight</code></pre>')
+    })
+    await act(async () => {
+      finish[2]('<pre><code>latest highlight</code></pre>')
+      finish[3]('<pre><code>latest highlight</code></pre>')
+    })
+    expect(container).toHaveTextContent('latest highlight')
+    expect(container).not.toHaveTextContent('obsolete highlight')
+  })
+
+  it('keeps the latest highlight when an older request completes last', async () => {
+    const finish: Array<(html: string) => void> = []
+    vi.mocked(codeToHtml).mockImplementation(() => new Promise<string>((resolve) => { finish.push(resolve) }))
+    const { container, rerender } = render(<CodeBlock code="old" language="javascript" />)
+    rerender(<CodeBlock code="new" language="javascript" />)
+    await act(async () => {
+      finish[2]('<pre><code>latest</code></pre>')
+      finish[3]('<pre><code>latest</code></pre>')
+    })
+    await act(async () => {
+      finish[0]('<pre><code>obsolete</code></pre>')
+      finish[1]('<pre><code>obsolete</code></pre>')
+    })
+    expect(container).toHaveTextContent('latest')
+    expect(container).not.toHaveTextContent('obsolete')
+  })
 })
 
 describe('highlightCode', () => {
