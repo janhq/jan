@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useToolApprovalRequests } from '../useToolApprovalRequests'
 import { useToolApproval } from '../useToolApproval'
+import { approvalRequestKey } from '@/lib/tool-approval-key'
 
 // useToolApproval persists via backendStorage; stub the persist layer so the
 // import is inert and no disk I/O happens in tests.
@@ -36,11 +37,54 @@ describe('useToolApprovalRequests', () => {
       result.current.requestApproval('tc1', 'tool-a', 'thread-1')
     })
 
-    expect(result.current.pending['tc1']).toMatchObject({
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toMatchObject({
       toolCallId: 'tc1',
       toolName: 'tool-a',
       threadId: 'thread-1',
     })
+  })
+
+  it('keeps same-ID calls on two threads independent through cancellation and approval', async () => {
+    const store = useToolApprovalRequests.getState()
+    const first = store.requestApproval('same', 'read', 'thread-A', 'server-A')
+    const second = store.requestApproval('same', 'write', 'thread-B', 'server-B')
+    expect(Object.keys(useToolApprovalRequests.getState().pending)).toHaveLength(2)
+    store.clearPendingForThread('thread-A')
+    expect(await first).toBe(false)
+    expect(Object.values(useToolApprovalRequests.getState().pending)[0].threadId).toBe('thread-B')
+    store.resolveApproval('same', 'allow-once', 'thread-B')
+    expect(await second).toBe(true)
+  })
+
+  it('shares an identical pending request without stranding its first caller', async () => {
+    const store = useToolApprovalRequests.getState()
+    const first = store.requestApproval('same', 'read', 'thread-A', 'server')
+    const second = store.requestApproval('same', 'read', 'thread-A', 'server')
+    expect(second).toBe(first)
+    store.resolveApproval('same', 'deny', 'thread-A')
+    expect(await Promise.all([first, second])).toEqual([false, false])
+  })
+
+  it('refuses an ownerless decision when the call ID is ambiguous', async () => {
+    const store = useToolApprovalRequests.getState()
+    const a = store.requestApproval('same', 'read', 'A')
+    const b = store.requestApproval('same', 'read', 'B')
+    store.resolveApproval('same', 'allow-always')
+    expect(Object.keys(useToolApprovalRequests.getState().pending)).toHaveLength(2)
+    expect(useToolApproval.getState().approvedToolsGlobal).toEqual([])
+    store.clearPendingForThread('A')
+    store.clearPendingForThread('B')
+    expect(await Promise.all([a, b])).toEqual([false, false])
+  })
+
+  it('does not replace an existing request with a conflicting tool identity', async () => {
+    const store = useToolApprovalRequests.getState()
+    const first = store.requestApproval('same', 'read', 'thread-A', 'trusted-source')
+    const conflict = store.requestApproval('same', 'write', 'thread-A', 'other-source')
+    expect(Object.values(useToolApprovalRequests.getState().pending)[0].toolName).toBe('read')
+    expect(await conflict).toBe(false)
+    store.clearPendingForThread('thread-A')
+    expect(await first).toBe(false)
   })
 
   it('auto-resolves true (no pending) when allowAllMCPPermissions is set', async () => {
@@ -53,7 +97,7 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('auto-resolves true (no pending) when the tool is already approved for the thread', async () => {
@@ -68,7 +112,7 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('resolveApproval allow-once resolves true without persisting the tool', async () => {
@@ -84,7 +128,7 @@ describe('useToolApprovalRequests', () => {
 
     await expect(p!).resolves.toBe(true)
     expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(false)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('resolveApproval allow-thread persists the tool for that thread only', async () => {
@@ -153,7 +197,7 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(result.current.pending['tc1']).toBeUndefined()
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toBeUndefined()
   })
 
   it('keeps the server on the pending entry so the prompt can name it', () => {
@@ -163,7 +207,7 @@ describe('useToolApprovalRequests', () => {
       result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
     })
 
-    expect(result.current.pending['tc1']).toMatchObject({
+    expect(result.current.pending[approvalRequestKey('thread-1', 'tc1')]).toMatchObject({
       serverName: 'github',
     })
   })
@@ -198,8 +242,8 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(pA!).resolves.toBe(false)
-    expect(result.current.pending['tcA']).toBeUndefined()
-    expect(result.current.pending['tcB']).toMatchObject({ threadId: 'thread-B' })
+    expect(result.current.pending[approvalRequestKey('thread-A', 'tcA')]).toBeUndefined()
+    expect(result.current.pending[approvalRequestKey('thread-B', 'tcB')]).toMatchObject({ threadId: 'thread-B' })
 
     act(() => {
       result.current.resolveApproval('tcB', 'allow-once')
@@ -217,6 +261,6 @@ describe('useToolApprovalRequests', () => {
       result.current.clearPendingForThread('thread-Z')
     })
 
-    expect(result.current.pending['tcA']).toMatchObject({ threadId: 'thread-A' })
+    expect(result.current.pending[approvalRequestKey('thread-A', 'tcA')]).toMatchObject({ threadId: 'thread-A' })
   })
 })

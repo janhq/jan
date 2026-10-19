@@ -30,6 +30,7 @@ import {
 } from '@/lib/toolInputSummary'
 import { summarizeToolOutput } from '@/lib/toolOutputSummary'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { findPendingApproval } from '@/lib/tool-approval-key'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { ToolElapsed } from './tool-runtime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -47,6 +48,7 @@ type ToolContextValue = {
   state: ToolUIPart['state']
   toolCallId?: string
   messageId?: string
+  threadId?: string
 }
 
 const ToolContext = createContext<ToolContextValue | null>(null)
@@ -64,6 +66,7 @@ export type ToolProps = ComponentProps<typeof Collapsible> & {
   state: ToolUIPart['state']
   toolCallId?: string
   messageId?: string
+  threadId?: string
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
@@ -75,6 +78,7 @@ export const Tool = memo(
     state,
     toolCallId,
     messageId,
+    threadId,
     open,
     defaultOpen = false,
     onOpenChange,
@@ -82,7 +86,7 @@ export const Tool = memo(
     ...props
   }: ToolProps) => {
     const isPending = useToolApprovalRequests((s) =>
-      toolCallId ? Boolean(s.pending[toolCallId]) : false
+      (state === 'input-available' || state === 'input-streaming') && Boolean(findPendingApproval(s.pending, toolCallId, threadId))
     )
     const [isOpen, setIsOpen] = useControllableState({
       prop: open,
@@ -106,7 +110,7 @@ export const Tool = memo(
 
     return (
       <ToolContext.Provider
-        value={{ isOpen, setIsOpen, state, toolCallId, messageId }}
+        value={{ isOpen, setIsOpen, state, toolCallId, messageId, threadId }}
       >
         <Collapsible
           className={cn('not-prose', className)}
@@ -165,9 +169,9 @@ const getStatusText = (
 export const ToolHeader = memo(
   ({ className, title, state, type, origin, input }: ToolHeaderProps) => {
     const { t } = useTranslation()
-    const { isOpen, toolCallId } = useTool()
+    const { isOpen, toolCallId, threadId } = useTool()
     const awaitingApproval = useToolApprovalRequests((s) =>
-      toolCallId ? Boolean(s.pending[toolCallId]) : false
+      (state === 'input-available' || state === 'input-streaming') && Boolean(findPendingApproval(s.pending, toolCallId, threadId))
     )
     const toolName = title ?? type.split('-').slice(1).join('-')
     const summary = useMemo(() => summarizeToolInput(input), [input])
@@ -331,13 +335,13 @@ export const ToolInput = memo(
 
 export const ToolApprovalActions = memo(() => {
   const { t } = useTranslation()
-  const { toolCallId } = useTool()
+  const { toolCallId, threadId, state } = useTool()
   const pending = useToolApprovalRequests((s) =>
-    toolCallId ? s.pending[toolCallId] : undefined
+    findPendingApproval(s.pending, toolCallId, threadId)
   )
   const resolveApproval = useToolApprovalRequests((s) => s.resolveApproval)
 
-  if (!pending || !toolCallId) return null
+  if (!pending || !toolCallId || (state !== 'input-available' && state !== 'input-streaming')) return null
 
   return (
     <div className="mt-4 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
@@ -349,28 +353,28 @@ export const ToolApprovalActions = memo(() => {
         <Button
           size="sm"
           variant="destructive"
-          onClick={() => resolveApproval(toolCallId, 'deny')}
+          onClick={() => resolveApproval(toolCallId, 'deny', threadId)}
         >
           {t('tools:toolApproval.deny')}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => resolveApproval(toolCallId, 'allow-once')}
+          onClick={() => resolveApproval(toolCallId, 'allow-once', threadId)}
         >
           {t('tools:toolApproval.allowOnce')}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => resolveApproval(toolCallId, 'allow-thread')}
+          onClick={() => resolveApproval(toolCallId, 'allow-thread', threadId)}
         >
           {t('tools:toolApproval.allowInThread')}
         </Button>
         <Button
           size="sm"
           autoFocus
-          onClick={() => resolveApproval(toolCallId, 'allow-always')}
+          onClick={() => resolveApproval(toolCallId, 'allow-always', threadId)}
         >
           {/* Trusting a server tool-by-tool is the same decision repeated. */}
           {pending.serverName

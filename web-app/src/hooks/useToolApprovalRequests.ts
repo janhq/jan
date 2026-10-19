@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
+import { approvalRequestKey } from '@/lib/tool-approval-key'
 
 export type PendingApproval = {
   toolCallId: string
@@ -8,6 +9,7 @@ export type PendingApproval = {
   /** MCP server the tool belongs to, so the prompt can offer to trust it. */
   serverName?: string
   resolve: (approved: boolean) => void
+  promise: Promise<boolean>
 }
 
 /**
@@ -32,7 +34,7 @@ type ToolApprovalRequestsState = {
     threadId: string,
     serverName?: string
   ) => Promise<boolean>
-  resolveApproval: (toolCallId: string, decision: ApprovalDecision) => void
+  resolveApproval: (toolCallId: string, decision: ApprovalDecision, threadId?: string) => void
   clearPendingForThread: (threadId: string) => void
 }
 
@@ -41,33 +43,32 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     pending: {},
 
     requestApproval: (toolCallId, toolName, threadId, serverName) => {
-      return new Promise<boolean>((resolve) => {
-        const settings = useToolApproval.getState()
-        if (settings.allowAllMCPPermissions) {
-          resolve(true)
-          return
-        }
-        if (settings.isToolApproved(threadId, toolName, serverName)) {
-          resolve(true)
-          return
-        }
-        set((s) => ({
-          pending: {
-            ...s.pending,
-            [toolCallId]: {
-              toolCallId,
-              toolName,
-              threadId,
-              serverName,
-              resolve,
-            },
-          },
-        }))
-      })
+      const key = approvalRequestKey(threadId, toolCallId)
+      const existing = get().pending[key]
+      if (existing) {
+        return existing.toolName === toolName && existing.serverName === serverName
+          ? existing.promise : Promise.resolve(false)
+      }
+      const settings = useToolApproval.getState()
+      if (settings.allowAllMCPPermissions || settings.isToolApproved(threadId, toolName, serverName)) {
+        return Promise.resolve(true)
+      }
+      let resolve!: (approved: boolean) => void
+      const promise = new Promise<boolean>((settle) => { resolve = settle })
+      set((s) => ({
+        pending: { ...s.pending, [key]: { toolCallId, toolName, threadId, serverName, resolve, promise } },
+      }))
+      return promise
     },
 
-    resolveApproval: (toolCallId, decision) => {
-      const entry = get().pending[toolCallId]
+    resolveApproval: (toolCallId, decision, threadId) => {
+      const pending = get().pending
+      const matches = threadId ? [approvalRequestKey(threadId, toolCallId)]
+        : Object.keys(pending).filter((key) => pending[key].toolCallId === toolCallId)
+      // Compatibility for callers without an owner is safe only if unique.
+      if (matches.length !== 1) return
+      const key = matches[0]
+      const entry = pending[key]
       if (!entry) return
       const approval = useToolApproval.getState()
       if (decision === 'allow-thread') {
@@ -81,7 +82,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       }
       set((s) => {
         const next = { ...s.pending }
-        delete next[toolCallId]
+        delete next[key]
         return { pending: next }
       })
       entry.resolve(decision !== 'deny')
@@ -95,7 +96,7 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       if (stranded.length === 0) return
       set((s) => {
         const next = { ...s.pending }
-        for (const entry of stranded) delete next[entry.toolCallId]
+        for (const entry of stranded) delete next[approvalRequestKey(entry.threadId, entry.toolCallId)]
         return { pending: next }
       })
       // Resolve as denied so any awaiting tool loop unblocks instead of hanging.

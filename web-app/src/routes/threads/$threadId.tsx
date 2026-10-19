@@ -2150,6 +2150,7 @@ function ThreadDetail() {
                   <MessageItem
                     key={message.id}
                     message={message}
+                    threadId={threadId}
                     isFirstMessage={isFirstMessage}
                     isLastMessage={isLastMessage}
                     status={effectiveStatus}
@@ -2172,6 +2173,7 @@ function ThreadDetail() {
                 <MessageItem
                   key={`continue-placeholder-${pendingContinueMessage.id}`}
                   message={pendingContinueMessage}
+                  threadId={threadId}
                   isFirstMessage={false}
                   isLastMessage={true}
                   status={effectiveStatus}

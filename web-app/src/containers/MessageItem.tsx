@@ -41,11 +41,13 @@ import { parseCitationsFromToolOutput } from '@/lib/citation-parser'
 import type { RagCitation, WebCitation } from '@/components/Citations'
 import { useGroundingStore } from '@/stores/grounding-store'
 import { useWebCitationStore } from '@/stores/web-citation-store'
+import { findPendingApproval } from '@/lib/tool-approval-key'
 import { WebSourcesRow } from '@/components/WebSourcesRow'
 import { injectCitationMarkers } from '@/lib/grounding'
 
 export type MessageItemProps = {
   message: UIMessage
+  threadId?: string
   isFirstMessage: boolean
   isLastMessage: boolean
   status: ChatStatus
@@ -74,6 +76,7 @@ export type MessageItemProps = {
 export const MessageItem = memo(
   ({
     message,
+    threadId,
     isFirstMessage,
     isLastMessage,
     status,
@@ -171,9 +174,9 @@ export const MessageItem = memo(
       if (!hasPendingToolCall) return false
       return message.parts.some((part) => {
         const toolCallId = (part as { toolCallId?: string }).toolCallId
-        return Boolean(toolCallId && pendingApprovals[toolCallId])
+        return Boolean(findPendingApproval(pendingApprovals, toolCallId, threadId))
       })
-    }, [hasPendingToolCall, message.parts, pendingApprovals])
+    }, [hasPendingToolCall, message.parts, pendingApprovals, threadId])
 
     const usedSkills = useMemo(
       () => usedSkillNames(message.parts as never),
@@ -468,6 +471,7 @@ export const MessageItem = memo(
             key={`${message.id}-cot-${groupSeq++}`}
             entries={cotEntries}
             messageId={message.id}
+            threadId={threadId}
             totalParts={parts.length}
             isStreaming={isStreaming}
             hasFollowingContent={hasFollowing}
@@ -507,6 +511,7 @@ export const MessageItem = memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       message.parts,
+      threadId,
       isStreaming,
       isReasoningAtBottom,
       grounding,
@@ -771,6 +776,7 @@ export const MessageItem = memo(
 
     return (
       prevProps.message === nextProps.message &&
+      prevProps.threadId === nextProps.threadId &&
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
