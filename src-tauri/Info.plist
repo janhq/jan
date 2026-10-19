@@ -15,5 +15,7 @@
       </array>
     </dict>
   </array>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Jan connects to model servers on your local network.</string>
 </dict>
 </plist>
