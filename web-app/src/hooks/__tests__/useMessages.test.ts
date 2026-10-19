@@ -206,9 +206,8 @@ describe('useMessages', () => {
       )
 
       // Verify persistence was attempted
-      await vi.waitFor(() => {
-        expect(mockCreateMessage).toHaveBeenCalled()
-      })
+      await act(async () => { await Promise.resolve() })
+      expect(mockCreateMessage).toHaveBeenCalled()
     })
 
     it('should handle message without created_at', async () => {
@@ -241,6 +240,7 @@ describe('useMessages', () => {
           created_at: expect.any(Number),
         })
       )
+      await act(async () => { await Promise.resolve() })
     })
 
     it('should preserve existing metadata', async () => {
@@ -281,6 +281,7 @@ describe('useMessages', () => {
           }),
         })
       )
+      await act(async () => { await Promise.resolve() })
     })
   })
 
