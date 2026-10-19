@@ -95,6 +95,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 open_in_browser: false,
             },
         },
+        ProviderDefinition {
+            id: "fikra",
+            name: "Fikra API",
+            default_base_url: "https://api.fikraapi.co.ke/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://fikraapi.co.ke".to_string(),
+                hint: "get a key at fikraapi.co.ke",
+                open_in_browser: true,
+            },
+        },
         // Not a fixed endpoint: the deployment this run signs in to (a dev
         // stack's `TOKAMAK_BASE_URL`, or where the last sign-in went), so a
         // paste sign-in verifies and stores the key against the same host the
@@ -160,7 +171,7 @@ mod tests {
         let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec!["openai", "anthropic", "opencode", "deepseek", "fikra", "tokamak"]
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
         assert!(provider_by_id("nope").is_none());
