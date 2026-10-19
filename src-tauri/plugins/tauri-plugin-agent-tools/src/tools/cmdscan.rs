@@ -915,6 +915,14 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         if word != "[" && word != "[[" && word.contains(['=', '$', '*', '?', '[']) {
             return false;
         }
+        // cmd strips `^` before it runs the command word, so `cm^d` runs
+        // `cmd` and `se^t PATH=x` is `set`: the escaped text would dodge the
+        // checks below and become a grant that covers the real command
+        // (#9315). The tokens no longer say whether the caret was quoted
+        // (where cmd keeps it), so any caret in the command word prompts.
+        if kind == ShellKind::Cmd && word.contains('^') {
+            return false;
+        }
         // Windows resolves `SSH` and `ssh.exe` to `ssh`, so the POSIX list is
         // matched by that name too.
         if OPAQUE.contains(&base.as_str())
@@ -1618,6 +1626,20 @@ mod tests {
         assert_eq!(
             scan_command_as("set \"PATH=C:\\evil\" & git status", ShellKind::Cmd),
             CommandScan::Opaque
+        );
+    }
+
+    /// janhq/jan#9315: the caret also escapes the command word, so `cm^d`
+    /// runs `cmd` and must not become a grantable base of its own.
+    #[test]
+    fn cmd_caret_in_command_word_is_opaque() {
+        for command in ["se^t PATH=C:\\evil& git status", "cm^d /c rm x", "r^d /s /q C:\\"] {
+            assert_eq!(scan_command_as(command, ShellKind::Cmd), CommandScan::Opaque, "{command}");
+        }
+        // POSIX shells read `^` literally.
+        assert_eq!(
+            scan_command_as("cm^d /c rm x", ShellKind::Posix),
+            CommandScan::Bases(set(&["cm^d"]))
         );
     }
 
