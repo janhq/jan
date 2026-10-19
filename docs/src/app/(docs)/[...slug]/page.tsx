@@ -6,11 +6,12 @@ import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getMDXComponents } from '@/components/mdx'
-import { NextraToc, NextraTocMeta } from '@/components/nextra-toc'
+import { NextraToc } from '@/components/nextra-toc'
 import { NavLinks } from '@/components/nav-links'
-import { Breadcrumb } from '@/components/breadcrumb'
+import { PageSection } from '@/components/page-section'
 import { source } from '@/lib/source'
-import { defaultOgImage, editUrl, isNightly, pageMarkdownUrl, siteName } from '@/lib/shared'
+import { defaultOgImage, isNightly, siteName } from '@/lib/shared'
+import { CopyPage } from '@/components/copy-page'
 
 type Props = { params: Promise<{ slug: string[] }> }
 
@@ -22,11 +23,6 @@ export default async function Page(props: Props) {
   const MDX = page.data.body
   const tocExclude = new Set(page.data.tocExclude ?? [])
   const toc = page.data.toc.filter((item) => !tocExclude.has(item.url))
-  const tocMeta = {
-    title: page.data.title,
-    editUrl: editUrl(page.path),
-    markdownUrl: pageMarkdownUrl(page.slugs),
-  }
 
   const body = <MDX components={getMDXComponents({ a: createRelativeLink(source, page) })} />
 
@@ -49,11 +45,11 @@ export default async function Page(props: Props) {
     <DocsLayout
       tree={source.getPageTree()}
       {...baseOptions()}
-      // Jan Desktop / Jan Agent are root folders -> sidebar tab switcher.
-      tabMode="auto"
+      // Jan Desktop / Jan Agent are root folders, so the sidebar shows one at
+      // a time. The navbar tabs switch between them, so no sidebar switcher.
+      tabs={false}
       sidebar={{ defaultOpenLevel: 0, collapsible: false }}
     >
-    <NextraTocMeta {...tocMeta}>
     <DocsPage
       toc={toc}
       full={page.data.full}
@@ -64,14 +60,22 @@ export default async function Page(props: Props) {
       // Prev/next as on jan.ai/docs (title + arrow), not Fumadocs' cards.
       footer={{ enabled: false }}
     >
-      <Breadcrumb />
-      <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
+      {/* One block, so the section label sits right on the title (the page
+          column spaces its children 16px apart). */}
+      <div>
+        <PageSection />
+        <div className="flex items-start justify-between gap-4">
+          <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
+          {/* In the right sidebar from xl; here below that. Nudged down to sit
+              level with the title's first line. */}
+          <CopyPage className="mt-2 xl:hidden" />
+        </div>
+      </div>
       <DocsBody>
         {body}
       </DocsBody>
       <NavLinks />
     </DocsPage>
-    </NextraTocMeta>
     </DocsLayout>
   )
 }

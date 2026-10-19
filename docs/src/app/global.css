@@ -4,104 +4,190 @@
 
 @source '../../node_modules/fumadocs-ui/dist/**/*.js';
 
-/* ---- Jan brand fonts (same files as the old jan.ai/docs) ---- */
+/* ---- Jan design system (from janhq/jan.ai @ 3cc53b5, src/components/ds) ----
+   Geist + Geist Mono, the neutral ramp and the type scale match jan.ai.
+   Docs add a dark theme built from the same ramp: every colour below that
+   flips with the theme is a role (page, surface, line, ink, link), set for
+   light here and for dark in `.dark` further down. */
+
+/* Variable fonts: one file per family covers every weight. SIL Open Font
+   License, see /assets/fonts/Geist-OFL.txt. */
 @font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
-  font-weight: 200;
+  font-family: 'Geist';
+  src: url('/assets/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Light.otf') format('opentype');
-  font-weight: 300;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Book.otf') format('opentype');
-  font-weight: 350;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Regular.otf') format('opentype');
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Medium.otf') format('opentype');
-  font-weight: 500;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
-  font-weight: 600;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'StudioFeixenSans';
-  src: url('/assets/fonts/StudioFeixenSans-Bold.otf') format('opentype');
-  font-weight: 700;
+  font-family: 'Geist Mono';
+  src: url('/assets/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
   font-display: swap;
 }
 
 @theme {
-  --font-sans:
-    'StudioFeixenSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Oxygen-Sans', Ubuntu, Cantarell, Helvetica, sans-serif;
-  /* `font-serif` resolved to Studio Feixen Sans on the old site too. */
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
   --font-serif: var(--font-sans);
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Jan palette: white page, near-black text, Jan blue accents. */
-  --color-fd-background: #ffffff;
-  --color-fd-foreground: #0a0a0a;
-  --color-fd-muted: #f7f7f7;
-  --color-fd-muted-foreground: #5c5c5c;
-  --color-fd-popover: #ffffff;
-  --color-fd-popover-foreground: #0a0a0a;
-  --color-fd-card: #fafafa;
-  --color-fd-card-foreground: #0a0a0a;
-  --color-fd-border: rgba(0, 0, 0, 0.1);
-  --color-fd-primary: #0668d5;
-  --color-fd-primary-foreground: #ffffff;
-  --color-fd-secondary: #f4f4f5;
-  --color-fd-secondary-foreground: #0a0a0a;
-  --color-fd-accent: #e0eefe;
-  --color-fd-accent-foreground: #0668d5;
-  --color-fd-ring: #0668d5;
+  /* Menlo neutral ramp (same values as jan.ai). */
+  --color-jan-neutral-0: #ffffff;
+  --color-jan-neutral-50: #f8f8f8;
+  --color-jan-neutral-100: #f0f0f1;
+  --color-jan-neutral-200: #e1e1e1;
+  --color-jan-neutral-300: #c9c8cc;
+  --color-jan-neutral-400: #b0afb4;
+  --color-jan-neutral-500: #949398;
+  --color-jan-neutral-600: #7b7c80;
+  --color-jan-neutral-700: #5a5c5f;
+  --color-jan-neutral-800: #323537;
+  --color-jan-neutral-900: #1e2022;
+  --color-jan-neutral-950: #0f0e13;
 
-  --color-jan-blue: #0668d5;
-  --color-jan-blue-soft: #e0eefe;
+  /* Accent swatches */
+  --color-jan-blue: #458edf;
+  --color-jan-yellow: #fec928;
+  --color-jan-lavender: #bbabf5;
+  --color-jan-green: #4f8a31;
+  --color-jan-lime: #c6e09e;
 
-  --animate-wave: wave 2.4s ease-in-out infinite;
-  @keyframes wave {
-    0%,
-    60%,
-    100% {
-      transform: rotate(0deg);
-    }
-    10%,
-    30% {
-      transform: rotate(14deg);
-    }
-    20% {
-      transform: rotate(-8deg);
-    }
-    40% {
-      transform: rotate(-4deg);
-    }
-    50% {
-      transform: rotate(10deg);
-    }
+  /* Theme roles (light). Text uses ink at fixed strengths: headings 100%,
+     body 70%, muted 60%, meta 40%, e.g. `text-ink/70`. */
+  --color-page: var(--color-jan-neutral-0);
+  --color-surface: var(--color-jan-neutral-50); /* sidebar, cards, code */
+  --color-line: var(--color-jan-neutral-200); /* borders, rules */
+  --color-ink: var(--color-jan-neutral-950);
+  --color-link: var(--color-jan-blue);
+  --color-chip: var(--color-jan-neutral-100); /* inline code */
+
+  /* Fumadocs' own roles (sidebar, search, TOC, popovers) follow ours. */
+  --color-fd-background: var(--color-page);
+  --color-fd-foreground: var(--color-ink);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: #6f6e71; /* ink at 60% on page */
+  --color-fd-popover: var(--color-page);
+  --color-fd-popover-foreground: var(--color-ink);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-ink);
+  --color-fd-border: var(--color-line);
+  --color-fd-primary: var(--color-link);
+  --color-fd-primary-foreground: var(--color-page);
+  --color-fd-secondary: var(--color-surface);
+  --color-fd-secondary-foreground: var(--color-ink);
+  --color-fd-accent: var(--color-surface);
+  --color-fd-accent-foreground: var(--color-ink);
+  --color-fd-ring: var(--color-link);
+
+  /* Type scale (jan.ai's Figma text styles). Display, Lead and Tagline are
+     fluid between 390px and 1440px wide; the rest are fixed. Pair the mono
+     styles with `font-mono uppercase`. */
+  --text-display-md: clamp(2rem, 1.7214rem + 1.1429vw, 2.75rem); /* 32 → 44 */
+  --text-display-md--line-height: clamp(2.25rem, 1.9714rem + 1.1429vw, 3rem);
+  --text-display-md--letter-spacing: -0.04em;
+  --text-display-md--font-weight: 600;
+  --text-lead: clamp(1.5rem, 1.4071rem + 0.381vw, 1.75rem); /* 24 → 28 */
+  --text-lead--line-height: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem);
+  --text-lead--letter-spacing: -0.02em;
+  --text-lead--font-weight: 600;
+  --text-tagline: clamp(1.125rem, 1.0554rem + 0.2857vw, 1.3125rem); /* 18 → 21 */
+  --text-tagline--line-height: clamp(1.5rem, 1.4071rem + 0.381vw, 1.75rem);
+  --text-tagline--letter-spacing: -0.02em;
+  --text-tagline--font-weight: 500;
+  --text-card-title: 1.3125rem; /* 21 / 28 SemiBold */
+  --text-card-title--line-height: 1.75rem;
+  --text-card-title--letter-spacing: -0.02em;
+  --text-card-title--font-weight: 600;
+  --text-body-strong: 1.0625rem; /* 17 / 26 SemiBold */
+  --text-body-strong--line-height: 1.625rem;
+  --text-body-strong--letter-spacing: -0.02em;
+  --text-body-strong--font-weight: 600;
+  --text-caption-strong: 0.875rem; /* 14 / 20 SemiBold */
+  --text-caption-strong--line-height: 1.25rem;
+  --text-caption-strong--letter-spacing: -0.02em;
+  --text-caption-strong--font-weight: 600;
+  --text-mono-badge: 0.8125rem; /* 13 / 16 Medium */
+  --text-mono-badge--line-height: 1rem;
+  --text-mono-badge--letter-spacing: 0.02em;
+  --text-mono-badge--font-weight: 500;
+  --text-body: 1.0625rem; /* 17 / 26 Medium */
+  --text-body--line-height: 1.625rem;
+  --text-body--letter-spacing: -0.02em;
+  --text-body--font-weight: 500;
+  --text-body-sm: 1rem; /* 16 / 24 Medium (UI labels) */
+  --text-body-sm--line-height: 1.5rem;
+  --text-body-sm--letter-spacing: -0.02em;
+  --text-body-sm--font-weight: 500;
+  --text-caption: 0.875rem; /* 14 / 20 Medium */
+  --text-caption--line-height: 1.25rem;
+  --text-caption--letter-spacing: -0.02em;
+  --text-caption--font-weight: 500;
+  --text-fine-print: 0.75rem; /* 12 / 16 */
+  --text-fine-print--line-height: 1rem;
+  --text-fine-print--letter-spacing: -0.02em;
+  --text-fine-print--font-weight: 400;
+  --text-mono-button: 0.875rem; /* 14 / 16 SemiBold */
+  --text-mono-button--line-height: 1rem;
+  --text-mono-button--letter-spacing: 0.01em;
+  --text-mono-button--font-weight: 600;
+  --text-mono-link: 0.875rem; /* 14 / 16 Medium */
+  --text-mono-link--line-height: 1rem;
+  --text-mono-link--letter-spacing: 0.02em;
+  --text-mono-link--font-weight: 500;
+  --text-mono-nav: 0.8125rem; /* 13 / 16 Medium (footer) */
+  --text-mono-nav--line-height: 1rem;
+  --text-mono-nav--letter-spacing: 0.02em;
+  --text-mono-nav--font-weight: 500;
+  --text-mono-label: 0.6875rem; /* 11 / 16 Medium */
+  --text-mono-label--line-height: 1rem;
+  --text-mono-label--letter-spacing: 0.04em;
+  --text-mono-label--font-weight: 500;
+
+  /* One motion curve for everything (quick start, soft landing). Hovers use
+     duration-150, menus duration-200. */
+  --ease-jan: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Dark theme: the same ramp, inverted. Ink stays off pure white for long
+   reading. Fumadocs puts `.dark` on <html>. */
+.dark {
+  --color-page: var(--color-jan-neutral-950);
+  --color-surface: var(--color-jan-neutral-900);
+  --color-line: var(--color-jan-neutral-800);
+  --color-ink: var(--color-jan-neutral-50);
+  --color-chip: var(--color-jan-neutral-800);
+
+  --color-fd-background: var(--color-page);
+  --color-fd-foreground: var(--color-ink);
+  --color-fd-muted: var(--color-surface);
+  --color-fd-muted-foreground: #9b9a9c; /* ink at 60% on page */
+  --color-fd-popover: var(--color-surface);
+  --color-fd-popover-foreground: var(--color-ink);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-ink);
+  --color-fd-border: var(--color-line);
+  --color-fd-primary: var(--color-link);
+  --color-fd-primary-foreground: var(--color-page);
+  --color-fd-secondary: var(--color-surface);
+  --color-fd-secondary-foreground: var(--color-ink);
+  --color-fd-accent: var(--color-surface);
+  --color-fd-accent-foreground: var(--color-ink);
+  --color-fd-ring: var(--color-link);
+}
+
+/* Keyboard focus: a blue outline, never on mouse click. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
   }
 }
 
-/* Height of the Jan navbar that sits above the Fumadocs layout. */
+/* Height of the Jan navbar that sits above the Fumadocs layout: jan.ai's
+   35px controls + 8px above and below + the 1px bottom border. */
 :root {
-  --jan-nav-height: 60px;
+  --jan-nav-height: 52px;
   --fd-banner-height: var(--jan-nav-height);
 }
 
@@ -135,14 +221,42 @@ body {
   padding-right: max(env(safe-area-inset-right), 1.5rem);
 }
 
-/* Code blocks: dark, as with Code Hike `dark-plus`. */
+/* Code blocks as on jan.ai: surface fill, 1px line, 12px radius, 20px
+   padding, Geist Mono 14/20 in one ink colour (the highlighter's token
+   colours are dropped, as jan.ai does). Copy button: components/code-block. */
 .prose figure.shiki {
-  background: #1e1e1e;
-  border-color: #1e1e1e;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  box-shadow: none;
+  color: var(--color-ink);
 }
-.prose figure.shiki button {
-  color: #c8c8c8;
+/* Fumadocs pads each line 16px, so the box adds 4px to make jan.ai's 20px. */
+.prose figure.shiki > div[role='region'] {
+  padding: 1.25rem 3.5rem 1.25rem 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+.prose figure.shiki pre,
+.prose figure.shiki code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: normal;
+}
+.prose figure.shiki span {
+  color: inherit !important;
+}
+/* Titled blocks (```lang title="…"): header row in the same quiet greys. */
+.prose figure.shiki > div:has(> figcaption) {
+  border-color: var(--color-line);
+  color: color-mix(in oklab, var(--color-ink) 60%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-label);
+}
+.prose figure.shiki:has(> div > figcaption) > div[role='region'] {
+  padding-right: 0.25rem;
 }
 /* Lines are flex items (`*:flex-col`), so an empty line collapses to 0px
    and blank lines vanish from code samples. Keep one line of height. */
@@ -151,193 +265,245 @@ figure.shiki .line {
 }
 
 /* ---------------------------------------------------------------------------
-   Nextra 2 (jan.ai/docs) typography, measured from the live site, applied to
-   the Fumadocs page body so the docs read exactly as before.
+   Page content, as jan.ai's post content (janhq/jan.ai src/styles/ds-prose.scss)
+   adapted to docs:
+   Text       15/24 Regular, ink at 80% (docs are read longer and denser than
+              posts: smaller, darker and lighter than jan.ai's 17/26 60%
+              Medium); bold by weight only; blocks 24px apart
+   Title      28 → 32 SemiBold (docs scale: jan.ai's 44px Display read as a
+              marketing page)
+   h2         22/30 SemiBold, full strength; 48px above, 16px below
+   h3, h4     Body/Strong, full strength; 40px above, sits on its paragraph
+   Links      body font in jan-blue with an up-right arrow (jan.ai's mono
+              caps read oddly in link-dense docs)
+   Code       inline: a grey chip; blocks: see figure.shiki above
+   Images     12px radius
+   Tables     ruled rows, Caption text
    --------------------------------------------------------------------------- */
-#nd-page {
-  --jan-text: #334155; /* slate-700 */
-  --jan-heading: #0f172a; /* slate-900 */
-  --jan-link: #006be6;
-}
 #nd-page h1 {
-  font-size: 2.25rem;
-  line-height: 1.5;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: var(--jan-heading);
+  font-size: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem); /* 28 → 32 */
+  line-height: clamp(2.125rem, 2.0321rem + 0.381vw, 2.375rem); /* 34 → 38 */
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--color-ink);
+  text-wrap: balance;
 }
+/* 24px between the title and the page's first line. */
 #nd-page .prose {
-  font-size: 1rem;
-  line-height: 1.75rem;
-  color: var(--jan-text);
+  margin-top: 1.5rem;
+  --tw-prose-body: color-mix(in oklab, var(--color-ink) 80%, transparent);
+  font-size: 0.9375rem;
+  line-height: 1.5rem;
+  letter-spacing: -0.01em;
+  font-weight: 400;
+  color: color-mix(in oklab, var(--color-ink) 80%, transparent);
 }
-#nd-page .prose :where(p):not(:where(.not-prose, .not-prose *)) {
+#nd-page .prose :where(p, ul, ol, blockquote, table, figure, img, video, iframe, details, .jan-tabs, .jan-steps):not(:where(.not-prose, .not-prose *)) {
   margin-top: 1.5rem;
   margin-bottom: 0;
-  line-height: 1.75rem;
+}
+#nd-page .prose > :first-child {
+  margin-top: 0;
 }
 #nd-page .prose :where(h2, h3, h4, h5, h6):not(:where(.not-prose, .not-prose *)) {
-  color: var(--jan-heading);
-  font-weight: 600;
+  color: var(--color-ink);
   margin-bottom: 0;
+  text-wrap: balance;
+  scroll-margin-top: calc(var(--jan-nav-height) + 1.5rem);
 }
 #nd-page .prose :where(h2):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1.875rem;
-  line-height: 1.5;
-  letter-spacing: -0.015em;
+  font-size: 1.375rem;
+  line-height: 1.875rem;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  margin-top: 3rem;
+}
+#nd-page .prose :where(h3, h4, h5, h6):not(:where(.not-prose, .not-prose *)) {
+  font-size: var(--text-body-strong);
+  line-height: var(--text-body-strong--line-height);
+  letter-spacing: var(--text-body-strong--letter-spacing);
+  font-weight: var(--text-body-strong--font-weight);
   margin-top: 2.5rem;
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid rgba(230, 230, 230, 0.7);
 }
-#nd-page .prose :where(h3):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1.5rem;
-  line-height: 1.5;
-  letter-spacing: -0.015em;
-  margin-top: 2rem;
+#nd-page .prose :where(h2 + *):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1rem;
 }
-#nd-page .prose :where(h4):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1.25rem;
-  margin-top: 2rem;
+#nd-page .prose :where(h3, h4, h5, h6) + :where(p, ul, ol) {
+  margin-top: 0.25rem;
 }
-#nd-page .prose :where(h5, h6):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1.125rem;
-  margin-top: 2rem;
+/* Bold stands out by weight only, in the text's own colour, so a step reads
+   as one shade (jan.ai's darker bold made docs, which bold every UI label,
+   look patchy). */
+#nd-page .prose :where(strong):not(:where(.not-prose, .not-prose *)) {
+  font-weight: 600;
+  color: inherit;
 }
-#nd-page .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1.5rem;
-  margin-bottom: 0;
-  line-height: 1.5rem;
+/* Lists: just enough indent for the marker, so bullets and numbers start at
+   the text's left edge. */
+#nd-page .prose :where(ul):not(:where(.not-prose, .not-prose *)) {
+  list-style: disc;
+  padding-inline-start: 1.1em;
+}
+#nd-page .prose :where(ol):not(:where(.not-prose, .not-prose *)) {
+  list-style: decimal;
+  padding-inline-start: 1.35em;
 }
 #nd-page .prose :where(li):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0;
+  padding-inline-start: 0.25em;
 }
-#nd-page .prose :where(li p):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 0.5rem;
+#nd-page .prose :where(li > ul, li > ol, li > p):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.375rem;
 }
-#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *, h1 a, h2 a, h3 a, h4 a, h5 a, h6 a)) {
-  color: var(--jan-link);
-  font-weight: 400;
-  text-decoration: underline;
-  text-decoration-color: currentColor;
-  text-underline-offset: auto;
+#nd-page .prose :where(li)::marker {
+  color: color-mix(in oklab, var(--color-ink) 60%, transparent);
+}
+/* Links: the surrounding text's font in jan-blue, no underline. Links that
+   leave the docs (full URLs other than docs.jan.ai) get an up-right arrow. */
+#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *, [style], h1 a, h2 a, h3 a, h4 a, h5 a, h6 a)) {
   border: 0;
+  border-radius: 0.125rem;
+  font-weight: inherit;
+  text-decoration: none;
+  color: var(--color-link);
+  transition: opacity 150ms var(--ease-jan);
 }
-#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *)):hover {
-  text-decoration-thickness: 2px;
+#nd-page .prose :where(a[href^='http'], a[href^='//']):not(:where(.not-prose, .not-prose *, [style], [href*='docs.jan.ai'], [href*='docs-nightly.jan.ai'], h1 a, h2 a, h3 a, h4 a, h5 a, h6 a))::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-inline-start: 0.125em;
+  vertical-align: 0.1em;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 7h10v10'/%3E%3Cpath d='M7 17 17 7'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: transform 150ms var(--ease-jan);
 }
+#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *, [style])):hover {
+  opacity: 0.8;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #nd-page .prose :where(a[href^='http'], a[href^='//']):not(:where(.not-prose, .not-prose *, [style])):hover::after {
+    transform: translate(1px, -1px);
+  }
+}
+#nd-page .prose :where(a):not(:where(.not-prose, .not-prose *)):focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 2px;
+}
+/* Inline code: a grey chip in Geist Mono. */
 #nd-page .prose :where(:not(pre) > code):not(:where(.not-prose, .not-prose *)) {
-  font-size: 0.9em;
-  padding: 0.125rem 0.25em;
-  border-radius: 0.375rem;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  background: rgba(0, 0, 0, 0.03);
-  color: var(--jan-text);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  font-weight: 400;
+  letter-spacing: normal;
+  padding: 0.125rem 0.25rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: var(--color-chip);
+  color: var(--color-ink);
 }
-/* Tables: full grid with zebra rows, as on the old site. */
+#nd-page .prose :where(code)::before,
+#nd-page .prose :where(code)::after {
+  content: none;
+}
+/* Tables: ruled rows in Caption, header in Caption/Strong. Wide ones scroll
+   sideways. */
 #nd-page .prose :where(table):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1rem;
-  line-height: 1.5rem;
-  margin-top: 1.5rem;
   display: block;
   overflow-x: auto;
   width: max-content;
   max-width: 100%;
   border: 0;
+  border-collapse: collapse;
   border-radius: 0;
   background: transparent;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  letter-spacing: var(--text-caption--letter-spacing);
 }
 #nd-page .prose :where(th, td):not(:where(.not-prose, .not-prose *)) {
-  border: 1px solid #d1d5db;
-  padding: 0.5rem 1rem;
-  color: var(--jan-text);
+  border: 0;
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.75rem 1rem 0.75rem 0;
+  text-align: left;
+  vertical-align: top;
 }
 #nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
+  border-bottom-color: var(--color-jan-neutral-300);
   font-weight: 600;
+  color: var(--color-ink);
   background: transparent;
 }
-#nd-page .prose :where(tbody tr:nth-child(even)):not(:where(.not-prose, .not-prose *)) {
-  background: #f3f4f6;
+.dark #nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
+  border-bottom-color: var(--color-jan-neutral-700);
+}
+#nd-page .prose :where(tbody tr):not(:where(.not-prose, .not-prose *)) {
+  background: transparent;
 }
 #nd-page .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1.5rem;
-  border-inline-start: 2px solid #e5e7eb;
-  padding-inline-start: 1.5rem;
-  font-style: italic;
-  color: #4b5563;
+  border-inline-start: 2px solid var(--color-jan-neutral-300);
+  padding-inline-start: 1.25rem;
+  font-style: normal;
+  color: inherit;
 }
-#nd-page .prose :where(img):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1.5rem;
+.dark #nd-page .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
+  border-inline-start-color: var(--color-jan-neutral-700);
 }
-
-/* Callout body paragraphs: Nextra's first:mt-0 spacing. */
-.jan-callout-body > p {
-  margin-top: 1.5rem;
-  line-height: 1.75rem;
+#nd-page .prose blockquote p::before,
+#nd-page .prose blockquote p::after {
+  content: none;
 }
-.jan-callout-body > :first-child {
-  margin-top: 0;
+/* Images, videos and embeds: 12px corners, as code blocks and callouts.
+   (jan.ai's 24px is for its large post images; docs screenshots are smaller
+   and it read too round.) */
+#nd-page .prose :where(img, video, iframe):not(:where(.not-prose, .not-prose *)) {
+  border-radius: 0.75rem;
 }
-.jan-callout-body ul,
-.jan-callout-body ol {
-  margin-top: 0.75rem;
-  list-style: disc;
-  padding-inline-start: 1.5rem;
-}
-.jan-callout-body a {
-  color: var(--jan-link, #006be6);
-  text-decoration: underline;
-}
-.jan-callout-body code {
-  font-size: 0.9em;
-  padding: 0.125rem 0.25em;
-  border-radius: 0.375rem;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  background: rgba(0, 0, 0, 0.03);
+#nd-page .prose :where(hr):not(:where(.not-prose, .not-prose *)) {
+  margin: 3.5rem 0;
+  border-color: var(--color-line);
 }
 
-/* <Steps>: every h3 is a numbered step, like Nextra's Steps. */
+/* <Steps>: every h3 is a numbered step. The number sits in a mono chip on a
+   thin line that runs down the steps. */
 .jan-steps {
   counter-reset: step;
-  margin-inline-start: 1rem;
-  margin-bottom: 3rem;
-  padding-inline-start: 1.5rem;
-  border-inline-start: 1px solid #e5e7eb;
+  margin-inline-start: 0.875rem;
+  padding-inline-start: 1.75rem;
+  border-inline-start: 1px solid var(--color-line);
 }
 #nd-page .prose .jan-steps h3 {
+  position: relative;
   counter-increment: step;
+  margin-top: 2rem;
+}
+#nd-page .prose .jan-steps > h3:first-child {
+  margin-top: 0;
 }
 #nd-page .prose .jan-steps h3::before {
   content: counter(step);
   position: absolute;
-  width: 33px;
-  height: 33px;
-  margin-inline-start: -41px;
-  margin-top: 3px;
-  border: 4px solid #fff;
-  border-radius: 9999px;
-  background: #f3f4f6;
-  color: #a3a3a3;
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.5rem;
-  text-align: center;
-  text-indent: -1px;
-  letter-spacing: normal;
-}
-#nd-page .prose .jan-steps h3 {
-  position: relative;
-}
-#nd-page .prose .jan-steps h3::before {
-  left: 0;
   top: 0;
+  inset-inline-start: -2.6875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--color-line);
+  border-radius: 9999px;
+  background: var(--color-page);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-badge);
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--color-ink);
 }
 
-/* Content images keep the old rounded look. */
-.prose img {
-  border-radius: 12px;
-}
-
+/* Content images keep their own wrapper. */
 .img-rounded-shadow {
   padding: 8px;
 }
@@ -347,74 +513,116 @@ figure.shiki .line {
 }
 
 /* ---------------------------------------------------------------------------
-   Sidebar and table of contents in the old Nextra look (measured from
-   jan.ai/docs): 14px items in gray-500, active item light blue, bold
-   separators, white background.
+   Left sidebar. Hierarchy reads top-down: section labels are small and muted,
+   page links are the main text, the current page (and the folder holding it)
+   is Jan blue. Rows get a faint fill on hover only.
    --------------------------------------------------------------------------- */
 #nd-sidebar {
-  background: #fff;
-  border-inline-end: 0;
-  font-size: 0.875rem;
+  background: var(--color-page);
+  border-inline-end: 1px solid var(--color-line);
+  font-size: 0.9375rem;
 }
-/* Sidebar items (links and folder triggers) */
+/* Fumadocs' sidebar header (title, search) is switched off in
+   lib/layout.shared.tsx; drop its empty padded box so the list starts at the
+   top. */
+#nd-sidebar > div:first-child:has(> div:only-child:empty) {
+  display: none;
+}
+/* Page links and folder triggers: 15px, ink at 80%, full on hover. Same
+   rules for the phone drawer (#nd-sidebar-mobile). */
 #nd-sidebar a[style*='padding-inline-start'],
-#nd-sidebar button[style*='padding-inline-start'] {
-  font-size: 0.875rem;
-  line-height: 1.3125rem;
+#nd-sidebar-mobile a[style*='padding-inline-start'],
+#nd-sidebar button[style*='padding-inline-start'],
+#nd-sidebar-mobile button[style*='padding-inline-start'] {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
   font-weight: 400;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
-  border-radius: 0.25rem;
-  color: #6b7280;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: color-mix(in oklab, var(--color-ink) 80%, transparent);
+  transition:
+    color 150ms var(--ease-jan),
+    background-color 150ms var(--ease-jan);
 }
 #nd-sidebar a[style*='padding-inline-start']:hover,
-#nd-sidebar button[style*='padding-inline-start']:hover {
-  background: #f3f4f6;
-  color: #111827;
+#nd-sidebar-mobile a[style*='padding-inline-start']:hover,
+#nd-sidebar button[style*='padding-inline-start']:hover,
+#nd-sidebar-mobile button[style*='padding-inline-start']:hover {
+  background: var(--color-surface);
+  color: var(--color-ink);
 }
+/* The current page, and the folder row above it. */
 #nd-sidebar a[data-active='true'],
-#nd-sidebar a[data-active='true']:hover {
-  background: #e0efff;
-  color: #004ca3;
-  font-weight: 600;
+#nd-sidebar-mobile a[data-active='true'],
+#nd-sidebar div[data-state]:has(a[data-active='true']) > button[style*='padding-inline-start'],
+#nd-sidebar-mobile div[data-state]:has(a[data-active='true']) > button[style*='padding-inline-start'] {
+  color: var(--color-link);
+  font-weight: 500;
 }
-#nd-sidebar a[data-active='true']::before {
+#nd-sidebar a[data-active='true']:hover,
+#nd-sidebar-mobile a[data-active='true']:hover {
+  color: var(--color-link);
+}
+#nd-sidebar a[data-active='true']::before,
+#nd-sidebar-mobile a[data-active='true']::before {
   display: none;
 }
-/* Section separators ("Get started", "Core concepts", ...). */
-#nd-sidebar p[style*='padding-inline-start'] {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #111827;
-  margin-top: 1.25rem;
-  margin-bottom: 0;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
+/* Folder chevrons: small and quiet. */
+#nd-sidebar button[style*='padding-inline-start'] svg,
+#nd-sidebar-mobile button[style*='padding-inline-start'] svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: color-mix(in oklab, var(--color-ink) 40%, transparent);
 }
+/* Section labels ("Get started", "Core concepts", ...): Geist Mono caps
+   (Mono/Label), ink at 60%, with room above to separate the groups. */
+#nd-sidebar p[style*='padding-inline-start'],
+#nd-sidebar-mobile p[style*='padding-inline-start'] {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-label);
+  line-height: var(--text-mono-label--line-height);
+  letter-spacing: var(--text-mono-label--letter-spacing);
+  font-weight: var(--text-mono-label--font-weight);
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-ink) 60%, transparent);
+  margin-top: 1.5rem;
+  margin-bottom: 0.25rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* First label: 32px under the navbar (with the list's 16px padding), level
+   with the breadcrumb. */
 #nd-sidebar p[style*='padding-inline-start']:first-child {
+  margin-top: 1rem;
+}
+#nd-sidebar-mobile p[style*='padding-inline-start']:first-child {
   margin-top: 0;
 }
-/* Nested folders: no guide line (Nextra had none). */
-#nd-sidebar div[data-state].relative::before {
-  display: none;
+/* Folders read as a file tree: their pages hang off a thin guide line
+   (Fumadocs' ::before, in --color-line, 10px in). Each page row starts 6px
+   past the line, so its hover fill never covers it, and the text sits 16px
+   past it. The inline padding is Fumadocs', hence !important. */
+#nd-sidebar div.relative[data-state] a[style*='padding-inline-start'],
+#nd-sidebar-mobile div.relative[data-state] a[style*='padding-inline-start'] {
+  margin-inline-start: 1rem;
+  padding-inline-start: 0.6875rem !important;
 }
 
 
-/* Page top spacing as on the old site: breadcrumb ~22px under the navbar. */
+/* Page top: section label 32px under the navbar, level with the sidebar. */
 @media (min-width: 768px) {
   #nd-page {
     padding-top: 1rem;
   }
 }
-#nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
-  text-align: center;
-}
-/* TOC entries are plain text, like Nextra (no inline-code chips). */
+/* TOC entries are plain text (no inline-code chips). */
 #nd-toc code {
   all: unset;
 }
 
-/* Table wrapper: no background band beside narrow tables (old site had none). */
+/* Table wrapper: no background band beside narrow tables. */
 #nd-page .prose div.relative.overflow-auto:has(> table) {
   background: transparent;
   border: 0;
@@ -440,37 +648,14 @@ figure.shiki .line {
   margin: 0;
 }
 
-/* Code blocks: right padding so the copy button doesn't cover the text, and
-   the old Code Hike drop shadow. */
-#nd-page figure.shiki pre {
-  padding-right: 2.75rem;
-}
-#nd-page figure.shiki button[aria-label] {
-  background: transparent;
-}
-
-/* <kbd>: plain monospace text, as on the old site (no chip). */
+/* <kbd>: plain monospace text (no chip). */
 #nd-page .prose kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 1em;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: inherit;
-}
-
-#nd-page .prose blockquote p::before,
-#nd-page .prose blockquote p::after {
-  content: none;
-}
-
-/* Footer content inset as on the old site (Nextra footer: container padding +
-   an inner 1.5rem). */
-@media (min-width: 1024px) {
-  .jan-footer-inner {
-    padding-left: max(env(safe-area-inset-left), 3rem);
-    padding-right: max(env(safe-area-inset-right), 3rem);
-  }
+  color: var(--color-ink);
 }

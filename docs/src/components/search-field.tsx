@@ -26,21 +26,21 @@ export function SearchField({
       }}
       className={cn(
         'relative flex items-center text-left',
-        variant === 'navbar' ? 'w-56' : 'w-full',
+        variant === 'navbar' ? 'h-[35px] w-56' : 'w-full',
         className
       )}
     >
-      <SearchIcon className="absolute left-3 size-4 text-gray-400 pointer-events-none" />
+      <SearchIcon className="absolute left-3 size-4 text-ink/40 pointer-events-none" />
       <span
         className={cn(
-          'w-full border border-gray-200 bg-gray-50 pl-9 pr-12 text-sm text-gray-400',
-          'transition-colors hover:border-gray-300 hover:bg-white',
-          variant === 'hero' ? 'rounded-2xl py-3.5' : 'rounded-lg py-2'
+          'w-full border border-line bg-page pl-9 pr-12 text-sm text-ink/40',
+          'transition-colors hover:border-ink/25',
+          variant === 'hero' ? 'rounded-2xl py-3.5' : 'flex h-full items-center rounded-lg'
         )}
       >
         Search docs…
       </span>
-      <kbd className="absolute right-2 hidden rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400 sm:block">
+      <kbd className="absolute right-2 hidden rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] font-medium text-ink/40 sm:block">
         ⌘K
       </kbd>
     </button>

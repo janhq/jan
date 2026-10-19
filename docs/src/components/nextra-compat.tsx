@@ -1,10 +1,9 @@
 /**
  * Drop-in replacements for the Nextra 2 MDX components the docs were written
- * with, rendering the same markup and look as jan.ai/docs did, so page bodies
- * did not need rewriting during the Fumadocs move.
+ * with, so page bodies did not need rewriting during the Fumadocs move. They
+ * now render in the jan.ai design system.
  *
- *   <Callout type="default|info|warning|error" emoji?>   (Nextra 2 has no
- *     `tip`: it rendered as a plain bordered box, and still does)
+ *   <Callout type="default|info|tip|warning|error" emoji?>
  *   <Steps> ... ### Step heading ... </Steps>   (each h3 = one numbered step)
  *   <Tabs items={[...]}><Tabs.Tab>...</Tabs.Tab></Tabs>
  *   <Link href=...>                              (nextra-theme-docs)
@@ -12,69 +11,55 @@
  * New content can use the Fumadocs components directly.
  */
 import type { ComponentProps, ReactNode } from 'react'
+import { Info, Lightbulb, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { NextraTabs, NextraTab } from '@/components/nextra-tabs'
 import { cn } from '@/lib/cn'
 
-// ---- Callout (port of nextra/components Callout, v2.13) ----------------------
+// ---- Callout (jan.ai's, from janhq/jan.ai src/components/ds/Callout) -----------
+//
+// A tinted card in one of the accent swatches: a round icon chip and a
+// Mono/Badge label on top, then the content at 80%. Same 12px corners as code
+// blocks. Inline code turns to the page colour, since grey sinks into the tint.
+//
+// type       label      accent
+// (default)  Note       blue
+// info       Note       blue
+// tip        Tip        lime, green chip
+// warning    Heads up   yellow
+// error      Important  yellow
 
-function InformationCircleIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      width="20"
-      height="20"
-      className="mt-1"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-      />
-    </svg>
-  )
-}
+type Kind = 'default' | 'info' | 'tip' | 'warning' | 'error'
 
-const TYPE_TO_EMOJI: Record<string, ReactNode> = {
-  default: '💡',
-  error: '🚫',
-  info: <InformationCircleIcon />,
-  warning: '⚠️',
-}
-
-// Tailwind palette values Nextra used (orange/red/blue/yellow 50-900).
-const TYPE_CLASSES: Record<string, string> = {
-  default: 'border-[#ffedd5] bg-[#fff7ed] text-[#9a3412]',
-  error: 'border-[#fecaca] bg-[#fee2e2] text-[#7f1d1d]',
-  info: 'border-[#bfdbfe] bg-[#dbeafe] text-[#1e3a8a]',
-  warning: 'border-[#fef9c3] bg-[#fefce8] text-[#713f12]',
+const KINDS: Record<Kind, { label: string; Icon: LucideIcon; card: string; chip: string }> = {
+  default: { label: 'Note', Icon: Info, card: 'bg-jan-blue/10 dark:bg-jan-blue/15', chip: 'bg-jan-blue text-jan-neutral-0' },
+  info: { label: 'Note', Icon: Info, card: 'bg-jan-blue/10 dark:bg-jan-blue/15', chip: 'bg-jan-blue text-jan-neutral-0' },
+  tip: { label: 'Tip', Icon: Lightbulb, card: 'bg-jan-lime/40 dark:bg-jan-lime/10', chip: 'bg-jan-green text-jan-neutral-0' },
+  warning: { label: 'Heads up', Icon: TriangleAlert, card: 'bg-jan-yellow/20 dark:bg-jan-yellow/10', chip: 'bg-jan-yellow text-jan-neutral-950' },
+  error: { label: 'Important', Icon: TriangleAlert, card: 'bg-jan-yellow/20 dark:bg-jan-yellow/10', chip: 'bg-jan-yellow text-jan-neutral-950' },
 }
 
 export function Callout({
   type = 'default',
-  emoji,
   children,
 }: {
   type?: string
+  /** Accepted for Nextra compatibility; the icon comes from `type` */
   emoji?: ReactNode
   children?: ReactNode
 }) {
+  const { label, Icon, card, chip } = KINDS[type as Kind] ?? KINDS.default
   return (
-    <div
-      className={cn(
-        'jan-callout not-prose mt-6 flex overflow-x-auto rounded-lg border py-2 pr-4',
-        TYPE_CLASSES[type] ?? 'border-[#e5e7eb] text-[#334155]'
-      )}
-    >
-      <div
-        className="select-none pl-3 pr-2 text-xl"
-        style={{ fontFamily: '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"' }}
-      >
-        {emoji ?? TYPE_TO_EMOJI[type]}
+    <aside className={cn('jan-callout mt-6 rounded-xl px-5 py-4 md:px-6 md:py-5', card)}>
+      <span className="flex items-center gap-2.5 font-mono text-mono-badge uppercase text-ink">
+        <span aria-hidden className={cn('flex size-6 shrink-0 items-center justify-center rounded-full', chip)}>
+          <Icon className="size-3.5" strokeWidth={2.25} />
+        </span>
+        {label}
+      </span>
+      <div className="mt-3 text-ink/80 [&>*+*]:!mt-3 [&>:first-child]:!mt-0 [&_:not(pre)>code]:!bg-page">
+        {children}
       </div>
-      <div className="jan-callout-body w-full min-w-0 leading-7">{children}</div>
-    </div>
+    </aside>
   )
 }
 

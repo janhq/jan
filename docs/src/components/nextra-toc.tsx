@@ -2,70 +2,30 @@
 /**
  * "On This Page" column ported from nextra-theme-docs 2.13 (src/components/toc.tsx)
  * so it looks and behaves as on jan.ai/docs:
- * - title "On This Page", h2 entries semibold, deeper levels indented
- * - active entry in Jan blue, no indicator line
- * - sticky footer: feedback, edit on GitHub, View as Markdown, "Scroll to top"
- *   (hidden until the page is scrolled 300px)
+ * - the headings (no title), regular weight; deeper levels hang off a thin
+ *   guide line like a file tree
+ * - active entry at full ink, the rest at 60%
+ * - sticky footer under a divider: "Copy page"
  * Plugged into Fumadocs via DocsPage `slots.toc.main`; it reads the TOC and the
  * active heading from Fumadocs' TOC provider.
  */
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import { useActiveAnchor, useTOCItems } from 'fumadocs-ui/components/toc'
 import { cn } from '@/lib/cn'
+import { CopyPage } from '@/components/copy-page'
 
-// Nextra's text-xs had an 18px line height (Tailwind 3 + its base styles).
-const linkClassName = 'text-xs/[18px] font-medium text-[#6b7280] hover:text-[#111827]'
-
+// h2 entries sit flush; deeper ones get a guide line on the left, nested
+// one step further per level. Rows use padding, not margin, so the lines of
+// neighbouring entries join into one.
 const DEPTH_CLASS: Record<number, string> = {
-  2: 'font-semibold',
-  3: 'pl-4',
-  4: 'pl-8',
-  5: 'pl-12',
-  6: 'pl-16',
-}
-
-function ArrowRightIcon({ className }: { className?: string }) {
-  return (
-    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" className={className}>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
-
-function BackToTop() {
-  const ref = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const toggle = () =>
-      ref.current?.classList.toggle('opacity-0', document.documentElement.scrollTop < 300)
-    toggle()
-    window.addEventListener('scroll', toggle)
-    return () => window.removeEventListener('scroll', toggle)
-  }, [])
-  return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-      className={cn('flex items-center gap-1.5 opacity-0 transition', linkClassName)}
-    >
-      Scroll to top
-      <ArrowRightIcon className="h-3.5 w-3.5 -rotate-90 rounded-full border border-current" />
-    </button>
-  )
-}
-
-export type NextraTocMeta = { title: string; editUrl: string; markdownUrl: string }
-
-// Fumadocs renders slots.toc.main itself (with its own props), so the page
-// metadata reaches it through context set by the page.
-const TocMetaContext = createContext<NextraTocMeta>({ title: '', editUrl: '#', markdownUrl: '#' })
-
-export function NextraTocMeta({ children, ...meta }: NextraTocMeta & { children: ReactNode }) {
-  return <TocMetaContext value={meta}>{children}</TocMetaContext>
+  2: '',
+  3: 'border-l pl-3',
+  4: 'ml-3 border-l pl-3',
+  5: 'ml-6 border-l pl-3',
+  6: 'ml-9 border-l pl-3',
 }
 
 export function NextraToc() {
-  const { title, editUrl, markdownUrl } = useContext(TocMetaContext)
   const items = useTOCItems().filter((item) => item.depth > 1)
   const active = useActiveAnchor()
   const tocRef = useRef<HTMLDivElement>(null)
@@ -80,10 +40,6 @@ export function NextraToc() {
     box.scrollTo({ top, behavior: 'smooth' })
   }, [active])
 
-  const feedback = `https://github.com/janhq/jan/issues/new?title=${encodeURIComponent(
-    `Feedback for “${title}”`
-  )}&labels=feedback`
-
   return (
     <div
       id="nd-toc"
@@ -94,48 +50,36 @@ export function NextraToc() {
         className="max-h-full overflow-y-auto pl-4 pr-4 pt-6 text-sm/[21px] [hyphens:auto]"
       >
         {items.length > 0 && (
-          <>
-            <p className="mb-4 font-semibold tracking-tight text-black">On This Page</p>
-            <ul>
-              {items.map((item) => {
-                const id = item.url.slice(1)
-                return (
-                  <li key={item.url} className="my-2 scroll-my-6 scroll-py-6">
-                    <a
-                      href={item.url}
-                      className={cn(
-                        DEPTH_CLASS[item.depth],
-                        'inline-block w-full break-words',
-                        active === id
-                          ? 'text-[#006be6] subpixel-antialiased'
-                          : 'text-[#6b7280] hover:text-[#111827]'
-                      )}
-                    >
-                      {item.title}
-                    </a>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
+          <ul>
+            {items.map((item) => {
+              const id = item.url.slice(1)
+              return (
+                <li key={item.url} className="scroll-my-6 scroll-py-6">
+                  <a
+                    href={item.url}
+                    className={cn(
+                      DEPTH_CLASS[item.depth],
+                      'inline-block w-full break-words py-1 transition-colors duration-150 ease-jan',
+                      active === id
+                        ? 'border-line text-ink'
+                        : 'border-line text-ink/60 hover:text-ink'
+                    )}
+                  >
+                    {item.title}
+                  </a>
+                </li>
+              )
+            })}
+          </ul>
         )}
         <div
           className={cn(
             items.length > 0 &&
-              'mt-8 border-t border-[#e5e7eb] bg-white pt-8 shadow-[0_-12px_16px_white]',
+              'mt-8 border-t border-line bg-page pt-8 shadow-[0_-12px_16px_var(--color-page)]',
             'sticky bottom-0 flex flex-col items-start gap-2 pb-8'
           )}
         >
-          <a href={feedback} target="_blank" rel="noreferrer" className={linkClassName}>
-            Question? Give us feedback →
-          </a>
-          <a href={editUrl} target="_blank" rel="noreferrer" className={linkClassName}>
-            Edit this page on GitHub →
-          </a>
-          <a href={markdownUrl} target="_blank" rel="noreferrer" className={linkClassName}>
-            View as Markdown →
-          </a>
-          <BackToTop />
+          <CopyPage variant="link" />
         </div>
       </div>
     </div>
