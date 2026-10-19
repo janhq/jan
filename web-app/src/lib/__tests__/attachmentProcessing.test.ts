@@ -8,6 +8,7 @@ import {
   type AttachmentProcessingResult,
 } from '../attachmentProcessing'
 import type { Attachment } from '@/types/attachment'
+import { estimateTokens } from '@/lib/context-manager'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 
 // Minimal mock for ServiceHub methods used by processAttachmentsForSend
@@ -71,6 +72,21 @@ const imageAttachment = (overrides: Partial<Attachment> = {}): Attachment => ({
 
 describe('processAttachmentsForSend', () => {
   const threadId = 'thread-1'
+
+  it.each([false, true])('reserves prepared inline content before auto routing (prepared document last: %s)', async (preparedLast) => {
+    const prepared = docAttachment({ path: '/tmp/prepared.txt', name: 'prepared.txt', processed: true,
+      injectionMode: 'inline', inlineContent: 'already prepared text '.repeat(20) })
+    const pending = docAttachment({ path: '/tmp/new.pdf', name: 'new.pdf' })
+    const ingest = vi.fn().mockResolvedValue({ id: 'new-embedded' })
+    const result = await processAttachmentsForSend({
+      attachments: preparedLast ? [pending, prepared] : [prepared, pending],
+      threadId, serviceHub: createMockServiceHub({ ingestFileAttachment: ingest }) as any,
+      parsePreference: 'auto', contextThreshold: estimateTokens(prepared.inlineContent!),
+    })
+    expect(result.processedAttachments.find((doc) => doc.path === pending.path)?.injectionMode).toBe('embeddings')
+    expect(result.processedAttachments.find((doc) => doc.path === prepared.path)).toEqual(prepared)
+    expect(ingest).toHaveBeenCalledWith(threadId, pending)
+  })
 
   describe('images', () => {
     it('ingests unprocessed images and returns them with id', async () => {

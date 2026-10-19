@@ -207,7 +207,12 @@ export const processAttachmentsForSend = async (
       : undefined
   // One budget for the whole send: each document that fits alone could still
   // overflow the window together with the others inlined before it.
-  let remainingInlineBudget = effectiveContextThreshold ?? 0
+  // Prepared inline documents bypass parsing below but still enter this send.
+  // Reserve their space up front, including when they follow an auto document.
+  const preparedInlineTokens = attachments.reduce((total, attachment) =>
+    attachment.type === 'document' && attachment.processed && attachment.injectionMode === 'inline'
+      ? total + estimateTokens(attachment.inlineContent ?? '') : total, 0)
+  let remainingInlineBudget = Math.max(0, (effectiveContextThreshold ?? 0) - preparedInlineTokens)
   const notifyUpdate = (
     ...args: Parameters<
       NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>
