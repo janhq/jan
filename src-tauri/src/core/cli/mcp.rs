@@ -79,6 +79,12 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
     obj.entry("mcpSettings").or_insert_with(|| serde_json::json!({}));
 
     let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    // A machine where the desktop app never ran has no data folder yet, and this
+    // is the first thing to write there.
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder)
+            .map_err(|e| format!("could not create {}: {e}", folder.display()))?;
+    }
     let tmp = path.with_extension("json.tmp");
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -87,7 +93,9 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
+    let mut file = options
+        .open(&tmp)
+        .map_err(|e| format!("could not write {}: {e}", tmp.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -97,7 +105,7 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
     // MCP env/header fields can contain keys entered during plugin setup.
     std::io::Write::write_all(&mut file, body.as_bytes()).map_err(|e| e.to_string())?;
     drop(file);
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("could not save {}: {e}", path.display()))?;
     Ok(())
 }
 
@@ -1083,6 +1091,33 @@ mod tests {
         let (_, servers) = connect_that_gives_up(data.path(), "mute", &config).await;
         assert!(servers.lock().await.is_empty());
         held.abort();
+    }
+
+    /// A machine where the desktop app never ran has no data folder yet, and the
+    /// CLI is the first thing to write there.
+    #[test]
+    fn upsert_creates_a_data_folder_that_does_not_exist_yet() {
+        let data = temp_data();
+        let folder = data.path().join("never").join("created");
+        let cfg = serde_json::json!({ "command": "echo", "args": [] });
+        upsert_server_in(&folder, "fx", &cfg).unwrap();
+
+        assert_eq!(get_server_in(&folder, "fx").unwrap().name, "fx");
+    }
+
+    /// When the folder cannot be created, the error says which one, rather than
+    /// a bare "No such file or directory".
+    #[test]
+    fn a_data_folder_that_cannot_be_created_is_named_in_the_error() {
+        let data = temp_data();
+        // A file where a directory has to go.
+        let blocker = data.path().join("blocker");
+        std::fs::write(&blocker, b"").unwrap();
+        let folder = blocker.join("data");
+        let cfg = serde_json::json!({ "command": "echo", "args": [] });
+
+        let err = upsert_server_in(&folder, "fx", &cfg).unwrap_err();
+        assert!(err.contains(&folder.display().to_string()), "{err}");
     }
 
     #[test]
