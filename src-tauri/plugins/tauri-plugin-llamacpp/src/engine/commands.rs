@@ -570,10 +570,7 @@ pub async fn get_engine_info(
     Ok(guard.as_ref().map(EngineInfo::from))
 }
 
-/// The llama.cpp this build is pinned to. Compile-time constants, so it answers
-/// with the engine's identity whether or not a worker is running -- unlike
-/// `get_engine_info`, which reports `None` while the engine is stopped, and is
-/// therefore no use to a settings screen that wants to name the engine.
+/// Identity reported by the installed worker, including when it is stopped.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
     /// llama.cpp's own version, e.g. `0.5.0`.
@@ -588,30 +585,111 @@ pub struct EngineVersion {
 }
 
 #[tauri::command]
-pub fn get_engine_version() -> EngineVersion {
-    EngineVersion {
-        version: super::PINNED_VERSION.to_string(),
-        tag: super::PINNED_TAG.to_string(),
-        build_number: super::PINNED_BUILD_NUMBER.to_string(),
-        commit: super::PINNED_COMMIT.to_string(),
+pub async fn get_engine_version<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<EngineVersion, String> {
+    query_engine_version(resolve_worker_exe(&app_handle)?).await
+}
+
+async fn query_engine_version(exe: PathBuf) -> Result<EngineVersion, String> {
+    let mut command = tokio::process::Command::new(exe);
+    command.arg("--version-json").kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = tokio::time::timeout(std::time::Duration::from_secs(5), command.output())
+        .await
+        .map_err(|_| "engine version query timed out".to_string())?
+        .map_err(|e| format!("could not query the installed engine: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("engine version query failed: {}", output.status));
     }
+    parse_engine_version(&output.stdout)
+}
+
+fn parse_engine_version(bytes: &[u8]) -> Result<EngineVersion, String> {
+    let info: EngineVersion = serde_json::from_slice(bytes)
+        .map_err(|e| format!("invalid engine version response: {e}"))?;
+    if info.version.trim().is_empty()
+        || info.build_number.is_empty()
+        || !info.build_number.bytes().all(|c| c.is_ascii_digit())
+        || info.tag != format!("b{}", info.build_number)
+        || info.commit.len() != 40
+        || !info.commit.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("inconsistent engine version response".to_string());
+    }
+    Ok(info)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The screen that shows this is the only place a user can check which
-    /// engine they are running, so it has to report the pin rather than a
-    /// hardcoded string that outlives the next bump.
+    /// A replacement worker can be newer than the desktop's compiled pin.
     #[test]
-    fn the_reported_version_is_the_pin() {
-        let v = get_engine_version();
-        assert_eq!(v.version, super::super::PINNED_VERSION);
-        assert_eq!(v.tag, super::super::PINNED_TAG);
-        assert_eq!(v.build_number, super::super::PINNED_BUILD_NUMBER);
-        assert_eq!(v.commit, super::super::PINNED_COMMIT);
-        assert_eq!(v.commit.len(), 40, "a full sha, not the short form");
+    fn the_reported_version_comes_from_the_worker() {
+        let build = super::super::PINNED_BUILD_NUMBER.parse::<u64>().unwrap() + 1;
+        let response = serde_json::json!({
+            "version": "99.0.0", "tag": format!("b{build}"),
+            "build_number": build.to_string(),
+            "commit": "0123456789abcdef0123456789abcdef01234567",
+        });
+        let v = parse_engine_version(&serde_json::to_vec(&response).unwrap()).unwrap();
+        assert_eq!(v.tag, format!("b{build}"));
+        assert_eq!(v.version, "99.0.0");
+        assert_ne!(v.tag, super::super::PINNED_TAG);
+    }
+
+    #[test]
+    fn engine_version_rejects_missing_or_inconsistent_metadata() {
+        for invalid in [b"{}".as_slice(), b"not JSON", b"[]"] {
+            assert!(parse_engine_version(invalid).is_err());
+        }
+        let valid = serde_json::json!({
+            "version": "0.7.0", "tag": "b11721", "build_number": "11721",
+            "commit": "ff5a23376725e5a889fa0bfb987b7541dc304da0",
+        });
+        for (field, value) in [
+            ("version", " "),
+            ("tag", "b1"),
+            ("build_number", "11721x"),
+            ("commit", "ff5a2337"),
+            ("commit", "z123456789abcdef0123456789abcdef01234567"),
+        ] {
+            let mut response = valid.clone();
+            response[field] = serde_json::Value::String(value.to_string());
+            assert!(parse_engine_version(&serde_json::to_vec(&response).unwrap()).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_missing_version_worker_is_not_replaced_by_the_compiled_pin() {
+        let error = query_engine_version(PathBuf::from("/definitely/not/a/worker"))
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("could not query the installed engine"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unsuccessful_version_process_is_reported() {
+        // The Rust test executable rejects the worker-only flag and exits.
+        let error = query_engine_version(std::env::current_exe().unwrap())
+            .await
+            .unwrap_err();
+        assert!(error.contains("engine version query failed"), "{error}");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires JAN_ENGINE_VERSION_TEST_WORKER pointing at an installed worker"]
+    async fn query_installed_worker_without_loading_a_model() {
+        let exe =
+            PathBuf::from(std::env::var_os("JAN_ENGINE_VERSION_TEST_WORKER").expect("worker path"));
+        let info = query_engine_version(exe).await.unwrap();
+        assert_eq!(info.tag, "b11721");
+        assert_eq!(info.commit, "ff5a23376725e5a889fa0bfb987b7541dc304da0");
     }
 
     #[test]
@@ -632,7 +710,12 @@ mod tests {
         let err = std::env::var_os("JAN_LLAMA_WORKER_BIN")
             .map(std::path::PathBuf::from)
             .filter(|p| !p.is_file())
-            .map(|p| format!("JAN_LLAMA_WORKER_BIN points at {}, which is not a file", p.display()))
+            .map(|p| {
+                format!(
+                    "JAN_LLAMA_WORKER_BIN points at {}, which is not a file",
+                    p.display()
+                )
+            })
             .expect("a missing override must be rejected, not ignored");
         assert!(err.contains("not a file"), "got {err}");
         std::env::remove_var("JAN_LLAMA_WORKER_BIN");
@@ -665,7 +748,11 @@ mod tests {
         let without = worker_missing_message(std::slice::from_ref(&worker_path));
         assert!(!without.contains(".old copy"), "got {without}");
 
-        std::fs::write(dir.join(format!("{}.old", worker::worker_file_name())), b"x").unwrap();
+        std::fs::write(
+            dir.join(format!("{}.old", worker::worker_file_name())),
+            b"x",
+        )
+        .unwrap();
         let with = worker_missing_message(&[worker_path]);
         assert!(with.contains("interrupted install"), "got {with}");
 
