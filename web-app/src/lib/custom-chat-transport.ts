@@ -1590,6 +1590,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
+    // The SDK validates tool calls before the route's execution gate sees them.
+    // Retain a parser-only definition for a disabled built-in shell so a model
+    // calling it anyway receives the route's refusal and can continue. It has
+    // no executor and activeTools keeps it out of the provider request. An MCP
+    // tool of the same name keeps its existing ownership and availability.
+    const canRefuseDisabledShell =
+      modelSupportsTools &&
+      !useChatShell.getState().shellEnabled &&
+      !useAppState.getState().mcpToolNames.has('shell') &&
+      !this.tools.shell
+    const toolsForParsing = canRefuseDisabledShell
+      ? { ...this.tools, shell: { inputSchema: jsonSchema({}) } }
+      : shouldEnableTools ? this.tools : undefined
+
     // Cloud providers take reasoning via the AI SDK's per-request
     // providerOptions (native thinking config), not the raw body.
     const reasoningProviderOptions = buildReasoningProviderOptions(
@@ -1609,7 +1623,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Hosted providers keep the SDK's two backoff retries for transient
       // 429/5xx; local servers fail at once (see isLocalChatServer).
       maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
-      tools: shouldEnableTools ? this.tools : undefined,
+      tools: toolsForParsing,
+      ...(canRefuseDisabledShell ? { activeTools: Object.keys(this.tools) } : {}),
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
       // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
