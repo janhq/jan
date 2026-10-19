@@ -208,6 +208,19 @@ the cap by being rejected. `JanRpcError` is an answer (`code`, `retryable`), and
 `JanRuntimeError` is the channel (spawn failure, protocol mismatch, exit), with
 the runtime's own stderr attached.
 
+A session's host tools follow it. `fork()` answers for the source's tools with
+the same handlers (`fork({ tools })` replaces them, `fork({ tools: [] })` drops
+them), and `resumeSession(id)` returns the session this client already holds,
+with its turns, listeners and handlers, rather than a second object for the
+same id. A host tool's name is trimmed, as the runtime trims it.
+
+Listeners registered with `session.on(...)` and `runtime.on(...)` run on the
+client's reader. One that throws, or returns a promise that rejects, does not
+crash your application: it fails the runtime. Every open turn and call settles
+with a `JanRuntimeError` (its `cause` is what the listener raised) and the
+process is stopped, so a listener that was answering permission requests cannot
+leave a turn parked behind it.
+
 ## Types
 
 `src/index.d.ts` is the public surface. `src/generated/rpc-types.d.ts` is

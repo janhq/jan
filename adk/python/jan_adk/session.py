@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Union
 
-from .errors import JanRuntimeError
+from .errors import JanRpcError, JanRuntimeError, describe_error
 from ._queue import EventQueue
 
 #: What a host tool is told about the call it is running.
@@ -44,9 +44,18 @@ class HostTool:
     parameters: Optional[Dict[str, Any]] = None
     capability: Optional[str] = None
 
+    @property
+    def declared_name(self) -> str:
+        """The name the runtime holds: it trims what it is given, so the handler
+        is found under the trimmed name or the tool would be advertised and
+        never run."""
+        return self.name.strip()
+
     def declaration(self) -> Dict[str, Any]:
         """The wire form: the handler never crosses the process boundary."""
-        declaration: Dict[str, Any] = {"name": self.name}
+        if not self.declared_name:
+            raise TypeError("a host tool needs a name")
+        declaration: Dict[str, Any] = {"name": self.declared_name}
         if self.description is not None:
             declaration["description"] = self.description
         if self.parameters is not None:
@@ -146,6 +155,14 @@ class JanSession:
         self._calls: Dict[str, threading.Event] = {}
         self._late: "OrderedDict[str, TurnResult]" = OrderedDict()
         self._closed = False
+        #: Why the runtime failed this session, once it has: a turn started as it
+        #: failed would never hear a terminal record.
+        self._failure: Optional[BaseException] = None
+        #: One tool or fork change of this session at a time: the runtime clones
+        #: the tools it holds when it reads ``session/fork``, so a replacement
+        #: that lands between that read and the handlers being copied would
+        #: leave the fork advertising a tool nothing here can run.
+        self._mutations = threading.RLock()
 
     # -- the surface ------------------------------------------------------
 
@@ -198,14 +215,15 @@ class JanSession:
 
     def set_tools(self, tools: Sequence[HostTool]) -> Dict[str, Any]:
         """Replace the host tools between turns; refused while a turn is active."""
-        view = self.runtime.request(
-            "session/tools/set",
-            {"sessionId": self.id, "tools": [tool.declaration() for tool in tools]},
-        )
-        self._declare(tools)
-        self.tools = list(view["tools"])
-        self.tool_specs = list(view["toolSpecs"])
-        return view
+        with self._mutations:
+            view = self.runtime.request(
+                "session/tools/set",
+                {"sessionId": self.id, "tools": [tool.declaration() for tool in tools]},
+            )
+            self._declare(tools)
+            self.tools = list(view["tools"])
+            self.tool_specs = list(view["toolSpecs"])
+            return view
 
     def set_model(self, model: str) -> str:
         """Change the model between turns; refused while a turn is active."""
@@ -213,11 +231,13 @@ class JanSession:
         self.model = current
         return current
 
-    def fork(self, tools: Sequence[HostTool] = ()) -> "JanSession":
+    def fork(self, tools: Optional[Sequence[HostTool]] = None) -> "JanSession":
         """A new session with this one's history.
 
-        Host tools are not inherited - a declaration belongs to the session that
-        made it - so they are re-declared here when given.
+        It answers for the same host tools with the same handlers: the runtime
+        copies the declarations, so the handlers have to come with them or the
+        model would be offered tools that nothing here can run. ``tools``
+        replaces them instead, and ``tools=[]`` drops them.
         """
         return self.runtime.fork_session(self.id, tools)
 
@@ -236,7 +256,11 @@ class JanSession:
     # -- the runtime's own calls ------------------------------------------
 
     def _declare(self, tools: Sequence[HostTool]) -> None:
-        self._tools = {tool.name: tool for tool in tools}
+        self._tools = {tool.declared_name: tool for tool in tools}
+
+    def _declarations(self) -> List[HostTool]:
+        """The declarations this session answers for, handlers included."""
+        return list(self._tools.values())
 
     def _deliver(self, tag: str, params: Dict[str, Any]) -> None:
         event = params.get("event") or {}
@@ -271,6 +295,7 @@ class JanSession:
         turn._finish(record)
 
     def _fail(self, error: BaseException) -> None:
+        self._failure = error
         for turn in self._turns.values():
             turn._fail(error)
         self._turns.clear()
@@ -287,11 +312,19 @@ class JanSession:
         if not create:
             return None
         turn = JanTurn(self, turn_id)
+        # A terminal record the runtime already sent is the turn's outcome,
+        # whatever happened to the runtime after it.
         late = self._late.pop(turn_id, None)
-        if late is None:
-            self._turns[turn_id] = turn
-        else:
+        if late is not None:
             turn._finish(late)
+            return turn
+        # The runtime failed while ``prompt()`` was still waiting for its reply:
+        # the turn it is about to return would never hear a terminal record, so
+        # it fails now with the reason the runtime did.
+        if self._failure is not None:
+            turn._fail(self._failure)
+            return turn
+        self._turns[turn_id] = turn
         return turn
 
     def _emit(self, kind: str, event: Dict[str, Any]) -> None:
@@ -333,11 +366,14 @@ class JanSession:
                 )
                 return
             try:
-                result = tool.handler(event.get("args"), call)
+                response = normalize_result(tool.handler(event.get("args"), call))
             except BaseException as error:  # noqa: BLE001 - the answer is the report
-                self._respond(request_id, {"content": str(error), "isError": True})
-                return
-            self._respond(request_id, normalize_result(result))
+                # A handler that raised and a result that could not be shaped -
+                # an image file that is gone, a malformed part - are answered
+                # alike: the model is told, and the turn goes on rather than
+                # waiting on a call this client failed to answer.
+                response = {"content": describe_error(error), "isError": True}
+            self._respond(request_id, response)
 
         threading.Thread(target=run, name=f"jan-tool-{call.tool_name}", daemon=True).start()
 
@@ -352,11 +388,36 @@ class JanSession:
         if flag is None or flag.is_set():
             self._calls.pop(request_id, None)
             return
-        self._calls.pop(request_id, None)
         try:
             self.runtime.request("tool/respond", {"requestId": request_id, **params})
-        except Exception:  # noqa: BLE001 - the turn was interrupted or the channel closed
-            pass
+        except Exception as error:  # noqa: BLE001 - classified below
+            # The runtime is still waiting on this request unless it is gone, so a
+            # failure to deliver the answer is itself answered, as a failed call.
+            # That covers the runtime refusing what the result carried (an
+            # unsupported part, an image over the caps) and the result failing to
+            # encode here before anything was sent (a Path, a circular reference,
+            # nesting past the recursion limit): which of them it was does not
+            # change what the model needs.
+            if not self._request_is_gone(error) and not flag.is_set():
+                why = "the runtime refused this tool result" if isinstance(error, JanRpcError) else "the tool result could not be encoded"
+                try:
+                    self.runtime.request(
+                        "tool/respond",
+                        {"requestId": request_id, "content": f"{why}: {describe_error(error)}", "isError": True},
+                    )
+                except Exception:  # noqa: BLE001 - nothing left to tell
+                    pass
+        finally:
+            self._calls.pop(request_id, None)
+
+    @staticmethod
+    def _request_is_gone(error: BaseException) -> bool:
+        """Whether a failed ``tool/respond`` means the request is no longer waiting
+        on the runtime: the channel is gone, or the runtime says nothing is
+        pending. Any other failure leaves it waiting."""
+        if isinstance(error, JanRuntimeError):
+            return True
+        return isinstance(error, JanRpcError) and isinstance(error.data, dict) and error.data.get("kind") == "not_pending"
 
     def _abort(self, error: BaseException) -> None:
         for flag in self._calls.values():
@@ -365,17 +426,19 @@ class JanSession:
 
 
 def normalize_input(content: Union[str, List[Dict[str, Any]], Dict[str, Any]]) -> Any:
-    """``turn/start`` takes the text, the parts, or the record a stream-json
-    client would write to a ``user`` line."""
+    """``turn/start`` takes the text, or the content parts as a bare list. A
+    ``{text}`` or ``{content}`` record is unwrapped to one of those; the
+    stream-json ``{"type": "user", "content": ...}`` envelope is not what this
+    verb parses, and the runtime refuses it."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return {"type": "user", "content": content}
+        return content
     if isinstance(content, dict):
         if isinstance(content.get("text"), str):
             return content["text"]
         if isinstance(content.get("content"), list):
-            return {"type": "user", "content": content["content"]}
+            return content["content"]
     raise TypeError("prompt() takes a string, content parts, or a {text} / {content} record")
 
 

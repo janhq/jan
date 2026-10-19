@@ -698,3 +698,433 @@ test('a request with no runtime behind it is refused, not hung', { skip: missing
     (error) => error.name === 'JanRpcError',
   )
 })
+
+// A test that waits on a turn must fail, not hang the runner, when the bug it
+// pins is "the turn never settles".
+const within = (promise, ms = 4000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`still pending after ${ms}ms`)), ms).unref()),
+  ])
+
+// A 1x1 PNG, small enough to inline and a valid payload for the runtime.
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AARAAB/wDcH1jPAAAAAElFTkSuQmCC'
+
+const lastUser = (body) => JSON.parse(body).messages.findLast((message) => message.role === 'user')
+
+test('a host tool declared with a padded name is still called', { skip: missingRuntime }, async (t) => {
+  const calls = []
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera', {}), PROSE('seen')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [{ name: ' camera ', capability: 'read', handler: () => (calls.push('camera'), { text: 'CAMERA_RESULT' }) }],
+  })
+  assert.deepEqual(session.tools, ['host__camera'])
+
+  const turn = await session.prompt('look')
+  await within(turn.result())
+  // Advertised means callable: the handler ran, and the model got its answer
+  // rather than "no host tool named".
+  assert.deepEqual(calls, ['camera'])
+  assert.match(provider.bodies[1], /CAMERA_RESULT/)
+  assert.doesNotMatch(provider.bodies[1], /no host tool named/)
+
+  await assert.rejects(session.setTools([{ name: '   ', handler: () => '' }]), TypeError)
+})
+
+test('a host result that cannot be shaped is answered as an error, and the turn goes on', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera_observe', {}), PROSE('no frame')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [
+      {
+        name: 'camera_observe',
+        capability: 'read',
+        // The handler succeeds; formatting its result is what fails.
+        handler: () => ({ text: 'a frame', images: [{ path: join(scratch.root, 'missing-image.png') }] }),
+      },
+    ],
+  })
+
+  const turn = await session.prompt('look')
+  const result = await within(turn.result())
+  assert.equal(result.stopReason, 'completed')
+  assert.equal(provider.bodies.length, 2, 'the model was told, so it was asked again')
+  assert.match(provider.bodies[1], /ENOENT|no such file/i)
+
+  // The session is still usable afterwards.
+  const again = await session.prompt('and now?')
+  assert.equal((await within(again.result())).stopReason, 'completed')
+})
+
+test('structured prompt inputs reach the model as content parts', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, { replies: [PROSE('seen')] })
+  const session = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+
+  await within((await session.prompt([{ type: 'text', text: 'hello parts' }])).result())
+  assert.match(JSON.stringify(lastUser(provider.bodies[0]).content), /hello parts/)
+
+  const image = { type: 'image_url', image_url: { url: `data:image/png;base64,${PNG}` } }
+  await within((await session.prompt([{ type: 'text', text: 'what is this?' }, image])).result())
+  const mixed = lastUser(provider.bodies[1]).content
+  assert.ok(Array.isArray(mixed))
+  assert.match(mixed.find((part) => part.type === 'text').text, /what is this\?/)
+  assert.equal(mixed.find((part) => part.type === 'image_url').image_url.url, image.image_url.url)
+
+  // The documented record form is the same parts.
+  await within((await session.prompt({ content: [{ type: 'text', text: 'record form' }] })).result())
+  assert.match(JSON.stringify(lastUser(provider.bodies[2]).content), /record form/)
+
+  // A refusal from the runtime stays an answer the caller can read.
+  await assert.rejects(session.prompt([{ type: 'audio', data: 'x' }]), (error) => error.name === 'JanRpcError')
+})
+
+const echoTool = (calls, label) => ({
+  name: 'echo',
+  capability: 'read',
+  handler: (args) => {
+    calls.push(label)
+    return { text: `echoed by ${label}: ${args.text}` }
+  },
+})
+
+test('a fork answers for its source’s host tools', { skip: missingRuntime }, async (t) => {
+  const calls = []
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__echo', { text: 'hi' }), PROSE('done')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [echoTool(calls, 'source')],
+  })
+  const fork = await session.fork()
+  assert.deepEqual(fork.tools, ['host__echo'])
+
+  await within((await fork.prompt('echo hi')).result())
+  assert.deepEqual(calls, ['source'])
+  assert.match(provider.bodies[1], /echoed by source: hi/)
+  assert.doesNotMatch(provider.bodies[1], /no host tool named/)
+})
+
+test('a fork given its own tools answers with those, and one given none has none', { skip: missingRuntime }, async (t) => {
+  const calls = []
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__echo', { text: 'hi' }), PROSE('done')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [echoTool(calls, 'source')],
+  })
+
+  const bare = await session.fork({ tools: [] })
+  assert.deepEqual(bare.tools, [], 'nothing is advertised that nothing can run')
+
+  const own = await session.fork({ tools: [echoTool(calls, 'fork')] })
+  await within((await own.prompt('echo hi')).result())
+  assert.deepEqual(calls, ['fork'], 'the source’s handler is not used by a fork that replaced it')
+  assert.match(provider.bodies[1], /echoed by fork: hi/)
+})
+
+test('resuming an open session returns it, and its turn settles', { skip: missingRuntime }, async (t) => {
+  const { scratch, runtime } = await connect(t, { replies: [(response) => response.write(HOLDING('still here'))] })
+  const original = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+  const turn = await original.prompt('hold')
+  for await (const event of turn) if (event.type === 'token') break
+
+  const resumed = await runtime.resumeSession(original.id)
+  assert.equal(resumed, original, 'the session this client already holds, not a second object for the id')
+
+  await resumed.interrupt()
+  const result = await within(turn.result())
+  assert.equal(result.stopReason, 'interrupted')
+})
+
+test('resuming an open session does not orphan its turn when the runtime closes', { skip: missingRuntime }, async (t) => {
+  const { scratch, runtime } = await connect(t, { replies: [(response) => response.write(HOLDING('still here'))] })
+  const original = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+  const turn = await original.prompt('hold')
+  for await (const event of turn) if (event.type === 'token') break
+  await runtime.resumeSession(original.id)
+
+  await runtime.close()
+  await assert.rejects(within(turn.result()), (error) => error instanceof JanRuntimeError)
+})
+
+test('a resumed session keeps the handlers of its host tools', { skip: missingRuntime }, async (t) => {
+  const calls = []
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__echo', { text: 'hi' }), PROSE('done')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [echoTool(calls, 'source')],
+  })
+  const resumed = await runtime.resumeSession(session.id)
+  await within((await resumed.prompt('echo hi')).result())
+  assert.deepEqual(calls, ['source'])
+  assert.match(provider.bodies[1], /echoed by source: hi/)
+})
+
+// The embedding application must survive a listener that raises, and must not
+// be left waiting: the runtime fails, and every open turn settles with an error
+// that names the listener's. This runs in its own Node process because the bug
+// it pins is the process exiting.
+const LISTENER_SCRIPT = `
+import { JanRuntime, JanRuntimeError } from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)}
+const mode = process.argv[1]
+const runtime = await JanRuntime.start({ bin: process.env.JAN_BIN })
+const session = await runtime.createSession({ cwd: process.env.PROJECT, model: 'stub-model', ephemeral: true })
+// Anything can be thrown, and reading it can throw: \`-null\` modes throw an
+// object with no prototype, \`-getter\` modes an Error whose \`message\` getter
+// throws, \`-badmessage\` modes an Error whose \`message\` is such an object.
+const thrown = () => {
+  if (mode.endsWith('-null')) return Object.create(null)
+  if (mode.endsWith('-getter')) {
+    return Object.defineProperty(new Error('x'), 'message', { get() { throw new Error('no message for you') } })
+  }
+  if (mode.endsWith('-badmessage')) return Object.assign(new Error('x'), { message: Object.create(null) })
+  return new Error('QA_THROWING_LISTENER')
+}
+session.on('event', async () => {
+  if (mode.startsWith('async')) throw thrown()
+})
+if (mode.startsWith('sync')) session.on('event', () => { throw thrown() })
+const turn = await session.prompt('hello')
+const outcome = await turn.result().then(() => 'resolved', (error) => error)
+await new Promise((resolve) => setTimeout(resolve, 300))
+let alive = true
+try { process.kill(runtime.pid, 0) } catch { alive = false }
+console.log(JSON.stringify({
+  runtimeError: outcome instanceof JanRuntimeError,
+  message: outcome?.message,
+  cause: (() => {
+    const cause = outcome?.cause
+    try {
+      const text = cause?.message
+      if (text && typeof text === 'object') return 'OBJECT_MESSAGE'
+      return text ?? (cause && Object.getPrototypeOf(cause) === null ? 'NULL_PROTOTYPE' : undefined)
+    } catch {
+      return 'THROWING_GETTER'
+    }
+  })(),
+  alive,
+}))
+`
+
+for (const [mode, article, message, cause] of [
+  ['sync', 'a', 'QA_THROWING_LISTENER', 'QA_THROWING_LISTENER'],
+  ['async', 'an', 'QA_THROWING_LISTENER', 'QA_THROWING_LISTENER'],
+  ['sync-null', 'a', 'a thrown value that cannot be converted to text', 'NULL_PROTOTYPE'],
+  ['async-null', 'an', 'a thrown value that cannot be converted to text', 'NULL_PROTOTYPE'],
+  ['sync-getter', 'a', 'a thrown value that cannot be converted to text', 'THROWING_GETTER'],
+  ['async-getter', 'an', 'a thrown value that cannot be converted to text', 'THROWING_GETTER'],
+  ['sync-badmessage', 'a', 'a thrown value that cannot be converted to text', 'OBJECT_MESSAGE'],
+  ['async-badmessage', 'an', 'a thrown value that cannot be converted to text', 'OBJECT_MESSAGE'],
+]) {
+  test(`${article} ${mode} listener that throws fails the runtime, not the host`, { skip: missingRuntime }, async (t) => {
+    const { scratch } = await connect(t, { replies: [PROSE('hello')] })
+    const { stdout } = await run(process.execPath, ['--input-type=module', '-e', LISTENER_SCRIPT, mode], {
+      env: { ...scratch.env, JAN_BIN: bin, PROJECT: scratch.projectPath },
+      timeout: 20_000,
+    })
+    const report = JSON.parse(stdout.trim().split('\n').at(-1))
+    assert.equal(report.runtimeError, true)
+    assert.equal(report.message, `an event listener raised: ${message}`)
+    assert.equal(report.cause, cause)
+    assert.equal(report.alive, false, 'the runtime process was stopped')
+  })
+}
+
+test('a tool result the runtime refuses is answered as an error, and the turn goes on', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera', {}), PROSE('no frame')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    // Shapes cleanly here, and the runtime refuses the part: the request is
+    // still pending on its side, so a swallowed refusal parks the turn.
+    tools: [{ name: 'camera', capability: 'read', handler: () => ({ parts: [{ type: 'audio', data: 'x' }] }) }],
+  })
+
+  const turn = await session.prompt('look')
+  assert.equal((await within(turn.result())).stopReason, 'completed')
+  assert.equal(provider.bodies.length, 2, 'the model was told, so it was asked again')
+  assert.match(provider.bodies[1], /refused this tool result/)
+})
+
+// The two orders of one fork and one tools change made together. Whichever the
+// runtime reads first is the tool set the fork holds, so it must be the handlers
+// the fork answers with.
+for (const [order, makeCalls] of [
+  ['fork first', (session, next) => Promise.all([session.fork(), session.setTools([next])]).then(([fork]) => [fork, 'a'])],
+  ['tools change first', (session, next) => Promise.all([session.setTools([next]), session.fork()]).then(([, fork]) => [fork, 'b'])],
+]) {
+  test(`a fork made with a tools change keeps matching handlers (${order})`, { skip: missingRuntime }, async (t) => {
+    const calls = []
+    const { provider, scratch, runtime } = await connect(t, {
+      replies: [TOOL_CALL('host__echo', { text: 'hi' }), PROSE('done')],
+    })
+    const session = await runtime.createSession({
+      cwd: scratch.projectPath,
+      model: 'stub-model',
+      ephemeral: true,
+      builtins: false,
+      permissions: 'host',
+      tools: [echoTool(calls, 'a')],
+    })
+    const [fork, expected] = await makeCalls(session, echoTool(calls, 'b'))
+    assert.deepEqual(fork.tools, ['host__echo'])
+
+    await within((await fork.prompt('echo hi')).result())
+    assert.deepEqual(calls, [expected], 'the fork ran the handler for the tools the runtime gave it')
+    assert.match(provider.bodies[1], new RegExp(`echoed by ${expected}: hi`))
+  })
+}
+
+test('a turn started as the runtime fails is failed, not left pending', { skip: missingRuntime }, async (t) => {
+  const { scratch, runtime } = await connect(t, { replies: [PROSE('hi')] })
+  const session = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+  // The runtime fails between the `turn/start` reply and `prompt()` resuming
+  // with it: what a listener that throws on the first event of a reply that
+  // arrives in the same chunk does.
+  const request = runtime.request.bind(runtime)
+  runtime.request = async (...args) => {
+    const answer = await request(...args)
+    if (args[0] === 'turn/start') {
+      runtime._callListener(() => {
+        throw new Error('QA_FAILS_FIRST')
+      })
+    }
+    return answer
+  }
+
+  const turn = await session.prompt('hi')
+  await assert.rejects(within(turn.result()), (error) => error instanceof JanRuntimeError && /QA_FAILS_FIRST/.test(error.message))
+})
+
+test('a terminal record already received wins over a runtime failure', { skip: missingRuntime }, async (t) => {
+  const { scratch, runtime } = await connect(t, { replies: [PROSE('hi')] })
+  const session = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+  // The runtime sent the turn's terminal record, and then failed, before
+  // `prompt()` resumed with the reply.
+  const request = runtime.request.bind(runtime)
+  runtime.request = async (...args) => {
+    const answer = await request(...args)
+    if (args[0] === 'turn/start') {
+      session._complete({ turnId: answer.turnId, stopReason: 'interrupted' })
+      runtime._callListener(() => {
+        throw new Error('QA_CLOSED_AFTER')
+      })
+    }
+    return answer
+  }
+
+  const turn = await session.prompt('hi')
+  assert.equal((await within(turn.result())).stopReason, 'interrupted')
+})
+
+test('a handler that throws a value with no text is still answered', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera', {}), PROSE('no frame')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [
+      {
+        name: 'camera',
+        capability: 'read',
+        handler: () => {
+          // Converting this to a string throws.
+          throw Object.create(null)
+        },
+      },
+    ],
+  })
+  const turn = await session.prompt('look')
+  assert.equal((await within(turn.result())).stopReason, 'completed')
+  assert.match(provider.bodies[1], /cannot be converted to text/)
+})
+
+test('a tool result that cannot be encoded is answered as an error, and the turn goes on', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera', {}), PROSE('no frame')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    // Shapes cleanly, and cannot be written as JSON: nothing reaches the runtime,
+    // which is still waiting on the request.
+    tools: [{ name: 'camera', capability: 'read', handler: () => ({ text: 'ok', details: { count: 1n } }) }],
+  })
+  const turn = await session.prompt('look')
+  assert.equal((await within(turn.result())).stopReason, 'completed')
+  assert.equal(provider.bodies.length, 2, 'the model was told, so it was asked again')
+  assert.match(provider.bodies[1], /could not be encoded/)
+})
+
+test('a tool result whose toJSON throws is answered as an error, and the turn goes on', { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera', {}), PROSE('no frame')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    // JSON.stringify throws a plain Error here, not a TypeError: any failure to
+    // send the answer is itself answered.
+    tools: [
+      {
+        name: 'camera',
+        capability: 'read',
+        handler: () => ({
+          text: 'ok',
+          details: {
+            toJSON() {
+              throw new Error('cannot encode')
+            },
+          },
+        }),
+      },
+    ],
+  })
+  const turn = await session.prompt('look')
+  assert.equal((await within(turn.result())).stopReason, 'completed')
+  assert.match(provider.bodies[1], /could not be encoded: cannot encode/)
+})
