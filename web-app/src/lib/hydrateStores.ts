@@ -23,6 +23,7 @@ import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import { useCoTDuration } from '@/hooks/useCoTDuration'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 
 /**
  * Stores persisted through `backendStorage` set `skipHydration: true` so they
@@ -57,6 +58,7 @@ const secondaryStores = [
   useCoworkSessions,
   useCoworkConfig,
   useCoTDuration,
+  useImageAttachmentConfig,
 ] as const
 
 export async function hydrateBackendStores(): Promise<void> {

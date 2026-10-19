@@ -1,4 +1,9 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http'
 import { AddressInfo } from 'node:net'
 
 /**
@@ -68,6 +73,31 @@ export type MockOptions = {
   chunkDelayMs?: number
 }
 
+/**
+ * The typed content parts of one streaming completion's last user message, as
+ * the server saw them on the wire.
+ *
+ * A plain-text turn has `content` as a string, which is reported as a single
+ * `text` part so every entry has the same shape. Image URLs are summarised
+ * rather than stored: a data URL for a 1.5MB image is 2MB of base64, which
+ * nobody wants in an assertion diff.
+ */
+export type MockUserParts = {
+  /** `type` of every content part, in order (`text`, `image_url`, ...). */
+  partTypes: string[]
+  /** One entry per `image_url` part. */
+  imageParts: Array<{
+    /** The URL starts with `data:image/`. */
+    isDataImageUrl: boolean
+    /** The URL contains `;base64,`, i.e. it is inline base64, not a link. */
+    hasBase64Marker: boolean
+    /** Length of the whole URL string, in characters. */
+    urlLength: number
+    decodedBytes: number
+    isValidPngDataUrl: boolean
+  }>
+}
+
 export type MockOpenAI = {
   /** Feed this to the Add Provider dialog verbatim. */
   baseUrl: string
@@ -95,6 +125,15 @@ export type MockOpenAI = {
    * they fire on a schedule of their own.
    */
   streamedPrompts: string[]
+  /**
+   * The typed content parts of the last user message of every *streaming*
+   * completion, oldest first, index-aligned with `streamedPrompts`. Live.
+   *
+   * It exists for the same reason `streamedPrompts` does: whether an attached
+   * image really went out as an inline base64 data URL is not observable in the
+   * DOM, and the echo reply only ever repeats the text.
+   */
+  streamedUserParts: MockUserParts[]
   close: () => Promise<void>
 }
 
@@ -123,6 +162,44 @@ function lastUserText(messages: ChatMessage[]): string {
       .join('')
   }
   return ''
+}
+
+/** Summarise the typed parts of the last user turn; see MockUserParts. */
+function lastUserParts(messages: ChatMessage[]): MockUserParts {
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')
+  const content = lastUser?.content
+  if (typeof content === 'string') {
+    return { partTypes: ['text'], imageParts: [] }
+  }
+  const parts = Array.isArray(content) ? content : []
+  const partTypes: string[] = []
+  const imageParts: MockUserParts['imageParts'] = []
+  for (const part of parts) {
+    const p = (part ?? {}) as { type?: unknown; image_url?: unknown }
+    partTypes.push(String(p.type))
+    if (p.type !== 'image_url') continue
+    // OpenAI's shape is { image_url: { url } }; tolerate a bare string too.
+    const raw = p.image_url
+    const url =
+      typeof raw === 'string'
+        ? raw
+        : String((raw as { url?: unknown } | undefined)?.url ?? '')
+    const payload = url.split(',')[1] ?? ''
+    const decoded = Buffer.from(payload, 'base64')
+    imageParts.push({
+      decodedBytes: decoded.length,
+      isValidPngDataUrl:
+        url.startsWith('data:image/png;base64,') &&
+        decoded.toString('base64') === payload &&
+        decoded
+          .subarray(0, 8)
+          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+      isDataImageUrl: url.startsWith('data:image/'),
+      hasBase64Marker: url.includes(';base64,'),
+      urlLength: url.length,
+    })
+  }
+  return { partTypes, imageParts }
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -176,7 +253,7 @@ async function streamCompletion(
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
+    'Connection': 'keep-alive',
     'Access-Control-Allow-Origin': '*',
   })
 
@@ -224,7 +301,8 @@ async function handle(
   res: ServerResponse,
   modelId: string,
   chunkDelay: () => number,
-  streamedPrompts: string[]
+  streamedPrompts: string[],
+  streamedUserParts: MockUserParts[]
 ) {
   const url = req.url ?? '/'
 
@@ -292,6 +370,7 @@ async function handle(
     // Recorded before the reply is written, so a spec that counts requests sees
     // this one even if the stream it opens is aborted halfway through.
     streamedPrompts.push(prompt)
+    streamedUserParts.push(lastUserParts(body.messages ?? []))
     await streamCompletion(res, MOCK_REPLY_PREFIX + prompt, modelId, chunkDelay)
     return
   }
@@ -318,6 +397,7 @@ export function startMockOpenAI(
 ): Promise<MockOpenAI> {
   const modelId = options.modelId ?? MOCK_MODEL_ID
   const streamedPrompts: string[] = []
+  const streamedUserParts: MockUserParts[] = []
   // Held in one place the handle also points at, so assigning to
   // `mock.chunkDelayMs` mid-spec changes the next chunk rather than only the
   // next server.
@@ -329,7 +409,8 @@ export function startMockOpenAI(
       res,
       modelId,
       () => state.chunkDelayMs,
-      streamedPrompts
+      streamedPrompts,
+      streamedUserParts
     ).catch((error) => {
       if (res.headersSent) {
         res.end()
@@ -347,6 +428,7 @@ export function startMockOpenAI(
         baseUrl: `http://127.0.0.1:${port}/v1`,
         modelId,
         streamedPrompts,
+        streamedUserParts,
         get chunkDelayMs() {
           return state.chunkDelayMs
         },

@@ -12,6 +12,7 @@ export const localStorageKey = {
   settingProxyConfig: 'setting-proxy-config',
   settingWebSearch: 'setting-web-search',
   settingCowork: 'setting-cowork',
+  settingImageAttachments: 'setting-image-attachments',
   settingHardware: 'setting-hardware',
   settingVulkan: 'setting-vulkan',
   productAnalyticPrompt: 'productAnalyticPrompt',
