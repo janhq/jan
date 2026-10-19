@@ -12,6 +12,7 @@ import '@testing-library/jest-dom'
 
 // Store backing state for usePrompt (settable by tests)
 let promptState = ''
+let historyIndexState = -1
 const setPromptMock = vi.fn((val: string) => {
   promptState = val
 })
@@ -22,6 +23,7 @@ vi.mock('@/hooks/usePrompt', () => ({
   usePrompt: (selector: any) =>
     selector({
       prompt: promptState,
+      historyIndex: historyIndexState,
       setPrompt: setPromptMock,
       addToHistory: addToHistoryMock,
       navigateHistory: navigateHistoryMock,
@@ -555,12 +557,52 @@ describe('ChatInput', () => {
 
   it('navigates prompt history on ArrowDown when cursor is at end', () => {
     promptState = 'abc'
+    historyIndexState = 0
     renderInput()
     const ta = getTextarea()
     ta.focus()
     ta.setSelectionRange(3, 3)
     fireEvent.keyDown(ta, { key: 'ArrowDown' })
     expect(navigateHistoryMock).toHaveBeenCalledWith('down')
+    historyIndexState = -1
+  })
+
+  it('keeps a nonempty draft when Up is pressed at the start', () => {
+    promptState = 'draft\nwith more text'
+    renderInput()
+    const ta = getTextarea()
+    ta.setSelectionRange(0, 0)
+    expect(fireEvent.keyDown(ta, { key: 'ArrowUp' })).toBe(true)
+    expect(navigateHistoryMock).not.toHaveBeenCalled()
+    expect(ta).toHaveValue(promptState)
+  })
+
+  it('keeps Down available for caret movement outside history browsing', () => {
+    promptState = 'draft'
+    renderInput()
+    const ta = getTextarea()
+    ta.setSelectionRange(promptState.length, promptState.length)
+    expect(fireEvent.keyDown(ta, { key: 'ArrowDown' })).toBe(true)
+    expect(navigateHistoryMock).not.toHaveBeenCalled()
+  })
+
+  it('continues browsing older prompts from an unedited history entry', () => {
+    promptState = 'previous prompt'
+    historyIndexState = 0
+    try {
+      renderInput()
+      const ta = getTextarea()
+      ta.setSelectionRange(0, 0)
+      fireEvent.keyDown(ta, { key: 'ArrowUp' })
+      expect(navigateHistoryMock).toHaveBeenCalledWith('up')
+    } finally { historyIndexState = -1 }
+  })
+
+  it.each(['shiftKey', 'ctrlKey', 'altKey', 'metaKey'])('preserves %s + Up editing shortcuts', (modifier) => {
+    promptState = ''
+    renderInput()
+    expect(fireEvent.keyDown(getTextarea(), { key: 'ArrowUp', [modifier]: true })).toBe(true)
+    expect(navigateHistoryMock).not.toHaveBeenCalled()
   })
 
   it('adds attached image files to onSubmit payload', async () => {

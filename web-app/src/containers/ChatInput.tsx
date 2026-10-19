@@ -290,6 +290,7 @@ const ChatInput = memo(function ChatInput({
   const setPrompt = usePrompt((state) => state.setPrompt)
   const addToHistory = usePrompt((state) => state.addToHistory)
   const navigateHistory = usePrompt((state) => state.navigateHistory)
+  const historyIndex = usePrompt((state) => state.historyIndex)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
@@ -2249,18 +2250,22 @@ const ChatInput = memo(function ChatInput({
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
-                // Navigate prompt history with Up/Down arrow keys
-                if (e.key === 'ArrowUp' && !isComposing) {
+                // Enter history only from an empty composer. Once browsing,
+                // continue at its boundaries; typing resets historyIndex and
+                // makes the recalled text a draft again.
+                const historyShortcut = !isComposing &&
+                  !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
+                if (e.key === 'ArrowUp' && historyShortcut) {
                   const textarea = e.currentTarget
                   const cursorAtStart =
                     textarea.selectionStart === 0 &&
                     textarea.selectionEnd === 0
-                  if (cursorAtStart || !prompt) {
+                  if (cursorAtStart && (!prompt || historyIndex >= 0)) {
                     e.preventDefault()
                     navigateHistory('up')
                   }
                 }
-                if (e.key === 'ArrowDown' && !isComposing) {
+                if (e.key === 'ArrowDown' && historyShortcut && historyIndex >= 0) {
                   const textarea = e.currentTarget
                   const cursorAtEnd =
                     textarea.selectionStart === prompt.length &&
