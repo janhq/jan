@@ -46,7 +46,7 @@ describe('bulk deletion failures', () => {
     fireEvent.click(screen.getByText('providers:deleteAllModels.confirm'))
     await waitFor(() => expect(h.setProviders).toHaveBeenCalled())
     expect(h.deleteCache.mock.calls).toEqual([['deleted']])
-    expect(h.removeFavorite.mock.calls).toEqual([['deleted']])
+    expect(h.removeFavorite.mock.calls.map(([id]) => id)).toEqual(['deleted'])
     expect(h.setProviders.mock.calls[0][0][0].models.map((m: Model) => m.id)).toEqual(['locked', 'external'])
     expect(h.deleteModel.mock.calls.map(([id]) => id)).toEqual(['deleted', 'locked'])
     expect(h.error).toHaveBeenCalled()
