@@ -112,10 +112,8 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import {
-  parsePromptForReferences,
-  resolvePathReference,
+  expandPromptReferences,
   searchFiles,
-  stripPromptReferences,
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
@@ -430,46 +428,6 @@ const ChatInput = memo(function ChatInput({
     filePickerCursorPos.current = null
   }, [])
 
-  // Resolve @path references in the prompt text, returning the resolved content
-  const resolvePromptReferences = useCallback(
-    async (text: string): Promise<{
-      text: string
-      resolvedContents: string
-    }> => {
-      const refs = parsePromptForReferences(text)
-      if (refs.length === 0) return { text, resolvedContents: '' }
-
-      const parts: string[] = []
-      for (const ref of refs) {
-        const resolved = await resolvePathReference(ref, workingDir)
-        if (resolved) {
-          if (resolved.kind === 'file') {
-            parts.push(
-              `--- File: ${resolved.absolutePath} ---\n${resolved.content}`
-            )
-          } else if (resolved.kind === 'directory') {
-            parts.push(
-              `--- Directory: ${resolved.absolutePath} ---\n${resolved.content}`
-            )
-          }
-        } else {
-          parts.push(
-            `[File not found or too large: ${ref}]`
-          )
-        }
-      }
-
-      const resolvedContents = parts.join('\n\n')
-
-      // Remove @ references from the prompt text (they'll be replaced by the
-      // resolved contents above so the model sees the content directly)
-      const cleanText = stripPromptReferences(text)
-
-      return { text: cleanText, resolvedContents }
-    },
-    [workingDir]
-  )
-
   // Get current thread messages for token counting
   const threadMessages = useMessages(
     useShallow((state) =>
@@ -661,9 +619,10 @@ const ChatInput = memo(function ChatInput({
       return
     }
 
-    // Resolve @path references before sending
+    // Expand @path references that resolve to a file or folder; any other
+    // `@token` (a pasted decorator) stays in the text as typed.
     const { text: resolvedText, resolvedContents } =
-      await resolvePromptReferences(prompt)
+      await expandPromptReferences(prompt, workingDir)
     const effectivePrompt = resolvedContents
       ? `${resolvedText}\n\n---\nReferenced file contents:\n\n${resolvedContents}`
       : resolvedText
