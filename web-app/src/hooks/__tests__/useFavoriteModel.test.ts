@@ -41,11 +41,41 @@ describe('useFavoriteModel', () => {
     expect(state.favoriteModels).toEqual([])
   })
 
+  it('keeps same-id favorites from two providers independent', () => {
+    const store = useFavoriteModel.getState()
+    store.addFavorite(makeModel('shared'), 'alpha')
+    expect(store.isFavorite('shared', 'beta')).toBe(false)
+    store.addFavorite(makeModel('shared'), 'beta')
+    expect(useFavoriteModel.getState().favoriteModels).toHaveLength(2)
+    store.removeFavorite('shared', 'alpha')
+    expect(store.isFavorite('shared', 'alpha')).toBe(false)
+    expect(store.isFavorite('shared', 'beta')).toBe(true)
+  })
+
+  it('toggling a model on another provider does not unstar the first', () => {
+    const store = useFavoriteModel.getState()
+    store.toggleFavorite(makeModel('shared'), 'alpha')
+    store.toggleFavorite(makeModel('shared'), 'beta')
+    expect(useFavoriteModel.getState().favoriteModels).toHaveLength(2)
+    store.toggleFavorite(makeModel('shared'), 'beta')
+    expect(store.isFavorite('shared', 'alpha')).toBe(true)
+    expect(store.isFavorite('shared', 'beta')).toBe(false)
+  })
+
+  it('does not remove another provider favorite when deleting a same-id model', () => {
+    useFavoriteModel.setState({ favoriteModels: [
+      { ...makeModel('shared'), provider: 'alpha' },
+      { ...makeModel('shared'), provider: 'beta' },
+    ] })
+    useFavoriteModel.getState().removeFavorite('shared', 'alpha')
+    expect(useFavoriteModel.getState().favoriteModels).toEqual([{ ...makeModel('shared'), provider: 'beta' }])
+  })
+
   it('should add a favorite', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(1)
@@ -56,8 +86,8 @@ describe('useFavoriteModel', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(1)
@@ -67,11 +97,11 @@ describe('useFavoriteModel', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
     })
 
     act(() => {
-      useFavoriteModel.getState().removeFavorite('model-1')
+      useFavoriteModel.getState().removeFavorite('model-1', 'llamacpp')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(0)
@@ -81,51 +111,51 @@ describe('useFavoriteModel', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(true)
-    expect(useFavoriteModel.getState().isFavorite('model-2')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'llamacpp')).toBe(true)
+    expect(useFavoriteModel.getState().isFavorite('model-2', 'llamacpp')).toBe(false)
   })
 
   it('should toggle favorite on', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().toggleFavorite(model)
+      useFavoriteModel.getState().toggleFavorite(model, 'llamacpp')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(true)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'llamacpp')).toBe(true)
   })
 
   it('should toggle favorite off', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'llamacpp')
     })
 
     act(() => {
-      useFavoriteModel.getState().toggleFavorite(model)
+      useFavoriteModel.getState().toggleFavorite(model, 'llamacpp')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'llamacpp')).toBe(false)
   })
 
   it('should handle multiple favorites', () => {
     act(() => {
-      useFavoriteModel.getState().addFavorite(makeModel('a'))
-      useFavoriteModel.getState().addFavorite(makeModel('b'))
-      useFavoriteModel.getState().addFavorite(makeModel('c'))
+      useFavoriteModel.getState().addFavorite(makeModel('a'), 'llamacpp')
+      useFavoriteModel.getState().addFavorite(makeModel('b'), 'llamacpp')
+      useFavoriteModel.getState().addFavorite(makeModel('c'), 'llamacpp')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(3)
 
     act(() => {
-      useFavoriteModel.getState().removeFavorite('b')
+      useFavoriteModel.getState().removeFavorite('b', 'llamacpp')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(2)
-    expect(useFavoriteModel.getState().isFavorite('b')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('b', 'llamacpp')).toBe(false)
   })
 })

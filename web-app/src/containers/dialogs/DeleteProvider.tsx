@@ -39,10 +39,9 @@ const DeleteProvider = ({ provider }: Props) => {
 
   const removeProvider = async () => {
     // Remove favorite models that belong to this provider
-    const providerModelIds = provider.models.map((model) => model.id)
     favoriteModels.forEach((favoriteModel) => {
-      if (providerModelIds.includes(favoriteModel.id)) {
-        removeFavorite(favoriteModel.id)
+      if (favoriteModel.provider === provider.provider) {
+        removeFavorite(favoriteModel.id, provider.provider)
       }
     })
 

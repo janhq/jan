@@ -4,6 +4,7 @@ import '@testing-library/jest-dom'
 import DropdownModelProvider from '../DropdownModelProvider'
 import { getModelDisplayName } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 // Define basic types to avoid missing declarations
 type ModelProvider = {
@@ -142,6 +143,7 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(useFavoriteModel).mockReturnValue({ favoriteModels: [] } as never)
 
     // Reset the mock for each test
     vi.mocked(useModelProvider).mockReturnValue({
@@ -161,6 +163,22 @@ describe('DropdownModelProvider - Display Name Integration', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('keeps another provider with the same model ID outside Favorites', () => {
+    const state = useModelProvider()
+    const providers = ['alpha', 'beta'].map((provider) => ({
+      provider, active: true, settings: [], models: [{ id: 'shared', capabilities: [] }],
+    }))
+    vi.mocked(useModelProvider).mockReturnValue({ ...state, providers } as never)
+    vi.mocked(useFavoriteModel).mockReturnValue({
+      favoriteModels: [{ id: 'shared', provider: 'alpha' }],
+    } as never)
+    render(<DropdownModelProvider />)
+    const favorites = screen.getByText('common:favorites').parentElement!.parentElement!
+    expect(favorites.querySelectorAll('[data-testid="model-option-shared"]')).toHaveLength(1)
+    expect(screen.getAllByTestId('model-option-shared')).toHaveLength(2)
+    expect(screen.getAllByTestId('model-option-shared').filter((row) => !favorites.contains(row))).toHaveLength(1)
   })
 
   it('should display custom model name in the trigger button', () => {
