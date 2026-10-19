@@ -915,7 +915,7 @@ pub(crate) fn reuse_last_good_listings(
 }
 
 /// Flatten the per-server listings into the advertised array, ordered by
-/// [`tool_sort_key`], with `tool_to_server` kept consistent with that order.
+/// [`tool_sort_key`], with one definition per name matching `tool_to_server`.
 pub(crate) fn assemble_tool_array(
     listings: Vec<(String, Vec<RenderedTool>)>,
 ) -> (Vec<serde_json::Value>, HashMap<String, String>) {
@@ -934,10 +934,21 @@ pub(crate) fn assemble_tool_array(
 
     let mut openai_tools = Vec::with_capacity(flattened.len());
     let mut tool_to_server: HashMap<String, String> = HashMap::new();
-    for (server_name, tool_name, tool) in flattened {
+    // Routing already selects the last server in sorted order. Walk backwards
+    // so only its definition reaches the provider, including when that server
+    // lists a name more than once (the last listed definition wins).
+    for (server_name, tool_name, tool) in flattened.into_iter().rev() {
+        if let Some(winner) = tool_to_server.get(&tool_name) {
+            log::warn!(
+                "Skipping duplicate MCP tool {tool_name:?} from server {server_name:?}; using the last definition from server {winner:?}"
+            );
+            continue;
+        }
         tool_to_server.insert(tool_name, server_name);
         openai_tools.push(tool);
     }
+    // Keep the original (server, tool) order for the retained definitions.
+    openai_tools.reverse();
 
     (openai_tools, tool_to_server)
 }
@@ -2108,10 +2119,8 @@ mod tests {
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
     }
 
-    /// Two servers exposing the same tool name is a pre-existing collision the
-    /// array does not dedupe - but which server wins `tool_to_server` used to
-    /// depend on iteration order, so the same call could route to either one
-    /// across restarts. Sorting makes it the last server by name, always.
+    /// A collision must advertise the definition belonging to the server that
+    /// receives the call. Sorting makes it the last server by name, always.
     #[test]
     fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
         let listings = |flipped: bool| {
@@ -2131,7 +2140,7 @@ mod tests {
             serde_json::to_string(&first).unwrap(),
             serde_json::to_string(&second).unwrap()
         );
-        assert_eq!(advertised_names(&first), ["search", "search"]);
+        assert_eq!(advertised_names(&first), ["search"]);
         assert_eq!(first_map.get("search").unwrap(), "zed");
         assert_eq!(first_map, second_map);
     }
@@ -2147,6 +2156,65 @@ mod tests {
         assert_eq!(tool_to_server.get("read").unwrap(), "fs");
         assert_eq!(tool_to_server.get("commit").unwrap(), "git");
         assert_eq!(tool_to_server.len(), tools.len());
+    }
+
+    #[test]
+    fn colliding_tools_advertise_the_routed_servers_schema() {
+        let mut filesystem_search = rendered("search");
+        filesystem_search.1["function"]["description"] = json!("Search files");
+        filesystem_search.1["function"]["parameters"] = json!({
+            "type": "object", "properties": { "path": { "type": "string" } }
+        });
+        let mut editor_search = rendered("search");
+        editor_search.1["function"]["description"] = json!("Search editor buffers");
+        editor_search.1["function"]["parameters"] = json!({
+            "type": "object", "properties": { "buffer": { "type": "integer" } }
+        });
+        let listings = vec![
+            ("fs".to_string(), vec![filesystem_search, rendered("read")]),
+            (
+                "zed".to_string(),
+                vec![editor_search.clone(), rendered("write")],
+            ),
+        ];
+        let mut reversed = listings.clone();
+        reversed.reverse();
+        let (tools, routing) = assemble_tool_array(listings);
+        assert_eq!(
+            assemble_tool_array(reversed),
+            (tools.clone(), routing.clone())
+        );
+        assert_eq!(advertised_names(&tools), ["read", "search", "write"]);
+        assert_eq!(routing["search"], "zed");
+        assert_eq!(tools[1], editor_search.1);
+        assert_eq!(tools.len(), routing.len());
+    }
+
+    #[test]
+    fn repeated_names_in_one_server_keep_only_the_last_definition() {
+        let mut replacement = rendered("search");
+        replacement.1["function"]["description"] = json!("Replacement definition");
+        let (tools, routing) = assemble_tool_array(vec![(
+            "fs".to_string(),
+            vec![rendered("search"), rendered("read"), replacement.clone()],
+        )]);
+        assert_eq!(advertised_names(&tools), ["read", "search"]);
+        assert_eq!(tools[1], replacement.1);
+        assert_eq!(routing["search"], "fs");
+        assert_eq!(tools.len(), routing.len());
+    }
+
+    #[test]
+    fn repeated_names_in_the_winning_server_do_not_leak_duplicates() {
+        let mut winner = rendered("search");
+        winner.1["function"]["description"] = json!("Winning definition");
+        let (tools, routing) = assemble_tool_array(vec![
+            ("alpha".to_string(), vec![rendered("search")]),
+            ("zed".to_string(), vec![rendered("search"), winner.clone()]),
+        ]);
+        assert_eq!(tools, vec![winner.1]);
+        assert_eq!(routing["search"], "zed");
+        assert_eq!(tools.len(), routing.len());
     }
 
     /// A listing timeout must not shrink the advertised array mid-session - the
