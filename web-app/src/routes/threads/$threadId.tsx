@@ -82,6 +82,7 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   OUT_OF_CONTEXT_SIZE,
   isContextOverflowMessage,
@@ -168,6 +169,13 @@ const forgetApprovals = (threadId: string) => {
 const CHAT_CLOSED_TOOL_ERROR =
   'Tool call cancelled: the chat was closed before it ran.'
 
+// Recorded for a call to the built-in shell while the user has the shell switch
+// off. The model reads it on its next turn, so it says why the call did not run
+// and that calling it again cannot succeed.
+const SHELL_DISABLED_TOOL_ERROR =
+  'Shell is turned off: the user disabled it, so this command was not run. ' +
+  'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
+
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
 // stopped) only reaches storage when a later reply rewrites the turn; when no
@@ -200,6 +208,23 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
+// How a call to a chat agent tool name is served. The switch is enforced where
+// the command would run, not only where the tool is offered: a call can still
+// arrive from replayed history or from a turn in flight when it flips. Such a
+// call is refused outright, before any approval prompt, because a prompt for a
+// tool the user turned off could save a permission for it. With the switch off
+// the built-in is not offered, so an MCP tool of the same name is the user's
+// own: it is served as an MCP tool and prompts like any other.
+function chatShellRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
+  if (!CHAT_AGENT_TOOL_NAMES.has(toolName)) return 'other'
+  if (useChatShell.getState().shellEnabled) return 'builtin'
+  return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
+}
+
+function isDisabledChatAgentTool(toolName: string): boolean {
+  return chatShellRoute(toolName) === 'disabled'
+}
+
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
 // approval), so only workspace-confined calls ever reach here.
@@ -207,7 +232,7 @@ function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
     WEB_TOOL_NAMES.has(toolName) ||
-    CHAT_AGENT_TOOL_NAMES.has(toolName)
+    chatShellRoute(toolName) === 'builtin'
   )
 }
 
@@ -679,6 +704,16 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
+            if (isDisabledChatAgentTool(toolName)) {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: SHELL_DISABLED_TOOL_ERROR,
+              })
+              continue
+            }
+
             const approved = isAutoAllowedTool(toolName)
               ? true
               : await (approvalsOf(threadId).get(toolCall.toolCallId) ??
@@ -732,7 +767,7 @@ function ThreadDetail() {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
-                } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+                } else if (chatShellRoute(toolName) === 'builtin') {
                   // Chat's shell runs with the sandbox network closed: the
                   // default `allowNetwork = false` is the contract here, not an
                   // accident.
@@ -931,6 +966,7 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
       if (
         !isAutoAllowedTool(toolCall.toolName) &&
+        !isDisabledChatAgentTool(toolCall.toolName) &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
         approvalsOf(threadId).set(

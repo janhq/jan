@@ -34,6 +34,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorldSearch,
+  IconTerminal2,
   IconBrandChrome,
   IconDots,
 } from '@tabler/icons-react'
@@ -66,7 +67,8 @@ import {
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
 import { defaultModel } from '@/lib/models'
-import { cancelAgentThreadBash } from '@/lib/agentTools'
+import { cancelAgentThreadBash, getSandboxStatus } from '@/lib/agentTools'
+import { useChatShell } from '@/hooks/useChatShell'
 import { useAssistant } from '@/hooks/useAssistant'
 import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -322,6 +324,20 @@ const ChatInput = memo(function ChatInput({
   const showToolControls = ownsToolSet && !effectiveAgentMode
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+  const shellEnabled = useChatShell((s) => s.shellEnabled)
+  const setShellEnabled = useChatShell((s) => s.setShellEnabled)
+  // The shell is only ever offered where a sandbox can confine it, so the
+  // switch is only shown there: with no backend there is nothing to turn off.
+  const [sandboxEnforcesShell, setSandboxEnforcesShell] = useState(false)
+  useEffect(() => {
+    let live = true
+    void getSandboxStatus().then((s) => {
+      if (live) setSandboxEnforcesShell(s.enforces)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -2563,6 +2579,38 @@ const ChatInput = memo(function ChatInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
+
+                {showToolControls &&
+                  sandboxEnforcesShell &&
+                  selectedModel?.capabilities?.includes('tools') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-pressed={shellEnabled}
+                          aria-label={t('common:shell')}
+                          className={cn(shellEnabled && 'text-primary')}
+                          onClick={() => setShellEnabled(!shellEnabled)}
+                        >
+                          <IconTerminal2
+                            size={18}
+                            className={cn(
+                              'text-muted-foreground',
+                              shellEnabled && 'text-primary'
+                            )}
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {shellEnabled
+                            ? t('common:shell') + t('common:activeSuffix')
+                            : t('common:shell')}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
                 {!effectiveAgentMode &&
                   (selectedProvider === 'llamacpp' ||
