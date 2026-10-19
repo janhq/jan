@@ -227,6 +227,31 @@ describe('useModelProvider - coverage', () => {
       expect(provider?.models[0].id).toBe('model-1')
     })
 
+    // Startup rebuilds every provider from its definition, which carries
+    // neither the user's choice nor the deployments last read from Azure.
+    it("keeps Azure's deployed-only choice and deployments when providers are reloaded", () => {
+      const { result } = renderHook(() => useModelProvider())
+
+      act(() => {
+        useModelProvider.setState({
+          providers: [
+            makeProvider('azure', [], {
+              deployed_models_only: false,
+              deployments: ['gpt-6-astra'],
+            }),
+          ],
+        })
+      })
+
+      act(() => {
+        result.current.setProviders([makeProvider('azure')])
+      })
+
+      const azure = result.current.getProviderByName('azure')
+      expect(azure?.deployed_models_only).toBe(false)
+      expect(azure?.deployments).toEqual(['gpt-6-astra'])
+    })
+
     it('merges non-persist provider preserving existing api_key/base_url', () => {
       const { result } = renderHook(() => useModelProvider())
 
