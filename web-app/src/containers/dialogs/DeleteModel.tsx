@@ -35,42 +35,43 @@ export const DialogDeleteModel = ({
 }: DialogDeleteModelProps) => {
   const { t } = useTranslation()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+  const [open, setOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const { setProviders, deleteModel: deleteModelCache } = useModelProvider()
   const { removeFavorite } = useFavoriteModel()
   const serviceHub = useServiceHub()
 
   const removeModel = async () => {
-    // Remove model from favorites if it exists
-    removeFavorite(selectedModelId)
-
-    deleteModelCache(selectedModelId)
-    serviceHub
-      .models()
-      .deleteModel(selectedModelId, provider.provider)
-      .then(() => {
-        serviceHub
-          .providers()
-          .getProviders()
-          .then((providers) => {
-            // Filter out the deleted model from all providers
-            const filteredProviders = providers.map((provider) => ({
-              ...provider,
-              models: provider.models.filter(
-                (model) => model.id !== selectedModelId
-              ),
-            }))
-            setProviders(filteredProviders)
-          })
-        toast.success(
-          t('providers:deleteModel.title', { modelId: selectedModel?.id }),
-          {
-            id: `delete-model-${selectedModel?.id}`,
-            description: t('providers:deleteModel.success', {
-              modelId: selectedModel?.id,
-            }),
-          }
-        )
+    if (isDeleting || !selectedModelId) return
+    setIsDeleting(true)
+    try {
+      await serviceHub.models().deleteModel(selectedModelId, provider.provider)
+      removeFavorite(selectedModelId)
+      deleteModelCache(selectedModelId)
+    } catch (error) {
+      console.error('Failed to delete model:', error)
+      toast.error(t('common:error'), {
+        description: error instanceof Error ? error.message : String(error),
       })
+      setIsDeleting(false)
+      return
+    }
+
+    // A catalog refresh failure does not undo a completed disk deletion.
+    try {
+      const providers = await serviceHub.providers().getProviders()
+      setProviders(providers.map((entry) => entry.provider === provider.provider
+        ? { ...entry, models: entry.models.filter((model) => model.id !== selectedModelId) }
+        : entry))
+    } catch (error) {
+      console.error('Failed to refresh providers after deletion:', error)
+    }
+    toast.success(t('providers:deleteModel.title', { modelId: selectedModelId }), {
+      id: `delete-model-${selectedModelId}`,
+      description: t('providers:deleteModel.success', { modelId: selectedModelId }),
+    })
+    setIsDeleting(false)
+    setOpen(false)
   }
 
   // Initialize with the provided model ID or the first model if available
@@ -93,7 +94,7 @@ export const DialogDeleteModel = ({
   }
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={(value) => !isDeleting && setOpen(value)}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
@@ -125,17 +126,15 @@ export const DialogDeleteModel = ({
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" disabled={isDeleting}>
               {t('providers:deleteModel.cancel')}
             </Button>
           </DialogClose>
-          <DialogClose asChild>
-            <Button variant="destructive" size="sm" onClick={removeModel} autoFocus>
+            <Button variant="destructive" size="sm" onClick={removeModel} disabled={isDeleting} autoFocus>
               {selectedModel.imported
                 ? t('providers:deleteModel.removeFromJan')
                 : t('providers:deleteModel.delete')}
             </Button>
-          </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
