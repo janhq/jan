@@ -55,14 +55,28 @@ function ImageSizeSetting() {
   const setMaxImageSizeMB = useImageAttachmentConfig((s) => s.setMaxImageSizeMB)
   const [local, setLocal] = useState<string | number | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const pendingValueRef = useRef<number | undefined>(undefined)
 
-  useEffect(() => () => clearTimeout(timerRef.current), [])
+  useEffect(
+    () => () => {
+      clearTimeout(timerRef.current)
+      // Navigation can unmount this row before the debounce fires. Save the
+      // latest edit without updating local state on the unmounted component.
+      if (pendingValueRef.current !== undefined) {
+        setMaxImageSizeMB(pendingValueRef.current)
+        pendingValueRef.current = undefined
+      }
+    },
+    [setMaxImageSizeMB]
+  )
 
   const onChange = (val: unknown) => {
     clearTimeout(timerRef.current)
     setLocal(val as string | number)
+    const validated = clampImageSizeMB(val, maxImageSizeMB)
+    pendingValueRef.current = validated
     timerRef.current = setTimeout(() => {
-      const validated = clampImageSizeMB(val, maxImageSizeMB)
+      pendingValueRef.current = undefined
       setMaxImageSizeMB(validated)
       setLocal(validated)
     }, 500)

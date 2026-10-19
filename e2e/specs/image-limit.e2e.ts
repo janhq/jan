@@ -424,6 +424,40 @@ describe('image size limit', () => {
     // Leave documents off: subsequent accepted images prove independence.
   })
 
+  it('saves an image limit edit when navigating away before the debounce', async () => {
+    // Dispatch the input and navigation in one webview task: the 500ms timer
+    // cannot fire between them, regardless of WebDriver round-trip latency.
+    await browser.execute(() => {
+      const heading = Array.from(document.querySelectorAll('h1')).find(
+        (h) => h.textContent?.trim() === 'Max Image Size (MB)'
+      )
+      const input =
+        heading?.parentElement?.parentElement?.querySelector('input')
+      const link = document.querySelector<HTMLAnchorElement>(
+        'a[href="/settings/general"]'
+      )
+      if (!input || !link)
+        throw new Error('Missing image limit or settings navigation')
+      // React tracks direct assignments; use the native setter and an input
+      // event to deliver the same change as typing, then the real UI link.
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value'
+      )!.set!
+      setter.call(input, '2')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      link.click()
+    })
+    await waitForPath('/settings/general')
+    await browser.waitUntil(() => persistedImageLimit() === 2, {
+      timeout: 15_000,
+      timeoutMsg: 'leaving Settings before 500ms lost the pending image limit',
+    })
+    await openAttachmentsSettings(true)
+    await expect($(IMAGE_ROW_INPUT)).toHaveValue('2')
+    await expect($(DOC_ROW_INPUT)).toHaveValue('100')
+  })
+
   it('persists a new image limit of 1MB set through the input', async () => {
     await setLimitViaUi(IMAGE_ROW_INPUT, 1)
     // Setting the image limit must not move the document limit.

@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => options,
@@ -64,6 +64,11 @@ describe('Attachments settings: image size', () => {
     })
   })
 
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+  })
+
   it('shows the document and image limits as separate settings with the provider note', () => {
     render(<Page />)
     expect(
@@ -87,6 +92,32 @@ describe('Attachments settings: image size', () => {
     })
     expect(useImageAttachmentConfig.getState().maxImageSizeMB).toBe(30)
     expect(useAttachments.getState().maxFileSizeMB).toBe(100)
+  })
+
+  it.each([
+    ['25', 25],
+    ['999', 100],
+    ['invalid', 10],
+  ])('saves %s when leaving before the debounce expires', (value, expected) => {
+    const page = render(<Page />)
+    fireEvent.change(screen.getByTestId('ctl-100'), { target: { value: '20' } })
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    fireEvent.change(screen.getByTestId('ctl-100'), { target: { value } })
+    expect(useImageAttachmentConfig.getState().maxImageSizeMB).toBe(10)
+
+    page.unmount()
+
+    expect(useImageAttachmentConfig.getState().maxImageSizeMB).toBe(expected)
+    expect(useAttachments.getState().maxFileSizeMB).toBe(100)
+    // An older scheduled edit must not overwrite the last value later.
+    act(() => {
+      vi.advanceTimersByTime(600)
+    })
+    expect(useImageAttachmentConfig.getState().maxImageSizeMB).toBe(expected)
+    render(<Page />)
+    expect(screen.getByTestId('ctl-100')).toHaveValue(String(expected))
   })
 
   it('clamps an out-of-range image limit to 100', () => {
