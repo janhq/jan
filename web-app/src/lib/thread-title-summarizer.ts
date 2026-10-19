@@ -56,20 +56,20 @@ export function cleanTitle(raw: string): string | null {
 
 /**
  * Generate a summarized thread title from the user's first message.
- * Uses the currently selected model via a non-streaming generateText call.
+ * Uses the owning thread's model via a non-streaming generateText call.
  * Returns null on failure or if the signal is aborted.
  */
 export async function generateThreadTitle(
   transcript: string,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  threadModel: ThreadModel | undefined
 ): Promise<string | null> {
   try {
-    const { selectedModel, selectedProvider, getProviderByName } =
-      useModelProvider.getState()
-    if (!selectedModel || !selectedProvider) {
-      console.warn('[ThreadTitle] No model/provider selected')
+    const { getProviderByName } = useModelProvider.getState()
+    if (!threadModel?.id || !threadModel.provider || abortSignal.aborted) {
       return null
     }
+    const { id: modelId, provider: selectedProvider } = threadModel
 
     // MLX models often emit reasoning that can't be reliably suppressed; fall back to default title.
     if (selectedProvider === 'mlx') return null
@@ -80,7 +80,7 @@ export async function generateThreadTitle(
       return null
     }
 
-    console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
+    console.log('[ThreadTitle] Creating model:', modelId, 'provider:', selectedProvider)
     // Slot 0 like every other surface, but under its own thread identity: the
     // engine parks the chat's KV prefix before this call takes the slot and
     // restores it on the next chat turn. Sending no thread_id would overwrite
@@ -94,10 +94,12 @@ export async function generateThreadTitle(
       params.thread_id = BACKGROUND_THREAD_ID
     }
     const model = await ModelFactory.createModel(
-      selectedModel.id,
+      modelId,
       provider,
       params
     )
+
+    if (abortSignal.aborted) return null
 
     console.log('[ThreadTitle] Calling generateText...')
     const { text } = await generateText({

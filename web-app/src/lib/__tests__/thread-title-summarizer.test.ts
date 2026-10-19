@@ -111,13 +111,52 @@ describe('generateThreadTitle', () => {
     mockCreateModel.mockResolvedValue(mockModel)
   })
 
+  it('uses the owning thread model rather than the globally selected provider', async () => {
+    mockGenerateText.mockResolvedValue({ text: 'Private Local Topic' })
+    await generateThreadTitle('local transcript', new AbortController().signal, {
+      id: 'local-model', provider: 'llamacpp',
+    })
+    expect(mockGetProviderByName).toHaveBeenCalledWith('llamacpp')
+    expect(mockCreateModel).toHaveBeenCalledWith('local-model', mockProvider,
+      expect.objectContaining({ thread_id: BACKGROUND_THREAD_ID, chat_template_kwargs: { enable_thinking: false } }))
+  })
+
+  it('does not fall back to an unrelated selection when the thread has no model', async () => {
+    expect(await generateThreadTitle('private transcript', new AbortController().signal, undefined)).toBeNull()
+    expect(mockCreateModel).not.toHaveBeenCalled()
+    expect(mockGenerateText).not.toHaveBeenCalled()
+  })
+
+  it('skips an MLX thread even when a remote model is selected elsewhere', async () => {
+    expect(await generateThreadTitle('local transcript', new AbortController().signal,
+      { id: 'mlx-model', provider: 'mlx' })).toBeNull()
+    expect(mockCreateModel).not.toHaveBeenCalled()
+  })
+
+  it('does not create a model for an already aborted title request', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    expect(await generateThreadTitle('transcript', controller.signal,
+      { id: 'test-model', provider: 'test-provider' })).toBeNull()
+    expect(mockCreateModel).not.toHaveBeenCalled()
+  })
+
+  it('does not send a prompt if cancelled while creating the model', async () => {
+    const controller = new AbortController()
+    mockCreateModel.mockImplementationOnce(async () => { controller.abort(); return mockModel })
+    expect(await generateThreadTitle('transcript', controller.signal,
+      { id: 'test-model', provider: 'test-provider' })).toBeNull()
+    expect(mockGenerateText).not.toHaveBeenCalled()
+  })
+
   it('returns a cleaned title on success', async () => {
     mockGenerateText.mockResolvedValue({ text: 'Python List Sorting' })
 
     const controller = new AbortController()
     const result = await generateThreadTitle(
       'Can you help me write a function to sort a list in Python?',
-      controller.signal
+      controller.signal,
+      { id: 'test-model', provider: mockSelectedProvider }
     )
 
     expect(result).toBe('Python List Sorting')
@@ -146,7 +185,7 @@ describe('generateThreadTitle', () => {
     })
     mockGenerateText.mockResolvedValue({ text: 'Some Title' })
 
-    await generateThreadTitle('hello there', new AbortController().signal)
+    await generateThreadTitle('hello there', new AbortController().signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(mockCreateModel).toHaveBeenCalledWith(
       'test-model',
@@ -164,7 +203,7 @@ describe('generateThreadTitle', () => {
     mockGenerateText.mockRejectedValue(abortError)
 
     const controller = new AbortController()
-    const result = await generateThreadTitle('test message', controller.signal)
+    const result = await generateThreadTitle('test message', controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(result).toBeNull()
   })
@@ -173,7 +212,7 @@ describe('generateThreadTitle', () => {
     mockGetProviderByName.mockReturnValueOnce(undefined)
 
     const controller = new AbortController()
-    const result = await generateThreadTitle('test message', controller.signal)
+    const result = await generateThreadTitle('test message', controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(result).toBeNull()
     expect(mockCreateModel).not.toHaveBeenCalled()
@@ -183,7 +222,7 @@ describe('generateThreadTitle', () => {
     mockGenerateText.mockRejectedValue(new Error('Network error'))
 
     const controller = new AbortController()
-    const result = await generateThreadTitle('test message', controller.signal)
+    const result = await generateThreadTitle('test message', controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(result).toBeNull()
   })
@@ -192,7 +231,7 @@ describe('generateThreadTitle', () => {
     mockGenerateText.mockResolvedValue({ text: '!!!' })
 
     const controller = new AbortController()
-    const result = await generateThreadTitle('test message', controller.signal)
+    const result = await generateThreadTitle('test message', controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(result).toBeNull()
   })
@@ -202,7 +241,7 @@ describe('generateThreadTitle', () => {
     const longMessage = 'x'.repeat(2000)
 
     const controller = new AbortController()
-    await generateThreadTitle(longMessage, controller.signal)
+    await generateThreadTitle(longMessage, controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     const callArgs = mockGenerateText.mock.calls[0][0]
     const prompt = callArgs.messages[0].content
@@ -214,7 +253,7 @@ describe('generateThreadTitle', () => {
     mockGenerateText.mockResolvedValue({ text: 'Title' })
 
     const controller = new AbortController()
-    await generateThreadTitle('test message', controller.signal)
+    await generateThreadTitle('test message', controller.signal, { id: 'test-model', provider: mockSelectedProvider })
 
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({

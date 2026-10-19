@@ -485,6 +485,7 @@ import {
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
 import { usePrompt } from '@/hooks/usePrompt'
+import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 
 // The global setup mock is a shared object, so an overridden factory has to be
 // put back or it leaks into every later test.
@@ -559,6 +560,26 @@ describe('ThreadDetail route', () => {
     expect(screen.getByTestId('model-dropdown')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('chat-status')).toHaveTextContent('ready')
+  })
+
+  it('passes the owning thread model to title generation after the global selection changes', async () => {
+    renderComponent()
+    const originalModel = h.modelProviderState.selectedModel
+    h.modelProviderState.selectedProvider = 'another-provider'
+    h.modelProviderState.selectedModel = { id: 'another-model' }
+    try {
+      await act(async () => {
+        ;(h as any).capturedOnFinish({
+          message: { id: 'a1', role: 'assistant', parts: [{ type: 'text', text: 'hello' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      expect(generateThreadTitle).toHaveBeenCalledWith(
+        expect.any(String), expect.any(AbortSignal), { id: 'gpt-x', provider: 'openai' }
+      )
+    } finally {
+      h.modelProviderState.selectedModel = originalModel
+    }
   })
 
   it('sets current thread id on mount and resets on unmount', () => {

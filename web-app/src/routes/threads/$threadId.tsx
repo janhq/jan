@@ -924,8 +924,9 @@ function ThreadDetail() {
               .join('\n\n') ||
             useThreads.getState().threads[threadId]?.title
           if (inputText) {
-            const provider = useModelProvider.getState().selectedProvider
-            const modelId = useModelProvider.getState().selectedModel?.id
+            const titleModel = currentThread?.model
+            const provider = titleModel?.provider
+            const modelId = titleModel?.id
             ;(async () => {
               if (provider === 'llamacpp' && modelId) {
                 let idle = false
@@ -946,7 +947,8 @@ function ThreadDetail() {
               titleAbortRef.current = controller
               const title = await generateThreadTitle(
                 inputText,
-                controller.signal
+                controller.signal,
+                titleModel
               )
               if (!title || controller.signal.aborted) return
               useThreads.getState().updateThread(threadId, { title })
