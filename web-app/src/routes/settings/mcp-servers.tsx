@@ -111,6 +111,10 @@ function MCPServersDesktop() {
     setSettings,
     updateSettings,
   } = useMCPServers()
+  // Web Search owns DuckDuckGo; keep its stored config when editing other servers.
+  const visibleServers = Object.entries(mcpServers).filter(
+    ([name]) => name !== 'DuckDuckGo'
+  )
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
 
@@ -700,12 +704,12 @@ function MCPServersDesktop() {
                 />
               </Card>
 
-              {Object.keys(mcpServers).length === 0 ? (
+              {visibleServers.length === 0 ? (
                 <div className="py-4 text-center font-medium text-muted-foreground">
                   {t('mcp-servers:noServers')}
                 </div>
               ) : (
-                Object.entries(mcpServers).map(([key, config], index) => (
+                visibleServers.map(([key, config], index) => (
                   <Card key={`${key}-${index}`}>
                     <CardItem
                       align="start"

@@ -126,6 +126,7 @@ vi.mock('@/hooks/useMCPServers', () => ({
   },
   useMCPServers: () => ({
     mcpServers: {
+      DuckDuckGo: { command: 'uvx', args: [], env: {}, active: true },
       NotesMCP: {
         command: 'npx',
         args: ['notes'],
@@ -197,6 +198,13 @@ vi.mock('sonner', () => ({
 }))
 
 describe('MCP servers route error handling', () => {
+  it('hides the Web Search transport while retaining ordinary MCP controls', () => {
+    const Component = McpServersRoute.component as React.ComponentType
+    render(<Component />)
+    expect(screen.queryByText('DuckDuckGo')).not.toBeInTheDocument()
+    expect(screen.getByText('NotesMCP')).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     useAppState.setState({

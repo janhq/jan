@@ -64,15 +64,20 @@ export class TauriMCPService extends DefaultMCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
-    return window.core?.api?.getTools()
+    const tools: MCPTool[] = await window.core?.api?.getTools() ?? []
+    // Web Search owns this internal transport. Never advertise its raw tools
+    // alongside web_search/web_fetch (or let them bypass Web Search being off).
+    return tools.filter((tool) => tool.server !== 'DuckDuckGo')
   }
 
   async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {
-    return invoke('get_tools_for_servers', { serverNames })
+    const tools = await invoke<MCPTool[]>('get_tools_for_servers', { serverNames })
+    return tools.filter((tool) => tool.server !== 'DuckDuckGo')
   }
 
   async getServerSummaries(): Promise<ServerSummary[]> {
-    return invoke('get_server_summaries')
+    const summaries = await invoke<ServerSummary[]>('get_server_summaries')
+    return summaries.filter((server) => server.name !== 'DuckDuckGo')
   }
 
   async getConnectedServers(): Promise<string[]> {
