@@ -11,9 +11,21 @@ vi.mock('shiki', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(codeToHtml).mockResolvedValue('<pre><code>highlighted</code></pre>')
 })
 
 describe('highlightCode', () => {
+  it('falls back to escaped source when highlighting rejects', async () => {
+    const source = '</code><img src=x onerror="bad()"> & literal text'
+    vi.mocked(codeToHtml).mockRejectedValue(new Error('unknown language'))
+    const [light, dark] = await highlightCode(source, 'unknown-language' as never)
+    expect(light).toBe(dark)
+    const element = document.createElement('div')
+    element.innerHTML = light
+    expect(element.textContent).toBe(source)
+    expect(element.querySelector('img')).toBeNull()
+    expect(element.querySelector('pre code')).not.toBeNull()
+  })
   it('returns light and dark HTML strings', async () => {
     const [light, dark] = await highlightCode('const x = 1', 'typescript')
 
@@ -54,6 +66,14 @@ describe('highlightCode', () => {
 })
 
 describe('CodeBlock', () => {
+  it('keeps the source visible in both themes after a highlighter failure', async () => {
+    vi.mocked(codeToHtml).mockRejectedValue(new Error('language unavailable'))
+    const source = '<script>literal source</script> & more'
+    const { container } = render(<CodeBlock code={source} language="javascript" />)
+    await waitFor(() => expect(container.querySelectorAll('pre code')).toHaveLength(2))
+    expect([...container.querySelectorAll('pre code')].map((node) => node.textContent)).toEqual([source, source])
+    expect(container.querySelector('script')).toBeNull()
+  })
   it('renders and calls codeToHtml to highlight code', async () => {
     render(<CodeBlock code="const x = 1" language="typescript" />)
 
@@ -98,6 +118,16 @@ describe('CodeBlock', () => {
 })
 
 describe('CodeBlockCopyButton', () => {
+  it('copies the original source after falling back to plain text', async () => {
+    const user = userEvent.setup()
+    vi.mocked(codeToHtml).mockRejectedValue(new Error('highlighter unavailable'))
+    const source = 'if (a < b) { return "&value" }'
+    render(<CodeBlock code={source} language="javascript"><CodeBlockCopyButton /></CodeBlock>)
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    await screen.findAllByText(source)
+    await user.click(screen.getByRole('button'))
+    expect(copy).toHaveBeenCalledWith(source)
+  })
   it('copies code to clipboard on click', async () => {
     const user = userEvent.setup()
 
