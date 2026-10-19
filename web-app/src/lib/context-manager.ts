@@ -11,6 +11,24 @@ import { stripToolImageSentinels } from './tool-image-sentinel'
  */
 const CHARS_PER_TOKEN = 3.5
 
+// Match the CLI's conservative fallback when a remote deployment has not
+// reported a window. This budget is client-side only and an explicit assistant
+// limit wins. Bundled engines keep their existing context/shift handling.
+const REMOTE_CONTEXT_FALLBACK = 128_000
+
+export function resolveAutoCompactWindow(
+  configuredTokens: number,
+  providerId: string,
+  autoCompact: boolean
+): number {
+  if (Number.isFinite(configuredTokens) && configuredTokens > 0) {
+    return configuredTokens
+  }
+  return autoCompact && providerId !== 'llamacpp' && providerId !== 'mlx'
+    ? REMOTE_CONTEXT_FALLBACK
+    : 0
+}
+
 export function estimateTokens(text: string): number {
   if (!text) return 0
   return Math.ceil(text.length / CHARS_PER_TOKEN)

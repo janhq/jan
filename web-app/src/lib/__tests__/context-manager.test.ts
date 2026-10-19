@@ -7,6 +7,7 @@ import {
   trimMessages,
   compactMessages,
   deriveToolOutputCap,
+  resolveAutoCompactWindow,
   type ContextManagerConfig,
 } from '../context-manager'
 import { encodeToolImageSentinel } from '../tool-image-sentinel'
@@ -22,6 +23,36 @@ function makeMessage(
     parts: [{ type: 'text' as const, text }],
   }
 }
+
+describe('resolveAutoCompactWindow', () => {
+  it.each(['openai', 'anthropic', 'ollama', 'custom-provider'])(
+    'uses a conservative budget for %s when auto compact has no limit',
+    (provider) => {
+      expect(resolveAutoCompactWindow(0, provider, true)).toBe(128_000)
+    }
+  )
+
+  it.each(['llamacpp', 'mlx'])(
+    'preserves bundled %s context handling',
+    (provider) => {
+      expect(resolveAutoCompactWindow(0, provider, true)).toBe(0)
+      expect(resolveAutoCompactWindow(4096, provider, true)).toBe(4096)
+    }
+  )
+
+  it('does not add an automatic budget when auto compact is off', () => {
+    expect(resolveAutoCompactWindow(0, 'openai', false)).toBe(0)
+    expect(resolveAutoCompactWindow(64_000, 'openai', false)).toBe(64_000)
+  })
+
+  it.each([NaN, Infinity, -1])('ignores invalid configured budgets (%s)', (value) => {
+    expect(resolveAutoCompactWindow(value, 'openai', true)).toBe(128_000)
+  })
+
+  it('keeps an explicit limit authoritative', () => {
+    expect(resolveAutoCompactWindow(256_000, 'openai', true)).toBe(256_000)
+  })
+})
 
 describe('estimateTokens', () => {
   it('should return 0 for empty string', () => {

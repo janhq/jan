@@ -61,6 +61,7 @@ import {
   trimMessages,
   compactMessages,
   estimateTokens,
+  resolveAutoCompactWindow,
   type ContextManagerConfig,
 } from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
@@ -1479,14 +1480,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // The router has not loaded the model yet. Preserve the configured limit.
       }
     }
-    const maxContextTokens = effectiveContextWindow(
-      configuredContextTokens,
-      liveContextTokens,
-      contextShiftEnabled
-    )
     const autoCompact =
       inferenceParams.auto_compact === true ||
       inferenceParams.auto_compact === 'true'
+    const maxContextTokens = effectiveContextWindow(
+      resolveAutoCompactWindow(configuredContextTokens, providerId, autoCompact),
+      liveContextTokens,
+      contextShiftEnabled
+    )
 
     let effectiveMessages = messagesToConvert
     if (maxContextTokens > 0) {

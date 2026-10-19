@@ -5,6 +5,7 @@ import type * as ProviderCaps from '@/lib/providerCaps'
 // Capture every streamText({...}) call so we can compare the prompt prefix
 // (system + tools + prior model messages) across consecutive turns.
 const streamTextCalls: Array<Record<string, unknown>> = []
+const summarize = vi.hoisted(() => vi.fn(async () => ({ text: 'Earlier conversation summary' })))
 
 const h = vi.hoisted(() => ({
   disabledTools: [] as string[],
@@ -26,6 +27,7 @@ const mcpService = {
 }
 
 h.serviceHub = {
+  app: () => ({ getJanDataFolder: async () => '' }),
   mcp: () => mcpService,
   rag: () => ({ getTools: async () => [] }),
 }
@@ -34,6 +36,7 @@ vi.mock('ai', async () => {
   const actual = await vi.importActual<typeof import('ai')>('ai')
   return {
     ...actual,
+    generateText: summarize,
     streamText: (args: Record<string, unknown>) => {
       streamTextCalls.push(args)
       return {
@@ -58,6 +61,7 @@ const provider = {
 const selectedModel = { id: 'gpt', capabilities: ['tools'] }
 
 vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => h.serviceHub,
   useServiceStore: { getState: () => ({ serviceHub: h.serviceHub }) },
 }))
 vi.mock('@/hooks/useToolAvailable', () => ({
@@ -163,6 +167,7 @@ const send = (transport: CustomChatTransport, messages: UIMessage[]) =>
 describe('CustomChatTransport prompt-prefix stability across turns', () => {
   beforeEach(() => {
     streamTextCalls.length = 0
+    summarize.mockClear()
     h.disabledTools = []
     h.servers = ['srv']
     h.providerId = 'openai'
@@ -176,6 +181,38 @@ describe('CustomChatTransport prompt-prefix stability across turns', () => {
     h.getRelevantTools.mockResolvedValue([
       { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
     ])
+  })
+
+  it('auto compacts a remote conversation with no configured context limit', async () => {
+    h.assistantParameters = { auto_compact: true, max_context_tokens: 0 }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    const messages = [
+      user('u1', `old-user ${'context '.repeat(40_000)}`),
+      assistant('a1', `old-assistant ${'context '.repeat(40_000)}`),
+      user('u2', 'latest-user'),
+    ]
+    await drain(await send(transport, messages))
+    expect(summarize).toHaveBeenCalledOnce()
+    const sent = JSON.stringify(streamTextCalls[0].messages)
+    expect(sent).toContain('latest-user')
+    expect(sent).toContain('Earlier conversation summary')
+    expect(sent).not.toContain('old-user')
+    expect(messages).toHaveLength(3)
+    expect(messages[0].parts[0]).toEqual(expect.objectContaining({
+      text: expect.stringContaining('old-user'),
+    }))
+  })
+
+  it('honors an explicit remote limit above the automatic fallback', async () => {
+    h.assistantParameters = { auto_compact: true, max_context_tokens: 256_000 }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [
+      user('u1', `old-user ${'context '.repeat(40_000)}`),
+      assistant('a1', `old-assistant ${'context '.repeat(40_000)}`),
+      user('u2', 'latest-user'),
+    ]))
+    expect(summarize).not.toHaveBeenCalled()
+    expect(streamTextCalls[0].messages).toHaveLength(3)
   })
 
   it('sends a byte-identical prefix (system + tools + prior turns) on the next turn', async () => {
