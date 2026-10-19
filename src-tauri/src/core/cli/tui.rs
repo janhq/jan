@@ -13450,30 +13450,57 @@ fn strip_row_chrome(line: &str) -> Option<String> {
     }
 }
 
+/// Writes `text` to the macOS pasteboard through `pbcopy`.
+///
+/// Not `arboard`: its AppKit write logs `-[NSPasteboard _setData:...] returns
+/// false` to stderr whenever the pasteboard is contended, and stderr is the
+/// terminal the TUI is drawing on, so the line lands on top of the screen. The
+/// failure is not visible to the caller either way, so nothing is lost by
+/// sending `pbcopy`'s own stderr to the void.
+#[cfg(target_os = "macos")]
+fn set_system_clipboard(text: String) {
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = io::Write::write_all(&mut stdin, text.as_bytes());
+    }
+    let _ = child.wait();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_system_clipboard(text: String) {
+    let Ok(mut clip) = arboard::Clipboard::new() else {
+        return;
+    };
+    // X11/Wayland ownership lives with the setter, so this thread parks inside
+    // `wait()` until something else claims the clipboard; returning immediately
+    // would drop the text on the floor.
+    #[cfg(target_os = "linux")]
+    {
+        use arboard::SetExtLinux;
+        let _ = clip.set().wait().text(text);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = clip.set_text(text);
+    }
+}
+
 /// Put a selection on the system clipboard by both routes available to a TUI:
-/// `arboard`, which serves it for as long as this process runs, and OSC 52,
-/// which hands it to the terminal emulator so it survives `jan` exiting and
-/// crosses an ssh/tmux session. OSC 52 goes second so that where it is supported
-/// the terminal ends up owning the selection.
+/// the OS clipboard, which serves it for as long as this process runs, and
+/// OSC 52, which hands it to the terminal emulator so it survives `jan`
+/// exiting and crosses an ssh/tmux session. OSC 52 goes second so that where it
+/// is supported the terminal ends up owning the selection.
 fn copy_to_clipboard(text: &str) {
     let owned = text.to_string();
-    std::thread::spawn(move || {
-        let Ok(mut clip) = arboard::Clipboard::new() else {
-            return;
-        };
-        // X11/Wayland ownership lives with the setter, so this thread parks
-        // inside `wait()` until something else claims the clipboard; returning
-        // immediately would drop the text on the floor.
-        #[cfg(target_os = "linux")]
-        {
-            use arboard::SetExtLinux;
-            let _ = clip.set().wait().text(owned);
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = clip.set_text(owned);
-        }
-    });
+    std::thread::spawn(move || set_system_clipboard(owned));
     if text.len() <= OSC52_MAX_BYTES {
         use base64::Engine;
         let payload = base64::engine::general_purpose::STANDARD.encode(text);
