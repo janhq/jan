@@ -8,6 +8,7 @@ keywords:
     web search,
     web_search,
     web_fetch,
+    DuckDuckGo,
     Exa,
     Tavily,
     SearXNG,
@@ -23,11 +24,13 @@ import { Callout } from 'nextra/components'
 
 Jan has **built-in web search**. When enabled, Jan advertises two tools - `web_search` and
 `web_fetch` - to any model that supports tool use, so the model can look up current information and
-read web pages on its own. It works out of the box with **no API key** and **no MCP server** required.
+read web pages on its own. The default DuckDuckGo provider needs **no API key** and **no manual MCP setup**.
 
 <Callout type="info">
-Web Search is **on by default**. The default provider (Exa) uses a free, keyless endpoint, so you can
-start asking about current events right away - no setup needed.
+Web Search is **on by default**. New configurations select **DuckDuckGo**. Jan starts its search
+server on the first search or page read; the first use may take longer while Jan downloads the
+server package. An internet connection is required. Existing saved provider choices and disabled
+web-search preferences are preserved.
 </Callout>
 
 You can toggle web search for a chat from the input toolbar - the globe icon shows **Web Search (Active)** when it's on.
@@ -59,7 +62,7 @@ web tools won't be available.
 
 Open **Settings > Web Search**.
 
-![Web Search settings](./_assets/web-search-settings.png)
+![DuckDuckGo selected in Web Search settings](./_assets/duckduckgo-web-search-settings.jpg)
 
 ### Enable Web Search
 
@@ -68,11 +71,12 @@ use. On by default. Works with no API key.
 
 ### Search Provider
 
-Choose the backend that answers `web_search` and `web_fetch`. Four providers are available:
+Choose the backend that answers `web_search` and `web_fetch`. Five providers are available:
 
 | Provider | API key | Notes |
 |----------|---------|-------|
-| **Exa** (default) | Optional | Uses a free, keyless endpoint out of the box. Add a key for higher rate limits and structured results. |
+| **DuckDuckGo** (default) | None | Jan manages the search server automatically. Search results appear as source citations; pages are returned as readable text. |
+| **Exa** | Optional | Uses a free, keyless endpoint out of the box. Add a key for higher rate limits and structured results. |
 | **Tavily** | Required | Needs a [Tavily](https://tavily.com) API key to return results. |
 | **SearXNG** | Optional | Self-hosted. Point Jan at your own [SearXNG](https://searxng.org) instance URL (with the JSON API enabled). |
 | **You.com** | Optional | Keyless search works out of the box, subject to a daily request cap. A [You.com](https://you.com/platform) API key lifts the cap and gives `web_fetch` extracted page content instead of raw HTML. |
@@ -89,7 +93,13 @@ of a key. The settings panel shows the right field for whichever provider you pi
 
 ## How it relates to MCP search
 
-This built-in web search is **native** - it does not use the [Model Context Protocol](/docs/desktop/mcp).
-Earlier versions of Jan relied on an Exa (or Serper) MCP server for web search; that's no longer
-necessary. You can still connect an MCP-based search server if you want a specific provider or extra
-control, but for most users the built-in Web Search is all you need.
+DuckDuckGo uses the [DuckDuckGo MCP server](https://github.com/nickclyde/duckduckgo-mcp-server)
+through Jan's existing [MCP integration](/docs/desktop/mcp). Jan includes a preset pinned to version
+`0.7.0`, with the browser backend available for search and page reading. Opening Jan does not start
+this inactive preset; selecting DuckDuckGo and using a web tool starts it when needed.
+
+If you already have a server named **DuckDuckGo**, Jan reuses its connection and configuration,
+including its region and other environment settings. Otherwise Jan uses the built-in preset.
+You can disable Web Search or choose another provider in **Settings > Web Search**. Exa, Tavily,
+SearXNG and You.com continue to use the native web-search plugin. These defaults apply to the
+desktop tools; native plugin and CLI provider defaults are unchanged.

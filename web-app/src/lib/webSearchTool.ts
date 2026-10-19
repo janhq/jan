@@ -1,6 +1,7 @@
 import { webSearch, webFetch } from '@janhq/tauri-plugin-websearch-api'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { executeDuckDuckGoTool } from '@/lib/duckduckgoSearch'
 import { TRUNCATION_MARKER } from '@/lib/toolPresentation'
 
 export const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
@@ -81,10 +82,14 @@ export async function executeWebTool(
   input: WebToolInput,
   options: { maxOutputChars?: number } = {}
 ): Promise<WebToolResult> {
-  const { apiKeys, endpoints, searchProvider } = useWebSearchConfig.getState()
+  const { apiKeys, endpoints, searchProvider, webSearchEnabled } = useWebSearchConfig.getState()
+  if (webSearchEnabled === false) return { error: 'Web search is disabled' }
   const apiKey = apiKeys[searchProvider] || undefined
   const endpoint = endpoints[searchProvider] || undefined
   try {
+    if (searchProvider === 'duckduckgo') {
+      return await executeDuckDuckGoTool(toolName, input, webOutputCap(options.maxOutputChars))
+    }
     if (toolName === 'web_search') {
       const query = typeof input?.query === 'string' ? input.query : ''
       const count = typeof input?.count === 'number' ? input.count : undefined

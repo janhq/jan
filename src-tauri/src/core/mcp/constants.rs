@@ -17,6 +17,14 @@ pub const DEFAULT_MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each ti
 
 pub const DEFAULT_MCP_CONFIG: &str = r#"{
   "mcpServers": {
+    "DuckDuckGo": {
+      "command": "uvx",
+      "args": ["--from", "duckduckgo-mcp-server[browser]==0.7.0", "duckduckgo-mcp-server", "--search-backend", "auto", "--fetch-backend", "auto"],
+      "env": { "DDG_REF_URL_THRESHOLD": "0" },
+      "active": false,
+      "capabilities": ["web"],
+      "description": "Search the web and read pages with DuckDuckGo. No API key required."
+    },
     "Jan Browser MCP": {
       "command": "npx",
       "args": ["-y", "search-mcp-server@latest"],

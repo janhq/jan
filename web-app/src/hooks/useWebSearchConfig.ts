@@ -15,6 +15,13 @@ export type WebSearchProviderMeta = {
 
 export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
   {
+    id: 'duckduckgo',
+    label: 'DuckDuckGo',
+    keyless: true,
+    secretKey: '',
+    homepage: 'duckduckgo.com',
+  },
+  {
     id: 'exa',
     label: 'Exa',
     keyless: true,
@@ -45,7 +52,7 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
   },
 ]
 
-export const DEFAULT_SEARCH_PROVIDER = 'exa'
+export const DEFAULT_SEARCH_PROVIDER = 'duckduckgo'
 
 export const providerFavicon = (meta: WebSearchProviderMeta): string =>
   `https://www.google.com/s2/favicons?domain=${meta.homepage}&sz=64`
@@ -102,6 +109,7 @@ export const useWebSearchConfig = create<WebSearchConfigState>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return
         for (const provider of WEB_SEARCH_PROVIDERS) {
+          if (!provider.secretKey) continue
           getServiceHub()
             .core()
             .invoke<string | null>('get_secret', { key: provider.secretKey })

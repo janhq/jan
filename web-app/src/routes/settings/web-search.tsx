@@ -143,7 +143,7 @@ function WebSearchContent() {
                     </div>
                   }
                 />
-              ) : (
+              ) : provider.secretKey ? (
                 <CardItem
                   title={t('settings:webSearch.apiKey', {
                     provider: provider.label,
@@ -188,7 +188,7 @@ function WebSearchContent() {
                     </div>
                   }
                 />
-              )}
+              ) : null}
             </Card>
           </div>
         </div>
