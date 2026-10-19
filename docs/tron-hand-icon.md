@@ -21,5 +21,11 @@ Run `yarn build:icon` to regenerate platform icon formats. Generated ICO, ICNS a
 sizes remain build artifacts under the repository's existing ignore rules. The desktop
 build tracks PNG and ICO changes so an icon-only update rebuilds the native resource.
 
-The proposed change contains artwork and icon build tracking only. It does not include
-engine upgrades, search-provider changes or conversation behavior changes.
+The assistant avatar renderer also maps the original `👋` value to the existing
+`/images/jan-logo.png` asset, using the requested image size. This covers the chat-input
+assistant switcher, assistant menus and saved threads without rewriting their stored
+avatars. Other emoji and custom image paths keep their existing rendering.
+
+The proposed change contains artwork, icon build tracking and legacy assistant-avatar
+rendering. It does not include engine upgrades, search-provider changes or conversation
+behavior changes.
