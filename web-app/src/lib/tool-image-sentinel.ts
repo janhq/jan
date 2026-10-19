@@ -111,13 +111,17 @@ function mcpImageDataUrl(item: McpContentItem & { data: string }): string | null
   // The sentinel regex takes a lowercase media type and an unbroken base64
   // run, so normalise both: some servers wrap long base64 across lines.
   const data = item.data.replace(/\s+/g, '')
-  const mime = data.startsWith('data:')
-    ? /^data:([^;,]*)/i.exec(data)?.[1]?.toLowerCase()
+  const embedded = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/i.exec(data)
+  if (/^data:/i.test(data) && !embedded) return null
+  const payload = embedded ? embedded[2] : data
+  if (!/^[A-Za-z0-9+/=]+$/.test(payload)) return null
+  const mime = embedded
+    ? embedded[1].toLowerCase()
     : item.mimeType?.toLowerCase().startsWith('image/')
       ? item.mimeType.toLowerCase()
       : 'image/png'
   if (!mime || SENDABLE_IMAGE_TYPES[mime] !== true) return null
-  return data.startsWith('data:') ? data : `data:${mime};base64,${data}`
+  return `data:${mime};base64,${payload}`
 }
 
 function mcpOutputWithSentinels(items: McpContentItem[]): string {
@@ -132,7 +136,7 @@ function mcpOutputWithSentinels(items: McpContentItem[]): string {
         pieces.push({ text: false, value: encodeToolImageSentinel(url) })
       } else {
         const mime = item.mimeType ?? 'unknown type'
-        pieces.push({ text: true, value: `(image omitted: ${mime} is not supported)` })
+        pieces.push({ text: true, value: `(image omitted: invalid or unsupported image data; reported type: ${mime})` })
       }
     } else if (item?.type === 'text' && typeof item.text === 'string') {
       pieces.push({ text: true, value: item.text })

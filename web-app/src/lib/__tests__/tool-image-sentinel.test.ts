@@ -100,6 +100,30 @@ describe('encodeMcpToolImages', () => {
   const outputOf = (messages: UIMessage[]) =>
     (messages[0].parts[0] as { output: unknown }).output
 
+  it.each(['data:IMAGE/PNG;base64,', 'DATA:IMAGE/PNG;BASE64,', 'data:Image/Png;base64,'])(
+    'decodes %s into an image part instead of sending base64 text', (prefix) => {
+      const out = encodeMcpToolImages([mcpTool([{ type: 'image', data: prefix + 'iVBORw0K\nGgo=', mimeType: 'image/png' }])])
+      const body = { messages: [{ role: 'tool', tool_call_id: 'c1', content: outputOf(out) }] }
+      decodeToolImageSentinelsInBody(body)
+      expect(body.messages[0].content).toEqual([
+        { type: 'text', text: 'The tool returned 1 image.' },
+        { type: 'image_url', image_url: { url: png, detail: 'auto' } },
+      ])
+      const nonVision = outputOf(stripUnsupportedImageParts(out, false)) as string
+      expect(nonVision).not.toContain(b64)
+      expect(nonVision).not.toContain('__JAN_TOOL_IMAGE__')
+    }
+  )
+
+  it.each(['data:image/png,unencoded', 'data:image/png;base64,@@@', 'https://example.com/image.png'])(
+    'omits malformed image data %s without leaving an undecodable sentinel', (data) => {
+      const sent = outputOf(encodeMcpToolImages([mcpTool([{ type: 'image', data, mimeType: 'image/png' }])])) as string
+      expect(hasToolImageSentinel(sent)).toBe(false)
+      expect(sent).not.toContain(data)
+      expect(sent).toContain('image omitted')
+    }
+  )
+
   // What the filesystem server's `read_media_file` returns: the image alone.
   it('turns an image-only MCP result into a caption plus a sentinel', () => {
     const out = encodeMcpToolImages([
