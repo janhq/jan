@@ -44,6 +44,43 @@ describe('PREVIEW_SHIM_SCRIPT', () => {
 
   beforeEach(() => {
     posted.length = 0
+    window.localStorage.clear()
+  })
+
+  it('makes property writes visible to the Storage methods', () => {
+    window.localStorage.score = 42
+    expect(window.localStorage.getItem('score')).toBe('42')
+    expect(window.localStorage.length).toBe(1)
+    expect(window.localStorage.key(0)).toBe('score')
+  })
+
+  it('makes setItem values readable as properties', () => {
+    window.localStorage.setItem('level', '3')
+    expect(window.localStorage.level).toBe('3')
+    expect('level' in window.localStorage).toBe(true)
+    window.localStorage.removeItem('level')
+    expect('level' in window.localStorage).toBe(false)
+  })
+
+  it('removes stored values through property deletion', () => {
+    window.localStorage.setItem('saved', 'yes')
+    delete window.localStorage.saved
+    expect(window.localStorage.getItem('saved')).toBeNull()
+    expect(window.localStorage.length).toBe(0)
+  })
+
+  it('stores prototype-named keys without losing their values', () => {
+    window.localStorage.setItem('__proto__', 'saved-value')
+    expect(window.localStorage.getItem('__proto__')).toBe('saved-value')
+    expect(window.localStorage.length).toBe(1)
+    window.localStorage.clear()
+    expect(window.localStorage.getItem('__proto__')).toBeNull()
+  })
+
+  it('enumerates stored data rather than the shim implementation methods', () => {
+    window.localStorage.setItem('first', '1')
+    window.localStorage.setItem('second', '2')
+    expect(Object.keys(window.localStorage)).toEqual(['first', 'second'])
   })
 
   it('never contains a closing script tag', () => {

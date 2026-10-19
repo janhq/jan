@@ -22,7 +22,7 @@ export const PREVIEW_SHIM_SCRIPT = `(function () {
   window.__janPreviewShim = true
 
   function memoryStorage() {
-    var data = {}
+    var data = Object.create(null)
     var store = {
       key: function (i) {
         var keys = Object.keys(data)
@@ -33,12 +33,42 @@ export const PREVIEW_SHIM_SCRIPT = `(function () {
       },
       setItem: function (k, v) { data[String(k)] = String(v) },
       removeItem: function (k) { delete data[String(k)] },
-      clear: function () { data = {} }
+      clear: function () { data = Object.create(null) }
     }
     Object.defineProperty(store, 'length', {
-      get: function () { return Object.keys(data).length }
+      get: function () { return Object.keys(data).length },
+      configurable: true
     })
-    return store
+    // Generated pages also use storage.score, delete storage.score and
+    // Object.keys(storage). All forms must share the same in-memory values.
+    return new Proxy(store, {
+      get: function (target, key) {
+        if (typeof key === 'string' &&
+            Object.prototype.hasOwnProperty.call(data, key) &&
+            !Object.prototype.hasOwnProperty.call(target, key)) return data[key]
+        return Reflect.get(target, key)
+      },
+      set: function (target, key, value) {
+        if (typeof key !== 'string') return Reflect.set(target, key, value)
+        data[key] = String(value)
+        return true
+      },
+      deleteProperty: function (target, key) {
+        if (typeof key !== 'string') return Reflect.deleteProperty(target, key)
+        delete data[key]
+        return true
+      },
+      has: function (target, key) {
+        return Object.prototype.hasOwnProperty.call(data, key) || Reflect.has(target, key)
+      },
+      ownKeys: function () { return Object.keys(data) },
+      getOwnPropertyDescriptor: function (target, key) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          return { value: data[key], enumerable: true, configurable: true, writable: true }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      }
+    })
   }
 
   function shimStorage(name) {
