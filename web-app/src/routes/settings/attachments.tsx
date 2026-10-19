@@ -8,6 +8,12 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import {
+  useImageAttachmentConfig,
+  clampImageSizeMB,
+  MIN_MAX_IMAGE_SIZE_MB,
+  MAX_MAX_IMAGE_SIZE_MB,
+} from '@/hooks/useImageAttachmentConfig'
 
 export const Route = createFileRoute('/settings/attachments')({
   component: AttachmentsSettings,
@@ -39,6 +45,48 @@ function clampValue(
   // Floor integer values, preserve decimals for threshold
   const adjusted = step >= 1 ? Math.floor(num) : num
   return Math.max(min, Math.min(max, adjusted))
+}
+
+// Image size limit lives outside the RAG extension (images are sent inline as
+// base64, not retrieved), so it is rendered separately from the extension defs.
+function ImageSizeSetting() {
+  const { t } = useTranslation()
+  const maxImageSizeMB = useImageAttachmentConfig((s) => s.maxImageSizeMB)
+  const setMaxImageSizeMB = useImageAttachmentConfig((s) => s.setMaxImageSizeMB)
+  const [local, setLocal] = useState<string | number | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  useEffect(() => () => clearTimeout(timerRef.current), [])
+
+  const onChange = (val: unknown) => {
+    clearTimeout(timerRef.current)
+    setLocal(val as string | number)
+    timerRef.current = setTimeout(() => {
+      const validated = clampImageSizeMB(val, maxImageSizeMB)
+      setMaxImageSizeMB(validated)
+      setLocal(validated)
+    }, 500)
+  }
+
+  return (
+    <CardItem
+      title={t('settings:attachments.maxImage')}
+      description={t('settings:attachments.maxImageDesc')}
+      actions={
+        <DynamicControllerSetting
+          controllerType="input"
+          controllerProps={{
+            value: local ?? maxImageSizeMB,
+            type: 'number',
+            min: MIN_MAX_IMAGE_SIZE_MB,
+            max: MAX_MAX_IMAGE_SIZE_MB,
+            step: 1,
+          }}
+          onChange={onChange}
+        />
+      }
+    />
+  )
 }
 
 function AttachmentsSettings() {
@@ -175,6 +223,106 @@ function AttachmentsSettings() {
     [sel]
   )
 
+  const renderDef = (d: SettingComponentProps) => {
+    // The toggle governs documents only (images never check it), so only the
+    // document size limit is greyed out while it is off.
+    const disabledReason =
+      d.key === 'max_file_size_mb' && !sel.enabled
+        ? t('settings:attachments.maxFileDisabledReason')
+        : undefined
+
+    // Use local value if typing, else use store value
+    const storeValue = (() => {
+      switch (d.key) {
+        case 'enabled':
+          return sel.enabled
+        case 'max_file_size_mb':
+          return sel.maxFileSizeMB
+        case 'retrieval_limit':
+          return sel.retrievalLimit
+        case 'retrieval_threshold':
+          return sel.retrievalThreshold
+        case 'chunk_size_chars':
+          return sel.chunkSizeChars
+        case 'overlap_chars':
+          return sel.overlapChars
+        case 'search_mode':
+          return sel.searchMode
+        case 'parse_mode':
+          return sel.parseMode
+        case 'auto_inline_context_ratio':
+          return sel.autoInlineContextRatio
+        default:
+          return d?.controllerProps?.value
+      }
+    })()
+
+    const currentValue =
+      localValues[d.key] !== undefined
+        ? localValues[d.key]
+        : storeValue
+
+    // Convert to DynamicControllerSetting compatible props
+    const baseProps = d.controllerProps
+    const normalizedValue: string | number | boolean = (() => {
+      if (Array.isArray(currentValue)) {
+        return currentValue.join(',')
+      }
+      return currentValue as string | number | boolean
+    })()
+
+    const props = {
+      value: normalizedValue,
+      placeholder:
+        'placeholder' in baseProps
+          ? baseProps.placeholder
+          : undefined,
+      type: 'type' in baseProps ? baseProps.type : undefined,
+      options:
+        'options' in baseProps ? baseProps.options : undefined,
+      input_actions:
+        'inputActions' in baseProps
+          ? baseProps.inputActions
+          : undefined,
+      rows: undefined,
+      min: 'min' in baseProps ? baseProps.min : undefined,
+      max: 'max' in baseProps ? baseProps.max : undefined,
+      step: 'step' in baseProps ? baseProps.step : undefined,
+      recommended:
+        'recommended' in baseProps
+          ? baseProps.recommended
+          : undefined,
+    }
+
+    const title = d.titleKey ? t(d.titleKey) : d.title
+    const description = d.descriptionKey
+      ? t(d.descriptionKey)
+      : d.description
+
+    return (
+      <CardItem
+        key={d.key}
+        title={title}
+        description={description}
+        actions={
+          // `inert` takes the control out of the tab order and ignores key
+          // presses, which the shared wrapper's pointer-events-none does not.
+          // The tooltip sits on an outer element so it still receives hover.
+          <div title={disabledReason}>
+            <div inert={disabledReason ? true : undefined}>
+              <DynamicControllerSetting
+                controllerType={d.controllerType}
+                controllerProps={props}
+                disabledReason={disabledReason}
+                onChange={(val) => debouncedSet(d.key, val, d)}
+              />
+            </div>
+          </div>
+        }
+      />
+    )
+  }
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
@@ -187,90 +335,11 @@ function AttachmentsSettings() {
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card title={t('common:attachments') || 'Attachments'}>
-              {defs.map((d) => {
-                // Use local value if typing, else use store value
-                const storeValue = (() => {
-                  switch (d.key) {
-                    case 'enabled':
-                      return sel.enabled
-                    case 'max_file_size_mb':
-                      return sel.maxFileSizeMB
-                    case 'retrieval_limit':
-                      return sel.retrievalLimit
-                    case 'retrieval_threshold':
-                      return sel.retrievalThreshold
-                    case 'chunk_size_chars':
-                      return sel.chunkSizeChars
-                    case 'overlap_chars':
-                      return sel.overlapChars
-                    case 'search_mode':
-                      return sel.searchMode
-                    case 'parse_mode':
-                      return sel.parseMode
-                    case 'auto_inline_context_ratio':
-                      return sel.autoInlineContextRatio
-                    default:
-                      return d?.controllerProps?.value
-                  }
-                })()
-
-                const currentValue =
-                  localValues[d.key] !== undefined
-                    ? localValues[d.key]
-                    : storeValue
-
-                // Convert to DynamicControllerSetting compatible props
-                const baseProps = d.controllerProps
-                const normalizedValue: string | number | boolean = (() => {
-                  if (Array.isArray(currentValue)) {
-                    return currentValue.join(',')
-                  }
-                  return currentValue as string | number | boolean
-                })()
-
-                const props = {
-                  value: normalizedValue,
-                  placeholder:
-                    'placeholder' in baseProps
-                      ? baseProps.placeholder
-                      : undefined,
-                  type: 'type' in baseProps ? baseProps.type : undefined,
-                  options:
-                    'options' in baseProps ? baseProps.options : undefined,
-                  input_actions:
-                    'inputActions' in baseProps
-                      ? baseProps.inputActions
-                      : undefined,
-                  rows: undefined,
-                  min: 'min' in baseProps ? baseProps.min : undefined,
-                  max: 'max' in baseProps ? baseProps.max : undefined,
-                  step: 'step' in baseProps ? baseProps.step : undefined,
-                  recommended:
-                    'recommended' in baseProps
-                      ? baseProps.recommended
-                      : undefined,
-                }
-
-                const title = d.titleKey ? t(d.titleKey) : d.title
-                const description = d.descriptionKey
-                  ? t(d.descriptionKey)
-                  : d.description
-
-                return (
-                  <CardItem
-                    key={d.key}
-                    title={title}
-                    description={description}
-                    actions={
-                      <DynamicControllerSetting
-                        controllerType={d.controllerType}
-                        controllerProps={props}
-                        onChange={(val) => debouncedSet(d.key, val, d)}
-                      />
-                    }
-                  />
-                )
-              })}
+              {defs.filter((d) => d.key !== 'max_file_size_mb').map(renderDef)}
+            </Card>
+            <Card title={t('settings:attachments.limitsTitle')}>
+              <ImageSizeSetting />
+              {defs.filter((d) => d.key === 'max_file_size_mb').map(renderDef)}
             </Card>
           </div>
         </div>

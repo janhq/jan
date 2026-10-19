@@ -85,6 +85,7 @@ import {
 } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
@@ -515,6 +516,7 @@ const ChatInput = memo(function ChatInput({
     (s) => s.autoInlineContextRatio
   )
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
+  const maxImageSizeMB = useImageAttachmentConfig((s) => s.maxImageSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
   // Same scope as the message queue: a surface writing attachments under its
@@ -1225,7 +1227,7 @@ const ChatInput = memo(function ChatInput({
   }
 
   const processImageFiles = useCallback(async (files: File[]) => {
-    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+    const maxSize = maxImageSizeMB * 1024 * 1024
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
 
@@ -1402,7 +1404,7 @@ const ChatInput = memo(function ChatInput({
     const errors: string[] = []
     if (oversizedFiles.length > 0) {
       errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max ${maxImageSizeMB}MB): ${oversizedFiles.join(', ')}`
       )
     }
 
@@ -1421,7 +1423,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress, maxImageSizeMB])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
