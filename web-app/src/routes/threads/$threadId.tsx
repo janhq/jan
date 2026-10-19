@@ -1411,8 +1411,15 @@ function ThreadDetail() {
             for (const toolName of ragTools) {
               toolApproval.approveToolForThread(threadId, toolName)
             }
+            // Merge into the thread's metadata as it is now, not as it was at
+            // send: replacing it drops `metadata.project` and detaches the
+            // thread from its project, and a stale copy reverts a project move
+            // or rename made while the documents were embedding.
             useThreads.getState().updateThread(threadId, {
-              metadata: { hasDocuments: true },
+              metadata: {
+                ...(useThreads.getState().threads[threadId]?.metadata ?? {}),
+                hasDocuments: true,
+              },
             })
           }
         } catch (error) {

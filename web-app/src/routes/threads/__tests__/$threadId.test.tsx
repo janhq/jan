@@ -584,6 +584,60 @@ describe('ThreadDetail route', () => {
     expect(h.messagesState.addMessage).toHaveBeenCalled()
   })
 
+  it('keeps the thread in its project when attachments are embedded', async () => {
+    const project = { id: 'p1', name: 'Proj', updated_at: 1 }
+    h.threadsState.threads['thread-1'].metadata = { project }
+    h.attachmentsState.getAttachments = vi.fn(() => [
+      { name: 'doc.pdf', type: 'document', path: '/doc.pdf' },
+    ])
+    vi.mocked(processAttachmentsForSend).mockResolvedValueOnce({
+      processedAttachments: [],
+      hasEmbeddedDocuments: true,
+    } as any)
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(h.threadsState.updateThread).toHaveBeenCalledWith('thread-1', {
+        metadata: { project, hasDocuments: true },
+      })
+    })
+    h.attachmentsState.getAttachments = vi.fn(() => [])
+  })
+
+  it('keeps a project move made while attachments were embedding', async () => {
+    const original = h.threadsState.threads['thread-1']
+    const before = { id: 'p1', name: 'Before', updated_at: 1 }
+    const moved = { id: 'p2', name: 'Moved', updated_at: 2 }
+    h.threadsState.threads['thread-1'] = {
+      ...original,
+      metadata: { project: before },
+    }
+    h.attachmentsState.getAttachments = vi.fn(() => [
+      { name: 'doc.pdf', type: 'document', path: '/doc.pdf' },
+    ])
+    vi.mocked(processAttachmentsForSend).mockImplementationOnce(async () => {
+      // The user moves the thread to another project while it embeds.
+      h.threadsState.threads['thread-1'] = {
+        ...h.threadsState.threads['thread-1'],
+        metadata: { project: moved, titleSetManually: true },
+      }
+      return { processedAttachments: [], hasEmbeddedDocuments: true } as any
+    })
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(h.threadsState.updateThread).toHaveBeenCalledWith('thread-1', {
+        metadata: { project: moved, titleSetManually: true, hasDocuments: true },
+      })
+    })
+    h.threadsState.threads['thread-1'] = original
+    h.attachmentsState.getAttachments = vi.fn(() => [])
+  })
+
   it('passes the auto-inline budget when sending documents', async () => {
     h.useAttachmentsState.autoInlineContextRatio = 0.75
     // 35 chars -> 10 estimated tokens + 4 per-message overhead.
