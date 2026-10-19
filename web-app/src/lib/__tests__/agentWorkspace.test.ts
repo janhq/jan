@@ -143,6 +143,158 @@ describe('agentWorkspace', () => {
     })
   })
 
+  describe('concurrent Remember actions', () => {
+    let notes: Map<string, string>
+
+    beforeEach(() => {
+      notes = new Map()
+      api.memoryList.mockImplementation(async () => [...notes.keys()])
+      api.memoryRead.mockImplementation(async (_: string, name: string) => {
+        if (!notes.has(name)) throw new Error('missing note')
+        return notes.get(name)
+      })
+      api.memoryWrite.mockImplementation(
+        async (_: string, name: string, content: string) => {
+          notes.set(name, content)
+        }
+      )
+    })
+
+    it('preserves different facts saved together under the same title', async () => {
+      const ws = await import('../agentWorkspace')
+      const results = await Promise.all([
+        ws.rememberNote('Chat Notes', 'first fact'),
+        ws.rememberNote('Chat Notes', 'second fact'),
+      ])
+
+      expect(results).toEqual([
+        { name: 'chat-notes', duplicate: false },
+        { name: 'chat-notes-2', duplicate: false },
+      ])
+      expect([...notes.entries()]).toEqual([
+        ['chat-notes', 'first fact'],
+        ['chat-notes-2', 'second fact'],
+      ])
+    })
+
+    it('writes identical concurrent saves only once', async () => {
+      const ws = await import('../agentWorkspace')
+      const results = await Promise.all([
+        ws.rememberNote('Chat Notes', 'same fact'),
+        ws.rememberNote('Chat Notes', 'same fact'),
+      ])
+
+      expect(results).toEqual([
+        { name: 'chat-notes', duplicate: false },
+        { name: 'chat-notes', duplicate: true },
+      ])
+      expect(api.memoryWrite).toHaveBeenCalledTimes(1)
+    })
+
+    it('protects a suffix that is also another title slug', async () => {
+      notes.set('topic', 'existing fact')
+      const ws = await import('../agentWorkspace')
+      await Promise.all([
+        ws.rememberNote('Topic', 'first new fact'),
+        ws.rememberNote('Topic 2', 'second new fact'),
+      ])
+
+      expect([...notes.entries()]).toEqual([
+        ['topic', 'existing fact'],
+        ['topic-2', 'first new fact'],
+        ['topic-2-2', 'second new fact'],
+      ])
+    })
+
+    it('allows a queued save after an earlier write rejects', async () => {
+      api.memoryWrite.mockRejectedValueOnce(new Error('disk full'))
+      const ws = await import('../agentWorkspace')
+      const results = await Promise.allSettled([
+        ws.rememberNote('Chat Notes', 'first fact'),
+        ws.rememberNote('Chat Notes', 'second fact'),
+      ])
+
+      expect(results[0]).toEqual({
+        status: 'rejected',
+        reason: new Error('disk full'),
+      })
+      expect(results[1]).toEqual({
+        status: 'fulfilled',
+        value: { name: 'chat-notes', duplicate: false },
+      })
+      expect(notes.get('chat-notes')).toBe('second fact')
+    })
+
+    it('waits for a pending write before listing names for the next save', async () => {
+      let finishWrite!: () => void
+      const pendingWrite = new Promise<void>((resolve) => {
+        finishWrite = resolve
+      })
+      api.memoryWrite.mockImplementationOnce(
+        async (_: string, name: string, content: string) => {
+          await pendingWrite
+          notes.set(name, content)
+        }
+      )
+      const ws = await import('../agentWorkspace')
+      const first = ws.rememberNote('Chat Notes', 'first fact')
+      await vi.waitFor(() => expect(api.memoryWrite).toHaveBeenCalledTimes(1))
+      const second = ws.rememberNote('Chat Notes', 'second fact')
+
+      try {
+        // Let the second action reach the queue while the first IPC write is
+        // still pending. Its name lookup must wait for that write to finish.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(api.memoryList).toHaveBeenCalledTimes(1)
+        expect(api.memoryWrite).toHaveBeenCalledTimes(1)
+      } finally {
+        finishWrite()
+        await Promise.all([first, second])
+      }
+      expect([...notes.values()]).toEqual(['first fact', 'second fact'])
+    })
+
+    it('keeps one data folder throughout a save', async () => {
+      api.memoryList.mockImplementation(async () => {
+        getJanDataFolder.mockResolvedValue('/other-data')
+        return []
+      })
+      const ws = await import('../agentWorkspace')
+      await ws.rememberNote('Chat Notes', 'the fact')
+
+      expect(api.memoryList).toHaveBeenCalledWith('/data')
+      expect(api.memoryWrite).toHaveBeenCalledWith(
+        '/data', 'chat-notes', 'the fact'
+      )
+      expect(getJanDataFolder).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not block another data folder behind a pending save', async () => {
+      let finishFirst!: () => void
+      const firstWrite = new Promise<void>((resolve) => {
+        finishFirst = resolve
+      })
+      api.memoryWrite.mockImplementationOnce(() => firstWrite)
+      const ws = await import('../agentWorkspace')
+      const first = ws.rememberNote('First', 'first fact')
+      await vi.waitFor(() => expect(api.memoryWrite).toHaveBeenCalledTimes(1))
+
+      getJanDataFolder.mockResolvedValue('/other-data')
+      try {
+        await expect(ws.rememberNote('Second', 'second fact')).resolves.toEqual({
+          name: 'second',
+          duplicate: false,
+        })
+        expect(api.memoryWrite).toHaveBeenLastCalledWith(
+          '/other-data', 'second', 'second fact'
+        )
+      } finally {
+        finishFirst()
+        await first
+      }
+    })
+  })
+
   /// Unlike a tool call, a failed edit has a user waiting on it, so these throw
   /// instead of resolving to an error value the page would have to sniff for.
   it('propagates failures to the caller', async () => {

@@ -81,6 +81,10 @@ export type RememberResult = {
   duplicate: boolean
 }
 
+// Serialize name allocation through the completed write. Different title slugs
+// can collide too (e.g. `topic` allocates `topic-2`), so the lock is per store.
+const pendingRememberSaves = new Map<string, Promise<void>>()
+
 /**
  * The chat surface's "Remember" action: save `content` as a note named after
  * the thread title. `memory_write` replaces a note by name, and this is a new
@@ -94,16 +98,33 @@ export async function rememberNote(
   title: string,
   content: string
 ): Promise<RememberResult> {
-  const base = slugifyMemoryName(title)
-  const taken = new Set(await listMemories())
-  let name = base
-  for (let n = 2; taken.has(name); n++) {
-    const existing = await readMemory(name).catch(() => null)
-    if (existing === content) return { name, duplicate: true }
-    name = `${base}-${n}`
-  }
-  await writeMemory(name, content)
-  return { name, duplicate: false }
+  // Resolve once so a data-folder change cannot move part of a queued save
+  // into another store after its name has already been allocated.
+  const folder = await dataFolder()
+  const previous = pendingRememberSaves.get(folder) ?? Promise.resolve()
+  const save = previous.then(async (): Promise<RememberResult> => {
+    const base = slugifyMemoryName(title)
+    const taken = new Set(await memoryList(folder))
+    let name = base
+    for (let n = 2; taken.has(name); n++) {
+      const existing = await memoryRead(folder, name).catch(() => null)
+      if (existing === content) return { name, duplicate: true }
+      name = `${base}-${n}`
+    }
+    await memoryWrite(folder, name, content)
+    invalidateMemory()
+    return { name, duplicate: false }
+  })
+
+  // Keep the caller's rejection, but allow later saves to proceed after it.
+  const settled = save.then(() => {}, () => {})
+  pendingRememberSaves.set(folder, settled)
+  void settled.then(() => {
+    if (pendingRememberSaves.get(folder) === settled) {
+      pendingRememberSaves.delete(folder)
+    }
+  })
+  return save
 }
 
 /** Open the store in the OS file manager. */
