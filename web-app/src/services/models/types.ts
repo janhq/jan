@@ -2,9 +2,15 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import {
+  SessionInfo,
+  modelInfo,
+  ThreadMessage,
+  UnloadResult,
+} from '@janhq/core'
 import type { SpecDraftKind } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import { type SpecConfig } from '@janhq/core'
 
 // Types for model catalog
 export interface ModelQuant {
@@ -97,7 +103,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-
 export type PreflightReason =
   | 'AUTH_REQUIRED'
   | 'LICENSE_NOT_ACCEPTED'
@@ -108,7 +113,10 @@ export type PreflightReason =
 
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
-  getModelContextLimit(modelId: string, provider: string): Promise<number | undefined>
+  getModelContextLimit(
+    modelId: string,
+    provider: string
+  ): Promise<number | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>
@@ -163,20 +171,11 @@ export interface ModelsService {
     getProviderByName?: (providerName: string) => ModelProvider | undefined
   ): Promise<{ exists: boolean; settingsUpdated: boolean }>
   checkMmprojExists(modelId: string): Promise<boolean>
-  getMtpInfo(modelId: string): Promise<{
-    mtp_layers: number
-    mtp: boolean
-    spec_draft_n_max?: number
-    spec_draft_n_min?: number
-    spec_draft_p_min?: number
-  }>
-  updateMtpSettings(
+  getSpecDecodingSettings(modelId: string): Promise<SpecConfig>
+  updateSpecDecodingSettings(
     modelId: string,
     patch: {
-      mtp?: boolean
-      spec_draft_n_max?: number | null
-      spec_draft_n_min?: number | null
-      spec_draft_p_min?: number | null
+      [K in keyof SpecConfig]?: SpecConfig[K] | null
     }
   ): Promise<void>
   updateModelSettings(

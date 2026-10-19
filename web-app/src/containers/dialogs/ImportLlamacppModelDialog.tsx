@@ -65,9 +65,7 @@ function extractTokenizerInfo(
     const n = Number(v)
     return Number.isFinite(n) ? n : undefined
   }
-  const vocabSizeKey = Object.keys(meta).find((k) =>
-    k.endsWith('.vocab_size')
-  )
+  const vocabSizeKey = Object.keys(meta).find((k) => k.endsWith('.vocab_size'))
   return {
     tokenizerModel: meta['tokenizer.ggml.model'],
     addBos:
@@ -176,7 +174,10 @@ export const ImportLlamacppModelDialog = ({
     useState<TokenizerInfo | null>(null)
 
   const validateGgufFile = useCallback(
-    async (filePath: string, fileType: 'model' | 'mmproj' | 'draft'): Promise<void> => {
+    async (
+      filePath: string,
+      fileType: 'model' | 'mmproj' | 'draft'
+    ): Promise<void> => {
       if (fileType === 'model') {
         setIsValidating(true)
         setValidationError(null)
@@ -258,7 +259,9 @@ export const ImportLlamacppModelDialog = ({
               const vision = truthy(meta?.['clip.has_vision_encoder'])
               const audio = truthy(meta?.['clip.has_audio_encoder'])
               setDetectedModalities(
-                vision || audio ? { vision, audio } : { vision: true, audio: false }
+                vision || audio
+                  ? { vision, audio }
+                  : { vision: true, audio: false }
               )
             }
           } catch (directError) {
@@ -387,7 +390,9 @@ export const ImportLlamacppModelDialog = ({
     }
 
     if (isMultimodal && !mmProjFile) {
-      toast.error('Please select both model and MMPROJ files for multimodal models')
+      toast.error(
+        'Please select both model and MMPROJ files for multimodal models'
+      )
       return
     }
 
@@ -488,9 +493,9 @@ export const ImportLlamacppModelDialog = ({
           </DialogTitle>
           <DialogDescription>
             Import a GGUF model file to add it to your collection. Enable
-            multimodal support to attach an mmproj for image or audio input,
-            or draft model support for speculative decoding. Embedding models
-            are detected automatically.
+            multimodal support to attach an mmproj for image or audio input, or
+            draft model support for speculative decoding. Embedding models are
+            detected automatically.
           </DialogDescription>
         </DialogHeader>
 
@@ -533,9 +538,10 @@ export const ImportLlamacppModelDialog = ({
               <div className="flex-1">
                 <h3 className="font-medium">Draft Model Support</h3>
                 <p className="text-sm text-muted-foreground leading-normal">
-                  Attach a smaller draft model (including MTP draft heads) for
-                  speculative decoding. The draft model must share the main
-                  model&apos;s tokenizer and vocabulary.
+                  Attach a smaller draft model for speculative decoding. The
+                  draft model must share the main model&apos;s tokenizer and
+                  vocabulary. (Supports draft-simple, draft-mtp, draft-eagle3,
+                  draft-dflash and draft-dspark.)
                 </p>
               </div>
               <Switch
@@ -563,9 +569,7 @@ export const ImportLlamacppModelDialog = ({
                   Model will be saved as:
                 </span>
               </div>
-              <p className="text-sm font-mono mt-1">
-                {modelName}
-              </p>
+              <p className="text-sm font-mono mt-1">{modelName}</p>
             </div>
           )}
 
@@ -574,9 +578,7 @@ export const ImportLlamacppModelDialog = ({
             {/* Model File Selection */}
             <div className="border  rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <h3 className="font-medium">
-                  Model File (GGUF)
-                </h3>
+                <h3 className="font-medium">Model File (GGUF)</h3>
                 <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
                   Required
                 </span>
@@ -588,17 +590,14 @@ export const ImportLlamacppModelDialog = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {isValidating ? (
-                          <IconLoader2
-                            size={16}
-                            className="animate-spin"
-                          />
+                          <IconLoader2 size={16} className="animate-spin" />
                         ) : validationError ? (
                           <IconAlertTriangle
                             size={16}
                             className="text-destructive"
                           />
                         ) : (
-                          <IconCheck size={16}  />
+                          <IconCheck size={16} />
                         )}
                         <span className="text-sm font-medium">
                           {modelFile.split(/[\\/]/).pop()}
@@ -693,10 +692,7 @@ export const ImportLlamacppModelDialog = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           {isValidatingMmproj ? (
-                            <IconLoader2
-                              size={16}
-                              className="animate-spin"
-                            />
+                            <IconLoader2 size={16} className="animate-spin" />
                           ) : mmprojValidationError ? (
                             <IconAlertTriangle
                               size={16}

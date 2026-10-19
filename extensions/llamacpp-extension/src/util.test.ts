@@ -4,6 +4,7 @@ import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
   resolveSpecDraftKind,
+  loadModelConfig,
   detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
@@ -12,6 +13,27 @@ import {
 import { getBackendSetting } from './backend-settings'
 
 vi.mock('./backend-settings')
+
+const modelYamls: Record<string, unknown> = {}
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(
+    async (_cmd: string, args: { path: string }) => modelYamls[args.path]
+  ),
+}))
+
+vi.mock('@janhq/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@janhq/core')>()
+
+  return {
+    logger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+    isSpecDraftType: actual.isSpecDraftType,
+  }
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -638,10 +660,10 @@ describe('detectTemplateKwargsFromChatTemplate', () => {
 
   it('detects the self-defaulting set idiom and infers types', () => {
     const tpl = [
-      "{%- set enable_thinking = enable_thinking | default(false) -%}",
-      "{%- set preserve_thinking = preserve_thinking | default(false) -%}",
+      '{%- set enable_thinking = enable_thinking | default(false) -%}',
+      '{%- set preserve_thinking = preserve_thinking | default(false) -%}',
       "{%- set reasoning_effort = reasoning_effort | default('medium') -%}",
-      "{%- set max_turns = max_turns | default(8) -%}",
+      '{%- set max_turns = max_turns | default(8) -%}',
     ].join('\n')
     expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
       { name: 'preserve_thinking', type: 'boolean', default: false },
@@ -677,8 +699,8 @@ describe('detectTemplateKwargsFromChatTemplate', () => {
 
 describe('resolveSpecDraftKind', () => {
   // general.architecture is what llama.cpp itself keys on: `eagle3` and
-  // `dflash` are distinct architectures, and anything else carrying draft
-  // weights is an MTP head.
+  // `dflash` are distinct architectures.
+  // If mtp layers exist it is interpreted as mtp, anything else is type simple.
   it('reads eagle3 straight off the architecture', () => {
     expect(resolveSpecDraftKind({ 'general.architecture': 'eagle3' })).toBe(
       'eagle3'
@@ -695,14 +717,20 @@ describe('resolveSpecDraftKind', () => {
   // head, which is a tensor rather than a metadata key.
   it('separates dspark from dflash by the markov head', () => {
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
-        hasMarkovHead: true,
-      })
+      resolveSpecDraftKind(
+        { 'general.architecture': 'dflash' },
+        {
+          hasMarkovHead: true,
+        }
+      )
     ).toBe('dspark')
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
-        hasMarkovHead: false,
-      })
+      resolveSpecDraftKind(
+        { 'general.architecture': 'dflash' },
+        {
+          hasMarkovHead: false,
+        }
+      )
     ).toBe('dflash')
   })
 
@@ -710,34 +738,120 @@ describe('resolveSpecDraftKind', () => {
   // for when it could not be read.
   it('trusts the markov head over the file naming', () => {
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
-        hasMarkovHead: false,
-        hint: 'dspark',
-      })
+      resolveSpecDraftKind(
+        { 'general.architecture': 'dflash' },
+        {
+          hasMarkovHead: false,
+          hint: 'dspark',
+        }
+      )
     ).toBe('dflash')
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
-        hint: 'dspark',
-      })
+      resolveSpecDraftKind(
+        { 'general.architecture': 'dflash' },
+        {
+          hint: 'dspark',
+        }
+      )
     ).toBe('dspark')
   })
 
-  it('treats any other architecture as an MTP head', () => {
+  it('seperates mtp from simple by the mtp layer count', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'mtp' }, { mtpLayers: 0 })
+    ).toBe('simple')
+    expect(
+      resolveSpecDraftKind(
+        { 'general.architecture': 'simple' },
+        { mtpLayers: 1 }
+      )
+    ).toBe('mtp')
+  })
+
+  it('treats any other architecture as simple', () => {
     expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
-      'mtp'
+      'simple'
     )
-    expect(resolveSpecDraftKind({})).toBe('mtp')
-    expect(resolveSpecDraftKind(undefined)).toBe('mtp')
+    expect(resolveSpecDraftKind({})).toBe('simple')
+    expect(resolveSpecDraftKind(undefined)).toBe('simple')
   })
 
   // The architecture wins: a misnamed file must not select a type the draft
   // cannot implement, which fails the load with an unrelated message.
   it('ignores a hint the architecture contradicts', () => {
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'glm4moe' }, { hint: 'dflash' })
-    ).toBe('mtp')
+      resolveSpecDraftKind(
+        { 'general.architecture': 'glm4moe' },
+        { hint: 'dflash' }
+      )
+    ).toBe('simple')
     expect(
-      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
+      resolveSpecDraftKind(
+        { 'general.architecture': 'dflash' },
+        { hint: 'mtp' }
+      )
     ).toBe('dflash')
+  })
+})
+
+describe('loadModelConfig', () => {
+  it('transform old config: mtp turned off', async () => {
+    const path = '/models/test/model.yml'
+    modelYamls[path] = {
+      mtp: false,
+      mtp_model_path: '/models/test/model.gguf',
+    }
+
+    const result = await loadModelConfig(path)
+    expect(result).not.toHaveProperty('mtp')
+    expect(result).not.toHaveProperty('mtp_model_path')
+    expect(result.spec_draft_type).toBe('draft-mtp')
+    expect(result.spec_draft_model).toBe('/models/test/model.gguf')
+  })
+
+  it('transform old config: mtp turned on', async () => {
+    const path = '/models/test/model.yml'
+    modelYamls[path] = {
+      mtp: true,
+      mtp_model_path: '/models/test/model.gguf',
+    }
+
+    const result = await loadModelConfig(path)
+    expect(result).not.toHaveProperty('mtp')
+    expect(result).not.toHaveProperty('mtp_model_path')
+    expect(result.spec_draft_type).toBe('draft-mtp')
+    expect(result.spec_type).toBe('draft-mtp')
+    expect(result.spec_draft_model).toBe('/models/test/model.gguf')
+  })
+
+  it('transform old config: draft-eagle3 turned on', async () => {
+    const path = '/models/test/model.yml'
+    modelYamls[path] = {
+      mtp: true,
+      spec_type: 'draft-eagle3',
+      mtp_model_path: '/models/test/model.gguf',
+    }
+
+    const result = await loadModelConfig(path)
+    expect(result).not.toHaveProperty('mtp')
+    expect(result).not.toHaveProperty('mtp_model_path')
+    expect(result.spec_draft_type).toBe('draft-eagle3')
+    expect(result.spec_type).toBe('draft-eagle3')
+    expect(result.spec_draft_model).toBe('/models/test/model.gguf')
+  })
+  it('transform old config: draft-eagle3 turned off', async () => {
+    const path = '/models/test/model.yml'
+    modelYamls[path] = {
+      mtp: false,
+      spec_type: 'draft-eagle3',
+      mtp_model_path: '/models/test/model.gguf',
+    }
+
+    const result = await loadModelConfig(path)
+    expect(result).not.toHaveProperty('mtp')
+    expect(result).not.toHaveProperty('mtp_model_path')
+    expect(result).not.toHaveProperty('spec_type')
+    expect(result.spec_draft_type).toBe('draft-eagle3')
+    expect(result.spec_draft_model).toBe('/models/test/model.gguf')
   })
 })

@@ -46,8 +46,17 @@ import {
   detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
   setDefaultEmbeddingModelId,
+  loadModelConfig,
   type EmbedBatchResult,
 } from './util'
+import {
+  type SpecConfig,
+  type SpecConfigPatch,
+  isSpecConfig,
+  isSpecType,
+  isSpecDraftType,
+  setSpecConfig,
+} from '@janhq/core'
 import {
   generatePreset,
   threadCacheDir,
@@ -152,7 +161,6 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
   'lazy_mode',
 ])
 
-
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -179,8 +187,7 @@ const SETUP_CONSENT_KEY = 'llamacpp-first-run-setup-started'
 const FALLBACK_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 const FALLBACK_EMBEDDING_MODEL_URL =
   'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
-const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
-  'llamacpp_model_yaml_backfill_v2'
+const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY = 'llamacpp_model_yaml_backfill_v2'
 
 /// The GPU-layers value the old UI shipped as its default. v1 of the backfill
 /// copied it into every model.yml, which pins offload to 100 layers and defeats
@@ -281,13 +288,11 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
   },
   chat_template: {
     yamlKey: 'chat_template',
-    coerce: (v) =>
-      typeof v === 'string' && v.trim().length > 0 ? v : null,
+    coerce: (v) => (typeof v === 'string' && v.trim().length > 0 ? v : null),
   },
   grammar: {
     yamlKey: 'grammar',
-    coerce: (v) =>
-      typeof v === 'string' && v.trim().length > 0 ? v : null,
+    coerce: (v) => (typeof v === 'string' && v.trim().length > 0 ? v : null),
   },
   batch_size: {
     yamlKey: 'batch_size',
@@ -413,7 +418,10 @@ async function findLlamaServerDir(
 //  - lib/
 //    - e.g. libcudart.so.12
 
-export default class llamacpp_extension extends AIEngine implements EmbeddingEngine {
+export default class llamacpp_extension
+  extends AIEngine
+  implements EmbeddingEngine
+{
   provider: string = 'llamacpp'
   timeout: number = 600
   llamacpp_env: string = ''
@@ -485,7 +493,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     await this.migrateParallelToDefault()
 
-    this.timeout = asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
+    this.timeout =
+      asI32(this.config.timeout, DEFAULT_TIMEOUT) || DEFAULT_TIMEOUT
     this.llamacpp_env = this.config.llamacpp_env
 
     // This sets the base directory where model files for this provider are stored.
@@ -1040,9 +1049,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * the post-fit value — what `fit_ctx` settled on — so it's the right
    * denominator for the token-usage popup.
    */
-  async getModelProps(
-    modelId: string
-  ): Promise<
+  async getModelProps(modelId: string): Promise<
     | (ModelProps & {
         modalities?: { vision: boolean; video: boolean; audio: boolean }
       })
@@ -1129,9 +1136,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
           })
         )
         ;(this.config as any).models_max = targetValue
-        logger.info(
-          `Migrated auto_unload=${old} -> models_max=${targetValue}`
-        )
+        logger.info(`Migrated auto_unload=${old} -> models_max=${targetValue}`)
       }
     } catch (e) {
       logger.warn('migrateAutoUnloadToModelsMax failed:', e)
@@ -1251,7 +1256,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
         const next = mapping.coerce(value)
         if (next === null) continue
-
         ;(cfg as Record<string, unknown>)[mapping.yamlKey] = next
         touched = true
       }
@@ -1271,7 +1275,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * for models that no longer appear in the persisted provider settings, so
    * iterating the persisted list would miss them.
    */
-  private async stripLegacyNglFromModelYaml(providerPath: string): Promise<void> {
+  private async stripLegacyNglFromModelYaml(
+    providerPath: string
+  ): Promise<void> {
     const modelsDir = await joinPath([providerPath, 'models'])
     if (!(await fs.existsSync(modelsDir))) return
 
@@ -1405,11 +1411,21 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   async getModelContextLimit(modelId: string): Promise<number | undefined> {
     const config = await invoke<ModelConfig>('read_yaml', {
-      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
+      path: await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ]),
     })
-    const path = await joinPath([await getJanDataFolderPath(), config.model_path])
+    const path = await joinPath([
+      await getJanDataFolderPath(),
+      config.model_path,
+    ])
     const { metadata } = await readGgufMetadata(path)
-    const limit = Number(metadata?.[`${metadata?.['general.architecture']}.context_length`])
+    const limit = Number(
+      metadata?.[`${metadata?.['general.architecture']}.context_length`]
+    )
     return Number.isInteger(limit) && limit > 0 ? limit : undefined
   }
 
@@ -1604,7 +1620,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       await this.migrateLegacyModels()
     } catch (err) {
-      logger.warn(`list: migrateLegacyModels failed, continuing: ${String(err)}`)
+      logger.warn(
+        `list: migrateLegacyModels failed, continuing: ${String(err)}`
+      )
     }
 
     let modelIds: string[] = []
@@ -1848,7 +1866,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     try {
       await this.refreshEnginePreset()
     } catch (e) {
-      logger.warn(`Router restart after model rename (${modelId} → ${model.id}) failed`, e)
+      logger.warn(
+        `Router restart after model rename (${modelId} → ${model.id}) failed`,
+        e
+      )
     }
   }
 
@@ -2031,7 +2052,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
-    let specKind: SpecDraftKind = 'mtp'
+    let specKind: SpecDraftKind = null
     let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
 
@@ -2069,7 +2090,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // its head count (the main gguf usually lacks nextn_predict_layers when
       // MTP ships as a separate file).
       if (draftModelPath) {
-        const fullDraftPath = await joinPath([janDataFolderPath, draftModelPath])
+        const fullDraftPath = await joinPath([
+          janDataFolderPath,
+          draftModelPath,
+        ])
         const draftMetadata = await readGgufMetadata(fullDraftPath)
         // Only asked for a DFlash-architecture draft, since that is the one
         // case a tensor decides (DSpark = DFlash + Markov head).
@@ -2078,14 +2102,20 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
             ? (await findGgufTensors(fullDraftPath, [MARKOV_HEAD_TENSOR]))
                 .length > 0
             : undefined
-        specKind = resolveSpecDraftKind(draftMetadata.metadata, {
-          hasMarkovHead,
-          hint: opts.specDraftKind,
-        })
         const draftLayers = detectMtpLayersFromGgufMeta(draftMetadata.metadata)
         // Only an MTP head reports nextn layers; the other flavours have none,
         // and the count is what makes the settings panel offer the toggle.
-        mtpLayers = draftLayers > 0 ? draftLayers : Math.max(mtpLayers, 1)
+        mtpLayers = draftLayers > 0 ? draftLayers : 0
+        specKind = resolveSpecDraftKind(draftMetadata.metadata, {
+          hasMarkovHead,
+          hint: opts.specDraftKind,
+          mtpLayers,
+        })
+      } else {
+        // MTP headers can live in main gguf without a draft model.
+        if (mtpLayers > 0) {
+          specKind = 'mtp'
+        }
       }
     } catch (error) {
       logger.error('GGUF validation failed:', error)
@@ -2133,13 +2163,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // A separate draft gguf is downloaded only to be used, so enable it by
       // default. Embedded-MTP models stay opt-in (no flag written here) and
       // need no spec_type: their flavour is always draft-mtp.
-      ...(draftModelPath
+      ...(specKind
         ? {
-            mtp_model_path: draftModelPath,
-            mtp: true,
+            spec_draft_type: `draft-${specKind}`,
             spec_type: `draft-${specKind}`,
           }
         : {}),
+      ...(draftModelPath ? { spec_draft_model: draftModelPath } : {}),
       ...(isEmbedding
         ? { pooling: 'mean', ubatch_size: 2048, batch_size: 2048 }
         : {}),
@@ -2610,13 +2640,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     }
   }
 
-  async getMtpInfo(modelId: string): Promise<{
-    mtp_layers: number
-    mtp: boolean
-    spec_draft_n_max?: number
-    spec_draft_n_min?: number
-    spec_draft_p_min?: number
-  }> {
+  async getSpecDecodingSettings(modelId: string): Promise<SpecConfig> {
     const path = await joinPath([
       await this.getProviderPath(),
       'models',
@@ -2624,32 +2648,26 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       'model.yml',
     ])
     if (!(await fs.existsSync(path))) {
-      return { mtp_layers: 0, mtp: false }
+      return { mtp_layers: 0 }
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
-      mtp_layers?: number
-      mtp?: boolean
-      spec_draft_n_max?: number
-      spec_draft_n_min?: number
-      spec_draft_p_min?: number
+    const cfg = await loadModelConfig(path)
+    const specConfig: Partial<SpecConfig> = {}
+
+    for (const key of Object.keys(cfg)) {
+      if (isSpecConfig(key) && cfg[key] !== undefined) {
+        Object.assign(specConfig, { [key]: cfg[key] })
+      }
     }
-    return {
-      mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
-      mtp: cfg.mtp === true,
-      spec_draft_n_max: cfg.spec_draft_n_max,
-      spec_draft_n_min: cfg.spec_draft_n_min,
-      spec_draft_p_min: cfg.spec_draft_p_min,
+
+    if (typeof cfg.mtp_layers !== 'number') {
+      Object.assign(specConfig, { ['mtp_layers']: 0 })
     }
+    return specConfig as SpecConfig
   }
 
-  async updateMtpSettings(
+  async updateSpecDecodingSettings(
     modelId: string,
-    patch: {
-      mtp?: boolean
-      spec_draft_n_max?: number | null
-      spec_draft_n_min?: number | null
-      spec_draft_p_min?: number | null
-    }
+    patch: SpecConfigPatch
   ): Promise<void> {
     const configPath = await joinPath([
       await this.getProviderPath(),
@@ -2660,27 +2678,32 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!(await fs.existsSync(configPath))) {
       throw new Error(`model.yml not found for ${modelId}`)
     }
-    const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
-      mtp?: boolean
-      spec_draft_n_max?: number
-      spec_draft_n_min?: number
-      spec_draft_p_min?: number
-    }
 
-    if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
-    const assignNumeric = (
-      key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
-      value: number | null | undefined
-    ) => {
+    const cfg = await loadModelConfig(configPath)
+
+    for (const key of Object.keys(patch)) {
+      if (!isSpecConfig(key)) {
+        continue
+      }
+
+      const value = patch[key]
       if (value === null) {
         delete cfg[key]
-      } else if (typeof value === 'number' && Number.isFinite(value)) {
-        cfg[key] = value
+        continue
       }
+
+      if (key === 'spec_type') {
+        if (isSpecType(patch.spec_type)) cfg.spec_type = patch.spec_type
+        continue
+      }
+
+      if (key === 'spec_draft_type') {
+        if (isSpecDraftType(patch.spec_draft_type))
+          cfg.spec_draft_type = patch.spec_draft_type
+        continue
+      }
+      setSpecConfig(cfg, key, value)
     }
-    if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
-    if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
-    if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
 
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
@@ -2940,7 +2963,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       }
     } catch (e) {
       // Without /props the pinned ubatch is still a valid ceiling.
-      logger.warn('Could not read embedder context size; using the pinned ubatch:', e)
+      logger.warn(
+        'Could not read embedder context size; using the pinned ubatch:',
+        e
+      )
     }
     return budget
   }
