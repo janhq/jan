@@ -408,7 +408,9 @@ pub fn run() {
             #[cfg(feature = "desktop")]
             if setup::tray_always_visible() {
                 log::info!("Enabling system tray icon");
-                let _ = setup::setup_tray(app.handle());
+                if let Err(error) = setup::setup_tray(app.handle()) {
+                    log::warn!("Failed to create tray icon: {error}");
+                }
             }
 
             // Not in e2e builds: on Windows `register_all` writes HKCU
@@ -468,14 +470,16 @@ pub fn run() {
                 }
                 // Windows/Linux: hide to tray only while the Local API Server is
                 // running and the user opted into keeping it alive in the
-                // background; otherwise fall through to the normal quit-on-close.
+                // background and a tray was created; otherwise quit on close
+                // so a missing Linux tray cannot leave an inaccessible app.
                 // The llamacpp engine is not a reason to keep the app resident
                 // (normal chat usage keeps it alive), so it gets torn down via
                 // the ExitRequested path on quit.
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(all(feature = "desktop", not(target_os = "macos")))]
                 if is_proxy_server_running(app)
                     && core::server::commands::SERVER_RUN_IN_BACKGROUND
                         .load(Ordering::SeqCst)
+                    && app.tray_by_id(setup::TRAY_ID).is_some()
                 {
                     api.prevent_close();
                     if let Some(window) = app.get_webview_window("main") {

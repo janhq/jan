@@ -82,6 +82,18 @@ Jan is single-instance — launching it again just focuses the existing window. 
 Jan's Local API Server binds to `127.0.0.1:1337` and does **not** fall back to another port automatically. If that port is taken (often by a previous Jan process that didn't exit cleanly), the server fails to bind. See [Port Conflicts](#failed-to-fetch-or-somethings-amiss-errors) below to find and free the port, or change it in **Settings** > **Local API Server**.
 
 
+## Local API Server and the Linux System Tray
+
+Jan can run its Local API Server without an AppIndicator library. If the log says
+`System tray unavailable`, Jan skips the tray icon and keeps the application and
+server running. Closing the main window then quits Jan, even with **Run in
+background** enabled, because there is no tray icon to reopen the window.
+
+To restore the tray icon, make an Ayatana AppIndicator or AppIndicator library
+available to Jan and restart it. For Flatpak, the library must be included in the
+application sandbox; installing it only on the host does not make it available
+inside the sandbox.
+
 ## Broken Build
 
 To resolve the issue where Jan is stuck in a broken build after installation:

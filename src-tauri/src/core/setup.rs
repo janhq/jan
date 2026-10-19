@@ -16,6 +16,10 @@ use crate::core::mcp::helpers::add_server_config;
 
 use super::{mcp::helpers::run_mcp_commands, state::AppState};
 
+#[cfg(all(feature = "desktop", any(target_os = "linux", test)))]
+#[path = "tray_library.rs"]
+mod tray_library;
+
 /// The MCP store schema this build writes. `migrate_mcp_servers` walks every
 /// store older than this through the gates below, then pins this value. The
 /// upgrade-compat fixture test (tests/upgrade_compat.rs) asserts committed
@@ -378,6 +382,12 @@ pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(feature = "desktop")]
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
+    // libappindicator-sys panics when none of its runtime libraries can load.
+    // Probe before entering its lazy initializer; a missing optional tray must
+    // not take down Jan after the Local API Server has already started.
+    #[cfg(target_os = "linux")]
+    let _indicator_library = tray_library::load_appindicator()?;
+
     let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator_i = PredefinedMenuItem::separator(app)?;
