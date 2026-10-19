@@ -43,7 +43,7 @@ export const DialogDeleteModel = ({
     // Remove model from favorites if it exists
     removeFavorite(selectedModelId)
 
-    deleteModelCache(selectedModelId)
+    deleteModelCache(selectedModelId, provider.provider)
     serviceHub
       .models()
       .deleteModel(selectedModelId, provider.provider)

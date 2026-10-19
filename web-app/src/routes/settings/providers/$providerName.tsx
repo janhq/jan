@@ -522,7 +522,7 @@ function ProviderDetail() {
         const removedIds = provider.models
           .filter((m) => !m.imported && !keepIds.has(m.id))
           .map((m) => m.id)
-        addDeletedModels(removedIds)
+        addDeletedModels(removedIds, providerName)
         updateProvider(providerName, {
           ...provider,
           models: updatedModels,

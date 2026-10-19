@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useModelProvider } from '../useModelProvider'
 
+vi.mock('@/lib/utils', async (original) => ({
+  ...await original<typeof import('@/lib/utils')>(),
+  isLocalProvider: (provider: string) => provider === 'llamacpp' || provider === 'mlx',
+}))
+
 vi.mock('@/lib/fileStorage', () => ({
   fileStorage: {
     getItem: vi.fn(() => Promise.resolve(null)),
@@ -133,6 +138,46 @@ describe('useModelProvider - coverage', () => {
   })
 
   describe('deleteModel', () => {
+    it('deletes only the owning provider and leaves another selected model intact', () => {
+      const selected = { id: 'shared' }
+      useModelProvider.setState({ providers: [makeProvider('alpha', [selected]), makeProvider('beta', [selected])], selectedProvider: 'beta', selectedModel: selected })
+      useModelProvider.getState().deleteModel('shared', 'alpha')
+      expect(useModelProvider.getState().getProviderByName('beta')?.models).toEqual([selected])
+      expect(useModelProvider.getState().selectedModel).toBe(selected)
+    })
+
+    it('does not hide another provider during a later catalog refresh', () => {
+      const providers = [makeProvider('alpha', [{ id: 'shared' }]), makeProvider('beta', [{ id: 'shared' }])]
+      useModelProvider.setState({ providers })
+      useModelProvider.getState().deleteModel('shared', 'alpha')
+      useModelProvider.getState().setProviders(providers)
+      expect(useModelProvider.getState().getProviderByName('alpha')?.models).toEqual([])
+      expect(useModelProvider.getState().getProviderByName('beta')?.models).toHaveLength(1)
+    })
+
+    it('does not clear a remote deletion when a same-ID local model appears', () => {
+      useModelProvider.setState({ providers: [makeProvider('remote', [{ id: 'shared' }])] })
+      useModelProvider.getState().deleteModel('shared', 'remote')
+      useModelProvider.getState().setProviders([makeProvider('llamacpp', [{ id: 'shared' }]), makeProvider('remote', [{ id: 'shared' }])])
+      expect(useModelProvider.getState().getProviderByName('remote')?.models).toEqual([])
+      expect(useModelProvider.getState().getProviderByName('llamacpp')?.models).toHaveLength(1)
+    })
+
+    it('records refresh removals separately per provider without duplicates', () => {
+      const store = useModelProvider.getState()
+      store.addDeletedModels(['shared', 'shared'], 'alpha')
+      store.addDeletedModels(['shared'], 'beta')
+      store.setProviders([makeProvider('alpha', [{ id: 'shared' }]), makeProvider('beta', [{ id: 'shared' }]), makeProvider('gamma', [{ id: 'shared' }])])
+      expect(useModelProvider.getState().deletedModels).toHaveLength(2)
+      expect(store.getProviderByName('gamma')?.models).toHaveLength(1)
+    })
+
+    it('clears the selected model only when its owning model is deleted', () => {
+      useModelProvider.setState({ providers: [makeProvider('alpha', [{ id: 'shared' }])], selectedProvider: 'alpha', selectedModel: { id: 'shared' } })
+      useModelProvider.getState().deleteModel('shared', 'alpha')
+      expect(useModelProvider.getState().selectedModel).toBeNull()
+    })
+
     it('removes model and tracks in deletedModels', () => {
       const { result } = renderHook(() => useModelProvider())
       act(() => {
@@ -142,9 +187,9 @@ describe('useModelProvider - coverage', () => {
         })
       })
 
-      act(() => { result.current.deleteModel('m1') })
+      act(() => { result.current.deleteModel('m1', 'llamacpp') })
       expect(result.current.getProviderByName('llamacpp')?.models).toHaveLength(1)
-      expect(result.current.deletedModels).toContain('m1')
+      expect(result.current.deletedModels).toContainEqual({ provider: 'llamacpp', id: 'm1' })
     })
 
     it('handles non-array deletedModels gracefully', () => {
@@ -155,8 +200,8 @@ describe('useModelProvider - coverage', () => {
           deletedModels: null as any,
         })
       })
-      act(() => { result.current.deleteModel('m1') })
-      expect(result.current.deletedModels).toContain('m1')
+      act(() => { result.current.deleteModel('m1', 'p1') })
+      expect(result.current.deletedModels).toContainEqual({ provider: 'p1', id: 'm1' })
     })
   })
 

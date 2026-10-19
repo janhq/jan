@@ -89,7 +89,7 @@ export const DialogDeleteAllModels = ({
           }
         }
         removeFavorite(id)
-        deleteModelCache(id)
+        deleteModelCache(id, provider.provider)
         await serviceHub.models().deleteModel(id, provider.provider)
       } catch (err) {
         failed++
