@@ -77,6 +77,7 @@ export const DialogDeleteAllModels = ({
     if (isDeleting) return
     setIsDeleting(true)
     const ids = downloadedIds
+    const deletedIds = new Set<string>()
     let failed = 0
 
     for (const id of ids) {
@@ -88,9 +89,10 @@ export const DialogDeleteAllModels = ({
             // best-effort stop; continue with delete
           }
         }
+        await serviceHub.models().deleteModel(id, provider.provider)
+        deletedIds.add(id)
         removeFavorite(id)
         deleteModelCache(id)
-        await serviceHub.models().deleteModel(id, provider.provider)
       } catch (err) {
         failed++
         console.error(`Failed to delete model ${id}:`, err)
@@ -101,7 +103,7 @@ export const DialogDeleteAllModels = ({
       const providers = await serviceHub.providers().getProviders()
       const filtered = providers.map((p) =>
         p.provider === provider.provider
-          ? { ...p, models: p.models.filter((m) => !ids.includes(m.id)) }
+          ? { ...p, models: p.models.filter((m) => !deletedIds.has(m.id)) }
           : p
       )
       setProviders(filtered)
