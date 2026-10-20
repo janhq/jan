@@ -132,6 +132,77 @@ describe('useAppState - coverage', () => {
     expect(result.current.promptProgress).toBeUndefined()
   })
 
+  it('should update live token stats globally and per-thread', () => {
+    const { result } = renderHook(() => useAppState())
+    const stats = {
+      promptTokens: 12,
+      completionTokens: 34,
+      tokensPerSecond: 56.7,
+      promptPerSecond: 89.1,
+    }
+
+    act(() => {
+      result.current.updateLiveTokenStats(stats)
+      result.current.updateThreadLiveTokenStats('t1', stats)
+    })
+    expect(result.current.liveTokenStats).toEqual(stats)
+    expect(result.current.liveTokenStatsByThread['t1']).toEqual(stats)
+
+    act(() => {
+      result.current.updateLiveTokenStats(undefined)
+      result.current.updateThreadLiveTokenStats('t1', undefined)
+    })
+    expect(result.current.liveTokenStats).toBeUndefined()
+    expect(result.current.liveTokenStatsByThread['t1']).toBeUndefined()
+  })
+
+  it('should clear liveTokenStatsByThread on clearThreadState', () => {
+    const { result } = renderHook(() => useAppState())
+
+    act(() => {
+      result.current.updateThreadLiveTokenStats('t1', {
+        promptTokens: 1,
+        completionTokens: 2,
+        tokensPerSecond: 3,
+        promptPerSecond: 4,
+      })
+      result.current.clearThreadState('t1')
+    })
+    expect(result.current.liveTokenStatsByThread['t1']).toBeUndefined()
+  })
+
+  it('should update model load progress globally and per-thread', () => {
+    const { result } = renderHook(() => useAppState())
+    const progress = { modelId: 'model-1', value: 0.42, stage: 'text_model' }
+
+    act(() => {
+      result.current.updateModelLoadProgress(progress)
+      result.current.updateThreadModelLoadProgress('t1', progress)
+    })
+    expect(result.current.modelLoadProgress).toEqual(progress)
+    expect(result.current.modelLoadProgressByThread['t1']).toEqual(progress)
+
+    act(() => {
+      result.current.updateModelLoadProgress(undefined)
+      result.current.updateThreadModelLoadProgress('t1', undefined)
+    })
+    expect(result.current.modelLoadProgress).toBeUndefined()
+    expect(result.current.modelLoadProgressByThread['t1']).toBeUndefined()
+  })
+
+  it('should clear modelLoadProgressByThread on clearThreadState', () => {
+    const { result } = renderHook(() => useAppState())
+
+    act(() => {
+      result.current.updateThreadModelLoadProgress('t1', {
+        modelId: 'model-1',
+        value: 0.5,
+      })
+      result.current.clearThreadState('t1')
+    })
+    expect(result.current.modelLoadProgressByThread['t1']).toBeUndefined()
+  })
+
   it('should set active models', () => {
     const { result } = renderHook(() => useAppState())
 
@@ -139,6 +210,26 @@ describe('useAppState - coverage', () => {
       result.current.setActiveModels(['model-a', 'model-b'])
     })
     expect(result.current.activeModels).toEqual(['model-a', 'model-b'])
+  })
+
+  it('should remove a single active model', () => {
+    const { result } = renderHook(() => useAppState())
+
+    act(() => {
+      result.current.setActiveModels(['model-a', 'model-b'])
+      result.current.removeActiveModel('model-a')
+    })
+    expect(result.current.activeModels).toEqual(['model-b'])
+  })
+
+  it('should no-op removing a model that is not active', () => {
+    const { result } = renderHook(() => useAppState())
+
+    act(() => {
+      result.current.setActiveModels(['model-a'])
+      result.current.removeActiveModel('model-does-not-exist')
+    })
+    expect(result.current.activeModels).toEqual(['model-a'])
   })
 
 })

@@ -45,6 +45,7 @@ vi.mock('@ai-sdk/openai', () => ({
     ;(globalThis as any).__capturedOpenAICfg = config
     const fn: any = vi.fn(() => ({ type: 'openai' }))
     fn.chat = vi.fn(() => ({ type: 'openai' }))
+    fn.responses = vi.fn(() => ({ type: 'openai' }))
     return fn
   }),
 }))
@@ -87,7 +88,7 @@ vi.mock('@/lib/provider-api-keys', () => ({
   }),
 }))
 
-import { ModelFactory } from '../model-factory'
+import { ModelFactory, LOOPBACK_DIRECT_PROXY } from '../model-factory'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
@@ -143,7 +144,15 @@ describe('model-factory deep coverage', () => {
     it('extractMetadata handles missing fields in timings', async () => {
       const ext = await getExtractor()
       const result = await ext.extractMetadata({ parsedBody: { timings: {} } })
-      expect(result.providerMetadata.promptTokens).toBeNull()
+      expect(result.providerMetadata.promptTokens).toBe(0)
+    })
+
+    it('extractMetadata sums prompt_n and cache_n (KV-cache-reused tokens) into promptTokens', async () => {
+      const ext = await getExtractor()
+      const result = await ext.extractMetadata({
+        parsedBody: { timings: { prompt_n: 21, cache_n: 200, predicted_n: 95 } },
+      })
+      expect(result.providerMetadata.promptTokens).toBe(221)
     })
 
     it('createStreamExtractor processes chunks and builds metadata', async () => {
@@ -159,6 +168,58 @@ describe('model-factory deep coverage', () => {
       const s = ext.createStreamExtractor()
       s.processChunk({})
       expect(s.buildMetadata()).toBeUndefined()
+    })
+
+    it('createStreamExtractor publishes live token stats globally and per-thread on every chunk', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().setCurrentStreamThreadId('thread-live')
+
+      const ext = await getExtractor()
+      const s = ext.createStreamExtractor()
+      s.processChunk({
+        timings: { prompt_n: 5, predicted_n: 15, predicted_per_second: 35, prompt_per_second: 65 },
+      })
+
+      expect(useAppState.getState().liveTokenStats).toEqual({
+        promptTokens: 5,
+        completionTokens: 15,
+        tokensPerSecond: 35,
+        promptPerSecond: 65,
+      })
+      expect(useAppState.getState().liveTokenStatsByThread['thread-live']).toEqual({
+        promptTokens: 5,
+        completionTokens: 15,
+        tokensPerSecond: 35,
+        promptPerSecond: 65,
+      })
+
+      s.processChunk({
+        timings: { prompt_n: 5, predicted_n: 20, predicted_per_second: 40, prompt_per_second: 65 },
+      })
+      expect(useAppState.getState().liveTokenStatsByThread['thread-live'].completionTokens).toBe(20)
+
+      useAppState.getState().setCurrentStreamThreadId(undefined)
+      useAppState.getState().updateThreadLiveTokenStats('thread-live', undefined)
+    })
+
+    it('live promptTokens includes cache_n so context usage does not reset on cached turns', async () => {
+      const { useAppState } = await import('@/hooks/useAppState')
+      useAppState.getState().setCurrentStreamThreadId('thread-cached')
+
+      const ext = await getExtractor()
+      const s = ext.createStreamExtractor()
+      // Deep into a conversation: only 21 tokens are freshly processed this
+      // turn, the other 20,935 are served from the KV cache.
+      s.processChunk({
+        timings: { prompt_n: 21, cache_n: 20935, predicted_n: 95, predicted_per_second: 30 },
+      })
+
+      expect(useAppState.getState().liveTokenStatsByThread['thread-cached'].promptTokens).toBe(
+        20956
+      )
+
+      useAppState.getState().setCurrentStreamThreadId(undefined)
+      useAppState.getState().updateThreadLiveTokenStats('thread-cached', undefined)
     })
   })
 
@@ -190,6 +251,22 @@ describe('model-factory deep coverage', () => {
       expect(body.auto_compact).toBeUndefined()
     })
 
+    // The engine is on loopback; a system or env proxy must never see the
+    // request, or a VPN or corporate proxy breaks local chat.
+    it('sends to the engine with every loopback host exempt from proxies', async () => {
+      vi.mocked(invoke).mockResolvedValue({ port: 8080, api_key: 'k' })
+      await ModelFactory.createModel('m', mkProvider('llamacpp'), {})
+      await getOpts().fetch('http://localhost:8080/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ messages: [] }),
+      })
+      const init = vi.mocked(httpFetch).mock.calls[0][1] as any
+      expect(init.proxy).toEqual(LOOPBACK_DIRECT_PROXY)
+      for (const host of ['localhost', '127.0.0.1', '::1']) {
+        expect(init.proxy.all.noProxy.split(',')).toContain(host)
+      }
+    })
+
     it('throws when startModel fails with Error', async () => {
       mockStartModel.mockRejectedValueOnce(new Error('GPU fail'))
       await expect(ModelFactory.createModel('m', mkProvider('llamacpp'), {})).rejects.toThrow('Failed to start model: GPU fail')
@@ -198,6 +275,25 @@ describe('model-factory deep coverage', () => {
     it('throws when startModel fails with non-Error', async () => {
       mockStartModel.mockRejectedValueOnce({ code: 'ENOMEM' })
       await expect(ModelFactory.createModel('m', mkProvider('llamacpp'), {})).rejects.toThrow('Failed to start model:')
+    })
+
+    // A serialized engine error is a plain object; it used to reach the user as
+    // raw JSON including the Rust-authored English message.
+    it('does not leak a serialized engine error as raw JSON', async () => {
+      mockStartModel.mockRejectedValueOnce({
+        code: 'MISSING_SHARED_LIBRARY',
+        message: 'A library this backend depends on is missing.',
+        details: 'libnccl.so.2: cannot open shared object file',
+        missing_libraries: ['libnccl.so.2'],
+      })
+
+      const err = await ModelFactory.createModel('m', mkProvider('llamacpp'), {}).catch(
+        (e) => e as Error
+      )
+
+      expect(err.message).not.toContain('{')
+      expect(err.message).not.toContain('backend depends on')
+      expect(err.message).toContain('libnccl.so.2')
     })
   })
 
@@ -225,6 +321,7 @@ describe('model-factory deep coverage', () => {
       await new Promise((r) => setTimeout(r, 20))
       expect(vi.mocked(httpFetch)).toHaveBeenCalledTimes(2)
       expect(vi.mocked(httpFetch).mock.calls[1][0]).toBe('http://localhost:9090/v1/cancel')
+      expect((vi.mocked(httpFetch).mock.calls[1][1] as any).proxy).toEqual(LOOPBACK_DIRECT_PROXY)
     })
 
     it('throws when startModel fails', async () => {

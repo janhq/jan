@@ -27,6 +27,20 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@janhq/assistant-extension': path.resolve(__dirname, '../extensions/assistant-extension/dist/index.js'),
+      '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/dist/index.js'),
+      '@janhq/download-extension': path.resolve(__dirname, '../extensions/download-extension/dist/index.js'),
+      '@janhq/llamacpp-extension': path.resolve(__dirname, '../extensions/llamacpp-extension/dist/index.js'),
+      '@janhq/mlx-extension': path.resolve(__dirname, '../extensions/mlx-extension/dist/index.js'),
+      '@janhq/rag-extension': path.resolve(__dirname, '../extensions/rag-extension/dist/index.js'),
+      '@janhq/vector-db-extension': path.resolve(__dirname, '../extensions/vector-db-extension/dist/index.js'),
+      // Resolve the plugin to guest-js source, not its built dist-js, so
+      // tests exercise the wrappers the app actually calls.
+      '@janhq/tauri-plugin-llamacpp-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index.ts'),
+      // The plugin ships its own @tauri-apps/api install; without this the
+      // aliased guest-js would get a second module instance that
+      // vi.mock('@tauri-apps/api/core') cannot intercept.
+      '@tauri-apps/api/core': path.resolve(__dirname, './node_modules/@tauri-apps/api/core.js'),
     },
   },
   define: {

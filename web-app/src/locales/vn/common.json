@@ -222,6 +222,7 @@
     "delete": "Xóa"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Cài đặt mô hình - {{modelId}}",
     "description": "Định cấu hình cài đặt mô hình để tối ưu hóa hiệu suất và hành vi."
   },

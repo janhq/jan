@@ -26,6 +26,14 @@ export class TauriHardwareService extends DefaultHardwareService {
     return llamacppExtension.getDevices()
   }
 
+  async reconcileLlamacppDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
+    const llamacppExtension = window.core.extensionManager.getByName(
+      '@janhq/llamacpp-extension'
+    )
+    if (!llamacppExtension?.reconcileEngineDevices) return 'unchanged'
+    return llamacppExtension.reconcileEngineDevices()
+  }
+
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
     // TODO: llama.cpp extension should handle this
     console.log(data)

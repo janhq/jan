@@ -20,28 +20,45 @@ on:
         type: boolean
         default: false
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-22.04'
+        description: >
+          Label of the runner to build on. A self-hosted label is what carries
+          the engine toolchain; the default keeps the GitHub-hosted image, which
+          only has enough for the vulkan variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'vulkan'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker: a `-` joined
+          backend list, e.g. vulkan, cuda13-vulkan, rocm-vulkan. One CUDA major
+          per bundle, so cuda12 and cuda13 are separate builds.
 jobs:
   build-linux-x64-external:
-    runs-on: ubuntu-22.04
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Free Disk Space Before Build
-        run: |
-          echo "Disk space before cleanup:"
-          df -h
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo apt-get clean
-          echo "Disk space after cleanup:"
-          df -h
+      # Hosted only: it uninstalls rather than deletes, which on a persistent
+      # runner would outlive the job. tool-cache holds the Node the next step
+      # wants; swap keeps a parallel engine compile from being OOM-killed.
+      - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false # minutes of apt; only the rocm job needs it
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: true
 
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
@@ -65,6 +82,15 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
+
+      # `make build` compiles jan-llama-worker, which the deb and the AppImage
+      # both bundle. The default variant is vulkan because it covers AMD, Intel
+      # and NVIDIA through one driver-provided backend; a cuda or rocm variant
+      # needs a caller-supplied runner that carries that toolkit.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
 
       - name: Update app version
         run: |
@@ -116,7 +142,6 @@ jobs:
             chmod +x .github/scripts/rename-tauri-app.sh
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}

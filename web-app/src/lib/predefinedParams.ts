@@ -30,6 +30,9 @@ export type SamplerCap =
   | 'grammar'
   | 'json_schema'
   | 'ignore_eos'
+  | 'sampler_order'
+  | 'backend_sampling'
+  | 'thinking_budget'
   | 'client_only'
 
 export interface ParamControllerProps {
@@ -223,7 +226,8 @@ export const paramsSettings: Record<string, ParamDef> = {
   grammar: {
     key: 'grammar',
     title: 'Grammar (GBNF)',
-    description: 'GBNF grammar to constrain generations.',
+    description:
+      'GBNF grammar to constrain generations. Ignored while tools are enabled, and takes precedence over JSON Schema.',
     value: '',
     controllerType: 'textarea',
     controllerProps: { rows: 4, placeholder: 'root ::= ...' },
@@ -232,7 +236,8 @@ export const paramsSettings: Record<string, ParamDef> = {
   json_schema: {
     key: 'json_schema',
     title: 'JSON Schema',
-    description: 'JSON schema constraining the output to valid JSON.',
+    description:
+      'JSON schema constraining the output to valid JSON. Ignored if a grammar is also set.',
     value: '',
     controllerType: 'textarea',
     controllerProps: { rows: 4, placeholder: '{"type":"object", ...}' },
@@ -332,10 +337,12 @@ export const paramsSettings: Record<string, ParamDef> = {
   dry_penalty_last_n: {
     key: 'dry_penalty_last_n',
     title: 'DRY Penalty Window',
-    description: 'Recent-token window DRY scans. -1 = full context, 0 = off.',
-    value: -1,
+    // Upstream throws on a negative window rather than clamping, so the old
+    // -1 default made merely enabling this param fail every request.
+    description: 'Recent-token window DRY scans. 0 = off.',
+    value: 64,
     controllerType: 'input',
-    controllerProps: { min: -1, step: 1 },
+    controllerProps: { min: 0, step: 1 },
     capability: 'dry',
     disabledBy: (v) =>
       Number(v.dry_multiplier) === 0 ? 'Set DRY Multiplier > 0' : null,
@@ -348,13 +355,50 @@ export const paramsSettings: Record<string, ParamDef> = {
     controllerType: 'checkbox',
     capability: 'ignore_eos',
   },
+  repeat_last_n: {
+    key: 'repeat_last_n',
+    title: 'Repeat Last N',
+    description:
+      'Number of recent tokens considered for the repeat penalty. 0 = disabled.',
+    value: 64,
+    controllerType: 'input',
+    controllerProps: { min: 0, step: 1 },
+    capability: 'repetition',
+  },
+  samplers: {
+    key: 'samplers',
+    title: 'Sampler Order',
+    description:
+      'Order in which samplers are applied, comma-separated (e.g. "top_k,typ_p,top_p,min_p,xtc,temperature"). Empty = server default order.',
+    value: '',
+    controllerType: 'input',
+    controllerProps: { placeholder: 'top_k,typ_p,top_p,min_p,xtc,temperature' },
+    capability: 'sampler_order',
+  },
+  backend_sampling: {
+    key: 'backend_sampling',
+    title: 'Backend Sampling',
+    description: 'Use the model backend\'s own sampler instead of llama.cpp\'s.',
+    value: false,
+    controllerType: 'checkbox',
+    capability: 'backend_sampling',
+  },
+  thinking_budget_tokens: {
+    key: 'thinking_budget_tokens',
+    title: 'Thinking Budget',
+    description:
+      'Maximum tokens the model may spend on reasoning before being forced to answer. -1 = unlimited.',
+    value: -1,
+    controllerType: 'input',
+    controllerProps: { min: -1, step: 1 },
+    capability: 'thinking_budget',
+  },
 }
 
 /**
  * Sampler keys exposed as per-model defaults in the model edit dialog. Persist
  * to the model (model.yml → router preset for llamacpp) and act as defaults the
  * local API server uses; per-assistant and per-request values override them.
- * `repeat_last_n` is intentionally omitted — it has no paramsSettings entry.
  */
 export const SAMPLER_DEFAULT_KEYS = [
   'temperature',
@@ -362,6 +406,7 @@ export const SAMPLER_DEFAULT_KEYS = [
   'top_k',
   'min_p',
   'repeat_penalty',
+  'repeat_last_n',
   'presence_penalty',
   'frequency_penalty',
 ] as const
@@ -417,6 +462,10 @@ export const LLAMACPP_ONLY_PARAM_KEYS: ReadonlySet<string> = new Set([
   'ignore_eos',
   'min_p',
   'repeat_penalty',
+  'repeat_last_n',
+  'samplers',
+  'backend_sampling',
+  'thinking_budget_tokens',
 ])
 
 export function evaluateDisabled(
@@ -519,7 +568,12 @@ export const paramCategories: CategoryDef[] = [
   {
     id: 'penalties',
     title: 'Penalties',
-    paramKeys: ['frequency_penalty', 'presence_penalty', 'repeat_penalty'],
+    paramKeys: [
+      'frequency_penalty',
+      'presence_penalty',
+      'repeat_penalty',
+      'repeat_last_n',
+    ],
     groupIds: [],
   },
   {
@@ -532,13 +586,14 @@ export const paramCategories: CategoryDef[] = [
       'auto_compact',
       'max_context_tokens',
       'ignore_eos',
+      'thinking_budget_tokens',
     ],
     groupIds: [],
   },
   {
     id: 'advanced',
     title: 'Advanced samplers',
-    paramKeys: ['typical_p', 'top_n_sigma'],
+    paramKeys: ['typical_p', 'top_n_sigma', 'samplers', 'backend_sampling'],
     groupIds: ['mirostat', 'dry', 'xtc', 'dynatemp'],
   },
 ]

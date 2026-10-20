@@ -17,6 +17,12 @@ export * from './events'
 export * from './fs'
 
 /**
+ * Export app settings module.
+ * @module
+ */
+export * from './settings'
+
+/**
  * Export Extension module.
  * @module
  */
@@ -33,3 +39,9 @@ export * from './extensions'
  * @module
  */
 export * from './models'
+
+/**
+ * Export shared logger.
+ * @module
+ */
+export * from './logger'

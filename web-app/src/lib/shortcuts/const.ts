@@ -37,11 +37,13 @@ export const PlatformShortcuts: ShortcutMap = {
   // Zoom shortcuts - same on both platforms (standard shortcuts)
   [ShortcutAction.ZOOM_IN]: {
     key: '+',
+    aliasKeys: ['=', 'Add'],
     usePlatformMetaKey: true,
   },
 
   [ShortcutAction.ZOOM_OUT]: {
     key: '-',
+    aliasKeys: ['_', 'Subtract'],
     usePlatformMetaKey: true,
   },
 }

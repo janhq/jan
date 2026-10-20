@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Používáte nejnovější verzi",
   "devVersion": "Detekována vývojová verze",
   "updateError": "Nepodařilo se zkontrolovat aktualizace",
-  "checkForBackendUpdates": "Zkontrolovat aktualizace Llamacpp",
-  "checkForBackendUpdatesDesc": "Zkontrolujte, zda je k dispozici novější verze backendu Llamacpp.",
-  "checkingForBackendUpdates": "Kontrolování aktualizací Llamacpp...",
-  "noBackendUpdateAvailable": "Používáte nejnovější verzi Llamacpp",
-  "backendUpdateError": "Nepodařilo se zkontrolovat aktualizace Llamacpp",
   "changeLocation": "Změnit umístění",
   "copied": "Zkopírováno",
   "copyPath": "Kopírovat cestu",
@@ -297,15 +292,6 @@
       "cancel": "Zrušit",
       "changeLocation": "Změnit umístění"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Nová verze Llamacpp {{version}}",
-    "backendUpdateAvailable": "Dostupná aktualizace Llamacpp",
-    "remindMeLater": "Připomenout později",
-    "updating": "Aktualizování...",
-    "updateNow": "Aktualizovat nyní",
-    "updateSuccess": "Llamacpp úspěšně aktualizován",
-    "updateError": "Nepodařilo se aktualizovat Llamacpp"
   },
   "backendInstallSuccess": "Backend úspěšně nainstalován",
   "backendInstallError": "Nepodařilo se nainstalovat backend"

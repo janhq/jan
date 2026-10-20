@@ -153,16 +153,26 @@ export type ToolResult = {
   error?: string
 }
 
+// Reasoning models wrap their chain-of-thought in a tag we strip out: <think>,
+// <thought> (Gemma), <thinking>, <reasoning>, plus namespaced variants like
+// <mm:think> (MiniMax). Matches an optional `ns:` prefix + a known keyword and
+// tolerates attributes on the opening tag. `\1` binds the close tag to the open.
+const REASONING_TAG = '(?:[a-zA-Z][a-zA-Z0-9]*:)?(?:think|thinking|thought|reasoning)'
+const openReasoningTagRe = () => new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>`, 'i')
+const completedReasoningTagRe = () =>
+  new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*?)</\\1>`, 'i')
+
 /**
  * Parse reasoning segments from the given text.
  * @param text - The text to parse reasoning from.
  * @returns
  */
 export const parseReasoning = (text: string) => {
-  // Check for thinking formats
-  const hasThinkTag =
-    (text.includes('<think>') && !text.includes('</think>')) ||
-    (text.includes('<thought>') && !text.includes('</thought>'))
+  // In-progress reasoning: an opening tag whose matching close hasn't streamed yet.
+  const openTag = text.match(openReasoningTagRe())
+  const hasThinkTag = openTag
+    ? !new RegExp(`</${openTag[1]}>`, 'i').test(text)
+    : false
   const hasAnalysisChannel =
     text.includes('<|channel|>analysis<|message|>') &&
     !text.includes('<|start|>assistant<|channel|>final<|message|>')
@@ -171,7 +181,7 @@ export const parseReasoning = (text: string) => {
     return { reasoningSegment: text, textSegment: '' }
 
   // Check for completed think tag format
-  const thinkMatch = text.match(/<(think|thought)>([\s\S]*?)<\/\1>/)
+  const thinkMatch = text.match(completedReasoningTagRe())
   if (thinkMatch?.index !== undefined) {
     const splitIndex = thinkMatch.index + thinkMatch[0].length
     return {
@@ -195,6 +205,48 @@ export const parseReasoning = (text: string) => {
   return { reasoningSegment: undefined, textSegment: text }
 }
 
+export type ReasoningTextPart = { type: 'reasoning' | 'text'; text: string }
+
+/**
+ * Split a raw assistant string into reasoning/text UIMessage parts, pulling out
+ * `<think>`/`<thought>`-wrapped reasoning (via {@link parseReasoning}) so it
+ * renders in the collapsible reasoning UI instead of inline as literal tags.
+ * Shared by the chat message loader and the code agent transcript so both
+ * surface reasoning the same way.
+ */
+export function reasoningPartsFromText(text: string): ReasoningTextPart[] {
+  const parts: ReasoningTextPart[] = []
+  const { reasoningSegment, textSegment } = parseReasoning(text)
+
+  if (reasoningSegment) {
+    // Extract the reasoning text from inside the tag (group 2 = content).
+    const completedMatch = reasoningSegment.match(
+      new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*)</\\1>`, 'i')
+    )
+    if (completedMatch) {
+      parts.push({ type: 'reasoning', text: completedMatch[2] })
+    } else {
+      // In-progress reasoning - content after an unclosed reasoning tag.
+      const inProgressMatch = reasoningSegment.match(
+        new RegExp(`<(${REASONING_TAG})(?:\\s[^>]*)?>([\\s\\S]*)`, 'i')
+      )
+      if (inProgressMatch) {
+        parts.push({ type: 'reasoning', text: inProgressMatch[2] })
+      }
+    }
+  }
+
+  if (textSegment) {
+    const trimmedText = textSegment.trim()
+    if (trimmedText) parts.push({ type: 'text', text: trimmedText })
+  } else if (!reasoningSegment) {
+    // No reasoning segment, just add the text as-is.
+    parts.push({ type: 'text', text })
+  }
+
+  return parts
+}
+
 /**
  * Convert Jan's ThreadMessage format to AI SDK UIMessage format.
  * This is used to load existing messages into the AI SDK chat.
@@ -214,50 +266,9 @@ export function convertThreadMessageToUIMessage(
         text: content.text.value,
       })
     } else if (content.type === 'text' && content.text?.value) {
-      // Text content - check if it contains old-format reasoning in <think> tags
-      const { reasoningSegment, textSegment } = parseReasoning(
-        content.text.value
-      )
-
-      // BACKWARD COMPATIBILITY: Handle old format with <think> tags
-      if (reasoningSegment) {
-        // Extract reasoning text from <think> or <thought> tags
-        const completedMatch = reasoningSegment.match(
-          /<(think|thought)>([\s\S]*)<\/\1>/
-        )
-        if (completedMatch) {
-          parts.push({
-            type: 'reasoning',
-            text: completedMatch[2],
-          })
-        } else {
-          // In-progress reasoning - extract content after <think> or <thought> tag
-          const inProgressMatch = reasoningSegment.match(/<(think|thought)>([\s\S]*)/)
-          if (inProgressMatch) {
-            parts.push({
-              type: 'reasoning',
-              text: inProgressMatch[2],
-            })
-          }
-        }
-      }
-
-      if (textSegment) {
-        // Trim leading whitespace/newlines from the text segment
-        const trimmedText = textSegment.trim()
-        if (trimmedText) {
-          parts.push({
-            type: 'text',
-            text: trimmedText,
-          })
-        }
-      } else if (!reasoningSegment) {
-        // No reasoning segment, just add the text as-is
-        parts.push({
-          type: 'text',
-          text: content.text.value,
-        })
-      }
+      // Text content - split out any legacy <think>/<thought> reasoning so it
+      // renders in the reasoning UI instead of inline (see reasoningPartsFromText).
+      parts.push(...reasoningPartsFromText(content.text.value))
     } else if (content.type === 'image_url' && content.image_url?.url) {
       parts.push({
         type: 'file',
@@ -282,6 +293,14 @@ export function convertThreadMessageToUIMessage(
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
+      // A call that failed, was denied or was stopped has no output; its error
+      // is kept beside the content (see `toolErrorsOf`) so it reloads as an
+      // error and not as a call that is still running.
+      const errorText = (
+        threadMessage.metadata as
+          | { toolErrors?: Record<string, string> }
+          | undefined
+      )?.toolErrors?.[content.tool_call_id ?? '']
       if (content.output != null) {
         parts.push({
           type: `tool-${content.tool_name}`,
@@ -289,6 +308,14 @@ export function convertThreadMessageToUIMessage(
           input: content.input,
           state: 'output-available',
           output: content.output,
+        })
+      } else if (errorText) {
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'output-error',
+          errorText,
         })
       } else {
         parts.push({
@@ -428,6 +455,30 @@ export function convertThreadMessagesToUIMessages(
   return threadMessages
     .map(convertThreadMessageToUIMessage)
     .filter((msg): msg is UIMessage => msg !== null)
+}
+
+/**
+ * The error text of each tool call in `message` that ended in an error (failed,
+ * denied, or stopped), by tool call id, for the message's persisted metadata.
+ * Such a call has no output to store, so without this it reloads as a call that
+ * never finished. Undefined when there is none.
+ */
+export function toolErrorsOf(
+  message: UIMessage
+): Record<string, string> | undefined {
+  const errors: Record<string, string> = {}
+  for (const part of (message.parts ?? []) as any[]) {
+    if (
+      typeof part?.type === 'string' &&
+      part.type.startsWith('tool-') &&
+      part.state === 'output-error' &&
+      part.toolCallId &&
+      part.errorText
+    ) {
+      errors[part.toolCallId] = part.errorText
+    }
+  }
+  return Object.keys(errors).length > 0 ? errors : undefined
 }
 
 /**

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
+vi.mock('../backend-settings')
+
 describe('migrateLegacyModels', () => {
   let extension: llamacpp_extension
 

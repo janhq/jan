@@ -1,5 +1,7 @@
 .env
 error.log
+# Runtime agent workspace scaffolded by ensure_project (not source)
+.jan/
 node_modules
 *.tgz
 dist
@@ -31,11 +33,15 @@ OpenCode.md
 Claude.md
 archive/
 .cache/
+.jan/
 
 # auto qa
 autoqa/trajectories
 autoqa/recordings
-autoqa/__pycache__
+
+# python bytecode
+__pycache__/
+*.py[cod]
 
 # Astro / Starlight specific
 website/dist/
@@ -71,3 +77,14 @@ llm-docs
 .claude/agents
 .claude
 CLAUDE.md
+JAN.md
+
+## agent
+.jan
+
+# Vendored llama.cpp: a shallow clone of the pinned tag, fetched by
+# `make engine-source`. Never committed -- the pin lives in build.rs.
+src-tauri/plugins/tauri-plugin-llamacpp/vendor/
+
+# wdio writes per-session driver logs here (e2e/wdio.conf.ts outputDir).
+e2e/logs

@@ -1,0 +1,45 @@
+---
+title: Web Search and Fetch
+description: Let the agent look things up when the answer isn't in your project.
+keywords: [Jan, Jan Agent, web search, web fetch, browse, research]
+---
+
+import { Callout } from 'nextra/components'
+
+# Web Search and Fetch
+
+Two tools let the agent go outside your project for information. Neither prompts - they read public
+pages and change nothing on your machine.
+
+| Tool | What it does |
+| --- | --- |
+| `web_search` | Search the web. Returns ranked results with title, URL, snippet, and publish date where available |
+| `web_fetch` | Fetch a URL and return its readable text, with the source URL and title |
+
+`web_fetch` returns extracted text, not raw HTML, and the output is bounded so one long page can't
+consume the context window.
+
+## When it helps
+
+- Checking a library's current API instead of relying on what the model recalls
+- Reading an error message someone else has already hit
+- Pulling the changelog for a dependency before upgrading it
+
+A useful habit is to ask for the source: "check the docs for X and link what you used." You then get
+a citation you can verify rather than a confident summary you can't.
+
+<Callout type="info">
+Web results are only as current as what the search returns, and a model will still summarize what it
+reads. For anything load-bearing, follow the link.
+</Callout>
+
+## Errors
+
+A failed search or fetch comes back as an error the agent can see, prefixed so it isn't mistaken for
+a successful empty result. That matters: a silent empty result would look like "nothing exists,"
+which is a very different conclusion from "the lookup failed."
+
+## Going further with MCP
+
+For anything beyond reading public pages - a private wiki, an internal search index, a browser that
+holds a login - add an [MCP server](/docs/agent/mcp). The built-in tools deliberately stay simple.

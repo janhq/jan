@@ -1,0 +1,77 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]    |
+|──────────────────────────────────────────────────────────────────────|
+|                                                                      |
+|                                                                      |
+|                                                                      |
+|                                                                      |
+|                                                                      |
+|                                                                      |
+|╭ permission required ───────────────────────────────────────────────╮|
+|│ edit wants write                                                   │|
+|│ on src/greet.rs                                                    │|
+|│  fn greet() {                                                      │|
+|│ -    println!("hi ansi16");                                        │|
+|│ +    println!("hello ansi16");                                     │|
+|│  }                                                                 │|
+|│ ▶ Allow once                                                       │|
+|│   Allow always (this thread)                                       │|
+|│   Deny                                                             │|
+|╰────────────────────────────────────────────────────────────────────╯|
+|>   working…       (Esc to cancel, type to steer the agent)           |
+|                                                                      |
+| ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=Yellow
+ 0 55..57 fg=Cyan
+ 0 57..66 fg=Cyan mod=BOLD
+ 8 0..1 fg=Yellow
+ 8 1..22 fg=Black bg=Yellow mod=BOLD
+ 8 22..70 fg=Yellow
+ 9 0..1 fg=Yellow
+ 9 2..6 fg=Cyan mod=BOLD
+ 9 6..13 fg=DarkGray
+ 9 13..18 fg=Yellow mod=BOLD
+ 9 69..70 fg=Yellow
+10 0..1 fg=Yellow
+10 2..5 fg=DarkGray
+10 69..70 fg=Yellow
+11 0..1 fg=Yellow
+11 2..3 mod=DIM
+11 69..70 fg=Yellow
+12 0..1 fg=Yellow
+12 2..3 fg=Red mod=BOLD
+12 3..29 fg=Red
+12 69..70 fg=Yellow
+13 0..1 fg=Yellow
+13 2..3 fg=Green mod=BOLD
+13 3..32 fg=Green
+13 69..70 fg=Yellow
+14 0..1 fg=Yellow
+14 2..3 mod=DIM
+14 69..70 fg=Yellow
+15 0..1 fg=Yellow
+15 2..68 fg=Cyan mod=BOLD
+15 69..70 fg=Yellow
+16 0..1 fg=Yellow
+16 69..70 fg=Yellow
+17 0..1 fg=Yellow
+17 69..70 fg=Yellow
+18 0..70 fg=Yellow
+19 0..2 fg=Cyan mod=BOLD
+19 2..3 mod=REVERSED
+19 4..12 mod=DIM | ITALIC
+19 18..59 mod=DIM | ITALIC
+21 1..4 fg=Yellow mod=BOLD
+21 4..11 mod=DIM
+21 14..19 fg=Yellow mod=BOLD
+21 19..27 mod=DIM
+21 30..33 fg=Yellow mod=BOLD
+21 33..38 mod=DIM
+21 41..47 fg=Yellow mod=BOLD
+21 47..54 mod=DIM

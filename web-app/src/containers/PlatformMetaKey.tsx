@@ -1,9 +1,5 @@
 import { useMemo } from 'react'
-
-// Detect if the user is on macOS
-const isMac =
-  typeof navigator !== 'undefined' &&
-  navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+import { isMac } from '@/lib/shortcuts'
 
 export function PlatformMetaKey() {
   const metaKeySymbol = useMemo(() => {

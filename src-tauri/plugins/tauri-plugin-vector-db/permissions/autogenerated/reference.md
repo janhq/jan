@@ -15,6 +15,9 @@ Default permissions for the vector-db plugin
 - `allow-chunk-text`
 - `allow-list-attachments`
 - `allow-get-chunks`
+- `allow-memory-index`
+- `allow-memory-search`
+- `allow-memory-clear`
 
 ## Permission Table
 
@@ -307,32 +310,6 @@ Enables the memory_clear command without any pre-configured scope.
 <td>
 
 Denies the memory_clear command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`vector-db:allow-memory-delete-message`
-
-</td>
-<td>
-
-Enables the memory_delete_message command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`vector-db:deny-memory-delete-message`
-
-</td>
-<td>
-
-Denies the memory_delete_message command without any pre-configured scope.
 
 </td>
 </tr>

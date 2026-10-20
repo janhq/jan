@@ -32,11 +32,11 @@ if [ "$PLATFORM" = "ubuntu" ]; then
     }
 
     # Make Jan executable if needed
-    if [ -f "/usr/bin/Jan-nightly" ]; then
-        sudo chmod +x /usr/bin/Jan-nightly
+    if [ -f "/usr/bin/Jan-Desktop-nightly" ]; then
+        sudo chmod +x /usr/bin/Jan-Desktop-nightly
     fi
-    if [ -f "/usr/bin/Jan" ]; then
-        sudo chmod +x /usr/bin/Jan
+    if [ -f "/usr/bin/Jan-Desktop" ]; then
+        sudo chmod +x /usr/bin/Jan-Desktop
     fi
 fi
 

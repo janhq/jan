@@ -70,12 +70,20 @@ vi.mock('@/lib/provider-api-keys', () => ({
   API_KEY_FALLBACKS_SETTING_KEY: 'api-key-fallbacks',
 }))
 
+const platform = vi.hoisted(() => ({ mac: false }))
+vi.mock('@/lib/shortcuts/platform', () => ({
+  get isMac() {
+    return platform.mac
+  },
+}))
+
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { EngineManager } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { TauriProvidersService } from '../tauri'
+import { ProviderUnreachableError } from '@/lib/provider-unreachable'
 
 describe('TauriProvidersService', () => {
   let svc: TauriProvidersService
@@ -264,6 +272,18 @@ describe('TauriProvidersService', () => {
       errSpy.mockRestore()
     })
 
+    it('does not tag an HTTP status error as unreachable', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+      } as any)
+
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const err = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+      expect(err).not.toBeInstanceOf(ProviderUnreachableError)
+    })
+
     it('throws structured error on 403', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: false,
@@ -321,6 +341,54 @@ describe('TauriProvidersService', () => {
       errSpy.mockRestore()
     })
 
+    // `@tauri-apps/plugin-http` rejects with a plain string, not an Error.
+    describe('when the request cannot be sent', () => {
+      const reject = (url: string) =>
+        vi
+          .mocked(fetchTauri)
+          .mockRejectedValueOnce(`error sending request for url (${url})`)
+      const lan = { ...baseProvider, base_url: 'http://10.1.0.211:11434/v1' }
+
+      beforeEach(() => {
+        platform.mac = false
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+      })
+
+      it('explains the failure instead of saying "Unknown error"', async () => {
+        reject('https://api.test.com/v1/models')
+        const err = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+        expect(err).toBeInstanceOf(ProviderUnreachableError)
+        expect(err.message).toMatch(/couldn't reach the provider/i)
+        expect(err.message).toContain('https://api.test.com/v1/models')
+        expect(err.message).not.toContain('Unknown error')
+      })
+
+      it('names the macOS Local Network setting for a LAN host', async () => {
+        platform.mac = true
+        reject('http://10.1.0.211:11434/v1/models')
+        const err = await svc.fetchModelsFromProvider(lan).catch((e) => e)
+        expect(err.message).toContain('Local Network')
+      })
+
+      it('does not mention it off macOS or for a public host', async () => {
+        reject('http://10.1.0.211:11434/v1/models')
+        const off = await svc.fetchModelsFromProvider(lan).catch((e) => e)
+        expect(off.message).not.toContain('Local Network')
+
+        platform.mac = true
+        reject('https://api.test.com/v1/models')
+        const pub = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+        expect(pub.message).not.toContain('Local Network')
+      })
+
+      it('keeps the text of a non-Error rejection in the fallback', async () => {
+        vi.mocked(fetchTauri).mockRejectedValueOnce('something odd')
+        await expect(svc.fetchModelsFromProvider(baseProvider)).rejects.toThrow(
+          'Unexpected error while fetching models from test-provider: something odd'
+        )
+      })
+    })
+
     it('adds Origin header for localhost URLs', async () => {
       const localProvider = { ...baseProvider, base_url: 'http://localhost:1234' }
       vi.mocked(fetchTauri).mockResolvedValueOnce({
@@ -354,6 +422,91 @@ describe('TauriProvidersService', () => {
             'x-api-key': 'sk-test',
             Authorization: 'Bearer sk-test',
           }),
+        })
+      )
+    })
+
+    it('adds default anthropic-version header for anthropic-shaped custom providers', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'anthropic_proxy',
+        base_url: 'https://anthropic.example.com/v1',
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2023-06-01' }),
+        })
+      )
+    })
+
+    it('adds default anthropic-version header when api_type is anthropic despite non-anthropic name/host', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'my-gateway',
+        base_url: 'https://gateway.corp.com/v1',
+        api_type: 'anthropic',
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          }),
+        })
+      )
+    })
+
+    it('does not add anthropic-version for non-anthropic providers', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(baseProvider)
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]?.headers as Record<
+        string,
+        string
+      >
+      expect(headers).not.toHaveProperty('anthropic-version')
+      expect(headers).not.toHaveProperty(
+        'anthropic-dangerous-direct-browser-access'
+      )
+    })
+
+    it('does not override a caller-supplied anthropic-version', async () => {
+      const provider = {
+        ...baseProvider,
+        provider: 'anthropic_proxy',
+        custom_header: [{ header: 'anthropic-version', value: '2099-01-01' }],
+      }
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(provider)
+      expect(fetchTauri).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'anthropic-version': '2099-01-01' }),
         })
       )
     })

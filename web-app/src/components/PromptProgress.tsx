@@ -1,19 +1,50 @@
 import { useAppState } from '@/hooks/useAppState'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/utils'
 
-export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
+export function PromptProgress({
+  hideIdle = false,
+  stateKey,
+}: {
+  hideIdle?: boolean
+  /**
+   * Identifies a caller outside the `/threads/:threadId` route — Cowork, keyed
+   * by its own session id — overriding the auto-detected route param, and
+   * switching the loading/progress read from useAppState's thread-keyed
+   * Records to useCoworkRun's session-keyed mirror of the same shape. Prompt
+   * progress has no Cowork equivalent, so it keeps the global fallback;
+   * harmless, since Cowork never writes there.
+   */
+  stateKey?: string
+}) {
   const params = useParams({ strict: false })
-  const threadId = (params as { threadId?: string })?.threadId
+  const threadId = stateKey ?? (params as { threadId?: string })?.threadId
   const promptProgress = useAppState((state) =>
     (threadId ? state.promptProgresses[threadId] : undefined) ??
     state.promptProgress
   )
-  const loadingModel = useAppState((state) =>
-    (threadId ? state.loadingModels[threadId] : undefined) ??
-    state.loadingModel
+  // Cowork keeps its load state in useCoworkRun's session-keyed mirror (fed by
+  // CoworkChatTransport and the load-progress listener), so a cowork surface
+  // reads only that. A chat surface reads useAppState's thread slot, falling
+  // back to the global slot for an off-thread stream.
+  const chatLoadingModel = useAppState((state) =>
+    (threadId ? state.loadingModels[threadId] : undefined) ?? state.loadingModel
   )
+  const coworkLoadingModel = useCoworkRun((state) =>
+    stateKey ? state.loadingModels[stateKey] : undefined
+  )
+  const loadingModel = stateKey ? coworkLoadingModel : chatLoadingModel
+  const chatLoadProgress = useAppState((state) =>
+    (threadId ? state.modelLoadProgressByThread[threadId] : undefined) ??
+    state.modelLoadProgress
+  )
+  const coworkLoadProgress = useCoworkRun((state) =>
+    stateKey ? state.modelLoadProgress[stateKey] : undefined
+  )
+  const loadProgress = stateKey ? coworkLoadProgress : chatLoadProgress
 
   const percentage =
     promptProgress && promptProgress.total > 0
@@ -32,8 +63,22 @@ export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
     return null
   }
 
+  const loadPercentage =
+    loadingModel && loadProgress ? Math.round(loadProgress.value * 100) : undefined
+
+  // Only worth naming the stage when the load actually has more than one
+  // (multimodal encoder and/or speculative-decoding draft model on top of the
+  // main weights) - a plain text-only load is always a single "text_model"
+  // stage for its entire duration, so calling that out would be noise.
+  const stageLabel =
+    loadingModel && loadProgress && (loadProgress.stages?.length ?? 0) > 1
+      ? describeLoadStage(loadProgress.stage)
+      : undefined
+
   const label = loadingModel
-    ? 'Loading model…'
+    ? loadPercentage !== undefined
+      ? `Loading ${stageLabel ?? 'model'}: ${loadPercentage}%`
+      : 'Loading model…'
     : showReading
       ? `Reading: ${percentage}%`
       : 'Working…'
@@ -41,8 +86,18 @@ export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
   const detail =
     showReading && !loadingModel ? buildDetail(promptProgress) : undefined
 
+  // The floor keeps the box from resizing as the percentage and ETA change; a
+  // bare "Working…" has nothing to stabilise, so it shrink-wraps instead of
+  // sitting in a mostly-empty rectangle.
+  const sized = loadingModel || showReading
+
   return (
-    <div className="inline-flex flex-col gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 min-w-56">
+    <div
+      className={cn(
+        'inline-flex flex-col gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2',
+        sized && 'min-w-56'
+      )}
+    >
       <div className="flex items-center gap-2 text-sm">
         <Loader className="animate-spin w-3.5 h-3.5 text-primary shrink-0" />
         <span className="font-medium text-foreground">{label}</span>
@@ -57,6 +112,19 @@ export function PromptProgress({ hideIdle = false }: { hideIdle?: boolean }) {
       )}
     </div>
   )
+}
+
+function describeLoadStage(stage: string | undefined): string | undefined {
+  switch (stage) {
+    case 'text_model':
+      return 'text model'
+    case 'mmproj_model':
+      return 'encoder'
+    case 'spec_model':
+      return 'draft model'
+    default:
+      return undefined
+  }
 }
 
 function buildDetail(progress: {

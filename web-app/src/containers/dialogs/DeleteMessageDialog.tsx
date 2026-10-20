@@ -39,6 +39,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
       size="icon-xs"
       role="button"
       tabIndex={0}
+      data-testid="delete-message-trigger"
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -54,6 +55,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
+        data-testid="delete-message-dialog"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           deleteButtonRef.current?.focus()
@@ -78,6 +80,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
               onKeyDown={handleKeyDown}
               size="sm"
               className="w-full sm:w-auto"
+              data-testid="confirm-delete-message"
               aria-label={t('common:deleteMessage')}
             >
               {t('common:delete')}

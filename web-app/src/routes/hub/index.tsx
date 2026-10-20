@@ -5,7 +5,7 @@ import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, formatBytes, sanitizeModelId } from '@/lib/utils'
 import { sumMlxModelBytes } from '@/lib/modelCompatibility'
-import { isMtpQuant } from '@/lib/mtp'
+import { isSpecSidecar } from '@/lib/specDraft'
 import {
   useState,
   useMemo,
@@ -50,6 +50,10 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
+import {
+  cleanHubSearchQuery,
+  prioritizeExactModelMatches,
+} from './-searchRanking'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
@@ -195,23 +199,26 @@ function HubContent() {
   }, [searchValue])
 
   const filteredModels = useMemo(() => {
-    // MTP companion ggufs are draft models, not standalone variants — move them
-    // out of `quants` (so they don't show as downloadable) into `mtpQuants`,
-    // where DownloadButton resolves them against the chosen quant.
+    // Speculative draft companions (mtp/eagle3/dflash/dspark) are draft models,
+    // not standalone variants — move them out of `quants` (so they don't show
+    // as downloadable) into `specQuants`, where DownloadButton resolves them
+    // against the chosen quant.
     let filtered: CatalogModel[] = sortedModels.map((model) => ({
       ...model,
-      quants: model.quants?.filter((q) => !isMtpQuant(q)),
-      mtpQuants: model.quants?.filter((q) => isMtpQuant(q)),
+      quants: model.quants?.filter((q) => !isSpecSidecar(q)),
+      specQuants: model.quants?.filter((q) => isSpecSidecar(q)),
     }))
     // Apply search filter
     if (debouncedSearchValue.length) {
       const fuse = new Fuse(filtered, searchOptions)
       // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(
-        /^https?:\/\/[^/]+\//,
-        ''
+      const cleanedSearchValue = cleanHubSearchQuery(debouncedSearchValue)
+      // Fuse scores fuzzy relevance; re-rank so an exact HF id/name is first
+      // (see #8447 — precise queries were not always top of list).
+      filtered = prioritizeExactModelMatches(
+        fuse.search(cleanedSearchValue).map((result) => result.item),
+        cleanedSearchValue
       )
-      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
     }
     // Apply downloaded filter
     if (showOnlyDownloaded) {

@@ -36,6 +36,11 @@ export class DefaultAppService implements AppService {
     return false
   }
 
+  async setServerRunInBackground(enabled: boolean): Promise<void> {
+    // No-op - tray/background behavior only exists in the desktop app
+    void enabled
+  }
+
   async readYaml<T = unknown>(path: string): Promise<T> {
     console.log('readYaml called with path:', path)
     throw new Error('readYaml not implemented in default app service')

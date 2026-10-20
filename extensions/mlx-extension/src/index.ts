@@ -23,33 +23,35 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  logger,
 } from '@janhq/core'
 
-import { info, warn, error as logError } from '@tauri-apps/plugin-log'
 import { invoke } from '@tauri-apps/api/core'
 import {
   loadMlxModel,
   unloadMlxModel,
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
-import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  readGgufMetadata,
+  generateApiKey,
+  ModelConfig,
+} from '@janhq/tauri-plugin-llamacpp-api'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
-const logger = {
-  info: function (...args: any[]) {
-    console.log(...args)
-    info(args.map((arg) => ` ${arg}`).join(` `))
-  },
-  warn: function (...args: any[]) {
-    console.warn(...args)
-    warn(args.map((arg) => ` ${arg}`).join(` `))
-  },
-  error: function (...args: any[]) {
-    console.error(...args)
-    logError(args.map((arg) => ` ${arg}`).join(` `))
-  },
+export function isAbsoluteModelPath(modelPath: string): boolean {
+  return modelPath.startsWith('/') || modelPath.includes(':')
+}
+
+export function isValidModelId(id: string): boolean {
+  // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
+  if (!/^[a-zA-Z0-9/_\-\.]+$/.test(id)) return false
+
+  // check for empty parts or path traversal
+  const parts = id.split('/')
+  return parts.every((s) => s !== '' && s !== '.' && s !== '..')
 }
 
 export default class mlx_extension extends AIEngine {
@@ -109,10 +111,7 @@ export default class mlx_extension extends AIEngine {
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
     // Reuse the llamacpp plugin's API key generation
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
+    const hash = await generateApiKey(modelId + port, this.apiSecret)
     return hash
   }
 
@@ -136,6 +135,35 @@ export default class mlx_extension extends AIEngine {
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: modelConfig.embedding ?? false,
     } as modelInfo
+  }
+
+  async getModelContextLimit(modelId: string): Promise<number | undefined> {
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
+    })
+    const modelPath = isAbsoluteModelPath(modelConfig.model_path)
+      ? modelConfig.model_path
+      : await joinPath([await getJanDataFolderPath(), modelConfig.model_path])
+    let value: unknown
+    if (modelPath.endsWith('.gguf')) {
+      const { metadata } = await readGgufMetadata(modelPath)
+      value = metadata?.[`${metadata?.['general.architecture']}.context_length`]
+    } else {
+      const directory = (await fs.fileStat(modelPath)).isDirectory
+        ? modelPath
+        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+      const config = JSON.parse(
+        await invoke<string>('read_file_sync', {
+          args: [await joinPath([directory, 'config.json'])],
+        })
+      ) as {
+        max_position_embeddings?: number
+        text_config?: { max_position_embeddings?: number }
+      }
+      value = config.text_config?.max_position_embeddings ?? config.max_position_embeddings
+    }
+    const limit = Number(value)
+    return Number.isInteger(limit) && limit > 0 ? limit : undefined
   }
 
   override async list(): Promise<modelInfo[]> {
@@ -287,14 +315,9 @@ export default class mlx_extension extends AIEngine {
 
     // Resolve model path - could be absolute or relative
     let modelPath: string
-    if (
-      modelConfig.model_path.startsWith('/') ||
-      modelConfig.model_path.includes(':')
-    ) {
-      // Absolute path
+    if (isAbsoluteModelPath(modelConfig.model_path)) {
       modelPath = modelConfig.model_path
     } else {
-      // Relative path - resolve from Jan data folder
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
@@ -524,10 +547,7 @@ export default class mlx_extension extends AIEngine {
     })
 
     // Check if model_path is a relative path within mlx folder
-    if (
-      !modelConfig.model_path.startsWith('/') &&
-      !modelConfig.model_path.includes(':')
-    ) {
+    if (!isAbsoluteModelPath(modelConfig.model_path)) {
       // Model file is at {janDataFolder}/{model_path}
       // Delete the parent folder containing the actual model file
       const janDataFolderPath = await getJanDataFolderPath()
@@ -583,15 +603,6 @@ export default class mlx_extension extends AIEngine {
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
-    const isValidModelId = (id: string) => {
-      // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
-      if (!/^[a-zA-Z0-9/_\-\.]+$/.test(id)) return false
-
-      // check for empty parts or path traversal
-      const parts = id.split('/')
-      return parts.every((s) => s !== '' && s !== '.' && s !== '..')
-    }
-
     if (!isValidModelId(modelId))
       throw new Error(
         `Invalid modelId: ${modelId}. Only alphanumeric and / _ - . characters are allowed.`
@@ -845,6 +856,14 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
+  // The MLX server is launched with a fixed context window (cfg.ctx_size),
+  // so the token counter can show a real percentage instead of a bare count.
+  async getModelProps(
+    modelId: string
+  ): Promise<{ nCtx: number; modelAlias?: string }> {
+    return { nCtx: this.config.ctx_size ?? 4096, modelAlias: modelId }
+  }
+
   async isVisionSupported(modelPath: string): Promise<boolean> {
     // Check if model is a Vision Language Model by examining config.json
     // modelPath can be a folder path or a file path; resolve to directory
@@ -950,14 +969,9 @@ export default class mlx_extension extends AIEngine {
 
     // model_path could be absolute or relative
     let modelPath: string
-    if (
-      modelConfig.model_path.startsWith('/') ||
-      modelConfig.model_path.includes(':')
-    ) {
-      // Absolute path
+    if (isAbsoluteModelPath(modelConfig.model_path)) {
       modelPath = modelConfig.model_path
     } else {
-      // Relative path - resolve from Jan data folder
       const janDataFolderPath = await getJanDataFolderPath()
       modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }

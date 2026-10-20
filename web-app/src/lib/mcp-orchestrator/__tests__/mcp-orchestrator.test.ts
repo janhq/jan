@@ -75,6 +75,26 @@ describe('MCPOrchestrator', () => {
       expect(tools).toHaveLength(1)
       expect(tools[0].name).toBe('read_file')
     })
+
+    it('returns tools sorted by (server, name) regardless of fetch order, to keep the serialized tool list stable across turns for KV-cache reuse', async () => {
+      const shuffledTools = [
+        { name: 'browse', description: '', inputSchema: {}, server: 'web' },
+        { name: 'write_file', description: '', inputSchema: {}, server: 'fs' },
+        { name: 'read_file', description: '', inputSchema: {}, server: 'fs' },
+      ]
+      const service = makeService({
+        getServerSummaries: vi.fn().mockResolvedValue(fewSummaries),
+        getTools: vi.fn().mockResolvedValue(shuffledTools),
+      })
+
+      const tools = await orchestrator.getRelevantTools('do something', service, [])
+
+      expect(tools.map((t) => `${(t as { server?: string }).server}::${t.name}`)).toEqual([
+        'fs::read_file',
+        'fs::write_file',
+        'web::browse',
+      ])
+    })
   })
 
   // ─── above threshold — uses getToolsForServers() ─────────────────────────

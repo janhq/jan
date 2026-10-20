@@ -1,13 +1,13 @@
 import { useMemo, useEffect, useState, useRef, memo } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn } from '@/lib/utils'
+import { cn, formatTokenCount } from '@/lib/utils'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useTokensCount } from '@/hooks/useTokensCount'
+import { useTokensCount, type TokenUsageSource } from '@/hooks/useTokensCount'
 import { ThreadMessage } from '@janhq/core'
 import {
   IconBrain,
@@ -27,16 +27,12 @@ interface TokenCounterProps {
   className?: string
   compact?: boolean
   additionalTokens?: number
+  /** Usage reported directly, for a surface that keeps no thread messages. */
+  source?: TokenUsageSource
 }
 
 const WARN_PCT = 85
 const OVER_PCT = 100
-
-const formatNumber = (num: number) => {
-  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
-  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
-  return num.toString()
-}
 
 const formatExact = (num: number) => num.toLocaleString()
 
@@ -44,9 +40,10 @@ export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
   additionalTokens = 0,
+  source,
 }: TokenCounterProps) {
   const { t } = useTranslation()
-  const { calculateTokens, ...tokenData } = useTokensCount(messages)
+  const { calculateTokens, ...tokenData } = useTokensCount(messages, source)
 
   const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)
@@ -98,9 +95,20 @@ export const TokenCounter = memo(function TokenCounter({
     return 'ok'
   }, [pct])
 
-  // n_ctx from /props is required for a meaningful denominator. Without it,
-  // hide entirely rather than render a misleading 0%/0 indicator.
-  if (!tokenData.maxTokens) return null
+  // Remote providers report no context-window denominator, so a percentage is
+  // meaningless. Show a plain total-tokens badge once a turn has counted tokens.
+  if (!tokenData.maxTokens) {
+    if (totalTokens <= 0) return null
+    return (
+      <TokenCountOnly
+        totalTokens={totalTokens}
+        inputTokens={tokenData.inputTokens}
+        outputTokens={tokenData.outputTokens}
+        modelDisplayName={tokenData.modelDisplayName}
+        className={className}
+      />
+    )
+  }
 
   const textCls =
     tier === 'over'
@@ -227,8 +235,8 @@ export const TokenCounter = memo(function TokenCounter({
                 {pct?.toFixed(1) ?? '0.0'}%
               </span>
               <span className="text-xs text-muted-foreground tabular-nums font-mono">
-                {formatNumber(totalTokens)} /{' '}
-                {formatNumber(tokenData.maxTokens)}
+                {formatTokenCount(totalTokens)} /{' '}
+                {formatTokenCount(tokenData.maxTokens)}
               </span>
             </div>
             <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
@@ -285,7 +293,7 @@ export const TokenCounter = memo(function TokenCounter({
                   title={`Configured ctx_len: ${formatExact(tokenData.configuredCtxLen!)}`}
                 >
                   <IconAdjustmentsAlt className="size-3" />
-                  Fitted to {formatNumber(tokenData.maxTokens)}
+                  Fitted to {formatTokenCount(tokenData.maxTokens)}
                 </span>
               )}
               {modelProps?.totalSlots !== undefined &&
@@ -320,6 +328,80 @@ export const TokenCounter = memo(function TokenCounter({
     </TooltipProvider>
   )
 })
+
+function TokenCountOnly({
+  totalTokens,
+  inputTokens,
+  outputTokens,
+  modelDisplayName,
+  className,
+}: {
+  totalTokens: number
+  inputTokens?: number
+  outputTokens?: number
+  modelDisplayName?: string
+  className?: string
+}) {
+  return (
+    <TooltipProvider delayDuration={400}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn('relative cursor-default', className)}>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border border-border">
+              <IconSum className="size-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-medium tabular-nums text-foreground">
+                {formatTokenCount(totalTokens)}
+              </span>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={6}
+          showArrow={false}
+          className="min-w-56 max-w-72 bg-background border p-0 overflow-hidden"
+        >
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
+            <IconBrain className="size-4 text-muted-foreground shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-foreground">
+                Token usage
+              </div>
+              {modelDisplayName && (
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {modelDisplayName}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="px-3 py-2 space-y-1.5">
+            {typeof inputTokens === 'number' && inputTokens > 0 && (
+              <Row
+                icon={<IconArrowUp className="size-3.5" />}
+                label="Prompt"
+                value={formatExact(inputTokens)}
+              />
+            )}
+            {typeof outputTokens === 'number' && outputTokens > 0 && (
+              <Row
+                icon={<IconArrowDown className="size-3.5" />}
+                label="Completion"
+                value={formatExact(outputTokens)}
+              />
+            )}
+            <Row
+              icon={<IconSum className="size-3.5" />}
+              label="Used"
+              value={formatExact(totalTokens)}
+              strong
+            />
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
 
 function Row({
   icon,

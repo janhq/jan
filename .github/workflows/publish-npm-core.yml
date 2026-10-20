@@ -2,7 +2,6 @@ name: Publish core Package to npmjs
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+-core']
-    paths: ['core/**', '.github/workflows/publish-npm-core.yml']
   workflow_dispatch:
 jobs:
   build-and-publish-plugins:

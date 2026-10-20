@@ -70,6 +70,132 @@ describe('ImportLlamacppModelDialog', () => {
     expect(screen.getByText('Select GGUF File')).toBeInTheDocument()
   })
 
+  it('shows Select Draft GGUF File when the draft model switch is enabled', () => {
+    render(
+      <ImportLlamacppModelDialog
+        provider={provider}
+        trigger={<button>Open</button>}
+      />
+    )
+    openDialog()
+    fireEvent.click(document.getElementById('draft-model')!)
+    expect(screen.getByText('Select Draft GGUF File')).toBeInTheDocument()
+  })
+
+  it('passes the draft model path through to pullModel', async () => {
+    hoisted.dialogOpen
+      .mockResolvedValueOnce('/tmp/ok.gguf')
+      .mockResolvedValueOnce('/tmp/draft.gguf')
+    hoisted.pullModel.mockResolvedValueOnce(undefined)
+    render(
+      <ImportLlamacppModelDialog
+        provider={provider}
+        trigger={<button>Open</button>}
+      />
+    )
+    openDialog()
+    fireEvent.click(screen.getByText('Select GGUF File'))
+    await waitFor(() => expect(hoisted.validateGgufFile).toHaveBeenCalled())
+    fireEvent.click(document.getElementById('draft-model')!)
+    fireEvent.click(screen.getByText('Select Draft GGUF File'))
+    await waitFor(() =>
+      expect(screen.getByText('draft.gguf')).toBeInTheDocument()
+    )
+    const importBtn = await screen.findByRole('button', {
+      name: /Import Model/i,
+    })
+    await waitFor(() => expect(importBtn).not.toBeDisabled())
+    fireEvent.click(importBtn)
+    await waitFor(() =>
+      expect(hoisted.pullModel).toHaveBeenCalledWith(
+        'ok.gguf',
+        '/tmp/ok.gguf',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        '/tmp/draft.gguf'
+      )
+    )
+  })
+
+  it('rejects a draft model whose tokenizer type does not match the main model', async () => {
+    hoisted.dialogOpen
+      .mockResolvedValueOnce('/tmp/ok.gguf')
+      .mockResolvedValueOnce('/tmp/draft.gguf')
+    hoisted.validateGgufFile.mockImplementation(async (path: string) => ({
+      isValid: true,
+      metadata: {
+        metadata: {
+          'general.architecture': 'llama',
+          'tokenizer.ggml.model': path.includes('draft') ? 'bpe' : 'llama',
+        },
+      },
+    }))
+    render(
+      <ImportLlamacppModelDialog
+        provider={provider}
+        trigger={<button>Open</button>}
+      />
+    )
+    openDialog()
+    fireEvent.click(screen.getByText('Select GGUF File'))
+    await waitFor(() => expect(hoisted.validateGgufFile).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getAllByText('ok.gguf').length).toBeGreaterThan(0)
+    )
+    fireEvent.click(document.getElementById('draft-model')!)
+    fireEvent.click(screen.getByText('Select Draft GGUF File'))
+    await waitFor(() =>
+      expect(screen.getAllByText('draft.gguf').length).toBeGreaterThan(0)
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText(/not compatible with the main model/i)
+      ).toBeInTheDocument()
+    )
+  })
+
+  it('accepts a draft model whose architecture name differs but tokenizer matches (MTP assistant heads)', async () => {
+    hoisted.dialogOpen
+      .mockResolvedValueOnce('/tmp/ok.gguf')
+      .mockResolvedValueOnce('/tmp/mtp.gguf')
+    hoisted.validateGgufFile.mockImplementation(async (path: string) => ({
+      isValid: true,
+      metadata: {
+        metadata: {
+          'general.architecture': path.includes('mtp')
+            ? 'gemma4-assistant'
+            : 'gemma4',
+          'tokenizer.ggml.model': 'llama',
+          'tokenizer.ggml.bos_token_id': '2',
+          'tokenizer.ggml.eos_token_id': '1',
+        },
+      },
+    }))
+    render(
+      <ImportLlamacppModelDialog
+        provider={provider}
+        trigger={<button>Open</button>}
+      />
+    )
+    openDialog()
+    fireEvent.click(screen.getByText('Select GGUF File'))
+    await waitFor(() => expect(hoisted.validateGgufFile).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getAllByText('ok.gguf').length).toBeGreaterThan(0)
+    )
+    fireEvent.click(document.getElementById('draft-model')!)
+    fireEvent.click(screen.getByText('Select Draft GGUF File'))
+    await waitFor(() =>
+      expect(screen.getAllByText('mtp.gguf').length).toBeGreaterThan(0)
+    )
+    expect(
+      screen.queryByText('Draft Model Validation Error')
+    ).not.toBeInTheDocument()
+  })
+
   it('shows Select MMPROJ File when the vision switch is enabled', () => {
     render(
       <ImportLlamacppModelDialog
@@ -78,7 +204,7 @@ describe('ImportLlamacppModelDialog', () => {
       />
     )
     openDialog()
-    const sw = screen.getByRole('switch')
+    const sw = document.getElementById('multimodal')!
     fireEvent.click(sw)
     expect(screen.getByText('Select MMPROJ File')).toBeInTheDocument()
   })
@@ -188,7 +314,13 @@ describe('ImportLlamacppModelDialog', () => {
     await waitFor(() =>
       expect(hoisted.pullModel).toHaveBeenCalledWith(
         'ok.gguf',
-        '/tmp/ok.gguf'
+        '/tmp/ok.gguf',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined
       )
     )
     await waitFor(() =>
@@ -235,7 +367,7 @@ describe('ImportLlamacppModelDialog', () => {
     )
     openDialog()
     // Enable vision mode first
-    fireEvent.click(screen.getByRole('switch'))
+    fireEvent.click(document.getElementById('multimodal')!)
     fireEvent.click(screen.getByText('Select MMPROJ File'))
     await waitFor(() =>
       expect(hoisted.invoke).toHaveBeenCalledWith(
@@ -260,7 +392,7 @@ describe('ImportLlamacppModelDialog', () => {
       />
     )
     openDialog()
-    fireEvent.click(screen.getByRole('switch'))
+    fireEvent.click(document.getElementById('multimodal')!)
     fireEvent.click(screen.getByText('Select MMPROJ File'))
     await waitFor(() =>
       expect(screen.getByText('MMProj Validation Error')).toBeInTheDocument()

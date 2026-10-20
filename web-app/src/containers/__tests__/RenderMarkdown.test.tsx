@@ -488,5 +488,46 @@ describe('RenderMarkdown', () => {
       await flush(container)
     })
   })
+
+  describe('web citation markers', () => {
+    it('renders a [[cite:URL]] marker as a favicon link to the source', () => {
+      const { container } = render(
+        <RenderMarkdown
+          content={'Paris is the capital of France.[[cite:https://en.wikipedia.org/wiki/Paris]]'}
+          messageId="m1"
+        />
+      )
+      const link = container.querySelector(
+        'a[href="https://en.wikipedia.org/wiki/Paris"]'
+      )
+      expect(link).toBeTruthy()
+      expect(link?.querySelector('img')).toBeTruthy()
+      // The raw marker text must not leak into the rendered output.
+      expect(container.textContent).not.toContain('[[cite:')
+    })
+
+    it('normalizes a scheme-less marker URL to https', () => {
+      const { container } = render(
+        <RenderMarkdown
+          content={'The TPU is fast.[[cite:example.com/article/foo-bar]]'}
+          messageId="m3"
+        />
+      )
+      const link = container.querySelector(
+        'a[href="https://example.com/article/foo-bar"]'
+      )
+      expect(link).toBeTruthy()
+      expect(link?.querySelector('img')).toBeTruthy()
+      expect(container.textContent).not.toContain('[[cite:')
+    })
+
+    it('leaves text without markers untouched', () => {
+      const { container } = render(
+        <RenderMarkdown content={'No citations here.'} messageId="m2" />
+      )
+      expect(container.querySelector('img')).toBeNull()
+      expect(container.textContent).toContain('No citations here.')
+    })
+  })
 })
 

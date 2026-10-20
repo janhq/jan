@@ -1,12 +1,6 @@
-use flate2::read::GzDecoder;
-use std::{
-    fs::{self, File},
-    io::Read,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
-use tar::Archive;
+use std::{fs, sync::Arc, time::Duration};
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use tauri::{App, AppHandle, Emitter, Listener, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(feature = "desktop")]
@@ -20,150 +14,15 @@ use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
 use crate::core::mcp::helpers::add_server_config;
 
-use super::{
-    extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
-};
+use super::{mcp::helpers::run_mcp_commands, state::AppState};
 
-pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> Result<(), String> {
-    // Skip extension installation on mobile platforms
-    // Mobile uses pre-bundled extensions loaded via MobileCoreService in the frontend
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        return Ok(());
-    }
-
-    let extensions_path = get_jan_extensions_path(app.clone());
-    let extensions_json_path = extensions_path.join("extensions.json");
-    let pre_install_path = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Could not resolve resource dir: {e}"))?
-        .join("resources")
-        .join("pre-install");
-
-    let mut clean_up = force;
-
-    // Check IS_CLEAN environment variable to optionally skip extension install
-    if std::env::var("IS_CLEAN").is_ok() {
-        clean_up = true;
-    }
-    log::info!("Installing extensions. Clean up: {clean_up}");
-    // A bare directory is not proof of a completed install; gate on the manifest
-    // so a previously-aborted run self-heals on the next launch.
-    if !clean_up && extensions_json_path.exists() {
-        return Ok(());
-    }
-
-    // Validate the install source before mutating anything. A missing/unreadable
-    // pre-install dir must not wipe a working install or leave a half-built one.
-    let pre_install_entries = match fs::read_dir(&pre_install_path) {
-        Ok(entries) => entries,
-        Err(e) => {
-            log::warn!(
-                "Skipping extension install; pre-install dir unavailable at {pre_install_path:?}: {e}"
-            );
-            return Ok(());
-        }
-    };
-
-    // Source is good — now it's safe to clear and recreate the target.
-    if extensions_path.exists() {
-        fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
-            log::info!("Failed to remove existing extensions folder, it may not exist.");
-        });
-    }
-    if !extensions_path.exists() {
-        fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;
-    }
-    let mut extensions_list = if extensions_json_path.exists() {
-        let existing_data =
-            fs::read_to_string(&extensions_json_path).unwrap_or_else(|_| "[]".to_string());
-        serde_json::from_str::<Vec<serde_json::Value>>(&existing_data).unwrap_or_else(|_| vec![])
-    } else {
-        vec![]
-    };
-
-    for entry in pre_install_entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|ext| ext == "tgz") {
-            let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
-            let gz_decoder = GzDecoder::new(tar_gz);
-            let mut archive = Archive::new(gz_decoder);
-
-            let mut extension_name = None;
-            let mut extension_manifest = None;
-            extract_extension_manifest(&mut archive)
-                .map_err(|e| e.to_string())
-                .and_then(|manifest| match manifest {
-                    Some(manifest) => {
-                        extension_name = manifest["name"].as_str().map(|s| s.to_string());
-                        extension_manifest = Some(manifest);
-                        Ok(())
-                    }
-                    None => Err("Manifest is None".to_string()),
-                })?;
-
-            let extension_name = extension_name.ok_or("package.json not found in archive")?;
-            let extension_dir = extensions_path.join(extension_name.clone());
-            fs::create_dir_all(&extension_dir).map_err(|e| e.to_string())?;
-
-            let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
-            let gz_decoder = GzDecoder::new(tar_gz);
-            let mut archive = Archive::new(gz_decoder);
-            for entry in archive.entries().map_err(|e| e.to_string())? {
-                let mut entry = entry.map_err(|e| e.to_string())?;
-                let file_path = entry.path().map_err(|e| e.to_string())?;
-                let components: Vec<_> = file_path.components().collect();
-                if components.len() > 1 {
-                    let relative_path: PathBuf = components[1..].iter().collect();
-                    let target_path = extension_dir.join(relative_path);
-                    if let Some(parent) = target_path.parent() {
-                        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                    }
-                    let _result = entry.unpack(&target_path).map_err(|e| e.to_string())?;
-                }
-            }
-
-            let main_entry = extension_manifest
-                .as_ref()
-                .and_then(|manifest| manifest["main"].as_str())
-                .unwrap_or("index.js");
-            let url = extension_dir.join(main_entry).to_string_lossy().to_string();
-
-            let new_extension = serde_json::json!({
-                "url": url,
-                "name": extension_name.clone(),
-                "origin": extension_dir.to_string_lossy(),
-                "active": true,
-                "description": extension_manifest
-                    .as_ref()
-                    .and_then(|manifest| manifest["description"].as_str())
-                    .unwrap_or(""),
-                "version": extension_manifest
-                    .as_ref()
-                    .and_then(|manifest| manifest["version"].as_str())
-                    .unwrap_or(""),
-                "productName": extension_manifest
-                    .as_ref()
-                    .and_then(|manifest| manifest["productName"].as_str())
-                    .unwrap_or(""),
-            });
-
-            extensions_list.push(new_extension);
-
-            log::info!("Installed extension to {extension_dir:?}");
-        }
-    }
-    fs::write(
-        &extensions_json_path,
-        serde_json::to_string_pretty(&extensions_list).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
+/// The MCP store schema this build writes. `migrate_mcp_servers` walks every
+/// store older than this through the gates below, then pins this value. The
+/// upgrade-compat fixture test (tests/upgrade_compat.rs) asserts committed
+/// past-release stores sit below it, so bumping this constant without adding
+/// that release's store fixture breaks the build instead of skipping a
+/// migration silently.
+pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 5;
 
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
@@ -212,13 +71,50 @@ pub fn migrate_mcp_servers(
     }
     if mcp_version < 3 {
         log::info!("Migrating MCP schema version 3: Updating Exa to streamable HTTP");
-        if let Err(e) = migrate_exa_to_http(app_handle) {
+        if let Err(e) = migrate_exa_to_http(app_handle.clone()) {
             log::error!("Failed to migrate Exa to HTTP: {e}");
         }
     }
-    store.set("mcp_version", 3);
+    if mcp_version < 4 {
+        log::info!(
+            "Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)"
+        );
+        if let Err(e) = remove_exa_server(app_handle.clone()) {
+            log::error!("Failed to remove Exa MCP server: {e}");
+        }
+    }
+    let mut schema = CURRENT_MCP_SCHEMA_VERSION;
+    if mcp_version < 5 {
+        // Version 4 only reaches an entry the user had deactivated, and it ran
+        // once for everyone on 0.8.4 or later, so what it missed is left to this
+        // step: the default 0.8.3 wrote for every user. See `remove_default_exa`.
+        log::info!(
+            "Migrating MCP schema version 5: Removing the hosted Exa MCP default 0.8.3 wrote"
+        );
+        let removed = remove_default_exa(app_handle);
+        if let Err(e) = &removed {
+            log::error!("Failed to remove the default Exa MCP server: {e}");
+        }
+        schema = schema_after_exa_cutover(&removed);
+    }
+    store.set("mcp_version", schema);
     store.save().expect("Failed to save store");
     Ok(())
+}
+
+/// The schema version to record once the version 5 cutover has been tried: the
+/// current one when it worked, and the one before it when it did not - a config
+/// that could not be read or written just then - so the next startup tries
+/// again instead of skipping it for good. The steps before it have run and are
+/// not repeated.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn schema_after_exa_cutover(removed: &Result<(), String>) -> i64 {
+    if removed.is_ok() {
+        CURRENT_MCP_SCHEMA_VERSION
+    } else {
+        CURRENT_MCP_SCHEMA_VERSION - 1
+    }
 }
 
 fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -254,79 +150,148 @@ fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn extract_extension_manifest<R: Read>(
-    archive: &mut Archive<R>,
-) -> Result<Option<serde_json::Value>, String> {
-    let entry = archive
-        .entries()
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok()) // Ignore errors in individual entries
-        .find(|entry| {
-            if let Ok(file_path) = entry.path() {
-                let path_str = file_path.to_string_lossy();
-                path_str == "package/package.json" || path_str == "package.json"
-            } else {
-                false
-            }
-        });
-
-    if let Some(mut entry) = entry {
-        let mut content = String::new();
-        entry
-            .read_to_string(&mut content)
-            .map_err(|e| e.to_string())?;
-
-        let package_json: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        return Ok(Some(package_json));
-    }
-
-    Ok(None)
+/// Whether an `exa` MCP server entry is one the version 4 cutover removes: not
+/// currently active, and carrying no API key.
+///
+/// Note what `active: false` does *not* mean here. It is not evidence that the
+/// user never turned the server on: 0.8.3's own `migrate_exa_to_http` wrote
+/// the entry with `active: true` and an empty `env` for everybody, so a 0.8.3
+/// upgrader fails the `inactive` half and keeps the entry. The entries this
+/// actually removes are the ones a user deactivated themselves; version 5
+/// (`is_hosted_default_exa_server`) is what reaches the rest.
+///
+/// It inspects `active` and `env` only -- not `url` or `type` -- so an inactive
+/// *custom* exa entry with an empty env also matches. Callers must reject
+/// non-object values before calling (see `remove_exa_entry`).
+///
+/// `pub` for the upgrade-compat fixture test, which pins the decision against
+/// real 0.8.3 bytes.
+pub fn is_default_exa_server(exa: &serde_json::Value) -> bool {
+    let inactive = exa.get("active").and_then(|v| v.as_bool()) != Some(true);
+    let no_key = exa
+        .get("env")
+        .and_then(|env| env.as_object())
+        .map(|env| env.is_empty())
+        .unwrap_or(true);
+    inactive && no_key
 }
 
-/// Install/update the bundled `jan` CLI binary.
-///
-/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
-///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
-///   When `false` only installs if the binary is not yet present on PATH.
-///
-/// Runs in a background task — never blocks startup.
-/// Errors are logged as warnings and never prevent the app from starting.
-pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
-    tauri::async_runtime::spawn(async move {
-        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
-        if !version_changed {
-            let which_cmd = if cfg!(windows) { "where" } else { "which" };
-            let mut cmd = std::process::Command::new(which_cmd);
-            cmd.arg("jan");
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            if cmd
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                log::debug!("jan CLI already on PATH — skipping reinstall");
-                return;
-            }
-        }
+/// The hosted Exa endpoint 0.8.3 registered as an MCP server.
+const HOSTED_EXA_URL: &str = "https://mcp.exa.ai/mcp";
 
-        match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
-            Ok(status) => {
-                log::info!(
-                    "jan CLI {} to {}",
-                    if version_changed { "updated" } else { "installed" },
-                    status.path.as_deref().unwrap_or("<unknown>")
-                );
-            }
-            Err(e) => {
-                log::warn!("jan CLI auto-install skipped: {e}");
-            }
-        }
+/// Whether an `exa` entry is the default 0.8.3's `migrate_exa_to_http` wrote:
+/// the hosted endpoint over http, with no command, no args, no key and no
+/// headers, whether or not it is active (0.8.3 wrote it active for everyone, so
+/// `active` says nothing about what the user wants).
+///
+/// Narrow on purpose, because a match deletes the entry and whatever the user
+/// put in it. It is the six fields 0.8.3 wrote and nothing else: a key in `env`,
+/// any `headers` (they carry authentication), any other field, and any other
+/// url, transport, command or args keep the entry. A proxy, a self-hosted Exa,
+/// or a server the user set up by hand under the name `exa` is not the default
+/// and is never removed. Non-object values do not match.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn is_hosted_default_exa_server(exa: &serde_json::Value) -> bool {
+    let Some(exa) = exa.as_object() else {
+        return false;
+    };
+    // Whatever this migration does not know is the user's, and is kept.
+    let only_known_fields = exa.keys().all(|key| {
+        matches!(
+            key.as_str(),
+            "type" | "url" | "command" | "args" | "env" | "active" | "headers"
+        )
     });
+    let is = |key: &str, want: &str| exa.get(key).and_then(|v| v.as_str()) == Some(want);
+    let empty_str = |key: &str| exa.get(key).is_none_or(|v| v.as_str() == Some(""));
+    let empty_list = |key: &str| {
+        exa.get(key)
+            .is_none_or(|v| v.as_array().is_some_and(|a| a.is_empty()))
+    };
+    let empty_map = |key: &str| {
+        exa.get(key)
+            .is_none_or(|v| v.as_object().is_some_and(|m| m.is_empty()))
+    };
+    only_known_fields
+        && is("type", "http")
+        && is("url", HOSTED_EXA_URL)
+        && empty_str("command")
+        && empty_list("args")
+        && empty_map("env")
+        && empty_map("headers")
+}
+
+/// One-time cutover to native web search: drop the default Exa MCP server so the
+/// built-in web_search/web_fetch tools own web search.
+///
+/// Version 4's match is narrow: the entry has to be inactive *and* keyless, but
+/// 0.8.3 shipped it `active: true` with an empty `env`, so for upgraders the
+/// cutover was close to a no-op. `remove_default_exa` (version 5) is the step
+/// that reaches them.
+fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    remove_exa_entry(&config_path, is_default_exa_server).map(|_| ())
+}
+
+/// Version 5 of the cutover: remove the hosted Exa default 0.8.3 wrote.
+///
+/// Nothing is lost by it: the built-in web tools default to Exa, and keyless
+/// Exa is the same hosted endpoint, so web search keeps working against the same
+/// server without a second set of Exa tools next to the built-in ones. An entry
+/// with a key, or any other url, is left alone (`is_hosted_default_exa_server`),
+/// and a user who wants the MCP entry back re-adds it with `jan cli mcp add`.
+fn remove_default_exa(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    remove_default_exa_from_config(&config_path).map(|_| ())
+}
+
+/// Version 5's removal against a config file. `Ok(true)` when it removed the
+/// entry. `pub` for the upgrade-compat fixture test.
+pub fn remove_default_exa_from_config(config_path: &std::path::Path) -> Result<bool, String> {
+    remove_exa_entry(config_path, is_hosted_default_exa_server)
+}
+
+/// Remove the `exa` entry of an `mcp_config.json` when `matches` says it is the
+/// one to remove. A missing file, a missing `mcpServers`, or no `exa` entry is
+/// nothing to do.
+fn remove_exa_entry(
+    config_path: &std::path::Path,
+    matches: fn(&serde_json::Value) -> bool,
+) -> Result<bool, String> {
+    if !config_path.exists() {
+        return Ok(false);
+    }
+    let config_str =
+        fs::read_to_string(config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
+    let mut config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
+
+    let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) else {
+        return Ok(false);
+    };
+
+    // `is_object()` is load-bearing, not defensive noise: serde_json's `get`
+    // returns None on a non-object, so without it a malformed `exa` (a string,
+    // a number, null) would read as "inactive, no key" and be deleted. Before
+    // this predicate was extracted the guard was an `.and_then(as_object)` that
+    // left such an entry alone, and this migration runs once against every
+    // user's config at startup -- it must not start deleting things it used to
+    // skip.
+    let is_default_exa = servers
+        .get("exa")
+        .is_some_and(|exa| exa.is_object() && matches(exa));
+
+    if is_default_exa {
+        servers.remove("exa");
+        fs::write(
+            config_path,
+            serde_json::to_string_pretty(&config)
+                .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+        )
+        .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+    }
+    Ok(is_default_exa)
 }
 
 /// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window
@@ -375,12 +340,49 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
 }
 
 #[cfg(feature = "desktop")]
-pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
-    let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
-    let separator_i = PredefinedMenuItem::separator(app.handle())?;
-    let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
-    TrayIconBuilder::with_id("tray")
+pub const TRAY_ID: &str = "tray";
+
+/// Tray icon forced on for the whole app lifetime at compile time; otherwise it
+/// only exists while the Local API Server is running.
+#[cfg(feature = "desktop")]
+pub fn tray_always_visible() -> bool {
+    option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true"
+}
+
+#[cfg(feature = "desktop")]
+pub fn show_tray<R: Runtime>(app: &AppHandle<R>) {
+    if app.tray_by_id(TRAY_ID).is_some() {
+        return;
+    }
+    let handle = app.clone();
+    // Tray creation must happen on the main thread (hard requirement on macOS).
+    let _ = app.run_on_main_thread(move || {
+        if handle.tray_by_id(TRAY_ID).is_none() {
+            if let Err(e) = setup_tray(&handle) {
+                log::error!("Failed to create tray icon: {e}");
+            }
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
+    if tray_always_visible() {
+        return;
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = handle.remove_tray_by_id(TRAY_ID);
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
+    let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let separator_i = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&show_i, &separator_i, &quit_i])?;
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)

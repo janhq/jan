@@ -6,6 +6,7 @@ import { useAppState } from '@/hooks/useAppState'
 const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
 const getConnectedServers = vi.fn().mockResolvedValue([])
+const updateSettings = vi.fn()
 
 vi.mock('@/containers/SettingsMenu', () => ({
   default: () => <div data-testid="settings-menu">Settings Menu</div>,
@@ -121,6 +122,7 @@ vi.mock('@/hooks/useMCPServers', () => ({
     useLightweightRouterModel: false,
     routerModelProvider: '',
     routerModelId: '',
+    maxToolOutputChars: 40000,
   },
   useMCPServers: () => ({
     mcpServers: {
@@ -138,6 +140,7 @@ vi.mock('@/hooks/useMCPServers', () => ({
       useLightweightRouterModel: false,
       routerModelProvider: '',
       routerModelId: '',
+      maxToolOutputChars: 40000,
     },
     addServer: vi.fn(),
     editServer: vi.fn(),
@@ -153,7 +156,7 @@ vi.mock('@/hooks/useMCPServers', () => ({
       active: false,
     }),
     setSettings: vi.fn(),
-    updateSettings: vi.fn(),
+    updateSettings,
   }),
 }))
 
@@ -235,5 +238,54 @@ describe('MCP servers route error handling', () => {
     await waitFor(() => {
       expect(useAppState.getState().errorMessage?.message).toBe('wrapped startup failed')
     })
+  })
+})
+
+// #8557: users had no way to bound an MCP result before it filled the context.
+describe('max tool output characters control', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getConnectedServers.mockResolvedValue([])
+  })
+
+  const capInput = (): HTMLInputElement => {
+    const inputs = screen.getAllByRole<HTMLInputElement>('spinbutton')
+    const found = inputs.find((i) => i.value === '40000')
+    if (!found) throw new Error('cap input not rendered')
+    return found
+  }
+
+  it('shows the configured cap and saves an edited one', async () => {
+    const Component = McpServersRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    fireEvent.change(capInput(), { target: { value: '12000' } })
+
+    expect(updateSettings).toHaveBeenCalledWith({ maxToolOutputChars: 12000 })
+  })
+
+  it('accepts 0 as an explicit opt-out rather than rejecting it', async () => {
+    const Component = McpServersRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    fireEvent.change(capInput(), { target: { value: '0' } })
+
+    expect(updateSettings).toHaveBeenCalledWith({ maxToolOutputChars: 0 })
+  })
+
+  it('restores the default when the field is cleared', async () => {
+    // An empty box must not persist as "0 characters of tool output".
+    const Component = McpServersRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    fireEvent.change(capInput(), { target: { value: '' } })
+
+    expect(updateSettings).toHaveBeenCalledWith({ maxToolOutputChars: 40000 })
   })
 })

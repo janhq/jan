@@ -3,10 +3,13 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   estimateTokens,
   estimateMessageTokens,
+  estimateConversationTokens,
   trimMessages,
   compactMessages,
+  deriveToolOutputCap,
   type ContextManagerConfig,
 } from '../context-manager'
+import { encodeToolImageSentinel } from '../tool-image-sentinel'
 
 function makeMessage(
   id: string,
@@ -34,6 +37,21 @@ describe('estimateTokens', () => {
 
   it('should handle short text', () => {
     expect(estimateTokens('Hi')).toBeGreaterThan(0)
+  })
+})
+
+describe('estimateConversationTokens', () => {
+  it('sums every message, overhead included', () => {
+    const a = makeMessage('1', 'user', 'Hello world')
+    const b = makeMessage('2', 'assistant', 'Hi there')
+    expect(estimateConversationTokens([a, b])).toBe(
+      estimateMessageTokens(a) + estimateMessageTokens(b)
+    )
+  })
+
+  it('is 0 for an empty or missing conversation', () => {
+    expect(estimateConversationTokens([])).toBe(0)
+    expect(estimateConversationTokens(undefined)).toBe(0)
   })
 })
 
@@ -68,6 +86,72 @@ describe('estimateMessageTokens', () => {
     }
     const tokens = estimateMessageTokens(msg)
     expect(tokens).toBe(4) // just overhead
+  })
+
+  // An image is a fixed, small cost to the model however many base64
+  // characters carry it; counting those characters would evict the user's
+  // question from a local model's window as soon as a tool returned a picture.
+  describe('tool images', () => {
+    const b64 = 'A'.repeat(1_500_000)
+    const toolMessage = (output: unknown): UIMessage =>
+      ({
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-read_media_file',
+            toolCallId: 'c1',
+            state: 'output-available',
+            input: { path: '/a.png' },
+            output,
+          },
+        ],
+      }) as unknown as UIMessage
+
+    it('does not count the base64 of an MCP image result', () => {
+      const tokens = estimateMessageTokens(
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }])
+      )
+      expect(tokens).toBeLessThan(10_000)
+      expect(tokens).toBeGreaterThan(0)
+    })
+
+    it('does not count the base64 of a tool image sentinel', () => {
+      const tokens = estimateMessageTokens(
+        toolMessage(
+          `Screenshot${encodeToolImageSentinel(`data:image/png;base64,${b64}`)}`
+        )
+      )
+      expect(tokens).toBeLessThan(10_000)
+    })
+
+    it('still counts the text that rides with an image', () => {
+      const text = 'caption '.repeat(2_000)
+      const withImage = estimateMessageTokens(
+        toolMessage([
+          { type: 'text', text },
+          { type: 'image', data: b64, mimeType: 'image/png' },
+        ])
+      )
+      const imageOnly = estimateMessageTokens(
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }])
+      )
+      expect(withImage - imageOnly).toBeGreaterThanOrEqual(estimateTokens(text))
+    })
+
+    it('keeps the question that led to an image result in the window', () => {
+      const messages = [
+        makeMessage('u1', 'user', 'what is in the frame?'),
+        toolMessage([{ type: 'image', data: b64, mimeType: 'image/png' }]),
+      ]
+      const { messages: kept, trimmedCount } = trimMessages(messages, {
+        maxContextTokens: 16_384,
+        maxOutputTokens: 2_048,
+        autoCompact: false,
+      })
+      expect(trimmedCount).toBe(0)
+      expect(kept).toHaveLength(2)
+    })
   })
 })
 
@@ -227,5 +311,35 @@ describe('compactMessages', () => {
     expect(result.messages.length).toBeGreaterThan(0)
     // No summary generated on fallback
     expect(result.compactedSummary).toBeUndefined()
+  })
+})
+
+describe('deriveToolOutputCap', () => {
+  it('scales the budget with the model context window', () => {
+    const small = deriveToolOutputCap(8_192)
+    const large = deriveToolOutputCap(1_000_000)
+
+    expect(small).toBeGreaterThan(0)
+    expect(large).toBeGreaterThan(small!)
+  })
+
+  it('leaves most of the window for the conversation itself', () => {
+    // A single tool result must not be allowed to fill the context it lives in.
+    const ctxTokens = 100_000
+    const cap = deriveToolOutputCap(ctxTokens)!
+
+    expect(estimateTokens('x'.repeat(cap))).toBeLessThan(ctxTokens / 2)
+  })
+
+  it('returns undefined when the context window is unknown', () => {
+    // Remote providers often report no window; the user's setting then governs
+    // alone rather than a fabricated budget taking over.
+    expect(deriveToolOutputCap(undefined)).toBeUndefined()
+    expect(deriveToolOutputCap(0)).toBeUndefined()
+    expect(deriveToolOutputCap(-1)).toBeUndefined()
+  })
+
+  it('returns a whole number of characters', () => {
+    expect(Number.isInteger(deriveToolOutputCap(8_191))).toBe(true)
   })
 })

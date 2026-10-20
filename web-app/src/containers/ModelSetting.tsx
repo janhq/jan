@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { SamplerDefaults } from '@/containers/SamplerDefaults'
+import { ChatTemplateKwargs } from '@/containers/ChatTemplateKwargs'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
@@ -22,25 +23,19 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
 
-const MTP_MIN_BUILD = 9193
-
-function parseBuildNumber(version: unknown): number | null {
-  if (typeof version !== 'string') return null
-  const m = version.match(/^b(\d+)$/)
-  return m ? parseInt(m[1], 10) : null
-}
-
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
 }
 
-export function ModelSetting({
-  model,
-  provider,
-}: ModelSettingProps) {
+/**
+ * Shared model-settings form + persistence, driven by both the header Sheet
+ * (ModelSetting) and the Cowork right rail (CoworkModelPanel). Keeping the
+ * handlers here avoids two copies of the debounced yaml-write / router-restart
+ * logic diverging.
+ */
+function useModelSettingControls(model: Model, provider: ProviderObject) {
   const { updateProvider } = useModelProvider()
-  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -179,7 +174,8 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe'
+        key === 'n_cpu_moe' ||
+        key === 'n_cpu_ffn'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -200,6 +196,37 @@ export function ModelSetting({
         debouncedPersistModelSettings(model.id, { [key]: value }, model.settings)
       }
     }
+  }
+
+  // Chat-template kwargs are a per-request concern (sent as chat_template_kwargs),
+  // not a router preset arg — persist to the store only, like `reasoning`.
+  const handleTemplateKwargsChange = (
+    value: Record<string, boolean | number | string>
+  ) => {
+    if (!provider) return
+    const modelIndex = provider.models.findIndex((m) => m.id === model.id)
+    if (modelIndex === -1) return
+    const existing = model.settings?.chat_template_kwargs
+    const updatedModel = {
+      ...model,
+      settings: {
+        ...model.settings,
+        chat_template_kwargs: {
+          key: 'chat_template_kwargs',
+          title: 'Chat template options',
+          description: '',
+          controller_type: 'object',
+          ...(existing ?? {}),
+          controller_props: {
+            ...(existing?.controller_props ?? {}),
+            value,
+          },
+        },
+      },
+    } as unknown as Model
+    const updatedModels = [...provider.models]
+    updatedModels[modelIndex] = updatedModel
+    updateProvider(provider.provider, { models: updatedModels })
   }
 
   const handleEngineSettingChange = (
@@ -224,28 +251,36 @@ export function ModelSetting({
     true
   const fitCtxSetting = provider.settings?.find((s) => s.key === 'fit_ctx')
 
-  return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon-xs">
-          <IconSettings size={18} className="text-muted-foreground" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>
-            {t('common:modelSettings.title', {
-              modelId: getModelDisplayName(model),
-            })}
-          </SheetTitle>
-          <SheetDescription className='text-xs leading-normal'>
-            {t('common:modelSettings.description')}
-          </SheetDescription>
-        </SheetHeader>
+  return {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  }
+}
 
-        <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
+/** The settings body, shared by the header Sheet and the Cowork rail. */
+export function ModelSettingFields({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+  const {
+    handleSettingChange,
+    handleTemplateKwargsChange,
+    handleEngineSettingChange,
+    fitEnabled,
+    fitCtxSetting,
+  } = useModelSettingControls(model, provider)
+
+  return (
+    <div className="px-4 space-y-8 pb-4 flex-1 min-h-0 overflow-y-auto">
           {provider.provider === 'llamacpp' && (
-            <MtpPanel modelId={model.id} provider={provider} />
+            <SpecDraftPanel modelId={model.id} />
+          )}
+          {provider.provider === 'llamacpp' && model.embedding !== true && (
+            <ChatTemplateKwargs
+              model={model}
+              onChange={handleTemplateKwargsChange}
+            />
           )}
           {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
             model.embedding !== true && (
@@ -283,6 +318,8 @@ export function ModelSetting({
             return Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'reasoning') return acc
+            // Rendered by the dedicated ChatTemplateKwargs section above.
+            if (entry[0] === 'chat_template_kwargs') return acc
             // Removed in v15 migration; defend against any pre-migration
             // localStorage state that still carries the orphan entry.
             if (entry[0] === 'auto_increase_ctx_len') return acc
@@ -320,6 +357,11 @@ export function ModelSetting({
                     title={config.title}
                     description={config.description}
                     controllerType={config.controller_type}
+                    disabledReason={
+                      fitEnabled && key === 'ngl'
+                        ? t('common:modelSettings.nglDisabledByFit')
+                        : undefined
+                    }
                     controllerProps={{
                       ...config.controller_props,
                       value: config.controller_props?.value,
@@ -334,13 +376,37 @@ export function ModelSetting({
             )
           })
           })()}
-        </div>
+    </div>
+  )
+}
+
+export function ModelSetting({ model, provider }: ModelSettingProps) {
+  const { t } = useTranslation()
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon-xs">
+          <IconSettings size={18} className="text-muted-foreground" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>
+            {t('common:modelSettings.title', {
+              modelId: getModelDisplayName(model),
+            })}
+          </SheetTitle>
+          <SheetDescription className="text-xs leading-normal">
+            {t('common:modelSettings.description')}
+          </SheetDescription>
+        </SheetHeader>
+        <ModelSettingFields model={model} provider={provider} />
       </SheetContent>
     </Sheet>
   )
 }
 
-type MtpInfo = {
+type SpecDraftInfo = {
   mtp_layers: number
   mtp: boolean
   spec_draft_n_max?: number
@@ -348,16 +414,10 @@ type MtpInfo = {
   spec_draft_p_min?: number
 }
 
-function MtpPanel({
-  modelId,
-  provider,
-}: {
-  modelId: string
-  provider: ProviderObject
-}) {
+export function SpecDraftPanel({ modelId }: { modelId: string }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const [info, setInfo] = useState<MtpInfo | null>(null)
+  const [info, setInfo] = useState<SpecDraftInfo | null>(null)
 
   useEffect(() => {
     let active = true
@@ -374,12 +434,6 @@ function MtpPanel({
       active = false
     }
   }, [modelId, serviceHub])
-
-  const llamacppVersion = provider.settings?.find(
-    (s) => s.key === 'llamacpp_version'
-  )?.controller_props?.value as string | undefined
-  const buildNo = parseBuildNumber(llamacppVersion)
-  const backendSupports = buildNo !== null && buildNo >= MTP_MIN_BUILD
 
   const persist = useCallback(
     async (patch: {
@@ -399,7 +453,7 @@ function MtpPanel({
 
   if (!info || info.mtp_layers <= 0) return null
 
-  const enabled = info.mtp === true && backendSupports
+  const enabled = info.mtp === true
 
   const updateNumber = (
     key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
@@ -420,19 +474,18 @@ function MtpPanel({
   return (
     <div className="space-y-3">
       <div className="font-medium">
-        {t('common:modelSettings.mtp.section')}
+        {t('common:modelSettings.specDraft.section')}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-8">
           <div className="mb-1 truncate">
             <span className="font-medium">
-              {t('common:modelSettings.mtp.enable')}
+              {t('common:modelSettings.specDraft.enable')}
             </span>
           </div>
           <Switch
             checked={enabled}
-            disabled={!backendSupports}
             onCheckedChange={(v) => {
               setInfo({ ...info, mtp: v })
               void persist({ mtp: v })
@@ -440,17 +493,15 @@ function MtpPanel({
           />
         </div>
         <p className="text-muted-foreground leading-normal text-xs">
-          {backendSupports
-            ? t('common:modelSettings.mtp.enableDescription')
-            : t('common:modelSettings.mtp.needsUpgrade')}
+          {t('common:modelSettings.specDraft.enableDescription')}
         </p>
       </div>
 
       {enabled && (
         <>
           <NumberRow
-            label={t('common:modelSettings.mtp.nMax')}
-            description={t('common:modelSettings.mtp.nMaxDescription')}
+            label={t('common:modelSettings.specDraft.nMax')}
+            description={t('common:modelSettings.specDraft.nMaxDescription')}
             placeholder="16"
             value={info.spec_draft_n_max}
             min={1}
@@ -458,8 +509,8 @@ function MtpPanel({
             onChange={(raw) => updateNumber('spec_draft_n_max', raw)}
           />
           <NumberRow
-            label={t('common:modelSettings.mtp.nMin')}
-            description={t('common:modelSettings.mtp.nMinDescription')}
+            label={t('common:modelSettings.specDraft.nMin')}
+            description={t('common:modelSettings.specDraft.nMinDescription')}
             placeholder="0"
             value={info.spec_draft_n_min}
             min={0}
@@ -467,8 +518,8 @@ function MtpPanel({
             onChange={(raw) => updateNumber('spec_draft_n_min', raw)}
           />
           <NumberRow
-            label={t('common:modelSettings.mtp.pMin')}
-            description={t('common:modelSettings.mtp.pMinDescription')}
+            label={t('common:modelSettings.specDraft.pMin')}
+            description={t('common:modelSettings.specDraft.pMinDescription')}
             placeholder="0.75"
             value={info.spec_draft_p_min}
             min={0}

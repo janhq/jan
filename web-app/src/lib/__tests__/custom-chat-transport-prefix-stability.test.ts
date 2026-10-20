@@ -1,0 +1,493 @@
+import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
+import type { UIMessage } from '@ai-sdk/react'
+import type * as ProviderCaps from '@/lib/providerCaps'
+
+// Capture every streamText({...}) call so we can compare the prompt prefix
+// (system + tools + prior model messages) across consecutive turns.
+const streamTextCalls: Array<Record<string, unknown>> = []
+
+const h = vi.hoisted(() => ({
+  disabledTools: [] as string[],
+  servers: ['srv'] as string[],
+  getRelevantTools: vi.fn(),
+  getModelProps: vi.fn(),
+  assistantParameters: null as Record<string, unknown> | null,
+  providerId: 'openai',
+  serviceHub: null as unknown,
+  predefinedRemote: false,
+}))
+
+const mcpService = {
+  getTools: vi.fn(async () => []),
+  getToolsForServers: vi.fn(async () => []),
+  getServerSummaries: vi.fn(async () =>
+    h.servers.map((name) => ({ name, capabilities: [], description: '' }))
+  ),
+}
+
+h.serviceHub = {
+  mcp: () => mcpService,
+  rag: () => ({ getTools: async () => [] }),
+}
+
+vi.mock('ai', async () => {
+  const actual = await vi.importActual<typeof import('ai')>('ai')
+  return {
+    ...actual,
+    streamText: (args: Record<string, unknown>) => {
+      streamTextCalls.push(args)
+      return {
+        toUIMessageStream: () =>
+          new ReadableStream({
+            start(controller) {
+              controller.close()
+            },
+          }),
+      }
+    },
+  }
+})
+
+const provider = {
+  provider: 'openai',
+  active: true,
+  api_key: 'k',
+  models: [{ id: 'gpt', capabilities: ['tools'] }],
+  settings: [] as Array<{ key: string; controller_props: { value: boolean } }>,
+}
+const selectedModel = { id: 'gpt', capabilities: ['tools'] }
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceStore: { getState: () => ({ serviceHub: h.serviceHub }) },
+}))
+vi.mock('@/hooks/useToolAvailable', () => ({
+  useToolAvailable: {
+    getState: () => ({ getDisabledTools: () => h.disabledTools }),
+  },
+}))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: {
+    getState: () => ({
+      selectedModel,
+      selectedProvider: h.providerId,
+      getProviderByName: () => provider,
+    }),
+  },
+}))
+vi.mock('@/hooks/useAssistant', () => ({
+  useAssistant: {
+    getState: () => ({
+      currentAssistant: h.assistantParameters
+        ? { parameters: h.assistantParameters }
+        : null,
+    }),
+  },
+}))
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: { getState: () => ({ threads: {} }) },
+}))
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: { getState: () => ({ enabled: false }) },
+}))
+vi.mock('@/hooks/useMCPServers', () => ({
+  useMCPServers: {
+    getState: () => ({ settings: { enableSmartToolRouting: true } }),
+  },
+}))
+// Every getState() setter is a no-op; unknown reads (currentStreamThreadId)
+// resolve to undefined.
+vi.mock('@/hooks/useAppState', () => ({
+  useAppState: {
+    getState: () =>
+      new Proxy(
+        {},
+        {
+          get: () => () => undefined,
+        }
+      ),
+  },
+}))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => []) }))
+vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
+  getLoadedModels: vi.fn(async () => ['llama-local']),
+  unloadLlamaModel: vi.fn(),
+}))
+vi.mock('@/lib/llamacppRouterProps', () => ({
+  getLlamacppExtension: () => ({ getModelProps: h.getModelProps }),
+}))
+vi.mock('@/lib/mcp-orchestrator', () => ({
+  mcpOrchestrator: { getRelevantTools: h.getRelevantTools },
+}))
+vi.mock('@/lib/mcp-router-model-filter', () => ({
+  isRouterModelSelectable: () => false,
+}))
+vi.mock('@/lib/reasoningProviderOptions', () => ({
+  buildReasoningProviderOptions: () => undefined,
+}))
+vi.mock('@/lib/providerCaps', async (importOriginal) => ({
+  ...(await importOriginal<typeof ProviderCaps>()),
+  isPredefinedRemoteProvider: () => h.predefinedRemote,
+  getProviderApiType: () => 'openai',
+}))
+vi.mock('../model-factory', () => ({
+  ModelFactory: { createModel: vi.fn(async () => ({ modelId: 'gpt' })) },
+}))
+
+import { CustomChatTransport } from '../custom-chat-transport'
+import { CoworkChatTransport } from '../coworkTransport'
+import { ModelFactory } from '../model-factory'
+
+const user = (id: string, text: string): UIMessage =>
+  ({ id, role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
+const assistant = (id: string, text: string): UIMessage =>
+  ({ id, role: 'assistant', parts: [{ type: 'text', text }] }) as UIMessage
+
+async function drain(stream: ReadableStream): Promise<void> {
+  const reader = stream.getReader()
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done } = await reader.read()
+    if (done) break
+  }
+}
+
+const send = (transport: CustomChatTransport, messages: UIMessage[]) =>
+  transport.sendMessages({
+    chatId: 'thread-1',
+    messages,
+    abortSignal: undefined,
+    trigger: 'submit-message',
+    messageId: undefined,
+  })
+
+describe('CustomChatTransport prompt-prefix stability across turns', () => {
+  beforeEach(() => {
+    streamTextCalls.length = 0
+    h.disabledTools = []
+    h.servers = ['srv']
+    h.providerId = 'openai'
+    h.assistantParameters = null
+    h.getModelProps.mockReset()
+    provider.provider = 'openai'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools']
+    h.getRelevantTools.mockReset()
+    h.getRelevantTools.mockResolvedValue([
+      { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
+    ])
+  })
+
+  it('sends a byte-identical prefix (system + tools + prior turns) on the next turn', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+
+    const turn1 = [user('u1', 'hello')]
+    await drain(await send(transport, turn1))
+
+    // A new turn: prior turn + assistant reply + new user question.
+    const turn2 = [
+      ...turn1,
+      assistant('a1', 'hi there'),
+      user('u2', 'again'),
+    ]
+    await drain(await send(transport, turn2))
+
+    expect(streamTextCalls).toHaveLength(2)
+    const [first, second] = streamTextCalls
+
+    // System prompt is byte-identical.
+    expect(JSON.stringify(second.system)).toBe(JSON.stringify(first.system))
+
+    // Tool set is byte-identical (frozen for the thread's lifetime).
+    expect(JSON.stringify(Object.keys(second.tools as object))).toBe(
+      JSON.stringify(Object.keys(first.tools as object))
+    )
+
+    // The prior turn's model messages are re-serialized byte-for-byte, so the
+    // second request's message array starts with turn 1's exact prefix.
+    const firstMessages = first.messages as unknown[]
+    const secondMessages = second.messages as unknown[]
+    expect(secondMessages.length).toBeGreaterThan(firstMessages.length)
+    expect(
+      JSON.stringify(secondMessages.slice(0, firstMessages.length))
+    ).toBe(JSON.stringify(firstMessages))
+  })
+
+  it('trims history to the loaded llama.cpp context window before streaming', async () => {
+    h.providerId = 'llamacpp'
+    h.getModelProps.mockResolvedValue({ nCtx: 4096 })
+    provider.provider = 'llamacpp'
+    provider.settings = [
+      { key: 'ctx_shift', controller_props: { value: true } },
+    ]
+    selectedModel.id = 'llama-local'
+
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(
+      await send(transport, [
+        user('u1', `old-user ${'context '.repeat(1_200)}`),
+        assistant('a1', `old-assistant ${'context '.repeat(1_200)}`),
+        user('u2', `latest-user ${'context '.repeat(1_200)}`),
+      ])
+    )
+
+    const requestMessages = streamTextCalls[0].messages as unknown[]
+    const serialized = JSON.stringify(requestMessages)
+    expect(h.getModelProps).toHaveBeenCalledWith('llama-local')
+    expect(requestMessages).toHaveLength(1)
+    expect(serialized).not.toContain('old-user')
+    expect(serialized).toContain('latest-user')
+  })
+
+  it('keeps the prefix stable when the third turn extends the second', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+
+    const turn2 = [
+      user('u1', 'hello'),
+      assistant('a1', 'hi there'),
+      user('u2', 'again'),
+    ]
+    await drain(await send(transport, turn2))
+
+    const turn3 = [...turn2, assistant('a2', 'sure'), user('u3', 'more')]
+    await drain(await send(transport, turn3))
+
+    expect(streamTextCalls).toHaveLength(2)
+    const [second, third] = streamTextCalls
+    const secondMessages = second.messages as unknown[]
+    const thirdMessages = third.messages as unknown[]
+    expect(
+      JSON.stringify(thirdMessages.slice(0, secondMessages.length))
+    ).toBe(JSON.stringify(secondMessages))
+  })
+
+  it('keeps the configured limit when llama.cpp context shift is disabled', async () => {
+    h.providerId = 'llamacpp'
+    h.getModelProps.mockResolvedValue({ nCtx: 4096 })
+    h.assistantParameters = {
+      max_context_tokens: 12_000,
+      max_output_tokens: 2048,
+    }
+    provider.provider = 'llamacpp'
+    selectedModel.id = 'llama-local'
+
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(
+      await send(transport, [
+        user('u1', `first-user ${'context '.repeat(1_200)}`),
+        assistant('a1', `first-assistant ${'context '.repeat(1_200)}`),
+        user('u2', `latest-user ${'context '.repeat(1_200)}`),
+      ])
+    )
+
+    const requestMessages = streamTextCalls[0].messages as unknown[]
+    expect(h.getModelProps).not.toHaveBeenCalled()
+    expect(requestMessages).toHaveLength(3)
+  })
+})
+
+describe('CustomChatTransport assistant completion (continuation prefill)', () => {
+  beforeEach(() => {
+    streamTextCalls.length = 0
+    h.disabledTools = []
+    h.servers = ['srv']
+    h.providerId = 'openai'
+    h.assistantParameters = null
+    h.getModelProps.mockReset()
+    provider.provider = 'openai'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools']
+    h.getRelevantTools.mockReset()
+    h.getRelevantTools.mockResolvedValue([
+      { name: 'tool_a', description: 'a', inputSchema: {}, server: 'srv' },
+    ])
+  })
+
+  const history: UIMessage[] = [
+    user('u1', 'write a poem'),
+    assistant('a1', 'here goes'),
+    user('u2', 'continue'),
+  ]
+
+  it('appends the partial content as a trailing assistant prefill message', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    transport.setContinueFromContent('Roses are red,')
+    await drain(await send(transport, history))
+
+    expect(streamTextCalls).toHaveLength(1)
+    const messages = streamTextCalls[0].messages as Array<{
+      role: string
+      content: unknown
+    }>
+    const last = messages[messages.length - 1]
+    expect(last.role).toBe('assistant')
+    expect(last.content).toEqual([{ type: 'text', text: 'Roses are red,' }])
+  })
+
+  it('prefills reasoning so a turn stopped mid-thinking resumes inside <think>', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    transport.setContinueFromContent({ reasoning: 'let me think', text: '' })
+    await drain(await send(transport, history))
+
+    const messages = streamTextCalls[0].messages as Array<{
+      role: string
+      content: unknown
+    }>
+    const last = messages[messages.length - 1]
+    expect(last.role).toBe('assistant')
+    expect(last.content).toEqual([{ type: 'reasoning', text: 'let me think' }])
+  })
+
+  it('leaves the cached prefix byte-identical (prefill only appends)', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+
+    // Normal send seeds the cache prefix.
+    await drain(await send(transport, history))
+    // Continuation send of the same history appends the prefill.
+    transport.setContinueFromContent('Roses are red,')
+    await drain(await send(transport, history))
+
+    expect(streamTextCalls).toHaveLength(2)
+    const [normal, cont] = streamTextCalls
+    const normalMessages = normal.messages as unknown[]
+    const contMessages = cont.messages as unknown[]
+
+    // The prefill adds exactly one trailing message; everything before it is
+    // re-serialized byte-for-byte, so llama.cpp reuses the KV cache.
+    expect(contMessages).toHaveLength(normalMessages.length + 1)
+    expect(JSON.stringify(contMessages.slice(0, normalMessages.length))).toBe(
+      JSON.stringify(normalMessages)
+    )
+  })
+
+  it('consumes the prefill once (next send appends nothing)', async () => {
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+
+    transport.setContinueFromContent('Roses are red,')
+    await drain(await send(transport, history))
+    // A second send without re-setting must not re-append the prefill.
+    await drain(await send(transport, history))
+
+    expect(streamTextCalls).toHaveLength(2)
+    const [withPrefill, without] = streamTextCalls
+    const withMessages = withPrefill.messages as unknown[]
+    const withoutMessages = without.messages as unknown[]
+    expect(withMessages).toHaveLength(withoutMessages.length + 1)
+    const last = (withoutMessages[withoutMessages.length - 1] as {
+      role: string
+    }).role
+    expect(last).toBe('user')
+  })
+})
+
+// Anthropic falls back to the model's maximum max_tokens when no cap reaches
+// the SDK, and counts it against the context window (janhq/jan#9227).
+describe('CustomChatTransport output-token cap', () => {
+  beforeEach(() => {
+    streamTextCalls.length = 0
+    h.providerId = 'anthropic'
+    h.predefinedRemote = true
+    provider.provider = 'anthropic'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    h.getRelevantTools.mockReset()
+    h.getRelevantTools.mockResolvedValue([])
+  })
+
+  it('passes the assistant cap to streamText as maxOutputTokens for a predefined remote provider', async () => {
+    h.assistantParameters = { max_output_tokens: '4096' }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0].maxOutputTokens).toBe(4096)
+    expect(streamTextCalls[0]).not.toHaveProperty('maxTokens')
+  })
+
+  it('omits maxOutputTokens when the cap is 0 ("no cap") so the SDK does not reject it', async () => {
+    h.assistantParameters = { max_output_tokens: 0 }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0]).not.toHaveProperty('maxOutputTokens')
+  })
+
+  afterAll(() => {
+    h.predefinedRemote = false
+  })
+})
+
+it('keeps a Cowork run on its chosen model when the viewed model changes between steps', async () => {
+  provider.provider = 'openai'
+  h.providerId = 'openai'
+  selectedModel.id = 'gpt'
+  const transport = new CoworkChatTransport('session-a', {
+    model: { provider: 'openai', id: 'gpt' },
+    workspacePath: null,
+    readOnlyFolder: null,
+    planMode: false,
+    webSearch: false,
+    allowSubagents: false,
+    subagentNames: [],
+  })
+  vi.mocked(ModelFactory.createModel).mockClear()
+  await drain(await send(transport, [user('first', 'First step')]))
+  selectedModel.id = 'other-session-model'
+  await drain(await send(transport, [user('next', 'Next step')]))
+  expect(vi.mocked(ModelFactory.createModel).mock.calls.map(([id]) => id)).toEqual(['gpt', 'gpt'])
+})
+
+// The filesystem server's `read_media_file` result, stored as its MCP content
+// array. Sent as-is, the SDK stringifies it and the model gets the base64 as
+// text; the transport must turn it into a tool image first.
+const mcpImageTurn = (): UIMessage[] => [
+  user('u1', 'look at the frame'),
+  {
+    id: 'a1',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'tool-read_media_file',
+        toolCallId: 'c1',
+        state: 'output-available',
+        input: { path: '/frames/a.png' },
+        output: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }],
+      },
+    ],
+  } as unknown as UIMessage,
+]
+
+// OpenAI-compatible providers get a sentinel, which the request fetch decodes
+// into an `image_url` part on the `role: tool` message.
+it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', async () => {
+  streamTextCalls.length = 0
+  provider.provider = 'groq'
+  h.providerId = 'groq'
+  selectedModel.id = 'gpt'
+  selectedModel.capabilities = ['tools', 'vision']
+  const transport = new CustomChatTransport('you are jan', 'thread-1')
+  await drain(await send(transport, mcpImageTurn()))
+  const sent = JSON.stringify(streamTextCalls[0].messages)
+  expect(sent).toContain('__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=')
+  expect(sent).not.toContain('mimeType')
+})
+
+// Anthropic, Gemini and OpenAI Responses build their own request, so the
+// image must reach the SDK as structured tool output.
+it.each(['anthropic', 'google', 'openai'])(
+  'sends an MCP image result to %s as an image-data tool output',
+  async (name) => {
+    streamTextCalls.length = 0
+    provider.provider = name
+    h.providerId = name
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools', 'vision']
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, mcpImageTurn()))
+    const sent = JSON.stringify(streamTextCalls[0].messages)
+    expect(sent).toContain(
+      '"type":"image-data","mediaType":"image/png","data":"iVBORw0KGgo="'
+    )
+    expect(sent).not.toContain('__JAN_TOOL_IMAGE__')
+  }
+)

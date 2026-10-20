@@ -31,9 +31,9 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
 pub fn find_memory_pattern(text: &str) -> Option<(usize, &str)> {
     // Find the last parenthesis that contains the memory pattern
     let mut last_match = None;
-    let mut chars = text.char_indices().peekable();
+    let chars = text.char_indices();
 
-    while let Some((start_idx, ch)) = chars.next() {
+    for (start_idx, ch) in chars {
         if ch == '(' {
             // Find the closing parenthesis
             let remaining = &text[start_idx + 1..];
@@ -69,7 +69,7 @@ pub fn is_memory_pattern(content: &str) -> bool {
         // Each part should start with a number and contain "MiB"
         part.split_whitespace()
             .next()
-            .map_or(false, |first_word| first_word.parse::<i32>().is_ok())
+            .is_some_and(|first_word| first_word.parse::<i32>().is_ok())
             && part.contains("MiB")
     })
 }
@@ -129,7 +129,7 @@ mod tests {
         let with_negative = [-1, b'A' as i8, b'B' as i8, 0];
         let result = parse_c_string(&with_negative);
         // Should convert negative to unsigned byte
-        assert!(result.len() > 0);
+        assert!(!result.is_empty());
         assert!(result.contains('A'));
         assert!(result.contains('B'));
     }

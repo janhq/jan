@@ -8,5 +8,6 @@
   },
   "sendMessage": "Envia el missatge",
   "newConversation": "Conversa nova",
-  "clearHistory": "Neteja l’historial"
+  "clearHistory": "Neteja l’historial",
+  "done": "Done"
 }

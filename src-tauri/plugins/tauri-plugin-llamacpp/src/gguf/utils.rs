@@ -4,8 +4,17 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
-// read gguf metadata
-pub async fn read_gguf_metadata_internal(path: String) -> Result<GgufMetadata, String> {
+/// Runs a parse over a gguf, local or remote.
+///
+/// A remote file is fetched in range chunks and the parse retried after each
+/// one, since neither the KV section nor the tensor-info block has a length
+/// known up front. `what` names the parse in the error, which is all that
+/// differs between callers -- the fetch loop is shared so the chunking rules
+/// cannot drift apart.
+async fn parse_gguf<T, F>(path: &str, what: &str, parse: F) -> Result<T, String>
+where
+    F: Fn(&mut (dyn ReadSeek + '_)) -> std::io::Result<T>,
+{
     if path.starts_with("http://") || path.starts_with("https://") {
         // Remote: read in 2MB chunks until successful
         let client = reqwest::Client::new();
@@ -19,7 +28,7 @@ pub async fn read_gguf_metadata_internal(path: String) -> Result<GgufMetadata, S
             let end = std::cmp::min(start + chunk_size - 1, max_total_size - 1);
 
             let resp = client
-                .get(&path)
+                .get(path)
                 .header("Range", format!("bytes={}-{}", start, end))
                 .send()
                 .await
@@ -34,9 +43,9 @@ pub async fn read_gguf_metadata_internal(path: String) -> Result<GgufMetadata, S
             total_downloaded += chunk_data.len();
 
             // Try parsing after each chunk
-            let cursor = std::io::Cursor::new(&accumulated_data);
-            if let Ok(metadata) = helpers::read_gguf_metadata(cursor) {
-                return Ok(metadata);
+            let mut cursor = std::io::Cursor::new(accumulated_data.as_slice());
+            if let Ok(parsed) = parse(&mut cursor) {
+                return Ok(parsed);
             }
 
             // If we got less data than expected, we've reached EOF
@@ -44,16 +53,40 @@ pub async fn read_gguf_metadata_internal(path: String) -> Result<GgufMetadata, S
                 break;
             }
         }
-        Err("Could not parse GGUF metadata from downloaded data".to_string())
+        Err(format!("Could not read {} from downloaded data", what))
     } else {
         // Local: use streaming file reader
         let file =
-            File::open(&path).map_err(|e| format!("Failed to open local file {}: {}", path, e))?;
-        let reader = BufReader::new(file);
+            File::open(path).map_err(|e| format!("Failed to open local file {}: {}", path, e))?;
+        let mut reader = BufReader::new(file);
 
-        helpers::read_gguf_metadata(reader)
-            .map_err(|e| format!("Failed to parse GGUF metadata: {}", e))
+        parse(&mut reader).map_err(|e| format!("Failed to parse {}: {}", what, e))
     }
+}
+
+/// One trait object for the two readers `parse_gguf` hands out, so the parse
+/// closure does not have to be generic over both.
+pub trait ReadSeek: std::io::Read + std::io::Seek {}
+impl<T: std::io::Read + std::io::Seek> ReadSeek for T {}
+
+// read gguf metadata
+pub async fn read_gguf_metadata_internal(path: String) -> Result<GgufMetadata, String> {
+    parse_gguf(&path, "GGUF metadata", |r: &mut (dyn ReadSeek + '_)| {
+        helpers::read_gguf_metadata(r)
+    })
+    .await
+}
+
+/// Which of `names` exist as tensors in the gguf. See `find_gguf_tensors` for
+/// why this is an exact-name question rather than a listing.
+pub async fn find_gguf_tensors_internal(
+    path: String,
+    names: Vec<String>,
+) -> Result<Vec<String>, String> {
+    parse_gguf(&path, "GGUF tensor names", |r: &mut (dyn ReadSeek + '_)| {
+        helpers::find_gguf_tensors(r, &names)
+    })
+    .await
 }
 
 /// Estimate KVCache size from a given metadata

@@ -51,6 +51,18 @@
       "layout": "raw"
     }
   },
+  "tokamak": {
+    "type": "page",
+    "title": "Tokamak",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "research": {
+    "type": "page",
+    "title": "Research"
+  },
   "privacy": {
     "title": "Privacy",
     "display": "hidden"

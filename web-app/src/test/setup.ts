@@ -113,6 +113,7 @@ const mockServiceHub = {
   opener: vi.fn().mockReturnValue({
     open: vi.fn().mockResolvedValue(undefined),
     revealItemInDir: vi.fn().mockResolvedValue(undefined),
+    openPath: vi.fn().mockResolvedValue(undefined),
   }),
   updater: () => ({
     checkForUpdates: vi.fn().mockResolvedValue(null),
@@ -143,9 +144,48 @@ const mockServiceHub = {
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => mockServiceHub,
   getServiceHub: () => mockServiceHub,
+  // The transports read the hub off the store in their constructor, so an
+  // incomplete mock here makes the class impossible to instantiate in a test.
+  useServiceStore: {
+    getState: () => ({ serviceHub: mockServiceHub }),
+    setState: vi.fn(),
+    subscribe: vi.fn(),
+  },
   initializeServiceHubStore: vi.fn(),
   isServiceHubInitialized: () => true,
 }))
+
+// `Promise.withResolvers` (Node 22+) is used by tests that need to resolve a
+// promise from outside its executor. Polyfilled for the Node 20 runtime; a
+// no-op where the runtime already ships it.
+if (typeof (Promise as { withResolvers?: unknown }).withResolvers !== 'function') {
+  (
+    Promise as unknown as { withResolvers: <T>() => {
+      promise: Promise<T>
+      resolve: (value: T | PromiseLike<T>) => void
+      reject: (reason?: unknown) => void
+    } }
+  ).withResolvers = function withResolvers<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void
+    let reject!: (reason?: unknown) => void
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    return { promise, resolve, reject }
+  }
+}
+
+// Radix's floating primitives (Tooltip, Popover, Select) measure with
+// ResizeObserver, which jsdom does not implement. Stubbed globally rather than
+// per test file, where it was already copied three times.
+if (!('ResizeObserver' in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
 
 // Mock window.matchMedia for useMediaQuery tests
 Object.defineProperty(window, 'matchMedia', {

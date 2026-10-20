@@ -96,22 +96,31 @@ function matchSqliteVecAsset(assets, platform, arch) {
         : ['linux']
 
   const archHints = arch === 'arm64' ? ['arm64', 'aarch64'] : ['x86_64', 'x64', 'amd64']
+  // The fallbacks below drop the arch hint: windows-arm64 has no sqlite-vec
+  // build and would take the x86_64 dll, which cannot load. Skipping is the
+  // supported outcome -- the caller falls back to linear search.
+  const foreignArchHints =
+    arch === 'arm64'
+      ? ['x86_64', 'x64', 'amd64', 'i686']
+      : ['arm64', 'aarch64', 'armv7']
   const extHints = ['zip', 'tar.gz']
 
   const lc = (s) => s.toLowerCase()
   const candidates = assets
     .filter((a) => a && a.browser_download_url && a.name)
     .map((a) => ({ name: lc(a.name), url: a.browser_download_url }))
+    .filter((c) => !foreignArchHints.some((h) => c.name.includes(h)))
 
   // Prefer exact OS + arch matches
   let matches = candidates.filter((c) => osHints.some((o) => c.name.includes(o)) && archHints.some((h) => c.name.includes(h)) && extHints.some((e) => c.name.endsWith(e)))
   if (matches.length) return matches[0].url
-  // Fallback: OS only
+  // OS only. Safe: foreign arches are filtered above, so this relaxes the arch
+  // spelling, not the arch.
   matches = candidates.filter((c) => osHints.some((o) => c.name.includes(o)) && extHints.some((e) => c.name.endsWith(e)))
   if (matches.length) return matches[0].url
-  // Last resort: any asset with shared library extension inside is unknown here, so pick any zip/tar.gz
-  matches = candidates.filter((c) => extHints.some((e) => c.name.endsWith(e)))
-  return matches.length ? matches[0].url : null
+  // No last resort: it would fire only when nothing matches this OS, so any
+  // archive it picked would be for another platform.
+  return null
 }
 
 async function fetchLatestSqliteVecUrl(platform, arch) {
@@ -142,8 +151,11 @@ function getPlatformArch() {
         ? 'aarch64-unknown-linux-gnu'
         : 'x86_64-unknown-linux-gnu'
   } else if (platform === 'win32') {
-    bunPlatform = 'windows-x64' // Bun has limited Windows support
-    uvPlatform = 'x86_64-pc-windows-msvc'
+    bunPlatform = arch === 'arm64' ? 'windows-aarch64' : 'windows-x64'
+    uvPlatform =
+      arch === 'arm64'
+        ? 'aarch64-pc-windows-msvc'
+        : 'x86_64-pc-windows-msvc'
   } else {
     throw new Error(`Unsupported platform: ${platform}`)
   }
@@ -248,7 +260,9 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'bun.exe'),
-        path.join(binDir, 'bun-x86_64-pc-windows-msvc.exe'),
+        // uvPlatform, not bunPlatform: tauri names externalBin by rust target
+        // triple, which is uv's spelling and not bun's.
+        path.join(binDir, `bun-${uvPlatform}.exe`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)
@@ -322,7 +336,7 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'uv.exe'),
-        path.join(binDir, 'uv-x86_64-pc-windows-msvc.exe'),
+        path.join(binDir, `uv-${uvPlatform}.exe`),
         (err) => {
           if (err) {
             console.log('Error Found:', err)

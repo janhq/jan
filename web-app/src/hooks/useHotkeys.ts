@@ -1,10 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useRouter } from '@tanstack/react-router'
-
-// Detect if the user is on macOS
-const isMac =
-  typeof navigator !== 'undefined' &&
-  navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
+import { isMac } from '@/lib/shortcuts'
 
 interface UseKeyboardShortcutProps {
   key: string

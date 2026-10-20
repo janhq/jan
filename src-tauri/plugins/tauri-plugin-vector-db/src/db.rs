@@ -48,6 +48,23 @@ pub struct MinimalChunkInput {
 // Connection & Path Management
 // ============================================================================
 
+/// Canonical base directory for all vector-db collections (RAG chunks and the
+/// agent memory store), given the OS app-data root. Single source of truth
+/// shared by `VectorDBState` and any out-of-plugin consumer so they operate on
+/// the same `.db` files.
+///
+/// The root is passed in rather than looked up here: this crate is a workspace
+/// member and cannot see the app's `core::app::paths`, which is where the
+/// Windows `%APPDATA%` override lives. Resolving `dirs::data_dir()` locally
+/// would put the plugin -- and only the plugin -- back on the real profile.
+pub fn base_dir_in(data_root: &Path) -> PathBuf {
+    let mut base = data_root.to_path_buf();
+    base.push("Jan");
+    base.push("data");
+    base.push("db");
+    base
+}
+
 pub fn collection_path(base: &Path, name: &str) -> PathBuf {
     let mut p = base.to_path_buf();
     let clean = name.replace(['/', '\\'], "_");
@@ -69,9 +86,33 @@ pub fn open_or_init_conn(path: &PathBuf) -> Result<Connection, VectorDBError> {
 // ============================================================================
 
 pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
-    // Check if vec0 module is already available
-    if conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok() {
+    load_sqlite_vec(conn, false)
+}
+
+/// Same probe, narrating each candidate for startup diagnostics.
+pub fn try_load_sqlite_vec_verbose(conn: &Connection) -> bool {
+    load_sqlite_vec(conn, true)
+}
+
+fn vec0_module_available(conn: &Connection) -> bool {
+    if conn
+        .execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])",
+            [],
+        )
+        .is_ok()
+    {
         let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
+        return true;
+    }
+    false
+}
+
+fn load_sqlite_vec(conn: &Connection, verbose: bool) -> bool {
+    if vec0_module_available(conn) {
+        if verbose {
+            println!("[VectorDB] sqlite-vec already loaded");
+        }
         return true;
     }
 
@@ -80,29 +121,70 @@ pub fn try_load_sqlite_vec(conn: &Connection) -> bool {
     }
 
     let paths = possible_sqlite_vec_paths();
+    if verbose {
+        println!("[VectorDB] Trying {} sqlite-vec candidates...", paths.len());
+    }
     for p in paths {
-        unsafe {
-            if conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok()
-                && conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS temp.temp_vec USING vec0(embedding float[1])", []).is_ok()
-            {
-                let _ = conn.execute("DROP TABLE IF EXISTS temp.temp_vec", []);
-                return true;
+        if verbose {
+            println!("[VectorDB]   Trying: {}", p);
+        }
+        let loaded = unsafe { conn.load_extension(&p, Some("sqlite3_vec_init")).is_ok() };
+        if loaded && vec0_module_available(conn) {
+            if verbose {
+                println!("[VectorDB] sqlite-vec loaded from: {}", p);
             }
+            return true;
         }
     }
 
+    if verbose {
+        println!("[VectorDB] sqlite-vec unavailable; using linear search");
+    }
     false
 }
 
+/// Filenames sqlite-vec ships under, without a platform suffix; SQLite appends
+/// that itself. `vec0` is what most distro packages install.
+const SQLITE_VEC_STEMS: [&str; 2] = ["sqlite-vec", "vec0"];
+
+const SQLITE_VEC_SYSTEM_DIRS: &[&str] = if cfg!(target_os = "macos") {
+    &["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"]
+} else if cfg!(target_os = "windows") {
+    &["C:\\Program Files\\sqlite-vec"]
+} else {
+    &[
+        "/usr/lib/sqlite3",
+        "/usr/local/lib/sqlite3",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/lib",
+    ]
+};
+
 pub fn possible_sqlite_vec_paths() -> Vec<String> {
+    build_sqlite_vec_paths(
+        std::env::var("JAN_SQLITE_VEC_PATH").ok(),
+        std::env::current_exe().ok(),
+    )
+}
+
+fn build_sqlite_vec_paths(override_path: Option<String>, exe: Option<PathBuf>) -> Vec<String> {
     let mut paths = Vec::new();
+
+    if let Some(custom) = override_path {
+        if !custom.trim().is_empty() {
+            paths.push(custom);
+        }
+    }
 
     // Dev paths
     paths.push("./src-tauri/resources/bin/sqlite-vec".to_string());
     paths.push("./resources/bin/sqlite-vec".to_string());
 
     // Exe-relative paths
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe {
         if let Some(dir) = exe.parent() {
             let mut d = dir.to_path_buf();
             d.push("resources");
@@ -122,6 +204,20 @@ pub fn possible_sqlite_vec_paths() -> Vec<String> {
             }
         }
     }
+
+    // System installs: the library is not bundled, so a package-manager copy is
+    // the usual source of ANN acceleration.
+    for dir in SQLITE_VEC_SYSTEM_DIRS {
+        for stem in SQLITE_VEC_STEMS {
+            paths.push(format!("{dir}{}{stem}", std::path::MAIN_SEPARATOR));
+        }
+    }
+
+    // Bare stems last, so the OS loader can search its own default paths.
+    paths.extend(SQLITE_VEC_STEMS.iter().map(|s| s.to_string()));
+
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| seen.insert(p.clone()));
     paths
 }
 
@@ -284,6 +380,10 @@ pub fn insert_chunks(
         .unwrap_or(-1);
 
     for ch in chunks.into_iter() {
+        // Reject unusable vectors before they reach either table: a non-finite
+        // value poisons cosine_similarity on the linear path and sqlite-vec
+        // silently drops the row on the ANN path.
+        validate_embedding(&ch.embedding)?;
         current_order += 1;
         let emb = to_le_bytes_vec(&ch.embedding);
         let chunk_id = Uuid::new_v4().to_string();
@@ -296,11 +396,16 @@ pub fn insert_chunks(
             let rowid: i64 = tx
                 .prepare("SELECT rowid FROM chunks WHERE id=?1")?
                 .query_row(params![chunk_id], |r| r.get(0))?;
-            let json_vec = serde_json::to_string(&ch.embedding).unwrap_or("[]".to_string());
-            let _ = tx.execute(
+            let json_vec = embedding_to_json(&ch.embedding)?;
+            // Tolerated, not propagated: an existing chunks_vec built for a
+            // different dimension (the embedding model changed) rejects the
+            // row, and linear search still serves it.
+            if let Err(e) = tx.execute(
                 "INSERT OR REPLACE INTO chunks_vec(rowid, embedding) VALUES (?1, ?2)",
                 params![rowid, json_vec],
-            );
+            ) {
+                println!("[VectorDB] ✗ Failed to index chunk in chunks_vec: {}", e);
+            }
         }
     }
 
@@ -331,6 +436,31 @@ pub fn delete_file(conn: &Connection, file_id: &str) -> Result<(), VectorDBError
 // Search Operations
 // ============================================================================
 
+// sqlite-vec parses a bound vector as JSON. serde_json writes a non-finite
+// float as `null` and sqlite-vec then fails with only "JSON parsing error", so
+// reject the vector here while the offending element can still be named.
+fn embedding_to_json(embedding: &[f32]) -> Result<String, VectorDBError> {
+    validate_embedding(embedding)?;
+    Ok(serde_json::to_string(embedding)?)
+}
+
+fn validate_embedding(embedding: &[f32]) -> Result<(), VectorDBError> {
+    if embedding.is_empty() {
+        return Err(VectorDBError::InvalidInput(
+            "embedding is empty; the embedding model returned no vector".to_string(),
+        ));
+    }
+    if let Some(i) = embedding.iter().position(|v| !v.is_finite()) {
+        return Err(VectorDBError::InvalidInput(format!(
+            "embedding has a non-finite value ({}) at index {} of {}; the embedding model returned an unusable vector",
+            embedding[i],
+            i,
+            embedding.len()
+        )));
+    }
+    Ok(())
+}
+
 pub fn search_collection(
     conn: &Connection,
     query_embedding: &[f32],
@@ -340,6 +470,11 @@ pub fn search_collection(
     vec_loaded: bool,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
+    // Both paths need this: sqlite-vec fails opaquely on a non-finite value,
+    // and cosine_similarity turns it into a NaN score that silently fails the
+    // threshold, so retrieval would just come back empty.
+    validate_embedding(query_embedding)?;
+
     let has_vec = if vec_loaded {
         conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'")
@@ -370,7 +505,7 @@ fn search_ann(
     limit: usize,
     file_ids: Option<Vec<String>>,
 ) -> Result<Vec<SearchResult>, VectorDBError> {
-    let json_vec = serde_json::to_string(&query_embedding).unwrap_or("[]".to_string());
+    let json_vec = embedding_to_json(query_embedding)?;
 
     // Build query with optional file_id filtering
     let query = if let Some(ref ids) = file_ids {
@@ -628,4 +763,353 @@ pub fn chunk_text(text: String, chunk_size: usize, chunk_overlap: usize) -> Vec<
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn override_takes_priority_over_every_other_candidate() {
+        let paths = build_sqlite_vec_paths(Some("/custom/vec".to_string()), None);
+        assert_eq!(paths.first().map(String::as_str), Some("/custom/vec"));
+    }
+
+    #[test]
+    fn blank_override_is_ignored() {
+        let paths = build_sqlite_vec_paths(Some("   ".to_string()), None);
+        assert!(!paths.iter().any(|p| p.trim().is_empty()), "{paths:?}");
+    }
+
+    #[test]
+    fn bundled_paths_are_searched_before_system_paths() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let bundled = paths
+            .iter()
+            .position(|p| p.contains("resources"))
+            .expect("a bundled candidate should exist");
+        let system = paths
+            .iter()
+            .position(|p| !p.contains("resources") && p.starts_with('/'))
+            .expect("a system candidate should exist");
+        assert!(bundled < system, "{paths:?}");
+    }
+
+    // A package-manager install is the only way to get ANN now that the library
+    // is deliberately not bundled.
+    #[test]
+    fn searches_system_library_directories() {
+        let paths = build_sqlite_vec_paths(None, None);
+        assert!(
+            paths.iter().any(|p| p.starts_with("/usr/")
+                || p.starts_with("/opt/")
+                || p.starts_with("C:\\")),
+            "{paths:?}"
+        );
+    }
+
+    // A bare stem lets the OS loader consult LD_LIBRARY_PATH and its default
+    // directories, which covers layouts we cannot enumerate.
+    #[test]
+    fn ends_with_bare_stems_for_the_loader_to_resolve() {
+        let paths = build_sqlite_vec_paths(None, None);
+        for stem in SQLITE_VEC_STEMS {
+            assert!(paths.contains(&stem.to_string()), "missing {stem} in {paths:?}");
+        }
+        let first_bare = paths.iter().position(|p| !p.contains('/') && !p.contains('\\'));
+        assert_eq!(first_bare.map(|i| i + SQLITE_VEC_STEMS.len()), Some(paths.len()));
+    }
+
+    #[test]
+    fn candidates_are_unique() {
+        let paths = build_sqlite_vec_paths(None, Some(PathBuf::from("/opt/jan/bin/jan")));
+        let mut seen = paths.clone();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), paths.len(), "duplicate candidates in {paths:?}");
+    }
+
+    #[test]
+    fn serializes_a_finite_embedding() {
+        assert_eq!(embedding_to_json(&[0.5, -0.25]).unwrap(), "[0.5,-0.25]");
+    }
+
+    // serde_json writes a non-finite float as `null`, which sqlite-vec rejects
+    // with an opaque "JSON parsing error". Catch it here with a usable message.
+    #[test]
+    fn rejects_non_finite_values() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let err = embedding_to_json(&[0.1, bad, 0.3]).unwrap_err();
+            let msg = err.to_string();
+            assert!(matches!(err, VectorDBError::InvalidInput(_)), "{msg}");
+            assert!(msg.contains("index 1"), "{msg}");
+        }
+        assert_eq!(serde_json::to_string(&f32::NAN).unwrap(), "null");
+    }
+
+    // How a non-finite value reaches us at all: a JSON number past f32::MAX is
+    // cast, not rejected, so an embedding of 1e39 arrives over IPC as infinity.
+    #[test]
+    fn json_numbers_past_f32_max_arrive_as_infinity() {
+        assert_eq!(
+            serde_json::from_str::<Vec<f32>>("[1e39]").unwrap(),
+            vec![f32::INFINITY]
+        );
+    }
+
+    // The linear path has no JSON step, so it needs its own guard or a NaN
+    // query silently returns zero matches instead of reporting the bad vector.
+    #[test]
+    fn linear_search_rejects_a_non_finite_query() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = search_collection(
+            &conn,
+            &[0.1, f32::NAN, 0.3],
+            5,
+            0.0,
+            Some("linear".to_string()),
+            false,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+    }
+
+    #[test]
+    fn insert_rejects_a_non_finite_embedding() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn, 3).unwrap();
+        let err = insert_chunks(
+            &conn,
+            "f1",
+            vec![MinimalChunkInput {
+                text: "hello".to_string(),
+                embedding: vec![0.1, f32::INFINITY, 0.3],
+            }],
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, VectorDBError::InvalidInput(_)), "{err}");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn rejects_an_empty_embedding() {
+        assert!(matches!(
+            embedding_to_json(&[]).unwrap_err(),
+            VectorDBError::InvalidInput(_)
+        ));
+    }
+}
+
+// ============================================================================
+// Project-scoped agent memory (FTS5 / BM25)
+// ============================================================================
+
+/// Single global collection file holding all agent memories, isolated per
+/// project via the `project_id` column.
+pub const MEMORY_COLLECTION: &str = "__memory__";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemoryHit {
+    pub msg_id: String,
+    pub project_id: String,
+    pub text: String,
+    pub role: String,
+    pub ts: i64,
+    pub score: f32,
+}
+
+/// FTS5 virtual table. `project_id` is UNINDEXED (filter column, not a search
+/// term). Porter stemming + unicode61 folding for lexical recall.
+pub fn ensure_memory_table(conn: &Connection) -> Result<(), VectorDBError> {
+    conn.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories USING fts5(
+            msg_id UNINDEXED,
+            project_id UNINDEXED,
+            text,
+            role UNINDEXED,
+            ts UNINDEXED,
+            tokenize = 'porter unicode61'
+        )",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Sanitize raw user text into a safe FTS5 MATCH expression: alphanumeric terms
+/// (>=2 chars) quoted and OR-joined, so FTS5 operators in the input cannot raise
+/// a syntax error. Returns None when nothing indexable remains.
+fn build_fts_match(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.chars().count() >= 2)
+        .map(|t| format!("\"{}\"", t.to_lowercase()))
+        .collect();
+    if terms.is_empty() {
+        None
+    } else {
+        Some(terms.join(" OR "))
+    }
+}
+
+/// Idempotent index: delete-then-insert by `msg_id`, so re-indexing an edited
+/// message replaces its row instead of duplicating it.
+pub fn memory_index(
+    conn: &Connection,
+    msg_id: &str,
+    project_id: &str,
+    text: &str,
+    role: &str,
+    ts: i64,
+) -> Result<(), VectorDBError> {
+    ensure_memory_table(conn)?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM memories WHERE msg_id = ?1", params![msg_id])?;
+    tx.execute(
+        "INSERT INTO memories (msg_id, project_id, text, role, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![msg_id, project_id, text, role, ts],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// BM25-ranked recall scoped to a single project. Best match first (bm25 is more
+/// negative = more relevant), recency breaks ties.
+pub fn memory_search(
+    conn: &Connection,
+    project_id: &str,
+    query: &str,
+    top_k: usize,
+) -> Result<Vec<MemoryHit>, VectorDBError> {
+    ensure_memory_table(conn)?;
+    let match_expr = match build_fts_match(query) {
+        Some(m) => m,
+        None => return Ok(Vec::new()),
+    };
+    let mut stmt = conn.prepare(
+        "SELECT msg_id, project_id, text, role, ts, bm25(memories) AS score
+         FROM memories
+         WHERE project_id = ?1 AND memories MATCH ?2
+         ORDER BY score ASC, ts DESC
+         LIMIT ?3",
+    )?;
+    let rows = stmt.query_map(params![project_id, match_expr, top_k as i64], |r| {
+        Ok(MemoryHit {
+            msg_id: r.get(0)?,
+            project_id: r.get(1)?,
+            text: r.get(2)?,
+            role: r.get(3)?,
+            ts: r.get(4)?,
+            score: r.get::<_, f64>(5)? as f32,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Clear memories: a single project when `project_id` is given, else all.
+pub fn memory_clear(conn: &Connection, project_id: Option<&str>) -> Result<(), VectorDBError> {
+    ensure_memory_table(conn)?;
+    match project_id {
+        Some(pid) => conn.execute("DELETE FROM memories WHERE project_id = ?1", params![pid])?,
+        None => conn.execute("DELETE FROM memories", [])?,
+    };
+    Ok(())
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    fn mem_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+        ensure_memory_table(&conn).expect("fts5 memory table");
+        conn
+    }
+
+    #[test]
+    fn bundled_sqlite_ships_fts5() {
+        let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+        conn.execute(
+            "CREATE VIRTUAL TABLE t USING fts5(content)",
+            [],
+        )
+        .expect("bundled rusqlite must ship FTS5");
+    }
+
+    #[test]
+    fn index_and_bm25_recall() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "the quick brown fox jumps", "user", 100).unwrap();
+        memory_index(&conn, "m2", "p1", "lazy dogs sleep all day", "user", 200).unwrap();
+
+        let hits = memory_search(&conn, "p1", "brown fox", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].msg_id, "m1");
+    }
+
+    #[test]
+    fn reindex_by_msg_id_is_idempotent() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "original text about apples", "user", 100).unwrap();
+        memory_index(&conn, "m1", "p1", "revised text about oranges", "user", 150).unwrap();
+
+        assert!(memory_search(&conn, "p1", "apples", 5).unwrap().is_empty());
+        let hits = memory_search(&conn, "p1", "oranges", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].text, "revised text about oranges");
+    }
+
+    #[test]
+    fn search_is_project_isolated() {
+        let conn = mem_conn();
+        memory_index(&conn, "a", "projectA", "shared keyword alpha", "user", 100).unwrap();
+        memory_index(&conn, "b", "projectB", "shared keyword alpha", "user", 100).unwrap();
+
+        let hits = memory_search(&conn, "projectA", "keyword", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].project_id, "projectA");
+    }
+
+    #[test]
+    fn recency_breaks_score_ties() {
+        let conn = mem_conn();
+        memory_index(&conn, "old", "p1", "duplicate phrase here", "user", 100).unwrap();
+        memory_index(&conn, "new", "p1", "duplicate phrase here", "user", 200).unwrap();
+
+        let hits = memory_search(&conn, "p1", "duplicate phrase", 5).unwrap();
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].msg_id, "new");
+    }
+
+    #[test]
+    fn operator_injection_is_safe() {
+        let conn = mem_conn();
+        memory_index(&conn, "m1", "p1", "normal indexed content", "user", 100).unwrap();
+        // Raw FTS5 operators in the query must not raise a syntax error.
+        let hits = memory_search(&conn, "p1", "content AND (OR* NEAR/2 \"", 5).unwrap();
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn clear_all_and_per_project() {
+        let conn = mem_conn();
+        memory_index(&conn, "a", "p1", "content one", "user", 100).unwrap();
+        memory_index(&conn, "b", "p2", "content two", "user", 100).unwrap();
+
+        memory_clear(&conn, Some("p1")).unwrap();
+        assert!(memory_search(&conn, "p1", "content", 5).unwrap().is_empty());
+        assert_eq!(memory_search(&conn, "p2", "content", 5).unwrap().len(), 1);
+
+        memory_clear(&conn, None).unwrap();
+        assert!(memory_search(&conn, "p2", "content", 5).unwrap().is_empty());
+    }
 }

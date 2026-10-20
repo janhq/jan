@@ -1,48 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { logger } from '@janhq/core'
 import {
   buildEmbedBatches,
   detectMtpLayersFromGgufMeta,
+  resolveSpecDraftKind,
+  detectTemplateKwargsFromChatTemplate,
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
 } from './util'
+import { getBackendSetting } from './backend-settings'
 
-// Mock console.log and console.error to avoid noise in tests
-const mockConsole = {
-  log: vi.fn(),
-  error: vi.fn(),
-}
+vi.mock('./backend-settings')
 
-// Set up mocks
 beforeEach(() => {
-  // Clear all mocks
   vi.clearAllMocks()
-
-  // Clear localStorage mocks
-  vi.mocked(localStorage.getItem).mockClear()
-
-  // Mock console
-  Object.defineProperty(console, 'log', {
-    value: mockConsole.log,
-    writable: true,
-  })
-  Object.defineProperty(console, 'error', {
-    value: mockConsole.error,
-    writable: true,
-  })
+  vi.mocked(getBackendSetting).mockReset()
 })
 
-describe('getProxyConfig', () => {
-  it('should return null when no proxy configuration is stored', () => {
-    vi.mocked(localStorage.getItem).mockReturnValue(null)
+describe('getProxyConfig', async () => {
+  it('should return null when no proxy configuration is stored', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue(null)
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toBeNull()
-    expect(localStorage.getItem).toHaveBeenCalledWith('setting-proxy-config')
+    expect(getBackendSetting).toHaveBeenCalledWith('setting-proxy-config')
   })
 
-  it('should return null when proxy is disabled', () => {
+  it('should return null when proxy is disabled', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: false,
@@ -59,14 +45,14 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toBeNull()
   })
 
-  it('should return null when proxy is enabled but no URL is provided', () => {
+  it('should return null when proxy is enabled but no URL is provided', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -83,14 +69,14 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toBeNull()
   })
 
-  it('should return basic proxy configuration with SSL settings', () => {
+  it('should return basic proxy configuration with SSL settings', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -107,9 +93,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
@@ -121,7 +107,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should include authentication when both username and password are provided', () => {
+  it('should include authentication when both username and password are provided', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -138,9 +124,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -154,7 +140,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should not include authentication when only username is provided', () => {
+  it('should not include authentication when only username is provided', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -171,9 +157,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -187,7 +173,7 @@ describe('getProxyConfig', () => {
     expect(result?.password).toBeUndefined()
   })
 
-  it('should not include authentication when only password is provided', () => {
+  it('should not include authentication when only password is provided', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -204,9 +190,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -220,7 +206,7 @@ describe('getProxyConfig', () => {
     expect(result?.password).toBeUndefined()
   })
 
-  it('should parse no_proxy list correctly', () => {
+  it('should parse no_proxy list correctly', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -237,9 +223,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -257,7 +243,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should handle empty no_proxy entries', () => {
+  it('should handle empty no_proxy entries', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -274,9 +260,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -289,7 +275,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should handle mixed SSL verification settings', () => {
+  it('should handle mixed SSL verification settings', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -306,9 +292,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
@@ -323,7 +309,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should handle all SSL verification settings as false', () => {
+  it('should handle all SSL verification settings as false', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -340,9 +326,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'http://proxy.example.com:8080',
@@ -354,7 +340,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should handle all SSL verification settings as true', () => {
+  it('should handle all SSL verification settings as true', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -371,9 +357,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'https://proxy.example.com:8080',
@@ -385,7 +371,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should log proxy configuration details', () => {
+  it('should log proxy configuration details', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -402,11 +388,11 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    getProxyConfig()
+    await getProxyConfig()
 
-    expect(mockConsole.log).toHaveBeenCalledWith('Using proxy configuration:', {
+    expect(logger.info).toHaveBeenCalledWith('Using proxy configuration:', {
       url: 'https://proxy.example.com:8080',
       hasAuth: true,
       noProxyCount: 2,
@@ -418,7 +404,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should log proxy configuration without authentication', () => {
+  it('should log proxy configuration without authentication', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -435,11 +421,11 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    getProxyConfig()
+    await getProxyConfig()
 
-    expect(mockConsole.log).toHaveBeenCalledWith('Using proxy configuration:', {
+    expect(logger.info).toHaveBeenCalledWith('Using proxy configuration:', {
       url: 'http://proxy.example.com:8080',
       hasAuth: false,
       noProxyCount: 0,
@@ -451,19 +437,19 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should return null and log error when JSON parsing fails', () => {
-    vi.mocked(localStorage.getItem).mockReturnValue('invalid-json')
+  it('should return null and log error when JSON parsing fails', async () => {
+    vi.mocked(getBackendSetting).mockResolvedValue('invalid-json')
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toBeNull()
-    expect(mockConsole.error).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       'Failed to parse proxy configuration:',
       expect.any(SyntaxError)
     )
   })
 
-  it('should handle SOCKS proxy URLs', () => {
+  it('should handle SOCKS proxy URLs', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -480,9 +466,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'socks5://proxy.example.com:1080',
@@ -496,7 +482,7 @@ describe('getProxyConfig', () => {
     })
   })
 
-  it('should handle comprehensive proxy configuration', () => {
+  it('should handle comprehensive proxy configuration', async () => {
     const proxyConfig = {
       state: {
         proxyEnabled: true,
@@ -513,9 +499,9 @@ describe('getProxyConfig', () => {
       version: 0,
     }
 
-    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify(proxyConfig))
+    vi.mocked(getBackendSetting).mockResolvedValue(JSON.stringify(proxyConfig))
 
-    const result = getProxyConfig()
+    const result = await getProxyConfig()
 
     expect(result).toEqual({
       url: 'https://secure-proxy.example.com:8443',
@@ -640,5 +626,118 @@ describe('detectMtpLayersFromGgufMeta', () => {
         'glm.nextn_predict_layers': '2.7',
       })
     ).toBe(2)
+  })
+})
+
+describe('detectTemplateKwargsFromChatTemplate', () => {
+  it('returns [] for missing or empty templates', () => {
+    expect(detectTemplateKwargsFromChatTemplate(undefined)).toEqual([])
+    expect(detectTemplateKwargsFromChatTemplate('')).toEqual([])
+    expect(detectTemplateKwargsFromChatTemplate(123)).toEqual([])
+  })
+
+  it('detects the self-defaulting set idiom and infers types', () => {
+    const tpl = [
+      "{%- set enable_thinking = enable_thinking | default(false) -%}",
+      "{%- set preserve_thinking = preserve_thinking | default(false) -%}",
+      "{%- set reasoning_effort = reasoning_effort | default('medium') -%}",
+      "{%- set max_turns = max_turns | default(8) -%}",
+    ].join('\n')
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'preserve_thinking', type: 'boolean', default: false },
+      { name: 'reasoning_effort', type: 'string', default: 'medium' },
+      { name: 'max_turns', type: 'number', default: 8 },
+    ])
+  })
+
+  it('excludes enable_thinking (owned by the reasoning control)', () => {
+    const tpl = '{%- set enable_thinking = enable_thinking | default(true) -%}'
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([])
+  })
+
+  it('deduplicates repeated kwargs and ignores non-self-defaulting sets', () => {
+    const tpl = [
+      '{%- set preserve_thinking = preserve_thinking | default(false) -%}',
+      '{%- set preserve_thinking = preserve_thinking | default(false) -%}',
+      '{%- set ns = namespace(x=1) -%}',
+      '{%- set role = message.role -%}',
+    ].join('\n')
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'preserve_thinking', type: 'boolean', default: false },
+    ])
+  })
+
+  it('handles the {% %} form without the dash', () => {
+    const tpl = '{% set add_notes = add_notes | default(true) %}'
+    expect(detectTemplateKwargsFromChatTemplate(tpl)).toEqual([
+      { name: 'add_notes', type: 'boolean', default: true },
+    ])
+  })
+})
+
+describe('resolveSpecDraftKind', () => {
+  // general.architecture is what llama.cpp itself keys on: `eagle3` and
+  // `dflash` are distinct architectures, and anything else carrying draft
+  // weights is an MTP head.
+  it('reads eagle3 straight off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'eagle3' })).toBe(
+      'eagle3'
+    )
+  })
+
+  it('reads dflash off the architecture', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'dflash' })).toBe(
+      'dflash'
+    )
+  })
+
+  // DSpark shares the dflash architecture and is told apart by its Markov
+  // head, which is a tensor rather than a metadata key.
+  it('separates dspark from dflash by the markov head', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: true,
+      })
+    ).toBe('dspark')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+      })
+    ).toBe('dflash')
+  })
+
+  // The tensor is the evidence; the catalog's file naming is only a fallback
+  // for when it could not be read.
+  it('trusts the markov head over the file naming', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hasMarkovHead: false,
+        hint: 'dspark',
+      })
+    ).toBe('dflash')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, {
+        hint: 'dspark',
+      })
+    ).toBe('dspark')
+  })
+
+  it('treats any other architecture as an MTP head', () => {
+    expect(resolveSpecDraftKind({ 'general.architecture': 'deepseek2' })).toBe(
+      'mtp'
+    )
+    expect(resolveSpecDraftKind({})).toBe('mtp')
+    expect(resolveSpecDraftKind(undefined)).toBe('mtp')
+  })
+
+  // The architecture wins: a misnamed file must not select a type the draft
+  // cannot implement, which fails the load with an unrelated message.
+  it('ignores a hint the architecture contradicts', () => {
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'glm4moe' }, { hint: 'dflash' })
+    ).toBe('mtp')
+    expect(
+      resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
+    ).toBe('dflash')
   })
 })

@@ -235,6 +235,7 @@
     "delete": "Eliminar"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Configuración del modelo - {{modelId}}",
     "description": "Configura los ajustes del modelo para optimizar el rendimiento y el comportamiento."
   },

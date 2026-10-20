@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { forceStopEngine } from '@janhq/tauri-plugin-llamacpp-api'
 import { AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -66,7 +67,7 @@ export default function LlamacppBusyOnExitDialog() {
         ...Object.keys(state.abortControllers),
       ])
       threadIds.forEach((tid) => state.clearThreadState(tid))
-      await invoke('plugin:llamacpp|force_kill_router_tree')
+      await forceStopEngine()
       await invoke('confirm_exit')
     } catch (e) {
       console.error('force-quit failed:', e)

@@ -8,9 +8,12 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { cleanupThreadWorkspace } from '@/lib/agentTools'
 
 type ThreadState = {
   threads: Record<string, Thread>
+  isLoadingThreads: boolean
+  setThreadsLoading: (loading: boolean) => void
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -56,8 +59,42 @@ const cleanupVectorDB = async (threadId: string) => {
   }
 }
 
+/**
+ * Drops the thread's saved prompt cache in the local engine.
+ *
+ * Best-effort and fire-and-forget, like the vector DB cleanup above: the cache
+ * is bounded by its own disk budget, so failing to reclaim one thread's share
+ * is not worth failing the delete over.
+ */
+const cleanupThreadCache = async (threadId: string) => {
+  try {
+    const { EngineManager } = await import('@janhq/core')
+    const engine = EngineManager.instance().get('llamacpp') as
+      | { forgetThreadCache?: (id: string) => Promise<number> }
+      | undefined
+    await engine?.forgetThreadCache?.(threadId)
+  } catch (e) {
+    console.warn(
+      `[Threads] Failed to drop the saved prompt cache for thread ${threadId}:`,
+      e
+    )
+  }
+}
+
+// Everything belonging to a thread that lives outside the thread store: its
+// vector DB collection, its saved prompt cache, and its ephemeral agent
+// sandbox. Fire-and-forget, since every caller runs inside a `set` reducer;
+// each logs its own failures.
+const cleanupThreadArtifacts = (threadId: string) => {
+  cleanupVectorDB(threadId)
+  cleanupThreadCache(threadId)
+  cleanupThreadWorkspace(threadId)
+}
+
 export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
+  isLoadingThreads: true,
+  setThreadsLoading: (loading) => set({ isLoadingThreads: loading }),
   searchIndex: null,
   setThreads: (threads) => {
     const threadMap = threads.reduce(
@@ -160,7 +197,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupVectorDB(threadId)
+      cleanupThreadArtifacts(threadId)
       getServiceHub().threads().deleteThread(threadId)
 
       return {
@@ -194,9 +231,14 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           !state.threads[threadId].metadata?.project
       )
 
-      // Delete threads and clean up their vector DB collections
+      // Delete threads and clean up their out-of-store artifacts. As in
+      // deleteThread: removing the chat session is what ends a turn the thread
+      // still has running in the background.
       threadsToDeleteIds.forEach((threadId) => {
-        cleanupVectorDB(threadId)
+        useAgentMode.getState().removeThread(threadId)
+        useChatSessions.getState().removeSession(threadId)
+        useAppState.getState().clearThreadState(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -230,7 +272,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupVectorDB(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -256,7 +298,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupVectorDB(threadId)
+        cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
 

@@ -16,6 +16,8 @@ import {
   API_KEY_FALLBACKS_SETTING_KEY,
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
+import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
+import { toProviderUnreachable } from '@/lib/provider-unreachable'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -106,6 +108,8 @@ export class TauriProvidersService extends DefaultProvidersService {
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
                 imported: (model as { imported?: boolean }).imported,
+                template_kwargs: (model as { template_kwargs?: TemplateKwarg[] })
+                  .template_kwargs,
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
@@ -177,6 +181,8 @@ export class TauriProvidersService extends DefaultProvidersService {
             headers[header.header] = header.value
           })
         }
+
+        ensureAnthropicHeaders(provider, headers)
 
         const response = await fetchTauri(`${provider.base_url}/models`, {
           method: 'GET',
@@ -262,8 +268,19 @@ export class TauriProvidersService extends DefaultProvidersService {
         throw new Error(error.message)
       }
 
+      // `@tauri-apps/plugin-http` rejects with a plain string, not an Error,
+      // so `error instanceof Error` alone reported every connection failure
+      // as "Unknown error".
+      const unreachable = toProviderUnreachable(
+        error,
+        `${provider.base_url}/models`
+      )
+      if (unreachable) throw unreachable
+
+      const message = error instanceof Error ? error.message : String(error)
+
       // Provide helpful error message for any connection errors
-      if (error instanceof Error && error.message.includes('fetch')) {
+      if (message.includes('fetch')) {
         throw new Error(
           `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
         )
@@ -271,7 +288,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       // Generic fallback
       throw new Error(
-        `Unexpected error while fetching models from ${provider.provider}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Unexpected error while fetching models from ${provider.provider}: ${message}`
       )
     }
   }

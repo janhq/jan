@@ -8,5 +8,6 @@
   },
   "sendMessage": "Odeslat zprávu",
   "newConversation": "Nová konverzace",
-  "clearHistory": "Vymazat historii"
+  "clearHistory": "Vymazat historii",
+  "done": "Done"
 }

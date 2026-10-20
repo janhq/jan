@@ -5,7 +5,9 @@ import { HtmlArtifact } from '../HtmlArtifact'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
-    t: (_key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? _key,
+    t: (_key: string, opts?: { defaultValue?: string; count?: number }) =>
+      opts?.defaultValue ??
+      (opts?.count === undefined ? _key : `${_key}#${opts.count}`),
   }),
 }))
 
@@ -109,5 +111,42 @@ describe('HtmlArtifact', () => {
     expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(
       doc.indexOf('<title>t</title>')
     )
+  })
+
+  it('shows a notice when the HTML has unresolved relative asset refs', () => {
+    render(<HtmlArtifact code={'<img src="./logo.png"><h1>hi</h1>'} />)
+    expect(screen.getByTestId('html-artifact-unresolved')).toBeInTheDocument()
+  })
+
+  // i18next picks the plural form from `count`, so the component's only job is
+  // to pass it; both forms must exist in the bundle or it renders the raw key.
+  it('passes the ref count through for pluralisation', () => {
+    const { unmount } = render(<HtmlArtifact code={'<img src="./a.png">'} />)
+    expect(screen.getByTestId('html-artifact-unresolved')).toHaveTextContent(
+      'htmlArtifact.unresolvedAssets#1'
+    )
+    unmount()
+    render(<HtmlArtifact code={'<img src="./a.png"><img src="./b.png">'} />)
+    expect(screen.getByTestId('html-artifact-unresolved')).toHaveTextContent(
+      'htmlArtifact.unresolvedAssets#2'
+    )
+  })
+
+  it('has both plural forms for the unresolved-assets notice', async () => {
+    const common = (await import('@/locales/en/common.json')).default
+    expect(common.htmlArtifact.unresolvedAssets_one).toBeTruthy()
+    expect(common.htmlArtifact.unresolvedAssets_other).toContain('{{count}}')
+  })
+
+  it('shows no notice for self-contained HTML', () => {
+    render(<HtmlArtifact code={'<h1>hi</h1><img src="https://x.dev/a.png">'} />)
+    expect(screen.queryByTestId('html-artifact-unresolved')).not.toBeInTheDocument()
+  })
+
+  it('hides the notice in the Code view', async () => {
+    const user = userEvent.setup()
+    render(<HtmlArtifact code={'<img src="a.png">'} />)
+    await user.click(screen.getByRole('tab', { name: /code/i }))
+    expect(screen.queryByTestId('html-artifact-unresolved')).not.toBeInTheDocument()
   })
 })

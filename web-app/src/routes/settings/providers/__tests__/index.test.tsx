@@ -159,8 +159,8 @@ describe('Providers Settings Route', () => {
     const Component = ProvidersRoute.component as React.ComponentType
     render(<Component />)
 
-    expect(screen.getByTestId('card')).toBeInTheDocument()
-    expect(screen.getByTestId('card-header')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('card-header').length).toBeGreaterThan(0)
   })
 
   it('should render list of providers', () => {
@@ -168,7 +168,7 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 
   it('should render provider avatars', () => {
@@ -176,7 +176,7 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 
   it('should render provider titles', () => {
@@ -184,7 +184,7 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 
   it('should render provider switches', () => {
@@ -192,7 +192,7 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 
   it('should render add provider dialog', () => {
@@ -227,7 +227,7 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 
   it('should handle add provider button click', () => {
@@ -303,6 +303,6 @@ describe('Providers Settings Route', () => {
     render(<Component />)
 
     // With empty providers array, should still render the page structure
-    expect(screen.getByTestId('card')).toBeInTheDocument()
+    expect(screen.getAllByTestId('card').length).toBeGreaterThan(0)
   })
 })

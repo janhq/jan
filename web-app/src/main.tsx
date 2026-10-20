@@ -6,6 +6,7 @@ import {
   pruneLocalStorageByFlags,
   type WebdataResetFlags,
 } from '@/services/app/reset-localstorage'
+import { installConsoleLogForwarding } from '@/services/app/console-logger'
 
 import './index.css'
 
@@ -79,6 +80,7 @@ const consumePendingWebdataReset = async () => {
 }
 
 const boot = async () => {
+  installConsoleLogForwarding()
   setupMobileViewport()
   preventDefaultFileDrop()
 

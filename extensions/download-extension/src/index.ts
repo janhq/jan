@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { BaseExtension, events } from '@janhq/core'
+import { BaseExtension, events, logger } from '@janhq/core'
 
 export enum Settings {
   hfToken = 'hf-token',
@@ -73,7 +73,7 @@ export default class DownloadManager extends BaseExtension {
         headers: this._getHeaders(),
       })
     } catch (error) {
-      console.error('Error downloading task', taskId, error)
+      logger.error('Error downloading task', taskId, error)
       throw error
     } finally {
       unlisten()
@@ -84,7 +84,7 @@ export default class DownloadManager extends BaseExtension {
     try {
       await invoke<void>('cancel_download_task', { taskId })
     } catch (error) {
-      console.error('Error cancelling download:', error)
+      logger.error('Error cancelling download:', error)
       throw error
     }
   }
@@ -93,7 +93,7 @@ export default class DownloadManager extends BaseExtension {
     try {
       await invoke<void>('pause_download_task', { taskId })
     } catch (error) {
-      console.error('Error pausing download:', error)
+      logger.error('Error pausing download:', error)
       throw error
     }
   }

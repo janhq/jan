@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Ja utilitzes l’última versió",
   "devVersion": "S’ha detectat la versió de desenvolupament",
   "updateError": "No s’han pogut cercar actualitzacions",
-  "checkForBackendUpdates": "Cerca actualitzacions de Llamacpp",
-  "checkForBackendUpdatesDesc": "Comprova si hi ha una versió més recent del backend Llamacpp.",
-  "checkingForBackendUpdates": "S’estan cercant actualitzacions de Llamacpp...",
-  "noBackendUpdateAvailable": "Ja utilitzes l’última versió de Llamacpp",
-  "backendUpdateError": "No s’han pogut cercar actualitzacions de Llamacpp",
   "changeLocation": "Canvia la ubicació",
   "copied": "Copiat",
   "copyPath": "Copia el camí",
@@ -307,15 +302,6 @@
       "cancel": "Cancel·la",
       "changeLocation": "Canvia la ubicació"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Nova versió de Llamacpp {{version}}",
-    "backendUpdateAvailable": "Actualització de Llamacpp disponible",
-    "remindMeLater": "Recorda-m’ho més tard",
-    "updating": "S’està actualitzant...",
-    "updateNow": "Actualitza ara",
-    "updateSuccess": "Llamacpp s’ha actualitzat correctament",
-    "updateError": "No s’ha pogut actualitzar Llamacpp"
   },
   "backendInstallSuccess": "El backend s’ha instal·lat correctament",
   "backendInstallError": "No s’ha pogut instal·lar el backend"

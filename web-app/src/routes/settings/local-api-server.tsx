@@ -62,6 +62,8 @@ function LocalAPIServerContent() {
     setVerboseLogs,
     enableOnStartup,
     setEnableOnStartup,
+    runInBackground,
+    setRunInBackground,
     serverHost,
     serverPort,
     setServerPort,
@@ -191,23 +193,25 @@ function LocalAPIServerContent() {
 
           // Port-related errors (highest priority)
           if (errorMsg.includes('Address already in use')) {
-            toast.error('Port has been occupied', {
-              description: `Port ${serverPort} is already in use. Please try a different port.`,
+            toast.error(t('model-errors:serverPortOccupied'), {
+              description: t('model-errors:serverPortOccupiedDescription', {
+                port: serverPort,
+              }),
             })
           }
           // Model-related errors
           else if (errorMsg.includes('Invalid or inaccessible model path')) {
-            toast.error('Invalid or inaccessible model path', {
+            toast.error(t('model-errors:serverInvalidModelPath'), {
               description: errorMsg,
             })
           } else if (errorMsg.includes('model')) {
-            toast.error('Failed to start model', {
+            toast.error(t('model-errors:serverStartModelFailed'), {
               description: errorMsg,
             })
           }
           // Generic server errors
           else {
-            toast.error('Failed to start server', {
+            toast.error(t('model-errors:serverStartFailed'), {
               description: errorMsg,
             })
           }
@@ -454,6 +458,20 @@ function LocalAPIServerContent() {
                     />
                   }
                 />
+                {!IS_MACOS && (
+                  <CardItem
+                    title={t('settings:localApiServer.runInBackground')}
+                    description={t(
+                      'settings:localApiServer.runInBackgroundDesc'
+                    )}
+                    actions={
+                      <Switch
+                        checked={runInBackground}
+                        onCheckedChange={setRunInBackground}
+                      />
+                    }
+                  />
+                )}
                 <CardItem
                   title={t('settings:localApiServer.defaultModel')}
                   description={t('settings:localApiServer.defaultModelDesc')}

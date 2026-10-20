@@ -8,5 +8,6 @@
   },
   "sendMessage": "Отправить сообщение",
   "newConversation": "Новый диалог",
-  "clearHistory": "Очистить историю"
+  "clearHistory": "Очистить историю",
+  "done": "Done"
 }

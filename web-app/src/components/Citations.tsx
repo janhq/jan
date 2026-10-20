@@ -105,7 +105,11 @@ const WebCitationItem = memo(({ c }: { c: WebCitation }) => {
     <li className="rounded-md border bg-card/40 px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
         {c.favicon ? (
-          <img src={c.favicon} alt="" className="size-3.5 rounded-sm" />
+          <img
+            src={c.favicon}
+            alt=""
+            className="size-4 shrink-0 rounded-full border border-border/50 bg-white object-contain"
+          />
         ) : (
           <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />
         )}

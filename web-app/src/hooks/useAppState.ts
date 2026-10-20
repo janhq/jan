@@ -9,6 +9,20 @@ export type PromptProgress = {
   total: number
 }
 
+export type LiveTokenStats = {
+  promptTokens: number
+  completionTokens: number
+  tokensPerSecond: number | null
+  promptPerSecond: number | null
+}
+
+export type ModelLoadProgress = {
+  modelId: string
+  value: number
+  stage?: string
+  stages?: string[]
+}
+
 type AppErrorMessage = {
   message?: string
   title?: string
@@ -26,17 +40,25 @@ type AppState = {
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
+  liveTokenStats?: LiveTokenStats
+  modelLoadProgress?: ModelLoadProgress
   activeModels: string[]
   cancelToolCall?: () => void
 
   streamingContents: Record<string, ThreadMessage>
   loadingModels: Record<string, boolean>
   promptProgresses: Record<string, PromptProgress>
+  liveTokenStatsByThread: Record<string, LiveTokenStats>
+  modelLoadProgressByThread: Record<string, ModelLoadProgress>
   cancelToolCalls: Record<string, () => void>
   errorMessages: Record<string, AppErrorMessage>
   busyThreads: Record<string, boolean>
   embeddingThreads: Record<string, boolean>
   currentStreamThreadId?: string
+  // The stream named by currentStreamThreadId is a Cowork run, so its
+  // load-progress events route to useCoworkRun's session mirror rather than
+  // this store's thread-keyed slots (which feed chat-thread active detection).
+  currentStreamIsCowork: boolean
   oomError?: string
   backendError?: string
 
@@ -55,7 +77,10 @@ type AppState = {
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
+  updateLiveTokenStats: (stats: LiveTokenStats | undefined) => void
+  updateModelLoadProgress: (progress: ModelLoadProgress | undefined) => void
   setActiveModels: (models: string[]) => void
+  removeActiveModel: (modelId: string) => void
 
   updateThreadStreamingContent: (
     threadId: string,
@@ -66,6 +91,14 @@ type AppState = {
     threadId: string,
     progress: PromptProgress | undefined
   ) => void
+  updateThreadLiveTokenStats: (
+    threadId: string,
+    stats: LiveTokenStats | undefined
+  ) => void
+  updateThreadModelLoadProgress: (
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ) => void
   setThreadCancelToolCall: (
     threadId: string,
     cancel: (() => void) | undefined
@@ -75,7 +108,10 @@ type AppState = {
     error: AppErrorMessage | undefined
   ) => void
   clearThreadState: (threadId: string) => void
-  setCurrentStreamThreadId: (threadId: string | undefined) => void
+  setCurrentStreamThreadId: (
+    threadId: string | undefined,
+    isCowork?: boolean
+  ) => void
   setThreadBusy: (threadId: string, busy: boolean) => void
   setThreadEmbedding: (threadId: string, embedding: boolean) => void
 }
@@ -94,12 +130,19 @@ export const useAppState = create<AppState>()((set) => ({
   streamingContents: {},
   loadingModels: {},
   promptProgresses: {},
+  liveTokenStatsByThread: {},
+  modelLoadProgressByThread: {},
   cancelToolCalls: {},
   errorMessages: {},
   busyThreads: {},
   embeddingThreads: {},
   currentStreamThreadId: undefined,
-  setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  currentStreamIsCowork: false,
+  setCurrentStreamThreadId: (threadId, isCowork = false) =>
+    set({
+      currentStreamThreadId: threadId,
+      currentStreamIsCowork: threadId ? isCowork : false,
+    }),
   setOomError: (line) => set({ oomError: line }),
   setBackendError: (line) => set({ backendError: line }),
   setThreadBusy: (threadId, busy) =>
@@ -175,9 +218,24 @@ export const useAppState = create<AppState>()((set) => ({
       promptProgress: progress,
     }))
   },
+  updateLiveTokenStats: (stats) => {
+    set(() => ({
+      liveTokenStats: stats,
+    }))
+  },
+  updateModelLoadProgress: (progress) => {
+    set(() => ({
+      modelLoadProgress: progress,
+    }))
+  },
   setActiveModels: (models: string[]) => {
     set(() => ({
       activeModels: models,
+    }))
+  },
+  removeActiveModel: (modelId: string) => {
+    set((state) => ({
+      activeModels: state.activeModels.filter((id) => id !== modelId),
     }))
   },
 
@@ -208,6 +266,20 @@ export const useAppState = create<AppState>()((set) => ({
       else delete next[threadId]
       return { promptProgresses: next }
     }),
+  updateThreadLiveTokenStats: (threadId, stats) =>
+    set((state) => {
+      const next = { ...state.liveTokenStatsByThread }
+      if (stats) next[threadId] = stats
+      else delete next[threadId]
+      return { liveTokenStatsByThread: next }
+    }),
+  updateThreadModelLoadProgress: (threadId, progress) =>
+    set((state) => {
+      const next = { ...state.modelLoadProgressByThread }
+      if (progress) next[threadId] = progress
+      else delete next[threadId]
+      return { modelLoadProgressByThread: next }
+    }),
   setThreadCancelToolCall: (threadId, cancel) =>
     set((state) => {
       const next = { ...state.cancelToolCalls }
@@ -227,6 +299,8 @@ export const useAppState = create<AppState>()((set) => ({
       const streamingContents = { ...state.streamingContents }
       const loadingModels = { ...state.loadingModels }
       const promptProgresses = { ...state.promptProgresses }
+      const liveTokenStatsByThread = { ...state.liveTokenStatsByThread }
+      const modelLoadProgressByThread = { ...state.modelLoadProgressByThread }
       const cancelToolCalls = { ...state.cancelToolCalls }
       const errorMessages = { ...state.errorMessages }
       const busyThreads = { ...state.busyThreads }
@@ -234,6 +308,8 @@ export const useAppState = create<AppState>()((set) => ({
       delete streamingContents[threadId]
       delete loadingModels[threadId]
       delete promptProgresses[threadId]
+      delete liveTokenStatsByThread[threadId]
+      delete modelLoadProgressByThread[threadId]
       delete cancelToolCalls[threadId]
       delete errorMessages[threadId]
       delete busyThreads[threadId]
@@ -242,6 +318,8 @@ export const useAppState = create<AppState>()((set) => ({
         streamingContents,
         loadingModels,
         promptProgresses,
+        liveTokenStatsByThread,
+        modelLoadProgressByThread,
         cancelToolCalls,
         errorMessages,
         busyThreads,

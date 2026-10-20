@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ThreadMessage } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
 import { parseContextOverflow } from '@/utils/error'
+import {
+  getLocalPropsExtension,
+  type LlamacppModelProps,
+} from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
+import { useAppState } from './useAppState'
 
-export interface ModelProps {
-  nCtx: number
-  totalSlots?: number
-  modelAlias?: string
-  isSleeping?: boolean
-}
+export type ModelProps = LlamacppModelProps
 
 export interface TokenCountData {
   tokenCount: number
@@ -28,14 +27,31 @@ export interface TokenCountData {
   isOverflow?: boolean
 }
 
-interface UsageMeta {
+export interface UsageMeta {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
 }
 
-interface LlamacppExtensionLike {
-  getModelProps?: (modelId: string) => Promise<ModelProps | undefined>
+/**
+ * Usage for a surface that keeps no `ThreadMessage`s.
+ *
+ * Cowork stores its transcript as its own turns, so there is nothing to scan
+ * for `metadata.usage`. It reports the same two facts directly rather than
+ * synthesising thread messages to carry them.
+ */
+export interface TokenUsageSource {
+  threadId?: string
+  usage?: UsageMeta
+  /**
+   * Whether the model is loading for this surface's own thread.
+   *
+   * A surface that keeps its load state outside `useAppState` reports it here:
+   * Cowork mirrors loads in `useCoworkRun` under the session id, so the
+   * thread-keyed slots the hook reads on its own never see them. Without it the
+   * launched context window is never refetched for a Cowork session.
+   */
+  loadingModel?: boolean
 }
 
 // The token-usage popup normally reflects the last *successful* turn. When a
@@ -62,22 +78,6 @@ const getLatestServerUsage = (messages: ThreadMessage[]): UsageMeta => {
   return {}
 }
 
-const getLlamacppExtension = (): LlamacppExtensionLike | undefined => {
-  const mgr = ExtensionManager.getInstance()
-  const candidates = [
-    mgr.getByName('@janhq/llamacpp-extension'),
-    mgr.getByName('llamacpp-extension'),
-  ]
-  for (const c of candidates) {
-    if (c && typeof (c as LlamacppExtensionLike).getModelProps === 'function')
-      return c as LlamacppExtensionLike
-  }
-  return mgr.listExtensions().find(
-    (ext) =>
-      typeof (ext as LlamacppExtensionLike).getModelProps === 'function'
-  ) as LlamacppExtensionLike | undefined
-}
-
 const readSettingNumber = (v: unknown): number | undefined => {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string') {
@@ -87,7 +87,10 @@ const readSettingNumber = (v: unknown): number | undefined => {
   return undefined
 }
 
-export const useTokensCount = (messages: ThreadMessage[] = []) => {
+export const useTokensCount = (
+  messages: ThreadMessage[] = [],
+  source?: TokenUsageSource
+) => {
   const { selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [modelProps, setModelProps] = useState<ModelProps | undefined>(
@@ -96,8 +99,38 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
   const [loading, setLoading] = useState(false)
   const reqId = useRef(0)
 
-  const modelId =
-    selectedProvider === 'llamacpp' ? selectedModel?.id : undefined
+  const isLocalProvider =
+    selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
+  const modelId = isLocalProvider ? selectedModel?.id : undefined
+
+  const threadId = source?.threadId ?? messages[0]?.thread_id
+  // Populated per-chunk while a llama.cpp turn is streaming (timings_per_token);
+  // cleared on stream start/finish/error, so its presence means "live now".
+  const liveStats = useAppState((s) =>
+    threadId ? s.liveTokenStatsByThread[threadId] : undefined
+  )
+  // getModelProps only succeeds once the router has autoloaded the model, which
+  // normally doesn't happen until the first turn is sent. Refetch as soon as that
+  // load finishes so the counter can appear mid-turn instead of waiting for the
+  // full response (and the resulting messages.length bump) to land.
+  //
+  // Cowork mirrors its load state onto `useCoworkRun` under the session id, so
+  // these thread-keyed slots never see it; such a surface reports its own mirror
+  // through `source.loadingModel`.
+  const appLoadingModel = useAppState((s) =>
+    threadId ? s.loadingModels[threadId] : s.loadingModel
+  )
+  const loadingModel = source?.loadingModel || appLoadingModel
+  // The window the meter divides by is the one the engine actually launched,
+  // and it moves without a model switch: "Increase context" recovery, the model
+  // settings form, or a re-fit. A local settings write publishes the new value
+  // only after the router has reloaded with it (`updateModelSettings` awaits
+  // `refreshEnginePreset`), so depending on it here refetches the launched window
+  // in the same tick the UI learns of the edit. Chat also refetched on its next
+  // message; Cowork has no message-length trigger at all.
+  const configuredCtxLen = readSettingNumber(
+    selectedModel?.settings?.ctx_len?.controller_props?.value
+  )
 
   useEffect(() => {
     if (!modelId) {
@@ -105,7 +138,7 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
       setLoading(false)
       return
     }
-    const ext = getLlamacppExtension()
+    const ext = getLocalPropsExtension(selectedProvider)
     if (!ext?.getModelProps) {
       setModelProps(undefined)
       return
@@ -126,10 +159,36 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
         if (id !== reqId.current) return
         setLoading(false)
       })
-  }, [modelId, messages.length])
+  }, [
+    modelId,
+    selectedProvider,
+    messages.length,
+    loadingModel,
+    configuredCtxLen,
+  ])
 
   const tokenData: TokenCountData = useMemo(() => {
-    if (selectedProvider !== 'llamacpp' || !modelId) {
+    if (!isLocalProvider) {
+      if (!selectedModel) {
+        return {
+          tokenCount: 0,
+          loading: false,
+          isNearLimit: false,
+          fitEnabled: false,
+        }
+      }
+      const usage = source?.usage ?? getLatestServerUsage(messages)
+      return {
+        tokenCount: usage.totalTokens ?? 0,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        loading: false,
+        isNearLimit: false,
+        fitEnabled: false,
+        modelDisplayName: selectedModel.name || selectedModel.id,
+      }
+    }
+    if (!modelId) {
       return {
         tokenCount: 0,
         loading: false,
@@ -138,19 +197,22 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
       }
     }
     const overflow = getActiveContextOverflow(messages)
-    const usage = getLatestServerUsage(messages)
+    const usage = liveStats
+      ? {
+          inputTokens: liveStats.promptTokens,
+          outputTokens: liveStats.completionTokens,
+          totalTokens: liveStats.promptTokens + liveStats.completionTokens,
+        }
+      : (source?.usage ?? getLatestServerUsage(messages))
     const tokenCount = overflow?.requestTokens ?? usage.totalTokens ?? 0
     const maxTokens = overflow?.contextTokens ?? modelProps?.nCtx
     const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
     const isNearLimit = overflow != null || (percentage ? percentage > 85 : false)
 
-    const provider = getProviderByName('llamacpp')
+    const provider = getProviderByName(selectedProvider)
     const fitEnabled =
       provider?.settings?.find((s) => s.key === 'fit')?.controller_props
         ?.value === true
-    const configuredCtxLen = readSettingNumber(
-      selectedModel?.settings?.ctx_len?.controller_props?.value
-    )
     const modelDisplayName =
       modelProps?.modelAlias || selectedModel?.name || modelId
     const caps = selectedModel?.capabilities ?? []
@@ -176,14 +238,16 @@ export const useTokensCount = (messages: ThreadMessage[] = []) => {
     }
   }, [
     messages,
+    source,
     modelId,
     selectedProvider,
+    isLocalProvider,
     modelProps,
     loading,
+    liveStats,
     getProviderByName,
-    selectedModel?.name,
-    selectedModel?.capabilities,
-    selectedModel?.settings?.ctx_len?.controller_props?.value,
+    selectedModel,
+    configuredCtxLen,
   ])
 
   return {

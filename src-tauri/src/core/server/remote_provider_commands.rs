@@ -23,6 +23,10 @@ pub struct RegisterProviderRequest {
     pub base_url: Option<String>,
     pub custom_headers: Vec<ProviderCustomHeader>,
     pub models: Vec<String>,
+    /// Upstream wire API (`"openai"` default, or `"openai-responses"` /
+    /// `"google"` / `"anthropic"` to engage a translating converter).
+    #[serde(default)]
+    pub api_type: Option<String>,
 }
 
 fn merge_register_api_keys(api_key: Option<String>, api_keys: Vec<String>) -> Vec<String> {
@@ -68,10 +72,14 @@ pub async fn register_provider_config(
             })
             .collect(),
         models: request.models, // Models will be added when they are configured
+        api_type: request.api_type,
+        // Registration carries no ratio: this path has no field for one, and
+        // `None` inherits `[agent].compaction_ratio` for the route.
+        compaction_ratio: None,
     };
 
     // Persist the key chain to the OS keyring so it survives webview storage
-    // clears and is readable by out-of-process consumers (jan-cli). Keyring
+    // clears and is readable by out-of-process consumers (jan CLI). Keyring
     // access is blocking, so run it off-thread and before taking the config
     // lock. Keyring failure (e.g. headless Linux without an unlocked Secret
     // Service) must not block registration; the in-memory config still works.
@@ -94,7 +102,7 @@ pub async fn register_provider_config(
     let mut configs = provider_configs.lock().await;
     let provider_name = request.provider.clone();
     configs.insert(provider_name.clone(), config);
-    log::info!("Registered provider config: {provider_name}");
+    log::debug!("Registered provider config: {provider_name}");
     Ok(())
 }
 
@@ -201,6 +209,8 @@ mod tests {
             base_url: None,
             custom_headers: vec![],
             models: vec![],
+            api_type: None,
+            compaction_ratio: None,
         }
     }
 

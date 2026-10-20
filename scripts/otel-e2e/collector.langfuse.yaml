@@ -1,0 +1,20 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file:
+    path: /out/otel.jsonl
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_AUTH}"
+processors:
+  batch:
+    timeout: 1s
+service:
+  pipelines:
+    metrics: { receivers: [otlp], processors: [batch], exporters: [file] }
+    logs: { receivers: [otlp], processors: [batch], exporters: [file] }
+    traces: { receivers: [otlp], processors: [batch], exporters: [file, otlphttp/langfuse] }

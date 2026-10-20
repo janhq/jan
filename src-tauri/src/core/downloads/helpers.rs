@@ -54,6 +54,23 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
+/// Like `err_to_string` but keeps the whole `source()` chain. reqwest's `Display` stops at
+/// "error sending request for url (...)"; the part that says why (DNS, refused, TLS, timeout) is
+/// only in the sources, and the download toast needs it to tell a firewall from a bad proxy.
+pub fn err_chain_to_string(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = format!("Error: {e}");
+    let mut source = e.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if !out.ends_with(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = cause.source();
+    }
+    out
+}
+
 /// Converts a URL to Jan mirror URL if applicable
 /// e.g., https://huggingface.co/... -> https://apps.jan.ai/huggingface.co/...
 /// or for nightly: https://huggingface.co/... -> https://apps-nightly.jan.ai/huggingface.co/...
@@ -107,16 +124,13 @@ async fn validate_downloaded_file(
 
     // Use model_id from item if available, otherwise extract from save path
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
-    let model_id = item
-        .model_id
-        .as_deref()
-        .unwrap_or_else(|| {
-            save_path
-                .parent() // get parent directory (modelId folder)
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-        });
+    let model_id = item.model_id.as_deref().unwrap_or_else(|| {
+        save_path
+            .parent() // get parent directory (modelId folder)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+    });
 
     if emit_event {
         if let Err(e) = app.emit(
@@ -681,7 +695,7 @@ async fn download_single_file(
             return Err("Download cancelled".to_string());
         }
 
-        let chunk = chunk.map_err(err_to_string)?;
+        let chunk = chunk.map_err(|e| err_chain_to_string(&e))?;
         writer.write_all(&chunk).await.map_err(err_to_string)?;
         download_delta += chunk.len() as u64;
         total_transferred += chunk.len() as u64;
@@ -797,7 +811,7 @@ async fn _get_maybe_resume_with_hmac(
         request = request.header(key, value);
     }
 
-    let resp = request.send().await.map_err(err_to_string)?;
+    let resp = request.send().await.map_err(|e| err_chain_to_string(&e))?;
 
     if start_bytes > 0 {
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
@@ -830,7 +844,7 @@ async fn _get_maybe_resume_internal(
             .header("Range", format!("bytes={start_bytes}-"))
             .send()
             .await
-            .map_err(err_to_string)?;
+            .map_err(|e| err_chain_to_string(&e))?;
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(format!(
                 "Failed to resume download: HTTP status {}, {}",
@@ -840,7 +854,11 @@ async fn _get_maybe_resume_internal(
         }
         Ok(resp)
     } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| err_chain_to_string(&e))?;
         if !resp.status().is_success() {
             return Err(format!(
                 "Failed to download: HTTP status {}, {}",
@@ -863,7 +881,7 @@ pub async fn _get_maybe_resume(
             .header("Range", format!("bytes={start_bytes}-"))
             .send()
             .await
-            .map_err(err_to_string)?;
+            .map_err(|e| err_chain_to_string(&e))?;
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(format!(
                 "Failed to resume download: HTTP status {}, {}",
@@ -873,7 +891,11 @@ pub async fn _get_maybe_resume(
         }
         Ok(resp)
     } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| err_chain_to_string(&e))?;
         if !resp.status().is_success() {
             return Err(format!(
                 "Failed to download: HTTP status {}, {}",

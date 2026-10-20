@@ -89,6 +89,35 @@ const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
 const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
   globalThis.core.api?.fileStat({ args: path })
 
+/**
+ * Reads a YAML file and returns it parsed.
+ *
+ * The Rust side (`core::filesystem::commands::read_yaml`) resolves the path
+ * within the Jan data folder, so a path escaping it is rejected there.
+ *
+ * @param path - The path to the YAML file.
+ */
+const readYaml: <T = unknown>(path: string) => Promise<T> = (path) =>
+  globalThis.core.api?.readYaml({ path })
+
+/**
+ * Serializes `data` as YAML to `savePath`.
+ *
+ * @param savePath - Destination path, resolved within the Jan data folder.
+ * @param data - The value to serialize.
+ */
+const writeYaml: (savePath: string, data: unknown) => Promise<void> = (savePath, data) =>
+  globalThis.core.api?.writeYaml({ data, savePath })
+
+/**
+ * Unpacks an archive into `outputDir`.
+ *
+ * @param path - The archive to unpack.
+ * @param outputDir - Destination directory, resolved within the Jan data folder.
+ */
+const decompress: (path: string, outputDir: string) => Promise<void> = (path, outputDir) =>
+  globalThis.core.api?.decompress({ path, outputDir })
+
 // TODO: Export `dummy` fs functions automatically
 // Currently adding these manually
 export const fs = {
@@ -105,4 +134,7 @@ export const fs = {
   fileStat,
   writeBlob,
   getGgufFiles,
+  readYaml,
+  writeYaml,
+  decompress,
 }

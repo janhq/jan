@@ -23,6 +23,8 @@ describe('useToolApprovalRequests', () => {
     useToolApprovalRequests.setState({ pending: {} })
     useToolApproval.setState({
       approvedTools: {},
+      approvedServers: [],
+      approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
     })
   })
@@ -85,7 +87,44 @@ describe('useToolApprovalRequests', () => {
     expect(result.current.pending['tc1']).toBeUndefined()
   })
 
-  it('resolveApproval allow-always resolves true and persists the tool for the thread', async () => {
+  it('resolveApproval allow-thread persists the tool for that thread only', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1')
+    })
+    act(() => {
+      result.current.resolveApproval('tc1', 'allow-thread')
+    })
+
+    await expect(p!).resolves.toBe(true)
+    const approval = useToolApproval.getState()
+    expect(approval.isToolApproved('thread-1', 'tool-a')).toBe(true)
+    expect(approval.isToolApproved('thread-2', 'tool-a')).toBe(false)
+  })
+
+  // "Always" has to mean always, which is what the thread scope could not say.
+  it('resolveApproval allow-always trusts the whole server, in every thread', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
+    })
+    act(() => {
+      result.current.resolveApproval('tc1', 'allow-always')
+    })
+
+    await expect(p!).resolves.toBe(true)
+    const approval = useToolApproval.getState()
+    expect(approval.isToolApproved('thread-2', 'other-tool', 'github')).toBe(
+      true
+    )
+    expect(approval.isToolApproved('thread-2', 'tool-a', 'gitlab')).toBe(false)
+  })
+
+  it('resolveApproval allow-always falls back to the tool when it has no server', async () => {
     const { result } = renderHook(() => useToolApprovalRequests())
 
     let p: Promise<boolean>
@@ -97,7 +136,36 @@ describe('useToolApprovalRequests', () => {
     })
 
     await expect(p!).resolves.toBe(true)
-    expect(useToolApproval.getState().isToolApproved('thread-1', 'tool-a')).toBe(true)
+    const approval = useToolApproval.getState()
+    expect(approval.isToolApproved('thread-2', 'tool-a')).toBe(true)
+    expect(approval.isToolApproved('thread-2', 'tool-b')).toBe(false)
+  })
+
+  it('auto-resolves true when the tool comes from an already trusted server', async () => {
+    act(() => {
+      useToolApproval.getState().approveServer('github')
+    })
+    const { result } = renderHook(() => useToolApprovalRequests())
+
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
+    })
+
+    await expect(p!).resolves.toBe(true)
+    expect(result.current.pending['tc1']).toBeUndefined()
+  })
+
+  it('keeps the server on the pending entry so the prompt can name it', () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+
+    act(() => {
+      result.current.requestApproval('tc1', 'tool-a', 'thread-1', 'github')
+    })
+
+    expect(result.current.pending['tc1']).toMatchObject({
+      serverName: 'github',
+    })
   })
 
   it('resolveApproval deny resolves false', async () => {

@@ -235,6 +235,7 @@
     "delete": "हटाएं"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "मॉडल सेटिंग्स - {{modelId}}",
     "description": "प्रदर्शन और व्यवहार को अनुकूलित करने के लिए मॉडल सेटिंग्स कॉन्फ़िगर करें।"
   },

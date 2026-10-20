@@ -59,6 +59,8 @@
     "description": "Configure how Jan manages and retries MCP servers.",
     "toolCallTimeout": "Tool call timeout (seconds)",
     "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out.",
+    "maxToolOutputChars": "Max tool output characters",
+    "maxToolOutputCharsDesc": "Longest tool result kept in the conversation. Anything past this is trimmed and marked as truncated, so one large result cannot exhaust the model's context. Set to 0 to keep results whole.",
     "smartToolRouting": "Smart MCP tool routing",
     "smartToolRoutingDesc": "When enabled, Jan selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list.",
     "useLightweightRouterModel": "Use a dedicated model for routing",
@@ -69,5 +71,31 @@
     "routerModelSearchPlaceholder": "Search models…",
     "routerModelEmptyList": "No lightweight models available. Add a smaller model or configure API keys in Models.",
     "routerModelEmptySearch": "No matches for “{{query}}”."
+  },
+  "auth": {
+    "label": "Auth:",
+    "state": {
+      "notApplicable": "not required",
+      "staticHeader": "Authorization header",
+      "authenticated": "authenticated",
+      "expired": "expired",
+      "staleResource": "issued for another URL",
+      "unauthenticated": "not authenticated"
+    },
+    "expiresIn": "expires in {{duration}}",
+    "authenticate": "Sign in",
+    "reauthenticate": "Re-authenticate",
+    "clear": "Clear authentication",
+    "waiting": "Waiting for browser...",
+    "openSignInPage": "Open the sign-in page",
+    "needsAuth": "{{serverName}} needs authentication",
+    "needsAuthHint": "Sign in to this server to connect.",
+    "authorized": "Signed in to {{serverName}}",
+    "authorizeFailed": "Sign-in for {{serverName}} failed",
+    "cleared": "Cleared stored credentials for {{serverName}}",
+    "nothingToClear": "{{serverName}} had no stored credentials",
+    "clearFailed": "Could not clear credentials for {{serverName}}",
+    "renew": "Renew session",
+    "expiredAgo": "expired {{duration}} ago"
   }
 }

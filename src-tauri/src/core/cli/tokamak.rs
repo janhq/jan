@@ -1,0 +1,1137 @@
+//! Tokamak sign-in for the headless CLI.
+//!
+//! Tokamak is an ordinary OpenAI-compatible upstream as far as the agent is
+//! concerned (Bearer key + `{base_url}/chat/completions`), so historically
+//! "login" was just: send the user to the web UI to mint an API key, verify what
+//! they paste against `GET /v1/models`, and persist it as a provider entry in
+//! `~/.jan/config.toml`. No OAuth, no callback server, no browser required --
+//! the key could always be pasted from another machine.
+//!
+//! The default flow is now the browser-approval device flow
+//! ([`device_login`] / [`super::device_auth`]): the server mints a fresh
+//! `sk_live_*` key after the user approves in a browser on any device, and only
+//! the PKCE verifier ever rides the network -- never the key. The legacy
+//! paste-a-key flow ([`login`]) remains for deployments that predate the
+//! `/auth/cli/sessions` endpoints (404/405 on create -- the caller falls back to
+//! it automatically) and for `--paste-token`.
+//!
+//! Presentation lives in the callers ([`super::login`] for the plain terminal,
+//! [`super::tui`] for `/login`); this module is UI-free so both share one
+//! implementation.
+
+pub mod usage;
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use crate::core::agent::global_config::{
+    adopt_default_model, set_provider, DefaultModelChange, ProviderUpdate,
+};
+
+/// Provider id this login writes to in `~/.jan/config.toml`.
+pub const PROVIDER: &str = "tokamak";
+/// Default OpenAI-compatible API root. Read through [`base_url`] rather than
+/// directly, so a dev or self-hosted deployment can be targeted without a
+/// rebuild; persisted into the config so a user can also retarget it by hand
+/// afterwards.
+pub const BASE_URL: &str = "https://api.tokamak.sh/v1";
+
+/// Env var selecting a non-production deployment, matching the name the tokamak
+/// CLI already uses. Without it there is no way to exercise the browser sign-in
+/// against a dev stack before it reaches production.
+pub const BASE_URL_ENV: &str = "TOKAMAK_BASE_URL";
+
+/// The API root this run's account calls (sign-in, `/usage`, `auth status`)
+/// talk to, first match wins:
+///
+/// 1. the session's base URL, when this session named `--provider tokamak` and
+///    gave it one (`--base-url` / `JAN_BASE_URL`), so a launched session reads
+///    the band it runs on rather than production;
+/// 2. `$TOKAMAK_BASE_URL`, with `/v1` appended when it names only a host -- the
+///    form the Tokamak CLI itself uses;
+/// 3. the stored `[providers.tokamak].base_url`, where the last sign-in went;
+/// 4. [`BASE_URL`].
+pub fn base_url() -> String {
+    resolve_base_url(
+        super::session_provider::tokamak_base_url().as_deref(),
+        std::env::var(BASE_URL_ENV).ok().as_deref(),
+        stored_base_url().as_deref(),
+    )
+}
+
+/// Split from [`base_url`] so the precedence is testable without mutating the
+/// process environment (which every other test in this binary shares).
+fn resolve_base_url(session: Option<&str>, from_env: Option<&str>, stored: Option<&str>) -> String {
+    let clean = |v: &str| v.trim().trim_end_matches('/').to_string();
+    session
+        .map(clean)
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            from_env
+                .map(clean)
+                .filter(|v| !v.is_empty())
+                .map(|v| with_api_prefix(&v))
+        })
+        .or_else(|| stored.map(clean).filter(|v| !v.is_empty()))
+        .unwrap_or_else(|| BASE_URL.to_string())
+}
+
+/// `https://api.tokamak.sh` -> `https://api.tokamak.sh/v1`: a bare origin gets
+/// the OpenAI-compatible prefix every caller appends paths to. A URL with any
+/// path is taken as given.
+fn with_api_prefix(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(parsed) if parsed.path().trim_matches('/').is_empty() => format!("{url}/v1"),
+        _ => url.to_string(),
+    }
+}
+
+fn stored_base_url() -> Option<String> {
+    crate::core::agent::global_config::load_global_config()
+        .ok()?
+        .get(PROVIDER)?
+        .base_url
+        .clone()
+}
+
+/// The production API-keys page. Read through [`api_keys_url`], which follows
+/// the deployment this run signs in to.
+pub const API_KEYS_URL: &str = "https://tokamak.sh/settings/api-keys";
+
+/// Where the user signs in and mints a key, on the web app of the deployment
+/// [`base_url`] points at (see [`super::device_auth::web_root`]).
+pub fn api_keys_url() -> String {
+    api_keys_url_for(&super::device_auth::web_root(&base_url()))
+}
+
+fn api_keys_url_for(web_root: &str) -> String {
+    format!("{}/settings/api-keys", web_root.trim_end_matches('/'))
+}
+
+const VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// What a successful sign-in changed, for the caller to report.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Login {
+    pub models: Vec<String>,
+    pub config_path: PathBuf,
+    /// The model written to `default_model`, or `None` when the user already had
+    /// a usable one.
+    pub default_model: Option<String>,
+    /// Set when [`Login::default_model`] *replaced* a stale default rather than
+    /// filling an empty one, so the caller can say so: silently changing the
+    /// model a user thinks they are on would be worse than the 404 it avoids.
+    pub replaced_default: bool,
+    /// Who the server says signed in. Only the browser flow reports one; the
+    /// paste flow never learns it.
+    pub account: Option<String>,
+}
+
+/// Trim a pasted key and reject anything that isn't plausibly one. Terminals and
+/// clipboards routinely add surrounding whitespace or a trailing newline; a key
+/// with interior whitespace is a mis-paste (partial selection, wrapped line)
+/// that would otherwise fail as a confusing 401.
+pub fn sanitize_key(raw: &str) -> Result<String, String> {
+    super::auth::providers::sanitize_key(raw)
+}
+
+/// What a `/models` listing said, for the two things that read it differently.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Roster {
+    /// Every id, sorted, as stored in the provider's `models` list.
+    pub stored: Vec<String>,
+    /// The id the endpoint listed **first**. Kept separately because `stored`
+    /// is sorted, which would make "the provider's first model" mean nothing
+    /// more than "alphabetically first".
+    pub first_listed: Option<String>,
+}
+
+/// Verify `api_key` against Tokamak and return the model ids it grants access
+/// to. An empty list is a valid answer (the account has no models yet), so the
+/// caller decides whether that is usable.
+async fn verify_key(api_key: &str) -> Result<Roster, String> {
+    let client = reqwest::Client::builder()
+        .timeout(VERIFY_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let root = base_url();
+    let mut request = client.get(format!("{root}/models"));
+    for (name, value) in super::providers::listing_headers_for(PROVIDER) {
+        request = request.header(name, value);
+    }
+    let response = request
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await
+        .map_err(|e| format!("could not reach {root}: {e}"))?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(describe_failure(status.as_u16(), &body));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Tokamak returned a response we could not read: {e}"))?;
+    // The listing carries per-model `context_length` and pricing; caching it
+    // here is what lets `/context` and `/usage` report the real window and an
+    // actual cost rather than a catalog guess. Never for a session-scoped
+    // Tokamak: that listing describes the session's endpoint, not the one the
+    // cache is kept for.
+    if !super::session_provider::tokamak_is_session_scoped() {
+        super::model_catalog::cache_listing(PROVIDER, &parsed);
+    }
+    Ok(roster_of(&parsed))
+}
+
+/// Split out so the sorted/wire-order pairing is testable without a server.
+fn roster_of(parsed: &serde_json::Value) -> Roster {
+    Roster {
+        stored: parse_models(parsed),
+        first_listed: super::auth::providers::listed_model_ids(parsed)
+            .into_iter()
+            .next(),
+    }
+}
+
+/// Verify the key, then persist it as the `tokamak` provider. Nothing is written
+/// when verification fails, so a typo never leaves a broken entry behind.
+pub async fn login(api_key: &str) -> Result<Login, String> {
+    let api_key = sanitize_key(api_key)?;
+    let roster = verify_key(&api_key).await?;
+    persist(&api_key, roster)
+}
+
+/// Write the verified key + model list to `~/.jan/config.toml`, adopting the
+/// provider's first-listed model as `default_model` when the user has none
+/// (otherwise the agent would still start with "no model specified" right after
+/// signing in) or when their default is no longer offered anywhere.
+fn persist(api_key: &str, roster: Roster) -> Result<Login, String> {
+    let config_path = set_provider(
+        PROVIDER,
+        ProviderUpdate {
+            api_key: Some(api_key.to_string()),
+            clear_api_key: false,
+            base_url: Some(base_url()),
+            models: Some(roster.stored.clone()),
+            api_type: None,
+            // A pasted key carries no metadata, and any left over from a
+            // previous browser login belongs to a key this one replaces.
+            key_id: Some(None),
+            key_expires_at: Some(None),
+            account: Some(None),
+        },
+    )?;
+    let (default_model, replaced_default) = resolve_default(&roster)?;
+    Ok(Login {
+        models: roster.stored,
+        config_path,
+        default_model,
+        replaced_default,
+        // The paste flow verifies a key against `/v1/models`; it never learns
+        // who the key belongs to.
+        account: None,
+    })
+}
+
+/// Point `default_model` at the provider's first-listed model when the stored
+/// default is missing or stale, reporting what happened.
+///
+/// Called *after* the roster is written, so the staleness check sees the list
+/// this sign-in just installed rather than the one it replaced -- that ordering
+/// is the whole point: a model retired upstream is only detectable once the new
+/// roster is on disk.
+fn resolve_default(roster: &Roster) -> Result<(Option<String>, bool), String> {
+    let Some(first) = roster.first_listed.as_ref() else {
+        return Ok((None, false));
+    };
+    Ok(match adopt_default_model(first)? {
+        Some(DefaultModelChange::Adopted) => (Some(first.clone()), false),
+        Some(DefaultModelChange::Repointed) => (Some(first.clone()), true),
+        None => (None, false),
+    })
+}
+
+/// Run the device (browser-approval) login to completion and persist the
+/// minted key. `pending` comes from [`super::device_auth::begin`].
+///
+/// The claim reply carries the key and its metadata but no model list, so the
+/// models are resolved the same way the paste flow resolves them -- a
+/// `GET /v1/models` with the fresh key. That doubles as a check that the minted
+/// key actually works before anything is written.
+pub(crate) async fn device_login(
+    pending: super::device_auth::PendingAuth,
+) -> Result<Login, String> {
+    let minted = pending.claim().await?;
+    let roster = verify_key(&minted.api_key).await?;
+    persist_minted(&minted, roster)
+}
+
+/// Persist a verified key plus the server-assigned key metadata (`key_id`/
+/// `key_expires_at`, so `auth status` can show the expiry and logout can revoke
+/// this exact key), adopting the provider's first-listed model as
+/// `default_model` when the user has none or theirs is no longer offered.
+fn persist_minted(minted: &super::device_auth::Minted, roster: Roster) -> Result<Login, String> {
+    let config_path = set_provider(
+        PROVIDER,
+        ProviderUpdate {
+            api_key: Some(minted.api_key.clone()),
+            clear_api_key: false,
+            base_url: Some(base_url()),
+            models: Some(roster.stored.clone()),
+            api_type: None,
+            // Written even when the server sent nothing, so a re-login cannot
+            // leave the previous key's id behind to be revoked by mistake.
+            key_id: Some(minted.key_id.clone()),
+            key_expires_at: Some(minted.key_expires_at),
+            account: Some(minted.account.clone()),
+        },
+    )?;
+    let (default_model, replaced_default) = resolve_default(&roster)?;
+    Ok(Login {
+        models: roster.stored,
+        config_path,
+        default_model,
+        replaced_default,
+        account: minted.account.clone(),
+    })
+}
+
+/// What a sign-out actually did, so the caller does not claim a revocation that
+/// never happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Logout {
+    /// Nothing was configured.
+    NothingToDo,
+    /// The local entry is gone and the server confirmed the key is revoked.
+    ClearedAndRevoked,
+    /// The local entry is gone, but the key was not revoked upstream -- no
+    /// `key_id` was recorded (a legacy paste login) or the call did not land.
+    ClearedOnly,
+}
+
+/// Sign out: revoke the stored key server-side (best-effort) and clear the
+/// `tokamak` provider entry. Local sign-out always happens even if the
+/// revocation call fails, so a network problem cannot strand the user signed in
+/// locally -- but the result says which of the two happened.
+pub async fn logout() -> Result<Logout, String> {
+    use crate::core::agent::global_config::{provider_key_meta, remove_provider};
+
+    let meta = provider_key_meta(PROVIDER).unwrap_or_default();
+    let key = stored_api_key();
+    if meta.key_id.is_none() && key.is_none() {
+        return Ok(Logout::NothingToDo);
+    }
+
+    // Revoking needs both the server-side id and the key itself to authenticate
+    // the call; a legacy paste login recorded no id, so it can only clear local.
+    let revoked = match (&meta.key_id, &key) {
+        (Some(key_id), Some(key)) => revoke_key(key_id, key).await,
+        _ => false,
+    };
+
+    remove_provider(PROVIDER)?;
+    super::model_catalog::forget(PROVIDER);
+    Ok(match revoked {
+        true => Logout::ClearedAndRevoked,
+        false => Logout::ClearedOnly,
+    })
+}
+
+/// The key account calls authenticate with: the session's, when this session
+/// named `--provider tokamak` with a key; otherwise the stored one. Never the
+/// key of any other provider (`--provider openrouter --api-key ...`, or a
+/// `JAN_API_KEY` that reached a Desktop-selected provider): that one is not
+/// Tokamak's to see.
+pub(crate) fn account_api_key() -> Option<String> {
+    super::session_provider::tokamak_key().or_else(stored_api_key)
+}
+
+fn stored_api_key() -> Option<String> {
+    use crate::core::agent::global_config::load_global_config;
+    load_global_config()
+        .ok()?
+        .get(PROVIDER)
+        .and_then(|c| c.api_key.clone())
+        .filter(|k| !k.is_empty())
+}
+
+/// Revoke `key_id` server-side, authenticating with the key itself. Best-effort
+/// by contract -- logout must never be blocked by this call -- so the result is
+/// a plain "did it land", never an error.
+///
+/// `DELETE /auth/api-keys/{id}` is the real route: unauthenticated it answers
+/// `401 user context missing`, while `DELETE /auth/api-keys` (no id) and
+/// `GET /auth/api-keys/{id}` both answer `404 auth route not found`.
+async fn revoke_key(key_id: &str, api_key: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder().timeout(VERIFY_TIMEOUT).build() else {
+        return false;
+    };
+    let root = super::device_auth::api_root(&base_url());
+    client
+        .delete(format!("{root}/auth/api-keys/{key_id}"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await
+        .is_ok_and(|r| r.status().is_success())
+}
+
+/// What `jan auth status` reports, without touching the network.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct AuthStatus {
+    pub signed_in: bool,
+    pub endpoint: String,
+    pub account: Option<String>,
+    pub key_id: Option<String>,
+    pub key_expires_at: Option<u64>,
+    /// Where the key comes from: `"session"` when this session's environment
+    /// (a launcher) supplied Tokamak's provider, `"config"` otherwise.
+    pub source: &'static str,
+}
+
+/// Read the local auth state for Tokamak.
+///
+/// While Tokamak is the session-scoped provider, the stored entry says nothing
+/// about the credential in use, so none of its metadata (account, key id,
+/// expiry) is mixed in: that would describe a different key, possibly for a
+/// different deployment.
+pub fn auth_status() -> AuthStatus {
+    use crate::core::agent::global_config::provider_key_meta;
+
+    if super::session_provider::tokamak_is_session_scoped() {
+        return AuthStatus {
+            signed_in: account_api_key().is_some(),
+            endpoint: base_url(),
+            source: "session",
+            ..Default::default()
+        };
+    }
+    let meta = provider_key_meta(PROVIDER).unwrap_or_default();
+    AuthStatus {
+        signed_in: stored_api_key().is_some(),
+        endpoint: base_url(),
+        account: meta.account,
+        key_id: meta.key_id,
+        key_expires_at: meta.key_expires_at,
+        source: "config",
+    }
+}
+
+/// How close to expiry a stored key has to be before the CLI says so unprompted,
+/// rather than letting the user discover it as a 401 mid-run.
+pub const EXPIRY_WARNING_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+/// A one-line warning when the stored key is expired or about to be. `None` when
+/// there is no key, no recorded expiry (a legacy paste login records none), or
+/// the expiry is comfortably far off -- and while Tokamak is the session-scoped
+/// provider, whose key is not the stored one: telling a launched session to run
+/// `jan login` would only overwrite the native sign-in to no effect.
+pub fn expiry_warning() -> Option<String> {
+    if super::session_provider::tokamak_is_session_scoped() {
+        return None;
+    }
+    let expires_at = auth_status().key_expires_at?;
+    describe_expiry(expires_at, unix_now())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Split from [`expiry_warning`] so the wording can be tested without pinning
+/// the wall clock.
+fn describe_expiry(expires_at: u64, now: u64) -> Option<String> {
+    if expires_at == 0 {
+        return None;
+    }
+    let Some(remaining) = expires_at.checked_sub(now) else {
+        return Some(
+            "your Tokamak key has expired - run `jan login` to sign in again.".to_string(),
+        );
+    };
+    if remaining > EXPIRY_WARNING_WINDOW.as_secs() {
+        return None;
+    }
+    let days = remaining / (24 * 60 * 60);
+    Some(match days {
+        0 => "your Tokamak key expires within a day - run `jan login` to renew it.".to_string(),
+        1 => "your Tokamak key expires in 1 day - run `jan login` to renew it.".to_string(),
+        n => format!("your Tokamak key expires in {n} days - run `jan login` to renew it."),
+    })
+}
+
+/// Who the stored key belongs to, as recorded when it was minted. Read from the
+/// config rather than looked up: the browser flow's claim reply already names
+/// the account, so there is no round trip and no identity-endpoint response
+/// shape to guess. `None` after a legacy paste login, which never learns it.
+pub fn account() -> Option<String> {
+    use crate::core::agent::global_config::provider_key_meta;
+    provider_key_meta(PROVIDER).ok()?.account
+}
+
+/// Whether the stored key is currently accepted by the upstream: a live check
+/// against `GET /v1/models`. `None` when there is no key to check (not signed
+/// in), otherwise the pass/fail. A network the CLI cannot reach is reported as
+/// `None` so a blip does not read as an invalid key.
+pub async fn live_valid() -> Option<bool> {
+    let key = match super::session_provider::tokamak_key() {
+        Some(key) => key,
+        None => {
+            use crate::core::agent::global_config::load_global_config;
+            load_global_config()
+                .ok()
+                .and_then(|c| c.get(PROVIDER).cloned())
+                .and_then(|c| c.api_key)?
+        }
+    };
+    if key.is_empty() {
+        return Some(false);
+    }
+    match verify_key(&key).await {
+        // A 401/403 is an invalid key; a network blip should not read as one.
+        Ok(_) => Some(true),
+        Err(e) if e.contains("could not reach") => None,
+        Err(_) => Some(false),
+    }
+}
+
+/// Human-readable reason a verification request was rejected.
+fn describe_failure(status: u16, body: &str) -> String {
+    match status {
+        401 | 403 => "Tokamak rejected that API key. Mint a fresh one and try again.".to_string(),
+        429 => "Tokamak is rate limiting this key - wait a moment and try again.".to_string(),
+        500..=599 => format!("Tokamak is unavailable right now (HTTP {status})."),
+        _ => {
+            let detail = api_error_message(body).unwrap_or_else(|| snippet(body));
+            if detail.is_empty() {
+                format!("Tokamak returned HTTP {status}.")
+            } else {
+                format!("Tokamak returned HTTP {status}: {detail}")
+            }
+        }
+    }
+}
+
+/// `error` as a string, or `error.message`, from an error body.
+fn api_error_message(body: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let error = value.get("error")?;
+    let text = error
+        .as_str()
+        .or_else(|| error.get("message").and_then(|m| m.as_str()))?;
+    Some(text.to_string())
+}
+
+fn snippet(body: &str) -> String {
+    let one_line = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() > 120 {
+        format!("{}...", one_line.chars().take(117).collect::<String>())
+    } else {
+        one_line
+    }
+}
+
+/// Model ids from a `/models` payload, sorted and deduped so a config write and
+/// the "N models" report are stable across calls. Accepts the OpenAI shape
+/// (`{"data":[{"id":...}]}`) plus the bare-array and array-of-strings variants
+/// smaller gateways serve.
+pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
+    super::auth::providers::parse_models(value)
+}
+
+/// Open the API-keys page in the user's browser. `Err` means the caller must
+/// print the URL for the user to open themselves -- which callers do
+/// unconditionally anyway, since a spawned launcher reports nothing about
+/// whether a page actually appeared.
+pub fn open_api_keys_page() -> Result<(), String> {
+    super::browser::open(&api_keys_url())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::agent::global_config::{load_global_config, with_temp_home};
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_trims_and_rejects_unusable_input() {
+        assert_eq!(sanitize_key("  tk-abc\n").unwrap(), "tk-abc");
+        assert!(sanitize_key("   ").is_err());
+        assert!(sanitize_key("").is_err());
+        assert!(sanitize_key("tk-abc def").is_err());
+        assert!(sanitize_key("tk-abc\ndef").is_err());
+    }
+
+    #[test]
+    fn parses_openai_model_list_sorted_and_deduped() {
+        let body = json!({"object": "list", "data": [
+            {"id": "tokamak-1-preview"},
+            {"id": "alpha"},
+            {"id": "alpha"},
+            {"id": "  "},
+            {"name": "no-id-field"},
+        ]});
+        assert_eq!(
+            parse_models(&body),
+            vec!["alpha".to_string(), "tokamak-1-preview".to_string()]
+        );
+        // Same payload, order preserved: the junk entries are still dropped and
+        // the duplicate still collapses, but to its *first* appearance.
+        assert_eq!(
+            super::super::auth::providers::listed_model_ids(&body),
+            vec!["tokamak-1-preview".to_string(), "alpha".to_string()]
+        );
+    }
+
+    #[test]
+    fn parses_bare_array_and_string_variants() {
+        assert_eq!(
+            parse_models(&json!(["b", {"id": "a"}])),
+            vec!["a".to_string(), "b".to_string()]
+        );
+        assert!(parse_models(&json!({"data": []})).is_empty());
+        assert!(parse_models(&json!({"unexpected": 1})).is_empty());
+    }
+
+    #[test]
+    fn failure_messages_name_the_actual_problem() {
+        assert!(describe_failure(401, r#"{"error":"unauthorized"}"#).contains("rejected"));
+        assert!(describe_failure(403, "").contains("rejected"));
+        assert!(describe_failure(429, "").contains("rate limiting"));
+        assert!(describe_failure(503, "").contains("unavailable"));
+        let other = describe_failure(400, r#"{"error":{"message":"bad request"}}"#);
+        assert!(other.contains("400") && other.contains("bad request"));
+        assert!(describe_failure(418, "").contains("418"));
+    }
+
+    /// A roster as a server would hand it over: `stored` sorted, `first_listed`
+    /// the id the endpoint led with.
+    fn roster(ids: &[&str]) -> Roster {
+        let mut stored: Vec<String> = ids.iter().map(|s| (*s).to_string()).collect();
+        stored.sort();
+        Roster {
+            stored,
+            first_listed: ids.first().map(|s| (*s).to_string()),
+        }
+    }
+
+    #[test]
+    fn persist_writes_provider_entry_and_default_model() {
+        with_temp_home(|_| {
+            let login = persist("tk-1", roster(&["m-a", "m-b"])).expect("persist");
+            assert_eq!(login.default_model.as_deref(), Some("m-a"));
+
+            let configs = load_global_config().expect("load");
+            let cfg = configs.get(PROVIDER).expect("tokamak present");
+            assert_eq!(cfg.api_key.as_deref(), Some("tk-1"));
+            assert_eq!(cfg.base_url.as_deref(), Some(BASE_URL));
+            assert_eq!(cfg.models, vec!["m-a".to_string(), "m-b".to_string()]);
+            assert!(super::super::providers::is_cli_reachable(cfg));
+        });
+    }
+
+    #[test]
+    fn persist_respects_an_existing_default_model() {
+        with_temp_home(|_| {
+            // Offered by this very roster, so it is a live choice, not a fossil.
+            crate::core::agent::global_config::set_default_model_if_unset("chosen").unwrap();
+            let login = persist("tk-1", roster(&["m-a", "chosen"])).expect("persist");
+            assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
+        });
+    }
+
+    #[test]
+    fn persist_with_no_models_still_saves_the_key() {
+        with_temp_home(|_| {
+            let login = persist("tk-1", roster(&[])).expect("persist");
+            assert!(login.models.is_empty());
+            assert_eq!(login.default_model, None);
+            let configs = load_global_config().expect("load");
+            assert_eq!(
+                configs.get(PROVIDER).unwrap().api_key.as_deref(),
+                Some("tk-1")
+            );
+        });
+    }
+
+    #[test]
+    fn relogin_replaces_the_key_and_model_list() {
+        with_temp_home(|_| {
+            persist("tk-old", roster(&["m-a", "m-b"])).expect("first");
+            persist("tk-new", roster(&["m-c"])).expect("second");
+            let configs = load_global_config().expect("load");
+            let cfg = configs.get(PROVIDER).unwrap();
+            assert_eq!(cfg.api_key.as_deref(), Some("tk-new"));
+            assert_eq!(cfg.models, vec!["m-c".to_string()]);
+        });
+    }
+
+    /// The bug this guards: a re-login replaces the provider's roster wholesale,
+    /// so a default the upstream has since retired is left pointing at a model
+    /// nothing serves. Every later run 404s, and a `--max-budget-usd` ceiling is
+    /// refused as unpriceable, with nothing connecting either to the sign-in.
+    #[test]
+    fn a_relogin_repoints_a_default_the_provider_no_longer_offers() {
+        with_temp_home(|_| {
+            let first = persist("tk-old", roster(&["legacy-preview", "m-b"])).expect("first");
+            assert_eq!(first.default_model.as_deref(), Some("legacy-preview"));
+            assert!(!first.replaced_default, "nothing to replace on a fresh sign-in");
+
+            // The upstream retires it; the next sign-in lists a new roster.
+            let again = persist("tk-new", roster(&["m-c", "m-d"])).expect("second");
+            assert_eq!(again.default_model.as_deref(), Some("m-c"));
+            assert!(
+                again.replaced_default,
+                "a stale default must be reported as replaced, not swapped in silence"
+            );
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("m-c"),
+                "the repoint must reach disk"
+            );
+        });
+    }
+
+    /// The other half: a default this sign-in still offers is a live choice, and
+    /// re-pointing it would overwrite a deliberate `/model` pick on every login.
+    #[test]
+    fn a_relogin_leaves_a_still_offered_default_alone() {
+        with_temp_home(|_| {
+            // Listed first, so this is what the user ended up on.
+            persist("tk-old", roster(&["chosen", "m-a"])).expect("first");
+
+            // A later sign-in leads with a different model, but still offers it.
+            let again = persist("tk-new", roster(&["m-a", "chosen"])).expect("second");
+            assert_eq!(again.default_model, None);
+            assert!(!again.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("chosen")
+            );
+        });
+    }
+
+    /// A model another provider still serves was not retired by this one, so the
+    /// tokamak roster says nothing about it either way.
+    #[test]
+    fn a_default_another_provider_serves_survives_a_tokamak_relogin() {
+        with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "local",
+                ProviderUpdate {
+                    base_url: Some("http://localhost:1337/v1".into()),
+                    models: Some(vec!["local-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("local-model").unwrap();
+
+            let login = persist("tk-1", roster(&["m-a"])).expect("persist");
+            assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("local-model")
+            );
+        });
+    }
+
+    /// `default_model` follows the provider's wire order, not the sorted roster:
+    /// a gateway that ranks its listing is stating a preference, and sorting
+    /// would silently reduce "first" to "alphabetically first".
+    #[test]
+    fn the_adopted_default_is_the_first_listed_not_the_first_sorted() {
+        with_temp_home(|_| {
+            let listing = json!({"data": [{"id": "zeta-flagship"}, {"id": "alpha-legacy"}]});
+            let roster = roster_of(&listing);
+            assert_eq!(roster.first_listed.as_deref(), Some("zeta-flagship"));
+            assert_eq!(
+                roster.stored,
+                vec!["alpha-legacy".to_string(), "zeta-flagship".to_string()],
+                "the stored roster stays sorted for a stable config write"
+            );
+
+            let login = persist("tk-1", roster).expect("persist");
+            assert_eq!(login.default_model.as_deref(), Some("zeta-flagship"));
+        });
+    }
+
+    /// An account with no models must not be recorded as having chosen one:
+    /// there is nothing to point at, and writing an empty default would make
+    /// the config look configured.
+    #[test]
+    fn an_empty_roster_adopts_no_default() {
+        with_temp_home(|_| {
+            let login = persist("tk-1", roster(&[])).expect("persist");
+            assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap(),
+                None
+            );
+        });
+    }
+
+    /// Build a claim result the way `device_auth` hands one over.
+    fn minted(key_id: Option<&str>, expires_at: Option<u64>) -> super::super::device_auth::Minted {
+        super::super::device_auth::Minted {
+            api_key: "sk_live_x".to_string(),
+            key_id: key_id.map(str::to_string),
+            key_expires_at: expires_at,
+            account: Some("a@b.c".to_string()),
+        }
+    }
+
+    /// A browser-flow mint records `key_id`/`key_expires_at`, so `auth status`
+    /// can show the expiry and logout can revoke that exact key.
+    #[test]
+    fn persist_minted_records_the_server_key_metadata() {
+        with_temp_home(|_| {
+            use crate::core::agent::global_config::provider_key_meta;
+            let login = persist_minted(&minted(Some("k-1"), Some(1700000000)), roster(&["m-a"]))
+                .expect("persist");
+            assert_eq!(login.default_model.as_deref(), Some("m-a"));
+            assert_eq!(login.account.as_deref(), Some("a@b.c"));
+
+            let configs = load_global_config().expect("load");
+            let cfg = configs.get(PROVIDER).unwrap();
+            assert_eq!(cfg.api_key.as_deref(), Some("sk_live_x"));
+
+            let meta = provider_key_meta(PROVIDER).expect("meta");
+            assert_eq!(meta.key_id.as_deref(), Some("k-1"));
+            assert_eq!(meta.key_expires_at, Some(1700000000));
+        });
+    }
+
+    /// A legacy paste login writes no key metadata, so auth status falls back to
+    /// the key-only shape rather than erroring.
+    #[test]
+    fn legacy_persist_writes_no_key_metadata() {
+        with_temp_home(|_| {
+            persist("tk-1", roster(&[])).expect("persist");
+            use crate::core::agent::global_config::provider_key_meta;
+            let meta = provider_key_meta(PROVIDER).expect("meta");
+            assert!(meta.key_id.is_none());
+            assert!(meta.key_expires_at.is_none());
+        });
+    }
+
+    /// The account rides the mint, so `auth status` can name it with no round
+    /// trip -- and a paste login that never learns one must not inherit a stale
+    /// account from the key it replaced.
+    #[test]
+    fn the_account_is_recorded_by_the_mint_and_cleared_by_a_paste() {
+        with_temp_home(|_| {
+            persist_minted(&minted(Some("k-1"), None), roster(&[])).expect("persist");
+            assert_eq!(account().as_deref(), Some("a@b.c"));
+            assert_eq!(auth_status().account.as_deref(), Some("a@b.c"));
+
+            persist("tk-pasted", roster(&[])).expect("persist paste");
+            assert_eq!(
+                account(),
+                None,
+                "a paste login must not keep the old account"
+            );
+            assert_eq!(auth_status().account, None);
+        });
+    }
+
+    #[test]
+    fn auth_status_reflects_signed_in_state_and_metadata() {
+        with_temp_home(|_| {
+            assert!(!auth_status().signed_in);
+            persist_minted(&minted(Some("k-1"), Some(1700000000)), roster(&[])).expect("persist");
+            let status = auth_status();
+            assert!(status.signed_in);
+            assert_eq!(status.endpoint, BASE_URL);
+            assert_eq!(status.key_id.as_deref(), Some("k-1"));
+            assert_eq!(status.key_expires_at, Some(1700000000));
+        });
+    }
+
+    /// A dev or self-hosted deployment must be reachable without a rebuild, and
+    /// an unset/blank var must not produce an empty base url.
+    #[test]
+    fn base_url_prefers_the_env_override() {
+        assert_eq!(resolve_base_url(None, None, None), BASE_URL);
+        assert_eq!(resolve_base_url(None, Some(""), None), BASE_URL);
+        assert_eq!(resolve_base_url(None, Some("   "), None), BASE_URL);
+        assert_eq!(
+            resolve_base_url(None, Some("https://api.dev.tokamak.sh/v1"), None),
+            "https://api.dev.tokamak.sh/v1"
+        );
+        // A trailing slash would double up in `{base}/models`.
+        assert_eq!(
+            resolve_base_url(None, Some(" http://localhost:8080/v1/ "), None),
+            "http://localhost:8080/v1"
+        );
+    }
+
+    /// The Tokamak CLI's own `TOKAMAK_BASE_URL` names only the origin; every
+    /// caller here appends an OpenAI-compatible path to the base, so a bare
+    /// origin gets `/v1` rather than a `/models` that 404s.
+    #[test]
+    fn a_bare_origin_in_the_env_gets_the_api_prefix() {
+        assert_eq!(
+            resolve_base_url(None, Some("https://api-stag.tokamak.sh"), None),
+            "https://api-stag.tokamak.sh/v1"
+        );
+        assert_eq!(
+            resolve_base_url(None, Some("http://localhost:8080/"), None),
+            "http://localhost:8080/v1"
+        );
+        // A path of any kind is taken as given.
+        assert_eq!(
+            resolve_base_url(None, Some("https://gw.example/tokamak/v1"), None),
+            "https://gw.example/tokamak/v1"
+        );
+    }
+
+    /// Account calls go where the session runs, then where the environment
+    /// points, then where the last sign-in went -- never to production just
+    /// because nothing said otherwise.
+    #[test]
+    fn base_url_precedence_is_session_env_stored_default() {
+        let session = Some("https://api-stag.tokamak.sh/v1");
+        let env = Some("https://api-dev.tokamak.sh");
+        let stored = Some("https://api.self-hosted.example/v1/");
+        assert_eq!(resolve_base_url(session, env, stored), "https://api-stag.tokamak.sh/v1");
+        assert_eq!(resolve_base_url(None, env, stored), "https://api-dev.tokamak.sh/v1");
+        assert_eq!(resolve_base_url(None, None, stored), "https://api.self-hosted.example/v1");
+        assert_eq!(resolve_base_url(None, None, None), BASE_URL);
+    }
+
+    /// The keys page is on the web app of the deployment signed in to.
+    #[test]
+    fn the_keys_page_follows_the_web_root() {
+        assert_eq!(api_keys_url_for("https://tokamak.sh"), API_KEYS_URL);
+        assert_eq!(
+            api_keys_url_for("https://stag.tokamak.sh/"),
+            "https://stag.tokamak.sh/settings/api-keys"
+        );
+    }
+
+    /// The warning window is the point of storing `key_expires_at` at all: a
+    /// key must announce itself before it 401s mid-run.
+    #[test]
+    fn expiry_is_only_described_inside_the_warning_window() {
+        const DAY: u64 = 24 * 60 * 60;
+        let now = 1_700_000_000;
+        // Comfortably far off: nothing to say.
+        assert_eq!(describe_expiry(now + 30 * DAY, now), None);
+        assert_eq!(describe_expiry(now + 8 * DAY, now), None);
+        // An unrecorded expiry is not an expired key.
+        assert_eq!(describe_expiry(0, now), None);
+
+        let soon = describe_expiry(now + 6 * DAY, now).expect("inside the window");
+        assert!(soon.contains("6 days"), "{soon}");
+        assert!(soon.contains("jan login"), "{soon}");
+
+        assert!(describe_expiry(now + DAY + 60, now)
+            .expect("1 day")
+            .contains("in 1 day"));
+        assert!(describe_expiry(now + 600, now)
+            .expect("today")
+            .contains("within a day"));
+        // Already gone -- and subtraction must not wrap.
+        let gone = describe_expiry(now - DAY, now).expect("expired");
+        assert!(gone.contains("has expired"), "{gone}");
+    }
+
+    /// A legacy paste login records no expiry, so the warning must stay quiet
+    /// rather than inventing one.
+    #[test]
+    fn expiry_warning_is_quiet_without_a_recorded_expiry() {
+        with_temp_home(|_| {
+            persist("tk-1", roster(&[])).expect("persist");
+            assert_eq!(expiry_warning(), None);
+        });
+    }
+
+    #[test]
+    fn expiry_warning_fires_for_a_key_that_is_about_to_lapse() {
+        with_temp_home(|_| {
+            let soon = unix_now() + 2 * 24 * 60 * 60;
+            persist_minted(&minted(Some("k-1"), Some(soon)), roster(&[])).expect("persist");
+            let warning = expiry_warning().expect("a key expiring in 2 days must warn");
+            assert!(warning.contains("2 days"), "{warning}");
+        });
+    }
+
+    fn run_logout() -> Logout {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(logout())
+            .expect("logout")
+    }
+
+    #[test]
+    fn logout_with_nothing_configured_is_a_no_op() {
+        with_temp_home(|_| assert_eq!(run_logout(), Logout::NothingToDo));
+    }
+
+    /// Without a recorded `key_id` there is nothing to revoke, so logout must
+    /// still clear the local entry -- and must not claim a revocation.
+    #[test]
+    fn logout_without_a_key_id_clears_locally_only() {
+        with_temp_home(|_| {
+            persist_minted(&minted(None, None), roster(&["m-a"])).expect("persist");
+            assert!(auth_status().signed_in);
+
+            assert_eq!(run_logout(), Logout::ClearedOnly);
+            assert!(!auth_status().signed_in);
+
+            // The provider entry is fully gone.
+            let configs = load_global_config().expect("load");
+            assert!(!configs.contains_key(PROVIDER));
+        });
+    }
+
+    /// A revoke call that cannot land (no server here) must not strand the user
+    /// signed in locally, and must report that the key survives upstream.
+    #[test]
+    fn logout_clears_locally_even_when_revocation_fails() {
+        with_temp_home(|_| {
+            persist_minted(&minted(Some("k-1"), None), roster(&["m-a"])).expect("persist");
+            assert_eq!(run_logout(), Logout::ClearedOnly);
+            assert!(!auth_status().signed_in);
+        });
+    }
+
+    // ── Account calls under session overrides ───────────────────────────────
+
+    fn session(provider: &str, explicit: bool, base_url: Option<String>) -> super::super::providers::ProviderOverrides {
+        super::super::providers::ProviderOverrides {
+            provider: Some(provider.to_string()),
+            api_key: Some(format!("{provider}-session-key")),
+            base_url,
+            explicit_provider: explicit,
+            ..Default::default()
+        }
+    }
+
+    /// Only a session that named `--provider tokamak` may hand its key to
+    /// Tokamak's account API. `--provider openrouter --api-key ...` and a key
+    /// that reached a Desktop-selected `tokamak` by default both fall back to
+    /// the stored Tokamak key.
+    #[test]
+    fn account_calls_use_the_session_key_only_for_an_explicit_tokamak() {
+        use super::super::session_provider::with_session;
+        let stored = || persist("tk-stored", roster(&["m"])).expect("persist");
+        with_session(session("openrouter", true, None), |_| {
+            stored();
+            assert_eq!(account_api_key().as_deref(), Some("tk-stored"));
+            assert_eq!(auth_status().source, "config");
+        });
+        with_session(session("tokamak", false, None), |_| {
+            stored();
+            assert_eq!(account_api_key().as_deref(), Some("tk-stored"));
+        });
+        with_session(
+            session("tokamak", true, Some("https://api-stag.tokamak.sh/v1".into())),
+            |_| {
+                stored();
+                assert_eq!(account_api_key().as_deref(), Some("tokamak-session-key"));
+                assert_eq!(base_url(), "https://api-stag.tokamak.sh/v1");
+            },
+        );
+    }
+
+    /// Against a live endpoint: the key that reaches `/usage` is Tokamak's own,
+    /// never the one a session was given for another provider.
+    #[test]
+    fn usage_never_carries_another_providers_key() {
+        use super::super::session_provider::with_session;
+        fn stub() -> (std::net::SocketAddr, std::sync::mpsc::Receiver<String>) {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                let mut buf = [0u8; 8192];
+                let n = std::io::Read::read(&mut stream, &mut buf).unwrap_or(0);
+                let _ = tx.send(String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase());
+                let body = "{}";
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            });
+            (addr, rx)
+        }
+        let fetch = || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(usage::fetch(&usage::Query::Summary))
+                .expect("usage")
+        };
+
+        let (addr, seen) = stub();
+        with_session(session("openrouter", true, None), |_| {
+            crate::core::agent::global_config::set_provider(
+                PROVIDER,
+                ProviderUpdate {
+                    api_key: Some("tk-stored".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            fetch();
+            let request = seen.recv().unwrap();
+            assert!(request.contains("authorization: bearer tk-stored\r\n"), "{request}");
+            assert!(!request.contains("openrouter-session-key"), "{request}");
+        });
+
+        let (addr, seen) = stub();
+        with_session(session("tokamak", true, Some(format!("http://{addr}/v1"))), |_| {
+            fetch();
+            let request = seen.recv().unwrap();
+            assert!(
+                request.contains("authorization: bearer tokamak-session-key\r\n"),
+                "{request}"
+            );
+        });
+    }
+
+    /// While the session provides Tokamak, the stored entry describes some
+    /// other key: none of its metadata may be reported, and its expiry must not
+    /// tell a launched session to run `jan login`.
+    #[test]
+    fn a_session_tokamak_reports_its_own_source_and_no_stored_expiry() {
+        use super::super::session_provider::with_session;
+        let soon = unix_now() + 2 * 24 * 60 * 60;
+        with_session(
+            session("tokamak", true, Some("https://api-stag.tokamak.sh/v1".into())),
+            |_| {
+                persist_minted(&minted(Some("k-native"), Some(soon)), roster(&[])).expect("persist");
+                let status = auth_status();
+                assert!(status.signed_in);
+                assert_eq!(status.source, "session");
+                assert_eq!(status.endpoint, "https://api-stag.tokamak.sh/v1");
+                assert_eq!(status.key_id, None);
+                assert_eq!(status.key_expires_at, None);
+                assert_eq!(status.account, None);
+                assert_eq!(expiry_warning(), None);
+            },
+        );
+        // The same stored key outside such a session still warns.
+        with_temp_home(|_| {
+            persist_minted(&minted(Some("k-native"), Some(soon)), roster(&[])).expect("persist");
+            assert!(expiry_warning().is_some());
+            assert_eq!(auth_status().source, "config");
+        });
+    }
+}

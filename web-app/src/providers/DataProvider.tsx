@@ -6,17 +6,19 @@ import {
   HUGGINGFACE_TOKEN_SECRET_KEY,
 } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { ExtensionManager } from '@/lib/extension'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
+import { sweepThreadWorkspaces } from '@/lib/agentTools'
 import { invoke } from '@tauri-apps/api/core'
 import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
@@ -58,7 +60,7 @@ async function registerRemoteProvider(provider: ModelProvider) {
 
   try {
     await invoke('register_provider_config', { request })
-    console.log(`Registered remote provider: ${provider.provider}`)
+    console.debug(`Registered remote provider: ${provider.provider}`)
   } catch (error) {
     console.error(`Failed to register provider ${provider.provider}:`, error)
   }
@@ -184,6 +186,10 @@ export function DataProvider() {
   const { setServers, setSettings } = useMCPServers()
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
+  const setThreadsLoading = useThreads((s) => s.setThreadsLoading)
+  // The thread fetch re-runs on extension re-registration; the sandbox sweep
+  // should not.
+  const sweptWorkspaces = useRef(false)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
 
@@ -202,6 +208,7 @@ export function DataProvider() {
     lastServerModels,
     setLastServerModels,
     defaultModelLocalApiServer,
+    runInBackground,
   } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
@@ -278,13 +285,67 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    serviceHub
-      .threads()
-      .fetchThreads()
-      .then((threads) => {
-        setThreads(threads)
-      })
-  }, [serviceHub, setThreads])
+    // fetchThreads throws while the Conversational extension is still loading
+    // (startup race, e.g. reload mid-stream). Retry with backoff instead of
+    // letting a single failed fetch leave the thread list permanently empty.
+    let cancelled = false
+    let attempt = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const load = () => {
+      serviceHub
+        .threads()
+        .fetchThreads()
+        .then((threads) => {
+          if (cancelled) return
+          // Never overwrite a populated list with an empty fetch result: an
+          // empty array here is more likely a transient not-ready state than
+          // the user having zero threads.
+          if (
+            threads.length === 0 &&
+            Object.keys(useThreads.getState().threads).length > 0
+          ) {
+            return
+          }
+          setThreads(threads)
+          setThreadsLoading(false)
+          // Collect agent sandboxes whose thread is gone (crash, or a thread
+          // deleted while the app was closed). Once per session, and only on a
+          // non-empty result: sweeping against an empty list would delete live
+          // sandboxes if this fetch were still a transient not-ready state.
+          // Leftovers then wait for the next startup that does see threads.
+          if (!sweptWorkspaces.current && threads.length > 0) {
+            sweptWorkspaces.current = true
+            sweepThreadWorkspaces(threads.map((t) => t.id))
+          }
+        })
+        .catch(() => {
+          if (cancelled) return
+          if (attempt >= 20) {
+            setThreadsLoading(false)
+            return
+          }
+          attempt += 1
+          timer = setTimeout(load, Math.min(1000, 150 * attempt))
+        })
+    }
+    // A late (or re-)registration re-arms the fetch even after the bounded
+    // retries above are exhausted, e.g. when extension setup itself failed
+    // and only recovers later.
+    const unsubscribe = ExtensionManager.getInstance().onRegistrationChange(
+      () => {
+        if (cancelled) return
+        attempt = 0
+        clearTimeout(timer)
+        load()
+      }
+    )
+    load()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      unsubscribe()
+    }
+  }, [serviceHub, setThreads, setThreadsLoading])
 
   // Sync remote providers with backend when providers change
   const providers = useModelProvider((s) => s.providers)
@@ -338,6 +399,16 @@ export function DataProvider() {
       events.off(AppEvent.onModelImported, handler)
     }
   }, [serviceHub, setProviders])
+
+  // Keep the backend's hide-to-tray-on-close flag in sync with the setting
+  useEffect(() => {
+    serviceHub
+      .app()
+      .setServerRunInBackground(runInBackground)
+      .catch((error) =>
+        console.error('Failed to sync run-in-background setting:', error)
+      )
+  }, [serviceHub, runInBackground])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {

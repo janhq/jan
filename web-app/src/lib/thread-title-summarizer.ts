@@ -1,6 +1,8 @@
 import { generateText } from 'ai'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { ModelSelection } from './custom-chat-transport'
+import { BACKGROUND_THREAD_ID, CHAT_SLOT_ID } from '@/constants/models'
 
 const MAX_TITLE_WORDS = 10
 const MAX_PROMPT_LENGTH = 1500
@@ -55,16 +57,20 @@ export function cleanTitle(raw: string): string | null {
 
 /**
  * Generate a summarized thread title from the user's first message.
- * Uses the currently selected model via a non-streaming generateText call.
+ * Uses the given model (the thread's own, which a turn finishing in the
+ * background no longer shares with the open thread), else the currently
+ * selected one, via a non-streaming generateText call.
  * Returns null on failure or if the signal is aborted.
  */
 export async function generateThreadTitle(
   transcript: string,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  modelSelection?: ModelSelection
 ): Promise<string | null> {
   try {
-    const { selectedModel, selectedProvider, getProviderByName } =
-      useModelProvider.getState()
+    const { getProviderByName } = useModelProvider.getState()
+    const { selectedModel, selectedProvider } =
+      modelSelection ?? useModelProvider.getState()
     if (!selectedModel || !selectedProvider) {
       console.warn('[ThreadTitle] No model/provider selected')
       return null
@@ -80,10 +86,18 @@ export async function generateThreadTitle(
     }
 
     console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
-    const params: Record<string, unknown> =
-      selectedProvider === 'llamacpp'
-        ? { chat_template_kwargs: { enable_thinking: false } }
-        : {}
+    // Slot 0 like every other surface, but under its own thread identity: the
+    // engine parks the chat's KV prefix before this call takes the slot and
+    // restores it on the next chat turn. Sending no thread_id would overwrite
+    // that prefix with nothing saved, and pinning a higher slot is unsafe --
+    // upstream wraps an out-of-range id_slot modulo the slot count instead of
+    // rejecting it, so it would land back on slot 0 anyway.
+    const params: Record<string, unknown> = {}
+    if (selectedProvider === 'llamacpp') {
+      params.chat_template_kwargs = { enable_thinking: false }
+      params.id_slot = CHAT_SLOT_ID
+      params.thread_id = BACKGROUND_THREAD_ID
+    }
     const model = await ModelFactory.createModel(
       selectedModel.id,
       provider,

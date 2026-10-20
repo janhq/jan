@@ -8,5 +8,6 @@
   },
   "sendMessage": "Kirim Pesan",
   "newConversation": "Percakapan Baru",
-  "clearHistory": "Hapus Riwayat"
+  "clearHistory": "Hapus Riwayat",
+  "done": "Done"
 }

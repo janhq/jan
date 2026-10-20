@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // --- Module mocks (must be declared before component import) ---------------
@@ -67,12 +73,13 @@ let selectedModelOverride: any = {
   capabilities: ['tools'],
   provider: 'llamacpp',
 }
+let selectedProviderOverride: any = 'llamacpp'
 const getProviderByNameMock = vi.fn()
 vi.mock('@/hooks/useModelProvider', () => ({
   useModelProvider: (selector: any) =>
     selector({
       selectedModel: selectedModelOverride,
-      selectedProvider: { provider: 'llamacpp' },
+      selectedProvider: selectedProviderOverride,
       providers: [],
       selectModelProvider: vi.fn(),
       updateProvider: vi.fn(),
@@ -80,12 +87,27 @@ vi.mock('@/hooks/useModelProvider', () => ({
     }),
 }))
 
+vi.mock('@/hooks/useTokensCount', () => ({
+  useTokensCount: () => ({
+    maxTokens: undefined,
+    configuredCtxLen: undefined,
+    tokenCount: 0,
+    isNearLimit: false,
+    loading: false,
+    fitEnabled: false,
+    calculateTokens: vi.fn(),
+  }),
+}))
+
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({
     loading: false,
-    currentAssistant: { id: 'a1', avatar: '' },
+    currentAssistant: { id: 'a1', name: 'Global assistant', avatar: '' },
     setCurrentAssistant: vi.fn(),
-    assistants: [{ id: 'a1', avatar: '' }],
+    assistants: [
+      { id: 'a1', name: 'Global assistant', avatar: '' },
+      { id: 'a2', name: 'Project assistant', avatar: '' },
+    ],
   }),
 }))
 
@@ -118,19 +140,41 @@ vi.mock('@/hooks/useAttachments', () => ({
     }),
 }))
 
+// The real image-limit store runs against an in-memory backend so tests can
+// set the configured limit the same way the settings page does.
+vi.mock('@/lib/backendStorage', () => ({
+  backendStorage: {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+  },
+}))
+
 let attachmentsList: any[] = []
+/** Attachments stored under a specific scope key, for the scopeKey tests. */
+let attachmentsByKey: Record<string, any[]> = {}
+/** Keys ChatInput actually read this render, so a mismatch is visible. */
+let readKeys: string[] = []
 const setAttachmentsMock = vi.fn()
 const clearAttachmentsMock = vi.fn()
 const transferAttachmentsMock = vi.fn()
+// Key-aware on purpose: the store is keyed, and a caller reading a different
+// key than the writer used is exactly the bug this mock has to be able to see.
+const attachmentStore = {
+  getAttachments: (key: string) => {
+    readKeys.push(key)
+    return attachmentsByKey[key] ?? attachmentsList
+  },
+  setAttachments: setAttachmentsMock,
+  clearAttachments: clearAttachmentsMock,
+  transferAttachments: transferAttachmentsMock,
+}
 vi.mock('@/hooks/useChatAttachments', () => ({
   NEW_THREAD_ATTACHMENT_KEY: '__new_thread__',
-  useChatAttachments: (selector: any) =>
-    selector({
-      getAttachments: () => attachmentsList,
-      setAttachments: setAttachmentsMock,
-      clearAttachments: clearAttachmentsMock,
-      transferAttachments: transferAttachmentsMock,
-    }),
+  useChatAttachments: Object.assign(
+    (selector: any) => selector(attachmentStore),
+    { getState: () => attachmentStore }
+  ),
 }))
 
 vi.mock('@/hooks/useJanBrowserExtension', () => ({
@@ -185,6 +229,8 @@ vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: () => ({
       get: () => undefined,
+      getByName: () => undefined,
+      listExtensions: () => [],
     }),
   },
 }))
@@ -257,6 +303,7 @@ vi.mock('@/components/ui/dropdown-menu', () => {
       </button>
     ),
     DropdownMenuTrigger: Pass,
+    DropdownMenuSeparator: () => null,
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
@@ -278,6 +325,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 
 // Helpers -------------------------------------------------------------------
 
@@ -285,12 +333,15 @@ const resetAll = () => {
   promptState = ''
   appStateOverrides = {}
   attachmentsList = []
+  attachmentsByKey = {}
+  readKeys = []
   agentModeOn = false
   selectedModelOverride = {
     id: 'model-a',
     capabilities: ['tools'],
     provider: 'llamacpp',
   }
+  selectedProviderOverride = { provider: 'llamacpp' }
   setPromptMock.mockClear()
   addToHistoryMock.mockClear()
   navigateHistoryMock.mockClear()
@@ -298,6 +349,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
 }
 
 const getTextarea = () =>
@@ -319,6 +371,14 @@ describe('ChatInput', () => {
     expect(ta).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
     // send button is present
     expect(document.querySelector('[data-test-id="send-message-button"]')).toBeTruthy()
+  })
+
+  it('shows the project assistant for a new conversation', () => {
+    renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
+
+    expect(
+      screen.getByRole('button', { name: 'Switch assistant' })
+    ).toHaveTextContent('Project assistant')
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -344,12 +404,19 @@ describe('ChatInput', () => {
     expect(setPromptMock).toHaveBeenCalledWith('abc')
   })
 
-  it('submits via onSubmit prop when Enter is pressed', () => {
+  it('submits via onSubmit prop when Enter is pressed', async () => {
     promptState = 'hello world'
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(onSubmit).toHaveBeenCalledWith('hello world', undefined)
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'hello world',
+        undefined,
+        undefined,
+        'hello world'
+      )
+    )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
   })
@@ -362,15 +429,18 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('does nothing when Enter pressed with empty/whitespace prompt', () => {
+  it('does nothing when Enter pressed with empty/whitespace prompt', async () => {
     promptState = '   '
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    // submission is async, so flush pending promises before asserting the
+    // whitespace guard actually blocked it
+    await act(async () => {})
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  it('submits via the send button click', () => {
+  it('submits via the send button click', async () => {
     promptState = 'button submit'
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
@@ -378,7 +448,14 @@ describe('ChatInput', () => {
       '[data-test-id="send-message-button"]'
     ) as HTMLButtonElement
     fireEvent.click(btn)
-    expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'button submit',
+        undefined,
+        undefined,
+        'button submit'
+      )
+    )
   })
 
   it('shows stop button while streaming and hides the send button', () => {
@@ -413,19 +490,37 @@ describe('ChatInput', () => {
     expect(clicked).toBeGreaterThanOrEqual(0) // smoke: no crash
   })
 
-  it('queues the message when streaming with a currentThreadId', () => {
+  it('queues the message when streaming with a currentThreadId', async () => {
     promptState = 'queued msg'
     const onSubmit = vi.fn()
     renderInput({ onSubmit, chatStatus: 'streaming' })
     // During streaming, stop button is shown instead of send; submit path is via Enter on textarea
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(enqueueMock).toHaveBeenCalledWith(
-      'thread-1',
-      expect.objectContaining({ text: 'queued msg', id: 'gen-id-1' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg', id: 'gen-id-1' })
+      )
     )
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  // Tools running means the stream is over (`ready`), but the turn is not: a new
+  // message must wait for it like one sent mid-stream.
+  it('queues the message while the turn\'s tools are still running', async () => {
+    promptState = 'queued msg'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('shows "please select a model" inline message when no model selected', () => {
@@ -468,7 +563,7 @@ describe('ChatInput', () => {
     expect(navigateHistoryMock).toHaveBeenCalledWith('down')
   })
 
-  it('adds attached image files to onSubmit payload', () => {
+  it('adds attached image files to onSubmit payload', async () => {
     promptState = 'with image'
     attachmentsList = [
       {
@@ -480,17 +575,39 @@ describe('ChatInput', () => {
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
-    expect(onSubmit).toHaveBeenCalledWith(
-      'with image',
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'file',
-          mediaType: 'image/png',
-          url: 'data:image/png;base64,xxx',
-        }),
-      ])
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'with image',
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'file',
+            mediaType: 'image/png',
+            url: 'data:image/png;base64,xxx',
+          }),
+        ]),
+        undefined,
+        'with image'
+      )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
+  })
+
+  it('passes document attachments to onSubmit as the third argument', async () => {
+    promptState = 'read this'
+    attachmentsList = [
+      { type: 'document', name: 'spec.pdf', path: '/docs/spec.pdf', fileType: 'pdf' },
+    ]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read this',
+        undefined,
+        [expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' })],
+        'read this'
+      )
+    )
   })
 
   it('shows the queued-message chips from the message queue', () => {
@@ -517,4 +634,222 @@ describe('ChatInput', () => {
     const svg = container.querySelector('.text-destructive svg')
     expect(svg).toBeTruthy()
   })
-})
+
+  describe('token counter visibility', () => {
+    // Regression: llama.cpp is a string provider ('llamacpp') and loads lazily,
+    // so it is never present in `activeModels` during a chat turn. The counter
+    // must still render off model selection + prompt/messages alone.
+    it('renders for llama.cpp even when activeModels is empty', () => {
+      selectedProviderOverride = { provider: 'llamacpp' }
+      appStateOverrides = { activeModels: [] }
+      promptState = 'hello'
+      renderInput()
+      expect(screen.getByTestId('stub-token-counter')).toBeInTheDocument()
+    })
+
+    it('renders for a remote provider (openai) with a selected model', () => {
+      selectedProviderOverride = 'openai'
+      appStateOverrides = { activeModels: [] }
+      promptState = 'hello'
+      renderInput()
+      expect(screen.getByTestId('stub-token-counter')).toBeInTheDocument()
+    })
+
+    it('does not render when no model is selected', () => {
+      selectedModelOverride = null
+      promptState = 'hello'
+      renderInput()
+      expect(screen.queryByTestId('stub-token-counter')).not.toBeInTheDocument()
+    })
+
+    it('does not render with no messages and an empty prompt', () => {
+      promptState = ''
+      renderInput()
+      expect(screen.queryByTestId('stub-token-counter')).not.toBeInTheDocument()
+    })
+  })
+
+  // Cowork is not keyed by thread: it passes its session id as scopeKey, and
+  // the preview panel writes annotation images under that same id. Reading the
+  // thread key here silently dropped every annotation.
+  it('reads attachments under scopeKey and shows them in the input', () => {
+    attachmentsByKey['code-session-1'] = [
+      {
+        type: 'image',
+        name: 'annotation.png',
+        dataUrl: 'data:image/png;base64,annotated',
+        mimeType: 'image/png',
+      },
+    ]
+    renderInput({ scopeKey: 'code-session-1' })
+    expect(readKeys).toContain('code-session-1')
+    const thumb = document.querySelector(
+      'img[src="data:image/png;base64,annotated"]'
+    )
+    expect(thumb).toBeTruthy()
+  })
+
+  it('falls back to the thread key when no scopeKey is given', () => {
+    renderInput()
+    expect(readKeys.length).toBeGreaterThan(0)
+    expect(readKeys).not.toContain('code-session-1')
+  })
+
+  // A scopeKey caller owns a stable id from the start; migrating the general
+  // chat's "new thread" draft into it would steal another surface's files.
+  it('does not migrate the new-thread draft into a scopeKey surface', () => {
+    renderInput({ scopeKey: 'code-session-1' })
+    expect(transferAttachmentsMock).not.toHaveBeenCalled()
+  })
+
+  describe('tool controls', () => {
+    const icons = (cls: string) =>
+      document.querySelectorAll(`.tabler-icon-${cls}`).length
+
+    // Web access is a global capability both surfaces honour -- Cowork reads
+    // the same store when it builds its tool set -- so the toggle travels.
+    it('offers the web-search toggle on every surface', () => {
+      renderInput()
+      expect(icons('world-search')).toBe(1)
+      renderInput({ ownsToolSet: false })
+      expect(icons('world-search')).toBeGreaterThan(0)
+    })
+
+    // Its only switch is Settings > Agent Tools now. In the composer it read as
+    // a per-message choice while actually flipping a global.
+    it('no longer offers the agent-tools toggle', () => {
+      renderInput()
+      expect(icons('folder-code')).toBe(0)
+    })
+
+    it('withholds MCP controls from a surface that owns its tool set', () => {
+      renderInput({ ownsToolSet: false })
+      // The composer still works: the textarea and attachments stay.
+      expect(getTextarea()).toBeInTheDocument()
+    })
+  })
+
+  describe('surfaceControls', () => {
+    it('docks a surface\'s own controls in the control row', () => {
+      renderInput({ surfaceControls: <button>plan</button> })
+      expect(screen.getByText('plan')).toBeInTheDocument()
+    })
+
+    // They configure the next message, not the run in flight, so streaming
+    // must not disable them the way it dims the tool icons.
+    it('keeps them live while streaming', () => {
+      renderInput({
+        surfaceControls: <button>plan</button>,
+        chatStatus: 'streaming',
+      })
+      const dimmed = document.querySelector('.pointer-events-none')
+      expect(dimmed).toBeTruthy()
+      expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
+    })
+  })
+
+  describe('image size limit', () => {
+    const MB = 1024 * 1024
+    const imageFile = (name: string, bytes: number, type = 'image/png') => {
+      const file = new File(['x'], name, { type })
+      Object.defineProperty(file, 'size', { value: bytes })
+      return file
+    }
+    const renderVision = () => {
+      selectedModelOverride = {
+        id: 'vision-model',
+        capabilities: ['tools', 'vision'],
+        provider: 'llamacpp',
+      }
+      return renderInput()
+    }
+    const pickFiles = (files: File[]) => {
+      const input = document.querySelector(
+        'input[type="file"]:not([accept])'
+      ) as HTMLInputElement
+      fireEvent.change(input, { target: { files } })
+    }
+    // ChatInput always calls setAttachments with an updater; run it against an
+    // empty list to see which images (if any) it would add.
+    const attachedImages = () =>
+      setAttachmentsMock.mock.calls.flatMap(([, updater]) =>
+        typeof updater === 'function' ? updater([]) : updater
+      )
+    const attachedNames = () => (attachedImages().length > 0 ? 'attached' : 'none')
+
+    beforeEach(() => {
+      setAttachmentsMock.mockClear()
+    })
+
+    it('accepts an image under the default 10MB limit via the picker', async () => {
+      renderVision()
+      pickFiles([imageFile('ok.png', 9 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('rejects an image over the default limit and reports 10MB', async () => {
+      renderVision()
+      pickFiles([imageFile('big.png', 11 * MB)])
+      expect(
+        await screen.findByText('File too large (max 10MB): big.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('honors a raised limit and accepts a 20MB image', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 25 })
+      renderVision()
+      pickFiles([imageFile('large.png', 20 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('honors a lowered limit and builds the message from it', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 2 })
+      renderVision()
+      pickFiles([imageFile('a.png', 3 * MB), imageFile('b.png', 4 * MB)])
+      expect(
+        await screen.findByText('Files too large (max 2MB): a.png, b.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('applies the same limit to pasted images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      renderVision()
+      const file = imageFile('pasted.png', 5 * MB)
+      fireEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+        },
+      })
+      expect(
+        await screen.findByText('File too large (max 3MB): pasted.png')
+      ).toBeInTheDocument()
+    })
+
+    it('applies the same limit to dropped images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      // jsdom has no DataTransfer constructor; handleDrop builds one.
+      class FakeDataTransfer {
+        files: File[] = []
+        items = { add: (f: File) => this.files.push(f) }
+      }
+      vi.stubGlobal('DataTransfer', FakeDataTransfer)
+      try {
+        renderVision()
+        const dropZone = document.querySelector(
+          '[data-drop-zone="true"]'
+        ) as HTMLElement
+        const file = imageFile('dropped.png', 5 * MB)
+        fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+        expect(
+          await screen.findByText('File too large (max 3MB): dropped.png')
+        ).toBeInTheDocument()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+  })
+ })

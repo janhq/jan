@@ -6,6 +6,7 @@ import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import type { ExtensionManifest } from '@/lib/extension'
 import type { InvokeArgs } from './types'
 import { DefaultCoreService } from './default'
+import { getBundledExtensions } from './bundled-extensions'
 
 export class TauriCoreService extends DefaultCoreService {
   async invoke<T = unknown>(command: string, args?: InvokeArgs): Promise<T> {
@@ -26,41 +27,19 @@ export class TauriCoreService extends DefaultCoreService {
     }
   }
 
-  // Extension management - using invoke
+  // Extensions are bundled into the app binary; no filesystem install step.
   async getActiveExtensions(): Promise<ExtensionManifest[]> {
-    try {
-      return await this.invoke<ExtensionManifest[]>('get_active_extensions')
-    } catch (error) {
-      console.error('Error getting active extensions in Tauri:', error)
-      return []
-    }
+    return getBundledExtensions()
   }
 
-  async installExtensions(): Promise<void> {
-    try {
-      return await this.invoke<void>('install_extensions')
-    } catch (error) {
-      console.error('Error installing extensions in Tauri:', error)
-      throw error
-    }
+  async installExtensions(): Promise<void> {}
+
+  async installExtension(): Promise<ExtensionManifest[]> {
+    return getBundledExtensions()
   }
 
-  async installExtension(extensions: ExtensionManifest[]): Promise<ExtensionManifest[]> {
-    try {
-      return await this.invoke<ExtensionManifest[]>('install_extension', { extensions })
-    } catch (error) {
-      console.error('Error installing extension in Tauri:', error)
-      return []
-    }
-  }
-
-  async uninstallExtension(extensions: string[], reload = true): Promise<boolean> {
-    try {
-      return await this.invoke<boolean>('uninstall_extension', { extensions, reload })
-    } catch (error) {
-      console.error('Error uninstalling extension in Tauri:', error)
-      return false
-    }
+  async uninstallExtension(): Promise<boolean> {
+    return false
   }
 
   // App token

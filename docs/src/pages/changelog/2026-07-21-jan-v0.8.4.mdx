@@ -1,0 +1,91 @@
+---
+title: "Jan v0.8.4: Native Web Search, Per-Model Chat Templates & a Backend Settings Store"
+version: 0.8.4
+description: "Jan v0.8.4 adds native web_search / web_fetch tools, per-model chat-template kwargs for llama.cpp, a token counter for remote and MLX providers, and moves settings and credentials into a backend-managed store (localStorage kept as a downgrade snapshot) - alongside a batch of chat, MCP, provider, and streaming fixes."
+date: 2026-07-21
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.4: Native Web Search, Per-Model Chat Templates & a Backend Settings Store"
+  date="2026-07-21"
+/>
+
+# Migration
+
+**Settings and credentials now live in a backend store, not browser localStorage.**
+
+Provider settings and credentials previously persisted in the webview's `localStorage`. In 0.8.4, Jan reads and writes them from a backend-managed store instead (secrets go to the OS keyring). Your existing settings and API keys are copied over automatically on first launch - no manual action is needed, and from this version on all new changes are saved to the backend store.
+
+Your old `localStorage` data is **not deleted** - it's kept as a snapshot so you can downgrade to a pre-0.8.4 build and still have your previous settings. Note that any changes you make in 0.8.4+ live only in the backend store, so a downgrade sees the older snapshot, not your latest settings. The migration runs once and is guarded by a backend flag, so re-upgrading never re-imports the stale `localStorage` copy over newer backend data.
+
+---
+
+# Highlights
+
+**Native Web Search & Web Fetch**
+
+Jan now ships built-in `web_search` and `web_fetch` tools backed by a native `tauri-plugin-websearch`, so models can search the web and fetch page content without configuring an external MCP server. The tools are available to the agent loop like any other built-in.
+
+**Per-Model Chat Template kwargs for llama.cpp**
+
+You can now set chat-template keyword arguments per model in llama.cpp router mode, so template variables (for example reasoning or tool-format switches a model's template exposes) can be pinned per model rather than applied globally.
+
+**Token Counter for Remote & MLX Providers**
+
+The token counter now works for remote and MLX providers, not just local llama.cpp - so you can see token usage during chat across provider types. This landed alongside a batch of related chat and inference fixes.
+
+**Interim Text Folding into the Reasoning Trace**
+
+A new toggle lets you fold interim narration text into the reasoning/chain-of-thought trace instead of showing it as loose prose between steps, keeping the transcript compact.
+
+---
+
+# Bug Fixes
+
+**Chat & Streaming**
+
+- Stopping a generation mid model-load now preserves `AbortError` identity, so the stop is handled cleanly instead of surfacing as an unexpected error.
+- Custom SSE event types in OpenAI-compatible streams are now ignored rather than breaking parsing.
+- Detached assistant replies in branched threads are no longer persisted, so branch history stays correct.
+- Numeric assistant parameters supplied as strings are now coerced to numbers.
+
+**MCP & Local API Server**
+
+- Guarded against a duplicate `serve()` on streamable-HTTP MCP servers.
+- The MCP tool-approval popup no longer hangs; transient approval state was moved off disk.
+- Providers now send the `anthropic-version` header when fetching the model list.
+
+**RAG & Rendering**
+
+- Embeddings were repaired, redundant chat-model reloads were stopped, and more PDF formats now parse for document indexing.
+- Code blocks are now forced left-to-right (LTR) even inside a right-to-left language context.
+
+**Desktop & Platform**
+
+- macOS: hide-on-close now hides to the tray when the Local API Server is running, instead of quitting.
+- Fixed a snake_case mismatch for the ADL enum in `get_gpu_usage`.
+
+**Security**
+
+- Bumped `handlebars` to 4.7.9 in docs to clear an RCE advisory.
+
+---
+
+# Localization
+
+Japanese (`ja`) translations were updated across common, settings, and terminology.
+
+---
+
+# Engineering
+
+- App plugin versions bumped to 0.8.4.
+- Centralized the llama.cpp extension lookup with a scoped-name fallback.
+
+---
+
+Update Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.4).

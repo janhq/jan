@@ -99,6 +99,10 @@ export class TauriAppService extends DefaultAppService {
     return await invoke<boolean>('get_server_status')
   }
 
+  async setServerRunInBackground(enabled: boolean): Promise<void> {
+    await invoke('set_server_run_in_background', { enabled })
+  }
+
   async readYaml<T = unknown>(path: string): Promise<T> {
     return await invoke<T>('read_yaml', { path })
   }

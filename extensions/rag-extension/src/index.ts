@@ -6,8 +6,9 @@ import {
   VectorDBExtension,
   type AttachmentInput,
   type SettingComponentProps,
-  AIEngine,
+  embedTexts,
   type AttachmentFileInfo,
+  logger,
 } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
@@ -30,7 +31,7 @@ export default class RagExtension extends RAGExtension {
     try {
       await this.configure()
     } catch (e) {
-      console.error('[RAG] configure() failed during onLoad:', e)
+      logger.error('[RAG] configure() failed during onLoad:', e)
     }
     // Check ANN availability on load (already self-contained try/catch)
     this.checkANNAvailability()
@@ -82,18 +83,18 @@ export default class RagExtension extends RAGExtension {
       ) as unknown as VectorDBExtension
       if (vec?.getStatus) {
         const status = await vec.getStatus()
-        console.log(
+        logger.info(
           '[RAG] Vector DB ANN support:',
           status.ann_available ? '✓ AVAILABLE' : '✗ NOT AVAILABLE'
         )
         if (!status.ann_available) {
-          console.warn(
+          logger.warn(
             '[RAG] Warning: sqlite-vec not loaded. Collections will use slower linear search.'
           )
         }
       }
     } catch (e) {
-      console.error('[RAG] Failed to check ANN status:', e)
+      logger.error('[RAG] Failed to check ANN status:', e)
     }
   }
 
@@ -231,7 +232,7 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const queryEmb = (await this.embedTexts([query]))?.[0]
+      const queryEmb = (await embedTexts([query]))?.[0]
       if (!queryEmb) {
         return {
           error: 'Failed to compute embeddings',
@@ -280,14 +281,19 @@ export default class RagExtension extends RAGExtension {
         content: [{ type: 'text', text: JSON.stringify(payload) }],
       }
     } catch (e) {
-      console.error('[RAG] Retrieve error:', e)
+      logger.error('[RAG] Retrieve error:', e)
       let msg = 'Unknown error'
       if (e instanceof Error) {
         msg = e.message
       } else if (typeof e === 'string') {
         msg = e
       } else if (e && typeof e === 'object') {
-        msg = JSON.stringify(e)
+        // Rust plugin errors arrive as { VariantName: "message" }.
+        const values = Object.values(e as Record<string, unknown>)
+        msg =
+          values.length === 1 && typeof values[0] === 'string'
+            ? values[0]
+            : JSON.stringify(e)
       }
       return {
         error: msg,
@@ -460,7 +466,7 @@ export default class RagExtension extends RAGExtension {
       // Preferred/required path: let Vector DB extension handle full file ingestion
       const canIngestFile = typeof (vec as any)?.ingestFile === 'function'
       if (!canIngestFile) {
-        console.error(
+        logger.error(
           '[RAG] Vector DB extension missing ingestFile; cannot ingest document'
         )
         continue
@@ -524,25 +530,7 @@ export default class RagExtension extends RAGExtension {
 
   async embed(texts: string[]): Promise<number[][]> {
     if (!texts || texts.length === 0) return []
-    return this.embedTexts(texts)
+    return embedTexts(texts)
   }
 
-  // Locally implement embedding logic (previously in embeddings-extension)
-  private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName(
-      '@janhq/llamacpp-extension'
-    ) as AIEngine & {
-      embed?: (
-        texts: string[]
-      ) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
-    }
-    if (!llm?.embed) throw new Error('llamacpp extension not available')
-    const res = await llm.embed(texts)
-    const data: Array<{ embedding: number[]; index: number }> = res?.data || []
-    const out: number[][] = new Array(texts.length)
-    for (const item of data) {
-      out[item.index] = item.embedding
-    }
-    return out
-  }
 }

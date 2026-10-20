@@ -9,8 +9,16 @@ export default defineConfig({
       // Web-app package - use its own vitest config
       './web-app',
 
-      // Extensions that ship their own tests
+      // Extensions - each ships its own vitest config
+      './extensions/assistant-extension',
+      './extensions/conversational-extension',
+      './extensions/download-extension',
       './extensions/llamacpp-extension',
+      // mlx depends on @janhq/tauri-plugin-mlx-api, which only resolves on
+      // macOS; skip its project elsewhere to avoid a resolve failure.
+      ...(process.platform === 'darwin' ? ['./extensions/mlx-extension'] : []),
+      './extensions/rag-extension',
+      './extensions/vector-db-extension',
     ],
     coverage: {
       provider: 'v8',
@@ -23,7 +31,15 @@ export default defineConfig({
         '**/src/**/*.test.tsx',
         '**/src/test/**/*',
         'src-tauri',
-        'extensions',
+        // The e2e suite is a separate package driven by WebdriverIO, not by
+        // vitest, so every line of it reads as uncovered and dilutes the total.
+        'e2e/**',
+        // The release-check scripts are run by node from workflows, never
+        // imported by a vitest suite, so they read as fully uncovered. Scoped
+        // to `check-*` rather than the whole tree so that a future `scripts/`
+        // module which is imported does not get dropped from the report by
+        // accident.
+        'scripts/check-*.mjs',
       ],
     },
   },

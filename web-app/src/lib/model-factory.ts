@@ -57,10 +57,15 @@ import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
+import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
+import {
+  hasToolImageSentinel,
+  splitToolImageSentinels,
+} from './tool-image-sentinel'
 import { filterDefaultSseEvents } from './sseEventTypeFilter'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
@@ -74,7 +79,11 @@ import {
   getMutualExclusionDrops,
   getProviderApiType,
 } from '@/lib/providerCaps'
+import { engineFailure } from '@/lib/engineError'
+import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 /**
  * Llama.cpp timings structure from the response
@@ -84,7 +93,14 @@ interface LlamaCppTimings {
   predicted_n?: number
   predicted_per_second?: number
   prompt_per_second?: number
+  cache_n?: number
 }
+
+// prompt_n only counts tokens freshly processed this turn; tokens served from
+// the KV cache (the rest of the conversation) are reported separately in
+// cache_n, so total prompt/context usage is the sum of both.
+const totalPromptTokens = (timings: LlamaCppTimings): number =>
+  (timings.prompt_n ?? 0) + (timings.cache_n ?? 0)
 
 interface LlamaCppPromptProgress {
   total?: number
@@ -109,7 +125,7 @@ const providerMetadataExtractor: MetadataExtractor = {
     if (body?.timings) {
       return {
         providerMetadata: {
-          promptTokens: body.timings.prompt_n ?? null,
+          promptTokens: totalPromptTokens(body.timings),
           completionTokens: body.timings.predicted_n ?? null,
           tokensPerSecond: body.timings.predicted_per_second ?? null,
           promptPerSecond: body.timings.prompt_per_second ?? null,
@@ -134,6 +150,16 @@ const providerMetadataExtractor: MetadataExtractor = {
         }
         if (chunk?.timings) {
           lastTimings = chunk.timings
+          const liveStats = {
+            promptTokens: totalPromptTokens(lastTimings),
+            completionTokens: lastTimings.predicted_n ?? 0,
+            tokensPerSecond: lastTimings.predicted_per_second ?? null,
+            promptPerSecond: lastTimings.prompt_per_second ?? null,
+          }
+          state.updateLiveTokenStats(liveStats)
+          if (streamThreadId) {
+            state.updateThreadLiveTokenStats(streamThreadId, liveStats)
+          }
         }
         const pp = chunk?.prompt_progress
         if (
@@ -157,7 +183,7 @@ const providerMetadataExtractor: MetadataExtractor = {
         if (lastTimings) {
           return {
             providerMetadata: {
-              promptTokens: lastTimings.prompt_n ?? null,
+              promptTokens: totalPromptTokens(lastTimings),
               completionTokens: lastTimings.predicted_n ?? null,
               tokensPerSecond: lastTimings.predicted_per_second ?? null,
               promptPerSecond: lastTimings.prompt_per_second ?? null,
@@ -179,6 +205,71 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
   'max_context_tokens',
   'auto_compact',
 ])
+
+/**
+ * Reconcile `grammar` / `json_schema` with what llama-server actually accepts.
+ * The UI can express every combination the server refuses:
+ *
+ * - `grammar` is rejected whenever the request carries usable tools, and the
+ *   check is `body.contains("grammar")` (server-common.cpp), so an untouched
+ *   Grammar row -- default `''` -- 400s a tool-enabled thread on its own.
+ * - `json_schema` and `grammar` together are refused outright; the explicit
+ *   GBNF wins here, since typing one is the more deliberate act.
+ * - a schema must be an *object*. The textarea holds a string, which the
+ *   server dumps and re-parses into a JSON string that every consumer skips
+ *   over `is_object()`, so the setting silently did nothing.
+ *
+ * Mutates `body`; llamacpp-only, since the other providers never see these keys.
+ */
+export function reconcileConstraintParams(body: Record<string, unknown>): void {
+  if ('grammar' in body) {
+    const grammar = body.grammar
+    if (typeof grammar !== 'string' || grammar.trim() === '') {
+      delete body.grammar
+    }
+  }
+
+  if ('json_schema' in body) {
+    const raw = body.json_schema
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed === '') {
+        delete body.json_schema
+      } else {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(trimmed)
+        } catch (e) {
+          console.warn('Ignoring JSON Schema that is not valid JSON:', e)
+          delete body.json_schema
+        }
+        if ('json_schema' in body) {
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            body.json_schema = parsed
+          } else {
+            console.warn('Ignoring JSON Schema that is not a JSON object')
+            delete body.json_schema
+          }
+        }
+      }
+    } else if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      delete body.json_schema
+    }
+  }
+
+  const tools = body.tools
+  const toolsUsable =
+    Array.isArray(tools) && tools.length > 0 && body.tool_choice !== 'none'
+  if (toolsUsable && 'grammar' in body) {
+    console.warn('Ignoring the GBNF grammar: llama.cpp refuses one alongside tools')
+    delete body.grammar
+  }
+
+  if ('grammar' in body && 'json_schema' in body) {
+    console.warn('Ignoring the JSON Schema: a GBNF grammar is set and llama.cpp accepts only one')
+    delete body.json_schema
+  }
+}
 
 function filterParameters(
   parameters: Record<string, unknown>,
@@ -346,7 +437,8 @@ export function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>,
   keepLlamacppOnly = false,
-  onLlamacppServerError?: () => void
+  onLlamacppServerError?: () => void,
+  filterNamedSseEvents = false
 ): typeof globalThis.fetch {
   // Params entered via a text input arrive as strings (see InputControl).
   // Providers reject a string where a number is required, so coerce back to a
@@ -359,6 +451,23 @@ export function createCustomFetch(
     return Number.isNaN(n) ? value : n
   }
 
+  // Internal param keys that don't match the llama-server wire field name.
+  const WIRE_KEY_REMAP: Record<string, string> = {
+    max_output_tokens: 'max_tokens',
+    dynatemp_exp: 'dynatemp_exponent',
+  }
+
+  // Server expects an array of sampler names; the UI stores a comma/
+  // semicolon-separated string for easy editing.
+  const coerceSamplers = (value: unknown): unknown => {
+    if (typeof value !== 'string') return value
+    const names = value
+      .split(/[,;]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return names.length > 0 ? names : undefined
+  }
+
   const buildBody = (
     rawBody: Record<string, unknown>,
     includeOurParams: boolean
@@ -366,18 +475,33 @@ export function createCustomFetch(
     if (!includeOurParams) {
       decodeAudioSentinelsInBody(rawBody)
       decodeVideoSentinelsInBody(rawBody)
+      decodeToolImageSentinelsInBody(rawBody)
       return rawBody
     }
     const normalised: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(parameters)) {
       if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
       if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
-      const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
-      normalised[targetKey] = coerceNumericParam(key, value)
+      const targetKey = WIRE_KEY_REMAP[key] ?? key
+      const coerced =
+        key === 'samplers'
+          ? coerceSamplers(value)
+          : coerceNumericParam(key, value)
+      if (coerced === undefined) continue
+      normalised[targetKey] = coerced
     }
     const merged = { ...rawBody, ...normalised }
+    if (keepLlamacppOnly) {
+      // Assert the server default explicitly so a preset/CLI override can't
+      // silently disable prompt-prefix KV reuse across turns.
+      merged.cache_prompt = true
+      reconcileConstraintParams(merged)
+    }
     if (keepLlamacppOnly && merged.stream === true) {
       merged.return_progress = true
+      // Requests per-chunk timings so the token counter can update live
+      // during generation instead of only once the stream finishes.
+      merged.timings_per_token = true
     }
     // llama-server convention: max_tokens = -1 means "unlimited". Users who
     // set max_output_tokens = 0 in assistant params mean "no cap", not
@@ -388,6 +512,7 @@ export function createCustomFetch(
     }
     decodeAudioSentinelsInBody(merged)
     decodeVideoSentinelsInBody(merged)
+    decodeToolImageSentinelsInBody(merged)
     return merged
   }
 
@@ -413,12 +538,17 @@ export function createCustomFetch(
       throw new Error(`${friendly} (${requestUrlOf(input)})`)
     }
     if (res.ok) {
-      // Servers may interleave custom named SSE events (e.g. tool-progress)
-      // with chat.completion.chunk data. The AI SDK validates every data line
-      // against the chunk schema regardless of event type, so strip non-default
-      // events before the stream reaches it.
+      // OpenAI-compatible servers may interleave custom named SSE events (e.g.
+      // tool-progress) with chat.completion.chunk data; the AI SDK validates
+      // every data line against the chunk schema, so strip non-default events.
+      // Opt-in only: Anthropic and the OpenAI Responses API use named SSE
+      // events as their protocol, so filtering there blanks the whole stream.
       const contentType = res.headers.get('content-type') || ''
-      if (res.body && contentType.includes('text/event-stream')) {
+      if (
+        filterNamedSseEvents &&
+        res.body &&
+        contentType.includes('text/event-stream')
+      ) {
         return new Response(filterDefaultSseEvents(res.body), {
           status: res.status,
           statusText: res.statusText,
@@ -543,6 +673,37 @@ export function stripAssistantReasoningInBody(
   }
 }
 
+/** Reads the global "Strip reasoning from context" toggle; defaults to false. */
+function shouldStripReasoningFromContext(): boolean {
+  return useGeneralSetting.getState().stripReasoningFromContext === true
+}
+
+/**
+ * A local llama.cpp model "preserves reasoning" when its chat template accepts
+ * a `preserve_thinking` kwarg that is on (user-set value, else the GGUF-detected
+ * default). Such templates re-emit prior `<think>` from the resent
+ * `reasoning_content`, so stripping that field would shrink earlier assistant
+ * turns and force llama.cpp to reprocess the KV-cache prefix. When true, the
+ * reasoning must be resent even if the global strip toggle is on.
+ */
+export function modelPreservesReasoning(
+  provider: ProviderObject | undefined,
+  modelId: string
+): boolean {
+  const model = provider?.models?.find((m) => m.id === modelId)
+  if (!model) return false
+  const raw: unknown =
+    model.settings?.chat_template_kwargs?.controller_props?.value
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const v = (raw as Record<string, unknown>).preserve_thinking
+    if (typeof v === 'boolean') return v
+  }
+  return (
+    model.template_kwargs?.find((k) => k.name === 'preserve_thinking')
+      ?.default === true
+  )
+}
+
 /** Wraps `inner` to strip reasoning fields from assistant messages before send. */
 function withAssistantReasoningStripped(
   inner: typeof globalThis.fetch
@@ -643,6 +804,25 @@ export function decodeVideoSentinelsInBody(body: Record<string, unknown>): void 
   }
 }
 
+// Rewrites a sentinel-bearing `role: tool` message (planted by Cowork's
+// `assistantMessageFor` for a tool that returned images) into a text part plus
+// OpenAI `image_url` parts, the shape the CLI loop sends for a `read` of an
+// image. Mutates `body.messages` in place.
+export function decodeToolImageSentinelsInBody(
+  body: Record<string, unknown>
+): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'tool' || typeof m.content !== 'string') continue
+    if (!hasToolImageSentinel(m.content)) continue
+    const split = splitToolImageSentinels(m.content)
+    if (split) m.content = split
+  }
+}
+
 type ApiKeyHeaderMode =
   | 'authorization-bearer'
   | 'x-api-key'
@@ -653,9 +833,16 @@ function createApiKeyRotatingFetch(
   baseFetch: typeof globalThis.fetch,
   apiKeys: string[],
   parameters: Record<string, unknown>,
-  headerMode: ApiKeyHeaderMode
+  headerMode: ApiKeyHeaderMode,
+  filterNamedSseEvents = false
 ): typeof globalThis.fetch {
-  const inner = createCustomFetch(baseFetch, parameters)
+  const inner = createCustomFetch(
+    baseFetch,
+    parameters,
+    false,
+    undefined,
+    filterNamedSseEvents
+  )
   if (apiKeys.length <= 1) {
     return inner
   }
@@ -683,6 +870,45 @@ function createApiKeyRotatingFetch(
     throw new Error('API key rotation exhausted')
   }
 }
+
+// An empty apiKey still puts an empty auth header on the wire, which upstreams
+// answer with misleading 401s (e.g. Anthropic's "x-api-key header is
+// required"). Fail here with an actionable message instead.
+function requireRemoteApiKey(
+  provider: ProviderObject,
+  keyChain: string[]
+): string {
+  const key = keyChain[0] ?? provider.api_key?.trim()
+  if (!key) {
+    throw new Error(
+      `No API key configured for ${provider.provider}. Add one in Settings > Model Providers.`
+    )
+  }
+  return key
+}
+
+/**
+ * Requests to the local engine and MLX servers, sent so that no proxy can
+ * capture them.
+ *
+ * `@tauri-apps/plugin-http` sends from Rust's reqwest, which reads
+ * `HTTP(S)_PROXY` and the OS proxy setting (on Windows, the registry one) and
+ * does not exempt loopback unless `NO_PROXY` names it. With a VPN client, a
+ * proxy tool or a corporate proxy configured, the chat request to
+ * `http://localhost:<port>` is then sent to that proxy and fails, although the
+ * server is up. Naming any proxy turns reqwest's environment and system lookup
+ * off, and the no-proxy list covers every loopback host, so the placeholder
+ * address is never dialled: these requests always go direct.
+ *
+ * Only for loopback servers. Remote providers keep `getRuntimeFetch`, which
+ * must go on honouring the user's proxy.
+ */
+export const LOOPBACK_DIRECT_PROXY = {
+  all: { url: 'http://127.0.0.1:9', noProxy: 'localhost,127.0.0.1,::1' },
+}
+
+export const loopbackFetch: typeof globalThis.fetch = (input, init) =>
+  httpFetch(input, { ...init, proxy: LOOPBACK_DIRECT_PROXY })
 
 function getRuntimeFetch(): typeof globalThis.fetch {
   const maybeWindow = globalThis as typeof globalThis & {
@@ -818,20 +1044,21 @@ export class ModelFactory {
         }
       } catch (error) {
         console.error('Failed to start llamacpp model:', error)
-        throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
+        // A serialized engine error is a plain object, so the previous
+        // `instanceof Error` path stringified it into raw JSON for the user.
+        // It rides along as `cause` so an outer layer describes the failure
+        // once from its code instead of nesting this sentence inside its own.
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 
     // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:llamacpp|find_session_by_model',
-      { modelId }
-    )
+    const sessionInfo = await findSessionByModel(modelId)
 
     if (!sessionInfo) {
-      throw new Error(`No running session found for model: ${modelId}`)
+      throw new Error(
+        i18n.t('model-errors:noRunningSession', { model: modelId })
+      )
     }
 
     const onLlamacppServerError = provider
@@ -847,12 +1074,22 @@ export class ModelFactory {
           })()
         }
       : undefined
-    const customFetch = createCustomFetch(
-      httpFetch,
+    // The global toggle can strip reasoning_content from resent assistant turns,
+    // but never for a preserve_thinking model: its template re-emits prior
+    // <think> from that field, so stripping it would diverge the KV-cache prefix.
+    let customFetch = createCustomFetch(
+      loopbackFetch,
       parameters,
       true,
-      onLlamacppServerError
+      onLlamacppServerError,
+      true
     )
+    if (
+      shouldStripReasoningFromContext() &&
+      !modelPreservesReasoning(provider, modelId)
+    ) {
+      customFetch = withAssistantReasoningStripped(customFetch)
+    }
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
@@ -891,9 +1128,7 @@ export class ModelFactory {
         }
       } catch (error) {
         console.error('Failed to start MLX model:', error)
-        throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
+        throw engineFailure('model-errors:startModelFailed', error)
       }
     }
 
@@ -917,7 +1152,16 @@ export class ModelFactory {
     // rebuilds upstream errors from buffered text rather than re-decoding the
     // raw stream) with every other provider, then layer MLX's /cancel-on-abort
     // on top.
-    const baseCustomFetch = createCustomFetch(httpFetch, parameters)
+    let baseCustomFetch = createCustomFetch(
+      loopbackFetch,
+      parameters,
+      false,
+      undefined,
+      true
+    )
+    if (shouldStripReasoningFromContext()) {
+      baseCustomFetch = withAssistantReasoningStripped(baseCustomFetch)
+    }
     const customFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
       init?: RequestInit
@@ -926,7 +1170,7 @@ export class ModelFactory {
       // to stop MLX inference immediately.
       if (init?.signal) {
         init.signal.addEventListener('abort', () => {
-          httpFetch(`${baseUrl}/v1/cancel`, {
+          loopbackFetch(`${baseUrl}/v1/cancel`, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -969,12 +1213,14 @@ export class ModelFactory {
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
-    // Add custom headers if specified (e.g., anthropic-version)
     if (provider.custom_header) {
       provider.custom_header.forEach((customHeader) => {
         headers[customHeader.header] = customHeader.value
       })
     }
+    // Custom Anthropic providers may ship no custom_header; Anthropic rejects
+    // browser-context requests (webview Origin) without the opt-in header.
+    ensureAnthropicHeaders(provider, headers)
 
     const keyChain = providerRemoteApiKeyChain(provider)
     const fetchImpl =
@@ -988,7 +1234,7 @@ export class ModelFactory {
         : createCustomFetch(getRuntimeFetch(), parameters)
 
     const anthropic = createAnthropic({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: requireRemoteApiKey(provider, keyChain),
       baseURL: getAnthropicSdkBaseUrl(provider.base_url),
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
@@ -1027,13 +1273,18 @@ export class ModelFactory {
         : createCustomFetch(getRuntimeFetch(), parameters)
 
     const openai = createOpenAI({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: requireRemoteApiKey(provider, keyChain),
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
     })
 
-    return openai.chat(modelId)
+    // The genuine OpenAI provider always supports the Responses API, so use it
+    // unconditionally: it is a superset of Chat Completions and the only surface
+    // that returns reasoning summaries. Custom OpenAI-compatible providers route
+    // through createOpenAICompatibleModel, not here, so this cannot hit a proxy
+    // that only implements /chat/completions.
+    return openai.responses(modelId)
   }
 
   /**
@@ -1066,7 +1317,7 @@ export class ModelFactory {
         : createCustomFetch(getRuntimeFetch(), parameters)
 
     const mistral = createMistral({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: requireRemoteApiKey(provider, keyChain),
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
@@ -1104,7 +1355,7 @@ export class ModelFactory {
         : createCustomFetch(getRuntimeFetch(), parameters)
 
     const xai = createXai({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: requireRemoteApiKey(provider, keyChain),
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
@@ -1150,7 +1401,7 @@ export class ModelFactory {
       : 'https://generativelanguage.googleapis.com/v1beta'
 
     const google = createGoogleGenerativeAI({
-      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      apiKey: requireRemoteApiKey(provider, keyChain),
       baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       fetch: fetchImpl,
@@ -1187,11 +1438,14 @@ export class ModelFactory {
             getRuntimeFetch(),
             keyChain,
             parameters,
-            'authorization-bearer'
+            'authorization-bearer',
+            true
           )
-        : createCustomFetch(getRuntimeFetch(), parameters)
+        : createCustomFetch(getRuntimeFetch(), parameters, false, undefined, true)
 
-    if (provider.provider === 'groq') {
+    // Groq's API rejects assistant `reasoning` fields, so it always strips
+    // regardless of the toggle; other providers honor the global setting.
+    if (provider.provider === 'groq' || shouldStripReasoningFromContext()) {
       fetchImpl = withAssistantReasoningStripped(fetchImpl)
     }
 

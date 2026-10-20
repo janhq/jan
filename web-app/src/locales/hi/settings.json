@@ -6,11 +6,6 @@
   "noUpdateAvailable": "आप नवीनतम संस्करण का उपयोग कर रहे हैं",
   "devVersion": "डेवलपमेंट संस्करण पाया गया",
   "updateError": "अपडेट्स जांचने में त्रुटि",
-  "checkForBackendUpdates": "Llamacpp अपडेट्स जांचें",
-  "checkForBackendUpdatesDesc": "देखें कि Llamacpp बैकएंड का कोई नया संस्करण उपलब्ध है या नहीं।",
-  "checkingForBackendUpdates": "Llamacpp अपडेट्स की जांच हो रही है...",
-  "noBackendUpdateAvailable": "आप Llamacpp के नवीनतम संस्करण का उपयोग कर रहे हैं",
-  "backendUpdateError": "Llamacpp अपडेट्स जांचने में त्रुटि",
   "changeLocation": "स्थान बदलें",
   "copied": "कॉपी किया गया",
   "copyPath": "पथ कॉपी करें",
@@ -312,15 +307,6 @@
       "cancel": "रद्द करें",
       "changeLocation": "स्थान बदलें"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Llamacpp का नया संस्करण {{version}}",
-    "backendUpdateAvailable": "Llamacpp अपडेट उपलब्ध है",
-    "remindMeLater": "बाद में याद दिलाएं",
-    "updating": "अपडेट हो रहा है...",
-    "updateNow": "अभी अपडेट करें",
-    "updateSuccess": "Llamacpp सफलतापूर्वक अपडेट हुआ",
-    "updateError": "Llamacpp अपडेट करने में त्रुटि"
   },
   "backendInstallSuccess": "OpenClaw सफलतापूर्वक इंस्टॉल हो गया!",
   "backendInstallError": "बैकएंड इंस्टॉल करने में त्रुटि",

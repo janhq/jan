@@ -222,6 +222,7 @@
     "delete": "Hapus"
   },
   "modelSettings": {
+    "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Pengaturan Model - {{modelId}}",
     "description": "Konfigurasikan pengaturan model untuk mengoptimalkan kinerja dan perilaku."
   },

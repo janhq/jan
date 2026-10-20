@@ -12,6 +12,12 @@ const { fsMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('@janhq/core', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
   getJanDataFolderPath: vi.fn().mockResolvedValue('/jan'),
   joinPath: vi.fn(async (parts: string[]) => parts.join('/')),
   fs: fsMock,

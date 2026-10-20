@@ -1,0 +1,22 @@
+{
+  // The ADK's own config: what a consumer's `tsc` has to accept is what this
+  // compiles. `src/index.js` is plain JavaScript, so it is included as a module
+  // - the declarations it satisfies live in `src/index.d.ts`, and both come
+  // from the same generated wire types.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.js", "src/**/*.d.ts", "tests/types.ts"]
+}

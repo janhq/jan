@@ -5,6 +5,9 @@ import {
   ChatCompletionRole,
 } from '@janhq/core'
 
+import { estimateConversationTokens } from '@/lib/context-manager'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
 
 /**
@@ -116,6 +119,20 @@ export const computeActivePath = (
   return path
 }
 
+/**
+ * Tokens the conversation the model will actually see already occupies. Only
+ * the active branch is sent, so inactive versions must not count.
+ */
+export const activePathTokens = (
+  messages: ThreadMessage[] | undefined,
+  activeRootId?: string
+): number =>
+  estimateConversationTokens(
+    convertThreadMessagesToUIMessages(
+      computeActivePath(messages ?? [], activeRootId)
+    )
+  )
+
 /** Return a copy of `m` with `parentId` set in metadata. */
 export const withParentId = (
   m: ThreadMessage,
@@ -201,6 +218,32 @@ export const repairDetachedAssistants = (
   }
 
   return [...writes.values()]
+}
+
+export type ContinuationPlan = {
+  parentId: string | null
+  deletePartialId: string | null
+}
+
+/**
+ * Resume a stopped assistant turn in place. The continued reply inherits the
+ * stale partial's parent, and that partial is dropped, so the reply replaces it
+ * rather than forking a sibling version. Falls back to `fallbackParentId` when
+ * no partial is targeted or its id is stale.
+ */
+export const planContinuation = (
+  messages: ThreadMessage[],
+  replyId: string,
+  partialId: string | null | undefined,
+  fallbackParentId: string | null
+): ContinuationPlan => {
+  const partial = partialId
+    ? messages.find((m) => m.id === partialId)
+    : undefined
+  const parentId = (partial ? getParentId(partial) : null) ?? fallbackParentId
+  const deletePartialId =
+    partial && partial.id !== replyId ? partial.id : null
+  return { parentId, deletePartialId }
 }
 
 /**

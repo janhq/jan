@@ -6,7 +6,11 @@ export const LIST_ATTACHMENTS = 'list_attachments'
 export const GET_CHUNKS = 'get_chunks'
 
 export function getRAGTools(retrievalLimit: number): MCPTool[] {
-  const maxTopK = Math.max(1, Number(retrievalLimit ?? 3))
+  // Coerce nullish/NaN to the default 3; a numeric-but-low value still clamps
+  // to a minimum of 1 below.
+  const parsedLimit = Number(retrievalLimit ?? 3)
+  const safeLimit = Number.isFinite(parsedLimit) ? parsedLimit : 3
+  const maxTopK = Math.max(1, safeLimit)
 
   return [
     {
@@ -33,7 +37,7 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
             description: 'Optional: Max citations to return. Adjust as needed.',
             minimum: 1,
             maximum: maxTopK,
-            default: retrievalLimit ?? 3,
+            default: safeLimit,
           },
           file_ids: {
             type: 'array',

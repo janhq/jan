@@ -1,0 +1,535 @@
+import { invoke, Channel } from '@tauri-apps/api/core'
+import {
+  MemoryCatalogEntry,
+  MonitorUpdate,
+  SkillMeta,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
+
+export {
+  MemoryCatalogEntry,
+  MonitorUpdate,
+  SkillMeta,
+  ToolImage,
+  ToolOutputChunk,
+  ToolResult,
+  ToolSchema,
+  WorkspaceScope,
+} from './types'
+
+/**
+ * Every call takes the Jan data folder, because the plugin derives its
+ * directories from it (`<dataFolder>/agent-workspace`) while the app remains the
+ * owner of where the data folder actually is.
+ *
+ * Two roots, with different lifetimes:
+ *
+ * - the **permanent store** (`memory/`, `skills/`) survives every conversation
+ * - a **thread sandbox** (`threads/<threadId>/`) is where the filesystem tools
+ *   run and is deleted with its thread
+ *
+ * `project` overrides which store is used and is unused for now: there is no
+ * project picker yet. It exists so adding one later needs no signature change.
+ */
+
+/** Ensure the permanent store exists and return its path. */
+export async function workspacePath(dataFolder: string): Promise<string> {
+  return await invoke('plugin:agent-tools|workspace_path', { dataFolder })
+}
+
+/** Ensure a thread's sandbox exists and return its path. */
+export async function threadWorkspacePath(
+  dataFolder: string,
+  threadId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|thread_workspace_path', {
+    dataFolder,
+    threadId,
+  })
+}
+
+/**
+ * Delete a thread's sandbox. Memory and skills are untouched. Idempotent: a
+ * thread that never ran a tool resolves successfully.
+ */
+export async function threadWorkspaceDelete(
+  dataFolder: string,
+  threadId: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|thread_workspace_delete', {
+    dataFolder,
+    threadId,
+  })
+}
+
+/**
+ * Delete every sandbox not belonging to a surviving thread, returning how many
+ * were removed. For startup: a crash, or a thread deleted while the app was
+ * closed, would otherwise leave one behind.
+ */
+export async function threadWorkspaceSweep(
+  dataFolder: string,
+  keep: string[]
+): Promise<number> {
+  return await invoke('plugin:agent-tools|thread_workspace_sweep', {
+    dataFolder,
+    keep,
+  })
+}
+
+/** The Cowork session sandbox, created if absent. */
+/**
+ * Let the `preview://` scheme serve files under `root` to the unsandboxed
+ * preview frame. `allowNetwork` becomes the served page's CSP; registering
+ * again replaces it. Unregister when the frame goes away.
+ */
+export async function previewRegisterRoot(
+  root: string,
+  allowNetwork: boolean
+): Promise<void> {
+  await invoke('plugin:agent-tools|preview_register_root', {
+    root,
+    allowNetwork,
+  })
+}
+
+export async function previewUnregisterRoot(root: string): Promise<void> {
+  await invoke('plugin:agent-tools|preview_unregister_root', { root })
+}
+
+export async function sessionWorkspacePath(
+  dataFolder: string,
+  sessionId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|session_workspace_path', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/** Delete a Cowork session's sandbox, with its scratch. */
+export async function sessionWorkspaceDelete(
+  dataFolder: string,
+  sessionId: string
+): Promise<void> {
+  await invoke('plugin:agent-tools|session_workspace_delete', {
+    dataFolder,
+    sessionId,
+  })
+}
+
+/**
+ * Collect session sandboxes whose sessions no longer exist, returning how many
+ * were removed. Separate from the thread sweep: the id spaces are independent,
+ * and an empty `keep` is a no-op rather than a full wipe.
+ */
+export async function sessionWorkspaceSweep(
+  dataFolder: string,
+  keep: string[]
+): Promise<number> {
+  return await invoke('plugin:agent-tools|session_workspace_sweep', {
+    dataFolder,
+    keep,
+  })
+}
+
+export async function skillList(
+  dataFolder: string,
+  project?: string
+): Promise<SkillMeta[]> {
+  return await invoke('plugin:agent-tools|skill_list', { dataFolder, project })
+}
+
+/** Raw SKILL.md text, frontmatter included. */
+export async function skillRead(
+  dataFolder: string,
+  name: string,
+  project?: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|skill_read', {
+    dataFolder,
+    project,
+    name,
+  })
+}
+
+/** Create or overwrite a skill. New skills are written as `<name>/SKILL.md`. */
+export async function skillWrite(
+  dataFolder: string,
+  name: string,
+  content: string,
+  project?: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|skill_write', {
+    dataFolder,
+    project,
+    name,
+    content,
+  })
+}
+
+/** Delete a skill. Idempotent: a missing skill resolves successfully. */
+export async function skillDelete(
+  dataFolder: string,
+  name: string,
+  project?: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|skill_delete', {
+    dataFolder,
+    project,
+    name,
+  })
+}
+/** Build a user prompt for an installed skill, including its body and arguments. */
+export async function skillInvoke(
+  dataFolder: string,
+  name: string,
+  args: string,
+  project?: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|skill_invoke', {
+    dataFolder,
+    project,
+    name,
+    args,
+  })
+}
+
+/** Memory note names (stems), sorted. */
+export async function memoryList(
+  dataFolder: string,
+  project?: string
+): Promise<string[]> {
+  return await invoke('plugin:agent-tools|memory_list', { dataFolder, project })
+}
+
+export async function memoryRead(
+  dataFolder: string,
+  name: string,
+  project?: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|memory_read', {
+    dataFolder,
+    project,
+    name,
+  })
+}
+
+export async function memoryWrite(
+  dataFolder: string,
+  name: string,
+  content: string,
+  project?: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|memory_write', {
+    dataFolder,
+    project,
+    name,
+    content,
+  })
+}
+
+/**
+ * Name + summary + mtime for every memory note, name-sorted. The recall
+ * surface: prompt injections list notes from this without reading each body.
+ */
+export async function memoryCatalog(
+  dataFolder: string,
+  project?: string
+): Promise<MemoryCatalogEntry[]> {
+  return await invoke('plugin:agent-tools|memory_catalog', {
+    dataFolder,
+    project,
+  })
+}
+
+/** Delete a memory note. Idempotent: a missing note resolves successfully. */
+export async function memoryDelete(
+  dataFolder: string,
+  name: string,
+  project?: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|memory_delete', {
+    dataFolder,
+    project,
+    name,
+  })
+}
+
+/** A file claimed in a session scratch for a subagent's answer. */
+export type ReservedResult = {
+  /** The reserved name, to pass back to `subagentResultFill`. */
+  file: string
+  /** The model-visible path the parent agent can `read`. */
+  path: string
+}
+
+/**
+ * Claim a file in `threadId`'s session scratch for a subagent's answer
+ * (`<scratch>/subagents/<id>.md`). Claimed at dispatch, not at completion: the
+ * `task` tool reports where the answer will be while the child is still
+ * working. An existing name is suffixed, never overwritten.
+ */
+export async function subagentResultReserve(
+  threadId: string,
+  id: string
+): Promise<ReservedResult> {
+  return await invoke('plugin:agent-tools|subagent_result_reserve', {
+    threadId,
+    id,
+  })
+}
+
+/** Write a finished subagent's answer into the file reserved for it. */
+export async function subagentResultFill(
+  threadId: string,
+  file: string,
+  content: string
+): Promise<void> {
+  return await invoke('plugin:agent-tools|subagent_result_fill', {
+    threadId,
+    file,
+    content,
+  })
+}
+
+/**
+ * Write a finished subagent's answer to `<scratch>/blackboard/<name>.md` -- the
+ * predictable, name-keyed coordination file a phased dispatch's next phase and
+ * sibling agents read. Reserve + fill in one call (written only after the child
+ * finishes). A re-dispatch of the same name truncates the earlier file in place.
+ * Returns the model-visible path.
+ */
+export async function blackboardWrite(
+  threadId: string,
+  name: string,
+  content: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|blackboard_write', {
+    threadId,
+    name,
+    content,
+  })
+}
+
+/** An attachment copied into a session workspace. */
+export type ImportedAttachment = {
+  /** The copy inside the workspace, readable by the agent's file tools. */
+  path: string
+  /** The extracted-text sibling (`<name>.txt`), when text was supplied. */
+  textPath: string | null
+}
+
+/**
+ * Copy a user attachment into `sessionId`'s workspace, writing `text` beside
+ * it when given, so the agent can read a file picked from outside its roots.
+ * Same-named files are suffixed, never overwritten.
+ */
+export async function attachmentImport(
+  dataFolder: string,
+  sessionId: string,
+  source: string,
+  text?: string
+): Promise<ImportedAttachment> {
+  return await invoke('plugin:agent-tools|attachment_import', {
+    dataFolder,
+    sessionId,
+    source,
+    text: text ?? null,
+  })
+}
+
+/**
+ * Function schemas for every built-in tool. Callers pick which subset to
+ * advertise; the schemas are never re-typed in TypeScript.
+ */
+export async function toolSchemas(): Promise<ToolSchema[]> {
+  return await invoke('plugin:agent-tools|tool_schemas')
+}
+
+/** Which OS sandbox, if any, can confine a shell on this machine. */
+export type SandboxStatus = {
+  /** `bubblewrap`, `seatbelt`, `appcontainer`, or `none`. */
+  backend: string
+  enforces: boolean
+}
+
+/**
+ * Report the sandbox backend. Callers should advertise `bash` to a model only
+ * when this reports `enforces`: without a backend every call is refused, and
+ * offering a tool that cannot run wastes a turn and reads as a bug.
+ */
+export async function sandboxStatus(): Promise<SandboxStatus> {
+  return await invoke('plugin:agent-tools|sandbox_status')
+}
+
+/**
+ * Execute one built-in tool.
+ *
+ * The filesystem tools run in `threadId`'s sandbox, which is created on demand,
+ * so the caller need not ensure it first. Memory and skill tools reach the
+ * permanent store instead, so what the model records outlives the conversation.
+ *
+ * The permission gate decides in Rust, so tools that need user approval
+ * (`write`, `edit`, and reads that escape the sandbox) reject regardless of what
+ * is requested here. `bash` runs only under an enforcing OS sandbox; see
+ * `sandboxStatus`.
+ *
+ * `allowNetwork` opens the sandboxed shell's network namespace. It defaults to
+ * off, so omitting it is the safe choice.
+ *
+ * `scope` picks the sandbox namespace: chat threads and Cowork sessions have
+ * independent id spaces and independent sweeps.
+ *
+ * `callId` is echoed on every streamed output chunk, which a backgrounded
+ * `bash` needs because it keeps producing output after the tool has returned.
+ *
+ * `readOnlyProject` attaches a folder the tools may read. It is validated on
+ * the Rust side and rejected outright if it overlaps the workspace or the Jan
+ * data folder, rather than being silently dropped. By default it is never
+ * written; `projectWritable` opts the same folder into writes and edits in
+ * place (Cowork's shared-folder mode).
+ */
+export async function executeTool(
+  dataFolder: string,
+  threadId: string,
+  name: string,
+  args: Record<string, unknown>,
+  project?: string,
+  enabledSkills?: string[],
+  allowNetwork?: boolean,
+  readOnlyProject?: string,
+  projectWritable?: boolean,
+  scope?: WorkspaceScope,
+  callId?: string
+): Promise<ToolResult> {
+  return await invoke('plugin:agent-tools|execute_tool', {
+    dataFolder,
+    threadId,
+    project,
+    name,
+    args,
+    enabledSkills,
+    allowNetwork,
+    readOnlyProject,
+    projectWritable,
+    scope,
+    callId,
+  })
+}
+
+/**
+ * `executeTool`, with the tool's output delivered as it is produced.
+ *
+ * A separate command rather than an optional argument: a Tauri `Channel` is a
+ * command argument, not a deserialisable value, so it cannot be wrapped in an
+ * optional. Chunks carry a monotonic `seq` and the `callId` they belong to.
+ */
+export async function executeToolStreaming(
+  dataFolder: string,
+  threadId: string,
+  name: string,
+  args: Record<string, unknown>,
+  onOutput: Channel<ToolOutputChunk>,
+  options?: {
+    project?: string
+    enabledSkills?: string[]
+    allowNetwork?: boolean
+    readOnlyProject?: string
+    projectWritable?: boolean
+    scope?: WorkspaceScope
+    callId?: string
+  }
+): Promise<ToolResult> {
+  return await invoke('plugin:agent-tools|execute_tool_streaming', {
+    dataFolder,
+    threadId,
+    name,
+    args,
+    onOutput,
+    project: options?.project,
+    enabledSkills: options?.enabledSkills,
+    allowNetwork: options?.allowNetwork,
+    readOnlyProject: options?.readOnlyProject,
+    projectWritable: options?.projectWritable,
+    scope: options?.scope,
+    callId: options?.callId,
+  })
+}
+
+/**
+ * Start a file monitor for a session: condition scripts are evaluated whenever
+ * the watched file changes, and every match is delivered to `onUpdate` (a
+ * callback here; the IPC channel it feeds is built in this layer). Resolves
+ * with the model-facing result string (the monitor id and the ground rules).
+ * Rejects when the args are invalid, the path escapes what the session may
+ * read, or no enforcing OS sandbox is available to run the scripts under.
+ */
+export async function startMonitor(
+  dataFolder: string,
+  threadId: string,
+  args: Record<string, unknown>,
+  onUpdate: (update: MonitorUpdate) => void,
+  options?: {
+    allowNetwork?: boolean
+    readOnlyProject?: string
+    projectWritable?: boolean
+    scope?: WorkspaceScope
+  }
+): Promise<string> {
+  const channel = new Channel<MonitorUpdate>()
+  channel.onmessage = onUpdate
+  return await invoke('plugin:agent-tools|start_monitor', {
+    dataFolder,
+    threadId,
+    args,
+    onUpdate: channel,
+    allowNetwork: options?.allowNetwork,
+    readOnlyProject: options?.readOnlyProject,
+    projectWritable: options?.projectWritable,
+    scope: options?.scope,
+  })
+}
+
+/** Stop one monitor. The result string is model-facing (`ERROR: ...` for an
+ * unknown id), matching the `monitor` tool contract. */
+export async function stopMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|stop_monitor', {
+    threadId,
+    monitorId,
+  })
+}
+
+/** One line per active monitor, for `monitor {op:"list"}`. */
+export async function listMonitors(threadId: string): Promise<string> {
+  return await invoke('plugin:agent-tools|list_monitors', { threadId })
+}
+
+/**
+ * The ids of a session's still-active monitors. Every monitor is one-shot, so a
+ * monitor no longer listed here has ended; the UI reconciles its rail against
+ * this so a row cannot stay 'running' after a missed terminal update.
+ */
+export async function sessionMonitorIds(threadId: string): Promise<string[]> {
+  return await invoke('plugin:agent-tools|session_monitor_ids', { threadId })
+}
+
+/** Abort every monitor a session still has. Called at run end. */
+export async function stopSessionMonitors(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|stop_session_monitors', { threadId })
+}
+
+/**
+ * Kill every `bash` tree this session started, running or backgrounded. Driven
+ * by the Stop button: aborting the JS run only discards a tool result, so a
+ * long or backgrounded shell would otherwise keep executing on the host.
+ */
+export async function cancelThreadBash(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
+}

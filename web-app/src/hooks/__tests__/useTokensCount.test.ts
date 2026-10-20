@@ -1,0 +1,305 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { ThreadMessage } from '@janhq/core'
+import { useTokensCount } from '../useTokensCount'
+import { useAppState } from '../useAppState'
+
+const mockGetModelProps = vi.fn()
+
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: () => ({
+      getByName: () => ({ getModelProps: mockGetModelProps }),
+      listExtensions: () => [],
+    }),
+  },
+}))
+
+const modelProviderState = {
+  selectedModel: { id: 'model-1', name: 'Model One', capabilities: [], settings: {} } as Record<string, unknown>,
+  selectedProvider: 'llamacpp' as string,
+}
+
+vi.mock('../useModelProvider', () => ({
+  useModelProvider: () => ({
+    selectedModel: modelProviderState.selectedModel,
+    selectedProvider: modelProviderState.selectedProvider,
+    getProviderByName: () => ({ settings: [] }),
+  }),
+}))
+
+function makeMessage(
+  overrides: Partial<ThreadMessage> = {}
+): ThreadMessage {
+  return {
+    id: 'm1',
+    object: 'thread.message',
+    thread_id: 'thread-1',
+    role: 'assistant',
+    content: [],
+    status: 'ready' as ThreadMessage['status'],
+    created_at: 1,
+    completed_at: 1,
+    metadata: {},
+    ...overrides,
+  } as ThreadMessage
+}
+
+describe('useTokensCount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetModelProps.mockResolvedValue({ nCtx: 1000 })
+    modelProviderState.selectedProvider = 'llamacpp'
+    modelProviderState.selectedModel = {
+      id: 'model-1',
+      name: 'Model One',
+      capabilities: [],
+      settings: {},
+    }
+    act(() => {
+      useAppState.setState({
+        liveTokenStats: undefined,
+        liveTokenStatsByThread: {},
+      })
+    })
+  })
+
+  it('falls back to the last message usage when no live stats are present', async () => {
+    const messages = [
+      makeMessage({ metadata: { usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } }),
+    ]
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(result.current.tokenCount).toBe(15)
+  })
+
+  it('prefers live per-thread token stats over the static last-message usage while streaming', async () => {
+    const messages = [
+      makeMessage({ metadata: { usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } }),
+    ]
+    act(() => {
+      useAppState.getState().updateThreadLiveTokenStats('thread-1', {
+        promptTokens: 900,
+        completionTokens: 40,
+        tokensPerSecond: 30,
+        promptPerSecond: 60,
+      })
+    })
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(result.current.tokenCount).toBe(940)
+    expect(result.current.inputTokens).toBe(900)
+    expect(result.current.outputTokens).toBe(40)
+  })
+
+  it('context overflow still takes priority over live stats', async () => {
+    const messages = [
+      makeMessage({
+        metadata: {
+          contextError: 'Context length exceeded (1200 tokens) is greater than context size (1000 tokens)',
+        },
+      }),
+    ]
+    act(() => {
+      useAppState.getState().updateThreadLiveTokenStats('thread-1', {
+        promptTokens: 50,
+        completionTokens: 5,
+        tokensPerSecond: 30,
+        promptPerSecond: 60,
+      })
+    })
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(result.current.isOverflow).toBe(true)
+    expect(result.current.tokenCount).toBe(1200)
+    expect(result.current.maxTokens).toBe(1000)
+  })
+
+  it('reports total usage for a remote provider without a percentage', async () => {
+    modelProviderState.selectedProvider = 'openai'
+    modelProviderState.selectedModel = {
+      id: 'gpt-x',
+      name: 'GPT X',
+      capabilities: [],
+      settings: {},
+    }
+    const messages = [
+      makeMessage({ metadata: { usage: { inputTokens: 100, outputTokens: 40, totalTokens: 140 } } }),
+    ]
+    const { result } = renderHook(() => useTokensCount(messages))
+    expect(result.current.tokenCount).toBe(140)
+    expect(result.current.inputTokens).toBe(100)
+    expect(result.current.outputTokens).toBe(40)
+    expect(result.current.maxTokens).toBeUndefined()
+    expect(result.current.percentage).toBeUndefined()
+    expect(result.current.isNearLimit).toBe(false)
+    expect(result.current.modelDisplayName).toBe('GPT X')
+  })
+
+  it('does not call llamacpp getModelProps for a remote provider', async () => {
+    modelProviderState.selectedProvider = 'openai'
+    const messages = [
+      makeMessage({ metadata: { usage: { totalTokens: 10 } } }),
+    ]
+    renderHook(() => useTokensCount(messages))
+    await Promise.resolve()
+    expect(mockGetModelProps).not.toHaveBeenCalled()
+  })
+
+  it('treats mlx as local: uses getModelProps nCtx for a real percentage', async () => {
+    modelProviderState.selectedProvider = 'mlx'
+    modelProviderState.selectedModel = {
+      id: 'mlx-model',
+      name: 'MLX Model',
+      capabilities: [],
+      settings: {},
+    }
+    mockGetModelProps.mockResolvedValue({ nCtx: 8192, modelAlias: 'MLX Model' })
+    const messages = [
+      makeMessage({ metadata: { usage: { inputTokens: 3000, outputTokens: 1096, totalTokens: 4096 } } }),
+    ]
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(mockGetModelProps).toHaveBeenCalledWith('mlx-model')
+    expect(result.current.tokenCount).toBe(4096)
+    expect(result.current.maxTokens).toBe(8192)
+    expect(result.current.percentage).toBeCloseTo(50, 5)
+    expect(result.current.isNearLimit).toBe(false)
+  })
+
+  it('flags mlx near-limit when usage exceeds 85% of nCtx', async () => {
+    modelProviderState.selectedProvider = 'mlx'
+    modelProviderState.selectedModel = {
+      id: 'mlx-model',
+      name: 'MLX Model',
+      capabilities: [],
+      settings: {},
+    }
+    mockGetModelProps.mockResolvedValue({ nCtx: 1000 })
+    const messages = [
+      makeMessage({ metadata: { usage: { inputTokens: 800, outputTokens: 100, totalTokens: 900 } } }),
+    ]
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(result.current.isNearLimit).toBe(true)
+  })
+
+  it('reports zero tokens for a remote provider before any turn completes', async () => {
+    modelProviderState.selectedProvider = 'anthropic'
+    const messages = [makeMessage({ metadata: {} })]
+    const { result } = renderHook(() => useTokensCount(messages))
+    expect(result.current.tokenCount).toBe(0)
+    expect(result.current.percentage).toBeUndefined()
+  })
+
+  // Cowork keeps its own turns, not ThreadMessages, so it reports usage
+  // directly rather than synthesising messages to carry it.
+  describe('direct usage source', () => {
+    it('counts tokens for a remote provider with no messages at all', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000 },
+        })
+      )
+      expect(result.current.tokenCount).toBe(1000)
+      expect(result.current.inputTokens).toBe(900)
+    })
+
+    it('measures a local run against the context window', async () => {
+      modelProviderState.selectedProvider = 'llamacpp'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 400, outputTokens: 100, totalTokens: 500 },
+        })
+      )
+      await waitFor(() => expect(result.current.modelProps).toBeDefined())
+      expect(result.current.tokenCount).toBe(500)
+      expect(result.current.maxTokens).toBe(1000)
+      expect(result.current.percentage).toBe(50)
+    })
+
+    // Otherwise a surface passing both would read a stale number off the
+    // messages while its own is fresher.
+    it('wins over usage found on the messages', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const messages = [makeMessage({ metadata: { usage: { totalTokens: 7 } } })]
+      const { result } = renderHook(() =>
+        useTokensCount(messages, { usage: { totalTokens: 4242 } })
+      )
+      expect(result.current.tokenCount).toBe(4242)
+    })
+
+    // "Increase context" (Cowork's recovery chip, the model rail's settings
+    // form) writes the new size and reloads the router with it. The meter
+    // divides by the launched window, so it has to refetch or it keeps
+    // reporting the previous one for the rest of the session.
+    it('refetches the launched window when the configured context size grows', async () => {
+      modelProviderState.selectedModel = {
+        id: 'model-1',
+        name: 'Model One',
+        capabilities: [],
+        settings: { ctx_len: { controller_props: { value: 8192 } } },
+      }
+      mockGetModelProps.mockResolvedValue({ nCtx: 8192 })
+      const { result, rerender } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { totalTokens: 500 },
+        })
+      )
+      await waitFor(() => expect(result.current.maxTokens).toBe(8192))
+
+      modelProviderState.selectedModel = {
+        id: 'model-1',
+        name: 'Model One',
+        capabilities: [],
+        settings: { ctx_len: { controller_props: { value: 16384 } } },
+      }
+      mockGetModelProps.mockResolvedValue({ nCtx: 16384 })
+      rerender()
+
+      await waitFor(() => expect(result.current.maxTokens).toBe(16384))
+      expect(result.current.percentage).toBeCloseTo((500 / 16384) * 100, 3)
+    })
+
+    // Cowork mirrors loads onto useCoworkRun under the session id, so the
+    // thread-keyed slots the hook reads itself never move for a session. The
+    // surface has to be able to report its own mirror.
+    it('refetches when the surface reports its own model load', async () => {
+      mockGetModelProps.mockResolvedValue({ nCtx: 8192 })
+      const { result, rerender } = renderHook(
+        ({ loading }: { loading: boolean }) =>
+          useTokensCount([], {
+            threadId: 'session-1',
+            usage: { totalTokens: 500 },
+            loadingModel: loading,
+          }),
+        { initialProps: { loading: true } }
+      )
+      await waitFor(() => expect(result.current.maxTokens).toBe(8192))
+
+      mockGetModelProps.mockResolvedValue({ nCtx: 16384 })
+      rerender({ loading: false })
+
+      await waitFor(() => expect(result.current.maxTokens).toBe(16384))
+    })
+  })
+
+  it('context overflow still works when there are no live stats at all', async () => {
+    const messages = [
+      makeMessage({
+        metadata: {
+          contextError: 'Context length exceeded (1200 tokens) is greater than context size (1000 tokens)',
+        },
+      }),
+    ]
+    const { result } = renderHook(() => useTokensCount(messages))
+    await waitFor(() => expect(result.current.modelProps).toBeDefined())
+    expect(result.current.isOverflow).toBe(true)
+    expect(result.current.tokenCount).toBe(1200)
+    expect(result.current.maxTokens).toBe(1000)
+  })
+})
