@@ -51,7 +51,10 @@ jobs:
             );
 
             // Past the cap the rest can't be seen, so a clean subset isn't a pass.
-            const truncated = pr.commits > commits.length;
+            // A full page counts as capped too: a re-run carries the old payload,
+            // whose commit count may predate later pushes.
+            const truncated = commits.length >= 250 || pr.commits > commits.length;
+            const total = Math.max(pr.commits, commits.length);
             if (unsigned.length === 0 && !truncated) {
               core.info(`All ${commits.length} commits are verified.`);
               if (sticky) {
@@ -80,10 +83,10 @@ jobs:
               `- ${c.sha.slice(0, 7)} ${code(firstLine(c.commit.message))}: ${reason(c.commit.verification)}`,
             );
             const unchecked = truncated
-              ? [``, `Only the first ${commits.length} of ${pr.commits} commits could be checked; GitHub's API lists no more. Collapsing the branch into one commit (below) makes the rest checkable.`]
+              ? [``, `Only the first ${commits.length} commits could be checked; GitHub's API lists no more. Collapsing the branch into one commit (below) makes the rest checkable.`]
               : [];
             const headline = unsigned.length === 0
-              ? `Thanks for the PR! This PR has ${pr.commits} commits, more than this check can read, and \`${pr.base.ref}\` only accepts verified commits.`
+              ? `Thanks for the PR! This PR has at least ${total} commits, more than this check can read, and \`${pr.base.ref}\` only accepts verified commits.`
               : `Thanks for the PR! ${unsigned.length === 1 ? 'One commit doesn\'t' : `${unsigned.length} commits don't`} have a verified signature, and \`${pr.base.ref}\` only accepts verified commits, so this can't be merged yet:`;
 
             const body = [
@@ -117,5 +120,5 @@ jobs:
             }
 
             core.setFailed(unsigned.length === 0
-              ? `Only ${commits.length} of ${pr.commits} commits could be checked`
+              ? `Only the first ${commits.length} commits could be checked`
               : `${unsigned.length} of ${commits.length} commits are not verified: ${unsigned.map((c) => c.sha.slice(0, 7)).join(', ')}`);
