@@ -172,7 +172,7 @@ describe('DefaultThreadsService', () => {
       })
     })
 
-    it('should handle creation error and return original thread', async () => {
+    it('should propagate creation errors', async () => {
       const inputThread = {
         id: '1',
         title: 'New Thread',
@@ -183,9 +183,8 @@ describe('DefaultThreadsService', () => {
         new Error('Creation failed')
       )
 
-      const result = await threadsService.createThread(inputThread as Thread)
-
-      expect(result).toEqual(inputThread)
+      await expect(threadsService.createThread(inputThread as Thread))
+        .rejects.toThrow('Creation failed')
     })
   })
 
@@ -265,9 +264,8 @@ describe('DefaultThreadsService', () => {
         model: { id: 'gpt-4', provider: 'openai' },
       }
 
-      const result = await threadsService.createThread(inputThread as Thread)
-
-      expect(result).toEqual(inputThread)
+      await expect(threadsService.createThread(inputThread as Thread))
+        .rejects.toThrow('Conversational extension not available yet')
     })
 
     it('should handle updateThread when extension manager returns null', async () => {

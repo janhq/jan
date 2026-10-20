@@ -246,8 +246,9 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
+const navigateMock = vi.fn()
 vi.mock('@tanstack/react-router', () => ({
-  useRouter: () => ({ navigate: vi.fn() }),
+  useRouter: () => ({ navigate: navigateMock }),
   Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
 }))
 
@@ -326,6 +327,7 @@ vi.mock('@/lib/platform/utils', () => ({
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { toast } from 'sonner'
 
 // Helpers -------------------------------------------------------------------
 
@@ -362,6 +364,32 @@ const renderInput = (props: any = {}) =>
 describe('ChatInput', () => {
   beforeEach(() => {
     resetAll()
+  })
+
+  it('preserves the draft when creating a conversation fails and allows retry', async () => {
+    navigateMock.mockClear()
+    const storage = vi.spyOn(Storage.prototype, 'setItem')
+    storage.mockClear()
+    promptState = 'Keep this prompt'
+    createThreadMock.mockRejectedValueOnce(new Error('disk full'))
+    renderInput()
+    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(
+      'Failed to create conversation', { description: 'disk full' }
+    ))
+    expect(promptState).toBe('Keep this prompt')
+    expect(setPromptMock).not.toHaveBeenCalledWith('')
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(storage.mock.calls.some(([key]) => key.startsWith('initial-message-'))).toBe(false)
+
+    createThreadMock.mockResolvedValueOnce({ id: 'saved' })
+    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    await waitFor(() => expect(setPromptMock).toHaveBeenCalledWith(''))
+    expect(createThreadMock).toHaveBeenCalledTimes(2)
+    expect(navigateMock).toHaveBeenCalledWith(expect.objectContaining({
+      params: { threadId: 'saved' },
+    }))
+    storage.mockRestore()
   })
 
   it('renders the textarea with placeholder and send button', () => {

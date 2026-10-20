@@ -90,32 +90,26 @@ export class DefaultThreadsService implements ThreadsService {
       ? [{ ...thread.assistants![0], model: modelPayload }]
       : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
-    return (
-      ExtensionManager.getInstance()
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.createThread({
-          ...thread,
-          assistants: assistantsPayload,
-          metadata: {
-            ...thread.metadata,
-            order: thread.order,
-          },
-        })
-        .then((e) => {
-          const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
+    const extension = ExtensionManager.getInstance()
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    if (!extension) {
+      throw new Error('Conversational extension not available yet')
+    }
 
-          const assistants = e.assistants
-
-          return {
-            ...e,
-            updated: e.updated,
-            model,
-            order: e.metadata?.order ?? thread.order,
-            assistants,
-          } as Thread
-        })
-        .catch(() => thread) ?? thread
-    )
+    const created = await extension.createThread({
+      ...thread,
+      assistants: assistantsPayload,
+      metadata: {
+        ...thread.metadata,
+        order: thread.order,
+      },
+    })
+    return {
+      ...created,
+      model: fromModelResponse(created.assistants?.[0]?.model, thread.model),
+      order: created.metadata?.order ?? thread.order,
+      assistants: created.assistants,
+    } as Thread
   }
 
   async updateThread(thread: Thread): Promise<void> {

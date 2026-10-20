@@ -771,15 +771,23 @@ const ChatInput = memo(function ChatInput({
 
         setCurrentAssistant(assistant)
 
-        const newThread = await createThread(
-          {
-            id: selectedModel?.id ?? defaultModel(selectedProvider),
-            provider: selectedProvider,
-          },
-          prompt, // Use prompt as thread title
-          assistant,
-          projectMetadata
-        )
+        let newThread: Thread
+        try {
+          newThread = await createThread(
+            {
+              id: selectedModel?.id ?? defaultModel(selectedProvider),
+              provider: selectedProvider,
+            },
+            prompt, // Use prompt as thread title
+            assistant,
+            projectMetadata
+          )
+        } catch (error) {
+          toast.error('Failed to create conversation', {
+            description: error instanceof Error ? error.message : String(error),
+          })
+          return
+        }
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
