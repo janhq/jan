@@ -37,8 +37,7 @@ jobs:
             const { owner, repo } = context.repo;
             const pr = context.payload.pull_request;
 
-            // The API returns at most 250 commits for a PR; anything past that
-            // is not checked (the ruleset still blocks the merge).
+            // The API returns at most 250 commits for a PR.
             const commits = await github.paginate(github.rest.pulls.listCommits, {
               owner, repo, pull_number: pr.number, per_page: 100,
             });
@@ -51,11 +50,10 @@ jobs:
               (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(MARKER),
             );
 
-            if (unsigned.length === 0) {
+            // Past the cap the rest can't be seen, so a clean subset isn't a pass.
+            const truncated = pr.commits > commits.length;
+            if (unsigned.length === 0 && !truncated) {
               core.info(`All ${commits.length} commits are verified.`);
-              if (pr.commits > commits.length) {
-                core.warning(`Only ${commits.length} of ${pr.commits} commits could be checked`);
-              }
               if (sticky) {
                 await github.rest.issues.deleteComment({ owner, repo, comment_id: sticky.id });
               }
@@ -81,16 +79,19 @@ jobs:
             const rows = unsigned.map((c) =>
               `- ${c.sha.slice(0, 7)} ${code(firstLine(c.commit.message))}: ${reason(c.commit.verification)}`,
             );
-            const truncated = pr.commits > commits.length
-              ? [``, `Only the first ${commits.length} of ${pr.commits} commits were checked.`]
+            const unchecked = truncated
+              ? [``, `Only the first ${commits.length} of ${pr.commits} commits could be checked; GitHub's API lists no more. Collapsing the branch into one commit (below) makes the rest checkable.`]
               : [];
+            const headline = unsigned.length === 0
+              ? `Thanks for the PR! This PR has ${pr.commits} commits, more than this check can read, and \`${pr.base.ref}\` only accepts verified commits.`
+              : `Thanks for the PR! ${unsigned.length === 1 ? 'One commit doesn\'t' : `${unsigned.length} commits don't`} have a verified signature, and \`${pr.base.ref}\` only accepts verified commits, so this can't be merged yet:`;
 
             const body = [
               MARKER,
-              `Thanks for the PR! ${unsigned.length === 1 ? 'One commit doesn\'t' : `${unsigned.length} commits don't`} have a verified signature, and \`${pr.base.ref}\` only accepts verified commits, so this can't be merged yet:`,
+              headline,
               ``,
               ...rows,
-              ...truncated,
+              ...unchecked,
               ``,
               `If the reason is about a key or an email, fix that on GitHub first (add the key as a **signing key**, verify the email). Then replace the branch's commits with one signed commit with the same content and force-push (\`upstream\` is your remote for janhq/jan, \`origin\` your fork; PRs are squash-merged, so nothing is lost):`,
               ``,
@@ -115,4 +116,6 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
             }
 
-            core.setFailed(`${unsigned.length} of ${commits.length} commits are not verified: ${unsigned.map((c) => c.sha.slice(0, 7)).join(', ')}`);
+            core.setFailed(unsigned.length === 0
+              ? `Only ${commits.length} of ${pr.commits} commits could be checked`
+              : `${unsigned.length} of ${commits.length} commits are not verified: ${unsigned.map((c) => c.sha.slice(0, 7)).join(', ')}`);
