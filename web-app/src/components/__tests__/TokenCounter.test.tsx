@@ -122,7 +122,9 @@ describe('TokenCounter', () => {
     expect(screen.queryByText(/%/)).toBeNull()
     expect(screen.getAllByText('1.4K').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('GPT X')).toBeTruthy()
-    expect(screen.getByText('1,400')).toBeTruthy()
+    expect(
+      screen.getByText((1400).toLocaleString(), { normalizer: (text) => text })
+    ).toBeTruthy()
   })
 
   describe('formatNumber helper (via rendered output)', () => {
