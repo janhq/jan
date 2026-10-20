@@ -119,7 +119,9 @@ interface LlamaCppChunk {
  * and converts it to token usage format. MLX uses the same timing structure
  * as llama.cpp.
  */
-const providerMetadataExtractor: MetadataExtractor = {
+const createProviderMetadataExtractor = (
+  streamThreadId?: string
+): MetadataExtractor => ({
   extractMetadata: async ({ parsedBody }: { parsedBody: unknown }) => {
     const body = parsedBody as LlamaCppChunk
     if (body?.timings) {
@@ -141,8 +143,9 @@ const providerMetadataExtractor: MetadataExtractor = {
       processChunk: (parsedChunk: unknown) => {
         const chunk = parsedChunk as LlamaCppChunk
         const state = useAppState.getState()
-        const streamThreadId = state.currentStreamThreadId
-        if (state.loadingModel) {
+        // Legacy global fields mirror only the currently selected stream.
+        const isCurrentStream = !!streamThreadId && state.currentStreamThreadId === streamThreadId
+        if (isCurrentStream && state.loadingModel) {
           state.updateLoadingModel(false)
         }
         if (streamThreadId) {
@@ -156,7 +159,7 @@ const providerMetadataExtractor: MetadataExtractor = {
             tokensPerSecond: lastTimings.predicted_per_second ?? null,
             promptPerSecond: lastTimings.prompt_per_second ?? null,
           }
-          state.updateLiveTokenStats(liveStats)
+          if (isCurrentStream) state.updateLiveTokenStats(liveStats)
           if (streamThreadId) {
             state.updateThreadLiveTokenStats(streamThreadId, liveStats)
           }
@@ -173,7 +176,7 @@ const providerMetadataExtractor: MetadataExtractor = {
             cache: pp.cache ?? 0,
             time_ms: pp.time_ms ?? 0,
           }
-          state.updatePromptProgress(progress)
+          if (isCurrentStream) state.updatePromptProgress(progress)
           if (streamThreadId) {
             state.updateThreadPromptProgress(streamThreadId, progress)
           }
@@ -194,7 +197,7 @@ const providerMetadataExtractor: MetadataExtractor = {
       },
     }
   },
-}
+})
 
 /**
  * Keys from inference parameters that are client-side only and must not
@@ -962,7 +965,8 @@ export class ModelFactory {
   static async createModel(
     modelId: string,
     provider: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    streamThreadId?: string
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
@@ -976,10 +980,10 @@ export class ModelFactory {
 
     switch (providerName) {
       case 'llamacpp':
-        return this.createLlamaCppModel(modelId, provider, parameters)
+        return this.createLlamaCppModel(modelId, provider, parameters, streamThreadId)
 
       case 'mlx':
-        return this.createMlxModel(modelId, provider, parameters)
+        return this.createMlxModel(modelId, provider, parameters, streamThreadId)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
@@ -1017,7 +1021,8 @@ export class ModelFactory {
   private static async createLlamaCppModel(
     modelId: string,
     provider?: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    streamThreadId?: string
   ): Promise<LanguageModel> {
     // Start the model first if provider is available
     if (provider) {
@@ -1089,7 +1094,7 @@ export class ModelFactory {
       },
       includeUsage: true,
       fetch: customFetch,
-      metadataExtractor: providerMetadataExtractor,
+      metadataExtractor: createProviderMetadataExtractor(streamThreadId),
     })
   }
 
@@ -1100,7 +1105,8 @@ export class ModelFactory {
   private static async createMlxModel(
     modelId: string,
     provider?: ProviderObject,
-    parameters: Record<string, unknown> = {}
+    parameters: Record<string, unknown> = {},
+    streamThreadId?: string
   ): Promise<LanguageModel> {
     parameters = filterParameters(parameters, false)
     // Start the model first if provider is available
@@ -1177,7 +1183,7 @@ export class ModelFactory {
         return url.toString()
       },
       fetch: customFetch,
-      metadataExtractor: providerMetadataExtractor,
+      metadataExtractor: createProviderMetadataExtractor(streamThreadId),
     })
 
     return wrapLanguageModel({

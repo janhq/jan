@@ -119,9 +119,9 @@ describe('model-factory deep coverage', () => {
 
   /* providerMetadataExtractor */
   describe('providerMetadataExtractor', () => {
-    async function getExtractor() {
+    async function getExtractor(threadId?: string) {
       vi.mocked(invoke).mockResolvedValue({ port: 8080, api_key: 'k' })
-      await ModelFactory.createModel('m', mkProvider('llamacpp'), {})
+      await ModelFactory.createModel('m', mkProvider('llamacpp'), {}, threadId)
       return getOpts()?.metadataExtractor
     }
 
@@ -174,7 +174,7 @@ describe('model-factory deep coverage', () => {
       const { useAppState } = await import('@/hooks/useAppState')
       useAppState.getState().setCurrentStreamThreadId('thread-live')
 
-      const ext = await getExtractor()
+      const ext = await getExtractor('thread-live')
       const s = ext.createStreamExtractor()
       s.processChunk({
         timings: { prompt_n: 5, predicted_n: 15, predicted_per_second: 35, prompt_per_second: 65 },
@@ -206,7 +206,7 @@ describe('model-factory deep coverage', () => {
       const { useAppState } = await import('@/hooks/useAppState')
       useAppState.getState().setCurrentStreamThreadId('thread-cached')
 
-      const ext = await getExtractor()
+      const ext = await getExtractor('thread-cached')
       const s = ext.createStreamExtractor()
       // Deep into a conversation: only 21 tokens are freshly processed this
       // turn, the other 20,935 are served from the KV cache.

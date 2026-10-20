@@ -1325,9 +1325,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     provider: ProviderObject,
     parameters: Record<string, unknown>,
     providerId: string,
-    abortSignal: AbortSignal | undefined
+    abortSignal: AbortSignal | undefined,
+    threadId: string
   ): Promise<LanguageModel> {
-    const modelPromise = ModelFactory.createModel(modelId, provider, parameters)
+    const modelPromise = ModelFactory.createModel(
+      modelId, provider, parameters, threadId
+    )
     if (!abortSignal) return modelPromise
 
     // Target lib is ES2021 here (see tsconfig.app.json), predating
@@ -1474,7 +1477,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         updatedProvider ?? provider,
         mergedParams,
         providerId,
-        options.abortSignal
+        options.abortSignal,
+        threadId
       )
       this.setLoadingModel(threadId, false)
       this.setModelLoadProgress(threadId, undefined)

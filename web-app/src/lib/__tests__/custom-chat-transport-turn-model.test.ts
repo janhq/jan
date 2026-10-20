@@ -158,7 +158,8 @@ describe('CustomChatTransport: a turn keeps its model', () => {
     expect(h.createModelMock).toHaveBeenLastCalledWith(
       'local-model',
       providers.llamacpp,
-      expect.anything()
+      expect.anything(),
+      'thread-a'
     )
     expect(transport.getTurnModelSelection()).toMatchObject({
       selectedProvider: 'llamacpp',
@@ -176,7 +177,8 @@ describe('CustomChatTransport: a turn keeps its model', () => {
     expect(h.createModelMock).toHaveBeenLastCalledWith(
       'remote-model',
       providers.openai,
-      expect.anything()
+      expect.anything(),
+      'thread-a'
     )
   })
 
@@ -197,7 +199,8 @@ describe('CustomChatTransport: a turn keeps its model', () => {
     expect(h.createModelMock).toHaveBeenLastCalledWith(
       'remote-model',
       providers.openai,
-      expect.anything()
+      expect.anything(),
+      'thread-a'
     )
   })
 
@@ -210,7 +213,8 @@ describe('CustomChatTransport: a turn keeps its model', () => {
     expect(h.createModelMock).toHaveBeenLastCalledWith(
       'remote-model',
       providers.openai,
-      expect.anything()
+      expect.anything(),
+      'thread-a'
     )
   })
 })
