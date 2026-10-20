@@ -30,7 +30,10 @@ import {
 } from '@/lib/toolInputSummary'
 import { summarizeToolOutput } from '@/lib/toolOutputSummary'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
-import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
+import {
+  queuePositionOf,
+  useToolCallRuntime,
+} from '@/hooks/useToolCallRuntime'
 import { ToolElapsed } from './tool-runtime'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
@@ -173,7 +176,7 @@ export const ToolHeader = memo(
     const summary = useMemo(() => summarizeToolInput(input), [input])
     // Position in the pending queue, or -1 once the executor has reached it.
     const queuePosition = useToolCallRuntime((s) =>
-      toolCallId ? s.queue.indexOf(toolCallId) : -1
+      toolCallId ? queuePositionOf(s, toolCallId) : -1
     )
     const startedAt = useToolCallRuntime((s) =>
       toolCallId ? s.timings[toolCallId]?.startedAt : undefined
