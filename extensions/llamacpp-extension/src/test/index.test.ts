@@ -1818,6 +1818,27 @@ describe('reconcileEngineDevices', () => {
       expect(await extension.reconcileEngineDevices()).toBe('restarted')
     })
 
+    // An abort that happened before the stream was handed over fires no event
+    // the listener will ever see, and a stream nobody reads never releases.
+    it('let go of the engine for a stream whose request was already aborted', async () => {
+      await armChat()
+      vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
+        async function* () {
+          yield { id: '1' }
+        } as never
+      )
+      const controller = new AbortController()
+      controller.abort()
+
+      // Returned and dropped, never read.
+      await extension.chat(
+        { ...(request as object), stream: true } as never,
+        controller
+      )
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    })
+
     it('let go of the engine when the request fails', async () => {
       const { ensureSession } = await armChat()
       ensureSession.mockRejectedValue(new Error('model not loaded'))

@@ -2529,9 +2529,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       const result = await this.chatOnEngine(opts, abortController)
       if (opts.stream && Symbol.asyncIterator in result) {
         // The caller reads the stream after this returns, so the lease goes
-        // with it. Aborting drops it too, in case the stream is never read.
+        // with it. An abort drops it too, in case the stream is never read; one
+        // that already happened (before this call, or while the session was
+        // being resolved) fires no event from here on, so it is checked now.
         streaming = true
-        abortController?.signal.addEventListener('abort', release, { once: true })
+        const signal = abortController?.signal
+        if (signal?.aborted) {
+          release()
+        } else {
+          signal?.addEventListener('abort', release, { once: true })
+        }
         return this.releaseWhenDone(release, result)
       }
       return result
