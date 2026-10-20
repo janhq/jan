@@ -28,7 +28,7 @@ export const useTools = () => {
   const { isDefaultsInitialized, setDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
 
   useEffect(() => {
-    async function setTools() {
+    async function setTools({ invalidateSessions }: { invalidateSessions: boolean }) {
       try {
         // A server connect/disconnect/tools-refresh fired this (mcp-update);
         // the orchestrator's per-request tool cache would otherwise only
@@ -62,7 +62,8 @@ export const useTools = () => {
         updateMcpToolNames(mcpNames)
         updateRagToolNames(ragOnly)
 
-        invalidateSessionTools()
+        // Only an mcp-update re-routes open threads; mount keeps their freeze.
+        if (invalidateSessions) invalidateSessionTools()
 
         // Initialize default disabled tools for new users (only once)
         if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
@@ -76,10 +77,11 @@ export const useTools = () => {
         console.error('Failed to fetch MCP tools:', error)
       }
     }
-    setTools()
+    setTools({ invalidateSessions: false })
 
     let unsubscribe = () => {}
-    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
+    const onMcpUpdate = () => setTools({ invalidateSessions: true })
+    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, onMcpUpdate).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
     }).catch((error) => {

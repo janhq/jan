@@ -29,12 +29,21 @@ import { useAppState } from '../useAppState'
 describe('useChat MCP tool name changes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    act(() => {
+      useAppState.getState().updateMcpToolNames([])
+      useAppState.getState().updateRagToolNames([])
+    })
+  })
+
+  it('does not invalidate on mount', () => {
+    renderHook(() => useChat({ sessionId: 's1' }))
+
+    expect(fake.invalidateFrozenTools).not.toHaveBeenCalled()
   })
 
   it('invalidates the frozen tools before refreshing when MCP tool names change', () => {
     renderHook(() => useChat({ sessionId: 's1' }))
-    fake.invalidateFrozenTools.mockClear()
-    fake.refreshTools.mockClear()
+    expect(fake.invalidateFrozenTools).not.toHaveBeenCalled()
 
     act(() => useAppState.getState().updateMcpToolNames(['fs::list']))
 
@@ -43,5 +52,14 @@ describe('useChat MCP tool name changes', () => {
     expect(fake.invalidateFrozenTools.mock.invocationCallOrder[0]).toBeLessThan(
       fake.refreshTools.mock.invocationCallOrder[0]
     )
+  })
+
+  it('does not invalidate when the tool names are re-set unchanged', () => {
+    act(() => useAppState.getState().updateMcpToolNames(['fs::list']))
+    renderHook(() => useChat({ sessionId: 's1' }))
+
+    act(() => useAppState.getState().updateMcpToolNames(['fs::list']))
+
+    expect(fake.invalidateFrozenTools).not.toHaveBeenCalled()
   })
 })
