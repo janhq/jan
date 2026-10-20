@@ -373,8 +373,9 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            // A Jan up to 0.8.4 leaves its llama-server router running across an
-            // in-app update; that version cannot be fixed, so reap it here.
+            // Reap engines a previous Jan left running: the llama-server router of
+            // a 0.8.4 that was updated in place, or an mlx-server whose app was
+            // killed. Neither can be stopped by the version that started it.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 let data_folder = get_jan_data_folder_path(app.handle().clone());
@@ -383,6 +384,25 @@ pub fn run() {
                     if killed > 0 {
                         log::warn!("Reaped {killed} engine process(es) left by a previous Jan");
                     }
+                });
+            }
+
+            // A SIGTERM ends the process without RunEvent::Exit, so the exit
+            // cleanup never ran and mlx-server, which does not watch its
+            // parent, was left running. Turn the signal into a normal exit.
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let Ok(mut term) = signal(SignalKind::terminate()) else {
+                        log::warn!("Could not listen for SIGTERM");
+                        return;
+                    };
+                    term.recv().await;
+                    log::info!("Received SIGTERM; shutting down");
+                    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+                    handle.exit(0);
                 });
             }
 
