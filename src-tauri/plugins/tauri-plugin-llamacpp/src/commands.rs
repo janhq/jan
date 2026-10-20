@@ -47,7 +47,7 @@ async fn http_client() -> reqwest::Client {
     crate::engine::worker::loopback_client_builder()
         .timeout(Duration::from_secs(600))
         .build()
-        .unwrap_or_else(|_| crate::engine::worker::loopback_client())
+        .expect("a reqwest client without proxies builds")
 }
 
 /// True when a request to the worker never got a response: refused, reset, or
@@ -86,27 +86,43 @@ enum WorkerFate {
     Running,
 }
 
+/// How long a worker that looks alive is watched before it is called
+/// unreachable. A worker that crashes mid-request has its sockets closed by the
+/// kernel a moment before its exit can be collected, so the client can see the
+/// reset first; without this grace that crash would be blamed on a VPN or a
+/// proxy instead of being reported with its exit code and stderr.
+const EXIT_GRACE: Duration = Duration::from_millis(500);
+const EXIT_POLL: Duration = Duration::from_millis(50);
+
 /// Checks the process, which is the one thing that tells the two causes of an
 /// unreachable worker apart: a crash, or something between Jan and 127.0.0.1.
 ///
 /// A worker found dead is reaped here, as `get_engine_info` does, so the next
 /// load starts a fresh one instead of failing against the same closed port.
+/// One still running is re-checked for up to [`EXIT_GRACE`] before it counts
+/// as running; the engine lock is released between checks.
 async fn worker_fate(state: &LlamacppState, port: u16) -> WorkerFate {
-    let mut guard = state.engine.lock().await;
-    let Some(handle) = guard.as_mut().filter(|h| h.port == port) else {
-        return WorkerFate::Gone;
-    };
-    match handle.exit_report() {
-        Some(report) => {
-            log::error!(
-                "jan-llama-worker exited unexpectedly ({}); last output: {:?}",
-                report.status,
-                report.last_lines
-            );
-            *guard = None;
-            WorkerFate::Exited(report)
+    let deadline = tokio::time::Instant::now() + EXIT_GRACE;
+    loop {
+        {
+            let mut guard = state.engine.lock().await;
+            let Some(handle) = guard.as_mut().filter(|h| h.port == port) else {
+                return WorkerFate::Gone;
+            };
+            if let Some(report) = handle.exit_report() {
+                log::error!(
+                    "jan-llama-worker exited unexpectedly ({}); last output: {:?}",
+                    report.status,
+                    report.last_lines
+                );
+                *guard = None;
+                return WorkerFate::Exited(report);
+            }
         }
-        None => WorkerFate::Running,
+        if tokio::time::Instant::now() >= deadline {
+            return WorkerFate::Running;
+        }
+        tokio::time::sleep(EXIT_POLL).await;
     }
 }
 
@@ -181,6 +197,15 @@ async fn worker_request_error(
 /// it is shown from its code like any other engine error.
 fn into_string_error(err: LlamacppError) -> String {
     serde_json::to_string(&err).unwrap_or(err.message)
+}
+
+/// [`into_string_error`] for a [`ServerError`]: an engine error keeps its code
+/// as JSON, anything else is its plain text as before.
+fn server_error_string(err: ServerError) -> String {
+    match err {
+        ServerError::Llamacpp(err) => into_string_error(err),
+        other => other.to_string(),
+    }
 }
 
 /// Payload for the `llamacpp-model-load-progress` event, mirrored from the
@@ -810,7 +835,7 @@ pub async fn ensure_session_ready<R: Runtime>(
     let (port, api_key, pid, _lease) = engine_endpoint(&app_handle).await?;
     post_load(&app_handle, port, &api_key, &model_id)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(server_error_string)?;
     Ok(SessionInfo {
         pid: pid as i32,
         port: port as i32,
@@ -930,6 +955,19 @@ mod unreachable_worker_tests {
         assert!(v["message"].is_string());
     }
 
+    // `ensure_session_ready` returns a String, and its load can fail with an
+    // engine error; the code has to survive as JSON, not thiserror's Display.
+    #[test]
+    fn a_string_command_keeps_an_engine_errors_code() {
+        let err = ServerError::Llamacpp(unreachable_worker_error(1, WorkerFate::Gone, "x"));
+        let text = server_error_string(err);
+        let v: serde_json::Value = serde_json::from_str(&text).expect(&text);
+        assert_eq!(v["code"], "ENGINE_STOPPED");
+
+        let other = server_error_string(ServerError::InvalidArgument("bad".into()));
+        assert_eq!(other, "Invalid argument: bad");
+    }
+
     /// A loopback port nothing listens on.
     fn closed_port() -> u16 {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -999,6 +1037,37 @@ mod unreachable_worker_tests {
 
         let again = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
         assert!(again.contains("ENGINE_STOPPED"), "{again}");
+    }
+
+    // A worker that dies mid-request can drop its connection a moment before
+    // its exit is collectable. Seen alive at first, it must still be reported
+    // as stopped once it exits within the grace window, not as unreachable.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_worker_that_exits_just_after_the_failed_request_is_reported_as_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!(
+                "echo '{{\"port\":{port},\"pid\":'$$'}}'\n\
+                 sleep 0.15\n\
+                 exit 3"
+            ),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+        assert!(
+            state.engine.lock().await.as_mut().unwrap().exited().is_none(),
+            "still running when the request fails"
+        );
+
+        match worker_fate(&state, port).await {
+            WorkerFate::Exited(report) => assert!(report.status.contains('3'), "{report:?}"),
+            other => panic!("expected Exited, got {other:?}"),
+        }
+        assert!(state.engine.lock().await.is_none(), "a dead worker is reaped");
     }
 
     // A worker that accepts the connection but has not answered yet -- a long

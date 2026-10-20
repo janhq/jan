@@ -310,8 +310,14 @@ pub fn loopback_client_builder() -> reqwest::ClientBuilder {
 }
 
 /// [`loopback_client_builder`] with reqwest's defaults otherwise.
+///
+/// No fallback to `reqwest::Client::default()`: that would turn proxy lookup
+/// back on, and it fails (by panicking) on the same TLS-backend error that
+/// would make this build fail, which is all that can -- proxies are off.
 pub fn loopback_client() -> reqwest::Client {
-    loopback_client_builder().build().unwrap_or_default()
+    loopback_client_builder()
+        .build()
+        .expect("a reqwest client without proxies builds")
 }
 
 /// How long to wait for the handshake. Generous because a cold page-cache read
