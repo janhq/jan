@@ -17,7 +17,8 @@ export class DefaultProjectsService implements ProjectsService {
       return data.state?.folders || []
     } catch (error) {
       console.error('Error loading projects from localStorage:', error)
-      return []
+      // An unreadable snapshot must not become the basis of the next write.
+      throw error
     }
   }
 
@@ -30,6 +31,7 @@ export class DefaultProjectsService implements ProjectsService {
       localStorage.setItem(this.storageKey, JSON.stringify(data))
     } catch (error) {
       console.error('Error saving projects to localStorage:', error)
+      throw error
     }
   }
 

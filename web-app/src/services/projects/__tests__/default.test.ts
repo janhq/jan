@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'mock-ulid-456'),
@@ -7,6 +7,8 @@ vi.mock('ulidx', () => ({
 import { DefaultProjectsService } from '../default'
 
 const STORAGE_KEY = 'thread-management'
+
+afterEach(() => vi.restoreAllMocks())
 
 beforeEach(() => {
   localStorage.clear()
@@ -30,11 +32,11 @@ describe('DefaultProjectsService', () => {
     expect(projects[0].name).toBe('P1')
   })
 
-  it('getProjects returns [] on invalid JSON', async () => {
+  it('getProjects rejects invalid JSON', async () => {
     localStorage.setItem(STORAGE_KEY, 'not-json')
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const svc = new DefaultProjectsService()
-    expect(await svc.getProjects()).toEqual([])
+    await expect(svc.getProjects()).rejects.toThrow()
     spy.mockRestore()
   })
 
@@ -84,14 +86,13 @@ describe('DefaultProjectsService', () => {
     expect(await svc.getProjects()).toHaveLength(1)
   })
 
-  it('saveToStorage handles localStorage error gracefully', async () => {
+  it('addProject rejects a failed storage write', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded')
     })
     const svc = new DefaultProjectsService()
-    // Should not throw
-    await svc.addProject('Fail')
+    await expect(svc.addProject('Fail')).rejects.toThrow('quota exceeded')
     expect(spy).toHaveBeenCalled()
     spy.mockRestore()
     setItemSpy.mockRestore()
@@ -101,5 +102,51 @@ describe('DefaultProjectsService', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ state: {} }))
     const svc = new DefaultProjectsService()
     expect(await svc.getProjects()).toEqual([])
+  })
+})
+
+
+describe('project persistence failures', () => {
+  const existing = [{ id: 'existing', name: 'Keep me', updated_at: 1 }]
+  const operations = [
+    ['add', (svc: DefaultProjectsService) => svc.addProject('New')],
+    ['update', (svc: DefaultProjectsService) => svc.updateProject('existing', 'Changed')],
+    ['delete', (svc: DefaultProjectsService) => svc.deleteProject('existing')],
+  ] as const
+
+  it.each(operations)('%s preserves projects when the initial read fails', async (_, operation) => {
+    seedStorage(existing)
+    const original = localStorage.getItem(STORAGE_KEY)
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => {
+      throw new Error('read unavailable')
+    })
+    try {
+      await expect(operation(new DefaultProjectsService())).rejects.toThrow('read unavailable')
+      expect(localStorage.getItem(STORAGE_KEY)).toBe(original)
+    } finally {
+      read.mockRestore()
+    }
+  })
+
+  it('does not replace corrupt storage with a newly added project', async () => {
+    localStorage.setItem(STORAGE_KEY, '{broken')
+    await expect(new DefaultProjectsService().addProject('New')).rejects.toThrow()
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('{broken')
+  })
+
+  it.each(operations)('%s reports a write failure and can be retried', async (_, operation) => {
+    seedStorage(existing)
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+      throw new Error('quota exceeded')
+    })
+    try {
+      const svc = new DefaultProjectsService()
+      await expect(operation(svc)).rejects.toThrow('quota exceeded')
+      expect(await svc.getProjects()).toEqual(existing)
+      await operation(svc)
+      expect(await svc.getProjects()).not.toEqual(existing)
+    } finally {
+      write.mockRestore()
+    }
   })
 })
