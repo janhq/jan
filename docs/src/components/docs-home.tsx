@@ -110,13 +110,7 @@ export function DocsHome() {
                   {drawing}
                 </div>
               </div>
-              <div className="mt-5 flex items-center justify-between gap-4">
-                <h2 className="text-doc-h2 text-ink">{title}</h2>
-                <ArrowRight
-                  aria-hidden
-                  className="size-5 shrink-0 text-ink/60 transition-[color,transform] duration-150 ease-jan group-hover:text-ink motion-safe:group-hover:translate-x-0.5"
-                />
-              </div>
+              <h2 className="mt-5 text-doc-h2 text-ink">{title}</h2>
               <p className="mt-1 text-doc-body text-ink/60">{description}</p>
             </Link>
           ))}

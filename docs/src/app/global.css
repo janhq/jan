@@ -563,14 +563,14 @@ figure.shiki .line {
   border: 1px solid var(--color-line);
   border-radius: 9999px;
   background: var(--color-page);
-}
-.dark #nd-page .prose .jan-steps h3::before {
-  background: var(--color-surface);
   font-family: var(--font-mono);
   font-size: var(--text-doc-label);
   font-weight: var(--text-doc-label--font-weight);
   letter-spacing: normal;
   color: var(--color-ink);
+}
+.dark #nd-page .prose .jan-steps h3::before {
+  background: var(--color-surface);
 }
 
 /* Content images keep their own wrapper. */

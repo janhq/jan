@@ -99,8 +99,8 @@ repeated quickstart content.
 
 - Each tile is a picture (white line-art drawing of the product, drawn in
   code in `src/components/home-drawings.tsx`, on a jan.ai brand gradient
-  from `public/images/home/`), then the title (with a bare → on its right) and description in
-  ink on the page. Text never sits on the gradient.
+  from `public/images/home/`), then the title and description in ink on the page. No arrow: the
+  picture already reads as the link. Text never sits on the gradient.
 - Hover: the gradient slowly zooms in and the drawing lifts a little.
 - Use jan.ai's own brand gradients, not the ribbed-glass versions and not
   new colours. Keep them calm so the drawing reads: blur each one until
