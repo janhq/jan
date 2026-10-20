@@ -6,6 +6,20 @@ import { useToolAvailable } from './useToolAvailable'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator/mcp-orchestrator'
+import { useChatSessions } from '@/stores/chat-session-store'
+
+// Each open thread's transport freezes its routed tool list; drop that freeze
+// and re-route so tools from servers that just (dis)connected show up.
+function invalidateSessionTools(): void {
+  for (const session of Object.values(useChatSessions.getState().sessions)) {
+    try {
+      session.transport.invalidateFrozenTools()
+      void session.transport.refreshTools()
+    } catch (error) {
+      console.error('[tools] failed to refresh session tools:', error)
+    }
+  }
+}
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
@@ -47,6 +61,8 @@ export const useTools = () => {
         }
         updateMcpToolNames(mcpNames)
         updateRagToolNames(ragOnly)
+
+        invalidateSessionTools()
 
         // Initialize default disabled tools for new users (only once)
         if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
