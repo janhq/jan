@@ -438,8 +438,8 @@ describe('DefaultThreadsService', () => {
           assistants: [
             {
               model: { id: 'gpt-4', engine: 'openai' },
-              id: 'jan',
-              name: 'Jan',
+              id: 'model-only',
+              name: 'Model',
             },
           ],
         })

@@ -128,12 +128,12 @@ export class DefaultThreadsService implements ThreadsService {
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.modifyThread({
         ...thread,
-        assistants: thread.assistants?.map((e) => ({
-          ...e,
-          model: toModelPayload(thread.model),
-        })) ?? [
-          { model: toModelPayload(thread.model), id: 'jan', name: 'Jan' },
-        ],
+        assistants: thread.assistants?.length
+          ? thread.assistants.map((e) => ({
+              ...e,
+              model: toModelPayload(thread.model),
+            }))
+          : [{ model: toModelPayload(thread.model), id: 'model-only', name: 'Model' }],
         metadata: {
           ...thread.metadata,
           is_favorite: thread.isFavorite,
