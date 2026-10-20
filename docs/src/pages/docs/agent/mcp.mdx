@@ -29,14 +29,34 @@ A server that fails to come up says so in the transcript, with the reason:
 MCP: failed to connect to 'fetch': connection closed: initialize response
 ```
 
+A server that starts but never answers is given up on after the tool call timeout (30 seconds by
+default, set under `mcpSettings` in `mcp_config.json` or in Jan Desktop's MCP settings). It is
+reported the same way, and the turn goes on without it:
+
+```
+MCP: failed to connect to 'fetch': timed out after 30s waiting for it to answer
+```
+
 <Callout type="info">
 The first turn waits for the connecting servers, so the model sees the full toolset rather than a
-half-connected one. A slow stdio server delays that first turn, not the whole session.
+half-connected one. A slow stdio server delays that first turn, not the whole session, for up to
+the timeout above: one that needs longer, such as a first run that downloads its package with
+`npx`, needs a larger `toolCallTimeoutSeconds`.
 </Callout>
 
 If a connected server later fails to list its tools - a timeout, a transient error - Jan advertises
 its last known tools instead of dropping it for that turn. The toolset stays the same across the
 hiccup, and so does the prefix your provider is caching.
+
+## A stdio server's environment
+
+A stdio server inherits Jan's environment, minus the credentials Jan was given for its own gateway:
+`JAN_API_KEY`, `JAN_CUSTOM_HEADERS`, the `--provider`'s own `<PROVIDER>_API_KEY` (for example
+`TOKAMAK_API_KEY` under `jan --provider tokamak`), and, while Jan exports
+[telemetry](/docs/agent/telemetry), the `OTEL_EXPORTER_OTLP_*HEADERS` variables. Everything else is
+inherited as before, so a server that reads `GITHUB_TOKEN`, or the key of a provider you did not
+name with `--provider`, keeps working. To hand a server one of the removed variables, set it in the
+server's own `env`, which is applied last.
 
 ## Managing servers
 
@@ -131,10 +151,10 @@ jan mcp serve --transport http         # loopback Streamable HTTP; prints its UR
 
 The served tools run against **one project root**, fixed when the server starts, with the same path
 confinement and sandbox re-checks an in-agent call gets. A path argument that escapes that root is
-refused, and so is anything inside the project's hidden `.jan` state.
+refused.
 
 The default set touches no project file: file reading, search, the web tools, and the memory and
-skill tools. Those last two do write, but only into the agent's own store under `.jan/agent` and
+skill tools. Those last two do write, but only into the agent's own store under `~/.jan/projects/<slug>` and
 only by sanitized name, so they can never reach a file in your project. Note that a skill written
 this way is an instruction Jan's own agent may later read, so a peer you would not trust to write
 instructions should be narrowed with `--tool`.
@@ -145,7 +165,7 @@ rather than a person who can answer a permission prompt:
 | Flag | Adds |
 | --- | --- |
 | `--allow-write` | `write` and `edit`, confined to the project root |
-| `--allow-exec` | `bash`, under the same OS sandbox the agent's shell uses |
+| `--allow-exec` | `shell`, under the same OS sandbox the agent's shell uses |
 | `--tool NAME` | Narrows the set to these names; never widens what the flags above permit |
 
 Anything that would otherwise wait for an approval returns an error instead of blocking, so a peer

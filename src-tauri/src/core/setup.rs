@@ -22,7 +22,7 @@ use super::{mcp::helpers::run_mcp_commands, state::AppState};
 /// past-release stores sit below it, so bumping this constant without adding
 /// that release's store fixture breaks the build instead of skipping a
 /// migration silently.
-pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 4;
+pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 5;
 
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
@@ -75,17 +75,46 @@ pub fn migrate_mcp_servers(
             log::error!("Failed to migrate Exa to HTTP: {e}");
         }
     }
-    if mcp_version < CURRENT_MCP_SCHEMA_VERSION {
+    if mcp_version < 4 {
         log::info!(
-            "Migrating MCP schema version {CURRENT_MCP_SCHEMA_VERSION}: Removing default Exa MCP (native web search cutover)"
+            "Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)"
         );
-        if let Err(e) = remove_exa_server(app_handle) {
+        if let Err(e) = remove_exa_server(app_handle.clone()) {
             log::error!("Failed to remove Exa MCP server: {e}");
         }
     }
-    store.set("mcp_version", CURRENT_MCP_SCHEMA_VERSION);
+    let mut schema = CURRENT_MCP_SCHEMA_VERSION;
+    if mcp_version < 5 {
+        // Version 4 only reaches an entry the user had deactivated, and it ran
+        // once for everyone on 0.8.4 or later, so what it missed is left to this
+        // step: the default 0.8.3 wrote for every user. See `remove_default_exa`.
+        log::info!(
+            "Migrating MCP schema version 5: Removing the hosted Exa MCP default 0.8.3 wrote"
+        );
+        let removed = remove_default_exa(app_handle);
+        if let Err(e) = &removed {
+            log::error!("Failed to remove the default Exa MCP server: {e}");
+        }
+        schema = schema_after_exa_cutover(&removed);
+    }
+    store.set("mcp_version", schema);
     store.save().expect("Failed to save store");
     Ok(())
+}
+
+/// The schema version to record once the version 5 cutover has been tried: the
+/// current one when it worked, and the one before it when it did not - a config
+/// that could not be read or written just then - so the next startup tries
+/// again instead of skipping it for good. The steps before it have run and are
+/// not repeated.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn schema_after_exa_cutover(removed: &Result<(), String>) -> i64 {
+    if removed.is_ok() {
+        CURRENT_MCP_SCHEMA_VERSION
+    } else {
+        CURRENT_MCP_SCHEMA_VERSION - 1
+    }
 }
 
 fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -121,19 +150,19 @@ fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether an `exa` MCP server entry is one the web-search cutover removes:
-/// not currently active, and carrying no API key.
+/// Whether an `exa` MCP server entry is one the version 4 cutover removes: not
+/// currently active, and carrying no API key.
 ///
 /// Note what `active: false` does *not* mean here. It is not evidence that the
 /// user never turned the server on: 0.8.3's own `migrate_exa_to_http` wrote
 /// the entry with `active: true` and an empty `env` for everybody, so a 0.8.3
 /// upgrader fails the `inactive` half and keeps the entry. The entries this
-/// actually removes are the ones a user deactivated themselves. See
-/// `remove_exa_server` for why that is left alone for now.
+/// actually removes are the ones a user deactivated themselves; version 5
+/// (`is_hosted_default_exa_server`) is what reaches the rest.
 ///
 /// It inspects `active` and `env` only -- not `url` or `type` -- so an inactive
 /// *custom* exa entry with an empty env also matches. Callers must reject
-/// non-object values before calling (see `remove_exa_server`).
+/// non-object values before calling (see `remove_exa_entry`).
 ///
 /// `pub` for the upgrade-compat fixture test, which pins the decision against
 /// real 0.8.3 bytes.
@@ -147,28 +176,99 @@ pub fn is_default_exa_server(exa: &serde_json::Value) -> bool {
     inactive && no_key
 }
 
+/// The hosted Exa endpoint 0.8.3 registered as an MCP server.
+const HOSTED_EXA_URL: &str = "https://mcp.exa.ai/mcp";
+
+/// Whether an `exa` entry is the default 0.8.3's `migrate_exa_to_http` wrote:
+/// the hosted endpoint over http, with no command, no args, no key and no
+/// headers, whether or not it is active (0.8.3 wrote it active for everyone, so
+/// `active` says nothing about what the user wants).
+///
+/// Narrow on purpose, because a match deletes the entry and whatever the user
+/// put in it. It is the six fields 0.8.3 wrote and nothing else: a key in `env`,
+/// any `headers` (they carry authentication), any other field, and any other
+/// url, transport, command or args keep the entry. A proxy, a self-hosted Exa,
+/// or a server the user set up by hand under the name `exa` is not the default
+/// and is never removed. Non-object values do not match.
+///
+/// `pub` for the upgrade-compat fixture test.
+pub fn is_hosted_default_exa_server(exa: &serde_json::Value) -> bool {
+    let Some(exa) = exa.as_object() else {
+        return false;
+    };
+    // Whatever this migration does not know is the user's, and is kept.
+    let only_known_fields = exa.keys().all(|key| {
+        matches!(
+            key.as_str(),
+            "type" | "url" | "command" | "args" | "env" | "active" | "headers"
+        )
+    });
+    let is = |key: &str, want: &str| exa.get(key).and_then(|v| v.as_str()) == Some(want);
+    let empty_str = |key: &str| exa.get(key).is_none_or(|v| v.as_str() == Some(""));
+    let empty_list = |key: &str| {
+        exa.get(key)
+            .is_none_or(|v| v.as_array().is_some_and(|a| a.is_empty()))
+    };
+    let empty_map = |key: &str| {
+        exa.get(key)
+            .is_none_or(|v| v.as_object().is_some_and(|m| m.is_empty()))
+    };
+    only_known_fields
+        && is("type", "http")
+        && is("url", HOSTED_EXA_URL)
+        && empty_str("command")
+        && empty_list("args")
+        && empty_map("env")
+        && empty_map("headers")
+}
+
 /// One-time cutover to native web search: drop the default Exa MCP server so the
 /// built-in web_search/web_fetch tools own web search.
 ///
-/// Narrower than the name suggests, and deliberately left that way in this
-/// change: removal needs the entry to be inactive *and* keyless, but 0.8.3
-/// shipped it `active: true` with an empty `env`, so upgraders from 0.8.3 keep
-/// it and the cutover is close to a no-op for them. Widening the match to the
-/// hosted endpoint regardless of `active` would delete configuration for the
-/// whole installed base at next startup, so it is tracked in janhq/jan#9010
-/// rather than changed in passing.
+/// Version 4's match is narrow: the entry has to be inactive *and* keyless, but
+/// 0.8.3 shipped it `active: true` with an empty `env`, so for upgraders the
+/// cutover was close to a no-op. `remove_default_exa` (version 5) is the step
+/// that reaches them.
 fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    remove_exa_entry(&config_path, is_default_exa_server).map(|_| ())
+}
+
+/// Version 5 of the cutover: remove the hosted Exa default 0.8.3 wrote.
+///
+/// Nothing is lost by it: the built-in web tools default to Exa, and keyless
+/// Exa is the same hosted endpoint, so web search keeps working against the same
+/// server without a second set of Exa tools next to the built-in ones. An entry
+/// with a key, or any other url, is left alone (`is_hosted_default_exa_server`),
+/// and a user who wants the MCP entry back re-adds it with `jan cli mcp add`.
+fn remove_default_exa(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+    remove_default_exa_from_config(&config_path).map(|_| ())
+}
+
+/// Version 5's removal against a config file. `Ok(true)` when it removed the
+/// entry. `pub` for the upgrade-compat fixture test.
+pub fn remove_default_exa_from_config(config_path: &std::path::Path) -> Result<bool, String> {
+    remove_exa_entry(config_path, is_hosted_default_exa_server)
+}
+
+/// Remove the `exa` entry of an `mcp_config.json` when `matches` says it is the
+/// one to remove. A missing file, a missing `mcpServers`, or no `exa` entry is
+/// nothing to do.
+fn remove_exa_entry(
+    config_path: &std::path::Path,
+    matches: fn(&serde_json::Value) -> bool,
+) -> Result<bool, String> {
     if !config_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let config_str =
-        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
+        fs::read_to_string(config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
     let mut config: serde_json::Value = serde_json::from_str(&config_str)
         .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
 
     let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) else {
-        return Ok(());
+        return Ok(false);
     };
 
     // `is_object()` is load-bearing, not defensive noise: serde_json's `get`
@@ -180,18 +280,18 @@ fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     // skip.
     let is_default_exa = servers
         .get("exa")
-        .is_some_and(|exa| exa.is_object() && is_default_exa_server(exa));
+        .is_some_and(|exa| exa.is_object() && matches(exa));
 
     if is_default_exa {
         servers.remove("exa");
         fs::write(
-            &config_path,
+            config_path,
             serde_json::to_string_pretty(&config)
                 .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
         )
         .map_err(|e| format!("Failed to write MCP config: {e}"))?;
     }
-    Ok(())
+    Ok(is_default_exa)
 }
 
 /// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window

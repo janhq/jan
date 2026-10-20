@@ -7,7 +7,7 @@
   "module": "dist/module.js",
   "engine": "mlx",
   "author": "Jan <service@jan.ai>",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",

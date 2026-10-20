@@ -55,27 +55,31 @@ impl ModelInfo {
         self.prompt_usd.is_some() && self.completion_usd.is_some()
     }
 
-    /// Estimated USD for one request's token counts.
-    ///
-    /// `cached` and `cache_write` are **shares of `prompt`**, not additions to
-    /// it: every pipeline that reaches here normalizes Anthropic's usage the
-    /// OpenAI way, so `prompt_tokens = input + cache_read + cache_write` (genai
-    /// `anthropic/adapter_shared.rs`, and `core::server::converters` for Jan's
-    /// own responses). Each share is billed at its own rate and the remainder
-    /// at the prompt rate; a rate the provider did not publish falls back to
-    /// the prompt rate, which is exactly what a prompt/completion-only price
-    /// list already charges.
+    /// The per-token rates for this model, or `None` when it cannot be priced.
+    /// This is what a run's money ceiling is metered against, so it is the same
+    /// `has_pricing` answer rather than a second, looser notion of "priced".
+    pub fn rates(&self) -> Option<crate::core::agent::session::TokenRates> {
+        Some(crate::core::agent::session::TokenRates {
+            prompt_usd: self.prompt_usd?,
+            completion_usd: self.completion_usd?,
+            cache_read_usd: self.cache_read_usd,
+            cache_write_usd: self.cache_write_usd,
+        })
+    }
+
+    /// Estimated USD for one request's token counts. An unpriced model costs
+    /// nothing here; callers that must not bill a missing price as free go
+    /// through [`TokenUsage::cost_usd`], which checks [`Self::has_pricing`]
+    /// first.
     pub fn cost_usd(&self, prompt: u64, completion: u64, cached: u64, cache_write: u64) -> f64 {
-        let prompt_rate = self.prompt_usd.unwrap_or(0.0);
-        // Clamped so a provider reporting a share larger than the prompt (or
-        // two shares that together exceed it) cannot underflow the remainder.
-        let cached = cached.min(prompt);
-        let written = cache_write.min(prompt - cached);
-        let fresh = prompt - cached - written;
-        fresh as f64 * prompt_rate
-            + cached as f64 * self.cache_read_usd.unwrap_or(prompt_rate)
-            + written as f64 * self.cache_write_usd.unwrap_or(prompt_rate)
-            + completion as f64 * self.completion_usd.unwrap_or(0.0)
+        self.rates()
+            .unwrap_or(crate::core::agent::session::TokenRates {
+                prompt_usd: self.prompt_usd.unwrap_or(0.0),
+                completion_usd: self.completion_usd.unwrap_or(0.0),
+                cache_read_usd: self.cache_read_usd,
+                cache_write_usd: self.cache_write_usd,
+            })
+            .cost_usd(prompt, completion, cached, cache_write)
     }
 }
 
@@ -157,6 +161,12 @@ fn catalog_path() -> Result<PathBuf, String> {
 /// Read the cache. A missing or unreadable file is an empty catalog, never an
 /// error: this is metadata that improves a display, so a corrupt cache must
 /// never block a run.
+///
+/// Disk only, on purpose: every catalog write starts from this (`probe_models`,
+/// [`cache_listing`], [`forget`]), so anything merged in here would be saved to
+/// `model_catalog.json` by the next write for any provider. A reader that must
+/// see the session-scoped provider's in-memory prices goes through
+/// [`effective`] instead.
 pub fn load() -> Catalog {
     let Ok(path) = catalog_path() else {
         return Catalog::default();
@@ -165,6 +175,15 @@ pub fn load() -> Catalog {
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
+}
+
+/// The catalog as this session sees it: [`load`], with the session-scoped
+/// provider's entries replaced by what its endpoint listed (see
+/// [`super::session_provider`]). For reading only -- never save it.
+pub fn effective() -> Catalog {
+    let mut catalog = load();
+    super::session_provider::apply_catalog(&mut catalog);
+    catalog
 }
 
 impl Catalog {
@@ -180,6 +199,28 @@ impl Catalog {
 
     pub fn remove_provider(&mut self, provider: &str) {
         self.providers.remove(provider);
+    }
+
+    /// Replace one provider's entries and keep the provider even when `models`
+    /// is empty: unlike [`Self::set_provider`], an empty map here means "this
+    /// provider prices nothing", so [`Self::get`] under it answers `None`
+    /// instead of falling through to another provider's rates.
+    pub(crate) fn overlay_provider(&mut self, provider: &str, models: BTreeMap<String, ModelInfo>) {
+        self.providers.insert(provider.to_string(), models);
+    }
+
+    /// This catalog with the session overlay applied, borrowing it untouched
+    /// when there is nothing to overlay: the telemetry pricer asks per request,
+    /// and the overlay can be filled after the pricer was built.
+    pub(crate) fn with_session_overlay(&self) -> std::borrow::Cow<'_, Catalog> {
+        match super::session_provider::overlay_catalog() {
+            Some((provider, models)) => {
+                let mut view = self.clone();
+                view.overlay_provider(&provider, models);
+                std::borrow::Cow::Owned(view)
+            }
+            None => std::borrow::Cow::Borrowed(self),
+        }
     }
 
     /// Metadata for `model_id` as `provider` reports it, matching the exact id
@@ -254,6 +295,8 @@ pub fn parse_listing(value: &serde_json::Value) -> BTreeMap<String, ModelInfo> {
     let entries = value
         .get("data")
         .and_then(|d| d.as_array())
+        // Gemini's native Models API: `{"models": [{"name": "models/<id>"}]}`.
+        .or_else(|| value.get("models").and_then(|m| m.as_array()))
         .or_else(|| value.as_array());
     let Some(entries) = entries else {
         return BTreeMap::new();
@@ -264,6 +307,14 @@ pub fn parse_listing(value: &serde_json::Value) -> BTreeMap<String, ModelInfo> {
             let id = entry
                 .get("id")
                 .and_then(|id| id.as_str())
+                .or_else(|| {
+                    // Requests name the bare id, so the `models/` resource
+                    // prefix is dropped to key the entry the way it is looked up.
+                    entry
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|n| n.strip_prefix("models/").unwrap_or(n))
+                })
                 .map(str::trim)
                 .filter(|id| !id.is_empty())?;
             let info = model_info(entry);
@@ -286,6 +337,10 @@ fn model_info(entry: &serde_json::Value) -> ModelInfo {
         context_length: entry
             .get("context_length")
             .or_else(|| entry.get("context_window"))
+            // Anthropic's own Models API.
+            .or_else(|| entry.get("max_input_tokens"))
+            // Gemini's.
+            .or_else(|| entry.get("inputTokenLimit"))
             .and_then(number)
             .map(|v| v as u64),
         max_output_tokens: entry
@@ -358,6 +413,31 @@ mod tests {
         assert!(parse_listing(&json!({"data": [{"id": "m-a"}, {"id": "m-b"}]})).is_empty());
         assert!(parse_listing(&json!(["m-a"])).is_empty());
         assert!(parse_listing(&json!({"unexpected": 1})).is_empty());
+    }
+
+    /// Anthropic's Models API names the window `max_input_tokens`; without it
+    /// a direct Anthropic route never learns a window from its listing.
+    #[test]
+    fn anthropic_max_input_tokens_is_read_as_the_window() {
+        let parsed = parse_listing(&json!({"data": [
+            {"id": "claude-opus-5", "type": "model", "max_input_tokens": 1000000, "max_tokens": 128000},
+        ]}));
+        assert_eq!(parsed["claude-opus-5"].context_length, Some(1_000_000));
+    }
+
+    /// Gemini's Models API lists `models/<id>` names with `inputTokenLimit`;
+    /// the entry is keyed by the bare id a request names.
+    #[test]
+    fn gemini_input_token_limit_is_read_as_the_window() {
+        let parsed = parse_listing(&json!({"models": [
+            {"name": "models/gemini-2.5-pro", "inputTokenLimit": 1048576, "outputTokenLimit": 65536},
+        ]}));
+        assert_eq!(parsed["gemini-2.5-pro"].context_length, Some(1_048_576));
+
+        let compat = parse_listing(&json!({"data": [
+            {"id": "gemini-2.5-flash", "inputTokenLimit": 1048576},
+        ]}));
+        assert_eq!(compat["gemini-2.5-flash"].context_length, Some(1_048_576));
     }
 
     /// Numbers and numeric strings are both accepted, and a nonsense price is

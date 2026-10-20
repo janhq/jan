@@ -153,6 +153,27 @@ test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
+	# No --locked: this crate gitignores its Cargo.lock, as rust-check.yml assumes.
+	# The unit tests that run the shell for real are ignored on Windows, where
+	# sandbox_spawn covers them (it needs its own main to host the helper re-exec).
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-agent-tools/Cargo.toml --no-default-features --lib --test sandbox_spawn
+
+# protocol/schema.json is committed, and core::cli::protocol_schema fails when it
+# no longer matches the types that define the channel. This is the fix for that
+# failure, not an optional extra: change a protocol type, run this, commit both.
+# `cd` rather than `--manifest-path` because jan-cli is its own workspace and its
+# .cargo/config.toml is what points the build at src-tauri/target. The feature
+# set matches build-cli, so this does not compile a second configuration.
+protocol-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent schema --out ../../protocol/schema.json
+
+# The same guard for the RPC surface: protocol/rpc-schema.json is committed, and
+# core::cli::rpc_schema fails when it no longer matches the types that define the
+# envelope. It covers this surface only - stream-json records are in
+# protocol/schema.json, and ACP (`jan acp`) uses the upstream
+# ACP schema.
+protocol-rpc-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent rpc-schema --out ../../protocol/rpc-schema.json
 
 test: test-prepare install-rust-targets
 	yarn build:mlx-server
@@ -180,15 +201,20 @@ test-ci: test-prepare
 # Compile and test guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
 #
-# This is the only job that compiles jan-cli at all: it is a standalone crate
-# and not a dependency of src-tauri, so the rust-check `cli` matrix entry never
-# reaches it (that entry's --all-targets covers app_lib's own
-# cfg(feature = "cli") test modules, which is a different crate). A bare
-# `cargo check` here built the bin but not the #[cfg(test)] module, which is
-# how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
-# `cargo test` builds and runs those targets, so it subsumes that check.
+# jan-cli is a standalone crate and not a dependency of src-tauri, so the
+# rust-check `cli` app entry never reaches it (that entry's --all-targets covers
+# app_lib's own cfg(feature = "cli") test modules, a different crate). This
+# target runs its tests; the CI lint guarantee is the jan-cli entry of the
+# rust-check `crates` matrix, which `lint-cli` reproduces locally. A bare
+# `cargo check` here once built the bin but not the #[cfg(test)] module, which
+# is how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
 check-cli:
 	cd src-tauri/jan-cli && cargo test --locked --no-default-features --features cli
+
+# The same clippy invocation as the rust-check `crates` matrix jan-cli entry.
+# Kept out of check-cli so the linter workflow does not lint it a second time.
+lint-cli:
+	cd src-tauri/jan-cli && cargo clippy --locked --no-default-features --features cli --all-targets -- -D warnings
 
 # Build MLX server (macOS Apple Silicon only) - always builds, unless
 # JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
@@ -309,9 +335,10 @@ endif
 # cuda12 and cuda13 cannot be combined: the CUDA major is whichever nvcc is on
 # PATH, one toolkit per configure, and both emit libggml-cuda.so.
 #
-# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
-# llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
-# CMakeLists only adds the 50/61/70 virtual archs below CUDA 13). They are still
+# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found ($CUDACXX,
+# else PATH). On x86_64, build.rs passes ggml-cuda's default arch list for that
+# version with Turing as native code (#9185); it only adds the 50/61/70 virtual
+# archs below CUDA 13. They are still
 # separate variants because the resulting binaries cover different GPUs, so
 # check-engine-toolchain asserts the toolkit matches the variant name rather
 # than letting a cuda13 build ship labelled cuda12.

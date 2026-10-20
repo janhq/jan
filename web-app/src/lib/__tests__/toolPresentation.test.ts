@@ -134,6 +134,15 @@ const agent = { kind: 'agent' } as const
 
 describe('describeNativeToolCall for agent tools', () => {
   it('builds a terminal from the command', () => {
+    expect(describeNativeToolCall(agent, 'shell', { command: 'ls -la' })).toEqual({
+      variant: 'terminal',
+      command: 'ls -la',
+    })
+  })
+
+  // Threads saved before the rename carry calls under the old `bash` name;
+  // they still render as a terminal.
+  it('renders a saved bash call as a terminal', () => {
     expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
       variant: 'terminal',
       command: 'ls -la',
@@ -142,7 +151,7 @@ describe('describeNativeToolCall for agent tools', () => {
 
   // The command streams in like any other argument, so a partial one must show.
   it('accepts a partially streamed command', () => {
-    expect(describeNativeToolCall(agent, 'bash', { command: 'git pu' })).toEqual({
+    expect(describeNativeToolCall(agent, 'shell', { command: 'git pu' })).toEqual({
       variant: 'terminal',
       command: 'git pu',
     })
@@ -231,6 +240,19 @@ describe('parseBashOutput', () => {
     expect(r.text).toBe("touch: cannot touch '/etc/x': Read-only file system")
     expect(r.sandboxNote).toContain('writes are limited to the workspace')
     expect(r.sandboxNote).toContain('Network access is disabled')
+  })
+
+  it('surfaces hook config notices separately from the body', () => {
+    const r = parseBashOutput(
+      'ok\n[exit 0]\n[hook config: Hook pre_tool_use matcher in /cfg/[x]/hooks.json ' +
+        'names `bash`, which matches nothing]\n[hook config: second]'
+    )
+    expect(r.exit).toBe(0)
+    expect(r.text).toBe('ok')
+    expect(r.configNotes).toEqual([
+      'Hook pre_tool_use matcher in /cfg/[x]/hooks.json names `bash`, which matches nothing',
+      'second',
+    ])
   })
 
   it('has no sandbox note on an ordinary run', () => {

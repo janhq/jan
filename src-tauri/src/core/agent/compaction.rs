@@ -81,12 +81,39 @@ pub(crate) struct CompactionBudget {
     pub(crate) ratio: f64,
     /// An explicit `[agent].compaction_reserve_tokens`, which wins over `ratio`.
     pub(crate) reserve_tokens: Option<u64>,
+    /// `context_window` is an explicit `[agent].context_window`, which holds
+    /// for every model. Otherwise it was resolved for this run's model, and a
+    /// subagent on a different model must re-resolve its own.
+    pub(crate) window_pinned: bool,
 }
 
 impl CompactionBudget {
     /// Prompt tokens at which this run compacts ahead of dispatching.
     pub(crate) fn trigger_tokens(&self) -> u64 {
         trigger_tokens(self.context_window, self.ratio, self.reserve_tokens)
+    }
+
+    /// This budget for a run on `model` under a dispatcher running
+    /// `parent_model`, with `resolve` sizing a window for a model. Kept when
+    /// the model is the same, the window was configured (which holds for
+    /// every model), or `resolve` cannot size one; otherwise the window is
+    /// the resolved one. Ratio and reserve are the project's and carry over.
+    pub(crate) fn for_model(
+        self,
+        model: &str,
+        parent_model: &str,
+        resolve: impl FnOnce(&str) -> Option<u64>,
+    ) -> Self {
+        if model == parent_model || self.window_pinned {
+            return self;
+        }
+        match resolve(model) {
+            Some(context_window) => Self {
+                context_window,
+                ..self
+            },
+            None => self,
+        }
     }
 }
 
@@ -101,13 +128,24 @@ pub(crate) fn estimate_request_tokens(request: &Value) -> u64 {
     (json_text_len(request) as u64 / 4).max(1)
 }
 
-/// Total length of every string in `value`, at any depth. Walks the value
-/// instead of serializing it: this runs on the first dispatch of every turn,
-/// and the request is already the largest allocation in the loop.
+/// What one image part is assumed to cost. Providers bill an image by its
+/// resolution, not by the length of its base64: Anthropic caps a resized image
+/// near 1.6K tokens, and OpenAI and Gemini typically charge less for the same
+/// frame. Counting the data URL as text scored one three-camera observation at
+/// ~560K tokens and compacted before nearly every request.
+const IMAGE_PART_TOKENS: usize = 1_600;
+
+/// Total length of every string in `value`, at any depth, with each
+/// `image_url` part counted as [`IMAGE_PART_TOKENS`] rather than its payload.
+/// Walks the value instead of serializing it: this runs on the first dispatch
+/// of every turn, and the request is already the largest allocation in the loop.
 fn json_text_len(value: &Value) -> usize {
     match value {
         Value::String(text) => text.len(),
         Value::Array(items) => items.iter().map(json_text_len).sum(),
+        Value::Object(fields) if fields.get("type").and_then(Value::as_str) == Some("image_url") => {
+            IMAGE_PART_TOKENS * 4
+        }
         Value::Object(fields) => fields.values().map(json_text_len).sum(),
         _ => 0,
     }
@@ -250,6 +288,9 @@ pub(crate) async fn fire_pre_compact(
     ctx: &tauri_plugin_agent_tools::tools::ToolContext<'_>,
     message_count: usize,
 ) {
+    // Every compaction path passes through here, so this is telemetry's one
+    // compaction count too. Inert unless the exporter is on.
+    crate::core::agent::otel::compaction(message_count);
     if hooks.is_empty() {
         return;
     }
@@ -317,7 +358,9 @@ pub(crate) async fn compact_conversation(
     };
 
     let kept = &rest[cut..];
-    let summary = summarize(&rest[..cut], model_id, model).await?;
+    // The interactive `/compact` meters nothing: it is not inside a run's
+    // budget, so there is no ceiling for this request to be charged against.
+    let (summary, _usage) = summarize(&rest[..cut], model_id, model).await?;
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
@@ -330,14 +373,20 @@ pub(crate) async fn compact_conversation(
 /// transcript's compaction path, where the summary becomes an event rather than
 /// a rewritten list. The node carries [`SUMMARY_MARKER`], so a later turn reads
 /// it as condensed history instead of mistaking it for a prompt.
+///
+/// Returns the summarizer's own reported usage alongside the node. A compaction
+/// is a paid request like any other -- a turn can make several of them (the
+/// preflight plus up to `MAX_COMPACTION_ATTEMPTS` overflow retries) -- so the
+/// caller folds it into the run's budget instead of letting the spend go
+/// unrecorded. `None` when the summarizer reported none or never ran.
 pub(crate) async fn summarize_span(
     span: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> Result<Value, String> {
+) -> Result<(Value, Option<crate::core::agent::events::Usage>), String> {
     summarize(span, model_id, model)
         .await
-        .map(|text| summary_message(&text))
+        .map(|(text, usage)| (summary_message(&text), usage))
 }
 
 /// Flatten a span of wire messages into a plain-text transcript. Rendering
@@ -407,11 +456,68 @@ fn clamp_middle(text: &str, max: usize) -> String {
 /// the caller must block rather than fabricate a fallback note for a
 /// smaller-window model. Every other failure and empty/unreadable completion
 /// stays recoverable and returns [`FALLBACK_NOTE`].
-async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) -> Result<String, String> {
+/// The reported usage rides back with the text so the caller can charge it: see
+/// [`summarize_span`]. A path that produced no request (an empty span) or a
+/// failure that degraded to [`FALLBACK_NOTE`] reports `None` rather than zeros,
+/// which is the same "nothing to charge" answer without inventing a figure.
+async fn summarize(
+    dropped: &[Value],
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<(String, Option<crate::core::agent::events::Usage>), String> {
     let transcript = clamp_middle(&render_transcript(dropped), SUMMARY_INPUT_CHARS);
     if transcript.trim().is_empty() {
-        return Ok(FALLBACK_NOTE.to_string());
+        return Ok((FALLBACK_NOTE.to_string(), None));
     }
+    // The smol model writes the summary when one is configured: summarizing is
+    // the cheap model's job. Any failure there, an overflow of its smaller
+    // window included, falls back to the run's own model rather than to a
+    // note, so a misconfigured smol model never costs the user their history.
+    // An empty smol reply was still billed: its usage rides along with the
+    // retry's so the run's budget is charged for both requests.
+    let mut smol_usage = None;
+    if let Some((smol_id, smol)) = model.summarizer() {
+        match request_summary(&transcript, smol_id, smol).await {
+            Ok((Some(summary), usage)) => return Ok((summary, usage)),
+            Ok((None, usage)) => {
+                smol_usage = usage;
+                log::warn!(
+                    "agent: compaction summary from {smol_id} was empty, retrying on {model_id}"
+                );
+            }
+            Err(e) => log::warn!(
+                "agent: compaction summary from {smol_id} failed, retrying on {model_id}: {e}"
+            ),
+        }
+    }
+    match request_summary(&transcript, model_id, model).await {
+        Ok((summary, usage)) => {
+            let usage = match (smol_usage, usage) {
+                (Some(smol), Some(run)) => Some(smol.plus(&run)),
+                (smol, run) => smol.or(run),
+            };
+            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
+        }
+        Err(e) => {
+            // A model-switch compaction targets the (smaller) new model: if the
+            // summarizer itself overflows, a note is not safe -- the request
+            // could still overflow and the dropped span would be lost. Propagate.
+            if crate::core::agent::upstream::is_context_overflow_error(&e) {
+                Err(e)
+            } else {
+                Ok((FALLBACK_NOTE.to_string(), smol_usage))
+            }
+        }
+    }
+}
+
+/// One summarizer request for an already rendered `transcript`: the summary
+/// text (`None` when the completion carried none) and the reported usage.
+async fn request_summary(
+    transcript: &str,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<(Option<String>, Option<crate::core::agent::events::Usage>), String> {
     let request = json!({
         "model": model_id,
         "messages": [
@@ -422,27 +528,17 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
     // Discard the summarizer's streamed tokens: a dropped receiver means these
     // never reach the user-facing event stream.
     let (sink, _rx) = mpsc::unbounded_channel();
-    match model.invoke(&request, &sink).await {
-        Ok(completion) => {
-            let summary = extract_choice_message(&completion)
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            Ok(summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()))
-        }
-        Err(e) => {
-            // A model-switch compaction targets the (smaller) new model: if the
-            // summarizer itself overflows, a note is not safe -- the request
-            // could still overflow and the dropped span would be lost. Propagate.
-            if crate::core::agent::upstream::is_context_overflow_error(&e) {
-                Err(e)
-            } else {
-                Ok(FALLBACK_NOTE.to_string())
-            }
-        }
-    }
+    let completion = model.invoke(&request, &sink).await?;
+    let summary = extract_choice_message(&completion)
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    // Charged whatever the body said: a completion whose text was empty still
+    // cost what the provider reported for it.
+    let usage = crate::core::agent::events::Usage::from_completion(&completion);
+    Ok((summary, usage))
 }
 
 #[cfg(test)]
@@ -451,9 +547,35 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
 
+    /// A budget re-sized for another model takes that model's window and
+    /// keeps the project's ratio; the same model, or a configured window,
+    /// keeps the budget as it was.
+    #[test]
+    fn a_budget_for_another_model_takes_that_models_window() {
+        let parent = CompactionBudget {
+            context_window: 1_000_000,
+            ratio: 0.7,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let child = parent.for_model("small", "big", |_| Some(200_000));
+        assert_eq!(child.context_window, 200_000);
+        assert_eq!(child.ratio, 0.7);
+        assert_eq!(parent.for_model("big", "big", |_| Some(1)).context_window, 1_000_000);
+        let pinned = CompactionBudget {
+            window_pinned: true,
+            ..parent
+        };
+        assert_eq!(pinned.for_model("small", "big", |_| Some(1)).context_window, 1_000_000);
+        // A build that cannot size a window keeps the one it has.
+        assert_eq!(parent.for_model("small", "big", |_| None).context_window, 1_000_000);
+    }
+
     /// The `PreCompact` call site: the hook runs, and it is told how much
     /// conversation is about to be summarized away -- the one fact a hook that
     /// archives a transcript needs.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn pre_compact_hooks_fire_with_the_message_count() {
         let root = std::env::temp_dir().join(format!(
@@ -767,6 +889,101 @@ mod tests {
         assert!(crate::core::agent::upstream::is_context_overflow_error(&error));
     }
 
+    /// A run model whose summaries go to a configured smol model first.
+    struct WithSmol<M, S> {
+        run: M,
+        smol: S,
+    }
+    #[async_trait]
+    impl<M: ModelInvoker, S: ModelInvoker> ModelInvoker for WithSmol<M, S> {
+        async fn invoke(
+            &self,
+            request: &Value,
+            events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            self.run.invoke(request, events).await
+        }
+        fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+            Some(("smol", &self.smol))
+        }
+    }
+
+    fn stub(summary: &str) -> StubModel {
+        StubModel {
+            summary: summary.into(),
+            calls: StdMutex::new(0),
+            requests: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// With a smol model configured the summary is its job: the run's model is
+    /// never called, and the request names the smol model's id.
+    #[tokio::test]
+    async fn a_configured_smol_model_writes_the_summary() {
+        let model = WithSmol { run: stub("RUN"), smol: stub("SMOL") };
+        let out = compact_conversation(&convo(20), "m", &model, 4).await.unwrap();
+        assert!(out[1]["content"].as_str().unwrap().contains("SMOL"));
+        assert_eq!(*model.run.calls.lock().unwrap(), 0);
+        assert_eq!(model.smol.requests.lock().await[0]["model"], "smol");
+    }
+
+    /// A smol model that fails, by overflowing its smaller window or otherwise,
+    /// or answers nothing, hands the summary back to the run's model instead
+    /// of costing the history a fallback note or the request an error.
+    #[tokio::test]
+    async fn a_failing_smol_model_falls_back_to_the_run_model() {
+        let overflowing = WithSmol { run: stub("RUN"), smol: OverflowingModel };
+        let failing = WithSmol { run: stub("RUN"), smol: FailingModel };
+        let empty = WithSmol { run: stub("RUN"), smol: stub("  ") };
+        for out in [
+            compact_conversation(&convo(20), "m", &overflowing, 4).await,
+            compact_conversation(&convo(20), "m", &failing, 4).await,
+            compact_conversation(&convo(20), "m", &empty, 4).await,
+        ] {
+            assert!(out.unwrap()[1]["content"].as_str().unwrap().contains("RUN"));
+        }
+        let requests = overflowing.run.requests.lock().await;
+        assert_eq!(requests[0]["model"], "m", "the retry is on the run's own model");
+    }
+
+    /// A model answering `content` and reporting `prompt`/`completion` tokens.
+    struct Billed(&'static str, u64, u64);
+    #[async_trait]
+    impl ModelInvoker for Billed {
+        async fn invoke(
+            &self,
+            _request: &Value,
+            _events: &mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+        ) -> Result<Value, String> {
+            Ok(json!({
+                "choices": [{ "message": { "content": self.0 } }],
+                "usage": {
+                    "prompt_tokens": self.1,
+                    "completion_tokens": self.2,
+                    "total_tokens": self.1 + self.2,
+                },
+            }))
+        }
+    }
+
+    /// An empty smol reply was still billed, so its usage is charged along
+    /// with the run model's retry rather than dropped with the empty text.
+    #[tokio::test]
+    async fn an_empty_smol_reply_is_still_charged() {
+        let model = WithSmol { run: Billed("RUN", 1_000, 50), smol: Billed(" ", 900, 7) };
+        let (_, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        let usage = usage.expect("both requests reported usage");
+        assert_eq!(usage.prompt_tokens, Some(1_900));
+        assert_eq!(usage.completion_tokens, Some(57));
+        assert_eq!(usage.total_tokens, Some(1_957));
+
+        // Still charged when the run model's retry then fails into the note.
+        let model = WithSmol { run: FailingModel, smol: Billed("", 900, 7) };
+        let (note, usage) = summarize_span(&convo(20)[1..17], "m", &model).await.unwrap();
+        assert!(note["content"].as_str().unwrap().contains(FALLBACK_NOTE));
+        assert_eq!(usage.expect("the smol request was billed").completion_tokens, Some(7));
+    }
+
     /// One prompt driving a long agentic run is the normal shape here: a single
     /// user message followed by hundreds of assistant/tool rounds. Compaction
     /// has to bite into that from the top, or the run it was called to rescue
@@ -947,6 +1164,29 @@ mod tests {
         assert!(
             estimate_request_tokens(&with_schemas) > estimate_request_tokens(&bare) + 1_000,
             "tool schemas must count toward the preflight estimate"
+        );
+    }
+
+    #[test]
+    fn an_image_part_costs_a_fixed_estimate_not_its_base64_length() {
+        // Three ~750 KB camera frames: as text, ~560K tokens, far past a 128K
+        // window's trigger; as images, a few thousand.
+        let frame = |_| json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:image/png;base64,{}", "A".repeat(750_000)) },
+        });
+        let observation = json!({
+            "model": "m",
+            "messages": [
+                { "role": "user", "content": "look" },
+                { "role": "tool", "tool_call_id": "c1", "content": (0..3).map(frame).collect::<Vec<_>>() },
+            ],
+        });
+        let estimate = estimate_request_tokens(&observation);
+        assert!(estimate >= 3 * IMAGE_PART_TOKENS as u64, "images still count: {estimate}");
+        assert!(
+            estimate < trigger_tokens(128_000, DEFAULT_COMPACTION_RATIO, None),
+            "one observation must not trigger compaction: {estimate}"
         );
     }
 }

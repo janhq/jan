@@ -112,6 +112,15 @@ export const MessageItem = memo(
     }, [onContinue, message.id])
 
     const isStopped = metadata?.stopped === true
+    // Continue extends partial text; a turn stopped before it wrote any (a tool
+    // call was all it had) has nothing to resume, so offering it would do
+    // nothing.
+    const canContinue =
+      isStopped &&
+      message.parts.some(
+        (p) =>
+          (p.type === 'text' || p.type === 'reasoning') && !!p.text?.trim()
+      )
 
     const handleEdit = useCallback(
       (newText: string) => {
@@ -701,7 +710,7 @@ export const MessageItem = memo(
                 onContinue &&
                 !isStreaming &&
                 isLastMessage &&
-                isStopped && (
+                canContinue && (
                   <Button
                     variant="ghost"
                     size="icon-xs"

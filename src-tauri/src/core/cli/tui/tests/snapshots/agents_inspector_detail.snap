@@ -1,0 +1,93 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
+|╭ subagent ────────────────────────────────────────────────────────────────────╮|
+|│ kv-review  (sub-kv-review-1)                                                 │|
+|│ 2 tools · 2 req · 75% cached  Running                                        │|
+|│                                                                              │|
+|│ Review the key-value store for races.                                        │|
+|│                                                                              │|
+|│ • Reading the store first.                                                   │|
+|│                                                                              │|
+|│ • Explored                                                                   │|
+|│   └ Read kv.rs                                                               │|
+|│                                                                              │|
+|│                                                                              │|
+|│ › check the lock order too                                                   │|
+|│                                                                              │|
+|│                                                                              │|
+|│ • Ran cargo test kv (exit 101)                                               │|
+|│   └ error: 1 test failed                                                     │|
+|╰──────────────────────────────────────────────────────────────────────────────╯|
+|                                                                                |
+|────────────────────────────────────────────────────────────────────────────────|
+|selecting…                                                                      |
+|                                                                                |
+|📂 /snapshot/repo               PgUp/PgDn scroll   m message   x stop   Esc back|
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..57 fg=#56B6C2
+ 0 57..66 fg=#56B6C2 mod=BOLD
+ 1 0..80 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..11 fg=#56B6C2 mod=BOLD
+ 2 11..30 fg=#808080
+ 2 79..80 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 2..30 fg=#808080
+ 3 32..39 fg=#56B6C2 mod=BOLD
+ 3 79..80 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 79..80 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 2..39 mod=DIM | ITALIC
+ 5 79..80 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 79..80 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 2..4 mod=DIM
+ 7 79..80 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 79..80 fg=#56B6C2
+ 9 0..1 fg=#56B6C2
+ 9 2..4 fg=#98C379 mod=BOLD
+ 9 4..12 mod=BOLD
+ 9 79..80 fg=#56B6C2
+10 0..1 fg=#56B6C2
+10 2..6 fg=DarkGray
+10 6..10 fg=#56B6C2
+10 79..80 fg=#56B6C2
+11 0..1 fg=#56B6C2
+11 79..80 fg=#56B6C2
+12 0..1 fg=#56B6C2
+12 2..78 bg=#282C3A
+12 79..80 fg=#56B6C2
+13 0..1 fg=#56B6C2
+13 2..4 fg=#56B6C2 bg=#282C3A mod=BOLD
+13 4..28 fg=#E9ECF2 bg=#282C3A mod=BOLD
+13 28..78 bg=#282C3A
+13 79..80 fg=#56B6C2
+14 0..1 fg=#56B6C2
+14 2..78 bg=#282C3A
+14 79..80 fg=#56B6C2
+15 0..1 fg=#56B6C2
+15 79..80 fg=#56B6C2
+16 0..1 fg=#56B6C2
+16 2..4 fg=Red mod=BOLD
+16 4..7 mod=BOLD
+16 21..32 fg=DarkGray
+16 79..80 fg=#56B6C2
+17 0..1 fg=#56B6C2
+17 2..6 fg=DarkGray
+17 6..26 mod=DIM
+17 79..80 fg=#56B6C2
+18 0..80 fg=#56B6C2
+21 0..10 mod=DIM | ITALIC
+23 0..1 fg=#808080
+23 2..17 fg=#808080
+23 31..80 mod=DIM

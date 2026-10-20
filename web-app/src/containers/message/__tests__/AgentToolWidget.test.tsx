@@ -11,7 +11,7 @@ vi.mock('@/hooks/useToolCallRuntime', () => ({
     selector({ diffs: {} }),
 }))
 
-import { AgentToolWidget } from '../AgentToolWidget'
+import { AgentToolWidget, TerminalWidget } from '../AgentToolWidget'
 
 const renderRunning = (tool: string, target = '') =>
   render(
@@ -89,6 +89,25 @@ describe('AgentToolWidget', () => {
       />
     )
     expect(screen.getByText('tools:toolCall.writing')).toBeInTheDocument()
+  })
+
+  /// The notice rides after the exit marker, where the body is cut; it must
+  /// still reach the user, since the stale hook no longer guards this call.
+  it('shows a hook config notice under a finished shell call', () => {
+    render(
+      <TerminalWidget
+        bar={{ variant: 'terminal', command: 'ls' }}
+        state="output-available"
+        output={
+          'ok\n[exit 0]\n[hook config: Hook pre_tool_use matcher names `bash`]'
+        }
+      />
+    )
+    expect(screen.getByText('ok')).toBeInTheDocument()
+    expect(
+      screen.getByText('Hook pre_tool_use matcher names `bash`')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/\[hook config/)).not.toBeInTheDocument()
   })
 
   it('prompts for a pattern rather than a path on grep', () => {

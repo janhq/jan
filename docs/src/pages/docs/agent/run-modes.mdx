@@ -25,12 +25,11 @@ because the CLI does not sandbox commands by default.
 
 Add `--sandbox` to run them under OS confinement (bubblewrap on Linux, Seatbelt on macOS,
 AppContainer on Windows), confined to the project directory; with it on, if no sandbox can be
-established the `bash` tool refuses to run at all. It can also be turned on permanently - see
+established the `shell` tool refuses to run at all. It can also be turned on permanently - see
 [the shell sandbox](/docs/agent/permissions#the-shell-sandbox).
 
 Some things are denied outright and no mode lifts them:
 
-- `.jan/agent/` internals, so the agent cannot rewrite its own permissions
 - anything listed in `[tools] deny` in `agent.toml`
 - every write and command while plan mode is on
 

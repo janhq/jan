@@ -293,6 +293,14 @@ export function convertThreadMessageToUIMessage(
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
       // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
+      // A call that failed, was denied or was stopped has no output; its error
+      // is kept beside the content (see `toolErrorsOf`) so it reloads as an
+      // error and not as a call that is still running.
+      const errorText = (
+        threadMessage.metadata as
+          | { toolErrors?: Record<string, string> }
+          | undefined
+      )?.toolErrors?.[content.tool_call_id ?? '']
       if (content.output != null) {
         parts.push({
           type: `tool-${content.tool_name}`,
@@ -300,6 +308,14 @@ export function convertThreadMessageToUIMessage(
           input: content.input,
           state: 'output-available',
           output: content.output,
+        })
+      } else if (errorText) {
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'output-error',
+          errorText,
         })
       } else {
         parts.push({
@@ -439,6 +455,30 @@ export function convertThreadMessagesToUIMessages(
   return threadMessages
     .map(convertThreadMessageToUIMessage)
     .filter((msg): msg is UIMessage => msg !== null)
+}
+
+/**
+ * The error text of each tool call in `message` that ended in an error (failed,
+ * denied, or stopped), by tool call id, for the message's persisted metadata.
+ * Such a call has no output to store, so without this it reloads as a call that
+ * never finished. Undefined when there is none.
+ */
+export function toolErrorsOf(
+  message: UIMessage
+): Record<string, string> | undefined {
+  const errors: Record<string, string> = {}
+  for (const part of (message.parts ?? []) as any[]) {
+    if (
+      typeof part?.type === 'string' &&
+      part.type.startsWith('tool-') &&
+      part.state === 'output-error' &&
+      part.toolCallId &&
+      part.errorText
+    ) {
+      errors[part.toolCallId] = part.errorText
+    }
+  }
+  return Object.keys(errors).length > 0 ? errors : undefined
 }
 
 /**

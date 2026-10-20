@@ -180,12 +180,12 @@ describe('artifactsFromTurns', () => {
     expect(artifactsFromTurns([])).toEqual([])
   })
 
-  it('recovers an mp4 a bash download produced (quoted spaces in the name)', () => {
+  it('recovers an mp4 a shell download produced (quoted spaces in the name)', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: {
           command:
             'cd /Users/thinhlpg/Desktop && yt-dlp -f "bv*+ba/b" -o "%(title)s.%(ext)s" "https://youtu.be/x" 2>&1 | tail -30',
@@ -202,12 +202,29 @@ describe('artifactsFromTurns', () => {
     expect(artifacts[0]!.title).toContain('Rick Astley')
   })
 
-  it('recovers a relative mp4 from ls -lh in the bash result', () => {
+  // Sessions saved before the rename name the shell `bash`; their files must
+  // not vanish from the library.
+  it('recovers artifacts from a saved bash turn', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
         name: 'bash',
+        args: { command: 'yt-dlp -o "clip.mp4" "https://youtu.be/x"' },
+        status: 'done',
+        isError: false,
+        result: '[download] Destination: /p/clip.mp4\n[download] 100% of 1MiB',
+      } as CoworkTurn,
+    ]
+    expect(artifactsFromTurns(turns, '/p').map((a) => a.path)).toEqual(['/p/clip.mp4'])
+  })
+
+  it('recovers a relative mp4 from ls -lh in the shell result', () => {
+    const turns = [
+      {
+        role: 'tool',
+        content: '',
+        name: 'shell',
         args: { command: 'cd /p && python3 make.py && ls -lh cat_video.mp4' },
         status: 'done',
         isError: false,
@@ -224,7 +241,7 @@ describe('artifactsFromTurns', () => {
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'cd /p/src && mv cat_video.mp4 /p/cat_video.mp4 && ls -lh /p/cat_video.mp4' },
         status: 'done',
         isError: false,
@@ -241,7 +258,7 @@ describe('artifactsFromTurns', () => {
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'which yt-dlp ffmpeg; ls *.mp4' },
         status: 'done',
         isError: false,
@@ -251,12 +268,12 @@ describe('artifactsFromTurns', () => {
     expect(artifactsFromTurns(turns, '/p')).toEqual([])
   })
 
-  it('ignores errored bash calls', () => {
+  it('ignores errored shell calls', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'python3 make.py 2>&1 && ls -lh out.mp4' },
         status: 'done',
         isError: true,

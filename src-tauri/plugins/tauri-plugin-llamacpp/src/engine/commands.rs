@@ -7,7 +7,9 @@ use std::sync::Arc;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
+use tauri_plugin_hardware::vendor::nvidia::{nvidia_driver, CudaVersion, NvidiaDriver};
 
+use super::driver;
 use super::worker::{self, WorkerHandle};
 use crate::state::LlamacppState;
 
@@ -47,6 +49,11 @@ fn generate_worker_key() -> String {
 /// packaging puts it, alongside the ggml backend modules the worker loads by
 /// scanning its own directory), then beside the app executable for a
 /// `cargo run` build.
+///
+/// A miss names every path that was tried. The file is shipped in the bundle,
+/// so its absence always means the install is damaged rather than that the user
+/// has something to configure, and which directory came up empty is the only
+/// thing that distinguishes the ways that happens.
 fn resolve_worker_exe<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, String> {
@@ -61,32 +68,112 @@ fn resolve_worker_exe<R: tauri::Runtime>(
         ));
     }
 
+    let mut tried: Vec<PathBuf> = Vec::new();
+
     if let Ok(dir) = app_handle.path().resource_dir() {
         let bundled = dir.join("resources/bin").join(worker::worker_file_name());
         if bundled.is_file() {
             return Ok(bundled);
         }
+        tried.push(bundled);
     }
 
-    worker::sidecar_path().ok_or_else(|| {
-        format!(
-            "{} was not found in the app resources or next to the executable",
-            worker::worker_file_name()
-        )
-    })
+    if let Some(sidecar) = worker::sidecar_candidate() {
+        if sidecar.is_file() {
+            return Ok(sidecar);
+        }
+        tried.push(sidecar);
+    }
+
+    Err(worker_missing_message(&tried))
+}
+
+/// Builds the "worker is missing" error from the paths that were tried.
+///
+/// Split out so it can be tested: the caller needs an `AppHandle` to resolve
+/// the bundle directory, but which paths were checked is the whole content of
+/// the message.
+fn worker_missing_message(tried: &[PathBuf]) -> String {
+    let checked = if tried.is_empty() {
+        "no candidate path could be resolved".to_string()
+    } else {
+        tried
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    // A `.old` beside a missing worker is the fingerprint of an interrupted
+    // Windows upgrade: the installer frees the file by renaming it before the
+    // first write, so that copy is left behind when the install does not go
+    // ahead. Worth naming, because the fix is to run the installer again
+    // rather than anything the app can do.
+    let interrupted = tried.iter().any(|p| {
+        let mut old = p.clone().into_os_string();
+        old.push(".old");
+        PathBuf::from(old).exists()
+    });
+    let hint = if interrupted {
+        " A .old copy is present, which means an interrupted install left it renamed; re-run the installer."
+    } else {
+        " The install looks incomplete; re-run the installer."
+    };
+
+    format!(
+        "{} was not found in the app resources or next to the executable (checked: {checked}).{hint}",
+        worker::worker_file_name()
+    )
 }
 
 /// Forwards a worker fault to the frontend, which turns it into the OOM or
 /// backend-error dialog. A mid-generation `GGML_ASSERT` kills the worker
 /// outright, so its log line is the only account of what happened.
-fn fault_emitter<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> worker::FaultCallback {
+///
+/// A driver too old for the engine's CUDA code is told apart from a generic
+/// backend crash, and the banner (which shows this text verbatim) says to
+/// update the driver instead of leaving the user with a bare ggml abort.
+fn fault_emitter<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    versions: Arc<EngineVersions>,
+) -> worker::FaultCallback {
     use tauri::Emitter;
     Arc::new(move |fault: worker::RuntimeFault, line: String| {
         log::error!("jan-llama-worker fault ({fault:?}): {line}");
-        if let Err(e) = app_handle.emit(fault.event_name(), line) {
+        let payload = driver::fault_payload(
+            &line,
+            versions.driver.get(),
+            versions.toolkit.get().copied(),
+        );
+        if let Err(e) = app_handle.emit(fault.event_name(), payload) {
             log::warn!("emit {} failed: {e}", fault.event_name());
         }
     })
+}
+
+/// What the fault callback needs to word a driver error. Filled once, off the
+/// callback's path: it runs on the task draining the worker's stderr, where an
+/// NVML load must not block. A fault before the fill is worded without them.
+#[derive(Default)]
+struct EngineVersions {
+    toolkit: std::sync::OnceLock<CudaVersion>,
+    driver: std::sync::OnceLock<NvidiaDriver>,
+}
+
+/// Reads the NVIDIA driver, writes it and the engine's CUDA toolkit to
+/// `app.log`, and warns when the driver is older than the engine. Without this a
+/// CUDA failure on an old driver cannot be told from any other (#9185).
+async fn record_nvidia_driver(versions: Arc<EngineVersions>) {
+    // NVML loads a shared library and may take a moment on first use.
+    let Ok(Some(driver)) = tokio::task::spawn_blocking(nvidia_driver).await else {
+        return;
+    };
+    let toolkit = versions.toolkit.get().copied();
+    log::info!("{}", driver::startup_line(&driver, toolkit));
+    if let Some(warning) = driver::startup_warning(&driver, toolkit) {
+        log::warn!("{warning}");
+    }
+    let _ = versions.driver.set(driver);
 }
 
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
@@ -109,6 +196,9 @@ pub async fn start_engine<R: tauri::Runtime>(
 
     let exe = resolve_worker_exe(&app_handle)?;
     let api_key = generate_worker_key();
+    // Filled from the handshake, after the worker is up; a fault before then
+    // is worded without it.
+    let versions = Arc::new(EngineVersions::default());
     let handle = worker::spawn(
         &exe,
         &PathBuf::from(preset_path),
@@ -117,10 +207,15 @@ pub async fn start_engine<R: tauri::Runtime>(
         models_max,
         slot_cache_mib,
         envs,
-        Some(fault_emitter(app_handle.clone())),
+        Some(fault_emitter(app_handle.clone(), versions.clone())),
     )
     .await
     .map_err(|e| e.to_string())?;
+    if let Some(v) = handle.cuda_toolkit {
+        let _ = versions.toolkit.set(v);
+    }
+    // Detached: NVML can be slow to load, and start_engine holds the engine lock.
+    tokio::spawn(record_nvidia_driver(versions));
 
     let info = EngineInfo::from(&handle);
     // Subscribed here rather than lazily: an eviction can happen on the very
@@ -186,7 +281,7 @@ async fn abort_unload_watcher(state: &Arc<LlamacppState>) {
 /// Models with a request in flight, from the worker's own `/models` listing.
 /// An unreachable worker reports none -- it cannot be generating.
 async fn busy_models(port: u16, api_key: &str) -> Vec<String> {
-    let Ok(resp) = reqwest::Client::new()
+    let Ok(resp) = worker::loopback_client()
         .get(format!("http://127.0.0.1:{port}/models"))
         .bearer_auth(api_key)
         .send()
@@ -306,7 +401,7 @@ pub async fn reload_engine_models(
         body["slot_cache_mib"] = serde_json::json!(m);
     }
 
-    let resp = reqwest::Client::new()
+    let resp = worker::loopback_client()
         .post(format!("http://127.0.0.1:{port}/models/reload"))
         .bearer_auth(&api_key)
         .json(&body)
@@ -425,7 +520,7 @@ pub async fn erase_thread_slot_state(
         body.insert("model".into(), serde_json::Value::String(m));
     }
     let body = serde_json::Value::Object(body);
-    let client = reqwest::Client::new();
+    let client = worker::loopback_client();
     let resp = client
         .post(format!("http://127.0.0.1:{port}/slots/state/erase"))
         .bearer_auth(&api_key)
@@ -481,9 +576,9 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.4.0`.
+    /// llama.cpp's own version, e.g. `0.5.0`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b10809`.
+    /// The upstream build tag the source was taken from, e.g. `b11146`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.
@@ -541,6 +636,40 @@ mod tests {
             .expect("a missing override must be rejected, not ignored");
         assert!(err.contains("not a file"), "got {err}");
         std::env::remove_var("JAN_LLAMA_WORKER_BIN");
+    }
+
+    // The bundle ships the worker, so this error only ever means a damaged
+    // install. It was reported from the field with nothing but the file name,
+    // which is not enough to tell a wrong resource dir from a file the
+    // installer removed, so the paths have to be in the message.
+    #[test]
+    fn a_missing_worker_names_every_path_it_looked_at() {
+        let tried = [
+            PathBuf::from("/opt/jan/resources/bin").join(worker::worker_file_name()),
+            PathBuf::from("/opt/jan").join(worker::worker_file_name()),
+        ];
+        let msg = worker_missing_message(&tried);
+        assert!(msg.contains("/opt/jan/resources/bin"), "got {msg}");
+        assert!(msg.contains("re-run the installer"), "got {msg}");
+    }
+
+    // The abort path of the Windows installer renames the worker aside before
+    // it writes anything, so a leftover `.old` names the actual cause and a
+    // fix the user can act on.
+    #[test]
+    fn a_leftover_old_copy_is_called_out_as_an_interrupted_install() {
+        let dir = std::env::temp_dir().join(format!("jan-worker-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let worker_path = dir.join(worker::worker_file_name());
+
+        let without = worker_missing_message(std::slice::from_ref(&worker_path));
+        assert!(!without.contains(".old copy"), "got {without}");
+
+        std::fs::write(dir.join(format!("{}.old", worker::worker_file_name())), b"x").unwrap();
+        let with = worker_missing_message(&[worker_path]);
+        assert!(with.contains("interrupted install"), "got {with}");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     // A thread deleted with no model loaded is the common case, so the erase

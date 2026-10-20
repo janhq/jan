@@ -7,6 +7,7 @@
   "lastRequestOverflowed": "Last request overflowed the context window.",
   "contextOverflowDetail": "This request needed {{request}} tokens, but the model’s context window holds only {{context}}.",
   "contextOverflowGeneric": "The request exceeds the available context size.",
+  "emptyReply": "The model finished without returning a reply. Try regenerating, or check the provider settings.",
   "engine": {
     "unknown": "The model engine reported an unexpected error.",
     "MODEL_LOAD_FAILED": "The model could not be loaded.",

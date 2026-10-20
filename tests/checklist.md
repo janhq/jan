@@ -5,7 +5,6 @@
 Before testing, set-up the following in the old version to make sure that we can see the data is properly migrated:
 - [ ] Changing Interface / theme to something that is obviously different from default set-up 
 - [ ] Ensure there are a few chat threads
-- [ ] Ensure there are a few favourites / star threads 
 - [ ] Ensure there are 2 model downloaded 
 - [ ] Ensure there are 2 import on local provider (llama.cpp) 
 - [ ] Modify MCP servers list and add some ENV value to MCP servers
@@ -64,18 +63,15 @@ Before testing, set-up the following in the old version to make sure that we can
 - [ ] Change the following values => close the application => re-open the application => ensure that the change is persisted across session:
 	- [ ] Theme
 	- [ ] Font Size
-	- [ ] Window Background
-	- [ ] App Main View
-	- [ ] Primary
 	- [ ] Accent
-	- [ ] Destructive
-	- [ ] Chat Width
-		- [ ] Ensure that when this value is changed, there is no broken UI caused by it
-	- [ ] Code Block
-	- [ ] Show Line Numbers
 - [ ] [0.7.0] Compact Token Counter will show token counter in side chat input when toggle, if not it will show a small token counter below the chat input
 - [ ] [ENG] Ensure that when click on `Reset` in the `Interface` section, it reset back to the default values
-- [ ] [ENG] Ensure that when click on `Reset` in the `Code Block` section, it reset back to the default values
+- [ ] [0.8.5] Accent color picker (9 color swatches) changes the app accent color
+- [ ] [0.8.5] Notification position dropdown works
+- [ ] [0.8.5] Show token speed toggle works
+- [ ] [0.8.5] Colored user message bubble toggle works
+- [ ] [0.8.5] Auto-generate chat title toggle works (AI-summarized thread titles)
+- [ ] [0.8.5] Render HTML & SVG artifacts toggle works
 
 #### In `Model Providers`:
 
@@ -92,15 +88,9 @@ In `Llama.cpp`:
 - [ ] Check that when click `delete` the model will be removed from the list
 - [ ] Deleted model doesn't appear in the selectable models section in chat input (even in old threads that use the model previously)
 - [ ] Ensure that user can re-import deleted imported models
-- [ ] [0.6.8] Ensure that there is a recommended `llama.cpp` for each system and that it works out of the box for users.
-- [ ] [0.6.10] Change to an older version of llama.cpp backend. Click on `Check for Llamacpp Updates` it should alert that there is a new version.
-- [ ] [0.7.0] Users can cancel a backend download while it is in progress.
-- [ ] [0.6.10] Try `Install backend from file` for a backend and it should show as an option for backend
-- [ ] [0.7.0] User can install a backend from file in both .tar.gz and .zip formats, and the backend appears in the backend selection menu
-- [ ] [0.7.0] A manually installed backend is automatically selected after import, and the backend menu updates to show it as the latest imported backend.
-- [ ] Enable `Auto-Unload Old Models`, and ensure that only one model can run / start at a time. If there are two model running at the time of enable, both of them will be stopped. 
-- [ ] Disable `Auto-Unload Old Models`, and ensure that multiple models can run at the same time.
-- [ ] Enable  `Context Shift` and ensure that context can run for long without encountering memory error. Use the `banana test` by turn on fetch MCP => ask local model to fetch and summarize the history of banana (banana has a very long history on wiki it turns out). It should run out of context memory sufficiently fast if `Context Shift` is not enabled.
+- [ ] [0.8.5] Verify embedded llama.cpp engine (0.5.0) is present and functional on first launch
+- [ ] [0.8.5] Set Max Concurrently Loaded Models to 1 and verify only one model runs at a time; set to 2+ and verify multiple models can coexist
+- [ ] [0.8.5] Enable Context Shift in model settings and verify long conversations do not hit memory errors (enable a fetch MCP server, ask the model to summarize a long Wikipedia article)
 
 In `Model Settings`:
 - [ ] [0.6.8] Ensure that user can change the Jinja chat template of individual model and it doesn't affect the template of other model
@@ -111,13 +101,14 @@ In Remote Model Providers:
 	- [ ] OpenAI
 	- [ ] Anthropic
     - [ ] [0.7.0] Azure
-	- [ ] Cohere
 	- [ ] OpenRouter
 	- [ ] Mistral
 	- [ ] Groq
 	- [ ] Gemini
 	- [ ] Hugging Face
-- [ ] Models should appear as available on the selectable dropdown in chat input once some value is input in the API key field. (it could be the wrong API key)
+	- [ ] [0.8.5] NVIDIA NIM
+	- [ ] [0.8.5] xAI
+	- [ ] [0.8.5] MiniMax
 - [ ] Once a valid API key is used, user can select a model from that provider and chat without any error. 
 - [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
@@ -174,6 +165,8 @@ Ensure that the following section information show up for hardware
 - [ ] When the user click `Always Allow` on the pop up, the tool will retain permission and won't ask for confirmation again. (this applied at an individual tool level, not at the MCP server level)
 - [ ] If `Allow All MCP Tool Permissions` is enabled, in every new thread,  there should not be any confirmation dialog pop up when a tool is called.
 - [ ] When the pop-up appear, make sure that the `Tool Parameters` is also shown with detail in the pop-up
+- [ ] [0.8.5] MCP server creation via Add MCP Server dialog with name/command/args/env works; env values masked in list view
+- [ ] [0.8.5] MCP server Save button disabled when required fields are empty (validation)
 - [ ] [0.6.9] Go to Enter JSON configuration when created a new MCP => paste the JSON config inside => click `Save` => server works
 - [ ] [0.6.9] If individual JSON config format is failed, the MCP server should not be activated
 - [ ] [0.6.9] Make sure that MCP server can be used with streamable-http transport => connect to Smithery and test MCP server
@@ -189,6 +182,7 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.9] Make sure that you can send an image to a Local API Server and it also works (can set up Local API Server as a Custom Provider in Jan to test)
 - [ ] [0.6.10] Make sure you are still able to see API key when server local status is running
 - [ ] [0.7.0] Users can see the Jan API Server Swagger UI by opening the following path in their browser `http://<ip>:<port>`
+- [ ] [0.8.5] Jan CLI commands work: `jan serve`, `jan models list`, `jan acp` (experimental, gated by JAN_EXPERIMENTAL_ACP=1)
 - [ ] [0.7.0] Users can set the trusted host to * in the server configuration to accept requests from all host or without host
 #### In `HTTPS Proxy`:
 - [ ] Model download request goes through proxy endpoint
@@ -209,13 +203,9 @@ Ensure that the following section information show up for hardware
 #### In the left bar:
 - [ ] User can delete an old thread, and it won't reappear even when app restart
 - [ ] Change the title of the thread should update its last modification date and re-organise its position in the correct chronological order on the left bar.
-- [ ] The title of a new thread is the first message from the user.
-- [ ] Users can starred / un-starred threads accordingly
-- [ ] Starred threads should move to `Favourite` section and other threads should stay in `Recent`
-- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents (including from both `Favourite` and `Recent`)
+- [ ] [0.8.5] New thread titles are AI-generated from conversation content (Auto-generate chat title toggle in Settings → Appearance). Verify titles are meaningful and the toggle works
+- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents
 - [ ] `Delete All` should delete only threads in the `Recents` section
-- [ ] `Unstar All` should un-star all of the `Favourites` threads and return them to `Recent`
-
 #### In a thread:
 - [ ] When `New Chat` is clicked, the assistant is set as the last selected assistant, the model selected is set as the last used model, and the user can immediately chat with the model. 
 - [ ] User can conduct multi-turn conversation in a single thread without lost of data (given that `Context Shift` is not enabled)
@@ -243,6 +233,7 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.10] User can click mode's setting on chat, enable Auto-Optimize Settings, and continue chatting with the model without interruption.
   - [ ] Verify this works with at least two models of different sizes (e.g., 1B and 7B).
 - [ ] [0.7.0] When chatting with a model, the UI displays a token usage counter showing the percentage of context consumed.
+- [ ] [0.8.5] Message version navigation (< 1/2 >) appears after editing and regenerating a message
 - [ ] [0.7.0] When chatting with a model, the scroll no longer follows the model’s streaming response; it only auto-scrolls when the user sends a new message
 #### In Project
 
@@ -251,7 +242,13 @@ Ensure that the following section information show up for hardware
 - [ ] [0.7.0] When the user attempts to delete a project, a confirmation dialog must appear warning that this action will permanently delete the project and all its associated threads. 
 - [ ] [0.7.0] The user can successfully delete a project, and all threads contained within that project are also permanently deleted.
 - [ ] [0.7.0] A thread that already belongs to a project cannot be re-added to the same project.
-- [ ] [0.7.0] Favorited threads retain their "favorite" status even after being added to a project
+
+- [ ] [0.8.5] LaTeX formulas render correctly in chat (inline $...$ and block $$...$$ via KaTeX)
+- [ ] [0.8.5] Token speed (tokens/sec) shown during generation; final token count shown under the response
+- [ ] [0.8.5] Context usage percentage meter visible in chat input area
+- [ ] [0.8.5] Message version navigation (< 1/2 >) appears after editing and regenerating a message
+- [ ] [0.8.5] MCP tool-call permission dialog appears before tool execution (when Allow All is disabled); Deny / Allow Once / Allow in thread / Always allow buttons all work
+- [ ] [0.8.5] Projects: create a project, add existing threads, verify threads appear under the project
 
 ## E. Assistants
 - [ ] There is always at least one default Assistant which is Jan
@@ -286,15 +283,27 @@ In `Settings -> General`:
 		- [ ] `~/Library/Application Support/Jan`
 		- [ ] `~/Library/Caches/jan.ai.app`
 	- [ ] On Windows
-		- [ ] `C:\Users<Username>\AppData\Roaming\Jan\`
-		- [ ] `C:\Users<Username>\AppData\Local\jan.ai.app`
-	- [ ] On Linux
+		- [ ] `C:\Users\\<Username>\\AppData\Roaming\Jan\`
+		- [ ] `C:\Users\\<Username>\\AppData\Local\jan.ai.app`
 		- [ ] `~/.cache/Jan`
 		- [ ] `~/.cache/jan.ai.app`
 		- [ ] `~/.local/share/Jan`
 		- [ ] `~/.local/share/jan.ai.app`
 - [ ] Ensure that the fresh install of Jan launch
 - [ ] Do some basic check to see that all function still behaved as expected. To be extra careful, you can go through the whole list again. However, it is more advisable to just check to make sure that all the core functionality like `Thread` and `Model Providers` work as intended.
+
+## H. Channel gate (preview surfaces)
+Some surfaces ship in the `nightly` channel only — Cowork is one of them. The desktop e2e suite covers the stable half on every nightly run; this section is how a release candidate and its nightly build are checked by hand.
+On the stable build:
+- [ ] The left bar shows no `Cowork` tab, and no `Home` / `Cowork` switcher above the chat list
+- [ ] `Settings` has no `Cowork` entry
+- [ ] Opening `/cowork` or `/artifacts` lands on `Home`, and `/settings/cowork` lands on `Settings -> General`
+- [ ] A thread, a project and a chat turn still work — the gate must not take the app down with it
+- [ ] A profile whose last surface was `Cowork` opens on `Home` in the stable build
+On the nightly build of the same commit:
+- [ ] The `Cowork` tab and switcher are present, and `/cowork` opens the surface
+- [ ] `Settings -> Cowork` is present and lists memory, skills and subagents
+
 
 # II. After release
 - [ ] Check that the App Updater works and user can update to the latest release without any problem

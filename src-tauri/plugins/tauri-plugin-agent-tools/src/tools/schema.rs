@@ -9,6 +9,48 @@
 
 use serde_json::{json, Value};
 
+/// The `bash` tool's description before any shell-specific note.
+const BASH_DESCRIPTION: &str = "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output.";
+
+/// The `bash` description for a shell of `kind`. The model writes POSIX by
+/// default, so a PowerShell or cmd host says so up front rather than letting the
+/// first command fail. Fixed per process (the shell is resolved once), so the
+/// tool array stays byte-identical across turns.
+pub fn bash_description(kind: super::proc::ShellKind) -> String {
+    match kind.syntax_note() {
+        Some(note) => format!("{note} {BASH_DESCRIPTION}"),
+        None => BASH_DESCRIPTION.to_string(),
+    }
+}
+
+/// Appended to the shell description when the run offers escalation.
+const ESCALATE_NOTE: &str = " Commands run inside an OS sandbox. If a command that matters to the task fails because of the sandbox (a read-only file system or permission error outside the project, such as a package manager writing its cache, or a blocked download), rerun the same command with `escalate: true` and a one-line `justification`: the user is asked to approve running it outside the sandbox. Never escalate pre-emptively, and never to work around a denial the user gave.";
+
+/// Add the escalation arguments to the `shell` schema in `schemas`, for a run
+/// whose shell is sandboxed and whose user can be asked to lift it. Applied
+/// once per run by the caller, so the array stays byte-identical across turns;
+/// a run without escalation keeps the plain schema.
+pub fn offer_escalation(schemas: &mut [Value]) {
+    for schema in schemas.iter_mut() {
+        let function = &mut schema["function"];
+        if function["name"] != super::SHELL_TOOL {
+            continue;
+        }
+        if let Some(description) = function["description"].as_str() {
+            function["description"] = Value::String(format!("{description}{ESCALATE_NOTE}"));
+        }
+        let properties = &mut function["parameters"]["properties"];
+        properties[super::gate::ESCALATE_ARG] = json!({
+            "type": "boolean",
+            "description": "Ask the user to run this command outside the sandbox. Only after it failed inside it."
+        });
+        properties[super::gate::JUSTIFICATION_ARG] = json!({
+            "type": "string",
+            "description": "Required with escalate: why the command needs to leave the sandbox, shown to the user."
+        });
+    }
+}
+
 /// OpenAI function schemas for the built-in tools, one per `BUILTIN_TOOLS`
 /// entry. `screenshot` is desktop-only (`feature = "tauri"`), so the headless
 /// CLI advertises one fewer.
@@ -97,8 +139,8 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "bash",
-                "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 10000 lines or 256KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background instead of erroring or being killed, and this call returns the path to a file where its full output will be written once it finishes; read that file (with the read tool) to collect the result. The file appears only when the command is done, so its presence means the output is complete.",
+                "name": super::SHELL_TOOL,
+                "description": bash_description(super::proc::shell().kind),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -113,7 +155,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_list",
-                "description": "List the names of your project memory notes (durable facts stored across sessions). No arguments.",
+                "description": "List your memory notes (durable facts stored across sessions): this project's, then your user-wide ones as `user:<name>`. No arguments.",
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
@@ -121,11 +163,11 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_read",
-                "description": "Read one of your project memory notes by name.",
+                "description": "Read a memory note by name. `name` is this project's note, `user:name` a user-wide note, `project:<slug>` another project's index and `project:<slug>/name` one of its notes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension)." }
+                        "name": { "type": "string", "description": "Note name (without the .md extension), optionally scoped with `user:` or `project:<slug>/`." }
                     },
                     "required": ["name"]
                 }
@@ -135,11 +177,11 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_write",
-                "description": "Create or overwrite a project memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short.",
+                "description": "Create or overwrite a memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short. Plain `name` is this project's; `user:name` applies to every project (personal preferences, cross-project conventions).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note." },
+                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note. Prefix `user:` for a user-wide note." },
                         "content": { "type": "string", "description": "Full Markdown content of the note." }
                     },
                     "required": ["name", "content"]
@@ -150,7 +192,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "skill_list",
-                "description": "List the project skills (reusable procedures) with a one-line description of each. No arguments.",
+                "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
@@ -172,12 +214,13 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "skill_write",
-                "description": "Create or update a project skill (a reusable procedure for this project). Keep it concise.",
+                "description": "Create or update a skill (a reusable procedure). Keep it concise.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "name": { "type": "string", "description": "Skill name (without the .md extension); becomes the skill title." },
-                        "content": { "type": "string", "description": "Full Markdown content of the skill." }
+                        "content": { "type": "string", "description": "Full Markdown content of the skill." },
+                        "scope": { "type": "string", "enum": ["project", "user"], "description": "Where to store it: `project` (default) for this project only, `user` for every project." }
                     },
                     "required": ["name", "content"]
                 }
@@ -285,6 +328,28 @@ mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
 
+    /// The plain array never mentions escalation; offering it touches only the
+    /// shell entry, adding both arguments and the when-to-use note.
+    #[test]
+    fn escalation_is_offered_only_on_request_and_only_on_the_shell() {
+        let plain = builtin_tool_schemas();
+        assert!(!serde_json::to_string(&plain).unwrap().contains("escalate"));
+        let mut offered = plain.clone();
+        offer_escalation(&mut offered);
+        for (before, after) in plain.iter().zip(&offered) {
+            if before["function"]["name"] == crate::tools::SHELL_TOOL {
+                let props = &after["function"]["parameters"]["properties"];
+                assert_eq!(props["escalate"]["type"], "boolean");
+                assert_eq!(props["justification"]["type"], "string");
+                assert!(after["function"]["description"].as_str().unwrap().contains("escalate: true"));
+                // Still optional: an ordinary call needs only `command`.
+                assert_eq!(after["function"]["parameters"]["required"], json!(["command"]));
+            } else {
+                assert_eq!(before, after);
+            }
+        }
+    }
+
     /// ls/find/grep stay in BUILTIN_TOOLS (recognized + executable) but are not
     /// advertised -- bash covers listing and searching -- so the offered set is
     /// BUILTIN_TOOLS minus that trio. Every other builtin must be advertised, in
@@ -321,6 +386,39 @@ mod tests {
             BUILTIN_TOOLS.iter().map(|t| t.name.to_string()).collect();
         expected.sort();
         assert_eq!(names, expected);
+    }
+
+    /// `skill_write` gains an optional `scope` (janhq/jan-internal#394):
+    /// additive, so `required` is unchanged and a caller that omits it keeps
+    /// writing to the project. The schema must also serialize to the same
+    /// bytes every time, since the tool array sits in the cached prefix.
+    #[test]
+    fn skill_write_scope_is_optional_and_the_schema_is_deterministic() {
+        let schemas = builtin_tool_schemas();
+        let write = schemas
+            .iter()
+            .find(|s| s["function"]["name"] == "skill_write")
+            .expect("skill_write advertised");
+        let params = &write["function"]["parameters"];
+        assert_eq!(params["required"], json!(["name", "content"]));
+        assert_eq!(params["properties"]["scope"]["type"], "string");
+        assert_eq!(params["properties"]["scope"]["enum"], json!(["project", "user"]));
+        let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
+        let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    /// A PowerShell or cmd host says so before the generic text, so the model
+    /// reads it before writing a command; a POSIX host is unchanged.
+    #[test]
+    fn the_bash_description_leads_with_the_shells_syntax() {
+        use crate::tools::proc::ShellKind;
+        assert_eq!(bash_description(ShellKind::Posix), BASH_DESCRIPTION);
+        for kind in [ShellKind::PowerShell, ShellKind::Cmd] {
+            let d = bash_description(kind);
+            assert!(d.starts_with(kind.syntax_note().unwrap()), "{d}");
+            assert!(d.ends_with(BASH_DESCRIPTION));
+        }
     }
 
     /// The search schemas name the arguments the handlers actually read; a

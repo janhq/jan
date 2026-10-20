@@ -155,6 +155,58 @@ pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> P
     }
 }
 
+/// Why `name` cannot safely be a file name on Windows, or `None` if it can.
+///
+/// The tools address files through a `\\?\` path (the project root is one), and
+/// Windows skips its name normalisation for those. A name Win32 would have
+/// rewritten is then created exactly as given: `aux` and `con.txt` are
+/// reserved device names and `name.` loses its dot, so every ordinary Windows
+/// tool (PowerShell, Explorer, `del`) reports the path as not found, and a
+/// `:` addresses an NTFS alternate data stream that no directory listing shows.
+/// The tool would still report success, so the model believes the file exists.
+///
+/// Platform-independent on purpose, so it is testable anywhere; callers gate it
+/// with [`refuse_windows_name`].
+pub fn windows_name_problem(name: &str) -> Option<&'static str> {
+    if name.contains(':') {
+        return Some("contains ':' (an NTFS alternate data stream, not a file)");
+    }
+    if name.ends_with('.') || name.ends_with(' ') {
+        return Some("ends with a dot or a space, which Windows silently strips");
+    }
+    // Reserved with or without an extension: `con.txt` is as reserved as `con`.
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    // COM1-9 and LPT1-9; Windows also reserves the superscript digits.
+    let numbered = ["COM", "LPT"].iter().any(|prefix| {
+        let mut digit = upper.strip_prefix(prefix).into_iter().flat_map(str::chars);
+        matches!(
+            (digit.next(), digit.next()),
+            (Some('1'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+        )
+    });
+    let reserved =
+        numbered || matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$");
+    reserved.then_some("is a reserved Windows device name")
+}
+
+/// On Windows, the first component of `raw` that is not a valid file name, with
+/// the reason; `None` elsewhere and for a path that is fine. Drive and root
+/// components are not names, and `.`/`..` are resolved before they reach disk.
+pub fn refuse_windows_name(raw: &str) -> Option<(String, &'static str)> {
+    if !cfg!(windows) {
+        return None;
+    }
+    use std::path::Component;
+    Path::new(raw).components().find_map(|c| match c {
+        Component::Normal(name) => {
+            let name = name.to_string_lossy();
+            windows_name_problem(&name).map(|why| (name.into_owned(), why))
+        }
+        _ => None,
+    })
+}
+
 /// The spelling to hand a tool-facing path back to the model: the inverse of
 /// [`resolve_path`]. On Linux a file inside the scratch is named `/tmp/...`, the
 /// one name that works from both the filesystem tools (which remap it back) and
@@ -244,44 +296,73 @@ fn tmp_relative(raw: &str) -> Option<String> {
     Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
-/// The agent's own state directory inside a project. Hidden wholesale rather
-/// than per-subdirectory: it holds `agent.toml`, the skills/memory workspaces
-/// (reachable only through the dedicated skill_*/memory_* tools), and the thread
-/// store with the conversation's own transcripts. None of it is project source,
-/// so a listing that shows it is noise at best and a self-referential read at
-/// worst -- and anything added under it later is hidden by construction.
-pub const JAN_DIR: &str = ".jan";
-
-/// True iff `raw` resolves inside `<project_root>/.jan`. Hidden paths are not
-/// merely denied: `ls`/`find`/`grep` omit them from their output, so the agent
-/// never sees the directory exists. The project instructions file is
-/// `<project_root>/JAN.md`, an ordinary project file, and is unaffected.
-pub fn is_hidden_jan_path(project_root: &Path, raw: &str) -> bool {
-    let Ok(root) = project_root.canonicalize() else {
+/// True iff `raw` resolves inside `hidden` (the Jan home, `~/.jan`), which holds
+/// `config.toml` with provider keys and hooks plus every project's store. The
+/// memory/skill tools reach the store by name and never come through here.
+///
+/// One exception: a project that itself lives under `hidden` (a Jan worktree in
+/// `~/.jan/worktrees/`) is the agent's working tree, so paths inside it stay
+/// reachable. The home itself as the project grants nothing.
+pub fn in_hidden_root(project_root: &Path, scratch: Option<&Path>, hidden: &Path, raw: &str) -> bool {
+    let Ok(hidden) = canonicalize_lenient(hidden) else {
         return false;
     };
-    let abs = if Path::new(raw).is_absolute() {
-        PathBuf::from(raw)
-    } else {
-        root.join(raw)
-    };
-    let Ok(resolved) = canonicalize_lenient(&abs) else {
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, raw)) else {
         return false;
     };
-    resolved.starts_with(root.join(JAN_DIR))
+    if !resolved.starts_with(&hidden) {
+        return false;
+    }
+    match project_root.canonicalize() {
+        Ok(root) if root != hidden && root.starts_with(&hidden) => !resolved.starts_with(&root),
+        _ => true,
+    }
 }
 
-/// True iff a shell command references a hidden path (best-effort token scan).
-/// Splits on whitespace and shell metacharacters and checks each token so
-/// `cat .jan/agent/agent.toml` and its quoted/redirected variants are caught.
-/// Best-effort is enough only because the OS sandbox masks the directory too
-/// (see [`super::jail::Policy::hide_root`]); this check exists to turn an
-/// evasion-free attempt into a clear error instead of an empty directory.
-pub fn command_touches_hidden_jan_path(project_root: &Path, command: &str) -> bool {
+/// True iff a shell command names a path inside `hidden` (best-effort token
+/// scan). `~` and `$HOME` are expanded, since `cat ~/.jan/config.toml` is the
+/// obvious spelling. Best-effort is enough only because the OS sandbox masks
+/// the directory too (see [`super::jail::Policy::hide_root`]); this turns a
+/// plain attempt into a clear refusal instead of an empty directory.
+pub fn command_touches_hidden_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    hidden: &Path,
+    command: &str,
+) -> bool {
+    let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
     command
-        .split(|c: char| c.is_whitespace() || ";|&><()\"'`".contains(c))
+        .split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c))
         .filter(|t| !t.is_empty())
-        .any(|t| is_hidden_jan_path(project_root, t))
+        .any(|t| {
+            let expanded = match &home {
+                Some(home) => expand_home(t, home),
+                None => t.to_string(),
+            };
+            in_hidden_root(project_root, scratch, hidden, &expanded)
+        })
+}
+
+fn expand_home(token: &str, home: &str) -> String {
+    for prefix in ["${HOME}", "$HOME", "~"] {
+        if let Some(rest) = token.strip_prefix(prefix) {
+            if rest.is_empty() || rest.starts_with('/') {
+                return format!("{home}{rest}");
+            }
+        }
+    }
+    token.to_string()
+}
+
+/// `hidden` spelled under `base`, the way a directory walk rooted at `base`
+/// names its entries, or `None` when the walk cannot reach it. Lets `ls`,
+/// `find` and `grep` skip the Jan home with a prefix test per entry instead of
+/// canonicalizing every file they visit.
+pub fn hidden_under(base: &Path, hidden: &Path) -> Option<PathBuf> {
+    let base_canon = base.canonicalize().ok()?;
+    let hidden_canon = canonicalize_lenient(hidden).ok()?;
+    let rest = hidden_canon.strip_prefix(&base_canon).ok()?;
+    Some(base.join(rest))
 }
 
 /// True when `target` *claims* to be inside a trusted root but resolves outside
@@ -380,6 +461,45 @@ fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
 }
 
 #[cfg(test)]
+mod windows_name_tests {
+    use super::windows_name_problem as problem;
+
+    #[test]
+    fn reserved_device_names_are_refused_with_or_without_an_extension() {
+        for n in [
+            "con", "CON", "Prn", "aux", "NUL", "con.txt", "aux.tar.gz", "nul.", "CONIN$", "CONOUT$",
+            "com1", "COM9", "lpt1", "LPT9", "com1.log", "com\u{b9}", "lpt\u{b2}.txt", "aux .txt",
+        ] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn names_that_only_resemble_reserved_ones_are_fine() {
+        for n in [
+            "auxiliary", "console.log", "com0", "com10", "lpt0", "com", "lpt", "conf", "nulls.txt",
+            "a.con", "my.aux", ".aux", "x.nul.y", "readme.md", ".gitignore", "a.b.c", "x y.txt",
+        ] {
+            assert_eq!(problem(n), None, "{n:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn trailing_dot_or_space_and_colon_are_refused() {
+        for n in ["name.", "name ", "name.txt.", "a.txt:stream", "a.txt::$DATA", "C:x"] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn the_refusal_gives_a_reason_the_model_can_act_on() {
+        assert!(problem("aux").unwrap().contains("reserved"));
+        assert!(problem("a:b").unwrap().contains("stream"));
+        assert!(problem("a.").unwrap().contains("dot or a space"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -459,63 +579,6 @@ mod tests {
         let root = unique_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
         assert_eq!(escapes_project(&root, None, "sub/newfile.txt"), Ok(false));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn hidden_path_covers_the_whole_jan_dir() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent/skills")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/memory")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"x").unwrap();
-        // Config, the agent dir listing, unknown config files.
-        assert!(is_hidden_jan_path(&root, ".jan/agent/agent.toml"));
-        assert!(is_hidden_jan_path(&root, "./.jan/agent/agent.toml"));
-        assert!(is_hidden_jan_path(
-            &root,
-            root.join(".jan/agent/agent.toml").to_str().unwrap()
-        ));
-        assert!(is_hidden_jan_path(&root, ".jan/agent"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/secrets.env"));
-        // skills/ and memory/ are reachable only via the dedicated tools, so they
-        // are hidden from the general filesystem tools too.
-        assert!(is_hidden_jan_path(&root, ".jan/agent/skills/deploy.md"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/memory/notes.md"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/AGENT.md"));
-        // The whole `.jan` dir is hidden, not just `agent/`: the thread store
-        // holds the running conversation's own transcripts, and future state
-        // added beside it is covered without another carve-out.
-        assert!(is_hidden_jan_path(&root, ".jan"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/threads/t1"));
-        // Ordinary project files, including the instructions file, are untouched.
-        assert!(!is_hidden_jan_path(&root, "JAN.md"));
-        assert!(!is_hidden_jan_path(&root, "src/main.rs"));
-        // A sibling whose name merely starts with `.jan` is not inside it.
-        assert!(!is_hidden_jan_path(&root, ".janitor"));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn command_scan_flags_hidden_paths() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"x").unwrap();
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "cat .jan/agent/agent.toml"
-        ));
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "grep foo < .jan/agent/agent.toml"
-        ));
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "cat .jan/agent/AGENT.md"
-        ));
-        assert!(command_touches_hidden_jan_path(&root, "ls -la .jan"));
-        assert!(!command_touches_hidden_jan_path(&root, "cat JAN.md"));
-        assert!(!command_touches_hidden_jan_path(&root, "ls -la src"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -621,11 +684,16 @@ mod tests {
                 file.to_string_lossy()
             );
         }
-        // Outside the scratch the path is untouched either way.
+        // Outside the scratch the path is only lexically normalized, which on
+        // Windows also spells it with the native separator.
         let other = PathBuf::from("/elsewhere/out.txt");
         assert_eq!(
             scratch_display_path(Some(&scratch), &other),
-            other.to_string_lossy()
+            if cfg!(windows) {
+                r"\elsewhere\out.txt"
+            } else {
+                "/elsewhere/out.txt"
+            }
         );
     }
 
@@ -694,7 +762,10 @@ mod tests {
     }
 
     /// `/tmpx` and `/tmp-archive` are not descendants of `/tmp` and must not be
-    /// silently redirected into the scratch.
+    /// silently redirected into the scratch. Unix only: the remap exists only
+    /// where a sandbox mounts the scratch over `/tmp`, and on Windows `/tmp` is
+    /// not an absolute path at all.
+    #[cfg(unix)]
     #[test]
     fn tmp_lookalikes_are_not_remapped() {
         assert_eq!(tmp_relative("/tmp"), Some(String::new()));
@@ -814,5 +885,79 @@ mod tests {
         assert!(!symlink_escapes_any_root(&ws, None, &roots, &link));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    /// The home-as-project case from the #9065 review: the Jan home sits inside
+    /// the project, and everything under it is hidden, not just config.toml.
+    #[test]
+    fn the_jan_home_is_hidden_when_the_project_contains_it() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(jan.join("projects/p-1/memory")).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        assert!(in_hidden_root(&home, None, &jan, ".jan/config.toml"));
+        assert!(in_hidden_root(&home, None, &jan, "./.jan/../.jan/config.toml"));
+        assert!(in_hidden_root(&home, None, &jan, jan.join("config.toml").to_str().unwrap()));
+        assert!(in_hidden_root(&home, None, &jan, ".jan"));
+        assert!(in_hidden_root(&home, None, &jan, ".jan/projects/p-1/agent.toml"));
+        // Not yet existing files are hidden too, so a write cannot create one.
+        assert!(in_hidden_root(&home, None, &jan, ".jan/hooks.toml"));
+        assert!(!in_hidden_root(&home, None, &jan, "JAN.md"));
+        assert!(!in_hidden_root(&home, None, &jan, ".janitor"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A Jan worktree is the agent's own working tree even though it lives
+    /// under `~/.jan`; the rest of the home stays hidden from it.
+    #[test]
+    fn a_worktree_inside_the_jan_home_keeps_its_own_tree() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let wt = jan.join("worktrees/repo-1/feature");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        assert!(!in_hidden_root(&wt, None, &jan, "src/main.rs"));
+        assert!(!in_hidden_root(&wt, None, &jan, wt.to_str().unwrap()));
+        assert!(in_hidden_root(&wt, None, &jan, "../../../config.toml"));
+        assert!(in_hidden_root(&wt, None, &jan, jan.join("config.toml").to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn command_scan_expands_home_spellings() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        for cmd in [
+            "cat ~/.jan/config.toml",
+            "cat $HOME/.jan/config.toml",
+            "grep key < ${HOME}/.jan/config.toml",
+            "cat ../.jan/config.toml",
+            "F=~/.jan/config.toml",
+        ] {
+            assert!(command_touches_hidden_root(&project, None, &jan, cmd), "{cmd}");
+        }
+        let abs = format!("cat '{}'", jan.join("config.toml").display());
+        assert!(command_touches_hidden_root(&project, None, &jan, &abs));
+        assert!(!command_touches_hidden_root(&project, None, &jan, "cat ~/.bashrc"));
+        assert!(!command_touches_hidden_root(&project, None, &jan, "ls -la src"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn hidden_under_spells_the_home_the_way_a_walk_does() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        assert_eq!(hidden_under(&home, &jan), Some(home.join(".jan")));
+        let dot = home.join(".");
+        assert_eq!(hidden_under(&dot, &jan), Some(dot.join(".jan")));
+        let other = home.join("proj");
+        std::fs::create_dir_all(&other).unwrap();
+        assert_eq!(hidden_under(&other, &jan), None);
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

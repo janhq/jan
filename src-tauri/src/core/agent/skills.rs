@@ -21,9 +21,48 @@ use serde::Deserialize;
 use tauri_plugin_agent_tools::skills::{DEFAULT_JAN_SKILL, DEFAULT_JAN_SKILL_NAME};
 use tauri_plugin_agent_tools::workspace::workspace_filename;
 
-/// `<project_root>/.jan/agent/skills`.
+/// `<store_root>/skills`, in the project's store (see `project::store_root`).
 pub(crate) fn skills_dir(root: &Path) -> PathBuf {
-    root.join(".jan").join("agent").join("skills")
+    crate::core::agent::project::store_root(root).join("skills")
+}
+
+/// The user-wide skill store root: `~/.jan` (skills live in its `skills/`,
+/// beside the user memory scope `~/.jan/memory`). Resolved through
+/// [`crate::core::agent::project::jan_home`], so test builds point at a
+/// per-process temp home. `None` when there is no usable home directory.
+pub(crate) fn user_store_root() -> Option<PathBuf> {
+    crate::core::agent::project::jan_home()
+}
+
+/// `~/.jan/skills`, the user scope: skills visible from every project.
+pub(crate) fn user_skills_dir() -> Option<PathBuf> {
+    user_store_root().map(|home| tauri_plugin_agent_tools::skills::skills_dir(&home))
+}
+
+/// Where a skill came from. Resolution order (earlier shadows later on the
+/// same plain name): project, then user, then the built-in `jan` skill.
+/// Plugin skills are always qualified `<plugin>:<name>`, so they never collide
+/// with a plain name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillScope {
+    Project,
+    Plugin,
+    User,
+    Builtin,
+}
+
+#[cfg(any(feature = "cli", test))]
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+impl SkillScope {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SkillScope::Project => "project",
+            SkillScope::Plugin => "plugin",
+            SkillScope::User => "user",
+            SkillScope::Builtin => "built-in",
+        }
+    }
 }
 
 /// One skill on disk, located by its identity name (folder name or flat stem).
@@ -36,6 +75,20 @@ pub(crate) struct SkillEntry {
     pub is_folder: bool,
     /// The plugin this skill ships in (`Some`), or `None` for a project skill.
     pub plugin: Option<String>,
+    /// True for a skill from the user scope (`~/.jan/skills`).
+    pub user: bool,
+}
+
+impl SkillEntry {
+    pub(crate) fn scope(&self) -> SkillScope {
+        if self.plugin.is_some() {
+            SkillScope::Plugin
+        } else if self.user {
+            SkillScope::User
+        } else {
+            SkillScope::Project
+        }
+    }
 }
 
 /// Summary for the management UI / prompt catalog.
@@ -51,6 +104,8 @@ pub struct SkillMeta {
     pub user_invocable: bool,
     /// Offered to the model (system-prompt catalog, `skill_list`/`skill_read`).
     pub model_invocable: bool,
+    /// Which layer the skill resolved from.
+    pub scope: SkillScope,
 }
 
 /// Frontmatter fields we recognize; everything else is ignored.
@@ -174,8 +229,14 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
     };
     for entry in rd.flatten() {
         let path = entry.path();
-        let Ok(ft) = entry.file_type() else { continue };
-        if ft.is_dir() {
+        // `metadata` follows symlinks (unlike `DirEntry::file_type`), so a
+        // symlinked skill folder or file is listed like a real one. Dangling
+        // links and symlink loops fail here (ELOOP) and are skipped; nothing
+        // below recurses, so a loop can never be walked.
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if meta.is_dir() {
             let skill_md = path.join("SKILL.md");
             if skill_md.is_file() {
                 if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
@@ -184,16 +245,18 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
                         file: skill_md,
                         is_folder: true,
                         plugin: None,
+                        user: false,
                     });
                 }
             }
-        } else if path.extension().and_then(|x| x.to_str()) == Some("md") {
+        } else if meta.is_file() && path.extension().and_then(|x| x.to_str()) == Some("md") {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 consider(SkillEntry {
                     name: stem.to_string(),
                     file: path,
                     is_folder: false,
                     plugin: None,
+                    user: false,
                 });
             }
         }
@@ -203,14 +266,74 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
     out
 }
 
-/// All project skills (`.jan/agent/skills`), sorted by name.
+/// All project skills (`<store_root>/skills`), sorted by name. A linked git
+/// worktree shares its main checkout's skills because
+/// [`crate::core::agent::project::store_root`] maps both to one store.
 pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
-    scan_skill_dir(&skills_dir(root))
+    let mut out = scan_skill_dir(&skills_dir(root));
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
 
-/// The plugins directory `.jan/agent/plugins`.
+/// All user-scope skills (`~/.jan/skills`), sorted by name.
+pub(crate) fn discover_user() -> Vec<SkillEntry> {
+    let Some(dir) = user_skills_dir() else {
+        return Vec::new();
+    };
+    scan_skill_dir(&dir)
+        .into_iter()
+        .map(|e| SkillEntry { user: true, ..e })
+        .collect()
+}
+
+/// A skill file's identity on disk for deduplication: its canonical path, so
+/// the same folder reached through two symlinks (or a project `skills/` that
+/// is itself a link to `~/.jan/skills`) counts once.
+fn canonical(file: &Path) -> PathBuf {
+    std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf())
+}
+
+/// A skill that lost to a higher-precedence one of the same name.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(any(feature = "cli", test)), allow(dead_code))]
+pub(crate) struct Shadowed {
+    pub entry: SkillEntry,
+    /// The scope of the skill that wins.
+    pub by: SkillScope,
+}
+
+/// The plugins directory `<store_root>/plugins`.
 pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
-    root.join(".jan").join("agent").join("plugins")
+    crate::core::agent::project::store_root(root).join("plugins")
+}
+
+/// Locate an installed plugin's directory by name. `None` when not installed.
+pub(crate) fn find_plugin_dir(root: &Path, plugin: &str) -> Option<PathBuf> {
+    Some(plugins_dir(root).join(plugin)).filter(|p| p.is_dir())
+}
+
+/// Visit every installed plugin directory. Skips non-directories and
+/// interrupted `.installing-*` staging directories (a partially-copied plugin
+/// must not leak its payload mid-install). Shared by the skill, command,
+/// agent, and plugin-listing discovery passes so they all agree on what is
+/// installed.
+pub(crate) fn for_each_plugin_dir(root: &Path, mut visit: impl FnMut(&str, &Path)) {
+    let Ok(rd) = std::fs::read_dir(plugins_dir(root)) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if plugin.starts_with(".installing-") {
+            continue;
+        }
+        visit(plugin, &path);
+    }
 }
 
 /// Recursively yield every `*.md` file under `dir`, skipping dotfiles and
@@ -263,53 +386,121 @@ pub(crate) fn invocation_wrapper(name: &str, kind: &str) -> String {
 /// (folder and flat forms, same rules as project skills) plus an optional
 /// single `SKILL.md` at the plugin root (a repo that is itself one skill).
 pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
-    let dir = plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
     let mut out: Vec<SkillEntry> = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        // Ignore interrupted `.installing-*` staging directories, matching the
-        // command/agent loaders: a partially-copied plugin must not leak its
-        // skills into the catalog during an install.
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
+    for_each_plugin_dir(root, |plugin, path| {
         let mut tagged = Vec::new();
-        for e in scan_skill_dir(&path.join("skills")) {
-            tagged.push(SkillEntry {
-                plugin: Some(plugin.to_string()),
-                ..e
-            });
-        }
-        let root_md = path.join("SKILL.md");
-        if root_md.is_file() {
-            tagged.push(SkillEntry {
-                name: plugin.to_string(),
-                file: root_md,
-                is_folder: false,
-                plugin: Some(plugin.to_string()),
-            });
-        }
-        out.extend(tagged);
-    }
+            for e in scan_skill_dir(&path.join("skills")) {
+                tagged.push(SkillEntry {
+                    plugin: Some(plugin.to_string()),
+                    ..e
+                });
+            }
+            let root_md = path.join("SKILL.md");
+            if root_md.is_file() {
+                tagged.push(SkillEntry {
+                    name: plugin.to_string(),
+                    file: root_md,
+                    is_folder: false,
+                    plugin: Some(plugin.to_string()),
+                    user: false,
+                });
+            }
+            out.extend(tagged);
+    });
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
 
-/// Project skills followed by plugin skills (qualified). Project skills shadow
-/// plugin skills of the same plain name.
+/// Every active skill in precedence order: project skills, plugin skills
+/// (qualified `<plugin>:<name>`), then user skills not shadowed by a project
+/// skill of the same name. The same file reached twice (symlinks) is kept
+/// once, at its highest-precedence location.
 pub(crate) fn discover_all(root: &Path) -> Vec<SkillEntry> {
-    let mut out = discover(root);
-    out.extend(discover_plugins(root));
-    out
+    discover_layers(root).0
+}
+
+/// [`discover_all`] plus the entries it dropped because a higher layer owns
+/// the name. A duplicate of the same canonical file is not reported as
+/// shadowed: it is one skill seen twice, not two skills competing.
+pub(crate) fn discover_layers(root: &Path) -> (Vec<SkillEntry>, Vec<Shadowed>) {
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut out: Vec<SkillEntry> = Vec::new();
+    for e in discover(root).into_iter().chain(discover_plugins(root)) {
+        if seen.insert(canonical(&e.file)) {
+            out.push(e);
+        }
+    }
+    let mut shadowed = Vec::new();
+    for e in discover_user() {
+        if !seen.insert(canonical(&e.file)) {
+            continue;
+        }
+        if out.iter().any(|o| o.plugin.is_none() && o.name == e.name) {
+            shadowed.push(Shadowed {
+                entry: e,
+                by: SkillScope::Project,
+            });
+            continue;
+        }
+        out.push(e);
+    }
+    (out, shadowed)
+}
+
+/// One row of the `/skills` listing: every discovered skill, its scope, and
+/// which scope shadows it, if any. Sorted by name, winners before losers.
+#[cfg(any(feature = "cli", test))]
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) struct SkillReportRow {
+    pub name: String,
+    pub scope: SkillScope,
+    pub description: String,
+    pub shadowed_by: Option<SkillScope>,
+    pub user_invocable: bool,
+    pub model_invocable: bool,
+    pub enabled: bool,
+}
+
+/// The `/skills` listing: active skills (both invocation sides), the built-in
+/// `jan` skill, and every shadowed entry, marked. `enabled` is the
+/// `[skills].enabled` whitelist, reported rather than filtered.
+#[cfg(any(feature = "cli", test))]
+pub(crate) fn report(root: &Path, enabled: &[String]) -> Vec<SkillReportRow> {
+    let (active, shadowed) = discover_layers(root);
+    let row = |e: &SkillEntry, shadowed_by: Option<SkillScope>| {
+        let parsed = parse(&std::fs::read_to_string(&e.file).unwrap_or_default());
+        SkillReportRow {
+            name: qualified_name(e),
+            scope: e.scope(),
+            description: describe(&parsed),
+            shadowed_by,
+            user_invocable: parsed.user_invocable,
+            model_invocable: parsed.model_invocable,
+            enabled: is_enabled(enabled, e),
+        }
+    };
+    let mut rows: Vec<SkillReportRow> = active.iter().map(|e| row(e, None)).collect();
+    rows.extend(shadowed.iter().map(|s| row(&s.entry, Some(s.by))));
+    let builtin = default_jan_skill_meta();
+    let jan_owner = active
+        .iter()
+        .find(|e| e.plugin.is_none() && e.name == DEFAULT_JAN_SKILL_NAME)
+        .map(SkillEntry::scope);
+    rows.push(SkillReportRow {
+        name: builtin.name,
+        scope: SkillScope::Builtin,
+        description: builtin.description,
+        shadowed_by: jan_owner,
+        user_invocable: true,
+        model_invocable: true,
+        enabled: enabled.is_empty() || enabled.iter().any(|n| n == DEFAULT_JAN_SKILL_NAME),
+    });
+    rows.sort_by(|a, b| {
+        a.name
+            .cmp(&b.name)
+            .then(a.shadowed_by.is_some().cmp(&b.shadowed_by.is_some()))
+    });
+    rows
 }
 
 /// The user-facing identity of a skill entry: `name` for project skills,
@@ -321,30 +512,40 @@ pub(crate) fn qualified_name(entry: &SkillEntry) -> String {
     }
 }
 
-/// Locate a project skill by name, preferring the folder form. Plugin skills
-/// are not resolved here — `resolve_readable` handles those.
+/// Locate a plain (unqualified) skill by name: the project store first, then
+/// the user scope, each preferring the folder form. Plugin skills are not
+/// resolved here — `resolve_readable` handles those.
 fn resolve(root: &Path, name: &str) -> Result<SkillEntry, String> {
     let stem = safe_stem(name)?;
-    let dir = skills_dir(root);
-    let folder = dir.join(&stem).join("SKILL.md");
+    if let Some(entry) = resolve_in_dir(&skills_dir(root), &stem, false) {
+        return Ok(entry);
+    }
+    if let Some(entry) = user_skills_dir().and_then(|dir| resolve_in_dir(&dir, &stem, true)) {
+        return Ok(entry);
+    }
+    Err(format!("ERROR: skill '{name}' not found"))
+}
+
+/// Locate `stem` in one plain skills directory, folder form first.
+fn resolve_in_dir(dir: &Path, stem: &str, user: bool) -> Option<SkillEntry> {
+    let folder = dir.join(stem).join("SKILL.md");
     if folder.is_file() {
-        return Ok(SkillEntry {
-            name: stem,
+        return Some(SkillEntry {
+            name: stem.to_string(),
             file: folder,
             is_folder: true,
             plugin: None,
+            user,
         });
     }
     let flat = dir.join(format!("{stem}.md"));
-    if flat.is_file() {
-        return Ok(SkillEntry {
-            name: stem,
-            file: flat,
-            is_folder: false,
-            plugin: None,
-        });
-    }
-    Err(format!("ERROR: skill '{name}' not found"))
+    flat.is_file().then(|| SkillEntry {
+        name: stem.to_string(),
+        file: flat,
+        is_folder: false,
+        plugin: None,
+        user,
+    })
 }
 
 /// Locate a skill inside an installed plugin: `plugins/<plugin>/skills/<plain>`
@@ -355,7 +556,7 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
     if safe_stem(plugin).ok()? != plugin || safe_stem(plain).ok()? != plain {
         return None;
     }
-    let base = plugins_dir(root).join(plugin);
+    let base = find_plugin_dir(root, plugin)?;
     let folder = base.join("skills").join(plain).join("SKILL.md");
     if folder.is_file() {
         return Some(SkillEntry {
@@ -363,6 +564,7 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
             file: folder,
             is_folder: true,
             plugin: Some(plugin.to_string()),
+            user: false,
         });
     }
     let flat = base.join("skills").join(format!("{plain}.md"));
@@ -372,6 +574,7 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
             file: flat,
             is_folder: false,
             plugin: Some(plugin.to_string()),
+            user: false,
         });
     }
     if plain == plugin {
@@ -382,14 +585,15 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
                 file: root_md,
                 is_folder: false,
                 plugin: Some(plugin.to_string()),
+                user: false,
             });
         }
     }
     None
 }
 
-/// Locate any readable skill: project skill first (project shadows plugins),
-/// then the explicit `<plugin>:<plain>` form, then a plain name that is unique
+/// Locate any readable skill: a plain project or user skill first (project
+/// shadows user), then the explicit `<plugin>:<plain>` form, then a plain name that is unique
 /// across installed plugins. Used by `read_raw` so `skill_read` and invocation
 /// dispatch reach plugin skills with the same names the catalogs advertise.
 pub(crate) fn resolve_readable(root: &Path, name: &str) -> Result<SkillEntry, String> {
@@ -441,6 +645,7 @@ fn meta_for(entry: &SkillEntry, parsed: &ParsedSkill) -> SkillMeta {
         plugin: entry.plugin.clone(),
         user_invocable: parsed.user_invocable,
         model_invocable: parsed.model_invocable,
+        scope: entry.scope(),
     }
 }
 /// Whether a name refers to the built-in Jan skill (aliased `jan`), which is
@@ -462,6 +667,7 @@ fn default_jan_skill_meta() -> SkillMeta {
         plugin: None,
         user_invocable: true,
         model_invocable: true,
+        scope: SkillScope::Builtin,
     }
 }
 
@@ -538,12 +744,21 @@ pub(crate) fn user_catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
     side_catalog(root, enabled, |p| p.user_invocable)
 }
 
+/// Every discovered skill (project + plugin + user), both invocation sides, ignoring
+/// the enabled whitelist — the full disk truth. This is what `/reload skills`
+/// diffs against the previous scan, so an edit or install shows up as an
+/// added/removed/changed entry regardless of who may invoke it.
+#[cfg(feature = "cli")]
+pub(crate) fn full_catalog(root: &Path) -> Vec<SkillMeta> {
+    side_catalog(root, &[], |_| true)
+}
+
 /// Metadata for every skill one plugin ships (both invocation sides), for the
 /// `/plugin list` view. The enabled whitelist is intentionally ignored here:
 /// the management view shows what the plugin contributes, not what is active.
 #[cfg(feature = "cli")]
 pub(crate) fn plugin_skill_metas(root: &Path, plugin: &str) -> Vec<SkillMeta> {
-    let mut metas = side_catalog(root, &[], |_| true);
+    let mut metas = full_catalog(root);
     metas.retain(|m| m.plugin.as_deref() == Some(plugin));
     metas
 }
@@ -673,9 +888,60 @@ pub(crate) fn build_invocation_message(
     Ok((msg, meta.description))
 }
 
-/// Find a skill in a user-side catalog by the name a human typed: exact
-/// match first (project names and the explicit `<plugin>:<skill>` form), then
-/// a plain name that is unique across plugin skills.
+/// The body the model's `skill_read` gets for `name`: resolved against the
+/// model-side catalog (enabled whitelist, `disable-model-invocation`), so it
+/// reads exactly the skills the system prompt advertises, plugin and user
+/// skills included. Frontmatter is stripped.
+pub(crate) fn read_for_model(root: &Path, enabled: &[String], name: &str) -> Result<String, String> {
+    let not_found = || format!("ERROR: skill '{name}' not found");
+    let catalog = catalog(root, enabled);
+    let meta = find_user_skill(&catalog, name).ok_or_else(not_found)?;
+    match resolve_readable(root, &meta.name) {
+        Ok(entry) => {
+            let raw = std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))?;
+            Ok(parse(&raw).body)
+        }
+        Err(_) if meta.scope == SkillScope::Builtin => Ok(parse(DEFAULT_JAN_SKILL).body),
+        Err(_) => Err(not_found()),
+    }
+}
+
+/// The CLI's skill resolver for the model tools (`skill_list`/`skill_read`):
+/// the same project + plugin + user + built-in layering as the system-prompt
+/// catalog, so a skill the prompt advertises is always readable.
+pub(crate) struct CoreSkillSource {
+    pub root: PathBuf,
+    pub enabled: Vec<String>,
+}
+
+impl CoreSkillSource {
+    pub(crate) fn shared(
+        root: &Path,
+        enabled: &[String],
+    ) -> tauri_plugin_agent_tools::tools::SkillSource {
+        std::sync::Arc::new(Self {
+            root: root.to_path_buf(),
+            enabled: enabled.to_vec(),
+        })
+    }
+}
+
+impl tauri_plugin_agent_tools::tools::SkillProvider for CoreSkillSource {
+    fn catalog(&self) -> Vec<(String, String)> {
+        catalog(&self.root, &self.enabled)
+            .into_iter()
+            .map(|m| (m.name, m.description))
+            .collect()
+    }
+
+    fn read(&self, name: &str) -> Result<String, String> {
+        read_for_model(&self.root, &self.enabled, name)
+    }
+}
+
+/// Find a skill in a catalog by the name a human (or the model) typed: exact
+/// match first (project/user names and the explicit `<plugin>:<skill>`
+/// form), then a plain name that is unique across plugin skills.
 fn find_user_skill(user_skills: &[SkillMeta], name: &str) -> Option<SkillMeta> {
     if let Some(meta) = user_skills.iter().find(|m| m.name == name).cloned() {
         return Some(meta);
@@ -930,7 +1196,7 @@ mod tests {
         // Unknown or disabled skills are rejected.
         assert!(build_invocation_message(&root, "nope", "").is_err());
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"other\"]\n",
         )
         .unwrap();
@@ -1211,5 +1477,272 @@ mod tests {
         // Unknown skill errors.
         assert!(build_invocation_message(&root, "nope", "").is_err());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A repo with one commit plus a linked worktree, or skip when git is
+    /// unavailable. Returns `(main_root, linked_root)`.
+    fn repo_with_linked_worktree(tag: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return None;
+        }
+        let n = std::time::SystemTime::UNIX_EPOCH
+            .elapsed()
+            .unwrap()
+            .as_nanos();
+        let main = std::env::temp_dir().join(format!("jan_wt_main_{tag}_{n}"));
+        std::fs::create_dir_all(&main).unwrap();
+        let run = |args: &[&str]| -> bool {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&main)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        if !run(&["init", "-q", "."])
+            || !run(&["commit", "--allow-empty", "-q", "-m", "init"])
+        {
+            return None;
+        }
+        let linked = std::env::temp_dir().join(format!("jan_wt_link_{tag}_{n}"));
+        let l = linked.to_string_lossy().to_string();
+        if !run(&["worktree", "add", &l]) {
+            return None;
+        }
+        Some((main, linked))
+    }
+
+    /// Skills and plugins installed in the main worktree are visible from a
+    /// linked worktree: the store follows the repo, not the checkout.
+    #[test]
+    fn linked_worktree_sees_main_worktree_skills_and_plugins() {
+        let Some((main, linked)) = repo_with_linked_worktree("discover") else {
+            return;
+        };
+        // git resolves paths through realpath, and on macOS /var is a symlink
+        // to /private/var: canonicalize so prefix comparisons hold.
+        let main = std::fs::canonicalize(&main).unwrap();
+        let linked = std::fs::canonicalize(&linked).unwrap();
+        project_skill(&main, "shared", "shared\n");
+        plugin_skill(&main, "shared-plugin", "prep", "plugin\n");
+
+        // Both the shared skill and the shared plugin's skills are visible
+        // from the linked worktree, under the linked root.
+        let names: Vec<String> = discover(&linked).iter().map(|e| e.name.clone()).collect();
+        assert!(names.contains(&"shared".to_string()), "{names:?}");
+        let plugins = discover_plugins(&linked);
+        assert_eq!(
+            plugins.iter().map(qualified_name).collect::<Vec<_>>(),
+            vec!["shared-plugin:prep".to_string()]
+        );
+        // Both checkouts resolve to one store, so the file lives in it.
+        let entry = resolve_readable(&linked, "shared-plugin:prep").unwrap();
+        assert!(entry.file.starts_with(plugins_dir(&main)), "{:?}", entry.file);
+        assert_eq!(plugins_dir(&linked), plugins_dir(&main));
+
+        let _ = std::fs::remove_dir_all(&main);
+        let _ = std::fs::remove_dir_all(&linked);
+    }
+
+    /// Skills written into the (per-process, test-only) user scope
+    /// `~/.jan/skills`, removed on drop so no other test sees them.
+    struct UserSkills(Vec<std::path::PathBuf>);
+
+    impl UserSkills {
+        fn new() -> Self {
+            Self(Vec::new())
+        }
+
+        fn folder(&mut self, name: &str, body: &str) -> std::path::PathBuf {
+            let dir = user_skills_dir().unwrap().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("SKILL.md"), body).unwrap();
+            self.0.push(dir.clone());
+            dir
+        }
+
+        fn flat(&mut self, name: &str, body: &str) {
+            let dir = user_skills_dir().unwrap();
+            std::fs::create_dir_all(&dir).unwrap();
+            let file = dir.join(format!("{name}.md"));
+            std::fs::write(&file, body).unwrap();
+            self.0.push(file);
+        }
+
+        /// Track a path created by the test itself (a symlink, say).
+        fn track(&mut self, path: std::path::PathBuf) {
+            self.0.push(path);
+        }
+    }
+
+    impl Drop for UserSkills {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+                    let _ = std::fs::remove_dir_all(path);
+                } else {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn user_scope_skills_reach_catalogs_and_reads_from_any_project() {
+        let mut user = UserSkills::new();
+        user.folder("u394-review", "---\ndescription: Review a diff\n---\nreview body\n");
+        user.flat("u394-notes", "---\ndescription: Take notes\n---\nnotes body\n");
+        for tag in ["ua", "ub"] {
+            let root = temp_root(tag);
+            let model = catalog(&root, &[]);
+            let m = model.iter().find(|m| m.name == "u394-review").expect("user skill listed");
+            assert_eq!(m.scope, SkillScope::User);
+            assert_eq!(m.description, "Review a diff");
+            assert!(model.iter().any(|m| m.name == "u394-notes"), "flat user skill");
+            assert!(user_catalog(&root, &[]).iter().any(|m| m.name == "u394-review"));
+            assert_eq!(read_for_model(&root, &[], "u394-review").unwrap(), "review body");
+            assert_eq!(read_for_model(&root, &[], "u394-notes").unwrap(), "notes body");
+            let (msg, _) = build_invocation_message(&root, "u394-review", "").unwrap();
+            assert!(msg.contains("review body"), "{msg}");
+            let _ = std::fs::remove_dir_all(&root);
+        }
+    }
+
+    #[test]
+    fn project_skill_shadows_a_same_named_user_skill_and_report_marks_it() {
+        let mut user = UserSkills::new();
+        user.folder("u394-deploy", "---\ndescription: user deploy\n---\nuser body\n");
+        let root = temp_root("shadow");
+        project_skill(&root, "u394-deploy", "---\ndescription: project deploy\n---\nproject body\n");
+
+        let model = catalog(&root, &[]);
+        let hits: Vec<_> = model.iter().filter(|m| m.name == "u394-deploy").collect();
+        assert_eq!(hits.len(), 1, "one entry per name");
+        assert_eq!(hits[0].scope, SkillScope::Project);
+        assert_eq!(hits[0].description, "project deploy");
+        assert_eq!(read_for_model(&root, &[], "u394-deploy").unwrap(), "project body");
+
+        let rows = report(&root, &[]);
+        let rows: Vec<_> = rows.iter().filter(|r| r.name == "u394-deploy").collect();
+        assert_eq!(rows.len(), 2, "winner and shadowed entry both reported");
+        assert_eq!((rows[0].scope, rows[0].shadowed_by), (SkillScope::Project, None));
+        assert_eq!(
+            (rows[1].scope, rows[1].shadowed_by),
+            (SkillScope::User, Some(SkillScope::Project))
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_skills_stay_qualified_beside_a_same_named_user_skill() {
+        let mut user = UserSkills::new();
+        user.folder("u394-prepare", "---\ndescription: user prep\n---\nuser prep body\n");
+        let root = temp_root("plugq");
+        plugin_skill(&root, "rel", "u394-prepare", "---\ndescription: plugin prep\n---\nplugin prep body\n");
+
+        let model = catalog(&root, &[]);
+        let plain = model.iter().find(|m| m.name == "u394-prepare").unwrap();
+        assert_eq!(plain.scope, SkillScope::User);
+        let qualified = model.iter().find(|m| m.name == "rel:u394-prepare").unwrap();
+        assert_eq!(qualified.scope, SkillScope::Plugin);
+        // The plain name is the user skill; the qualified name is the plugin's.
+        assert_eq!(read_for_model(&root, &[], "u394-prepare").unwrap(), "user prep body");
+        assert_eq!(read_for_model(&root, &[], "rel:u394-prepare").unwrap(), "plugin prep body");
+        // Nothing is shadowed: the names differ.
+        assert!(report(&root, &[]).iter().all(|r| r.shadowed_by.is_none() || r.name == "jan"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn built_in_jan_is_shadowed_by_a_user_skill_named_jan() {
+        let mut user = UserSkills::new();
+        user.folder("jan", "---\ndescription: my jan\n---\nmine\n");
+        let root = temp_root("janu");
+        let model = catalog(&root, &[]);
+        let jan: Vec<_> = model.iter().filter(|m| m.name == "jan").collect();
+        assert_eq!(jan.len(), 1);
+        assert_eq!(jan[0].scope, SkillScope::User);
+        assert_eq!(read_for_model(&root, &[], "jan").unwrap(), "mine");
+        let builtin = report(&root, &[])
+            .into_iter()
+            .find(|r| r.scope == SkillScope::Builtin)
+            .unwrap();
+        assert_eq!(builtin.shadowed_by, Some(SkillScope::User));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn model_reads_plugin_skills_and_honours_filters() {
+        let root = temp_root("plugread");
+        plugin_skill(&root, "rel", "prepare", "---\ndescription: prep\n---\nprep body\n");
+        plugin_skill(
+            &root,
+            "rel",
+            "secret",
+            "---\ndescription: s\ndisable-model-invocation: true\n---\nno\n",
+        );
+        // Qualified and unique-plain names both read.
+        assert_eq!(read_for_model(&root, &[], "rel:prepare").unwrap(), "prep body");
+        assert_eq!(read_for_model(&root, &[], "prepare").unwrap(), "prep body");
+        // A user-only skill never reaches the model.
+        assert!(read_for_model(&root, &[], "rel:secret").is_err());
+        // The whitelist applies: a plugin not enabled is unreadable.
+        assert!(read_for_model(&root, &["other".into()], "rel:prepare").is_err());
+        assert!(read_for_model(&root, &["rel".into()], "rel:prepare").is_ok());
+        // The built-in jan skill still reads.
+        assert!(!read_for_model(&root, &[], "jan").unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_skill_folders_are_listed_in_both_scopes_and_deduped() {
+        use std::os::unix::fs::symlink;
+        let library = temp_root("library");
+        for name in ["u394-linked-proj", "u394-linked-user"] {
+            let dir = library.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("SKILL.md"), format!("---\ndescription: {name}\n---\nbody\n"))
+                .unwrap();
+        }
+        let root = temp_root("symlink");
+        let proj_dir = skills_dir(&root);
+        std::fs::create_dir_all(&proj_dir).unwrap();
+        symlink(library.join("u394-linked-proj"), proj_dir.join("u394-linked-proj")).unwrap();
+        // A symlink loop and a dangling link must be skipped, not hang or panic.
+        symlink(proj_dir.join("loop-b"), proj_dir.join("loop-a")).unwrap();
+        symlink(proj_dir.join("loop-a"), proj_dir.join("loop-b")).unwrap();
+        symlink(library.join("missing"), proj_dir.join("dangling")).unwrap();
+        // A self-referencing folder link (`dir/self -> dir`) is one level only.
+        symlink(&proj_dir, proj_dir.join("self")).unwrap();
+
+        let mut user = UserSkills::new();
+        let user_dir = user_skills_dir().unwrap();
+        std::fs::create_dir_all(&user_dir).unwrap();
+        let link = user_dir.join("u394-linked-user");
+        symlink(library.join("u394-linked-user"), &link).unwrap();
+        user.track(link);
+        // The same library folder linked into both scopes counts once.
+        let dup = user_dir.join("u394-linked-proj");
+        symlink(library.join("u394-linked-proj"), &dup).unwrap();
+        user.track(dup);
+
+        let model = catalog(&root, &[]);
+        let names: Vec<_> = model.iter().map(|m| (m.name.as_str(), m.scope)).collect();
+        assert!(names.contains(&("u394-linked-proj", SkillScope::Project)), "{names:?}");
+        assert!(names.contains(&("u394-linked-user", SkillScope::User)), "{names:?}");
+        assert_eq!(
+            names.iter().filter(|(n, _)| *n == "u394-linked-proj").count(),
+            1,
+            "{names:?}"
+        );
+        assert!(!names.iter().any(|(n, _)| n.starts_with("loop") || *n == "dangling"));
+        // The duplicate is not reported as shadowing: it is the same file.
+        assert!(report(&root, &[])
+            .iter()
+            .all(|r| r.name != "u394-linked-proj" || r.shadowed_by.is_none()));
+        assert_eq!(read_for_model(&root, &[], "u394-linked-user").unwrap(), "body");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&library);
     }
 }

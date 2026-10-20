@@ -15,10 +15,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
 import { LlamacppEngineInfo } from '../LlamacppEngineInfo'
 
 const PIN = {
-  version: '0.4.0',
-  tag: 'b10809',
-  buildNumber: '10809',
-  commit: '5266f24da75dc449bd56cbed7addb9c8e4a6a73e',
+  version: '0.5.0',
+  tag: 'b11146',
+  buildNumber: '11146',
+  commit: '7fe450e19305b828c199d602c23a8337aaa1f03b',
 }
 
 describe('LlamacppEngineInfo', () => {
@@ -31,8 +31,8 @@ describe('LlamacppEngineInfo', () => {
     render(<LlamacppEngineInfo />)
 
     expect(await screen.findByText('llama.cpp')).toBeInTheDocument()
-    expect(screen.getByText('0.4.0')).toBeInTheDocument()
-    expect(screen.getByText('b10809')).toBeInTheDocument()
+    expect(screen.getByText('0.5.0')).toBeInTheDocument()
+    expect(screen.getByText('b11146')).toBeInTheDocument()
   })
 
   // A 40-char sha would wrap the row and buys nothing a reader can use; the
@@ -41,13 +41,30 @@ describe('LlamacppEngineInfo', () => {
     getEngineVersion.mockResolvedValue(PIN)
     render(<LlamacppEngineInfo />)
 
-    expect(await screen.findByText('5266f24d')).toBeInTheDocument()
+    expect(await screen.findByText('7fe450e1')).toBeInTheDocument()
     expect(screen.queryByText(PIN.commit)).not.toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: /engineReleaseNotes/ })
     ).toHaveAttribute(
       'href',
-      'https://github.com/ggml-org/llama.cpp/releases/tag/b10809'
+      'https://github.com/ggml-org/llama.cpp/releases/tag/b11146'
+    )
+  })
+
+  // The bundled engine has no version picker, so the panel names the way out
+  // when that one version regresses a model: the user's own llama-server.
+  it('points to running another llama.cpp version as a custom provider', async () => {
+    getEngineVersion.mockResolvedValue(PIN)
+    render(<LlamacppEngineInfo />)
+
+    expect(
+      await screen.findByText(/engineOtherVersion$/)
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /engineOtherVersionLink/ })
+    ).toHaveAttribute(
+      'href',
+      'https://jan.ai/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version'
     )
   })
 

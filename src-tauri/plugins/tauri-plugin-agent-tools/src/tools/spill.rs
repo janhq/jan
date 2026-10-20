@@ -136,6 +136,16 @@ pub fn reserve_blackboard_result(scratch: &Path, name: &str) -> Option<PathBuf> 
     }
 }
 
+/// Whether `<scratch>/blackboard/<name>.md` already holds an entry, under the
+/// same stem [`reserve_blackboard_result`] would write to. A dispatch asks this
+/// before reusing a worker name, since reserving that name truncates the file.
+pub fn blackboard_result_exists(scratch: &Path, name: &str) -> bool {
+    scratch
+        .join(BLACKBOARD_DIR)
+        .join(format!("{}.md", sanitize_stem(name)))
+        .exists()
+}
+
 /// Read `<scratch>/blackboard/<name>.md` for injection into the next phase,
 /// fail-closed against the same redirection the write path guards: the shell
 /// shares this scratch and can `rm` a finished answer and `ln -s` a host file in

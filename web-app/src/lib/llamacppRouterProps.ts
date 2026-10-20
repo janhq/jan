@@ -44,3 +44,10 @@ export const getLocalPropsExtension = (
   if (provider === 'mlx') return getMlxExtension()
   return undefined
 }
+
+/** A ctx_len setting or launched n_ctx as a positive token count. The settings
+ *  store keeps ctx_len as a number or a string, and '' when left to auto-fit. */
+export const readCtxLen = (value: unknown): number | undefined => {
+  const n = typeof value === 'string' ? parseInt(value, 10) : value
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined
+}

@@ -29,7 +29,7 @@ use rmcp::{ErrorData as McpError, ServerHandler};
 use tauri_plugin_agent_tools::tools::gate::{
     resolve_decision, Decision, DenyReason, GateContext, PromptKind, SessionGrants,
 };
-use tauri_plugin_agent_tools::tools::handlers::{bash_result_failed, execute_builtin};
+use tauri_plugin_agent_tools::tools::handlers::{execute_builtin, tool_result_failed};
 use tauri_plugin_agent_tools::tools::schema::{builtin_tool_schemas, search_tool_schemas};
 use tauri_plugin_agent_tools::tools::{lookup, Capability, ToolContext};
 
@@ -89,10 +89,13 @@ pub struct ServeOptions {
     /// The one project root the served tools are confined to.
     pub project_root: PathBuf,
     /// Where `memory/` and `skills/` live; normally
-    /// `workspace::project_store(project_root)`.
+    /// `project::store_root(project_root)`.
     pub store_root: PathBuf,
     /// The `[skills].enabled` whitelist; empty means every skill.
     pub enabled_skills: Vec<String>,
+    /// `~/.jan`, whose `skills/` is the user scope `skill_write` `scope:"user"`
+    /// writes to. `None` refuses that scope.
+    pub user_store_root: Option<PathBuf>,
     /// Let the sandboxed shell reach the network.
     pub allow_network: bool,
     /// Run `bash` under OS confinement. Left on unless the operator turns it off.
@@ -104,14 +107,15 @@ pub struct ServeOptions {
 }
 
 impl ServeOptions {
-    /// Defaults for a project root: its co-located store, the read-only served
+    /// Defaults for a project root: its store under `~/.jan/projects`, the read-only served
     /// set, sandbox on.
     pub fn new(project_root: PathBuf) -> Self {
-        let store_root = tauri_plugin_agent_tools::workspace::project_store(&project_root);
+        let store_root = crate::core::agent::project::store_root(&project_root);
         Self {
             project_root,
             store_root,
             enabled_skills: Vec::new(),
+            user_store_root: crate::core::agent::skills::user_store_root(),
             allow_network: false,
             sandbox: true,
             scratch_root: None,
@@ -122,16 +126,21 @@ impl ServeOptions {
 
 /// The MCP server: Jan's built-in toolset behind a `ServerHandler`.
 ///
-/// Cheap to clone (one `Arc`), which is what the Streamable HTTP transport needs
-/// -- it builds a fresh handler per session from a factory.
+/// Cheap to clone (an `Arc` and one path), which is what the Streamable HTTP
+/// transport needs -- it builds a fresh handler per session from a factory.
 #[derive(Debug, Clone)]
 pub struct JanToolServer {
     opts: Arc<ServeOptions>,
+    /// The Jan home, refused to every served tool whether or not `bash` is
+    /// sandboxed: a served client is a program, not a user at the terminal,
+    /// and there is no one here to approve reaching keys or hooks.
+    hidden_root: Option<std::path::PathBuf>,
 }
 
 impl JanToolServer {
     pub fn new(opts: ServeOptions) -> Self {
         Self {
+            hidden_root: crate::core::agent::project::hidden_root(true),
             opts: Arc::new(opts),
         }
     }
@@ -191,7 +200,13 @@ impl JanToolServer {
         )
         .with_network(self.opts.allow_network)
         .with_sandbox(self.opts.sandbox)
-        .with_confined_writes(true);
+        .with_hidden_root(self.hidden_root.as_deref())
+        .with_confined_writes(true)
+        .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+            &self.opts.project_root,
+            &self.opts.enabled_skills,
+        ))
+        .with_skill_user_root(self.opts.user_store_root.as_deref());
         if let Some(scratch) = self.opts.scratch_root.as_deref() {
             ctx = ctx.with_scratch_root(scratch);
         }
@@ -216,7 +231,7 @@ impl JanToolServer {
             return (
                 format!(
                     "ERROR: tool '{name}' is not served by this Jan MCP server. \
-                     Mutating filesystem tools and bash are opt-in."
+                     Mutating filesystem tools and the shell are opt-in."
                 ),
                 Vec::new(),
             );
@@ -229,9 +244,7 @@ impl JanToolServer {
                 scratch: self.opts.scratch_root.as_deref(),
                 read_roots: &[],
                 write_roots: &[],
-                // The agent's own `.jan` state is never reachable as a path;
-                // memory and skills are served through their own tools.
-                hide_jan: true,
+                hidden_root: self.hidden_root.as_deref(),
             },
             &Default::default(),
             &SessionGrants::default(),
@@ -244,8 +257,8 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::Hidden) => {
                 return (
                     format!(
-                        "ERROR: tool '{name}' was refused: the path is inside the agent's \
-                         hidden .jan state. Use the memory_* and skill_* tools instead."
+                        "ERROR: tool '{name}' was refused: the Jan home (~/.jan) is hidden. \
+                         Use the memory_* and skill_* tools instead."
                     ),
                     Vec::new(),
                 )
@@ -266,6 +279,17 @@ impl JanToolServer {
                         "ERROR: tool '{name}' was refused: the path escapes the served project \
                          root, and an external caller cannot be asked to approve a {what} \
                          outside it."
+                    ),
+                    Vec::new(),
+                );
+            }
+            // The served shell runs under the sandbox the server was started
+            // with; an external caller cannot lift it, for the same reason.
+            Decision::Prompt(PromptKind::Escalate) => {
+                return (
+                    format!(
+                        "ERROR: tool '{name}' was refused: running outside the sandbox needs \
+                         the user's approval, which an external caller cannot give."
                     ),
                     Vec::new(),
                 );
@@ -317,11 +341,13 @@ impl ServerHandler for JanToolServer {
     ) -> Result<CallToolResponse, McpError> {
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
         let (content, mut blocks) = self.dispatch(&request.name, &args).await;
-        // Same two clauses the agent loop uses. `bash` reports a non-zero exit
-        // as an `[exit N]` trailer rather than an `ERROR` prefix, so the prefix
-        // alone would tell a peer that a command which exited 3 succeeded.
-        let is_error = content.starts_with("ERROR")
-            || (request.name == "bash" && bash_result_failed(&content));
+        // The rule the agent loop uses. The shell reports a non-zero exit as an
+        // `[exit N]` trailer rather than an `ERROR` prefix, so the prefix alone
+        // would tell a peer that a command which exited 3 succeeded.
+        let is_error = match lookup(&request.name) {
+            Some(tool) => tool_result_failed(tool, &content),
+            None => content.starts_with("ERROR"),
+        };
         blocks.insert(0, ContentBlock::text(content));
         let result = if is_error {
             CallToolResult::error(blocks)

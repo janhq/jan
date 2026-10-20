@@ -6,11 +6,20 @@
 // rides inside the tool part's output text as a sentinel and the request fetch
 // decodes it back into content parts.
 
+import type { UIMessage } from '@ai-sdk/react'
+import type { ModelMessage } from 'ai'
+
 const PREFIX = ' __JAN_TOOL_IMAGE__'
 const SUFFIX = ' '
 
 const SENTINEL_REGEX =
   / __JAN_TOOL_IMAGE__(data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+) /g
+
+const DATA_URL_REGEX = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/
+
+type ToolResultContentItem =
+  | { type: 'text'; text: string }
+  | { type: 'image-data'; mediaType: string; data: string }
 
 export function encodeToolImageSentinel(dataUrl: string): string {
   return `${PREFIX}${dataUrl}${SUFFIX}`
@@ -62,4 +71,150 @@ export function stripToolImageSentinels(
   if (!hasToolImageSentinel(text)) return text
   SENTINEL_REGEX.lastIndex = 0
   return text.replace(SENTINEL_REGEX, replacement)
+}
+
+type McpContentItem = {
+  type?: string
+  text?: string
+  data?: string
+  mimeType?: string
+}
+
+/** The content array of an MCP result, stored bare or as `{ content }`. */
+function mcpContentItems(output: unknown): McpContentItem[] | null {
+  if (Array.isArray(output)) return output
+  if (output && typeof output === 'object') {
+    const content = (output as { content?: unknown }).content
+    if (Array.isArray(content)) return content
+  }
+  return null
+}
+
+function isMcpImage(
+  item: McpContentItem | null | undefined
+): item is McpContentItem & { data: string } {
+  return item?.type === 'image' && typeof item.data === 'string' && !!item.data
+}
+
+// What vision providers and llama.cpp's image loader accept. Anything else
+// (svg, bmp, tiff) is rejected upstream, and since the stored result is
+// re-sent on every turn it would break the thread for good.
+const SENDABLE_IMAGE_TYPES: Record<string, true> = {
+  'image/png': true,
+  'image/jpeg': true,
+  'image/gif': true,
+  'image/webp': true,
+}
+
+/** The image as a data URL, or null when its media type is not sendable. */
+function mcpImageDataUrl(item: McpContentItem & { data: string }): string | null {
+  // The sentinel regex takes a lowercase media type and an unbroken base64
+  // run, so normalise both: some servers wrap long base64 across lines.
+  const data = item.data.replace(/\s+/g, '')
+  const mime = data.startsWith('data:')
+    ? /^data:([^;,]*)/i.exec(data)?.[1]?.toLowerCase()
+    : item.mimeType?.toLowerCase().startsWith('image/')
+      ? item.mimeType.toLowerCase()
+      : 'image/png'
+  if (!mime || SENDABLE_IMAGE_TYPES[mime] !== true) return null
+  return data.startsWith('data:') ? data : `data:${mime};base64,${data}`
+}
+
+function mcpOutputWithSentinels(items: McpContentItem[]): string {
+  // Items keep their original order so a caption stays next to its image.
+  const pieces: Array<{ text: boolean; value: string }> = []
+  let images = 0
+  for (const item of items) {
+    if (isMcpImage(item)) {
+      const url = mcpImageDataUrl(item)
+      if (url) {
+        images++
+        pieces.push({ text: false, value: encodeToolImageSentinel(url) })
+      } else {
+        const mime = item.mimeType ?? 'unknown type'
+        pieces.push({ text: true, value: `(image omitted: ${mime} is not supported)` })
+      }
+    } else if (item?.type === 'text' && typeof item.text === 'string') {
+      pieces.push({ text: true, value: item.text })
+    } else {
+      pieces.push({ text: true, value: JSON.stringify(item) })
+    }
+  }
+  let out = ''
+  let prevText = false
+  for (const piece of pieces) {
+    if (piece.text && prevText) out += '\n'
+    out += piece.value
+    prevText = piece.text
+  }
+  const hasText = pieces.some((piece) => piece.text)
+  return hasText || images === 0
+    ? out
+    : `The tool returned ${images} image${images === 1 ? '' : 's'}.${out}`
+}
+
+/**
+ * Re-encodes MCP tool results that carry images (e.g. the filesystem server's
+ * `read_media_file`) so the model sees the image, not its base64.
+ *
+ * Chat stores an MCP result as its raw content array, which keeps the tool
+ * card's image preview working. But the AI SDK stringifies structured tool
+ * output, so sent as-is an image item reaches the model as megabytes of base64
+ * text: useless to the model, and enough to blow a provider's input limit. An
+ * output with at least one image item becomes its text plus one sentinel per
+ * image instead, the same form Cowork's tool images take, so the request fetch
+ * decodes it into `image_url` parts and `stripUnsupportedImageParts` drops it
+ * for a model without vision. Text-only results are left as they are.
+ */
+export function encodeMcpToolImages(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'assistant' || !Array.isArray(message.parts)) {
+      return message
+    }
+    let touched = false
+    const parts = message.parts.map((part) => {
+      const type = (part as { type?: string }).type
+      if (type !== 'dynamic-tool' && !type?.startsWith('tool-')) return part
+      const items = mcpContentItems((part as { output?: unknown }).output)
+      if (!items?.some(isMcpImage)) return part
+      touched = true
+      return { ...part, output: mcpOutputWithSentinels(items) } as typeof part
+    })
+    return touched ? ({ ...message, parts } as UIMessage) : message
+  })
+}
+
+/**
+ * For providers whose SDK builds its own request shape (Anthropic, Gemini,
+ * OpenAI Responses), where the request fetch cannot decode a sentinel: hands
+ * the SDK each tool image as a structured `content` output, which it maps to
+ * the provider's native image block. Run on model messages, after
+ * `convertToModelMessages` has stringified the UI tool output.
+ */
+export function toContentToolOutputs(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'tool') return message
+    let touched = false
+    const content = message.content.map((part) => {
+      if (
+        part.type !== 'tool-result' ||
+        part.output.type !== 'text' ||
+        !hasToolImageSentinel(part.output.value)
+      ) {
+        return part
+      }
+      const value = (splitToolImageSentinels(part.output.value) ?? []).flatMap(
+        (item): ToolResultContentItem[] => {
+          if (item.type === 'text') return [item]
+          const match = DATA_URL_REGEX.exec(item.image_url.url)
+          return match
+            ? [{ type: 'image-data', mediaType: match[1], data: match[2] }]
+            : []
+        }
+      )
+      touched = true
+      return { ...part, output: { type: 'content', value } } as typeof part
+    })
+    return touched ? { ...message, content } : message
+  })
 }

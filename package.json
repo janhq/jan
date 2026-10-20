@@ -6,7 +6,8 @@
     "packages": [
       "core",
       "web-app",
-      "extensions/*"
+      "extensions/*",
+      "packages/*"
     ]
   },
   "scripts": {

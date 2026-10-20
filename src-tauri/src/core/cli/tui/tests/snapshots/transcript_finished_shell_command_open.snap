@@ -1,0 +1,28 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› run the tests                                                                 |
+|                                                                                |
+|                                                                                |
+|• Ran cargo test --lib parser                                                   |
+|  └ running 3 tests                                                             |
+|    test parser::empty ... ok                                                   |
+|    test parser::nested ... ok                                                  |
+|    … +3 lines (Ctrl-O to expand)                                               |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..15 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 15..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 fg=#98C379 mod=BOLD
+ 4 2..5 mod=BOLD
+ 5 0..4 fg=DarkGray
+ 5 4..19 mod=DIM
+ 6 0..4 fg=DarkGray
+ 6 4..29 mod=DIM
+ 7 0..4 fg=DarkGray
+ 7 4..30 mod=DIM
+ 8 0..33 fg=DarkGray

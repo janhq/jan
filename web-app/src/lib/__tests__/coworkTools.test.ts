@@ -20,7 +20,7 @@ const schema = (name: string) => ({
   function: { name, description: name, parameters: { type: 'object' } },
 })
 
-const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'bash', 'memory_write']
+const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory_write']
 
 const opts = (over: Partial<Parameters<typeof buildCoworkTools>[0]> = {}) => ({
   planMode: false,
@@ -123,12 +123,12 @@ describe('web tools', () => {
     expect(tools.web_fetch).toBeDefined()
   })
 
-  // Research is most of what planning is, so unlike write/edit/bash these are
+  // Research is most of what planning is, so unlike write/edit/shell these are
   // reads that plan mode keeps.
   it('survive plan mode', async () => {
     const tools = await buildCoworkTools(opts({ webSearch: true, planMode: true }))
     expect(tools.web_search).toBeDefined()
-    expect(tools.bash).toBeUndefined()
+    expect(tools.shell).toBeUndefined()
   })
 
   // Advertising them changes the tool JSON, so a run that froze without them

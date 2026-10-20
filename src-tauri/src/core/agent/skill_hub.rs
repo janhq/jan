@@ -1,6 +1,6 @@
 //! Import skills from Anthropic's public skill hub (github.com/anthropics/skills).
 //! Skills live at `skills/<name>/SKILL.md` with optional bundled files; import
-//! copies the whole folder into the project's `.jan/agent/skills/<name>/`.
+//! copies the whole folder into the project store's `skills/<name>/`.
 //!
 //! All network I/O goes through the backend (no CORS/CSP limits) using the git
 //! tree API (1 request to enumerate paths) plus raw.githubusercontent.com for
@@ -103,7 +103,7 @@ pub async fn list() -> Result<Vec<HubSkill>, String> {
 }
 
 /// Download one hub skill (SKILL.md + every bundled file) into the project's
-/// `.jan/agent/skills/<name>/`, replacing any existing skill of the same name.
+/// `<store>/skills/<name>/`, replacing any existing skill of the same name.
 ///
 /// Atomic on failure: every file is fetched into memory first, and only once all
 /// downloads succeed is the destination cleared and rewritten — a mid-download

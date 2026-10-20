@@ -53,8 +53,8 @@ const useSkillsVersion = create<{ v: number; bump: () => void }>((set) => ({
 /**
  * CRUD over the agent's skills. The permanent store in the Jan data folder is
  * always listed -- it is what the Cowork agent's `skill_*` tools read by
- * default -- and with a `folder` its co-located store
- * (`<folder>/.jan/agent/skills`) layers on top, a project skill shadowing a
+ * default -- and with a `folder` its project store
+ * (`~/.jan/projects/<slug>/skills`) layers on top, a project skill shadowing a
  * same-named global one (#8879). Each returned skill carries its `origin` so
  * `read`/`write`/`remove` target the store it lives in; a brand-new skill lands
  * in the folder's store when one is attached, else the permanent store. The

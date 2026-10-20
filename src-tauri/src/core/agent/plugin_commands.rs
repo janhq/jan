@@ -32,24 +32,12 @@ pub(crate) struct ParsedCommand {
 
 /// Every command shipped by installed plugins, sorted by plugin then name.
 /// Discovery is recursive (`commands/**/*.md`), skips `README.md` and
-/// dotfiles, and ignores interrupted `.installing-*` staging directories.
+/// dotfiles, and ignores interrupted `.installing-*` staging directories. A
+/// linked git worktree also sees the main worktree's plugins, project-local
+/// shadowing shared ones (see `skills::discovery_roots`).
 pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
-    let dir = crate::core::agent::skills::plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
+    crate::core::agent::skills::for_each_plugin_dir(root, |plugin, path| {
         crate::core::agent::skills::walk_markdown_files(&path.join("commands"), &mut |path| {
             let raw = std::fs::read_to_string(path).unwrap_or_default();
             let name = path
@@ -65,7 +53,7 @@ pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
                 hints: template_hints(&parsed.body),
             });
         });
-    }
+    });
     out.sort_by(|a, b| (&a.plugin, &a.name).cmp(&(&b.plugin, &b.name)));
     out
 }
@@ -385,19 +373,19 @@ mod tests {
         let cmd_dir = plugins_dir(&root).join("release").join("commands");
         std::fs::create_dir_all(&cmd_dir).unwrap();
         std::fs::write(cmd_dir.join("prepare.md"), "body").unwrap();
-        std::fs::create_dir_all(root.join(".jan").join("agent")).unwrap();
+        std::fs::create_dir_all(crate::core::agent::project::store_root(&root)).unwrap();
 
         // With the command disabled (not in the whitelist), invocation errors,
         // matching the skill path.
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"some-other\"]\n",
         )
         .unwrap();
         assert!(build_message(&root, "prepare", "").is_err());
         // A command enabled by name resolves.
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"prepare\"]\n",
         )
         .unwrap();

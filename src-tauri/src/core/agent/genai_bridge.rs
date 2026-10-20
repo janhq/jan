@@ -99,6 +99,7 @@ fn client_for(
     request_url: &str,
     api_key: Option<&str>,
     adapter: AdapterKind,
+    extra_headers: &[(String, String)],
 ) -> Client {
     let endpoint = Endpoint::from_owned(endpoint_base.to_string());
 
@@ -121,6 +122,13 @@ fn client_for(
     if let Some(key) = api_key.filter(|k| !k.is_empty()) {
         headers.push(("Authorization".to_string(), format!("Bearer {key}")));
     }
+    // The provider's custom headers and Jan's own (User-Agent, correlation and
+    // session ids) have to go in here rather than through
+    // `ChatOptions::with_extra_headers`: genai overwrites the whole header map
+    // with this override's when `RequestOverride` is set, which it always is on
+    // this path, so extra headers set anywhere else are silently dropped. genai
+    // sets no User-Agent of its own, so this list is exactly what is sent.
+    super::request_headers::merge_onto(&mut headers, extra_headers);
     let auth = AuthData::RequestOverride {
         url: request_url.to_string(),
         headers: genai::Headers::from(headers),
@@ -195,10 +203,9 @@ fn options_from_body(body: &serde_json::Value) -> ChatOptions {
         capture_content: Some(true),
         capture_tool_calls: Some(true),
         capture_reasoning_content: Some(true),
-        // Providers that inline `<think>` tags in `content` instead of exposing a
-        // reasoning field get normalized into reasoning events too, so consumers
-        // see one shape regardless of provider.
-        normalize_reasoning_content: Some(true),
+        // `normalize_reasoning_content` is deliberately unset: genai only honours
+        // it on non-streaming OpenAI calls, and this bridge streams. Inline
+        // `<think>` tags are split by the TUI, per provider (`think_tags`).
         ..Default::default()
     }
 }
@@ -217,6 +224,8 @@ fn messages_from_body(
 
     let mut system: Option<String> = None;
     let mut out: Vec<ChatMessage> = Vec::with_capacity(raw.len());
+    // Images from the current run of tool messages, waiting for the run to end.
+    let mut tool_images: Vec<ContentPart> = Vec::new();
 
     for msg in raw {
         let role = msg
@@ -224,6 +233,11 @@ fn messages_from_body(
             .and_then(|v| v.as_str())
             .ok_or("Each message must include a string 'role'")?;
         let content = msg.get("content");
+        // A user turn right after the run takes the images itself (see the
+        // user arm); any other role closes the run with its own carrier.
+        if !matches!(role, "tool" | "user") {
+            flush_tool_images(&mut out, &mut tool_images);
+        }
 
         match role {
             "system" | "developer" => {
@@ -241,6 +255,13 @@ fn messages_from_body(
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string();
+                let images = content_images(content);
+                if !images.is_empty() {
+                    tool_images.push(ContentPart::Text(format!(
+                        "[image output of tool call {call_id}]"
+                    )));
+                    tool_images.extend(images);
+                }
                 out.push(ChatMessage::new(
                     ChatRole::Tool,
                     ToolResponse::new(call_id, content_text(content)),
@@ -281,18 +302,98 @@ fn messages_from_body(
                     parts.into_iter().collect::<MessageContent>(),
                 ));
             }
-            // Everything else is a user turn. Multimodal content-part arrays are
-            // flattened to their text; images are not yet forwarded (see below).
+            // Everything else is a user turn. A content-part array keeps its
+            // images in place; a text-only one stays a plain string, which is
+            // what the adapters serialize it as anyway.
             _ => {
-                out.push(ChatMessage::new(
-                    ChatRole::User,
-                    content_text(content),
-                ));
+                let mut parts = content_parts(content);
+                // Pending tool images lead this turn rather than forming one
+                // of their own, so two user turns never sit back to back.
+                if role == "user" && !tool_images.is_empty() {
+                    let mut carried = std::mem::take(&mut tool_images);
+                    carried.append(&mut parts);
+                    parts = carried;
+                }
+                let message = if parts.iter().all(ContentPart::is_text) {
+                    MessageContent::from(content_text(content))
+                } else {
+                    MessageContent::from(parts)
+                };
+                out.push(ChatMessage::new(ChatRole::User, message));
             }
         }
     }
+    flush_tool_images(&mut out, &mut tool_images);
 
     Ok((system, out))
+}
+
+/// Emit the images a run of tool messages produced as one user message.
+///
+/// `genai`'s `ToolResponse` carries only a string, so an image a tool returned
+/// (a `read` of a PNG, a host camera frame) cannot ride in its tool message.
+/// It goes in a user turn right after the run instead: after, not between, the
+/// tool messages, because OpenAI rejects any message interleaved with the
+/// replies to one assistant turn's calls. Each image is labeled with the call
+/// it answers so a batch of several stays attributable.
+///
+/// The carrier is only ever followed by an assistant turn or the end of the
+/// request: a user turn that follows the run absorbs the images instead
+/// (see the user arm of [`messages_from_body`]). That matters to adapters
+/// that demand alternating roles, like genai's Anthropic one, which, unlike
+/// `server::converters`, does not merge adjacent user turns. The agent
+/// sends `api_type: None` down this path today, but nothing here relies on
+/// it.
+fn flush_tool_images(out: &mut Vec<ChatMessage>, pending: &mut Vec<ContentPart>) {
+    if pending.is_empty() {
+        return;
+    }
+    let parts = std::mem::take(pending);
+    out.push(ChatMessage::new(ChatRole::User, MessageContent::from(parts)));
+}
+
+/// The parts of an OpenAI `content` field in order: text and images. Anything
+/// else (audio, a malformed image) is skipped rather than failing the request,
+/// matching how the text-only path always treated unknown parts.
+fn content_parts(content: Option<&serde_json::Value>) -> Vec<ContentPart> {
+    match content {
+        Some(serde_json::Value::String(s)) => vec![ContentPart::Text(s.clone())],
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| match p.get("type").and_then(|t| t.as_str()) {
+                Some("text") => p
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|t| ContentPart::Text(t.to_string())),
+                Some("image_url") => image_part(p),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Only the image parts of a `content` field.
+fn content_images(content: Option<&serde_json::Value>) -> Vec<ContentPart> {
+    content_parts(content)
+        .into_iter()
+        .filter(ContentPart::is_binary)
+        .collect()
+}
+
+/// One OpenAI `image_url` part as a `genai` binary. A `data:` URL becomes inline
+/// base64 so every adapter can re-encode it natively (Anthropic and Gemini do
+/// not accept data URLs); any other URL is passed through as a URL.
+fn image_part(part: &serde_json::Value) -> Option<ContentPart> {
+    let url = part.get("image_url")?.get("url")?.as_str()?;
+    match url.strip_prefix("data:") {
+        Some(rest) => {
+            let (mime, data) = rest.split_once(";base64,")?;
+            (!mime.is_empty() && !data.is_empty())
+                .then(|| ContentPart::from_binary_base64(mime, data, None))
+        }
+        None => Some(ContentPart::from_binary_url("image/*", url, None)),
+    }
 }
 
 /// Text of an OpenAI `content` field: a bare string, or the concatenated `text`
@@ -600,6 +701,34 @@ fn finish_reason_str(reason: Option<&genai::chat::StopReason>) -> Option<&'stati
     })
 }
 
+/// Why one attempt did not produce a completion.
+enum AttemptError {
+    /// `genai` reported the failure.
+    Upstream(genai::Error),
+    /// The connection closed before the provider signalled the end of its
+    /// response. `partial` is whether any answer had arrived by then.
+    Truncated { partial: bool },
+}
+
+impl From<genai::Error> for AttemptError {
+    fn from(err: genai::Error) -> Self {
+        Self::Upstream(err)
+    }
+}
+
+/// The failure for a stream that closed early. Not retried: the provider did
+/// answer (the status was a success), so another attempt would either replay
+/// output the consumer has already seen or hide a provider that answers with
+/// nothing. The caller reports it as a failed run, never as a finished answer.
+fn truncated_stream_message(partial: bool) -> String {
+    if partial {
+        "Upstream request failed: the provider closed the stream before it finished its answer, so the response is incomplete".to_string()
+    } else {
+        "Upstream request failed: the provider closed the stream without sending an answer"
+            .to_string()
+    }
+}
+
 /// Tracks a streaming tool call so `ToolCallStarted` fires once and
 /// `ToolCallArgsDelta` carries only new bytes.
 #[derive(Default)]
@@ -622,6 +751,7 @@ pub(crate) async fn stream_chat_completions(
     api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
+    extra_headers: &[(String, String)],
 ) -> Result<serde_json::Value, String> {
     let (model, chat_req) = chat_request_from_body(body)?;
     let options = options_from_body(body);
@@ -638,7 +768,14 @@ pub(crate) async fn stream_chat_completions(
     let mut last_err = String::from("Upstream request failed");
 
     for (key_index, key) in keys.iter().enumerate() {
-        let client = client_for(http, &endpoint_base, upstream_url, *key, adapter);
+        let client = client_for(
+            http,
+            &endpoint_base,
+            upstream_url,
+            *key,
+            adapter,
+            extra_headers,
+        );
 
         for attempt in 0..MAX_ATTEMPTS {
             let mut progressed = false;
@@ -653,7 +790,10 @@ pub(crate) async fn stream_chat_completions(
             .await
             {
                 Ok(completion) => return Ok(completion),
-                Err(err) => {
+                Err(AttemptError::Truncated { partial }) => {
+                    return Err(truncated_stream_message(partial));
+                }
+                Err(AttemptError::Upstream(err)) => {
                     let (status, err_body, headers) = http_parts(&err);
                     let described = describe_error(&err);
                     last_err = match status {
@@ -714,6 +854,16 @@ pub(crate) async fn stream_chat_completions(
                                 delay.as_millis(),
                                 attempt + 2
                             );
+                            // The TUI mutes the log, so the warning above never
+                            // reaches the user; the event is what they see.
+                            let _ = events.send(StreamEvent::Retry {
+                                attempt: attempt + 2,
+                                max_attempts: MAX_ATTEMPTS,
+                                delay_ms: delay.as_millis() as u64,
+                                // genai's errors span lines (Cause/Status/Body);
+                                // a status row has one.
+                                reason: last_err.split_whitespace().collect::<Vec<_>>().join(" "),
+                            });
                             tokio::time::sleep(delay).await;
                         }
                     }
@@ -756,7 +906,7 @@ async fn run_once(
     options: &ChatOptions,
     events: &mpsc::UnboundedSender<StreamEvent>,
     progressed: &mut bool,
-) -> Result<serde_json::Value, genai::Error> {
+) -> Result<serde_json::Value, AttemptError> {
     let response = client
         .exec_chat_stream(model, chat_req, Some(options))
         .await?;
@@ -768,6 +918,12 @@ async fn run_once(
     let mut final_calls: Vec<serde_json::Value> = Vec::new();
     let mut finish: Option<&'static str> = None;
     let mut usage: Option<genai::chat::Usage> = None;
+    // Whether the provider sent its own completion signal (`[DONE]`, Anthropic's
+    // `message_stop`). A connection that closes without one has been cut off.
+    // `genai` hands over a `finish_reason` only together with this event, so a
+    // server that sends one and then closes without `[DONE]` is treated the same
+    // way: nothing here can tell it from a stream cut mid-answer.
+    let mut ended = false;
 
     while let Some(event) = stream.next().await {
         match event? {
@@ -824,6 +980,7 @@ async fn run_once(
             }
             ChatStreamEvent::ThoughtSignatureChunk(_) => {}
             ChatStreamEvent::End(end) => {
+                ended = true;
                 finish = finish_reason_str(end.captured_stop_reason.as_ref());
                 usage = end.captured_usage.clone();
                 if let Some(tool_calls) = end.captured_tool_calls() {
@@ -860,6 +1017,12 @@ async fn run_once(
         }
     }
 
+    if !ended {
+        return Err(AttemptError::Truncated {
+            partial: !content.is_empty() || !reasoning.is_empty() || !calls.is_empty(),
+        });
+    }
+
     Ok(completion_json(
         content,
         reasoning,
@@ -872,6 +1035,7 @@ async fn run_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use genai::chat::{Binary, BinarySource};
     use serde_json::json;
 
     /// The trailing slash is load-bearing: `Url::join` would otherwise replace
@@ -1057,8 +1221,20 @@ mod tests {
         );
     }
 
+    /// The image's base64 payload, when `part` is an inline image.
+    fn inline_image(part: &ContentPart) -> Option<(&str, &str)> {
+        match part {
+            ContentPart::Binary(Binary {
+                content_type,
+                source: BinarySource::Base64(data),
+                ..
+            }) => Some((content_type.as_str(), data.as_ref())),
+            _ => None,
+        }
+    }
+
     #[test]
-    fn multimodal_content_parts_are_flattened_to_their_text() {
+    fn user_content_parts_keep_their_images_in_order() {
         let body = json!({
             "model": "m",
             "messages": [{
@@ -1072,12 +1248,124 @@ mod tests {
         });
         let (_, req) = chat_request_from_body(&body).unwrap();
         let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
+        assert_eq!(parts.len(), 3, "{parts:?}");
+        assert!(matches!(parts[0], ContentPart::Text(t) if t == "look: "));
+        assert_eq!(inline_image(parts[1]), Some(("image/png", "AAA")));
+        assert!(matches!(parts[2], ContentPart::Text(t) if t == "what is it?"));
+    }
+
+    #[test]
+    fn a_remote_image_url_is_forwarded_as_a_url() {
+        let body = json!({
+            "model": "m",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    { "type": "image_url", "image_url": { "url": "https://x.test/a.jpg" } }
+                ]
+            }]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
         assert!(
-            parts
-                .iter()
-                .any(|p| matches!(p, ContentPart::Text(t) if t == "look: what is it?")),
-            "text parts joined: {parts:?}"
+            matches!(parts[0], ContentPart::Binary(Binary { source: BinarySource::Url(u), .. })
+                if u == "https://x.test/a.jpg"),
+            "{parts:?}"
         );
+    }
+
+    /// `ToolResponse.content` is a string, so a tool's image cannot ride in
+    /// the tool message. It follows the run of tool messages, never between
+    /// them (that would split the replies to one assistant turn's calls, which
+    /// OpenAI rejects), and a user turn right after absorbs it, so no two user
+    /// turns sit back to back for an adapter that demands alternation.
+    #[test]
+    fn tool_images_lead_the_next_user_turn() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "cam", "arguments": "{}" } },
+                    { "id": "c2", "type": "function", "function": { "name": "ls", "arguments": "{}" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "text", "text": "frame" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c2", "content": "a.txt" },
+                { "role": "user", "content": "next" }
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
+        assert_eq!(roles, ["Assistant", "Tool", "Tool", "User"]);
+        let tool: Vec<&ContentPart> = req.messages[1].content.iter().collect();
+        assert!(
+            matches!(tool[0], ContentPart::ToolResponse(tr) if tr.call_id == "c1" && tr.content == "frame"),
+            "the tool message keeps its text: {tool:?}"
+        );
+        let user: Vec<&ContentPart> = req.messages[3].content.iter().collect();
+        assert!(
+            matches!(user[0], ContentPart::Text(t) if t.contains("c1")),
+            "the image is labeled with the call it answers: {user:?}"
+        );
+        assert_eq!(inline_image(user[1]), Some(("image/png", "QUJD")));
+        assert!(matches!(user[2], ContentPart::Text(t) if t == "next"), "{user:?}");
+    }
+
+    /// With no user turn to absorb them, the images get their own carrier,
+    /// and the assistant turn after it keeps the roles alternating.
+    #[test]
+    fn tool_images_without_a_following_user_turn_get_a_carrier() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "cam", "arguments": "{}" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }
+                ]},
+                { "role": "assistant", "content": "a red square" }
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
+        assert_eq!(roles, ["Assistant", "Tool", "User", "Assistant"]);
+    }
+
+    #[test]
+    fn a_trailing_tool_image_is_still_forwarded() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,QUJD" } }
+                ]}
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        assert_eq!(req.messages.len(), 2);
+        let carried: Vec<&ContentPart> = req.messages[1].content.iter().collect();
+        assert_eq!(inline_image(carried[1]), Some(("image/jpeg", "QUJD")));
+    }
+
+    #[test]
+    fn a_malformed_image_part_is_dropped_not_fatal() {
+        let body = json!({
+            "model": "m",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "hi" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png,notbase64" } },
+                    { "type": "image_url" }
+                ]
+            }]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
+        assert_eq!(parts.len(), 1, "{parts:?}");
     }
 
     #[test]
@@ -1213,7 +1501,7 @@ mod tests {
 
     async fn run(url: &str, keys: &[String], events: &mpsc::UnboundedSender<StreamEvent>)
         -> Result<serde_json::Value, String> {
-        stream_chat_completions(&build_http_client(), url, keys, None, &body(), events).await
+        stream_chat_completions(&build_http_client(), url, keys, None, &body(), events, &[]).await
     }
 
     #[tokio::test]
@@ -1365,6 +1653,52 @@ mod tests {
         server.await.expect("server");
     }
 
+    /// The TUI mutes the log facade, so a retry announced only through
+    /// `log::warn!` left the user watching a spinner for up to the whole retry
+    /// budget. Each retry has to reach the consumer as an event, before the
+    /// backoff sleep, naming the attempt about to run and why.
+    #[tokio::test]
+    async fn each_retry_is_announced_before_the_backoff() {
+        let (url, server) = serve(vec![
+            Some(status_response(503, "Service Unavailable", r#"{"error":"busy"}"#)),
+            None,
+            Some(sse_response(&[
+                r#"{"choices":[{"delta":{"content":"hi"}}]}"#,
+                r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            ])),
+        ])
+        .await;
+
+        let (tx, mut rx) = sink();
+        run(&url, &[], &tx).await.expect("the retries carry the turn");
+
+        drop(tx);
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let retries: Vec<(u32, u32, u64, String)> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                StreamEvent::Retry {
+                    attempt,
+                    max_attempts,
+                    delay_ms,
+                    reason,
+                } => Some((*attempt, *max_attempts, *delay_ms, reason.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(retries.len(), 2, "one event per retry: {events:?}");
+        assert_eq!((retries[0].0, retries[0].1), (2, MAX_ATTEMPTS));
+        assert_eq!((retries[1].0, retries[1].1), (3, MAX_ATTEMPTS));
+        assert_eq!(retries[0].2, BASE_RETRY_DELAY.as_millis() as u64);
+        assert_eq!(retries[1].2, 2 * BASE_RETRY_DELAY.as_millis() as u64);
+        assert!(retries[0].3.contains("503"), "{}", retries[0].3);
+        assert!(!retries[0].3.contains('\n'), "a one-line reason: {}", retries[0].3);
+        let first_token = events.iter().position(|e| matches!(e, StreamEvent::Token { .. }));
+        let last_retry = events.iter().rposition(|e| matches!(e, StreamEvent::Retry { .. }));
+        assert!(first_token > last_retry, "the retries precede the answer: {events:?}");
+        server.await.expect("server");
+    }
+
     /// 401 rotates to the next key rather than burning retries on a key the
     /// upstream has already rejected.
     #[tokio::test]
@@ -1464,5 +1798,74 @@ mod tests {
         assert!(matches!(disposition_for_status(400), Disposition::Fatal));
         assert!(matches!(disposition_for_status(404), Disposition::Fatal));
         assert!(matches!(disposition_for_status(422), Disposition::Fatal));
+    }
+
+    /// An SSE reply with no `[DONE]`: the provider's connection closes where the
+    /// stream was cut, which is what a dropped upstream looks like.
+    fn cut_off_response(events: &[&str]) -> String {
+        let body: String = events.iter().map(|e| format!("data: {e}\n\n")).collect();
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    /// Only one reply is queued, so a retry would hit a closed listener and
+    /// report a transport error instead: the message proves the cut-off itself
+    /// reached the caller as the failure.
+    #[tokio::test]
+    async fn a_stream_cut_off_mid_answer_fails_instead_of_finishing() {
+        let (url, server) = serve(vec![Some(cut_off_response(&[
+            r#"{"choices":[{"delta":{"content":"partial"}}]}"#,
+        ]))])
+        .await;
+
+        let (tx, mut rx) = sink();
+        let err = run(&url, &[], &tx)
+            .await
+            .expect_err("a cut-off answer is not a completed one");
+        assert!(err.contains("before it finished its answer"), "{err}");
+
+        // What arrived is still shown to the consumer as it streamed.
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::Token { text } = ev {
+                tokens.push(text);
+            }
+        }
+        assert_eq!(tokens, vec!["partial".to_string()]);
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn an_empty_successful_stream_fails_instead_of_finishing() {
+        let (url, server) = serve(vec![Some(cut_off_response(&[]))]).await;
+
+        let (tx, _rx) = sink();
+        let err = run(&url, &[], &tx)
+            .await
+            .expect_err("no answer at all is not a completed one");
+        assert!(err.contains("without sending an answer"), "{err}");
+        server.await.expect("server");
+    }
+
+    /// The provider's own terminal outcomes are answers, whatever they say.
+    #[tokio::test]
+    async fn a_provider_terminal_outcome_is_kept_as_it_was_sent() {
+        for reason in ["stop", "length", "content_filter"] {
+            let chunk = format!(r#"{{"choices":[{{"delta":{{}},"finish_reason":"{reason}"}}]}}"#);
+            let (url, server) = serve(vec![Some(sse_response(&[
+                r#"{"choices":[{"delta":{"content":"text"}}]}"#,
+                chunk.as_str(),
+            ]))])
+            .await;
+
+            let (tx, _rx) = sink();
+            let completion = run(&url, &[], &tx).await.expect("a terminal outcome is a completion");
+            assert_eq!(completion["choices"][0]["finish_reason"], reason);
+            assert_eq!(completion["choices"][0]["message"]["content"], "text");
+            server.await.expect("server");
+        }
     }
 }

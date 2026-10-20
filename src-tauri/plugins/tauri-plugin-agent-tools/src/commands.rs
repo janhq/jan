@@ -77,11 +77,28 @@ pub struct ToolResult {
     pub images: Vec<ImageContentPart>,
 }
 
+/// `content` plus, on a shell call, a line per hook matcher that still names
+/// the shell's old name. The CLI reports hook load notices once at run start;
+/// this surface has no run around a call, so they ride on the shell call
+/// itself -- exactly the call the stale hook no longer guards.
+fn with_renamed_shell_notices(
+    tool: &str,
+    mut content: String,
+    hooks: &crate::tools::hooks::HookSet,
+) -> String {
+    if tool == crate::tools::SHELL_TOOL {
+        for notice in hooks.renamed_shell_notices() {
+            content.push_str(&format!("\n[hook config: {notice}]"));
+        }
+    }
+    content
+}
+
 /// The permanent store root holding `memory/` and `skills/`.
 ///
 /// `project` is an explicit override and is currently always `None`: the desktop
-/// has no project picker yet. Once one lands, a project's own co-located store
-/// (`<project>/.jan/agent`) layers on top of this one; see the memory-scope TODO.
+/// has no project picker yet. Once one lands, a project's own store
+/// (`~/.jan/projects/<slug>`) layers on top of this one; see the memory-scope TODO.
 fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
     match project.map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => workspace::project_store(Path::new(p)),
@@ -582,6 +599,7 @@ pub async fn start_monitor(
         project_root: root,
         scratch_root: Some(scratch),
         mask_root: Some(PathBuf::from(&data_folder)),
+        hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
         allow_network: allow_network.unwrap_or(false),
@@ -869,6 +887,9 @@ async fn execute_tool_inner(
     );
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
+    // The desktop always sandboxes, and an attached project folder can be the
+    // user's home, which puts the CLI's `~/.jan` inside it.
+    let hidden = workspace::hidden_root(true);
 
     match gate::resolve_decision(
         tool,
@@ -878,21 +899,17 @@ async fn execute_tool_inner(
             scratch: Some(&scratch),
             read_roots: &read_roots,
             write_roots: &write_roots,
-            hide_jan: true,
+            hidden_root: hidden.as_deref(),
         },
         &ToolPermissions::default(),
         &SessionGrants::default(),
     ) {
         Decision::Allow => {}
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
-            return Err(format!(
-                "tool '{name}' is denied: {} is the agent's own state directory and is hidden",
-                crate::tools::sandbox::JAN_DIR
-            )
-            .into());
-        }
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
+        }
+        Decision::HardDeny(gate::DenyReason::Hidden) => {
+            return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the
@@ -949,6 +966,15 @@ async fn execute_tool_inner(
             }
             .into());
         }
+        // The chat sandbox is throwaway by design and never lifted: escalation
+        // is a CLI capability, so say so rather than "not available yet".
+        Decision::Prompt(PromptKind::Escalate) => {
+            return Err(format!(
+                "tool '{name}' cannot run outside the sandbox here; the command was not run. \
+                 Run it without `escalate`."
+            )
+            .into());
+        }
         Decision::Prompt(kind) => {
             return Err(format!(
                 "tool '{name}' needs user approval ({kind:?}) and is not available yet"
@@ -976,6 +1002,7 @@ async fn execute_tool_inner(
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
         .with_write_roots(&write_roots)
+        .with_hidden_root(hidden.as_deref())
         .with_thread_id(Some(&thread_id))
         .with_screenshot_backend(screenshot_backend);
     if let Some(sp) = skill_project.as_deref() {
@@ -988,8 +1015,8 @@ async fn execute_tool_inner(
         ctx = ctx.with_output_sink(sink);
     }
     let (content, diff, images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
-    let is_error =
-        content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
+    let content = with_renamed_shell_notices(tool.name, content, &hooks);
+    let is_error = handlers::tool_result_failed(tool, &content);
     Ok(ToolResult {
         content,
         diff,
@@ -1180,10 +1207,10 @@ mod tests {
     }
 
     #[test]
-    fn explicit_project_uses_its_co_located_store() {
+    fn explicit_project_uses_its_project_store() {
         assert_eq!(
             resolve_store("/data", Some("/repo")),
-            Path::new("/repo/.jan/agent")
+            workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
@@ -1406,6 +1433,10 @@ mod tests {
     /// the OS can confine it and is refused when it cannot. Asserting both arms
     /// keeps the fallback honest on hosts (and CI images) with no backend.
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
     async fn bash_runs_only_when_the_sandbox_can_enforce() {
         let data = unique_data_folder();
         let df = data.to_string_lossy().to_string();
@@ -1414,7 +1445,7 @@ mod tests {
             df.clone(),
             T1.into(),
             None,
-            "bash".into(),
+            "shell".into(),
             json!({"command": "echo hi"}),
             None,
             None,
@@ -1441,6 +1472,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&data);
     }
 
+    /// A hook matcher on `bash` is reported under each shell call, and only
+    /// there: the desktop has no run start to report it at.
+    #[test]
+    fn a_bash_hook_matcher_is_reported_under_shell_calls() {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some("bash".into()),
+                command: "guard".into(),
+                timeout_secs: None,
+            }],
+            Path::new("config.toml"),
+        );
+        let out = with_renamed_shell_notices("shell", "ok\n[exit 0]".into(), &hooks);
+        assert!(out.starts_with("ok\n[exit 0]\n[hook config: "), "{out}");
+        assert!(out.contains("now `shell`"), "{out}");
+        assert_eq!(with_renamed_shell_notices("read", "x".into(), &hooks), "x");
+        let none = crate::tools::hooks::HookSet::new();
+        assert_eq!(with_renamed_shell_notices("shell", "x".into(), &none), "x");
+    }
+
     /// The network flag has to survive the whole IPC -> ToolContext -> jail path.
     /// Only the closed direction is asserted: opening it would make the test
     /// depend on the host actually having connectivity.
@@ -1457,7 +1510,7 @@ mod tests {
             df.clone(),
             T1.into(),
             None,
-            "bash".into(),
+            "shell".into(),
             json!({"command": "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected"}),
             None,
             None,
@@ -1742,35 +1795,6 @@ mod tests {
                 "expected {bad:?} to be rejected by execute_tool"
             );
         }
-        let _ = std::fs::remove_dir_all(&data);
-    }
-
-    #[tokio::test]
-    async fn agent_config_surface_is_hard_denied() {
-        let data = unique_data_folder();
-        let df = data.to_string_lossy().to_string();
-        thread_workspace_path(df.clone(), T1.into()).await.unwrap();
-
-        let err = execute_tool(
-            df.clone(),
-            T1.into(),
-            None,
-            "read".to_string(),
-            json!({"path": ".jan/agent/agent.toml"}),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect_err("agent config must be hard-denied");
-        assert!(
-            err.message.contains("is hidden"),
-            "unexpected: {}",
-            err.message
-        );
         let _ = std::fs::remove_dir_all(&data);
     }
 

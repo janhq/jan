@@ -11,35 +11,49 @@ Run `jan` in a folder. That CWD is the project root; `--project DIR` selects ano
 
 ## Project files
 
-Jan reads non-empty `JAN.md` files from the project root and its ancestors. The nearest file wins.
-Jan creates this separate state tree on first use:
+Jan reads one non-empty instructions file per folder, from the project root and its ancestors. The
+nearest file wins. `AGENTS.md` is the default and what `/init` writes; a legacy `JAN.md` still loads
+and wins over `AGENTS.md` in the same folder. It is the only file Jan keeps in the project; commit it
+to share instructions.
+Everything else is per-user state under `~/.jan/`, created on first use.
+
+## User files
 
 ```text
-<project>/
-|-- JAN.md                 # always-loaded project instructions
-`-- .jan/
-    `-- agent/
+~/.jan/
+|-- config.toml              # CLI provider configuration and credentials
+|-- MEMORY.md                # generated index: user notes + projects with memory
+|-- memory/                  # user-wide notes (`user:<name>`), every project
+|-- skills/                  # user-wide skills, every project (project skills shadow them)
+`-- projects/
+    `-- <name>-<hash>/       # one per project directory (git worktrees share it)
+        |-- project.json     # which directory this store belongs to
         |-- agent.toml       # model, provider, budget, tools, skills
+        |-- MEMORY.md        # generated index of this project's notes
+        |-- memory/          # durable project facts
         |-- skills/
         |   `-- <name>/
         |       `-- SKILL.md # procedure, plus optional scripts/templates
-        |-- memory/          # durable project facts
+        |-- plugins/
         |-- threads/         # saved conversations
         `-- subagents/       # reusable agent definitions
 ```
 
-`agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections.
-A simple skill can be `skills/<name>.md`. Commit `JAN.md`, `agent.toml`, `skills/`, and
-`subagents/`; gitignore `threads/`. Run `jan cli agent status --project .` to scaffold the tree.
+`agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections, plus
+`[subagents.<name>] model = ...` to choose the model a subagent runs on.
 
-## User-global files
-
-`~/.jan/` is separate from a project's `.jan/`:
-
-```text
-~/.jan/
-`-- config.toml              # CLI provider configuration and credentials
-```
+Built-in subagents `explore` (read-only: `read`/`ls`/`find`/`grep`, no shell) and `research` run on
+the cheap `smol` role (`smol_model` in `config.toml`, else the session's model); `review` and
+`debug` run on the session's model. A dispatch picks one with `agent: "<name>"`. A subagent's
+`model` is a model id, `smol` or `inherit`. Change it in `/settings > subagents`; set
+the cheap model with `/settings > smol_model`.
+A simple skill can be `skills/<name>.md`. Skill precedence is project > user (`~/.jan/skills`) >
+built-in `jan`. Plugin skills are always named `<plugin>:<name>`. `/skills` lists each skill's scope
+and marks shadowed ones, and `skill_write` with `scope: "user"` writes a user skill. Symlinked
+skill folders are followed. Run `jan cli agent status --project .` to scaffold
+the store. A project that still has a `.jan/` folder from an older Jan is moved into
+`~/.jan/projects/` automatically the next time Jan starts in it.
+`memory_cross_project = false` in `config.toml` hides other projects' memory from the agent.
 
 Jan Desktop stores its settings and shared MCP configuration under the platform support folder:
 

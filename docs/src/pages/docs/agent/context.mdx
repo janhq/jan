@@ -26,10 +26,11 @@ only when a turn ends.
 At the end of a turn you get a receipt:
 
 ```
-2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+  Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ```
 
-`↑` is context sent, `↓` tokens produced, then elapsed time and throughput. The two differ on
+First how long the turn took and when it finished, then `↑` context sent, `↓` tokens produced, and
+throughput. The two differ on
 purpose: context is the size of the request, output is what came back.
 
 ### The `/context` overlay
@@ -43,7 +44,10 @@ Inside is a rail that shows the fill as a percentage of the window, a visual bar
 `^` marker at the current usage point and `╳` marking the auto-compact reserve zone, a
 token scale, and a headroom line (`N tokens available before auto-compact`), the
 prompt-cache lines when the route reports any, followed by a per-category breakdown:
-System prompt, System tools, Project context, Skills, and Messages.
+System prompt, System tools, Project context, Skills, and Messages. Below it, **Project
+instructions** lists each instructions file the project context loaded, and labels a legacy
+`JAN.md` or an opt-in `CLAUDE.md` (see
+[Project Config](/docs/agent/project-config#janmd-and-claudemd)).
 Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to close; closing never
 cancels the turn.
 
@@ -168,15 +172,30 @@ name = "small-window"
 compaction_ratio = 0.6
 ```
 
+The summary is written by `smol_model` from `~/.jan/config.toml` when one is set, so the session's
+own model is not spent on condensing its history. If the smol model fails (its smaller window
+overflows, it is unreachable, or it returns nothing), the session's model writes the summary
+instead. A run under a `[budget]` money limit always summarizes on its own model, so every request
+is charged at the rates the limit was priced against.
+
 The check runs on the request itself, before it is dispatched, so the break lands at a point the
 session chose rather than after a provider rejects an oversized prompt and the run retries. When it
 runs, the session history is replaced with the compacted version, the transcript is told, and the
-console says so:
+console says so. While the summary is being written, the header and input row show `compacting`,
+and the note that follows says why it happened:
 
 ```
 auto-compacted 84 -> 31 messages (ctx 96K/128K)
-compacted 84 messages into a summary before sending (104K tokens against a 102K token budget)
+compacted 84 messages into a summary: the prompt neared the context window
 ```
+
+A run also compacts when it uses up its [session token budget](#budgets), and after a provider
+rejects a prompt as too long (see [Context overflow](#context-overflow)). Both report the same
+way, and so does a subagent's compaction, prefixed with its name.
+
+Headless and RPC clients get a `compaction` event: `phase` is `started`, then `finished` (with
+`messages`, the number summarized) or `failed`, and `reason` is `preflight`, `context_overflow` or
+`session_budget`.
 
 ## Compacting on purpose
 
@@ -215,7 +234,7 @@ Separately from the context window, a project can bound how far one run goes:
 
 ```toml
 [budget]
-# max_tokens = 128000  # token-spend ceiling per run; 0 disables the cap
+# max_tokens = 128000  # token-spend ceiling per run; defaults to the model's context window; 0 disables the cap
 ```
 
 That's a stop point for the run as a whole, not a per-request limit. There is no turn cap - the

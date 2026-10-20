@@ -105,7 +105,7 @@ const Home = () => {
               </a>
             </div>
             <div className="mt-4">
-              <div className="text-center relative lg:w-1/2 mx-auto">
+              <div className="text-center relative mx-auto">
                 <div className="flex flex-col lg:flex-row items-center justify-center gap-4 animate-fade-in-up delay-300">
                   <span>
                     <img
@@ -119,7 +119,7 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  Personal Intelligence that answers only to you
+                  Your personal intelligence. Run any model, your way.
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
@@ -130,7 +130,7 @@ const Home = () => {
                     lastRelease={lastRelease}
                   />
                   <div className="font-medium text-center mt-2 text-white">
-                    +{totalDownload(release)} downloads
+                    {totalDownload(release)}+ downloads
                   </div>
                 </div>
                 <a
@@ -229,46 +229,11 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Products */}
-      <section className="px-3 pt-20">
-        <div className="container mx-auto">
-          <h2 className="text-[24px] lg:text-[40px] font-semibold text-center mb-10 -tracking-[1.3px]">
-            An open model ecosystem
-          </h2>
-          <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
-              <h3 className="text-xl font-semibold">Jan Agent</h3>
-              <p className="mt-2 text-black/60">
-                The core agent, distributed separately — run it on your own
-                VM or container.
-              </p>
-              <a href="/docs/agent" className="inline-block mt-4">
-                <Button variant="playful" size="lg">
-                  Install Jan Agent
-                </Button>
-              </a>
-            </div>
-            <div className="rounded-2xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] p-6">
-              <h3 className="text-xl font-semibold">Tokamak</h3>
-              <p className="mt-2 text-black/60">
-                Router, fusion model, and governance/audit — the self-hosted
-                backend Jan agents connect to.
-              </p>
-              <a href="/tokamak" className="inline-block mt-4">
-                <Button variant="playful" size="lg">
-                  Explore Tokamak
-                </Button>
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Statistic and social */}
       <section className="pt-20">
         <div className="container mx-auto">
           <h2 className="text-[24px] lg:text-[52px] font-semibold text-center mb-16 -tracking-[1.3px]">
-            Over 4 million downloads
+            Over 6 million downloads
           </h2>
         </div>
         <TweetSection />
@@ -336,7 +301,7 @@ const Home = () => {
                         <span className="font-bold text-lg">Discord</span>
                         <span className="text-sm mt-1">
                           {formatCompactNumber(discordWidget.presence_count)}{' '}
-                          Online
+                          online
                         </span>
                       </span>
                     </Button>
@@ -626,7 +591,7 @@ const Home = () => {
                     classNameButton="!shadow-none border-2"
                   />
                   <span className="text-xs font-medium text-center mt-2">
-                    +{totalDownload(release)} downloads, Free & Open source
+                    {totalDownload(release)}+ downloads, Free & Open source
                   </span>
                 </div>
               </div>

@@ -36,19 +36,27 @@ on the hosted runners — inside the virtual display for no reason.
 
 ## What it covers
 
-Four spec files, run in this order (see [Spec order](#spec-order-is-maintained-by-hand)):
+Five spec files, run in this order (see [Spec order](#spec-order-is-maintained-by-hand)):
 
 | Spec | Covers |
 |---|---|
 | `smoke.e2e.ts` | The app boots, React mounts, the first-run wizard renders, and the data folder Rust resolves is inside the throwaway profile. |
 | `chat.e2e.ts` | Configure a provider and a model through the real dialogs; send; stream a reply; a second turn; survive a webview reload; delete the thread and confirm it left disk. |
 | `message-actions.e2e.ts` | Regenerate; switch between reply versions; edit a user message and re-run; delete a single message; stop a reply mid-stream; New Chat into a fresh thread. |
+| `image-limit.e2e.ts` | Image/document defaults and disabled state; persisted image limit; oversized rejection and accepted images through paste, drop and the hidden file input; inline base64 parts received by the mock. |
 | `cowork-channel.e2e.ts` | The absent half of the channel gate: no sidebar tab, no settings entry, and a bookmarked `/cowork`, `/artifacts` or `/settings/cowork` URL lands where the guard sends it. |
+
+The image spec generates valid PNGs inside the webview and dispatches synthetic
+`ClipboardEvent` / `DragEvent` events, plus assigns a generated `FileList` to the
+hidden image input and dispatches `change`. These exercise the real intake
+handlers, validation and send path. They do not exercise the OS clipboard,
+OS drag-and-drop or native file picker, which the embedded driver cannot drive.
+The tests share state in declaration order and use their own mock model id.
 
 Those are the load-bearing items of the manual checklist's D section: if the
 chat loop and the actions on a message work, the product works. Much of D is
 still manual — rename, the search dialog, `Delete All`, projects, switching
-model mid-conversation, markdown/LaTeX/code-block rendering, image attachments,
+model mid-conversation, markdown/LaTeX/code-block rendering, native image pickers,
 IME input, the token-speed readout.
 
 **Deliberately out of scope.** llama.cpp: a real local model means a
@@ -590,8 +598,9 @@ and `chat.e2e.ts` configures a provider, which under an alphabetically sorted
 glob ran first and broke it.
 
 The order is pristine first, most-configured last — `smoke` → `chat` →
-`message-actions` — and it is the reason `message-actions.e2e.ts` can assume a
-provider has already been configured and the analytics panel already answered.
+`message-actions` → `image-limit` → `cowork-channel` — and it is the reason
+`message-actions.e2e.ts` can assume a provider has already been configured and
+the analytics panel already answered.
 
 It leaks further than a shared profile would explain. The embedded provider
 spawns **one** app in the launcher's `onPrepare` and every spec file drives that

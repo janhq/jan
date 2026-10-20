@@ -51,7 +51,7 @@ key)
   [ -n "$tag" ] && [ -n "$triple" ] || exit 1
 
   t="$triple $features"
-  for v in JAN_ENGINE_CUDA_ARCHS CC CXX CFLAGS CXXFLAGS LDFLAGS CUDAFLAGS CUDAHOSTCXX \
+  for v in JAN_ENGINE_CUDA_ARCHS CUDACXX CC CXX CFLAGS CXXFLAGS LDFLAGS CUDAFLAGS CUDAHOSTCXX \
            CMAKE_GENERATOR CMAKE_TOOLCHAIN_FILE; do
     t+=" $v=${!v:-}"
   done

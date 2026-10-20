@@ -34,6 +34,7 @@ import {
   IconPaperclip,
   IconLoader2,
   IconWorldSearch,
+  IconTerminal2,
   IconBrandChrome,
   IconDots,
 } from '@tabler/icons-react'
@@ -66,7 +67,8 @@ import {
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
 import { defaultModel } from '@/lib/models'
-import { cancelAgentThreadBash } from '@/lib/agentTools'
+import { cancelAgentThreadBash, getSandboxStatus } from '@/lib/agentTools'
+import { useChatShell } from '@/hooks/useChatShell'
 import { useAssistant } from '@/hooks/useAssistant'
 import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -85,10 +87,10 @@ import {
 } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { shouldShowTokenCounter } from '@/lib/tokenCounterVisibility'
-import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -101,15 +103,20 @@ import {
   createAudioAttachment,
   createVideoAttachment,
 } from '@/types/attachment'
+import {
+  applyIngestionChoices,
+  needsIngestionChoice,
+  promptIngestionChoices,
+  resolveAutoInlineBudget,
+} from '@/lib/attachmentProcessing'
+import { activePathTokens } from '@/lib/message-branching'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import {
-  parsePromptForReferences,
-  resolvePathReference,
+  expandPromptReferences,
   searchFiles,
-  stripPromptReferences,
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
@@ -132,10 +139,20 @@ type ChatInputProps = {
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
     /** Document attachments, for surfaces that do not read them back out of
      * the attachments store themselves. */
-    documents?: Attachment[]
+    documents?: Attachment[],
+    /** What the user typed, before @path references were expanded into
+     * `text`, so a cancelled send can hand it back unchanged. */
+    draft?: string
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
+  /**
+   * The turn's tools are still running or awaiting approval after the stream
+   * ended (`chatStatus` is already `ready`). Stop must stay reachable then: a
+   * runaway command otherwise leaves a send arrow and no way to end it. Like
+   * `chatStatus`, it queues what the user types until the turn ends.
+   */
+  toolsRunning?: boolean
   // Overrides the conversation scope this input belongs to — both its message
   // queue and its pending attachments (default: useThreads' currentThreadId).
   // Callers outside the general chat (e.g. Cowork, keyed by session id) pass
@@ -245,6 +262,7 @@ const ChatInput = memo(function ChatInput({
   onSubmit,
   onStop,
   chatStatus,
+  toolsRunning,
   scopeKey,
   ownsToolSet = true,
   surfaceControls,
@@ -306,6 +324,20 @@ const ChatInput = memo(function ChatInput({
   const showToolControls = ownsToolSet && !effectiveAgentMode
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
+  const shellEnabled = useChatShell((s) => s.shellEnabled)
+  const setShellEnabled = useChatShell((s) => s.setShellEnabled)
+  // The shell is only ever offered where a sandbox can confine it, so the
+  // switch is only shown there: with no backend there is nothing to turn off.
+  const [sandboxEnforcesShell, setSandboxEnforcesShell] = useState(false)
+  useEffect(() => {
+    let live = true
+    void getSandboxStatus().then((s) => {
+      if (live) setSandboxEnforcesShell(s.enforces)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
 
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [filePickerQuery, setFilePickerQuery] = useState('')
@@ -413,46 +445,6 @@ const ChatInput = memo(function ChatInput({
     filePickerCursorPos.current = null
   }, [])
 
-  // Resolve @path references in the prompt text, returning the resolved content
-  const resolvePromptReferences = useCallback(
-    async (text: string): Promise<{
-      text: string
-      resolvedContents: string
-    }> => {
-      const refs = parsePromptForReferences(text)
-      if (refs.length === 0) return { text, resolvedContents: '' }
-
-      const parts: string[] = []
-      for (const ref of refs) {
-        const resolved = await resolvePathReference(ref, workingDir)
-        if (resolved) {
-          if (resolved.kind === 'file') {
-            parts.push(
-              `--- File: ${resolved.absolutePath} ---\n${resolved.content}`
-            )
-          } else if (resolved.kind === 'directory') {
-            parts.push(
-              `--- Directory: ${resolved.absolutePath} ---\n${resolved.content}`
-            )
-          }
-        } else {
-          parts.push(
-            `[File not found or too large: ${ref}]`
-          )
-        }
-      }
-
-      const resolvedContents = parts.join('\n\n')
-
-      // Remove @ references from the prompt text (they'll be replaced by the
-      // resolved contents above so the model sees the content directly)
-      const cleanText = stripPromptReferences(text)
-
-      return { text: cleanText, resolvedContents }
-    },
-    [workingDir]
-  )
-
   // Get current thread messages for token counting
   const threadMessages = useMessages(
     useShallow((state) =>
@@ -460,8 +452,12 @@ const ChatInput = memo(function ChatInput({
     )
   )
 
+  // Read when a document is attached, without rebuilding the attach
+  // callback on every message update.
+  const threadMessagesRef = useRef(threadMessages)
+  threadMessagesRef.current = threadMessages
+
   const maxRows = 10
-  const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -532,7 +528,11 @@ const ChatInput = memo(function ChatInput({
 
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
+  const autoInlineContextRatio = useAttachments(
+    (s) => s.autoInlineContextRatio
+  )
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
+  const maxImageSizeMB = useImageAttachmentConfig((s) => s.maxImageSizeMB)
 
   // Derived: any document currently processing (ingestion in progress)
   // Same scope as the message queue: a surface writing attachments under its
@@ -637,9 +637,10 @@ const ChatInput = memo(function ChatInput({
       return
     }
 
-    // Resolve @path references before sending
+    // Expand @path references that resolve to a file or folder; any other
+    // `@token` (a pasted decorator) stays in the text as typed.
     const { text: resolvedText, resolvedContents } =
-      await resolvePromptReferences(prompt)
+      await expandPromptReferences(prompt, workingDir)
     const effectivePrompt = resolvedContents
       ? `${resolvedText}\n\n---\nReferenced file contents:\n\n${resolvedContents}`
       : resolvedText
@@ -657,8 +658,10 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
-      // When the model is still streaming, queue the message for later
-      if (isStreaming && queueId) {
+      // While the model is still streaming, or the turn's tools are still
+      // running, queue the message for later. The queue waits for the tools, so
+      // a second turn never starts under a tool loop that Stop still has to end.
+      if ((isStreaming || toolsRunning) && queueId) {
         useMessageQueue.getState().enqueue(queueId, {
           id: generateId(),
           text: effectivePrompt,
@@ -697,7 +700,8 @@ const ChatInput = memo(function ChatInput({
       onSubmit(
         effectivePrompt,
         files.length > 0 ? files : undefined,
-        documents.length > 0 ? documents : undefined
+        documents.length > 0 ? documents : undefined,
+        prompt
       )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
@@ -714,6 +718,7 @@ const ChatInput = memo(function ChatInput({
 
       const messagePayload = {
         text: effectivePrompt,
+        draft: prompt,
         files: [] as Array<{ type: string; mediaType: string; url: string }>,
       }
 
@@ -865,7 +870,7 @@ const ChatInput = memo(function ChatInput({
       }
       cancelToolCall?.()
       // Aborting the stream/loop only discards a pending tool result; a running
-      // or backgrounded bash keeps executing until its session's shells are
+      // or backgrounded shell keeps executing until its session's shells are
       // killed. Chat's tool thread_id is the chat thread id.
       void cancelAgentThreadBash(threadId)
     },
@@ -884,60 +889,60 @@ const ChatInput = memo(function ChatInput({
 
       // Only collect the user's inline-vs-embeddings preference via the
       // dialog.  Actual ingestion is always deferred to send time
-      // (processAttachmentsForSend inside processAndSendMessage).
-      const docsNeedingPrompt = docs.filter((doc) => {
-        if (doc.processed || doc.injectionMode) return false
-        const preference = doc.parseMode ?? parsePreference
-        return preference === 'prompt' || preference === 'auto'
-      })
+      // (processAttachmentsForSend inside processAndSendMessage), where
+      // 'auto' documents are routed by size when the model's window is known.
+      // Same conversation-aware budget as the send path (the active branch,
+      // which is what gets sent). If the budget is gone by send time, the
+      // send path asks for the remaining 'auto' documents itself.
+      const hasInlineBudget =
+        (await resolveAutoInlineBudget(
+          selectedModel,
+          selectedProvider,
+          autoInlineContextRatio,
+          activePathTokens(
+            threadMessagesRef.current,
+            (
+              useThreads.getState().threads[currentThreadId ?? '']
+                ?.metadata as Record<string, unknown> | undefined
+            )?.activeRootId as string | undefined
+          )
+        )) !== undefined
+      const docsNeedingPrompt = docs.filter((doc) =>
+        needsIngestionChoice(doc, parsePreference, hasInlineBudget)
+      )
 
       if (docsNeedingPrompt.length > 0) {
-        const choices = new Map<string, 'inline' | 'embeddings'>()
-        for (let i = 0; i < docsNeedingPrompt.length; i++) {
-          const doc = docsNeedingPrompt[i]
-          const choice = await useAttachmentIngestionPrompt
-            .getState()
-            .showPrompt(
-              doc,
-              ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
-              i,
-              docsNeedingPrompt.length
-            )
+        const choices = await promptIngestionChoices(docsNeedingPrompt)
 
-          if (!choice) {
-            // User cancelled — remove all pending docs
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter(
-                (att) =>
-                  !docsNeedingPrompt.some(
-                    (d) => d.path && att.path && d.path === att.path
-                  )
-              )
+        if (!choices) {
+          // User cancelled — remove all pending docs
+          setAttachmentsForThread(attachmentsKey, (prev) =>
+            prev.filter(
+              (att) =>
+                !docsNeedingPrompt.some(
+                  (d) => d.path && att.path && d.path === att.path
+                )
             )
-            return
-          }
-
-          if (doc.path) {
-            choices.set(doc.path, choice)
-          }
+          )
+          return
         }
 
         // Persist each document's chosen mode so processAttachmentsForSend
         // can pick it up at send time.
         if (choices.size > 0) {
           setAttachmentsForThread(attachmentsKey, (prev) =>
-            prev.map((att) => {
-              const mode = att.path ? choices.get(att.path) : undefined
-              return mode ? { ...att, parseMode: mode } : att
-            })
+            applyIngestionChoices(prev, choices)
           )
         }
       }
     },
     [
-      ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
       attachmentsKey,
+      autoInlineContextRatio,
+      currentThreadId,
       parsePreference,
+      selectedModel,
+      selectedProvider,
       setAttachmentsForThread,
     ]
   )
@@ -1238,7 +1243,7 @@ const ChatInput = memo(function ChatInput({
   }
 
   const processImageFiles = useCallback(async (files: File[]) => {
-    const maxSize = 10 * 1024 * 1024 // 10MB in bytes
+    const maxSize = maxImageSizeMB * 1024 * 1024
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
 
@@ -1415,7 +1420,7 @@ const ChatInput = memo(function ChatInput({
     const errors: string[] = []
     if (oversizedFiles.length > 0) {
       errors.push(
-        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max 10MB): ${oversizedFiles.join(', ')}`
+        `File${oversizedFiles.length > 1 ? 's' : ''} too large (max ${maxImageSizeMB}MB): ${oversizedFiles.join(', ')}`
       )
     }
 
@@ -1434,7 +1439,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress, maxImageSizeMB])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -2575,6 +2580,38 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
+                {showToolControls &&
+                  sandboxEnforcesShell &&
+                  selectedModel?.capabilities?.includes('tools') && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-pressed={shellEnabled}
+                          aria-label={t('common:shell')}
+                          className={cn(shellEnabled && 'text-primary')}
+                          onClick={() => setShellEnabled(!shellEnabled)}
+                        >
+                          <IconTerminal2
+                            size={18}
+                            className={cn(
+                              'text-muted-foreground',
+                              shellEnabled && 'text-primary'
+                            )}
+                          />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {shellEnabled
+                            ? t('common:shell') + t('common:activeSuffix')
+                            : t('common:shell')}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+
                 {!effectiveAgentMode &&
                   (selectedProvider === 'llamacpp' ||
                     selectedProvider === 'google' ||
@@ -2914,7 +2951,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               )}
 
-              {isStreaming ? (
+              {isStreaming || toolsRunning ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

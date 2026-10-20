@@ -379,6 +379,16 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
+        // arg.cpp:886-890, added in 0.4.1: an unset `-mmdev` follows `--device`
+        // rather than falling back to auto-placement. Without it a preset that
+        // pins the model to one GPU would still let the projector land wherever
+        // ggml chose, which is the split the setting exists to prevent.
+        if (engine->params.mmproj_use_gpu && engine->params.mmproj_device == nullptr &&
+            !engine->params.devices.empty()) {
+            engine->params.mmproj_device  = engine->params.devices.front();
+            engine->params.mmproj_use_gpu = engine->params.mmproj_device != nullptr;
+        }
+
         // Same omission, arg.cpp:946-954: common_params_fit needs spare slots
         // to write its overrides into and throws "did not provide buffer to
         // set tensor_buft_overrides" without them, so auto-fit silently gave
@@ -423,7 +433,7 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
-        // server.cpp:152-157, in llama-server's main() -- which neither entry
+        // server.cpp:156-161, in llama-server's main() -- which neither entry
         // point here goes through. n_parallel = -1 is the SERVER default, and
         // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
         // slots, so leaving the sentinel unresolved yields an engine with no
@@ -433,7 +443,7 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
             engine->params.kv_unified = true;
         }
 
-        // server.cpp:160-170, immediately after the block above and dependent on
+        // server.cpp:164-174, immediately after the block above and dependent on
         // it: the pool is n_parallel wide, so it can only be sized once the
         // sentinel is resolved. Only `-c 0` (size to the model's trained
         // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size

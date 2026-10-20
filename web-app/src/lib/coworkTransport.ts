@@ -115,7 +115,7 @@ export class CoworkChatTransport extends CustomChatTransport {
    * The set actually advertised this run, for narrowing a subagent's tools.
    *
    * A child's allowlist intersects with this rather than with the full built-in
-   * list, so plan mode and a withheld `bash` propagate to children for free.
+   * list, so plan mode and a withheld `shell` propagate to children for free.
    */
   get advertisedTools(): Record<string, Tool> {
     return this.frozenTools ?? this.tools

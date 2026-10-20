@@ -13,9 +13,6 @@
 //!   interpreter, loader, and libraries.
 //! - writes: the thread workspace and a private temp dir, nothing else.
 //! - network: denied unless explicitly allowed.
-//! - the agent's own `<workspace>/.jan` state directory is hidden even though it
-//!   sits inside the workspace ([`Policy::hide_root`]); AppContainer is the one
-//!   backend that cannot express it.
 //!
 //! AppContainer is stricter than that on reads: it can only read what grants
 //! `ALL APPLICATION PACKAGES`, which covers the system directories a process
@@ -75,11 +72,6 @@ pub struct Policy {
     /// masking it would hide the very files the agent works on.
     pub mask_root: Option<PathBuf>,
     pub allow_network: bool,
-    /// A path *inside* the workspace to hide from the shell: the agent's own
-    /// `<project>/.jan` state directory. The workspace bind/allow makes the whole
-    /// project reachable, so hiding it needs a rule layered on top -- see
-    /// [`Policy::with_hide_root`].
-    pub hide_root: Option<PathBuf>,
     /// Expose `$HOME` to the sandboxed shell read-only instead of hiding it.
     /// The CLI turns this on so helpers that read the user's home (`git`/`ssh`
     /// credential helpers, `~/.ssh/config`, `~/.netrc`) work, while writes stay
@@ -103,6 +95,10 @@ pub struct Policy {
     /// allowed) read-write in the same position as `read_roots`; an entry
     /// present in both lists is bound once, writable.
     pub write_roots: Vec<PathBuf>,
+    /// The Jan home (`~/.jan`), hidden from the shell wherever it sits: under a
+    /// read-only `$HOME`, inside the workspace (running in `$HOME`), or around
+    /// it (a Jan worktree in `~/.jan/worktrees/`). See [`Policy::with_hide_root`].
+    pub hide_root: Option<PathBuf>,
 }
 
 impl Policy {
@@ -111,12 +107,32 @@ impl Policy {
             workspace: workspace.to_path_buf(),
             mask_root: None,
             allow_network,
-            hide_root: None,
             home_readonly: false,
             scratch_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
+            hide_root: None,
         }
+    }
+
+    /// Hide `hide_root` from the sandboxed shell. The gate's token scan of the
+    /// command string is best-effort; this is what makes the directory
+    /// unreachable to the spellings a scan cannot see (`cd ~; cat .jan/*`, a
+    /// script the shell writes and runs). Not enforced on AppContainer, where
+    /// carving a subpath back out of a granted folder would mean writing a deny
+    /// ACE onto the user's directory; there the scan stands alone.
+    pub fn with_hide_root(mut self, hide_root: &Path) -> Self {
+        self.hide_root = Some(hide_root.to_path_buf());
+        self
+    }
+
+    /// True when a bind of the workspace or an attached root would re-expose the
+    /// hidden directory, so it has to be masked again after those binds.
+    fn hide_under_a_bind(&self, hide: &Path) -> bool {
+        std::iter::once(&self.workspace)
+            .chain(&self.read_roots)
+            .chain(&self.write_roots)
+            .any(|root| hide.starts_with(root) && hide != root)
     }
 
     /// Attach read-only roots. See [`Policy::read_roots`] for why their bind
@@ -138,18 +154,6 @@ impl Policy {
     /// thread workspace (nested under it) is re-bound on top so it survives.
     pub fn with_mask_root(mut self, mask_root: &Path) -> Self {
         self.mask_root = Some(mask_root.to_path_buf());
-        self
-    }
-
-    /// Hide `hide_root` from the sandboxed shell. Applied after the workspace is
-    /// bound/allowed, so it wins over it: the gate's token scan of the command
-    /// string is best-effort, and this is what makes `.jan` unreachable to the
-    /// spellings a scan cannot see (`cd .jan`, `$(echo ...)`, a script the shell
-    /// writes and runs). Not enforced on AppContainer, where the workspace is
-    /// granted by an ACE and carving a subpath back out would mean writing a deny
-    /// ACE onto the user's directory; there the scan stands alone.
-    pub fn with_hide_root(mut self, hide_root: &Path) -> Self {
-        self.hide_root = Some(hide_root.to_path_buf());
         self
     }
 
@@ -208,9 +212,10 @@ fn detect() -> Backend {
     }
     #[cfg(target_os = "linux")]
     {
-        match bwrap_path() {
-            Some(path) if bwrap_usable(&path) => Backend::Bubblewrap,
-            _ => Backend::None,
+        if bwrap_path().is_some() {
+            Backend::Bubblewrap
+        } else {
+            Backend::None
         }
     }
     #[cfg(windows)]
@@ -250,14 +255,12 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
         Backend::Bubblewrap => Some(ShellConfig {
             program: bwrap_path()?,
             args: bwrap_args(policy, cfg),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         Backend::Seatbelt => Some(ShellConfig {
             program: PathBuf::from(seatbelt_program()),
             args: seatbelt_args(policy, cfg),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         // AppContainer is a token attribute on the spawn rather than an argv
         // prefix, and `tokio::process::Command` cannot set one, so the wrapper is
@@ -273,8 +276,7 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
                 &cfg.program,
                 &cfg.args,
             ),
-            via_stdin: cfg.via_stdin,
-            description: cfg.description,
+            kind: cfg.kind,
         }),
         Backend::None => None,
     }
@@ -284,20 +286,119 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
 // bubblewrap (Linux)
 // ---------------------------------------------------------------------------
 
-/// The fixed FHS locations are preferred so a directory prepended to `PATH`
-/// cannot shadow the system bwrap; `PATH` is the fallback for distros with no
-/// FHS layout at all (NixOS keeps bwrap only at a Nix-store path). A planted
-/// `bwrap` found via `PATH` gains nothing: it runs as the same user, and
-/// [`bwrap_usable`]'s live probe still has to pass before it is trusted.
+/// The local override is trusted only when the resolved target is a regular
+/// file owned by `owner_uid`, neither group- nor world-writable, and every
+/// directory on both its lookup path and resolved path up to `trust_root` is
+/// owned by that uid and neither group- nor world-writable. Checking both
+/// paths prevents a writable symlink target or lookup directory from replacing
+/// an otherwise protected binary. Production uses `/` and uid 0.
+///
+/// Debian ships `/usr/local` as `root:root 0755` unless the admin opted into
+/// the staff group (`/etc/staff-group-for-usr-local`), which makes it
+/// `root:staff 2775`. Such a directory is rejected on purpose: the mode alone
+/// cannot say who is in that group, and anyone who is can swap the binary. The
+/// sandbox then starts with the system bwrap, as it did before this lookup.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn trusted_local_bwrap(path: &Path, trust_root: &Path, owner_uid: u32) -> bool {
+    fn protected(path: &Path, owner_uid: u32, directory: bool) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(meta) = std::fs::metadata(path) else {
+            return false;
+        };
+        (if directory {
+            meta.is_dir()
+        } else {
+            meta.is_file()
+        }) && meta.uid() == owner_uid
+            && meta.mode() & 0o022 == 0
+    }
+
+    fn protected_parents(path: &Path, root: &Path, owner_uid: u32) -> bool {
+        let mut parent = path.parent();
+        while let Some(dir) = parent {
+            if !protected(dir, owner_uid, true) {
+                return false;
+            }
+            if dir == root {
+                return true;
+            }
+            parent = dir.parent();
+        }
+        false
+    }
+
+    let Ok(resolved) = path.canonicalize() else {
+        return false;
+    };
+    let Ok(root) = trust_root.canonicalize() else {
+        return false;
+    };
+    protected(&resolved, owner_uid, false)
+        && protected_parents(path, trust_root, owner_uid)
+        && protected_parents(&resolved, &root, owner_uid)
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn select_bwrap(
+    candidates: [&Path; 3],
+    trust_root: &Path,
+    owner_uid: u32,
+    usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let [local, system, bin] = candidates;
+    let trusted = trusted_local_bwrap(local, trust_root, owner_uid);
+    if trusted && local.is_file() && usable(local) {
+        return Some(local.to_path_buf());
+    }
+    [system, bin]
+        .into_iter()
+        .chain((!trusted).then_some(local))
+        .find(|path| path.is_file() && usable(path))
+        .map(Path::to_path_buf)
+}
+
+/// [`select_bwrap`], then `PATH` as a last resort for distros with no FHS
+/// layout at all (NixOS keeps bwrap only at a Nix-store path). `PATH` is
+/// consulted only when none of the fixed locations holds a bwrap, as before:
+/// an installed but unusable system bwrap (userns blocked) must not hand the
+/// choice to whatever a user prepended to `PATH`.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn select_bwrap_or_path(
+    candidates: [&Path; 3],
+    trust_root: &Path,
+    owner_uid: u32,
+    usable: impl Fn(&Path) -> bool,
+    which: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let any_installed = candidates.iter().any(|path| path.is_file());
+    select_bwrap(candidates, trust_root, owner_uid, &usable).or_else(|| {
+        if any_installed {
+            None
+        } else {
+            which().filter(|path| usable(path))
+        }
+    })
+}
+
+/// Prefer a root-owned local override only if its binary and every directory
+/// reachable on both its original and symlink-resolved paths are root-owned and
+/// not group/world-writable. This prevents an unprivileged user from planting
+/// a local override ahead of `/usr/bin` or `/bin`. An untrusted local binary is
+/// only a last resort, as before, followed by `PATH` for non-FHS distros.
+/// Every candidate must pass the live sandbox probe before selection.
 #[cfg(target_os = "linux")]
 fn bwrap_path() -> Option<PathBuf> {
+    // OnceLock, not LazyLock: this crate's MSRV is 1.77.2 and LazyLock needs 1.80.
     static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
     PATH.get_or_init(|| {
-        ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
-            .into_iter()
-            .map(PathBuf::from)
-            .find(|p| p.is_file())
-            .or_else(|| super::proc::which("bwrap"))
+        let candidates = [
+            Path::new("/usr/local/bin/bwrap"),
+            Path::new("/usr/bin/bwrap"),
+            Path::new("/bin/bwrap"),
+        ];
+        select_bwrap_or_path(candidates, Path::new("/"), 0, bwrap_usable, || {
+            super::proc::which("bwrap")
+        })
     })
     .clone()
 }
@@ -399,6 +500,11 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(mask) = &policy.mask_root {
         push(&mut args, &["--tmpfs", &mask.to_string_lossy()]);
     }
+    // The Jan home, masked with the others: before the binds below, so a
+    // workspace living under it (a Jan worktree) is punched back through.
+    if let Some(hide) = &policy.hide_root {
+        push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
+    }
 
     // Between the masks above and the workspace below, and that position is the
     // enforcement: after the `$HOME`/data-folder tmpfs so a project living under
@@ -424,12 +530,9 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
 
     push(&mut args, &["--bind", &ws, &ws]);
-    // After the workspace bind, so it is not shadowed by it: an empty tmpfs where
-    // the agent's own state directory sits. Mounted unconditionally rather than
-    // only when the directory exists, so a `.jan` created while the sandbox runs
-    // cannot be read back by the next command in the same shell. Writes into it
-    // are discarded with the sandbox (and hard-denied at the tool layer anyway).
-    if let Some(hide) = &policy.hide_root {
+    // And again after, when a bind contains it (running in `$HOME`): the
+    // workspace bind would otherwise shadow the mask above and re-expose it.
+    if let Some(hide) = policy.hide_root.as_deref().filter(|h| policy.hide_under_a_bind(h)) {
         push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
     }
     push(&mut args, &["--chdir", &ws]);
@@ -464,6 +567,11 @@ fn seatbelt_program() -> &'static str {
         "/usr/bin/sandbox-exec"
     }
 }
+
+/// Seatbelt rules hiding the Jan home; where they go in the profile decides
+/// whether they win over the workspace allow (see [`seatbelt_policy`]).
+const HIDE_RULES: &str = "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
+                          (deny file-write* (subpath (param \"HIDE_ROOT\")))\n";
 
 /// Seatbelt profile. `(deny default)` closes everything, then each section opens
 /// the narrowest thing that works. Later rules win, which is what lets the
@@ -502,6 +610,16 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if policy.mask_root.is_some() {
         p.push_str("(deny file-read* (subpath (param \"MASK_ROOT\")))\n");
     }
+    // Later rules win. Denied here, before the allows below, when the
+    // workspace lives under the Jan home (a worktree) so it is read back; when
+    // the home lies inside an allowed root instead, the deny goes last.
+    let hide_last = policy
+        .hide_root
+        .as_deref()
+        .is_some_and(|h| policy.hide_under_a_bind(h));
+    if policy.hide_root.is_some() && !hide_last {
+        p.push_str(HIDE_RULES);
+    }
     p.push_str(
         "(allow file-read* (subpath (param \"WORKSPACE\")))\n\
          ; Writes: the workspace and the temp dir, nothing else.\n\
@@ -538,13 +656,8 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
              (allow file-write* (subpath (param \"WRITE_ROOT_{i}\")))\n"
         ));
     }
-    // Last, so it wins over the workspace allow above: the agent's own state
-    // directory is neither readable nor writable, however the command spells it.
-    if policy.hide_root.is_some() {
-        p.push_str(
-            "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
-             (deny file-write* (subpath (param \"HIDE_ROOT\")))\n",
-        );
+    if hide_last {
+        p.push_str(HIDE_RULES);
     }
     if policy.allow_network {
         p.push_str(
@@ -576,14 +689,14 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(mask) = &policy.mask_root {
         args.push(format!("-DMASK_ROOT={}", mask.to_string_lossy()));
     }
+    if let Some(hide) = &policy.hide_root {
+        args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
+    }
     for (i, root) in policy.read_roots.iter().enumerate() {
         args.push(format!("-DREAD_ROOT_{i}={}", root.to_string_lossy()));
     }
     for (i, root) in policy.write_roots.iter().enumerate() {
         args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
-    }
-    if let Some(hide) = &policy.hide_root {
-        args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
     }
     args.push(format!(
         "-DTMPDIR={}",
@@ -704,8 +817,7 @@ mod tests {
         ShellConfig {
             program: PathBuf::from("/bin/bash"),
             args: vec!["-c".to_string()],
-            via_stdin: false,
-            description: "bash",
+            kind: super::super::proc::ShellKind::Posix,
         }
     }
 
@@ -713,8 +825,336 @@ mod tests {
         Policy::new(Path::new("/data/agent-workspace/threads/t1"), false)
     }
 
+    #[cfg(unix)]
+    struct BwrapFixture(PathBuf);
+
+    #[cfg(unix)]
+    impl BwrapFixture {
+        fn new() -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "jan_bwrap_{}_{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).expect("create fixture");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            Self(path)
+        }
+
+        fn candidates(&self) -> [PathBuf; 3] {
+            use std::os::unix::fs::PermissionsExt;
+            let local = self.0.join("usr/local/bin/bwrap");
+            let system = self.0.join("usr/bin/bwrap");
+            let bin = self.0.join("bin/bwrap");
+            for path in [&local, &system, &bin] {
+                std::fs::create_dir_all(path.parent().unwrap()).expect("create bin directory");
+                std::fs::write(path, b"bwrap").expect("create candidate");
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap();
+                let mut dir = path.parent();
+                while let Some(parent) = dir.filter(|parent| *parent != self.0) {
+                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o755))
+                        .unwrap();
+                    dir = parent.parent();
+                }
+            }
+            [local, system, bin]
+        }
+
+        fn owner(&self) -> u32 {
+            use std::os::unix::fs::MetadataExt;
+            std::fs::metadata(&self.0).expect("fixture owner").uid()
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for BwrapFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove fixture");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trusted_local_bwrap_wins_over_system() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let selected = select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+            true
+        });
+        assert_eq!(selected.as_deref(), Some(local.as_path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn group_writable_local_bwrap_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o664)).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn world_writable_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            local.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    // An installed system bwrap that fails the probe (userns blocked) must not
+    // pass the choice to whatever sits earlier in PATH.
+    #[cfg(unix)]
+    #[test]
+    fn path_is_not_consulted_when_a_fixed_bwrap_is_installed() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let planted = fixture.0.join("planted/bwrap");
+        std::fs::create_dir_all(planted.parent().unwrap()).unwrap();
+        std::fs::write(&planted, b"bwrap").unwrap();
+        let planted_on_path = planted.clone();
+        let selected = select_bwrap_or_path(
+            [&local, &system, &bin],
+            &fixture.0,
+            fixture.owner(),
+            |path| path == planted,
+            move || Some(planted_on_path),
+        );
+        assert_eq!(selected, None);
+    }
+
+    // No fixed location holds a bwrap (NixOS): PATH is the only source, and the
+    // live probe still has to pass.
+    #[cfg(unix)]
+    #[test]
+    fn path_is_used_when_no_fixed_bwrap_is_installed() {
+        let fixture = BwrapFixture::new();
+        let missing = fixture.0.join("nowhere/bwrap");
+        let on_path = fixture.0.join("nix/bwrap");
+        std::fs::create_dir_all(on_path.parent().unwrap()).unwrap();
+        std::fs::write(&on_path, b"bwrap").unwrap();
+        let found = on_path.clone();
+        let selected = select_bwrap_or_path(
+            [&missing, &missing, &missing],
+            &fixture.0,
+            fixture.owner(),
+            |path| path == on_path,
+            move || Some(found),
+        );
+        assert_eq!(selected.as_deref(), Some(on_path.as_path()));
+        let unusable = select_bwrap_or_path(
+            [&missing, &missing, &missing],
+            &fixture.0,
+            fixture.owner(),
+            |_| false,
+            || Some(on_path.clone()),
+        );
+        assert_eq!(unusable, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn setgid_group_writable_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            local.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o2775),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writable_parent_of_local_directory_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(
+            fixture.0.join("usr/local"),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_bwrap_with_wrong_owner_is_rejected() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner() + 1,
+                |_| true
+            ),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_symlink_to_untrusted_target_is_rejected() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let target = fixture.0.join("untrusted/bwrap");
+        std::fs::create_dir(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, b"untrusted").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o666)).unwrap();
+        std::fs::remove_file(&local).unwrap();
+        symlink(&target, &local).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_symlink_through_writable_target_directory_is_rejected() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        let target = fixture.0.join("untrusted/bwrap");
+        std::fs::create_dir(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, b"untrusted").unwrap();
+        std::fs::set_permissions(
+            target.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        std::fs::remove_file(&local).unwrap();
+        symlink(&target, &local).unwrap();
+        assert_eq!(
+            select_bwrap([&local, &system, &bin], &fixture.0, fixture.owner(), |_| {
+                true
+            }),
+            Some(system)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn untrusted_local_remains_last_resort() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        std::fs::set_permissions(&local, std::fs::Permissions::from_mode(0o666)).unwrap();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner(),
+                |path| path == local
+            ),
+            Some(local)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unusable_local_bwrap_falls_through_to_system() {
+        let fixture = BwrapFixture::new();
+        let [local, system, bin] = fixture.candidates();
+        assert_eq!(
+            select_bwrap(
+                [&local, &system, &bin],
+                &fixture.0,
+                fixture.owner(),
+                |path| path != local
+            ),
+            Some(system)
+        );
+    }
+
     fn joined(args: &[String]) -> String {
         args.join(" ")
+    }
+
+    /// Running in `$HOME`: the Jan home is inside the workspace, so the
+    /// workspace bind would shadow the first mask; a second one must follow.
+    #[test]
+    fn bwrap_hides_the_jan_home_after_a_workspace_that_contains_it() {
+        let ws = "/home/u";
+        let hide = "/home/u/.jan";
+        let text = joined(&bwrap_args(
+            &Policy::new(Path::new(ws), false).with_hide_root(Path::new(hide)),
+            &cfg(),
+        ));
+        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
+        let last = text.rfind(&format!("--tmpfs {hide}")).expect("mask");
+        assert!(bind < last, "the mask must follow the workspace bind: {text}");
+    }
+
+    /// A Jan worktree lives under the home: the mask goes before the workspace
+    /// bind only, or it would hide the tree the agent is working in.
+    #[test]
+    fn bwrap_hides_the_jan_home_before_a_workspace_inside_it() {
+        let ws = "/home/u/.jan/worktrees/r-1/feat";
+        let hide = "/home/u/.jan";
+        let text = joined(&bwrap_args(
+            &Policy::new(Path::new(ws), false).with_hide_root(Path::new(hide)),
+            &cfg(),
+        ));
+        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
+        let mask = format!("--tmpfs {hide} ");
+        assert_eq!(text.matches(&mask).count(), 1, "{text}");
+        assert!(text.find(&mask).unwrap() < bind, "{text}");
+        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(".jan"));
+    }
+
+    #[test]
+    fn seatbelt_orders_the_jan_home_deny_by_where_the_workspace_is() {
+        let deny = "(deny file-read* (subpath (param \"HIDE_ROOT\")))";
+        let allow = "(allow file-read* (subpath (param \"WORKSPACE\")))";
+        let home = Policy::new(Path::new("/Users/u"), false).with_hide_root(Path::new("/Users/u/.jan"));
+        let p = seatbelt_policy(&home);
+        assert!(p.find(allow).unwrap() < p.find(deny).unwrap(), "{p}");
+        assert!(p.contains("(deny file-write* (subpath (param \"HIDE_ROOT\")))"));
+        let wt = Policy::new(Path::new("/Users/u/.jan/worktrees/r/f"), false)
+            .with_hide_root(Path::new("/Users/u/.jan"));
+        let p = seatbelt_policy(&wt);
+        assert!(p.find(deny).unwrap() < p.find(allow).unwrap(), "{p}");
+        // The path travels as a -D parameter, never interpolated into the profile.
+        assert!(!p.contains("/Users/u/.jan"), "{p}");
+        assert!(joined(&seatbelt_args(&wt, &cfg())).contains("-DHIDE_ROOT=/Users/u/.jan"));
+        assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
     }
 
     #[test]
@@ -756,26 +1196,6 @@ mod tests {
         let ro = joined(&bwrap_args(&policy().with_home_readonly(true), &cfg()));
         assert!(!ro.contains(&tmpfs), "{ro}");
         assert!(ro.contains(&ro_bind), "{ro}");
-    }
-
-    /// The workspace bind makes the whole project reachable, so the mask must be
-    /// layered on after it or it would be shadowed and silently do nothing.
-    #[test]
-    fn bwrap_hides_the_agent_state_dir_after_binding_the_workspace() {
-        let ws = "/data/agent-workspace/threads/t1";
-        let hide = format!("{ws}/.jan");
-        let text = joined(&bwrap_args(
-            &policy().with_hide_root(Path::new(&hide)),
-            &cfg(),
-        ));
-        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
-        let tmpfs = text.find(&format!("--tmpfs {hide}")).expect("hide tmpfs");
-        assert!(
-            bind < tmpfs,
-            "the mask must follow the workspace bind: {text}"
-        );
-        // Unset by default, so nothing is hidden where no state dir is named.
-        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(".jan"));
     }
 
     /// The bind order *is* the enforcement, on both sides: after the `$HOME`
@@ -907,25 +1327,6 @@ mod tests {
         assert!(!seatbelt_args(&policy(), &cfg())
             .iter()
             .any(|a| a.contains("READ_ROOT")));
-    }
-
-    #[test]
-    fn seatbelt_denies_the_agent_state_dir_last() {
-        let hide = "/data/agent-workspace/threads/t1/.jan";
-        let p = policy().with_hide_root(Path::new(hide));
-        let profile = seatbelt_policy(&p);
-        let allow = profile
-            .find("(allow file-read* (subpath (param \"WORKSPACE\")))")
-            .expect("workspace allow");
-        let deny = profile
-            .find("(deny file-read* (subpath (param \"HIDE_ROOT\")))")
-            .expect("hide deny");
-        assert!(allow < deny, "later rules win, so the deny must come last");
-        assert!(profile.contains("(deny file-write* (subpath (param \"HIDE_ROOT\")))"));
-        // The path travels as a -D parameter, never interpolated into the profile.
-        assert!(!profile.contains(hide), "{profile}");
-        assert!(joined(&seatbelt_args(&p, &cfg())).contains(&format!("-DHIDE_ROOT={hide}")));
-        assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
     }
 
     #[test]

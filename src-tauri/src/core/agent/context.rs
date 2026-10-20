@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
-use tauri_plugin_agent_tools::{memory, workspace};
+use tauri_plugin_agent_tools::memory;
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
@@ -26,56 +26,153 @@ const GUIDELINES: &str =
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
 missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
 its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
-`[exit 0]` is success even if there is text on stderr (many tools write normal status there).";
+`[exit 0]` is success even if there is text on stderr (many tools write normal status there).\n\
+- You may end your turn while background work is still running -- a backgrounded shell command, a \
+dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
+notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \
+stopping. Do not idle, poll a file in a loop, or narrate waiting: say what you started, then either \
+get on with unrelated work or finish the turn.\n\
+- Never detach a shell command yourself with `nohup`, a trailing `&`, `setsid` or `disown`. For a \
+long-running command (a server, a build, a watcher), run it normally with a smaller `timeout`: when \
+the timeout passes the command keeps running in the background, its output is captured, and you are \
+notified when it exits. A command you detach yourself is invisible to that: no output, no notice.";
 
-/// The one instructions file Jan reads, discovered by walking from the project
-/// root up to the filesystem root. Another agent's file (`AGENTS.md`,
-/// `CLAUDE.md`) is deliberately not ingested: only what a user wrote for Jan --
-/// by hand or through `/init` -- becomes authoritative project context.
-const CONTEXT_FILE_NAME: &str = "JAN.md";
+/// The instructions file Jan reads first in every directory of the walk from
+/// the project root up to the filesystem root. When a directory has a
+/// non-empty one it wins outright: nothing else in that directory is read.
+///
+/// `JAN.md` is the *legacy* name: `/init` now writes `AGENTS.md` (#9083), but a
+/// `JAN.md` the user already has keeps winning, so an existing project loads
+/// exactly the bytes it loaded before and its prompt cache stays warm. Other
+/// directories fall back to the names in `[context].fallback_files` (default
+/// `AGENTS.md`; `CLAUDE.md` is opt-in), tried in order, one file per directory.
+/// `[]` restores JAN.md-only exactly.
+pub(crate) const CONTEXT_FILE_NAME: &str = "JAN.md";
 
-/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
-/// `<project_context>` block so the model treats them as authoritative project
-/// instructions. Returns None when none exist.
-pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
-    let mut files: Vec<(std::path::PathBuf, String)> = Vec::new();
+/// The instructions file `/init` writes for a new project (#9083).
+#[cfg(feature = "cli")]
+pub(crate) const DEFAULT_INSTRUCTIONS_FILE: &str = "AGENTS.md";
+
+/// How a surface labels a loaded instructions file by its name: `JAN.md` is
+/// the legacy name, `CLAUDE.md` an opt-in fallback, and `AGENTS.md` -- the
+/// default -- needs no label.
+#[cfg(feature = "cli")]
+pub(crate) fn instructions_file_label(path: &Path) -> Option<&'static str> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some(CONTEXT_FILE_NAME) => Some("legacy JAN.md"),
+        Some(DEFAULT_INSTRUCTIONS_FILE) | None => None,
+        Some(_) => Some("fallback"),
+    }
+}
+
+/// One instructions file the walk picked: where it is, what it says, and
+/// whether it is a fallback (not `JAN.md`), so a surface can say so.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContextFile {
+    pub path: std::path::PathBuf,
+    pub content: String,
+    pub fallback: bool,
+}
+
+/// Walk from `project_root` to the filesystem root and pick at most one
+/// instructions file per directory: a non-empty `JAN.md`, else the first
+/// non-empty name in `fallback_files`. A file whose canonical path was already
+/// picked (a `sub/AGENTS.md -> ../JAN.md` symlink) is skipped, so the same text
+/// is never loaded twice. Returned farthest-first, so the nearest -- most
+/// specific -- instructions come last and take precedence.
+///
+/// Deterministic for a given tree and config: the order is the walk's, never a
+/// directory listing's.
+pub(crate) fn discover_context_files(
+    project_root: &Path,
+    fallback_files: &[String],
+) -> Vec<ContextFile> {
+    let mut files: Vec<ContextFile> = Vec::new();
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = Default::default();
     let mut dir = Some(project_root);
     while let Some(current) = dir {
-        let path = current.join(CONTEXT_FILE_NAME);
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if !content.trim().is_empty() {
-                files.push((path, content));
+        let candidates = std::iter::once((CONTEXT_FILE_NAME, false))
+            .chain(fallback_files.iter().map(|name| (name.as_str(), true)));
+        for (name, fallback) in candidates {
+            let path = current.join(name);
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if content.trim().is_empty() {
+                continue;
             }
+            // This directory is decided by the first usable file, even when it
+            // turns out to be a duplicate: a JAN.md that links to an ancestor's
+            // file must not let this directory's AGENTS.md in behind it.
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if seen.insert(canonical) {
+                files.push(ContextFile {
+                    path,
+                    content,
+                    fallback,
+                });
+            }
+            break;
         }
         dir = current.parent();
     }
+    // Collected nearest-first; reverse so the nearest appears last.
+    files.reverse();
+    files
+}
+
+/// The instructions files this project loads under its resolved
+/// `[context].fallback_files`, farthest-first. What `/context` and the startup
+/// note report, and what [`load_context_files`] renders: one rule for all three.
+pub(crate) fn project_context_files(project_root: &Path) -> Vec<ContextFile> {
+    let fallback = crate::core::agent::project::context_fallback_files(project_root);
+    discover_context_files(project_root, &fallback)
+}
+
+/// Render picked instruction files as the `<project_context>` block, or None
+/// when there are none. Each file keeps its own `<project_instructions path=...>`
+/// tag, so the model sees which file -- `JAN.md` or a fallback -- it got.
+fn render_context_files(files: &[ContextFile]) -> Option<String> {
     if files.is_empty() {
         return None;
     }
-    // Ancestors are collected nearest-first; reverse so the nearest (most
-    // specific) instructions appear last and take precedence.
-    files.reverse();
     let mut block = String::from(
         "<project_context>\n\nProject-specific instructions and guidelines:\n\n",
     );
-    for (path, content) in files {
+    for file in files {
         block.push_str(&format!(
             "<project_instructions path=\"{}\">\n{}\n</project_instructions>\n\n",
-            path.display(),
-            content.trim()
+            file.path.display(),
+            file.content.trim()
         ));
     }
     block.push_str("</project_context>");
     Some(block)
 }
 
+/// Ingest the project's instructions -- `JAN.md`, or a configured fallback where
+/// a directory has none -- from the project root and its ancestors, wrapped in a
+/// `<project_context>` block so the model treats them as authoritative project
+/// instructions. Returns None when none exist.
+pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
+    render_context_files(&project_context_files(project_root))
+}
+
 /// Whether this project has usable instructions, by the same rule the system
-/// prompt uses: a non-empty `JAN.md` at the root or in any ancestor. Drives the
-/// `/init` invitation on the CLI splash, so an ancestor's file (a monorepo root)
-/// correctly counts as already onboarded.
-#[cfg(feature = "cli")]
+/// prompt uses: a non-empty `JAN.md` (or fallback) at the root or in any
+/// ancestor, so an ancestor's file (a monorepo root) counts as already
+/// onboarded. The startup note reads [`project_context_files`] directly, since
+/// it also names a fallback; this is the yes/no its tests pin.
+#[cfg(all(test, feature = "cli"))]
 pub(crate) fn has_context_file(project_root: &Path) -> bool {
-    load_context_files(project_root).is_some()
+    !project_context_files(project_root).is_empty()
+}
+
+/// Whether `project_root` itself (not an ancestor) has a non-empty `name`.
+/// `/init` uses it to decide between writing a file and reviewing one.
+#[cfg(feature = "cli")]
+pub(crate) fn has_own_file(project_root: &Path, name: &str) -> bool {
+    std::fs::read_to_string(project_root.join(name)).is_ok_and(|content| !content.trim().is_empty())
 }
 
 /// Built-in guide teaching the model the skills/memory file conventions. Always
@@ -143,11 +240,26 @@ user what's wrong.";
 const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited. For open-ended exploration \
 that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
-in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
+in its own window and returns only the distilled answer. For read-only codebase questions set `agent: \"explore\"` \
+and for web lookups `agent: \"research\"`: both run on a cheaper model; use `agent: \"general\"` when no \
+other agent fits. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
 yourself for small, targeted tasks where delegating would cost more than it saves.";
+
+/// The `# Subagents` block: the guide, then the predefined agents the
+/// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
+/// Read from the registry when the prompt is composed, so it is fixed for the
+/// session like the rest of the prefix; a definition added mid-session shows up
+/// in the next session's prompt (the enum, rebuilt per run, already takes it).
+fn subagent_guide(project_root: &Path) -> String {
+    let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
+    match crate::core::agent::subagent::agent_catalog(&registry) {
+        Some(catalog) => format!("{SUBAGENT_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"),
+        None => SUBAGENT_GUIDE.to_string(),
+    }
+}
 
 /// System-prompt addendum for a `/goal` run with no staged plan: an unattended
 /// loop that keeps firing turns until a condition is met needs the phased list
@@ -183,10 +295,10 @@ fn display_path(path: &Path) -> String {
 /// session start so the agent is grounded from turn one. Fields: working
 /// directory, OS/platform/arch, shell, and scratch space.
 ///
-/// Deliberately carries nothing that varies within a session -- today's date and
-/// the current git branch have their own tail composers ([`Composer::Date`] and
-/// [`Composer::GitState`]) -- so this block stays constant for the session and
-/// can sit above the cache line. Kept short: a few lines, not a wall of text.
+/// Deliberately carries nothing that varies within a session -- the date and git
+/// branch are the separate [`SessionStart`] snapshot -- so this block stays
+/// constant for the session and can sit above the cache line. Kept short: a few
+/// lines, not a wall of text.
 fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
     let cwd = display_path(project_root);
 
@@ -196,9 +308,16 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         std::env::consts::ARCH
     );
 
-    let shell = std::env::var("SHELL")
-        .or_else(|_| std::env::var("COMSPEC"))
-        .unwrap_or_else(|_| "unknown".to_string());
+    // The shell the tool actually runs, not the user's `$SHELL`/`COMSPEC`: on
+    // Windows those name cmd even when the tool resolved PowerShell, and the
+    // model writes its commands for whatever is named here.
+    let resolved = tauri_plugin_agent_tools::tools::proc::shell();
+    let shell = display_path(&resolved.program);
+    let shell_note = resolved
+        .kind
+        .syntax_note()
+        .map(|note| format!("\n{note}"))
+        .unwrap_or_default();
 
     // Where to do temporary work. Named by the one spelling that resolves from
     // both `bash` and the filesystem tools on this platform: `/tmp` where the
@@ -217,33 +336,24 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         "# Runtime Environment\n\n\
 Work directory: `{cwd}`\n\
 OS: `{os}`\n\
-Shell: `{shell}`{scratch_line}"
+Shell: `{shell}`{shell_note}{scratch_line}"
     )
 }
 
-/// A catalog of curated memory notes (names + one-line summaries), injected so
-/// the model can read a note on demand with `memory_read`. None when no note
-/// exists. Mirrors `load_skills`: progressive disclosure, not full bodies.
+/// The memory index (names + one-line summaries), injected so the model can
+/// read a note on demand with `memory_read`: this project's notes, the user's
+/// `user:` notes, and pointers to other projects when cross-project memory is
+/// on. The same content as the generated `MEMORY.md` files, rendered from the
+/// notes. None when there is nothing to show. Progressive disclosure, not
+/// full bodies.
 pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
-    let entries = memory::catalog(&workspace::project_store(project_root));
-    if entries.is_empty() {
-        return None;
+    let (store, home, cross_project) = crate::core::agent::project::memory_roots(project_root);
+    memory::Scopes {
+        store: &store,
+        home: home.as_deref(),
+        cross_project,
     }
-    let list = entries
-        .iter()
-        .map(|entry| {
-            let (name, description) = (&entry.name, &entry.summary);
-            if description.is_empty() {
-                format!("- `{name}` - no summary")
-            } else {
-                format!("- `{name}` - {description}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(format!(
-        "# Available Memories\n\nDurable facts recorded in this project. Read a note's full contents with `memory_read` when it is relevant to the current task.\n\n{list}"
-    ))
+    .prompt_block()
 }
 
 /// Everything the prompt-block composers read.
@@ -252,6 +362,51 @@ struct CompositionInputs<'a> {
     project_root: &'a Path,
     scratch: Option<&'a Path>,
     subagents_enabled: bool,
+    session_start: Option<&'a SessionStart>,
+}
+
+/// The date and git branch a session started with, taken once and then carried
+/// unchanged for the session's life.
+///
+/// Frozen rather than read per turn so the system prompt stays byte-identical
+/// across the session: a live date moves at midnight and a live branch moves on
+/// every checkout, and either would rewrite the cached prefix. The block says
+/// "session start" and "starting branch" so the model reads them as a snapshot,
+/// not a live reading. A resumed session takes a fresh one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionStart {
+    date: String,
+    branch: Option<String>,
+}
+
+impl SessionStart {
+    /// Read the clock and `project_root`'s checkout now.
+    pub(crate) fn capture(project_root: Option<&Path>) -> Self {
+        Self {
+            date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+            branch: project_root.and_then(crate::core::agent::git::current_branch),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixed(date: &str, branch: Option<&str>) -> Self {
+        Self {
+            date: date.to_string(),
+            branch: branch.map(str::to_string),
+        }
+    }
+
+    /// The `# Session Start` block as it is written into the system prompt.
+    pub(crate) fn block(&self) -> String {
+        let branch = match &self.branch {
+            Some(branch) => format!("`{branch}`"),
+            None => "none (not a git repository, or no commits yet)".to_string(),
+        };
+        format!(
+            "# Session Start\n\nSession start date: {}\nStarting branch: {branch}",
+            self.date
+        )
+    }
 }
 
 /// The system prompt, split by where the placement policy sent each block.
@@ -296,19 +451,17 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         Composer::RuntimeEnvironment => {
             Some(runtime_environment_block(inputs.project_root, inputs.scratch))
         }
-        Composer::SubagentGuide => inputs.subagents_enabled.then(|| SUBAGENT_GUIDE.to_string()),
+        Composer::SessionStart => inputs.session_start.map(SessionStart::block),
+        Composer::SubagentGuide => inputs.subagents_enabled.then(|| subagent_guide(inputs.project_root)),
         Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
         Composer::ProjectContext => load_context_files(inputs.project_root),
         Composer::Skills => load_skills(inputs.project_root),
         Composer::MemoryCatalog => load_memory_catalog(inputs.project_root),
         // Built where the request is assembled, because they need state the
-        // composition has no access to: the tool array is a request field, the
-        // date and git state are the run's own clock and checkout, and the last
-        // three read per-turn state (a query, the todo registry).
+        // composition has no access to: the tool array is a request field, and
+        // the last three read per-turn state (a query, the todo registry).
         Composer::ToolSchemas
-        | Composer::Date
-        | Composer::GitState
         | Composer::MemoryRecall
         | Composer::PlanAddendum
         | Composer::TodoAddendum => None,
@@ -330,12 +483,14 @@ pub(crate) fn compose_system_prompt(
     scratch: Option<&Path>,
     subagents_enabled: bool,
     policy: &PromptPolicy,
+    session_start: Option<&SessionStart>,
 ) -> Result<ComposedPrompt, String> {
     let inputs = CompositionInputs {
         base,
         project_root,
         scratch,
         subagents_enabled,
+        session_start,
     };
     policy.validate()?;
     let mut prefix: Vec<String> = Vec::new();
@@ -377,6 +532,7 @@ mod tests {
             scratch,
             subagents_enabled,
             &PromptPolicy::default(),
+            None,
         )
         .ok()
         .map(|composed| composed.as_prompt())
@@ -386,17 +542,20 @@ mod tests {
 
     fn scratch_project(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("jan_ctx_test_{tag}_{n}"))
+        let root = std::env::temp_dir().join(format!("jan_ctx_test_{tag}_{n}"));
+        let _ = std::fs::remove_dir_all(crate::core::agent::project::store_root(&root));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     fn write_skill(root: &Path, name: &str, body: &str) {
-        let dir = root.join(".jan").join("agent").join("skills");
+        let dir = crate::core::agent::project::store_root(root).join("skills");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
     }
 
     fn write_memory(root: &Path, name: &str, body: &str) {
-        let dir = root.join(".jan").join("agent").join("memory");
+        let dir = crate::core::agent::project::store_root(root).join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
     }
@@ -558,6 +717,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The permission to stop while background work runs is unconditional: it
+    /// applies to a backgrounded shell and a monitor, which exist on runs with
+    /// subagents disabled, so it must not live in the gated subagent block.
+    #[test]
+    fn guidelines_permit_ending_a_turn_while_background_work_runs() {
+        let root = scratch_project("bgturn");
+        let without_subagents = default_prompt(None, &root, None, false).expect("prompt");
+        assert!(
+            without_subagents.contains("You may end your turn while background work is still running"),
+            "missing the permission: {without_subagents}"
+        );
+        assert!(
+            without_subagents.contains("notified automatically"),
+            "must say the notice arrives on its own"
+        );
+        assert!(
+            !without_subagents.contains("dispatch_subagent"),
+            "the subagent block must still be gated off"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A command detached by hand (`nohup`, `&`, `setsid`) escapes the shell
+    /// tool's own backgrounding, so no completion notice ever comes back and
+    /// the agent is left polling. The guideline steers it to a short `timeout`
+    /// instead, which backgrounds the command and keeps the doorbell.
+    #[test]
+    fn guidelines_steer_long_commands_to_the_timeout_not_nohup() {
+        let root = scratch_project("nohup");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
+        assert!(out.contains("`nohup`"), "names nohup: {out}");
+        assert!(out.contains("smaller `timeout`"), "points at the timeout: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn context_files_ingested_nearest_last() {
         let root = scratch_project("ctxfiles");
@@ -578,6 +772,160 @@ mod tests {
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn agents_only() -> Vec<String> {
+        vec!["AGENTS.md".to_string()]
+    }
+
+    /// #9079: a directory with no JAN.md falls back to AGENTS.md, and the tag
+    /// names the file so the model can tell which one it got.
+    #[test]
+    fn agents_md_is_read_where_there_is_no_jan_md() {
+        let root = scratch_project("agentsfallback");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].fallback);
+        assert!(files[0].path.ends_with("AGENTS.md"));
+        let block = render_context_files(&files).expect("block");
+        assert!(block.contains("AGENTS_RULES"));
+        assert!(block.contains("AGENTS.md\">"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// One file per directory: a repo with both loads exactly what it loaded
+    /// before the fallback existed.
+    #[test]
+    fn jan_md_wins_over_agents_md_in_the_same_directory() {
+        let root = scratch_project("janwins");
+        std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+        let all = vec!["AGENTS.md".to_string(), "CLAUDE.md".to_string()];
+        let block = render_context_files(&discover_context_files(&root, &all)).unwrap();
+        let jan_only = render_context_files(&discover_context_files(&root, &[])).unwrap();
+        assert_eq!(block, jan_only, "JAN.md must shadow every fallback");
+        assert!(!block.contains("AGENTS_RULES") && !block.contains("CLAUDE_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty JAN.md does not count, the same rule as before: the directory
+    /// falls through to its AGENTS.md.
+    #[test]
+    fn an_empty_jan_md_falls_through_to_the_fallback() {
+        let root = scratch_project("emptyjan");
+        std::fs::write(root.join("JAN.md"), "  \n").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].content.contains("AGENTS_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[]` is today's behaviour exactly, and CLAUDE.md is read only when listed.
+    #[test]
+    fn fallback_list_controls_what_is_read() {
+        let root = scratch_project("fallbacklist");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+        assert!(discover_context_files(&root, &[]).is_empty());
+        let agents = discover_context_files(&root, &agents_only());
+        assert!(agents[0].content.contains("AGENTS_RULES"));
+        let claude = discover_context_files(&root, &["CLAUDE.md".to_string()]);
+        assert!(claude[0].content.contains("CLAUDE_RULES"));
+        // Order is precedence within a directory.
+        let both = vec!["CLAUDE.md".to_string(), "AGENTS.md".to_string()];
+        let files = discover_context_files(&root, &both);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].content.contains("CLAUDE_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Mixed monorepo: the root's JAN.md and a package's AGENTS.md both load,
+    /// nearest last, each tagged with its own path.
+    #[test]
+    fn fallback_is_decided_per_directory() {
+        let root = scratch_project("perdir");
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("JAN.md"), "ROOT_JAN").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "ROOT_AGENTS").unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "PKG_AGENTS").unwrap();
+        let files = discover_context_files(&nested, &agents_only());
+        let texts: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
+        assert_eq!(texts, ["ROOT_JAN", "PKG_AGENTS"]);
+        assert_eq!(
+            files.iter().map(|f| f.fallback).collect::<Vec<_>>(),
+            [false, true]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The common `JAN.md -> AGENTS.md` symlink loads once, as JAN.md.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_jan_md_loads_its_target_once() {
+        let root = scratch_project("symlink");
+        std::fs::write(root.join("AGENTS.md"), "SHARED_RULES").unwrap();
+        std::os::unix::fs::symlink("AGENTS.md", root.join("JAN.md")).unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(!files[0].fallback);
+        let block = render_context_files(&files).unwrap();
+        assert_eq!(block.matches("SHARED_RULES").count(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A package whose AGENTS.md links to the root's file must not load the
+    /// same text a second time.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_already_loaded_by_canonical_path_is_skipped() {
+        let root = scratch_project("canonical");
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("AGENTS.md"), "SHARED_RULES").unwrap();
+        std::os::unix::fs::symlink("../AGENTS.md", nested.join("AGENTS.md")).unwrap();
+        let files = discover_context_files(&nested, &agents_only());
+        assert_eq!(files.len(), 1, "{files:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A project's `agent.toml` `[context]` is what `load_context_files` honours:
+    /// `[]` turns the fallback off, and a name Jan does not know is ignored.
+    #[test]
+    fn agent_toml_context_section_configures_the_fallback() {
+        let root = scratch_project("agenttoml");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("README.md"), "README_TEXT").unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::write(store.join("agent.toml"), "[context]\nfallback_files = []\n").unwrap();
+        assert!(load_context_files(&root).is_none());
+        std::fs::write(
+            store.join("agent.toml"),
+            "[context]\nfallback_files = [\"README.md\", \"AGENTS.md\"]\n",
+        )
+        .unwrap();
+        let block = load_context_files(&root).expect("AGENTS.md via agent.toml");
+        assert!(block.contains("AGENTS_RULES"));
+        assert!(!block.contains("README_TEXT"), "unknown names are never read");
+        let _ = std::fs::remove_dir_all(&store);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Unset everywhere: AGENTS.md is on, CLAUDE.md is not.
+    #[test]
+    fn the_default_fallback_is_agents_md_only() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root = scratch_project("defaultfallback");
+            assert_eq!(
+                crate::core::agent::project::context_fallback_files(&root),
+                ["AGENTS.md"]
+            );
+            let _ = std::fs::remove_dir_all(&root);
+        });
     }
 
     #[test]
@@ -606,6 +954,10 @@ mod tests {
         let root = scratch_project("subagent-handoff");
         let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("belongs to that subagent"));
+        assert!(with.contains("agent: \"explore\""), "points cheap work at explore");
+        // The names the `agent` enum accepts are spelled out with their purpose.
+        assert!(with.contains("Predefined agents (`agent` field):"), "{with}");
+        assert!(with.contains("- `research` (model: smol): "), "{with}");
         assert!(with.contains("do not do the same work yourself"));
         assert!(!with.contains("keep working rather than waiting"));
         let _ = std::fs::remove_dir_all(&root);
@@ -621,9 +973,8 @@ mod tests {
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
         assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
-        // Must contain the key sections. Today's date and the git branch are
-        // deliberately NOT here: they vary within a session, so they are their
-        // own per-turn composers rather than part of this cache-line block.
+        // Must contain the key sections. The date and git branch are
+        // deliberately NOT here: they are the separate session-start block.
         assert!(block.contains("# Runtime Environment"));
         assert!(block.contains("Work directory:"));
         assert!(block.contains("OS:"));
@@ -662,27 +1013,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The date is per-turn content: it belongs in the volatile block, not in
-    /// the stable prefix, or a run that crosses midnight moves every byte behind
-    /// the cache line.
+    /// The date and branch the session started with sit in the system prompt,
+    /// right after the runtime environment, worded as what they are: values
+    /// taken once at session start, not live readings.
     #[test]
-    fn the_date_is_a_tail_composer() {
-        let root = scratch_project("date-tail");
-        std::fs::create_dir_all(&root).unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
-            .expect("default policy");
+    fn the_session_start_block_sits_in_the_prefix_after_the_environment() {
+        let root = scratch_project("session-start");
+        let start = SessionStart::fixed("2026-09-30", Some("feat/x"));
+        let composed = compose_system_prompt(
+            None,
+            &root,
+            None,
+            false,
+            &PromptPolicy::default(),
+            Some(&start),
+        )
+        .expect("default policy");
+        let block = "# Session Start\n\nSession start date: 2026-09-30\nStarting branch: `feat/x`";
+        let at = composed.prefix.find(block).unwrap_or_else(|| {
+            panic!("the block is in the system prompt: {}", composed.prefix)
+        });
+        let env = composed.prefix.find("# Runtime Environment").unwrap();
+        assert!(env < at, "it follows the runtime environment");
+        assert!(!composed.prefix.contains("Today's date"), "no live-date wording");
+        assert!(composed.tail.is_empty(), "nothing of it is left for the tail");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Outside a repository the block says so instead of naming a branch.
+    #[test]
+    fn the_session_start_block_names_a_missing_repository() {
+        let root = scratch_project("session-start-norepo");
+        let start = SessionStart::fixed("2026-09-30", None);
+        let prompt = compose_system_prompt(
+            None,
+            &root,
+            None,
+            false,
+            &PromptPolicy::default(),
+            Some(&start),
+        )
+        .unwrap()
+        .prefix;
         assert!(
-            !composed.prefix.contains("Today's date"),
-            "the date must not sit above the cache line: {}",
-            composed.prefix
+            prompt.contains("Starting branch: none (not a git repository, or no commits yet)"),
+            "{prompt}"
         );
-        assert!(
-            composed
-                .tail
-                .iter()
-                .all(|(composer, _)| *composer != Composer::Date),
-            "the date is rendered by the run, not by this composition"
-        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Frozen means frozen: the snapshot is taken once, and a branch switch
+    /// after it changes nothing the prompt says.
+    #[test]
+    fn a_session_start_snapshot_ignores_a_later_branch_switch() {
+        let root = scratch_project("session-start-switch");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        git(&["init", "-q", "-b", "first"]);
+        git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"]);
+        let start = SessionStart::capture(Some(&root));
+        git(&["checkout", "-q", "-b", "second"]);
+        let compose = || {
+            compose_system_prompt(
+                None,
+                &root,
+                None,
+                false,
+                &PromptPolicy::default(),
+                Some(&start),
+            )
+            .unwrap()
+            .prefix
+        };
+        let (one, two) = (compose(), compose());
+        assert_eq!(one, two, "byte-identical across turns");
+        assert!(one.contains("Starting branch: `first`"), "{one}");
+        assert!(!one.contains("second"), "{one}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -701,7 +1113,7 @@ mod tests {
                 "guidelines".to_string(),
             ]),
         );
-        let composed = compose_system_prompt(None, &root, None, false, &policy).expect("policy");
+        let composed = compose_system_prompt(None, &root, None, false, &policy, None).expect("policy");
 
         assert!(composed.prefix.contains("# Guidelines"));
         assert!(
@@ -733,10 +1145,10 @@ mod tests {
     fn a_policy_that_allows_a_varying_composer_fails_composition() {
         let root = scratch_project("varying");
         std::fs::create_dir_all(&root).unwrap();
-        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["date".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy)
+        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["memory_recall".to_string()]));
+        let error = compose_system_prompt(None, &root, None, false, &policy, None)
             .expect_err("a per-turn composer cannot be allowed into the prefix");
-        assert!(error.contains("date"), "{error}");
+        assert!(error.contains("memory_recall"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -747,7 +1159,7 @@ mod tests {
         let root = scratch_project("typo");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["skils".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None)
             .expect_err("an unknown id must not read as a policy");
         assert!(error.contains("skils"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -761,7 +1173,7 @@ mod tests {
         let root = scratch_project("order");
         write_skill(&root, "s.md", "Do the thing.");
         std::fs::write(root.join("JAN.md"), "PROJECT_RULES").unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None)
             .expect("default policy");
 
         // Every block the registry declares for the prefix is present, in the
@@ -841,6 +1253,25 @@ mod tests {
             !block.contains(&format!("Work directory: `{cwd_shown}`")),
             "block must not report the process cwd"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The block names the shell the tool resolved, not `$SHELL`/`COMSPEC`,
+    /// and carries the syntax note exactly when that shell needs one.
+    #[test]
+    fn runtime_environment_block_names_the_resolved_shell() {
+        let root = scratch_project("resolved_shell");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        let resolved = tauri_plugin_agent_tools::tools::proc::shell();
+        assert!(
+            block.contains(&format!("Shell: `{}`", display_path(&resolved.program))),
+            "got: {block}"
+        );
+        match resolved.kind.syntax_note() {
+            Some(note) => assert!(block.contains(note)),
+            None => assert!(!block.contains("not bash/POSIX")),
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

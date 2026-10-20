@@ -49,6 +49,10 @@ import {
   supportsRemoteCatalog,
   fetchTopRemoteModels,
 } from '@/lib/remoteModelCatalog'
+import {
+  refreshFailureText,
+  withUnreachableErrors,
+} from '@/lib/provider-unreachable'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -486,7 +490,10 @@ function ProviderDetail() {
     try {
       let newModels: Model[]
       if (supportsRemoteCatalog(provider)) {
-        const catalog = await fetchTopRemoteModels(provider, serviceHub.providers().fetch())
+        const catalog = await fetchTopRemoteModels(
+          provider,
+          withUnreachableErrors(serviceHub.providers().fetch())
+        )
         newModels = catalog.map((m) => ({
           id: m.id,
           model: m.id,
@@ -564,10 +571,11 @@ function ProviderDetail() {
         t('providers:refreshModelsFailed', { provider: provider.provider }),
         error
       )
+      const generic = t('providers:refreshModelsFailed', {
+        provider: provider.provider,
+      })
       toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsFailed', {
-          provider: provider.provider,
-        }),
+        description: refreshFailureText(error, generic),
       })
     } finally {
       setRefreshingModels(false)
