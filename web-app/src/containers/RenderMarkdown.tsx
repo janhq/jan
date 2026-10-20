@@ -112,7 +112,56 @@ const fixEmphasisFlanking = (s: string): string =>
 // escaping currency, and fixing emphasis would corrupt each other unless code and
 // math are first lifted out as opaque tokens. PUA-delimited tokens can't occur in
 // model output and are inert to every transform here.
-const CODE_BLOCK = /(```[\s\S]*?```|`[^`\n]+`)/g
+// A fence owns its contents through a matching (or longer) closing fence,
+// or EOF for an unfinished response. A shorter nested fence is literal code.
+function maskCode(input: string, store: string[]): string {
+  const save = (code: string) => tok('C', store.push(code) - 1)
+  const inline = (text: string): string => {
+    const runs = /`+/g
+    let result = ''
+    let cursor = 0
+    let open: RegExpExecArray | null
+    while ((open = runs.exec(text)) !== null) {
+      const endOfOpen = runs.lastIndex
+      let close: RegExpExecArray | null
+      while ((close = runs.exec(text)) !== null) {
+        if (close[0].length === open[0].length) break
+      }
+      if (!close) {
+        // An unmatched run is prose; a later run can still open a code span.
+        runs.lastIndex = endOfOpen
+        continue
+      }
+      result += text.slice(cursor, open.index)
+      result += save(text.slice(open.index, runs.lastIndex))
+      cursor = runs.lastIndex
+    }
+    return result + text.slice(cursor)
+  }
+
+  const fences = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)(?:\r?\n|$)/gm
+  let result = ''
+  let cursor = 0
+  let open: RegExpExecArray | null
+  while ((open = fences.exec(input)) !== null) {
+    const marker = open[1]
+    // Backticks in the info string do not form a CommonMark fence.
+    if (marker[0] === '`' && open[2].includes('`')) continue
+    const closing = new RegExp(
+      `^ {0,3}${marker[0]}{${marker.length},}[\\t ]*\\r?$`,
+      'gm'
+    )
+    closing.lastIndex = fences.lastIndex
+    const close = closing.exec(input)
+    const end = close ? closing.lastIndex : input.length
+    result += inline(input.slice(cursor, open.index))
+    result += save(input.slice(open.index, end))
+    cursor = end
+    fences.lastIndex = end
+    if (!close) break
+  }
+  return result + inline(input.slice(cursor))
+}
 const BRACKET_MATH =
   /(\$\$[\s\S]*?\$\$|(?<!\\)\\\[[\s\S]*?\\\]|(?<!\\)\\\(.*?\\\))/g
 const tok = (kind: 'C' | 'L', n: number) => `\uE000${kind}${n}\uE000`
@@ -175,8 +224,7 @@ const normalizeLatex = (input: string): string => {
   const code: string[] = []
   const math: string[] = []
 
-  let s = input
-    .replace(CODE_BLOCK, (m) => tok('C', code.push(m) - 1))
+  let s = maskCode(input, code)
     .replace(BRACKET_MATH, (m) => tok('L', math.push(m) - 1))
 
   s = maskInlineMath(s, math)
