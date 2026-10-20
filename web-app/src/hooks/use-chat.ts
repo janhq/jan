@@ -110,8 +110,10 @@ export function useChat(
   // Refresh tools when MCP or RAG tool names change (e.g., when MCP servers start/stop)
   useEffect(() => {
     if (transportRef.current) {
-      // Use forceRefreshTools to update the transport's tool cache
+      // Drop the frozen routed tool set so the refresh re-routes instead of
+      // returning the stale list, then update the transport's tool cache.
       // This ensures the transport has the latest tools when MCP server status changes
+      transportRef.current.invalidateFrozenTools()
       transportRef.current.refreshTools()
     }
   }, [mcpToolNames, ragToolNames])
