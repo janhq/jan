@@ -3461,6 +3461,11 @@ async fn orchestrate_inner(
     args: &OrchestrationArgs,
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
+    // The upstream address is resolved once below and reused for every turn, so
+    // the lease is held for the whole run: a device-change restart must not stop
+    // the worker between two turns of it.
+    #[cfg(not(feature = "cli"))]
+    let _engine_lease = args.llama_state.lease().await;
     let OrchestrationArgs {
         client,
         provider_configs,

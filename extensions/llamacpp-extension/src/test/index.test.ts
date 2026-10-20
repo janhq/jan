@@ -7,7 +7,11 @@ import {
   reloadEngineModels,
   startEngine,
 } from '@janhq/tauri-plugin-llamacpp-api'
-import type { ReloadReport } from '@janhq/tauri-plugin-llamacpp-api'
+import type {
+  ReloadReport,
+  SessionInfo,
+} from '@janhq/tauri-plugin-llamacpp-api'
+import * as api from '@janhq/tauri-plugin-llamacpp-api'
 import { generatePreset } from '../preset'
 import * as store from '../settings-store'
 
@@ -17,6 +21,11 @@ vi.mock('../backend-settings')
 
 // Mock fetch globally
 global.fetch = vi.fn()
+
+// The engine requests go through the Tauri HTTP plugin (reqwest), not the
+// webview's fetch.
+const httpFetch = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
 vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
@@ -51,6 +60,8 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
       models_max: 1,
     }),
     engineDevices: vi.fn().mockResolvedValue([]),
+    beginEngineRestart: vi.fn().mockResolvedValue(true),
+    endEngineRestart: vi.fn().mockResolvedValue(undefined),
     eraseThreadSlotState: vi.fn().mockResolvedValue(0),
   }
 })
@@ -101,7 +112,7 @@ describe('llamacpp_extension', () => {
   describe('resolveThreadCacheBudget', () => {
     const budget = (cfg: Record<string, unknown>): number => {
       // `config` is populated by onLoad, which is not run here.
-      ;(extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
+      ; (extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
       return (extension as any).resolveThreadCacheBudget()
     }
 
@@ -137,12 +148,12 @@ describe('llamacpp_extension', () => {
   describe('getProviderPath', () => {
     it('should return correct provider path', async () => {
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp')
 
       const result = await extension.getProviderPath()
-      
+
       expect(result).toBe('/path/to/jan/llamacpp')
     })
   })
@@ -150,7 +161,7 @@ describe('llamacpp_extension', () => {
   describe('list', () => {
     it('should return empty array when models directory does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models')
       vi.mocked(fs.existsSync)
@@ -160,21 +171,21 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.readdirSync).mockResolvedValue([]) // empty directory after creation
 
       const result = await extension.list()
-      
+
       expect(result).toEqual([])
     })
 
     it('should return model list when models exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
-      
+
       // Set up providerPath first
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       const modelsDir = '/path/to/jan/llamacpp/models'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      
+
       // Mock joinPath to handle the directory traversal logic
       vi.mocked(joinPath).mockImplementation((paths) => {
         if (paths.length === 1) {
@@ -182,15 +193,15 @@ describe('llamacpp_extension', () => {
         }
         return Promise.resolve(paths.join('/'))
       })
-      
+
       vi.mocked(fs.existsSync)
         .mockResolvedValueOnce(true) // modelsDir exists
         .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
         .mockResolvedValueOnce(true) // model.yml exists in test-model dir
-      
+
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1000 })
-      
+
       vi.mocked(invoke).mockResolvedValue({
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
@@ -198,7 +209,7 @@ describe('llamacpp_extension', () => {
       })
 
       const result = await extension.list()
-      
+
       // Note: There's a bug in the original code where it pushes just the child name
       // instead of the full path, causing the model ID to be empty
       expect(result).toEqual([
@@ -226,7 +237,7 @@ describe('llamacpp_extension', () => {
 
     it('should throw error if model already exists', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models/test-model/model.yml')
       vi.mocked(fs.existsSync).mockResolvedValue(true)
@@ -244,13 +255,13 @@ describe('llamacpp_extension', () => {
         tensor_count: 1,
         metadata: { 'general.architecture': 'llama' },
       } as any)
-      
+
       const mockDownloadManager = {
         downloadFiles: vi.fn().mockResolvedValue(undefined)
       }
-      
+
       window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
@@ -258,8 +269,8 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
 
-      await extension.import('test-model', { 
-        modelPath: 'https://example.com/model.gguf' 
+      await extension.import('test-model', {
+        modelPath: 'https://example.com/model.gguf'
       })
 
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
@@ -321,10 +332,10 @@ describe('llamacpp_extension', () => {
         auto_update_engine: false,
         auto_unload: true
       }
-      
+
       // Set up providerPath
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
 
@@ -448,7 +459,7 @@ describe('llamacpp_extension', () => {
         }]
       }
 
-      global.fetch = vi.fn().mockResolvedValue({
+      httpFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(mockResponse)
       })
@@ -460,9 +471,9 @@ describe('llamacpp_extension', () => {
       }
 
       const result = await extension.chat(request)
-      
+
       expect(result).toEqual(mockResponse)
-      expect(fetch).toHaveBeenCalledWith(
+      expect(httpFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
         expect.objectContaining({
           method: 'POST',
@@ -478,7 +489,7 @@ describe('llamacpp_extension', () => {
   describe('delete', () => {
     it('should throw error if model does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
@@ -488,14 +499,14 @@ describe('llamacpp_extension', () => {
 
     it('should delete model successfully', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(true)
       vi.mocked(fs.rm).mockResolvedValue(undefined)
 
       await extension.delete('test-model')
-      
+
       expect(fs.rm).toHaveBeenCalledWith('/path/to/jan/llamacpp/models/test-model')
     })
   })
@@ -1496,5 +1507,550 @@ describe('forgetThreadCache', () => {
     expect(
       vi.mocked(eraseThreadSlotState).mock.calls[0][0].cacheDir
     ).not.toContain('/')
+  })
+})
+
+describe('reconcileEngineDevices', () => {
+  const ECO = [{ id: 'Vulkan0', name: 'Intel UHD', mem: 100, free: 90 }]
+  const HYBRID = [
+    ...ECO,
+    { id: 'CUDA0', name: 'NVIDIA RTX 4060 Laptop', mem: 8000, free: 7000 },
+  ]
+  let extension: llamacpp_extension
+
+  // The worker reported only the iGPU when it started.
+  const startedInEcoMode = async () => {
+    vi.mocked(api.getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+      devices: ECO.map(({ id, name }) => ({ id, name })),
+    })
+    vi.mocked(api.engineDevices).mockResolvedValue(ECO as never)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(true)
+    vi.mocked(api.endEngineRestart).mockResolvedValue(undefined)
+    vi.mocked(api.stopEngine).mockResolvedValue(undefined)
+    extension = new llamacpp_extension()
+    // Standing in for the real spawn, which the plugin does.
+    return vi
+      .spyOn(extension as never, 'runStartEngine' as never)
+      .mockResolvedValue(undefined as never)
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('restarts once a GPU has appeared, so the next load can use it', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(api.stopEngine).toHaveBeenCalledTimes(1)
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the engine alone when the devices are the same', async () => {
+    const spawn = await startedInEcoMode()
+    // Free memory moves constantly; it must not count as a change.
+    vi.mocked(api.engineDevices).mockResolvedValue([
+      { ...ECO[0], free: 12 },
+    ] as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('never interrupts a generation in flight', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(false)
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('never interrupts a model that is still loading', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    const inFlight = Promise.withResolvers<SessionInfo>()
+    const loading = extension as unknown as {
+      loadingModels: Map<string, Promise<SessionInfo>>
+    }
+    loading.loadingModels.set('m', inFlight.promise)
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when no engine is running', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.getEngineInfo).mockResolvedValue(null as never)
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  it('does not restart on a failed enumeration, since that says nothing about GPUs', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockRejectedValue(new Error('timed out'))
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  // The native side holds requests back for as long as a restart it agreed to is
+  // open, so it has to hear about the end however the restart goes.
+  it('releases native requests after a restart, once the new worker is up', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.endEngineRestart).mock.invocationCallOrder[0]).toBeGreaterThan(
+      spawn.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('releases native requests even when stopping the worker fails', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.stopEngine).mockRejectedValue(new Error('stop failed'))
+
+    await expect(extension.reconcileEngineDevices()).rejects.toThrow('stop failed')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('releases native requests even when the new worker will not start', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    spawn.mockRejectedValue(new Error('spawn failed'))
+
+    await expect(extension.reconcileEngineDevices()).rejects.toThrow('spawn failed')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not release anything it never claimed', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(false)
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.endEngineRestart).not.toHaveBeenCalled()
+  })
+
+  // The worker reports what it initialised, so the baseline cannot be skewed by
+  // when this page happened to enumerate: a GPU that showed up after the worker
+  // started but before the first comparison is still a change.
+  it('compares against what the worker reported, however late the first check is', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    // The first enumeration this page ever makes already sees the dGPU.
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats "no GPU" as a baseline, so a GPU appearing is a change', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+      devices: [],
+    })
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a worker alone that did not report its devices', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+      devices: null,
+    })
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  // The reporter's log shows the dGPU absent from the engine on 9 of 21 starts.
+  // Waiting for a visit to Settings > Hardware leaves every other load on the
+  // iGPU, so the load itself has to notice.
+  describe('before a model load', () => {
+    const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+
+    const arm = async () => {
+      const spawn = await startedInEcoMode()
+      vi.spyOn(extension as never, 'findSessionByModel' as never).mockResolvedValue(
+        null as never
+      )
+      vi.spyOn(extension as never, 'ensureEngineReady' as never).mockResolvedValue(
+        undefined as never
+      )
+      vi.spyOn(
+        extension as never,
+        'evictChatIfAtCapacity' as never
+      ).mockResolvedValue(undefined as never)
+      vi.mocked(api.loadLlamaModel).mockResolvedValue(session as never)
+      return spawn
+    }
+
+    it('restarts an idle engine first, so the model lands on the GPU that appeared', async () => {
+      const spawn = await arm()
+      vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+      await extension.load('m')
+
+      expect(api.stopEngine).toHaveBeenCalledTimes(1)
+      expect(spawn).toHaveBeenCalledTimes(1)
+      // The model must go to the new engine, not the one that was stopped.
+      expect(
+        vi.mocked(api.stopEngine).mock.invocationCallOrder[0]
+      ).toBeLessThan(vi.mocked(api.loadLlamaModel).mock.invocationCallOrder[0])
+      expect(spawn.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(api.loadLlamaModel).mock.invocationCallOrder[0]
+      )
+    })
+
+    it('leaves the engine alone when the devices are unchanged', async () => {
+      const spawn = await arm()
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
+
+    it('still loads, on the running engine, while another model is loading', async () => {
+      const spawn = await arm()
+      vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+      const inFlight = Promise.withResolvers<SessionInfo>()
+      const loading = extension as unknown as {
+        loadingModels: Map<string, Promise<SessionInfo>>
+      }
+      loading.loadingModels.set('other', inFlight.promise)
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
+
+    it('still loads when the enumeration itself fails', async () => {
+      await arm()
+      vi.mocked(api.engineDevices).mockRejectedValue(new Error('timed out'))
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // The restart stops a worker that a request may already hold the port of, so
+  // the worker's own idle check is not enough: it only sees requests the worker
+  // has admitted. Requests lease the engine from before they resolve a session.
+  describe('requests using the engine', () => {
+    const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+    const request = { model: 'm', messages: [] } as never
+
+    const armChat = async () => {
+      const spawn = await startedInEcoMode()
+      vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+      const ensureSession = vi
+        .spyOn(extension as never, 'ensureHealthySession' as never)
+        .mockResolvedValue(session as never)
+      return { spawn, ensureSession }
+    }
+
+    // Chat and embeddings go out through the no-proxy client, not global fetch.
+    beforeEach(() => httpFetch.mockReset())
+
+    it('are not cut off by a restart while one is in flight, even if the worker looks idle', async () => {
+      const { spawn } = await armChat()
+      const reply = Promise.withResolvers<Response>()
+      httpFetch.mockReturnValue(reply.promise)
+
+      const chat = extension.chat(request)
+      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+
+      expect(await extension.reconcileEngineDevices()).toBe('busy')
+      expect(api.stopEngine).not.toHaveBeenCalled()
+
+      reply.resolve({ ok: true, json: async () => ({ id: 'c' }) } as Response)
+      await chat
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+      expect(spawn).toHaveBeenCalledTimes(1)
+    })
+
+    it('wait for a restart under way and then use the new engine', async () => {
+      const { spawn, ensureSession } = await armChat()
+      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      const stopped = Promise.withResolvers<void>()
+      vi.mocked(api.stopEngine).mockReturnValue(stopped.promise)
+
+      const restart = extension.reconcileEngineDevices()
+      await vi.waitFor(() => expect(api.stopEngine).toHaveBeenCalled())
+      // Asked while the restart is stopping the worker. Admitted straight away,
+      // it would resolve the port of the worker being stopped, so the session
+      // must only be resolved once the new worker is up.
+      const chat = extension.chat(request)
+
+      stopped.resolve()
+      expect(await restart).toBe('restarted')
+      await chat
+
+      expect(spawn.mock.invocationCallOrder[0]).toBeLessThan(
+        ensureSession.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('keep the engine for as long as a stream is being read', async () => {
+      const { spawn } = await armChat()
+      vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
+        async function*() {
+          yield { id: '1' }
+          yield { id: '2' }
+        } as never
+      )
+
+      const stream = (await extension.chat({
+        ...(request as object),
+        stream: true,
+      } as never)) as AsyncIterable<unknown>
+      // Returned, not read: the caller still holds the port.
+      expect(await extension.reconcileEngineDevices()).toBe('busy')
+
+      const seen: unknown[] = []
+      for await (const chunk of stream) seen.push(chunk)
+      expect(seen).toHaveLength(2)
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+      expect(spawn).toHaveBeenCalledTimes(1)
+    })
+
+    it('let go of the engine when a reader stops a stream early', async () => {
+      await armChat()
+      vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
+        async function*() {
+          yield { id: '1' }
+          yield { id: '2' }
+        } as never
+      )
+
+      const stream = (await extension.chat({
+        ...(request as object),
+        stream: true,
+      } as never)) as AsyncIterable<unknown>
+      for await (const _chunk of stream) break
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    })
+
+    // An abort that happened before the stream was handed over fires no event
+    // the listener will ever see, and a stream nobody reads never releases.
+    it('let go of the engine for a stream whose request was already aborted', async () => {
+      await armChat()
+      vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
+        async function*() {
+          yield { id: '1' }
+        } as never
+      )
+      const controller = new AbortController()
+      controller.abort()
+
+      // Returned and dropped, never read.
+      await extension.chat(
+        { ...(request as object), stream: true } as never,
+        controller
+      )
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    })
+
+    it('let go of the engine when the request fails', async () => {
+      const { ensureSession } = await armChat()
+      ensureSession.mockRejectedValue(new Error('model not loaded'))
+
+      await expect(extension.chat(request)).rejects.toThrow('model not loaded')
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    })
+
+    // Settings > Hardware > Refresh and a model load can both ask at once. The
+    // second must not raise its own gate over the first's and clear it on its
+    // way out while the first is still deciding.
+    it('are not admitted while an earlier restart is still deciding, however many ask', async () => {
+      const { spawn, ensureSession } = await armChat()
+      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      const idle = Promise.withResolvers<boolean>()
+      vi.mocked(api.beginEngineRestart)
+        .mockReturnValueOnce(idle.promise)
+        .mockResolvedValue(false)
+
+      const first = extension.reconcileEngineDevices('m')
+      await vi.waitFor(() => expect(api.beginEngineRestart).toHaveBeenCalledTimes(1))
+      const second = extension.reconcileEngineDevices()
+      // Let everything that can settle without the first's idle answer settle.
+      // Unqueued, that is the whole of the second one, which returns busy and
+      // clears the gate the first still needs.
+      for (let i = 0; i < 50; i++) await Promise.resolve()
+      const chat = extension.chat(request)
+
+      idle.resolve(true)
+      expect(await first).toBe('restarted')
+      await second
+      await chat
+
+      expect(spawn.mock.invocationCallOrder[0]).toBeLessThan(
+        ensureSession.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('keep the engine for every batch of an embedding', async () => {
+      await armChat()
+      vi.spyOn(extension as never, 'ensureEmbeddingModelLoaded' as never).mockResolvedValue(
+        session as never
+      )
+      vi.spyOn(extension as never, 'embedBatchBudget' as never).mockResolvedValue(
+        512 as never
+      )
+      const reply = Promise.withResolvers<Response>()
+      httpFetch.mockReturnValue(reply.promise)
+
+      const embedding = extension.embed(['a'])
+      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+
+      expect(await extension.reconcileEngineDevices()).toBe('busy')
+
+      reply.resolve({
+        ok: true,
+        json: async () => ({ data: [{ embedding: [0.1], index: 0 }] }),
+      } as Response)
+      await embedding
+
+      expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    })
+  })
+})
+
+// Jan's requests to its own engine must not be captured by a proxy. reqwest
+// reads HTTP(S)_PROXY and the OS proxy and only skips loopback when NO_PROXY
+// names it, so each request names a proxy of its own whose no-proxy list
+// covers every loopback host (#9352).
+describe('engine requests bypass a configured proxy', () => {
+  let extension: llamacpp_extension
+  const session = {
+    model_id: 'test-model',
+    pid: 1,
+    port: 3000,
+    api_key: 'test-key',
+  }
+
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body })
+
+  const expectDirect = (urlPart: string) => {
+    const call = httpFetch.mock.calls.find(([url]) =>
+      String(url).includes(urlPart)
+    )
+    expect(call, `no plugin-http request to ${urlPart}`).toBeDefined()
+    const noProxy = (call![1] as { proxy?: { all?: { noProxy?: string } } })
+      .proxy?.all?.noProxy
+    expect(noProxy?.split(',')).toEqual(
+      expect.arrayContaining(['localhost', '127.0.0.1', '::1'])
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    httpFetch.mockReset()
+    extension = new llamacpp_extension()
+  })
+
+  it('sends the embeddings request direct', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded' as never
+    ).mockResolvedValue(session as never)
+    vi.spyOn(extension as never, 'embedBatchBudget' as never).mockResolvedValue(
+      512 as never
+    )
+    httpFetch.mockResolvedValue(
+      okJson({ data: [{ embedding: [0.1], index: 0 }], usage: {} })
+    )
+
+    await extension.embed(['hello'])
+
+    expectDirect('/v1/embeddings')
+  })
+
+  it('sends the tokenize request direct', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded' as never
+    ).mockResolvedValue(session as never)
+    httpFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
+
+    await expect(extension.countEmbeddingTokens(['hello'])).resolves.toEqual([3])
+
+    expectDirect('/tokenize')
+  })
+
+  it('sends the props request direct', async () => {
+    vi.spyOn(extension as never, 'getEngineInfo' as never).mockResolvedValue({
+      port: 3000,
+      apiKey: 'k',
+    } as never)
+    vi.spyOn(extension as never, 'getLoadedModels' as never).mockResolvedValue([
+      'test-model',
+    ] as never)
+    httpFetch.mockResolvedValue(
+      okJson({ default_generation_settings: { n_ctx: 4096 } })
+    )
+
+    await expect(extension.getModelProps('test-model')).resolves.toMatchObject({
+      nCtx: 4096,
+    })
+
+    expectDirect('/props')
+  })
+
+  it('sends chat requests direct, streaming or not', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureHealthySession' as never
+    ).mockResolvedValue(session as never)
+    httpFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
+
+    const request = {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+    }
+    await extension.chat({ ...request, stream: false }).catch(() => { })
+    expectDirect('/v1/chat/completions')
+
+    httpFetch.mockClear()
+    const stream = (await extension.chat({
+      ...request,
+      stream: true,
+    })) as AsyncIterable<unknown>
+    await stream[Symbol.asyncIterator]()
+      .next()
+      .catch(() => { })
+    expectDirect('/v1/chat/completions')
   })
 })

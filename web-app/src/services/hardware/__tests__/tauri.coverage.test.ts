@@ -51,6 +51,28 @@ describe('TauriHardwareService – coverage', () => {
     })
   })
 
+  describe('reconcileLlamacppDevices', () => {
+    it('asks the llamacpp extension to reconcile and returns its answer', async () => {
+      const reconcileEngineDevices = vi.fn().mockResolvedValue('restarted')
+      vi.mocked(window.core.extensionManager.getByName).mockReturnValue({
+        reconcileEngineDevices,
+      })
+
+      await expect(svc.reconcileLlamacppDevices()).resolves.toBe('restarted')
+      expect(window.core.extensionManager.getByName).toHaveBeenCalledWith(
+        '@janhq/llamacpp-extension'
+      )
+    })
+
+    it('is unchanged when the extension is absent or too old to reconcile', async () => {
+      vi.mocked(window.core.extensionManager.getByName).mockReturnValue(undefined)
+      await expect(svc.reconcileLlamacppDevices()).resolves.toBe('unchanged')
+
+      vi.mocked(window.core.extensionManager.getByName).mockReturnValue({})
+      await expect(svc.reconcileLlamacppDevices()).resolves.toBe('unchanged')
+    })
+  })
+
   describe('refreshHardwareInfo', () => {
     it('invokes plugin:hardware|refresh_system_info', async () => {
       const { invoke } = await import('@tauri-apps/api/core')

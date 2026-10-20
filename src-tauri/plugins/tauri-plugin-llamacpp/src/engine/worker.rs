@@ -14,9 +14,19 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tauri_plugin_hardware::vendor::nvidia::CudaVersion;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+/// A device as the engine names it: the id a `device` setting uses and the
+/// human name. Deliberately without memory, which changes constantly and says
+/// nothing about whether the set of GPUs is the same.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceIdentity {
+    pub id: String,
+    pub name: String,
+}
 
 /// The worker prints this and nothing else on stdout, then serves. Reading a
 /// structured line beats the router path's stderr scraping: there is no
@@ -29,6 +39,11 @@ pub struct Handshake {
     /// The CUDA toolkit the engine was built with, which decides how new an
     /// NVIDIA driver it needs.
     pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, as it saw them at start.
+    /// `None` when it did not say (a worker that predates the field, or one
+    /// that could not list them), which is not the same as `Some(vec![])`: an
+    /// empty list is a real answer, "this machine has no GPU".
+    pub devices: Option<Vec<DeviceIdentity>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -282,11 +297,24 @@ pub fn parse_handshake(line: &str) -> Result<Handshake, WorkerError> {
         .get("cuda_toolkit")
         .and_then(serde_json::Value::as_str)
         .and_then(CudaVersion::parse);
+    // `null` or absent means "not reported", which must stay distinct from an
+    // empty list. One unreadable entry makes the whole list untrustworthy as a
+    // baseline, so it reads as not reported rather than as a shorter list that
+    // would later look like a change.
+    let devices = v
+        .get("devices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|a| {
+            a.iter()
+                .map(|d| serde_json::from_value::<DeviceIdentity>(d.clone()).ok())
+                .collect::<Option<Vec<_>>>()
+        });
     Ok(Handshake {
         port,
         pid,
         models,
         cuda_toolkit,
+        devices,
     })
 }
 
@@ -374,6 +402,12 @@ pub struct WorkerHandle {
     pub models: Vec<String>,
     /// The CUDA toolkit the engine was built with, when it reported one.
     pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, from its handshake (`None`
+    /// when it did not say). It lists its GPUs once, at start, so this is the
+    /// baseline a later enumeration is compared against. Kept on the handle,
+    /// not in the webview, so it survives a page reload and always describes
+    /// the worker that is actually running.
+    pub devices: Option<Vec<DeviceIdentity>>,
     child: Child,
     /// Declared after `child` so it is dropped after it: the graceful stop must
     /// get its turn before closing the job would kill the worker outright.
@@ -595,6 +629,7 @@ pub async fn spawn(
         api_key: api_key.to_string(),
         models: hs.models,
         cuda_toolkit: hs.cuda_toolkit,
+        devices: hs.devices,
         child,
         #[cfg(windows)]
         _job: job,
@@ -825,6 +860,7 @@ mod tests {
                 pid: 1234,
                 models: vec!["a".into(), "b".into()],
                 cuda_toolkit: Some(CudaVersion { major: 13, minor: 2 }),
+                devices: None,
             }
         );
     }
@@ -851,6 +887,52 @@ mod tests {
             assert_eq!(hs.port, 8080, "{line}");
             assert_eq!(hs.cuda_toolkit, None, "{line}");
         }
+    }
+
+    fn id_name(id: &str, name: &str) -> DeviceIdentity {
+        DeviceIdentity {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn parse_handshake_reads_the_devices_the_worker_initialised() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX 4060"},{"id":"Vulkan1","name":"UHD"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            hs.devices,
+            Some(vec![id_name("CUDA0", "RTX 4060"), id_name("Vulkan1", "UHD")])
+        );
+    }
+
+    // "No GPU" is a real baseline: a GPU appearing later must read as a change.
+    // Not reporting is not that, or a worker that predates the field would be
+    // restarted on every check.
+    #[test]
+    fn parse_handshake_tells_no_devices_from_devices_not_reported() {
+        let none = parse_handshake(r#"{"port":8080,"devices":[]}"#).unwrap();
+        assert_eq!(none.devices, Some(vec![]));
+        for line in [
+            r#"{"port":8080}"#,
+            r#"{"port":8080,"devices":null}"#,
+            r#"{"port":8080,"devices":"CUDA0"}"#,
+        ] {
+            assert_eq!(parse_handshake(line).unwrap().devices, None, "{line}");
+        }
+    }
+
+    // A truncated list as a baseline would look like a GPU appearing, and
+    // restart the engine for nothing.
+    #[test]
+    fn parse_handshake_does_not_trust_a_list_with_an_unreadable_entry() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX"},{"id":"Vulkan1"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(hs.devices, None);
     }
 
     #[test]

@@ -105,6 +105,10 @@ pub async fn load_mlx_model_impl(
     let mut command = Command::new(&bin_path);
     command.args(&args);
     command.envs(envs);
+    // Lets a later Jan tell this server from one someone runs themselves, so it
+    // can stop it if this app dies without its exit cleanup. Set after `envs`:
+    // nothing the caller passes may remove it.
+    command.env(jan_utils::MLX_OWNER_ENV, "1");
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
@@ -391,4 +395,69 @@ pub async fn get_mlx_all_sessions<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<SessionInfo>, String> {
     get_all_active_sessions(app_handle).await
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// The startup sweep stops an orphaned `mlx-server` only when it carries
+    /// `MLX_OWNER_ENV`, so every server this plugin starts must have it, even
+    /// when the caller's own environment names the variable.
+    #[tokio::test]
+    async fn the_server_it_starts_carries_jans_marker() {
+        let dir = std::env::temp_dir().join(format!(
+            "jan-mlx-marker-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let env_dump = dir.join("env.txt");
+        let server = dir.join("mlx-server");
+        // Dump the environment first, then announce readiness, so the file is
+        // complete by the time the plugin returns.
+        std::fs::write(
+            &server,
+            format!(
+                "#!/bin/sh\nenv > '{}'\necho 'server is listening'\nexec sleep 30\n",
+                env_dump.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&server, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let sessions = Arc::new(Mutex::new(HashMap::new()));
+        let mut envs = HashMap::new();
+        envs.insert(jan_utils::MLX_OWNER_ENV.to_string(), "0".to_string());
+        let session = load_mlx_model_impl(
+            sessions.clone(),
+            &server,
+            "m".to_string(),
+            dir.display().to_string(),
+            1,
+            MlxConfig { ctx_size: 0 },
+            envs,
+            false,
+            10,
+        )
+        .await
+        .expect("fake server should load");
+
+        let dumped = std::fs::read_to_string(&env_dump).unwrap();
+        let marker = format!("{}=1", jan_utils::MLX_OWNER_ENV);
+        assert!(dumped.lines().any(|l| l == marker), "{dumped}");
+        assert!(
+            !dumped.lines().any(|l| l == format!("{}=0", jan_utils::MLX_OWNER_ENV)),
+            "{dumped}"
+        );
+
+        if let Some(mut s) = sessions.lock().await.remove(&session.pid) {
+            let _ = s.child.kill().await;
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
