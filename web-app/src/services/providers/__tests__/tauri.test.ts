@@ -181,6 +181,57 @@ describe('TauriProvidersService', () => {
       errSpy.mockRestore()
     })
 
+    it.each(['list', 'getSettings'] as const)(
+      'keeps healthy and builtin providers when an engine %s fails, then retries it',
+      async (method) => {
+        const engine = (id: string) => ({
+          list: vi.fn().mockResolvedValue([{ id, name: id }]),
+          getSettings: vi.fn().mockResolvedValue([]),
+          isToolSupported: vi.fn().mockResolvedValue(false),
+          inferenceUrl: 'http://localhost:1337/chat/completions',
+        })
+        const before = engine('before-model')
+        const broken = engine('recovered-model')
+        const after = engine('after-model')
+        const failure = new Error(`${method} unavailable`)
+        broken[method].mockRejectedValueOnce(failure)
+        vi.mocked(EngineManager.instance).mockReturnValue({
+          engines: new Map([
+            ['before', before],
+            ['broken', broken],
+            ['after', after],
+          ]),
+        } as any)
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const partial = await svc.getProviders()
+          expect(partial.map((p) => p.provider)).toEqual(['before', 'after', 'openai'])
+          expect(partial[0].models[0].id).toBe('before-model')
+          expect(partial[1].models[0].id).toBe('after-model')
+          expect(log).toHaveBeenCalledWith('Error getting provider broken in Tauri:', failure)
+          const recovered = await svc.getProviders()
+          expect(recovered.map((p) => p.provider)).toEqual(['before', 'broken', 'after', 'openai'])
+          expect(recovered[1].models[0].id).toBe('recovered-model')
+        } finally {
+          log.mockRestore()
+        }
+      }
+    )
+
+    it('keeps builtin providers when every runtime engine fails', async () => {
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        engines: new Map([
+          ['broken', { list: vi.fn().mockRejectedValue(new Error('unavailable')) }],
+        ]),
+      } as any)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        expect((await svc.getProviders()).map((p) => p.provider)).toEqual(['openai'])
+      } finally {
+        log.mockRestore()
+      }
+    })
+
     it('maps engine settings correctly', async () => {
       const mockEngine = {
         list: vi.fn().mockResolvedValue([]),
