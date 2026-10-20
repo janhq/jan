@@ -301,6 +301,8 @@ jobs:
           }
 
       # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      # Pinned because glslc's version is in the engine-prebuilt.sh key; bump it
+      # with the x64 one in setup-engine-toolchain and the copy in engine-build.yml.
       - name: Provision the Vulkan SDK
         if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
         shell: bash
@@ -308,7 +310,7 @@ jobs:
           curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
             --connect-timeout 30 --max-time 900 \
             -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-            https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
+            https://sdk.lunarg.com/sdk/download/1.4.363.0/warm/vulkan_sdk.exe
           "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
             --accept-licenses --default-answer --confirm-command install
           echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
