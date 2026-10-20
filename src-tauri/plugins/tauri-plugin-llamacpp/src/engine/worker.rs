@@ -220,12 +220,26 @@ const STDERR_TAIL_LINES: usize = 4;
 /// Per line, so one runaway line cannot crowd out the rest of the tail.
 const STDERR_TAIL_LINE_CHARS: usize = 300;
 
+/// How long a dead worker's stderr drain is given to finish before its tail is
+/// read. A worker's last words are often its last write before it exits, so
+/// its exit can be collected while they still sit unread in the pipe. The pipe
+/// closes when the worker does, so this is normally a few milliseconds; the
+/// bound is for a grandchild that still holds the pipe open.
+const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
+
 /// The last few stderr lines, shared between the drain task and the handle.
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
 
+/// Lines that are kept out of the tail, though still logged. ggml prints one
+/// `load_backend: loaded ... from <path>` per backend at start, which says
+/// nothing about a crash and would fill the error with local paths.
+fn is_tail_noise(line: &str) -> bool {
+    line.starts_with("load_backend:")
+}
+
 fn remember_stderr_line(tail: &StderrTail, line: &str) {
     let line = line.trim();
-    if line.is_empty() {
+    if line.is_empty() || is_tail_noise(line) {
         return;
     }
     let line: String = line.chars().take(STDERR_TAIL_LINE_CHARS).collect();
@@ -268,15 +282,12 @@ pub fn describe_exit(status: &ExitStatus) -> String {
     {
         use std::os::unix::process::ExitStatusExt;
         if let Some(sig) = status.signal() {
-            let name = match sig {
-                6 => "SIGABRT",
-                7 => "SIGBUS",
-                9 => "SIGKILL",
-                11 => "SIGSEGV",
-                15 => "SIGTERM",
-                _ => return format!("killed by signal {sig}"),
+            // Signal numbers differ by platform (SIGBUS is 7 on Linux, 10 on
+            // macOS), so the name comes from the platform's own table.
+            return match nix::sys::signal::Signal::try_from(sig) {
+                Ok(signal) => format!("killed by {}", signal.as_str()),
+                Err(_) => format!("killed by signal {sig}"),
             };
-            return format!("killed by {name}");
         }
     }
     "no exit code".to_string()
@@ -488,6 +499,8 @@ pub struct WorkerHandle {
     pub devices: Option<Vec<DeviceIdentity>>,
     child: Child,
     stderr_tail: StderrTail,
+    /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
+    stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
     /// get its turn before closing the job would kill the worker outright.
     #[cfg(windows)]
@@ -563,12 +576,24 @@ impl WorkerHandle {
     }
 
     /// None while still running, otherwise how it ended and what it last said.
-    pub fn exit_report(&mut self) -> Option<ExitReport> {
+    ///
+    /// Waits up to [`STDERR_DRAIN_WAIT`] for the rest of its stderr first, so
+    /// a crash reason written just before the exit is not missed.
+    pub async fn exit_report(&mut self) -> Option<ExitReport> {
         let status = self.exited()?;
+        wait_for_drain(self.stderr_drain.take()).await;
         Some(ExitReport {
             status: describe_exit(&status),
             last_lines: stderr_lines(&self.stderr_tail),
         })
+    }
+}
+
+/// Gives a dead worker's stderr drain a bounded moment to read what is left.
+/// On timeout the task is detached, not cancelled, and keeps logging.
+async fn wait_for_drain(drain: Option<tokio::task::JoinHandle<()>>) {
+    if let Some(drain) = drain {
+        let _ = tokio::time::timeout(STDERR_DRAIN_WAIT, drain).await;
     }
 }
 
@@ -691,17 +716,13 @@ pub async fn spawn(
         }
         Ok(Ok(None)) => {
             // Closed stdout without a line: it died. The exit status and its
-            // last words are the most useful things we can report. The stderr
-            // pipe closed with it, so the drain finishes promptly; bounded
-            // anyway, since a grandchild could still hold the pipe open.
+            // last words are the most useful things we can report.
             let status = child
                 .wait()
                 .await
                 .map(|s| describe_exit(&s))
                 .unwrap_or_else(|e| format!("exit status unknown: {e}"));
-            if let Some(drain) = stderr_drain {
-                let _ = tokio::time::timeout(Duration::from_millis(500), drain).await;
-            }
+            wait_for_drain(stderr_drain).await;
             let lines = stderr_lines(&stderr_tail);
             let output = if lines.is_empty() {
                 String::new()
@@ -739,6 +760,7 @@ pub async fn spawn(
         devices: hs.devices,
         child,
         stderr_tail,
+        stderr_drain,
         #[cfg(windows)]
         _job: job,
     })
@@ -1100,15 +1122,46 @@ pub(crate) mod tests {
         );
     }
 
+    // Backend-load lines name no cause and carry local paths, so a crash
+    // right after start must show what came before them, not them.
+    #[test]
+    fn backend_load_lines_stay_out_of_the_tail() {
+        let tail = StderrTail::default();
+        remember_stderr_line(&tail, "ggml_metal_init: error: failed to allocate");
+        for b in ["MTL", "BLAS", "CPU"] {
+            remember_stderr_line(
+                &tail,
+                &format!("load_backend: loaded {b} backend from /opt/jan/libggml-{b}.so"),
+            );
+        }
+        assert_eq!(
+            stderr_lines(&tail),
+            vec!["ggml_metal_init: error: failed to allocate".to_string()]
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn exit_statuses_read_the_way_users_search_for_them() {
         use std::os::unix::process::ExitStatusExt;
         // Unix wait status: the code in the high byte, a signal in the low bits.
         assert_eq!(describe_exit(&ExitStatus::from_raw(3 << 8)), "exit code 3");
-        assert_eq!(describe_exit(&ExitStatus::from_raw(9)), "killed by SIGKILL");
-        assert_eq!(describe_exit(&ExitStatus::from_raw(11)), "killed by SIGSEGV");
-        assert_eq!(describe_exit(&ExitStatus::from_raw(10)), "killed by signal 10");
+        // From the platform's constants: SIGBUS is 7 on Linux but 10 on macOS,
+        // where 7 is SIGEMT.
+        use nix::sys::signal::Signal;
+        for (sig, name) in [
+            (Signal::SIGABRT, "SIGABRT"),
+            (Signal::SIGBUS, "SIGBUS"),
+            (Signal::SIGKILL, "SIGKILL"),
+            (Signal::SIGSEGV, "SIGSEGV"),
+            (Signal::SIGTERM, "SIGTERM"),
+        ] {
+            assert_eq!(
+                describe_exit(&ExitStatus::from_raw(sig as i32)),
+                format!("killed by {name}")
+            );
+        }
+        assert_eq!(describe_exit(&ExitStatus::from_raw(100)), "killed by signal 100");
     }
 
     #[cfg(windows)]

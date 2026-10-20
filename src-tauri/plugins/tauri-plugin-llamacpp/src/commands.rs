@@ -109,13 +109,17 @@ async fn worker_fate(state: &LlamacppState, port: u16) -> WorkerFate {
             let Some(handle) = guard.as_mut().filter(|h| h.port == port) else {
                 return WorkerFate::Gone;
             };
-            if let Some(report) = handle.exit_report() {
+            if handle.exited().is_some() {
+                // Reaped under the lock, reported outside it: the report waits
+                // briefly for the rest of the worker's stderr.
+                let mut dead = guard.take().expect("checked above");
+                drop(guard);
+                let report = dead.exit_report().await.expect("it has exited");
                 log::error!(
                     "jan-llama-worker exited unexpectedly ({}); last output: {:?}",
                     report.status,
                     report.last_lines
                 );
-                *guard = None;
                 return WorkerFate::Exited(report);
             }
         }
@@ -1021,10 +1025,6 @@ mod unreachable_worker_tests {
             assert!(std::time::Instant::now() < deadline, "fake worker did not exit");
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        // Let the stderr drain catch the last line, as it has long since in
-        // the field by the time the user sends a message.
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
         let err = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
         let v: serde_json::Value = serde_json::from_str(&err).expect(&err);
         assert_eq!(v["code"], "ENGINE_STOPPED", "{v}");
@@ -1037,6 +1037,45 @@ mod unreachable_worker_tests {
 
         let again = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
         assert!(again.contains("ENGINE_STOPPED"), "{again}");
+    }
+
+    // The crash reason is the last thing a dying worker writes, and its exit
+    // can be collected before the stderr drain has read it. A request made the
+    // moment the worker is seen dead must still carry that line. The line is
+    // written by a child that outlives the worker by a moment, which makes
+    // "exited, but stderr not yet read" certain instead of a race.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_request_right_after_a_crash_still_carries_its_last_words() {
+        let dir = tempfile::tempdir().unwrap();
+        let port = closed_port();
+        let handle = spawn_fake(
+            dir.path(),
+            &format!(
+                "echo '{{\"port\":{port},\"pid\":'$$'}}'\n\
+                 (sleep 0.1; echo 'CUDA error: unspecified launch failure' >&2) &\n\
+                 exit 3"
+            ),
+        )
+        .await;
+        let state = LlamacppState::new();
+        *state.engine.lock().await = Some(handle);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while state.engine.lock().await.as_mut().unwrap().exited().is_none() {
+            assert!(std::time::Instant::now() < deadline, "fake worker did not exit");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        let err = engine_loaded_model_ids(&state, port, "k").await.unwrap_err();
+        let v: serde_json::Value = serde_json::from_str(&err).expect(&err);
+        assert_eq!(v["code"], "ENGINE_STOPPED", "{v}");
+        assert!(v["message"].as_str().unwrap().contains("exit code 3"), "{v}");
+        assert!(
+            v["details"].as_str().unwrap().contains("unspecified launch failure"),
+            "{v}"
+        );
+        assert!(state.engine.lock().await.is_none(), "a dead worker is reaped");
     }
 
     // A worker that dies mid-request can drop its connection a moment before
