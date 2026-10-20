@@ -231,8 +231,13 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           !state.threads[threadId].metadata?.project
       )
 
-      // Delete threads and clean up their out-of-store artifacts
+      // Delete threads and clean up their out-of-store artifacts. As in
+      // deleteThread: removing the chat session is what ends a turn the thread
+      // still has running in the background.
       threadsToDeleteIds.forEach((threadId) => {
+        useAgentMode.getState().removeThread(threadId)
+        useChatSessions.getState().removeSession(threadId)
+        useAppState.getState().clearThreadState(threadId)
         cleanupThreadArtifacts(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })

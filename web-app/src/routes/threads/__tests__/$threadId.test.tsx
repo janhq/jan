@@ -1082,6 +1082,66 @@ describe('ThreadDetail route', () => {
       expect(persisted('b-a2').metadata.parentId).toBe('b-u1')
     })
 
+    // The partial shown while the model reloads after "Increase Context Size"
+    // belongs to its thread: never shown in another, and cleared by its own
+    // turn finishing even while another thread is open.
+    it("keeps the reload placeholder to its own thread", async () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      const C = Route.component as React.ComponentType
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      act(() => {
+        onFinishA({
+          message: {
+            id: 'a-len',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer' }],
+            metadata: {
+              finishReason: 'length',
+              usage: { inputTokens: 30000, outputTokens: 4000 },
+            },
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+      const realModels = hub.models as () => Record<string, unknown>
+      hub.models = () => ({
+        ...realModels(),
+        updateModelSettings: vi.fn().mockResolvedValue(undefined),
+      })
+      // The click regenerates after a delay; it must not fire in a later test.
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          screen.getByText('Increase Context Size').click()
+        })
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+        hub.models = realModels
+      }
+      // In front, its own thread shows the partial while the model reloads.
+      h.chatState.status = 'submitted'
+      rerender(<C />)
+      expect(screen.getByTestId('message-a-len')).toBeInTheDocument()
+
+      openThreadB(rerender)
+      expect(screen.queryByTestId('message-a-len')).toBeNull()
+
+      // A's resumed reply finishes behind B.
+      act(() => {
+        onFinishA({
+          message: { id: 'a-len', role: 'assistant', parts: [{ type: 'text', text: 'partial answer, done' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      h.routeParams.threadId = 'thread-1'
+      h.chatState.messages = []
+      rerender(<C />)
+      expect(screen.queryByTestId('message-a-len')).toBeNull()
+    })
+
     it("does not show its context-limit banner on the open thread", () => {
       h.modelProviderState.selectedProvider = 'llamacpp'
       const { rerender } = renderComponent()

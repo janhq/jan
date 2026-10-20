@@ -237,8 +237,8 @@ const SHELL_DISABLED_TOOL_ERROR =
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
 // stopped) only reaches storage when a later reply rewrites the turn; when no
-// reply follows (Stop, or the thread was deleted) it has to be written here, or the
-// call reloads as "Running" after a restart.
+// reply follows (Stop) it has to be written here, or the call reloads as
+// "Running" after a restart.
 function rewriteStoredTurn(
   threadId: string,
   message: UIMessage,
@@ -413,9 +413,22 @@ function ThreadDetail() {
   }, [thread])
 
   // Holds the partial assistant message while the model reloads after a
-  // context-limit hit, so the user sees it instead of a blank gap.
-  const [pendingContinueMessage, setPendingContinueMessage] =
-    useState<UIMessage | null>(null)
+  // context-limit hit, so the user sees it instead of a blank gap. Tagged with
+  // its thread: the turn it resumes can finish while another thread is open, so
+  // it is shown only in its own thread and cleared by that turn.
+  const [pendingContinue, setPendingContinue] = useState<{
+    threadId: string
+    message: UIMessage
+  } | null>(null)
+  const pendingContinueMessage =
+    pendingContinue && pendingContinue.threadId === threadId
+      ? pendingContinue.message
+      : null
+  const clearPendingContinue = useCallback(
+    (ofThread: string) =>
+      setPendingContinue((prev) => (prev?.threadId === ofThread ? null : prev)),
+    []
+  )
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
   // Per-thread so the shimmer survives navigating away and back while the
   // embedding run is still in flight.
@@ -545,13 +558,7 @@ function ThreadDetail() {
         // partial marked as stopped so the "Continue" button can resume it.
       }
 
-      if (
-        !isAbort &&
-        message.parts.length &&
-        openThreadIdRef.current === threadId
-      ) {
-        setPendingContinueMessage(null)
-      }
+      if (!isAbort && message.parts.length) clearPendingContinue(threadId)
 
       // Nothing would be persisted for an empty reply, so without this the
       // turn silently vanishes and the user cannot tell it failed. The error
@@ -767,18 +774,16 @@ function ThreadDetail() {
       // running call, but the loop still records the calls it cuts short.
       const stoppedByUser = () => stopSignal.aborted && !released
 
-      // The outcomes handed to the chat, so a loop that ends after the thread was
-      // deleted can wait for them to land before it persists the turn.
-      const outputs: Promise<unknown>[] = []
       const record = (output: Parameters<typeof addToolOutput>[0]) => {
-        outputs.push(Promise.resolve(addToolOutput(output)))
+        void addToolOutput(output)
       }
 
       ;(async () => {
         for (const toolCall of sessionData.tools) {
           if (stoppedByUser()) break
-          // The thread was deleted before this call's turn came: it will not run,
-          // and without an outcome its card would read "Running" on return.
+          // The thread was deleted before this call's turn came: it will not run.
+          // Recorded as the chat closing, like a cut-short approval below, so
+          // every call of the turn ends with an outcome.
           if (signal.aborted) {
             record({
               state: 'output-error',
@@ -816,8 +821,8 @@ function ThreadDetail() {
                     ))
             approvalsOf(threadId).delete(toolCall.toolCallId)
             // Only an explicit Stop skips the result. Deleting the thread also
-            // resolves a pending approval as denied; that denial must still be
-            // recorded, or the call stays "Running" with nothing running.
+            // resolves a pending approval as denied, recorded below as the chat
+            // closing rather than as the user's refusal.
             if (stoppedByUser()) break
 
             if (!approved) {
@@ -941,17 +946,6 @@ function ThreadDetail() {
           }
         }
 
-        // The loop was cut short without a Stop: no follow-up reply will run to
-        // rewrite the stored turn, so write what the live copy holds (results
-        // and errors included), if the session still holds it. This turn by its
-        // id, not the last message: a newer turn may have started since.
-        if (signal.aborted && !stopSignal.aborted) {
-          await Promise.allSettled(outputs)
-          const turn = useChatSessions
-            .getState()
-            .sessions[threadId]?.chat.messages.find((m) => m.id === message.id)
-          if (turn?.role === 'assistant') rewriteStoredTurn(threadId, turn, false)
-        }
         unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining(threadId)
@@ -1035,6 +1029,9 @@ function ThreadDetail() {
                 }
                 if (!idle) return
               }
+              // Deleted while waiting for the engine: nothing to name, and the
+              // deletion has already cancelled what it could.
+              if (!useChatSessions.getState().sessions[threadId]) return
               titleAborts.get(threadId)?.abort()
               const controller = new AbortController()
               titleAborts.set(threadId, controller)
@@ -1214,8 +1211,12 @@ function ThreadDetail() {
   useEffect(() => {
     if (status !== 'streaming') return
     launchedCtxLens.delete(threadId)
-    const modelId = selectedModel?.id
-    const ext = getLocalPropsExtension(selectedProvider)
+    // The model the streaming turn runs on, which a follow-up keeps even if
+    // the selection has changed since the turn started.
+    const { selectedModel: turnModel, selectedProvider: turnProvider } =
+      turnModelOf(threadId)
+    const modelId = turnModel?.id
+    const ext = getLocalPropsExtension(turnProvider)
     if (!modelId || !ext?.getModelProps) return
     let cancelled = false
     ext
@@ -1229,7 +1230,7 @@ function ThreadDetail() {
     return () => {
       cancelled = true
     }
-  }, [status, selectedProvider, selectedModel?.id, threadId])
+  }, [status, threadId])
 
   useEffect(() => {
     if (status === 'streaming') {
@@ -2044,7 +2045,7 @@ function ThreadDetail() {
     const pending = takeFrom(pendingContinuations, threadId)
     if (pending) {
       setContinueFromContentRef.current?.(pending.text)
-      setPendingContinueMessage(pending.message)
+      setPendingContinue({ threadId, message: pending.message })
     }
 
     setTimeout(() => {
@@ -2083,9 +2084,7 @@ function ThreadDetail() {
       // consumed by a later, unrelated "Increase Context Size" click.
       pendingContinuations.delete(threadId)
     }
-    if (status === 'error' && pendingContinueMessage) {
-      setPendingContinueMessage(null)
-    }
+    if (status === 'error') clearPendingContinue(threadId)
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Message queue: auto-send the next queued message when the stream finishes.
