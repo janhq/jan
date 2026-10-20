@@ -18,12 +18,16 @@ export class DefaultMessagesService implements MessagesService {
       return []
     }
 
-    return (
-      ExtensionManager.getInstance()
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.listMessages(threadId)
-        ?.catch(() => []) ?? []
-    )
+    const extension = ExtensionManager.getInstance()
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    if (!extension) {
+      throw new Error('Conversational extension not available yet')
+    }
+    const messages = await extension.listMessages(threadId)
+    if (!Array.isArray(messages)) {
+      throw new Error('Invalid conversation history response')
+    }
+    return messages
   }
 
   async createMessage(message: ThreadMessage): Promise<ThreadMessage> {

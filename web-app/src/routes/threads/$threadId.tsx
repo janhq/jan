@@ -357,6 +357,14 @@ function ThreadDetail() {
   const updateMessage = useMessages((state) => state.updateMessage)
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
+  const [historyReadError, setHistoryReadError] = useState<{
+    threadId: string
+    message: string
+  } | null>(null)
+  const [historyReadAttempt, setHistoryReadAttempt] = useState(0)
+  const [isReadingHistory, setIsReadingHistory] = useState(false)
+  const currentHistoryError = historyReadError && historyReadError.threadId === threadId
+    ? historyReadError.message : undefined
 
   useTools()
 
@@ -1252,10 +1260,14 @@ function ThreadDetail() {
       return
     }
 
+    let cancelled = false
+    setIsReadingHistory(true)
     serviceHub
       .messages()
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
+        if (cancelled) return
+        setHistoryReadError(null)
         if (fetchedMessages && fetchedMessages.length > 0) {
           const currentLocalMessages = useMessages
             .getState()
@@ -1326,11 +1338,18 @@ function ThreadDetail() {
           currentThread.current = threadId
         }
       })
-      .catch((error) =>
+      .catch((error) => {
+        if (cancelled) return
         console.error('Failed to fetch messages for thread:', threadId, error)
-      )
+        setHistoryReadError({
+          threadId,
+          message: error instanceof Error ? error.message || 'History could not be read' : String(error),
+        })
+      })
+      .finally(() => { if (!cancelled) setIsReadingHistory(false) })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, serviceHub])
+  }, [threadId, serviceHub, historyReadAttempt])
 
   useEffect(() => {
     // A title being summarized is left to finish: it belongs to its thread,
@@ -1742,10 +1761,11 @@ function ThreadDetail() {
       _documents?: unknown,
       draft?: string
     ) => {
+      if (currentHistoryError) return
       clearBannerErrors()
       await processAndSendMessage(text, files, draft)
     },
-    [processAndSendMessage, clearBannerErrors]
+    [processAndSendMessage, clearBannerErrors, currentHistoryError]
   )
 
   // Versioning helpers --------------------------------------------------------
@@ -2375,6 +2395,19 @@ function ThreadDetail() {
 
         {/* Chat Input - Fixed at bottom */}
         <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+          {currentHistoryError ? (
+            <div role="alert" className="rounded-lg border p-4">
+              <p>Unable to load conversation history.</p>
+              <p className="text-sm text-muted-foreground">{currentHistoryError}</p>
+              <Button
+                disabled={isReadingHistory}
+                onClick={() => setHistoryReadAttempt((attempt) => attempt + 1)}
+                className="mt-2"
+              >
+                {t('common:run.tryAgain')}
+              </Button>
+            </div>
+          ) : (
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
@@ -2382,6 +2415,7 @@ function ThreadDetail() {
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
           />
+          )}
         </div>
       </div>
     </div>

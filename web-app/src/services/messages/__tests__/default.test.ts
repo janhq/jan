@@ -51,10 +51,9 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual([{ id: 'msg1' }])
     })
 
-    it('returns empty array on extension error', async () => {
+    it('propagates an extension read error', async () => {
       mockListMessages.mockRejectedValue(new Error('fail'))
-      const result = await svc.fetchMessages('thread-1')
-      expect(result).toEqual([])
+      await expect(svc.fetchMessages('thread-1')).rejects.toThrow('fail')
     })
   })
 

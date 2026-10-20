@@ -326,6 +326,7 @@ vi.mock('@/lib/extension', () => ({
 }))
 
 vi.mock('@/lib/messages', () => ({
+  threadMessageIsEmpty: () => false,
   convertThreadMessagesToUIMessages: (msgs: any[]) =>
     msgs.map((m) => ({
       id: m.id,
@@ -504,6 +505,7 @@ import { usePrompt } from '@/hooks/usePrompt'
 // put back or it leaks into every later test.
 const hub = getServiceHub() as unknown as Record<string, unknown>
 const realMcp = hub.mcp
+const realMessages = hub.messages
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -545,7 +547,12 @@ describe('ThreadDetail route', () => {
     h.messagesState.updateMessage = vi.fn()
     h.messagesState.deleteMessage = vi.fn()
     h.messagesState.setMessages = vi.fn()
-    h.chatSessionsState.getSessionData = vi.fn(() => ({ tools: [] }))
+    // The real session store returns stable data for each thread across renders.
+    const sessionData = new Map<string, { tools: any[] }>()
+    h.chatSessionsState.getSessionData = vi.fn((id: string) => {
+      if (!sessionData.has(id)) sessionData.set(id, { tools: [] })
+      return sessionData.get(id)
+    })
     h.messageQueueState.dequeue = vi.fn(() => null)
     h.messageQueueState.clearQueue = vi.fn()
     h.agentModeState.agentThreads = {}
@@ -556,6 +563,7 @@ describe('ThreadDetail route', () => {
     h.appStateState.tools = []
     h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
     hub.mcp = realMcp
+    hub.messages = realMessages
     useToolCallRuntime.getState().reset()
     sessionStorage.clear()
   })
@@ -577,6 +585,52 @@ describe('ThreadDetail route', () => {
     expect(screen.getByTestId('model-dropdown')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('chat-status')).toHaveTextContent('ready')
+  })
+
+  it('shows a failed history read and restores the conversation after retry', async () => {
+    const fetchMessages = vi.fn().mockRejectedValueOnce(new Error('history file is locked'))
+      .mockResolvedValueOnce([{
+        id: 'saved-user', thread_id: 'thread-1', role: 'user', created_at: 1,
+        content: [{ type: 'text', text: { value: 'saved history', annotations: [] } }],
+      }])
+    hub.messages = () => ({ fetchMessages })
+    h.messagesState.getMessages.mockReturnValue([])
+    renderComponent()
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('history file is locked'))
+    expect(screen.queryByTestId('chat-input')).not.toBeInTheDocument()
+    expect(h.messagesState.setMessages).not.toHaveBeenCalled()
+    await act(async () => screen.getByRole('button', { name: 'common:run.tryAgain' }).click())
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toBeInTheDocument())
+    expect(fetchMessages).toHaveBeenCalledTimes(2)
+    expect(h.messagesState.setMessages).toHaveBeenCalledWith('thread-1', expect.arrayContaining([
+      expect.objectContaining({ id: 'saved-user' }),
+    ]))
+  })
+
+  it.each(['success', 'failure'])('ignores a late history %s after switching threads', async (outcome) => {
+    let resolve!: (messages: any[]) => void
+    let reject!: (error: Error) => void
+    const pending = new Promise<any[]>((yes, no) => { resolve = yes; reject = no })
+    const fetchMessages = vi.fn((id: string) => id === 'thread-1' ? pending : Promise.resolve([]))
+    hub.messages = () => ({ fetchMessages })
+    h.threadsState.threads['thread-2'] = { ...h.threadsState.threads['thread-1'], id: 'thread-2' }
+    const view = renderComponent()
+    try {
+      h.routeParams.threadId = 'thread-2'
+      const Component = Route.component as React.ComponentType
+      view.rerender(<Component />)
+      await act(async () => {
+        if (outcome === 'failure') reject(new Error('old history read failed'))
+        else resolve([{ id: 'old-message', role: 'user', content: [] }])
+      })
+      expect(fetchMessages).toHaveBeenCalledWith('thread-2')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(h.messagesState.setMessages).not.toHaveBeenCalled()
+    } finally {
+      view.unmount()
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+    }
   })
 
   it('sets current thread id on mount and resets on unmount', () => {

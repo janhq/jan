@@ -48,35 +48,33 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual(mockMessages)
     })
 
-    it('should return empty array when extension not found', async () => {
+    it('should reject when extension not found', async () => {
       mockExtensionManager.get.mockReturnValue(null)
       const threadId = 'thread-123'
 
-      const result = await messagesService.fetchMessages(threadId)
+      await expect(messagesService.fetchMessages(threadId))
+        .rejects.toThrow('Conversational extension not available yet')
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
-      expect(result).toEqual([])
     })
 
-    it('should return empty array when listMessages fails', async () => {
+    it('should propagate a listMessages failure', async () => {
       const threadId = 'thread-123'
       const error = new Error('Failed to list messages')
       mockExtension.listMessages.mockRejectedValue(error)
 
-      const result = await messagesService.fetchMessages(threadId)
+      await expect(messagesService.fetchMessages(threadId)).rejects.toBe(error)
 
       expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
       expect(mockExtension.listMessages).toHaveBeenCalledWith(threadId)
-      expect(result).toEqual([])
     })
 
     it('should handle undefined listMessages response', async () => {
       const threadId = 'thread-123'
       mockExtension.listMessages.mockReturnValue(undefined)
 
-      const result = await messagesService.fetchMessages(threadId)
-
-      expect(result).toEqual([])
+      await expect(messagesService.fetchMessages(threadId))
+        .rejects.toThrow('Invalid conversation history response')
     })
   })
 
