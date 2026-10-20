@@ -11,11 +11,36 @@ import { cn } from '@/lib/utils'
 
 type Format = 'markdown' | 'csv'
 
+function cellText(cell: Element): string {
+  const parts: { text: string; literal: boolean }[] = []
+  let prose = ''
+  const flush = () => {
+    if (prose) parts.push({ text: prose.replace(/\s+/g, ' '), literal: false })
+    prose = ''
+  }
+  const visit = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      prose += node.textContent ?? ''
+    } else if (node.nodeName === 'CODE' || node.nodeName === 'PRE') {
+      flush()
+      parts.push({ text: node.textContent ?? '', literal: true })
+    } else {
+      node.childNodes.forEach(visit)
+    }
+  }
+  visit(cell)
+  flush()
+  // Trim table-layout whitespace, not significant whitespace inside code.
+  const first = parts[0]
+  const last = parts.at(-1)
+  if (first && !first.literal) first.text = first.text.trimStart()
+  if (last && !last.literal) last.text = last.text.trimEnd()
+  return parts.map((part) => part.text).join('')
+}
+
 function extractRows(table: HTMLTableElement): string[][] {
   return Array.from(table.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.querySelectorAll('th, td')).map((cell) =>
-      (cell.textContent ?? '').replace(/\s+/g, ' ').trim()
-    )
+    Array.from(tr.querySelectorAll('th, td')).map(cellText)
   )
 }
 
