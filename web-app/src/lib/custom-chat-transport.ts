@@ -1013,6 +1013,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
+  /** Drops the frozen routed tool list so the next refreshTools() re-routes. */
+  invalidateFrozenTools(): void {
+    this.frozenRoutedTools = null
+    this.frozenRoutedSig = ''
+  }
+
   async refreshTools(abortSignal?: AbortSignal) {
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
