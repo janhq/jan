@@ -326,6 +326,7 @@ vi.mock('@/lib/platform/utils', () => ({
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { toast } from 'sonner'
 
 // Helpers -------------------------------------------------------------------
 
@@ -505,6 +506,74 @@ describe('ChatInput', () => {
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  it.each([
+    { chatStatus: 'streaming', toolsRunning: false, type: 'image' },
+    { chatStatus: 'ready', toolsRunning: true, type: 'document' },
+  ])('preserves the draft and attachments instead of queueing text alone while $chatStatus/tools=$toolsRunning', async ({ chatStatus, toolsRunning, type }) => {
+    promptState = 'Explain this attachment'
+    attachmentsList = [{
+      name: type === 'image' ? 'photo.png' : 'notes.pdf',
+      type,
+      dataUrl: type === 'image' ? 'data:image/png;base64,AA==' : undefined,
+      path: type === 'document' ? '/notes.pdf' : undefined,
+      mimeType: 'image/png',
+    }]
+    clearAttachmentsMock.mockClear()
+    vi.mocked(toast.info).mockClear()
+    const onSubmit = vi.fn()
+    const view = renderInput({ onSubmit, chatStatus, toolsRunning })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await act(async () => {})
+    expect(enqueueMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(
+      'Wait for the current turn to finish before sending attachments'
+    ))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(promptState).toBe('Explain this attachment')
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(attachmentsList).toHaveLength(1)
+
+    view.rerender(<ChatInput onSubmit={onSubmit} chatStatus="ready" toolsRunning={false} />)
+    fireEvent.click(document.querySelector('[data-test-id="send-message-button"]')!)
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(
+      'Explain this attachment',
+      type === 'image'
+        ? [{ type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AA==' }]
+        : undefined,
+      type === 'document' ? attachmentsList : undefined,
+      'Explain this attachment'
+    ))
+  })
+
+  it.each([
+    { chatStatus: 'streaming', toolsRunning: false },
+    { chatStatus: 'ready', toolsRunning: true },
+  ])('blocks file ingestion via picker, paste, and drop while $chatStatus/tools=$toolsRunning', ({ chatStatus, toolsRunning }) => {
+    selectedModelOverride.capabilities = ['tools', 'vision']
+    const readFile = vi.spyOn(FileReader.prototype, 'readAsDataURL')
+    renderInput({ onSubmit: vi.fn(), chatStatus, toolsRunning })
+    const file = new File(['photo'], 'photo.png', { type: 'image/png' })
+    const clipboardData = {
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }],
+      files: [file],
+    }
+    fireEvent.change(document.querySelector('input[type="file"]:not([accept])')!, {
+      target: { files: [file] },
+    })
+    fireEvent.paste(getTextarea(), { clipboardData })
+    fireEvent.drop(getTextarea(), { dataTransfer: { files: [file] } })
+    expect(readFile).not.toHaveBeenCalled()
+    expect(document.querySelector('.lucide-plus')?.closest('button')).toBeDisabled()
+    readFile.mockRestore()
+  })
+
+  it('allows normal text paste while a turn is running', () => {
+    renderInput({ onSubmit: vi.fn(), chatStatus: 'streaming' })
+    expect(fireEvent.paste(getTextarea(), {
+      clipboardData: { items: [{ kind: 'string', type: 'text/plain' }] },
+    })).toBe(true)
   })
 
   // Tools running means the stream is over (`ready`), but the turn is not: a new
