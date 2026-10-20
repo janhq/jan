@@ -126,6 +126,8 @@ env:
   NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
   JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  # engine-build.yml's prebuilt-windows-arm64 copies this job's toolchain
+  # (MSVC, CUDA, Vulkan) to keep its prebuilt warm: change both together.
   CUDA_SHORT: '13.4'
   # Redistributable archives, as upstream llama.cpp provisions this same
   # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
