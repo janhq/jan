@@ -11,11 +11,14 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ core: () => ({ invoke }) }),
 }))
 
-import { backendStorage } from '../backendStorage'
+let backendStorage: typeof import('../backendStorage')['backendStorage']
 
 describe('backendStorage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules()
     vi.clearAllMocks()
+    invoke.mockReset()
+    backendStorage = (await import('../backendStorage')).backendStorage
     localStorage.clear()
   })
 
@@ -58,9 +61,9 @@ describe('backendStorage', () => {
       expect(await backendStorage.getItem('missing')).toBeNull()
     })
 
-    it('degrades to null on backend error rather than throwing', async () => {
+    it('rejects backend read errors so hydration cannot report success', async () => {
       invoke.mockRejectedValueOnce(new Error('boom'))
-      await expect(backendStorage.getItem('k')).resolves.toBeNull()
+      await expect(backendStorage.getItem('k')).rejects.toThrow('boom')
     })
 
     it('swallows write errors so persistence never crashes the store', async () => {

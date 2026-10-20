@@ -19,24 +19,43 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 // confirmed backend write/read so a failed invoke still retries next time.
 const lastWritten = new Map<string, string>()
 
+// A failed read is not an absent key. Until a read succeeds, persisting the
+// store's initial defaults could replace preferences that are still on disk.
+const unreadable = new Set<string>()
+const readVersions = new Map<string, number>()
+
 export const backendStorage: StateStorage = {
   getItem: async (name) => {
     if (!isPlatformTauri()) return localStorage.getItem(name)
+    const version = (readVersions.get(name) ?? 0) + 1
+    readVersions.set(name, version)
+    unreadable.add(name)
     try {
       const value = await getServiceHub().core().invoke<string | null>(
         'settings_get',
         { key: name }
       )
+      // A late response must not hydrate stale state or unlock a newer read
+      // that is still pending or has failed.
+      if (readVersions.get(name) !== version) {
+        throw new Error(`Settings read superseded for '${name}'`)
+      }
       if (value != null) lastWritten.set(name, value)
+      else lastWritten.delete(name)
+      unreadable.delete(name)
       return value ?? null
     } catch (error) {
       console.error(`settings_get failed for '${name}':`, error)
-      return null
+      throw error
     }
   },
   setItem: async (name, value) => {
     if (!isPlatformTauri()) {
       localStorage.setItem(name, value)
+      return
+    }
+    if (unreadable.has(name)) {
+      console.warn(`settings_set skipped for '${name}': settings have not been read`)
       return
     }
     if (lastWritten.get(name) === value) return
@@ -50,6 +69,10 @@ export const backendStorage: StateStorage = {
   removeItem: async (name) => {
     if (!isPlatformTauri()) {
       localStorage.removeItem(name)
+      return
+    }
+    if (unreadable.has(name)) {
+      console.warn(`settings_remove skipped for '${name}': settings have not been read`)
       return
     }
     try {

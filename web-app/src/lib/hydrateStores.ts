@@ -63,9 +63,39 @@ const secondaryStores = [
   useImageAttachmentConfig,
 ] as const
 
-export async function hydrateBackendStores(): Promise<void> {
-  await Promise.resolve(useTheme.persist.rehydrate())
-  await Promise.all(
-    secondaryStores.map((store) => Promise.resolve(store.persist.rehydrate()))
-  )
+type BackendStore = {
+  persist: {
+    rehydrate: () => void | Promise<void>
+    hasHydrated: () => boolean
+  }
+}
+
+const hydrateStore = async (store: BackendStore): Promise<void> => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await store.persist.rehydrate()
+    } catch {
+      // Custom storage can reject directly; Zustand itself catches failures.
+    }
+    // Zustand's rehydrate promise resolves even when its storage read failed.
+    if (store.persist.hasHydrated()) return
+  }
+  throw new Error('Persisted settings could not be hydrated after three attempts')
+}
+
+let hydration: Promise<void> | undefined
+
+export function hydrateBackendStores(): Promise<void> {
+  if (hydration) return hydration
+  hydration = (async () => {
+    const theme = await Promise.allSettled([hydrateStore(useTheme)])
+    // Try every store even if theme failed. Its read must run so the storage
+    // guard protects its saved settings before initialization can fall back.
+    const secondary = await Promise.allSettled(secondaryStores.map(hydrateStore))
+    const failed = [...theme, ...secondary].find((result) => result.status === 'rejected')
+    if (failed?.status === 'rejected') throw failed.reason
+  })().finally(() => {
+    hydration = undefined
+  })
+  return hydration
 }
