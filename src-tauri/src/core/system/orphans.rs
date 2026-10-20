@@ -25,15 +25,26 @@
 //! parent that started after its child is not its owner. When a start time is
 //! unknown the order cannot be told: a router keeps its Jan, and a process is
 //! never swept as a child on that evidence.
+//!
+//! `mlx-server` (macOS) is swept too, with a stricter rule. It is a direct
+//! child of the app and does not watch its parent, so an app that dies without
+//! running its exit cleanup (a crash, `kill -9`) leaves it holding the model in
+//! unified memory. Its name, path and flags can all belong to a server someone
+//! runs themselves, so it is only taken when it carries the environment marker
+//! Jan sets when it starts one, and nothing is left above it (macOS reparents
+//! it to launchd). A server started by a version before the marker existed
+//! cannot be told apart and is left alone.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use jan_utils::MLX_OWNER_ENV;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 const ROUTER_BINARY: &str = "llama-server";
 const ROUTER_PRESET_FILE: &str = "router.preset.ini";
 const PRESET_FLAG: &str = "--models-preset";
+const MLX_BINARY: &str = "mlx-server";
 
 /// The slice of a process the matcher needs, so it can be tested without
 /// spawning anything.
@@ -45,6 +56,9 @@ pub struct ProcInfo {
     pub cmd: Vec<String>,
     /// Seconds since the epoch; 0 when the OS would not say.
     pub start_time: u64,
+    /// Carries the environment marker Jan sets on the `mlx-server` it starts.
+    /// Only read for `mlx-server` processes; false for everything else.
+    pub jan_launched: bool,
 }
 
 fn normalize(path: &str) -> String {
@@ -98,6 +112,18 @@ fn is_jan_router(proc: &ProcInfo, llamacpp_dir: &str) -> bool {
         && preset.starts_with(&format!("{llamacpp_dir}/"))
 }
 
+fn is_mlx_binary(name: &str) -> bool {
+    name.eq_ignore_ascii_case(MLX_BINARY)
+}
+
+/// Whether `proc` is an MLX server that a Jan started. There is no preset file
+/// tying it to a data folder, and its name, path and flags are all things
+/// someone running their own `mlx-server` can have, so the only proof is the
+/// marker Jan puts in the server's environment when it starts one.
+fn is_jan_mlx_server(proc: &ProcInfo) -> bool {
+    is_mlx_binary(&proc.name) && proc.jan_launched
+}
+
 /// A Jan process, judged by name: `Jan`, `jan`, `Jan.exe`, `Jan-Desktop.exe`.
 fn is_jan(name: &str) -> bool {
     name.to_ascii_lowercase().contains("jan")
@@ -130,6 +156,16 @@ fn is_orphaned(proc: &ProcInfo, by_pid: &HashMap<u32, &ProcInfo>) -> bool {
         Some(parent) => by_pid
             .get(&parent)
             .is_none_or(|p| !is_jan(&p.name) || !could_be_parent(p, proc)),
+    }
+}
+
+/// Whether nothing is left above `proc`: no parent, init, or a parent pid that
+/// is not running. macOS hands the child of a dead process to launchd (pid 1)
+/// at once, so this is exactly a server whose app died.
+fn has_no_live_parent(proc: &ProcInfo, by_pid: &HashMap<u32, &ProcInfo>) -> bool {
+    match proc.parent {
+        None | Some(1) => true,
+        Some(parent) => !by_pid.contains_key(&parent),
     }
 }
 
@@ -187,6 +223,17 @@ pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> 
             }
         }
     }
+    // `mlx-server` has no router above it and no children, so it goes alone.
+    // Unlike a router it is only taken when nothing is left above it: a live
+    // parent of any kind, a shell included, means someone started it on purpose.
+    for server in procs
+        .iter()
+        .filter(|p| is_jan_mlx_server(p) && has_no_live_parent(p, &by_pid))
+    {
+        if seen.insert(server.pid) {
+            victims.push(server.pid);
+        }
+    }
     victims
 }
 
@@ -194,8 +241,9 @@ pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> 
 /// killed. Blocking: run it off the async runtime.
 pub fn sweep_orphaned_engines(data_folder: &Path) -> usize {
     // A fresh install, or a user who never ran the llama.cpp engine, has
-    // nothing to sweep and should not pay for a process-table scan.
-    if !data_folder.join("llamacpp").is_dir() {
+    // nothing to sweep and should not pay for a process-table scan. macOS
+    // always scans: an MLX model can be the only engine ever used there.
+    if !cfg!(target_os = "macos") && !data_folder.join("llamacpp").is_dir() {
         return 0;
     }
 
@@ -205,6 +253,22 @@ pub fn sweep_orphaned_engines(data_folder: &Path) -> usize {
         true,
         ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
     );
+    // Only an `mlx-server` can carry Jan's marker, and reading a process's
+    // environment costs a call each, so ask for those alone.
+    let mlx_pids: Vec<Pid> = system
+        .processes()
+        .iter()
+        .filter(|(_, p)| is_mlx_binary(&p.name().to_string_lossy()))
+        .map(|(pid, _)| *pid)
+        .collect();
+    if !mlx_pids.is_empty() {
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&mlx_pids),
+            true,
+            ProcessRefreshKind::nothing().with_environ(UpdateKind::Always),
+        );
+    }
+    let marker = format!("{MLX_OWNER_ENV}=");
     let procs: Vec<ProcInfo> = system
         .processes()
         .values()
@@ -213,6 +277,10 @@ pub fn sweep_orphaned_engines(data_folder: &Path) -> usize {
             parent: p.parent().map(Pid::as_u32),
             name: p.name().to_string_lossy().into_owned(),
             start_time: p.start_time(),
+            jan_launched: p
+                .environ()
+                .iter()
+                .any(|kv| kv.to_string_lossy().starts_with(&marker)),
             cmd: p
                 .cmd()
                 .iter()
@@ -227,14 +295,15 @@ pub fn sweep_orphaned_engines(data_folder: &Path) -> usize {
         let Some(process) = system.process(Pid::from_u32(pid)) else {
             continue;
         };
+        let name = process.name().to_string_lossy();
         log::warn!(
-            "Killing llama-server left running by a previous Jan: pid {pid}, parent {:?}",
+            "Killing {name} left running by a previous Jan: pid {pid}, parent {:?}",
             process.parent()
         );
         if process.kill() {
             killed += 1;
         } else {
-            log::warn!("Could not kill orphaned llama-server pid {pid}");
+            log::warn!("Could not kill orphaned {name} pid {pid}");
         }
     }
     killed
@@ -254,6 +323,7 @@ mod tests {
             parent,
             name: name.to_string(),
             start_time: 0,
+            jan_launched: false,
             cmd: cmd.iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -529,5 +599,85 @@ mod tests {
             ),
         ];
         assert_eq!(sweep(&procs), vec![200]);
+    }
+
+    /// An `mlx-server` carrying the marker Jan sets when it starts one.
+    fn mlx_server(pid: u32, parent: Option<u32>) -> ProcInfo {
+        let mut server = proc(
+            pid,
+            parent,
+            "mlx-server",
+            &[
+                "/Applications/Jan.app/Contents/Resources/resources/bin/mlx-server",
+                "--model",
+                "/Users/u/models/qwen",
+                "--port",
+                "52113",
+                "--model-id",
+                "qwen",
+            ],
+        );
+        server.jan_launched = true;
+        server
+    }
+
+    #[test]
+    fn an_mlx_server_adopted_by_init_is_swept() {
+        assert_eq!(sweep(&[mlx_server(200, Some(1))]), vec![200]);
+    }
+
+    #[test]
+    fn an_mlx_server_whose_parent_is_gone_is_swept() {
+        assert_eq!(sweep(&[mlx_server(200, Some(999))]), vec![200]);
+    }
+
+    #[test]
+    fn an_mlx_server_whose_jan_is_still_running_is_left_alone() {
+        let procs = [
+            proc(100, Some(1), "Jan-Desktop", &["Jan"]),
+            mlx_server(200, Some(100)),
+        ];
+        assert!(sweep(&procs).is_empty());
+    }
+
+    #[test]
+    fn an_mlx_server_under_a_live_shell_is_left_alone() {
+        // Run by hand from a terminal: its parent is alive and is not a Jan.
+        for shell in ["zsh", "bash", "tmux: server"] {
+            let procs = [
+                proc(100, Some(1), shell, &[shell]),
+                mlx_server(200, Some(100)),
+            ];
+            assert!(sweep(&procs).is_empty(), "{shell}");
+        }
+    }
+
+    #[test]
+    fn a_lookalike_mlx_server_without_jans_marker_is_left_alone_even_when_orphaned() {
+        // Run by hand, e.g. `/Users/u/tools/resources/bin/mlx-server ...`, whose
+        // shell has exited so launchd owns it. Path, flags and parent all fit;
+        // only the marker Jan sets when it starts the server is missing.
+        let theirs = proc(
+            200,
+            Some(1),
+            "mlx-server",
+            &[
+                "/Users/u/tools/resources/bin/mlx-server",
+                "--model",
+                "/path/to/model",
+                "--port",
+                "8080",
+                "--model-id",
+                "custom",
+            ],
+        );
+        assert!(sweep(&[theirs]).is_empty());
+    }
+
+    #[test]
+    fn a_process_with_jans_marker_but_another_name_is_left_alone() {
+        let mut other = mlx_server(200, Some(1));
+        other.name = "python3".to_string();
+        assert!(sweep(&[other]).is_empty());
     }
 }

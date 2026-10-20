@@ -1,5 +1,10 @@
 use std::path::Path;
 
+/// Environment variable Jan sets on every `mlx-server` it starts. The startup
+/// sweep stops an orphaned `mlx-server` only when it carries this, because the
+/// server's name, path and flags can all belong to one someone runs themselves.
+pub const MLX_OWNER_ENV: &str = "JAN_MLX_OWNER";
+
 /// Returns true when the current process is running inside a Flatpak sandbox
 pub fn is_flatpak() -> bool {
     Path::new("/.flatpak-info").exists()
