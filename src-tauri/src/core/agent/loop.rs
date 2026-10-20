@@ -214,6 +214,14 @@ pub(crate) trait ModelInvoker: Send + Sync {
         request: &serde_json::Value,
         events: &mpsc::UnboundedSender<StreamEvent>,
     ) -> Result<serde_json::Value, String>;
+
+    /// The model id and invoker that write this run's compaction summaries in
+    /// its place, or `None` to summarize on the run's own model. Set to the
+    /// `smol` role model when one is configured: condensing a transcript does
+    /// not need the run's model, and it is the largest side request a run makes.
+    fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+        None
+    }
 }
 
 /// One tool call's outcome: `content` is the model-facing result string,
@@ -467,6 +475,9 @@ struct HttpModelInvoker {
     /// just before it leaves, and the completion is mapped back. `None` = off,
     /// and then nothing in the request or the reply changes.
     secrets: Option<Arc<crate::core::agent::secrets::SecretFilter>>,
+    /// The `smol` model's id and invoker, which compaction summaries go to
+    /// first (see [`ModelInvoker::summarizer`]). `None` summarizes on this one.
+    summarizer: Option<Box<(String, HttpModelInvoker)>>,
 }
 
 /// [`crate::core::agent::provenance::RequestIdentity`] as the invoker stores it:
@@ -537,6 +548,12 @@ fn converter_http_client() -> reqwest::Client {
 
 #[async_trait]
 impl ModelInvoker for HttpModelInvoker {
+    fn summarizer(&self) -> Option<(&str, &dyn ModelInvoker)> {
+        self.summarizer
+            .as_deref()
+            .map(|(id, model)| (id.as_str(), model as &dyn ModelInvoker))
+    }
+
     async fn invoke(
         &self,
         request: &serde_json::Value,
@@ -681,6 +698,12 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
+    /// The run's `allowed_tools` allowlist, when the request set one (a
+    /// subagent always does). Advertising already hides every other tool from
+    /// the model, but a model can still name one it was not offered, so the
+    /// same set is enforced where a call is dispatched: a name outside it never
+    /// reaches a built-in, the shell or an MCP server.
+    allowed_names: Option<std::collections::HashSet<String>>,
     /// Where `memory/` and `skills/` live: the project's store under
     /// `~/.jan/projects`. The desktop points this at its permanent store.
     store_root: std::path::PathBuf,
@@ -1081,9 +1104,10 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         )
     };
     format!(
-        "{head}\n{where_answers} Steer one by name with message_subagent, or stop it with \
+        "{head}\n{}\n{where_answers} Steer one by name with message_subagent, or stop it with \
          stop_subagent. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
-         each finishes."
+         each finishes.",
+        crate::core::agent::subagent::worker_names_line(&d.names)
     )
 }
 
@@ -1109,6 +1133,17 @@ impl CompositeToolInvoker {
         } else {
             self.bg_shells.has_pending_work()
         }
+    }
+
+    /// Whether any background source has a notice ready to deliver now, as
+    /// opposed to work that is merely still running.
+    fn has_queued_background(&self) -> bool {
+        self.subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_queued_notices())
+            || self.monitors.has_queued_notices()
+            || self.bg_shells.has_queued_notices()
+            || !self.hook_notices_queue.lock().unwrap().is_empty()
     }
 
     /// Whether the background subagents owe the model something the run must
@@ -1556,7 +1591,7 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
             SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
@@ -1569,10 +1604,13 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let plan = match parse_dispatch_plan(args) {
+                let plan = match ctx.bg.plan_dispatch(args, self.subagent_scratch()) {
                     Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
+                // Rejected before any child started (an unknown agent, a tool
+                // the parent denies), the names go back for the retry.
+                let reserved = plan.names.clone();
                 match spawn_dispatch_plan(
                     &ctx.bg,
                     ctx.bg_generation,
@@ -1593,7 +1631,10 @@ impl CompositeToolInvoker {
                     self.subagent_scratch(),
                 ) {
                     Ok(d) => format_dispatched_plan(&d),
-                    Err(e) => format!("ERROR: {e}"),
+                    Err(e) => {
+                        ctx.bg.release_names(&reserved);
+                        format!("ERROR: {e}")
+                    }
                 }
             }
             "message_subagent" => {
@@ -1989,6 +2030,18 @@ fn escalation_unavailable_msg(name: &str, sandboxed: bool) -> String {
     }
 }
 
+/// The refusal for a call to a tool outside the run's `allowed_tools`. Same
+/// `ERROR: tool '<name>' ...` shape as every other refusal, and it names what
+/// the run may call so the model can recover instead of retrying.
+fn not_in_allowlist_msg(name: &str, allowed: &std::collections::HashSet<String>) -> String {
+    let mut names: Vec<&str> = allowed.iter().map(String::as_str).collect();
+    names.sort_unstable();
+    format!(
+        "ERROR: tool '{name}' is not available to this run (allowed tools: {})",
+        names.join(", ")
+    )
+}
+
 fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
@@ -2079,23 +2132,37 @@ impl ToolInvoker for CompositeToolInvoker {
         // (subagent, monitor, shell): with three sources the arms would be
         // eight, and a fourth would double them again. `select_all` keeps the
         // same guarantee with one rule.
-        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> =
-            Vec::new();
-        if let Some(ctx) = self
-            .subagents
-            .as_ref()
-            .filter(|ctx| ctx.bg.has_pending_work())
-        {
-            waits.push(Box::pin(ctx.bg.wait_for_notice()));
-        }
-        if self.monitors.has_pending_work() {
-            waits.push(Box::pin(self.monitors.wait_for_notice()));
-        }
-        if self.bg_shells.has_pending_work() {
-            waits.push(Box::pin(self.bg_shells.wait_for_notice()));
-        }
-        if !waits.is_empty() {
+        //
+        // Looped because a side can wake with nothing to deliver: a shell
+        // abandoned at its park budget, a child aborted, a plan between phases.
+        // Returning then while another side still holds the run open would
+        // resume it and spend a model turn reacting to nothing. A woken side
+        // either queued something (we return) or has nothing left (it drops out
+        // of the next round), so this cannot spin.
+        loop {
+            let mut waits: Vec<
+                std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>,
+            > = Vec::new();
+            if let Some(ctx) = self
+                .subagents
+                .as_ref()
+                .filter(|ctx| ctx.bg.has_pending_work())
+            {
+                waits.push(Box::pin(ctx.bg.wait_for_notice()));
+            }
+            if self.monitors.has_pending_work() {
+                waits.push(Box::pin(self.monitors.wait_for_notice()));
+            }
+            if self.bg_shells.has_pending_work() {
+                waits.push(Box::pin(self.bg_shells.wait_for_notice()));
+            }
+            if waits.is_empty() {
+                return;
+            }
             let _ = futures::future::select_all(waits).await;
+            if self.has_queued_background() || !self.background_pending() {
+                return;
+            }
         }
     }
 
@@ -2140,6 +2207,17 @@ impl ToolInvoker for CompositeToolInvoker {
                 .and_then(|f| f.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            if let Some(allowed) = &self.allowed_names {
+                if !allowed.contains(name) {
+                    let id = tc
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    out.push(ToolOutcome::plain(id, not_in_allowlist_msg(name, allowed)));
+                    continue;
+                }
+            }
             if name == "ask" {
                 let id = tc
                     .get("id")
@@ -3047,6 +3125,12 @@ fn advertise_local_tools(
             openai_tools.push(tool.schema());
         }
     }
+    // Last, so the names a child may be given are drawn from the whole array.
+    crate::core::agent::subagent::constrain_tool_names(
+        openai_tools,
+        permissions,
+        allowed_names.is_some(),
+    );
 }
 
 /// The last completion of a run stopped by its money ceiling, rewritten into a
@@ -3595,9 +3679,11 @@ async fn orchestrate_inner(
         if model_id.is_none() {
             // The llama.cpp router is a desktop-only listing call on the app's
             // reqwest 0.12 stack, not agent upstream traffic, so it does not use
-            // the genai client threaded through `OrchestrationArgs`.
+            // the genai client threaded through `OrchestrationArgs`. It only
+            // ever reaches the worker on 127.0.0.1, so it never goes through a
+            // proxy: a system or env proxy would otherwise capture loopback too.
             static ROUTER_CLIENT: std::sync::LazyLock<reqwest::Client> =
-                std::sync::LazyLock::new(reqwest::Client::new);
+                std::sync::LazyLock::new(tauri_plugin_llamacpp::engine::worker::loopback_client);
             if let Some(first) = router_first_model(llama_state, &ROUTER_CLIENT).await {
                 model_id = Some(first);
             }
@@ -3675,6 +3761,7 @@ async fn orchestrate_inner(
     .await?;
 
     let max_turns = body_turn_cap(json_body);
+    let cost_ceiling = body_cost_ceiling(json_body);
 
     let provenance = request_identity(&model_id, provider_configs, run_id.as_deref()).await;
     let converter = provenance
@@ -3696,6 +3783,13 @@ async fn orchestrate_inner(
         provenance,
         provenance_events: Some(events.clone()),
         secrets: crate::core::agent::secrets::for_run(),
+        // A metered run charges every side request at its own model's rates, so
+        // a summary billed on another model would be costed at a price nobody
+        // quoted for it: under a money ceiling the run summarizes on itself.
+        summarizer: match cost_ceiling {
+            Some(_) => None,
+            None => smol_summarizer(args, &model_id, Some(events.clone())).await,
+        },
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -3704,7 +3798,6 @@ async fn orchestrate_inner(
     };
 
     let max_session_tokens = body_session_budget(json_body);
-    let cost_ceiling = body_cost_ceiling(json_body);
     let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
 
     if let Some(root) = project_root {
@@ -3786,6 +3879,7 @@ async fn orchestrate_inner(
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
             project_root: root.clone(),
+            allowed_names: allowed_names.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
             permission_requests: permission_requests.clone(),
@@ -4133,42 +4227,11 @@ pub(crate) async fn compact_history(
             .with_hooks(&hooks, false, None);
         crate::core::agent::compaction::fire_pre_compact(&hooks, &ctx, messages.len()).await;
     }
-    let (upstream_url, api_keys) = resolve_upstream_for_model(
-        model_id,
-        args.provider_configs.clone(),
-        #[cfg(not(feature = "cli"))]
-        args.llama_state.clone(),
-        #[cfg(not(feature = "cli"))]
-        args.mlx_sessions.clone(),
-    )
-    .await?;
-    let provenance =
-        request_identity(model_id, &args.provider_configs, args.run_id.as_deref()).await;
-    let converter = provenance
-        .api_type
-        .as_deref()
-        .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
-    let model = HttpModelInvoker {
-        client: args.client.clone(),
-        upstream_url,
-        api_keys,
-        provider_configs: args.provider_configs.clone(),
-        converter,
-        converter_client: converter_http_client(),
-        // A compaction call is billed to the same session as the turn that
-        // triggered it, so it carries the same correlation id: leaving it out
-        // would make the session's recorded spend smaller than the bill.
-        client_request_id: crate::core::agent::correlation::session_request_id(
-            args.session_id.as_deref(),
-        ),
-        session_id: args.session_id.clone(),
-        provenance,
-        // A `/compact` runs between turns: there is no run stream in existence
-        // to carry the record, so this request is reported nowhere rather than
-        // somewhere a client cannot read.
-        provenance_events: None,
-        secrets: crate::core::agent::secrets::for_run(),
-    };
+    // A `/compact` runs between turns: there is no run stream in existence to
+    // carry the provenance record, so this request is reported nowhere rather
+    // than somewhere a client cannot read.
+    let mut model = side_call_invoker(args, model_id, None).await?;
+    model.summarizer = smol_summarizer(args, model_id, None).await;
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
 }
@@ -4184,7 +4247,7 @@ pub(crate) async fn evaluate_goal(
     condition: &str,
     messages: &[serde_json::Value],
 ) -> Result<crate::core::agent::goal::GoalVerdict, String> {
-    let model = side_call_invoker(args, smol_model_id).await?;
+    let model = side_call_invoker(args, smol_model_id, None).await?;
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
 
@@ -4198,7 +4261,7 @@ pub(crate) async fn side_completion(
     model_id: &str,
     request: &serde_json::Value,
 ) -> Result<String, String> {
-    let model = side_call_invoker(args, model_id).await?;
+    let model = side_call_invoker(args, model_id, None).await?;
     // Nothing streams to the user: a dropped receiver keeps the tokens internal.
     let (sink, _rx) = mpsc::unbounded_channel();
     let completion = model.invoke(request, &sink).await?;
@@ -4209,12 +4272,34 @@ pub(crate) async fn side_completion(
         .to_string())
 }
 
-/// The invoker a between-turns side call uses: `model_id`'s upstream, billed to
-/// this session, with no run stream to report provenance on.
-#[cfg(feature = "cli")]
+/// The `smol` model's invoker for compaction summaries, or `None` when no smol
+/// model is configured, it is `model_id` itself, or it cannot be resolved (the
+/// summary then goes to `model_id`, which is what it did before smol existed).
+async fn smol_summarizer(
+    args: &OrchestrationArgs,
+    model_id: &str,
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
+) -> Option<Box<(String, HttpModelInvoker)>> {
+    let smol = crate::core::agent::subagent::configured_smol_model()?;
+    if smol == model_id {
+        return None;
+    }
+    match side_call_invoker(args, &smol, provenance_events).await {
+        Ok(model) => Some(Box::new((smol, model))),
+        Err(e) => {
+            log::warn!("agent: smol_model {smol} cannot summarize, compacting on {model_id}: {e}");
+            None
+        }
+    }
+}
+
+/// The invoker a side call uses: `model_id`'s upstream, billed to this session.
+/// `provenance_events` is the run stream its provenance rides, `None` between
+/// turns where no run stream exists.
 async fn side_call_invoker(
     args: &OrchestrationArgs,
     smol_model_id: &str,
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
 ) -> Result<HttpModelInvoker, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         smol_model_id,
@@ -4242,15 +4327,17 @@ async fn side_call_invoker(
         provider_configs: args.provider_configs.clone(),
         converter,
         converter_client: converter_http_client(),
-        // Same session, same bill (see `compact_history`).
+        // A side call is billed to the same session as the turn it serves, so
+        // it carries the same correlation id: leaving it out would make the
+        // session's recorded spend smaller than the bill.
         client_request_id: crate::core::agent::correlation::session_request_id(
             args.session_id.as_deref(),
         ),
         session_id: args.session_id.clone(),
         provenance,
-        // Between turns, like `/compact`: no run stream exists to carry it.
-        provenance_events: None,
+        provenance_events,
         secrets: crate::core::agent::secrets::for_run(),
+        summarizer: None,
     };
     Ok(model)
 }
@@ -4796,9 +4883,13 @@ async fn run_turn_cycle(
                 }
             }
             let awaiting_user = final_text.trim_end().ends_with('?');
+            // Held back while background work is owed: the model is legitimately
+            // waiting on it, and the park below resumes it when it lands, so the
+            // nudge then fires at the real stop instead of pestering a wait.
             if !closeout_nudged
                 && run_mode == crate::core::agent::plan::RunMode::Normal
                 && !awaiting_user
+                && !tools.background_pending()
             {
                 if let Some(summary) = open_todo_summary(todo_registry).await {
                     closeout_nudged = true;
@@ -5146,6 +5237,7 @@ async fn run_turn_cycle(
         } else if mutations_since_todo_touch >= MID_RUN_NUDGE_MUTATION_THRESHOLD
             && mid_run_nudge_count < MID_RUN_NUDGE_MAX_PER_CYCLE
             && run_mode == crate::core::agent::plan::RunMode::Normal
+            && !tools.background_pending()
         {
             let open_count = match todo_registry {
                 Some(registry) => {
@@ -5583,6 +5675,7 @@ mod tests {
             },
             provenance_events: Some(run),
             secrets: None,
+            summarizer: None,
         };
 
         let request =
@@ -5675,6 +5768,7 @@ mod tests {
             },
             provenance_events: None,
             secrets: Some(filter),
+            summarizer: None,
         };
         let request = json!({"model":"m","messages":[
             {"role":"user","content":format!("my key is {SECRET}")}]});
@@ -5763,6 +5857,7 @@ mod tests {
             provenance: RequestIdentityOwned::default(),
             provenance_events: Some(run),
             secrets: None,
+            summarizer: None,
         };
         let (tx, _rx) = mpsc::unbounded_channel();
         invoker
@@ -8636,6 +8731,7 @@ mod tests {
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
             project_root: root,
+            allowed_names: None,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             events,
@@ -10952,9 +11048,7 @@ mod tests {
 
         invoker.bg_shells.start(ShellBackgrounded {
             id: 1,
-            command: "sleep 600".to_string(),
             timeout_secs: 30,
-            output_path: Some("/tmp/out.log".to_string()),
         });
         assert!(
             !invoker.background_pending(),
@@ -10994,9 +11088,7 @@ mod tests {
 
         invoker.bg_shells.start(ShellBackgrounded {
             id: 1,
-            command: "sleep 600".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         assert!(
             invoker.background_pending(),
@@ -11622,6 +11714,7 @@ mod tests {
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
+            names: vec!["explorer-a".to_string(), "explorer-b".to_string()],
         });
         assert!(out.contains("sub-explorer-a-1"), "{out}");
         assert!(out.contains("sub-explorer-b-2"), "{out}");
@@ -11642,8 +11735,17 @@ mod tests {
                 run_id: "sub-researcher-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["researcher".to_string(), "writer".to_string()],
         });
         assert!(out.contains("sub-researcher-1"), "{out}");
+        // Every worker is named, the later phase's included, in listed order.
+        assert!(
+            out.contains(&crate::core::agent::subagent::worker_names_line(&[
+                "researcher".to_string(),
+                "writer".to_string(),
+            ])),
+            "{out}"
+        );
         assert_eq!(out.matches("run_id:").count(), 1, "{out}");
         assert!(out.contains("reported as they start"), "{out}");
     }
@@ -11670,6 +11772,36 @@ mod tests {
             bg,
         });
         invoker
+    }
+
+    /// A shell abandoned at its park budget wakes its own wait with nothing to
+    /// deliver. While a subagent still holds the run open, that empty wake must
+    /// not end the park: the run would resume and spend a model turn reacting
+    /// to nothing.
+    #[cfg(feature = "cli")]
+    #[tokio::test(start_paused = true)]
+    async fn a_silently_abandoned_shell_does_not_end_the_park_while_a_child_runs() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        crate::core::agent::subagent::tests::hold_running(&bg);
+        let invoker = invoker_with_registry(root.clone(), bg);
+        // Clamped to the 60s floor.
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            timeout_secs: 0,
+        });
+
+        let parked = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            invoker.await_background(),
+        )
+        .await;
+        assert!(parked.is_err(), "the empty shell wake must not end the park");
+        assert!(!invoker.bg_shells.has_pending_work(), "the shell was abandoned");
+        assert!(invoker.background_notices().is_empty(), "and said nothing");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The whole model-facing path: `stop_subagent {name}` reaches the registry
@@ -11773,6 +11905,7 @@ mod tests {
                 run_id: "sub-w-1".to_string(),
             }],
             blackboard_dir: None,
+            names: vec!["w".to_string()],
         });
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");
@@ -12032,6 +12165,61 @@ mod tests {
         // The edit ran in the sequential pass and the read after it, so the
         // announcements follow completion.
         assert_eq!(*heard.lock().unwrap(), ["e", "r"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A model can name a tool it was never offered (a hallucinated name, or one
+    /// steered by text it read), so `allowed_tools` has to hold where a call is
+    /// dispatched and not only where tools are advertised.
+    #[tokio::test]
+    async fn a_call_outside_the_allowlist_is_refused_and_does_not_run() {
+        let root = hooks_root("allowlist_dispatch");
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        let call = |id: &str, name: &str, args: serde_json::Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() }
+            })
+        };
+        let calls = [
+            call("sh", "shell", json!({ "command": "touch SHELL_RAN" })),
+            call("wr", "write", json!({ "path": "WRITE_RAN", "content": "x" })),
+            call("rd", "read", json!({ "path": "a.txt" })),
+        ];
+
+        // Control: with no allowlist the same calls run, so the refusals below
+        // come from the allowlist and not from a broken fixture.
+        let open = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        open.invoke_streaming(&calls, &|_| {}).await.unwrap();
+        assert!(root.join("SHELL_RAN").exists(), "control: the shell runs");
+        assert!(root.join("WRITE_RAN").exists(), "control: the write runs");
+        std::fs::remove_file(root.join("SHELL_RAN")).unwrap();
+        std::fs::remove_file(root.join("WRITE_RAN")).unwrap();
+
+        let mut restricted = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        restricted.allowed_names = Some(["read".to_string()].into_iter().collect());
+        let out = restricted.invoke_streaming(&calls, &|_| {}).await.unwrap();
+
+        let by_id = |id: &str| out.iter().find(|o| o.id == id).expect("outcome").content.clone();
+        for refused in ["sh", "wr"] {
+            let text = by_id(refused);
+            assert!(text.contains("not available to this run"), "{refused}: {text}");
+            assert!(text.contains("allowed tools: read"), "{refused}: {text}");
+        }
+        assert!(!root.join("SHELL_RAN").exists(), "the shell must not run");
+        assert!(!root.join("WRITE_RAN").exists(), "the write must not run");
+        assert!(by_id("rd").contains("one"), "an allowed read still runs");
         let _ = std::fs::remove_dir_all(&root);
     }
 

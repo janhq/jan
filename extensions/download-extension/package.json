@@ -5,7 +5,7 @@
   "description": "Download and manage files and AI models in Jan.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "scripts": {
     "test": "vitest run",
     "build": "rolldown -c rolldown.config.mjs",

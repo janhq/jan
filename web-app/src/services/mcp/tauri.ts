@@ -93,6 +93,7 @@ export class TauriMCPService extends DefaultMCPService {
     serverName?: string
     arguments: object
     cancellationToken?: string
+    maxOutputChars?: number
   }): {
     promise: Promise<{ error: string; content: { text: string }[] }>
     cancel: () => Promise<void>

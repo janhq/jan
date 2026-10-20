@@ -17,6 +17,9 @@ import {
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
+import { describeTransportError } from '@/lib/model-factory'
+import { localNetworkHint } from '@/lib/local-network'
+import { isMac } from '@/lib/shortcuts/platform'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -267,8 +270,21 @@ export class TauriProvidersService extends DefaultProvidersService {
         throw new Error(error.message)
       }
 
+      // `@tauri-apps/plugin-http` rejects with a plain string, not an Error,
+      // so `error instanceof Error` alone reported every connection failure
+      // as "Unknown error".
+      const friendly = describeTransportError(error)
+      if (friendly) {
+        const hint = localNetworkHint(provider.base_url, isMac)
+        throw new Error(
+          `${friendly} (${provider.base_url}/models)${hint ? ` ${hint}` : ''}`
+        )
+      }
+
+      const message = error instanceof Error ? error.message : String(error)
+
       // Provide helpful error message for any connection errors
-      if (error instanceof Error && error.message.includes('fetch')) {
+      if (message.includes('fetch')) {
         throw new Error(
           `Cannot connect to ${provider.provider} at ${provider.base_url}. Please check that the service is running and accessible.`
         )
@@ -276,7 +292,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       // Generic fallback
       throw new Error(
-        `Unexpected error while fetching models from ${provider.provider}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Unexpected error while fetching models from ${provider.provider}: ${message}`
       )
     }
   }

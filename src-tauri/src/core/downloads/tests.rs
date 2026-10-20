@@ -441,6 +441,72 @@ fn test_err_to_string_with_io_error() {
     assert!(s.contains("missing"));
 }
 
+#[derive(Debug)]
+struct Layered(&'static str, Option<Box<dyn std::error::Error + 'static>>);
+
+impl std::fmt::Display for Layered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Layered {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.1.as_deref()
+    }
+}
+
+#[test]
+fn err_chain_keeps_the_cause_err_to_string_drops() {
+    // reqwest's Display is only the outer layer; the reason is two sources down.
+    let io = std::io::Error::other("connection refused (os error 10061)");
+    let connect = Layered("tcp connect error", Some(Box::new(io)));
+    let outer = Layered("error sending request for url (https://huggingface.co/x.gguf)", Some(Box::new(connect)));
+
+    assert_eq!(
+        err_to_string(&outer),
+        "Error: error sending request for url (https://huggingface.co/x.gguf)"
+    );
+    assert_eq!(
+        err_chain_to_string(&outer),
+        "Error: error sending request for url (https://huggingface.co/x.gguf): tcp connect error: connection refused (os error 10061)"
+    );
+}
+
+#[tokio::test]
+async fn a_refused_connection_surfaces_its_cause_through_reqwest() {
+    // Bind then drop, so the port is closed and the connect is refused rather than timing out.
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let err = reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/model.gguf"))
+        .send()
+        .await
+        .unwrap_err();
+
+    let plain = err_to_string(&err);
+    let chain = err_chain_to_string(&err);
+    assert!(plain.starts_with("Error: error sending request for url"));
+    assert!(chain.len() > plain.len(), "no cause appended: {chain}");
+    assert!(chain.starts_with(&plain));
+}
+
+#[test]
+fn err_chain_does_not_repeat_a_cause_the_parent_already_prints() {
+    let inner = Layered("timed out", None);
+    let outer = Layered("request failed: timed out", Some(Box::new(inner)));
+    assert_eq!(err_chain_to_string(&outer), "Error: request failed: timed out");
+}
+
+#[test]
+fn err_chain_of_a_plain_error_matches_err_to_string() {
+    let e = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+    assert_eq!(err_chain_to_string(&e), err_to_string(&e));
+}
+
 // ===== _convert_headers edge cases =====
 
 #[test]

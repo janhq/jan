@@ -12,12 +12,12 @@
 //! Unlike a monitor, a backgrounded command carries no deadline of its own:
 //! `npm run dev`, `tail -f` and a hung build never end. So the *park* is what
 //! is bounded here (see [`tauri_plugin_agent_tools::tools::shell_park_budget_secs`]):
-//! once a command outlives its budget the registry discharges the obligation
-//! with a notice of its own -- "still running after Ns, read {path} when it
-//! finishes" -- which both lets the turn end and leaves the model something to
-//! act on. Expiring without a notice would be worse than not bounding it: the
-//! run loop re-checks `has_pending_work` after the park and would spin a fresh
-//! turn with nothing to deliver, once per deadline, forever.
+//! once a command outlives its budget the registry silently stops waiting on
+//! it. No notice is queued for that: the model already knows the command is
+//! running (the `bash` result said so) and gains nothing actionable from being
+//! told again, while the late completion still pings when it eventually lands.
+//! The run loop re-checks `background_pending` after the park, so a park that
+//! ends with nothing queued ends the run rather than spinning an empty turn.
 
 use std::sync::Mutex;
 
@@ -34,10 +34,6 @@ pub(crate) struct ShellNotice {
 /// A command that was backgrounded and has not reported back yet.
 struct Pending {
     id: u64,
-    command: String,
-    /// Where its output will land, so an expiry notice can still say where to
-    /// collect a result this run has stopped waiting for.
-    output_path: Option<String>,
     /// When the run stops holding itself open for this command.
     deadline: tokio::time::Instant,
 }
@@ -71,8 +67,6 @@ impl BackgroundShells {
             + std::time::Duration::from_secs(shell_park_budget_secs(handoff.timeout_secs));
         self.state.lock().unwrap().pending.push(Pending {
             id: handoff.id,
-            command: handoff.command,
-            output_path: handoff.output_path,
             deadline,
         });
     }
@@ -116,17 +110,16 @@ impl BackgroundShells {
         !self.state.lock().unwrap().notices.is_empty()
     }
 
-    /// Park until a ping is queued, a command's budget expires, or nothing is
-    /// left to wait for. The waiter registers before the state re-read, so a
+    /// Park until a ping is queued or nothing is left to wait for (every
+    /// remaining command finished or outlived its budget). The waiter registers before the state re-read, so a
     /// command finishing in between wakes this call rather than being missed.
     pub(crate) async fn wait_for_notice(&self) {
         loop {
             let waiter = self.wake.notified();
             tokio::pin!(waiter);
             waiter.as_mut().enable();
-            // Discharged before the state is read, so an already-expired
-            // command returns from the park with its notice queued rather than
-            // as a bare "nothing to deliver" wakeup.
+            // Discharged before the state is read, so a park whose last
+            // command has expired returns instead of sleeping on it again.
             self.abandon_expired();
             let next = {
                 let state = self.state.lock().unwrap();
@@ -147,22 +140,12 @@ impl BackgroundShells {
         }
     }
 
-    /// Stop waiting on every command past its budget, leaving a ping that says
-    /// so. Taking that ping is what lets the run end: the obligation is
-    /// discharged, not merely timed out.
+    /// Stop waiting on every command past its budget. Silent on purpose: the
+    /// model was told the command runs in the background when `bash` returned,
+    /// and its completion still pings if it ever lands.
     fn abandon_expired(&self) {
         let now = tokio::time::Instant::now();
-        let mut state = self.state.lock().unwrap();
-        let (expired, live): (Vec<_>, Vec<_>) = std::mem::take(&mut state.pending)
-            .into_iter()
-            .partition(|p| p.deadline <= now);
-        state.pending = live;
-        for p in expired {
-            state.notices.push(ShellNotice {
-                headline: still_running_headline(&p.command),
-                text: abandoned_text(&p),
-            });
-        }
+        self.state.lock().unwrap().pending.retain(|p| p.deadline > now);
     }
 }
 
@@ -197,11 +180,6 @@ pub(crate) fn headline(done: &ShellDone) -> String {
     )
 }
 
-/// The headline of a command the run stopped waiting on.
-pub(crate) fn still_running_headline(command: &str) -> String {
-    format!("Background command still running: {}", short_command(command))
-}
-
 fn text(done: &ShellDone) -> String {
     let verb = if done.failed {
         "finished with a nonzero exit"
@@ -229,37 +207,12 @@ fn text(done: &ShellDone) -> String {
     }
 }
 
-/// What the model is told when a command outlives the run's patience: the run
-/// is no longer held open for it, but it is still running and its output will
-/// still appear.
-fn abandoned_text(p: &Pending) -> String {
-    match &p.output_path {
-        Some(path) => format!(
-            "Background command `{}` is still running. This run is no longer waiting on \
-             it, so you are free to finish your turn: its output appears in {path} when \
-             it eventually ends, and you can read that file then (if the output was large \
-             that file keeps a tail and points to the full log).",
-            short_command(&p.command)
-        ),
-        None => format!(
-            "Background command `{}` is still running, and this run is no longer waiting \
-             on it. Its output is not being captured, so there is nothing to read back.",
-            short_command(&p.command)
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn handoff(id: u64, timeout_secs: u64) -> ShellBackgrounded {
-        ShellBackgrounded {
-            id,
-            command: "cargo build --release".to_string(),
-            timeout_secs,
-            output_path: Some("/tmp/jan-bash/out.txt".to_string()),
-        }
+        ShellBackgrounded { id, timeout_secs }
     }
 
     fn done(failed: bool, path: Option<&str>) -> ShellDone {
@@ -401,27 +354,19 @@ mod tests {
     }
 
     /// The bound: a command that never ends (`npm run dev`, `tail -f`) must not
-    /// park the run for its whole life. The park ends at the budget with a
-    /// notice, and once that notice is delivered nothing is owed, so the turn
-    /// can finish.
+    /// park the run for its whole life. The park ends at the budget with
+    /// nothing queued -- the model was already told the command runs in the
+    /// background, so a "still running" reminder would only cost it a turn --
+    /// and nothing is owed afterwards, so the turn can finish.
     #[tokio::test(start_paused = true)]
-    async fn a_command_that_never_ends_stops_holding_the_run_open() {
+    async fn a_command_that_never_ends_stops_holding_the_run_open_silently() {
         let shells = BackgroundShells::default();
         shells.start(handoff(1, 30));
         // Never signalled: the park can only end on the budget.
         shells.wait_for_notice().await;
-        let notices = shells.take_notices();
-        assert_eq!(notices.len(), 1, "expiry must leave something to deliver");
         assert!(
-            notices[0].text.contains("still running")
-                && notices[0].text.contains("no longer waiting"),
-            "must say the run stopped waiting: {}",
-            notices[0].text
-        );
-        assert!(
-            notices[0].text.contains("/tmp/jan-bash/out.txt"),
-            "must still say where the output will land: {}",
-            notices[0].text
+            shells.take_notices().is_empty(),
+            "expiry must not ping the model about a command it knows is running"
         );
         assert!(
             !shells.has_pending_work(),
@@ -430,15 +375,24 @@ mod tests {
     }
 
     /// The park is sized per command: a short-timeout command must not be
-    /// abandoned while a long-running sibling still has budget left.
+    /// abandoned while a long-running sibling still has budget left, and
+    /// abandoning the short one must not wake the park with nothing to say.
     #[tokio::test(start_paused = true)]
     async fn each_command_is_abandoned_at_its_own_deadline() {
         let shells = BackgroundShells::default();
         shells.start(handoff(1, 0)); // clamped to the 60s floor
         shells.start(handoff(2, 600)); // clamped to the 1800s ceiling
-        shells.wait_for_notice().await;
-        assert_eq!(shells.take_notices().len(), 1, "only the first expires");
+        let parked = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            shells.wait_for_notice(),
+        )
+        .await;
+        assert!(parked.is_err(), "the long one keeps the park open");
+        assert!(shells.take_notices().is_empty());
         assert!(shells.has_pending_work(), "the long one is still owed");
+        shells.wait_for_notice().await;
+        assert!(shells.take_notices().is_empty());
+        assert!(!shells.has_pending_work());
     }
 
     /// A command that comes back after it was abandoned still reports: it is
@@ -448,7 +402,7 @@ mod tests {
         let shells = BackgroundShells::default();
         shells.start(handoff(7, 0));
         shells.wait_for_notice().await;
-        let _ = shells.take_notices();
+        assert!(shells.take_notices().is_empty(), "abandoning is silent");
         shells.finish(ShellDone {
             id: 7,
             ..done(false, Some("/tmp/x"))

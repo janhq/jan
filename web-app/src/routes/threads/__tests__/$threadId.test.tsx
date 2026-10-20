@@ -138,6 +138,8 @@ const h = vi.hoisted(() => {
   useMessageQueueMock.getState = () => messageQueueState
 
   return {
+    // The route's thread id, which the tests move to simulate a thread switch.
+    routeParams: { threadId: 'thread-1' },
     mockSendMessage,
     mockRegenerate,
     mockStop,
@@ -178,7 +180,7 @@ const h = vi.hoisted(() => {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
-  useParams: () => ({ threadId: 'thread-1' }),
+  useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
 }))
 
@@ -317,12 +319,30 @@ vi.mock('@/lib/messages', () => ({
       parts: [{ type: 'text', text: m.content?.[0]?.text?.value ?? '' }],
     })),
   extractContentPartsFromUIMessage: (msg: any) =>
-    msg.parts
-      .filter((p: any) => p.type === 'text')
-      .map((p: any) => ({ type: 'text', text: { value: p.text, annotations: [] } })),
+    msg.parts.flatMap((p: any) =>
+      p.type === 'text'
+        ? [{ type: 'text', text: { value: p.text, annotations: [] } }]
+        : p.type?.startsWith('tool-')
+          ? [{ type: 'tool_call', tool_call_id: p.toolCallId, output: p.output }]
+          : []
+    ),
   uiMessageHasMeaningfulContent: (msg: any) =>
     !!msg?.parts?.some((p: any) => p.type === 'text' && p.text?.trim()),
+  toolErrorsOf: (msg: any) => {
+    const errors: Record<string, string> = {}
+    for (const p of msg.parts ?? []) {
+      if (p.state === 'output-error') errors[p.toolCallId] = p.errorText
+    }
+    return Object.keys(errors).length ? errors : undefined
+  },
 }))
+
+// The chat runs MCP tools through the cancellable API so Stop can end the call.
+const cancellable = (run: (args: any) => Promise<unknown>) => (args: any) => ({
+  promise: run(args),
+  cancel: vi.fn().mockResolvedValue(undefined),
+  token: 'test-token',
+})
 
 vi.mock('@/lib/completion', () => ({
   newUserThreadContent: (threadId: string, text: string, _a: any, id: string) => ({
@@ -359,7 +379,7 @@ vi.mock('@/types/attachment', () => ({
 
 vi.mock('ai', () => ({
   generateId: () => 'gen-id',
-  lastAssistantMessageIsCompleteWithToolCalls: () => false,
+  lastAssistantMessageIsCompleteWithToolCalls: () => true,
 }))
 
 vi.mock('zustand/react/shallow', () => ({
@@ -370,6 +390,7 @@ vi.mock('@/hooks/use-chat', () => ({
   useChat: (_args: any) => {
     ;(h as any).capturedOnFinish = _args?.onFinish
     ;(h as any).capturedOnToolCall = _args?.onToolCall
+    ;(h as any).capturedSendAutomaticallyWhen = _args?.sendAutomaticallyWhen
     return {
       messages: h.chatState.messages,
       status: h.chatState.status,
@@ -397,6 +418,17 @@ vi.mock('@/hooks/useChatAttachments', () => ({
 }))
 vi.mock('@/hooks/useAttachments', () => ({ useAttachments: h.useAttachmentsMock }))
 vi.mock('@/hooks/useToolAvailable', () => ({ useToolAvailable: h.useToolAvailableMock }))
+const shell = vi.hoisted(() => ({
+  enabled: true,
+  execute: vi.fn(async () => ({ output: 'ok' })),
+}))
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: shell.enabled }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  executeAgentTool: shell.execute,
+}))
 vi.mock('@/hooks/useToolApproval', () => ({ useToolApproval: h.useToolApprovalMock }))
 vi.mock('@/hooks/useToolApprovalRequests', () => ({
   useToolApprovalRequests: h.useToolApprovalRequestsMock,
@@ -430,6 +462,14 @@ vi.mock('@/constants/chat', () => ({
 vi.mock('@/utils/error', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/error')>()),
   OUT_OF_CONTEXT_SIZE: 'OUT_OF_CONTEXT_SIZE',
+}))
+
+// The built-in web tools run in the webview rather than through the service
+// hub, so a test can see what they were handed.
+const webTool = vi.hoisted(() => ({ executeWebTool: vi.fn() }))
+vi.mock('@/lib/webSearchTool', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/webSearchTool')>()),
+  executeWebTool: webTool.executeWebTool,
 }))
 
 // -----------------------------------------------------------------------------
@@ -553,6 +593,60 @@ describe('ThreadDetail route', () => {
       expect(h.mockSendMessage).toHaveBeenCalled()
     })
     expect(h.messagesState.addMessage).toHaveBeenCalled()
+  })
+
+  it('keeps the thread in its project when attachments are embedded', async () => {
+    const project = { id: 'p1', name: 'Proj', updated_at: 1 }
+    h.threadsState.threads['thread-1'].metadata = { project }
+    h.attachmentsState.getAttachments = vi.fn(() => [
+      { name: 'doc.pdf', type: 'document', path: '/doc.pdf' },
+    ])
+    vi.mocked(processAttachmentsForSend).mockResolvedValueOnce({
+      processedAttachments: [],
+      hasEmbeddedDocuments: true,
+    } as any)
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(h.threadsState.updateThread).toHaveBeenCalledWith('thread-1', {
+        metadata: { project, hasDocuments: true },
+      })
+    })
+    h.attachmentsState.getAttachments = vi.fn(() => [])
+  })
+
+  it('keeps a project move made while attachments were embedding', async () => {
+    const original = h.threadsState.threads['thread-1']
+    const before = { id: 'p1', name: 'Before', updated_at: 1 }
+    const moved = { id: 'p2', name: 'Moved', updated_at: 2 }
+    h.threadsState.threads['thread-1'] = {
+      ...original,
+      metadata: { project: before },
+    }
+    h.attachmentsState.getAttachments = vi.fn(() => [
+      { name: 'doc.pdf', type: 'document', path: '/doc.pdf' },
+    ])
+    vi.mocked(processAttachmentsForSend).mockImplementationOnce(async () => {
+      // The user moves the thread to another project while it embeds.
+      h.threadsState.threads['thread-1'] = {
+        ...h.threadsState.threads['thread-1'],
+        metadata: { project: moved, titleSetManually: true },
+      }
+      return { processedAttachments: [], hasEmbeddedDocuments: true } as any
+    })
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(h.threadsState.updateThread).toHaveBeenCalledWith('thread-1', {
+        metadata: { project: moved, titleSetManually: true, hasDocuments: true },
+      })
+    })
+    h.threadsState.threads['thread-1'] = original
+    h.attachmentsState.getAttachments = vi.fn(() => [])
   })
 
   it('passes the auto-inline budget when sending documents', async () => {
@@ -957,6 +1051,47 @@ describe('ThreadDetail route', () => {
       })
       expect(useMessageErrors.getState().errors['a-empty']).toBeUndefined()
     })
+
+    // Stopped right after the tool call started, before any input arrived: the
+    // turn has nothing worth persisting, but its live card must not stay
+    // "Running".
+    it('settles a live tool call stopped before it had any input', () => {
+      renderComponent()
+      h.mockSetChatMessages.mockClear()
+      act(() => {
+        ;(h as any).capturedOnFinish({
+          message: {
+            id: 'a-early',
+            role: 'assistant',
+            parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
+            metadata: {},
+          },
+          isAbort: true,
+          isError: false,
+        })
+      })
+      const updater = h.mockSetChatMessages.mock.calls
+        .map((c: any[]) => c[0])
+        .find((a: unknown) => typeof a === 'function')
+      // The open thread's own last message is still mid-call; it is not the
+      // aborted turn, so it must be left alone.
+      const other = {
+        id: 'a-other',
+        role: 'assistant',
+        parts: [{ type: 'tool-fetch', toolCallId: 'tcO', state: 'input-available' }],
+      }
+      const live = [
+        {
+          id: 'a-early',
+          role: 'assistant',
+          parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
+        },
+        other,
+      ]
+      const out = updater(live)
+      expect(out[0].parts[0]).toMatchObject({ state: 'output-error' })
+      expect(out[1]).toBe(other)
+    })
   })
 
   describe('context overflow banner (#9228)', () => {
@@ -991,6 +1126,114 @@ describe('ThreadDetail route', () => {
       ]
       renderComponent()
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
+  })
+
+  // #9222: the shell switch is enforced where the command would run, so a call
+  // that still arrives while it is off (replayed history, a turn in flight when
+  // the switch flipped) is refused rather than auto-approved.
+  describe('the chat shell switch at execution time', () => {
+    const shellCall = (id: string) => ({
+      toolCall: { toolCallId: id, toolName: 'shell', input: { command: 'ls' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-sh',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+
+    beforeEach(() => {
+      shell.enabled = true
+      shell.execute.mockClear()
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(false)
+    })
+
+    it('runs the shell without a prompt while the switch is on', async () => {
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh1'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not run the shell, and says why, once the switch is off', async () => {
+      shell.enabled = false
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh2'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'sh2',
+          tool: 'shell',
+          state: 'output-error',
+          // What the model reads on its next turn: why the call did not run, and
+          // that calling it again cannot succeed.
+          errorText: expect.stringMatching(/turned off.*Do not call the shell again/s),
+        })
+      )
+    })
+
+    // A prompt for a tool the user turned off is itself wrong: an "always allow"
+    // answer could save a permission for it. It is refused before any prompt,
+    // on both paths that can open one.
+    it('never prompts for a shell call while the switch is off', async () => {
+      shell.enabled = false
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh3'))
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(shell.execute).not.toHaveBeenCalled()
+    })
+
+    // Turning the built-in off must not break a user's own MCP tool that happens
+    // to be called `shell`: it is not offered by the built-in any more, so the
+    // call is served by the MCP server and prompts like any MCP call.
+    it('serves an MCP tool named shell while the switch is off', async () => {
+      shell.enabled = false
+      h.appStateState.mcpToolNames = new Set(['shell'])
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () =>
+        ({
+          callToolWithCancellation: (args: unknown) => ({
+            promise: callTool(args),
+            cancel: vi.fn().mockResolvedValue(undefined),
+            token: 't',
+          }),
+        }) as never
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(shellCall('sh4'))
+      })
+      await act(async () => {
+        await finish()
+      })
+      expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+      expect(callTool).toHaveBeenCalledTimes(1)
+      expect(shell.execute).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
+        expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
     })
   })
 
@@ -1102,7 +1345,8 @@ describe('ThreadDetail route', () => {
       h.appStateState.mcpToolNames = new Set(['fetch'])
       h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () => ({ callTool }) as never
+      hub.mcp = () =>
+        ({ callToolWithCancellation: cancellable(callTool) }) as never
       renderComponent()
 
       const onToolCall = (
@@ -1129,7 +1373,8 @@ describe('ThreadDetail route', () => {
       const previousSettings = h.modelProviderState.selectedModel.settings
       h.modelProviderState.selectedModel.settings = {}
       const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
-      hub.mcp = () => ({ callTool }) as never
+      hub.mcp = () =>
+        ({ callToolWithCancellation: cancellable(callTool) }) as never
 
       try {
         renderComponent()
@@ -1147,6 +1392,38 @@ describe('ThreadDetail route', () => {
       } finally {
         h.modelProviderState.selectedModel.settings = previousSettings
       }
+    })
+
+    // A page is a tool result like any other: held to the budget the window
+    // affords, not the 40,000 characters it used to be allowed (#9170).
+    it('hands a built-in web tool the budget of the active model context window', async () => {
+      webTool.executeWebTool.mockReset()
+      webTool.executeWebTool.mockResolvedValue({ content: 'page' })
+      renderComponent()
+
+      const onToolCall = (
+        h as { capturedOnToolCall: (arg: unknown) => Promise<void> }
+      ).capturedOnToolCall
+      await act(async () => {
+        await onToolCall({
+          toolCall: {
+            toolCallId: 'tcw',
+            toolName: 'web_fetch',
+            input: { url: 'https://example.com' },
+          },
+        })
+      })
+      await act(async () => {
+        await finishWithToolCalls()
+      })
+
+      expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
+      const [name, input, options] = webTool.executeWebTool.mock.calls[0]
+      expect(name).toBe('web_fetch')
+      expect(input).toEqual({ url: 'https://example.com' })
+      // 4096-token window in the harness: a fraction of it, not the whole thing.
+      expect(options.maxOutputChars).toBeGreaterThan(0)
+      expect(options.maxOutputChars).toBeLessThan(4096 * 3.5)
     })
 
     // A model can request several tools in one turn. They arrive together but
@@ -1187,7 +1464,8 @@ describe('ThreadDetail route', () => {
           }
           return Promise.resolve({ error: '', content: [] })
         })
-        hub.mcp = () => ({ callTool }) as never
+        hub.mcp = () =>
+          ({ callToolWithCancellation: cancellable(callTool) }) as never
 
         renderComponent()
         await act(async () => {
@@ -1218,6 +1496,527 @@ describe('ThreadDetail route', () => {
         expect(started).toEqual(['tcA', 'tcB'])
       })
 
+      // A call that never returns must not hold the loop, the thread, or the
+      // backend: Stop ends all three, and the stopped call's output is dropped.
+      it('Stop cancels a running MCP call and frees the thread', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        const never = new Promise(() => {})
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: never,
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        h.appStateState.setThreadBusy.mockClear()
+        h.mockAddToolOutput.mockClear()
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
+          'thread-1',
+          true
+        )
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(h.appStateState.setThreadBusy).toHaveBeenLastCalledWith(
+          'thread-1',
+          false
+        )
+        expect(h.mockAddToolOutput).not.toHaveBeenCalled()
+      })
+
+      // Edit and regenerate stay available while tools run (the status is
+      // `ready`). The new reply replaces the turn it answers, so the call that
+      // turn still has running must be ended first, or the new turn's loop would
+      // take over the controllers and Stop could no longer reach it.
+      it.each([
+        ['editing a message', 'edit-u1'],
+        ['regenerating a reply', 'regen-a-tc'],
+      ])('%s ends the tool call the replaced turn still has running', async (_name, button) => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          { id: 'a-tc', role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
+        ]
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        await act(async () => {
+          screen.getByTestId(button).click()
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(h.mockRegenerate).toHaveBeenCalled()
+      })
+
+      // A reply with no tool calls has no loop. If it registered one anyway it
+      // would take the controllers of an earlier turn whose call is still
+      // running, and its empty loop would delete them: Stop could no longer end
+      // that call.
+      it('a reply without tool calls leaves an earlier running call stoppable', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        const { rerender } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        // A newer reply with no tool calls finishes (a fresh render, so a fresh
+        // tool list).
+        rerender(<Component />)
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+        expect(cancel).toHaveBeenCalledTimes(1)
+      })
+
+      // Leaving the thread ends the loop but is not a Stop: a call already
+      // running keeps going and its result still lands in the retained session.
+      it('leaving the thread does not cancel a running MCP call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+
+        const { unmount } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+
+        expect(cancel).not.toHaveBeenCalled()
+      })
+
+      // A turn of a thread that was left can finish in the background, after
+      // another thread is shown. A Stop there is that thread's, and must not end
+      // the background thread's loop: its queued calls still run.
+      it('Stop in the thread in front does not end another thread\'s loop', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+        const started: string[] = []
+        const finish: Array<(r: unknown) => void> = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: (args: any) => {
+              started.push(args.arguments.id)
+              return {
+                promise: new Promise((resolve) => finish.push(resolve)),
+                cancel: vi.fn().mockResolvedValue(undefined),
+                token: 't',
+              }
+            },
+          }) as never
+        h.mockAddToolOutput.mockClear()
+        const Component = Route.component as React.ComponentType
+        const call = (id: string) => ({
+          toolCall: { toolCallId: id, toolName: 'fetch', input: { id } },
+        })
+
+        try {
+          const { rerender } = renderComponent()
+          const onToolCallA = (h as any).capturedOnToolCall
+          const onFinishA = (h as any).capturedOnFinish
+          await act(async () => {
+            await onToolCallA(call('tcA'))
+            await onToolCallA(call('tcB'))
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            await onFinishA({
+              message: {
+                id: 'a-tc',
+                role: 'assistant',
+                parts: [{ type: 'text', text: '' }],
+                metadata: { finishReason: 'tool-calls' },
+              },
+              isAbort: false,
+            })
+          })
+          expect(started).toEqual(['tcA'])
+
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          await act(async () => {
+            finish[0]({ error: '', content: [] })
+          })
+
+          expect(started).toEqual(['tcA', 'tcB'])
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+      })
+
+      // A loop left behind by a thread switch finishes later. It must not take
+      // the controller of the thread now in front with it, or that thread's reply
+      // would never continue after its tool result.
+      it('a left thread\'s loop ending does not stop the current thread continuing', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const results: Array<(r: unknown) => void> = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise((resolve) => results.push(resolve)),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await arrive('tcB')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          // Thread 1's call, left running, now completes.
+          await act(async () => {
+            results[0]({ error: '', content: [] })
+          })
+
+          const followUp = (h as any).capturedSendAutomaticallyWhen
+          expect(followUp({ messages: [] })).toBe(true)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+      })
+
+      // The route component is reused across thread switches, so a Stop must
+      // reach only the thread it is pressed in, and still work after returning.
+      it('Stop reaches only its own thread\'s running call, also after returning', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          expect(cancel).not.toHaveBeenCalled()
+
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+          expect(cancel).toHaveBeenCalledTimes(1)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+      })
+
+      // The turn was stored before any tool ran, so a call that finished while
+      // another was still running has its output only in the rendered message.
+      it('Stop keeps a finished call\'s output and settles only the running one', async () => {
+        const part = (id: string, state: string, extra: object = {}) => ({
+          type: 'tool-fetch',
+          toolCallId: id,
+          input: {},
+          state,
+          ...extra,
+        })
+        const stored = {
+          id: 'a-tools',
+          role: 'assistant',
+          content: [],
+          metadata: { parentId: 'u1' },
+        }
+        h.messagesState.getMessages = vi.fn(() => [stored])
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          {
+            id: 'a-tools',
+            role: 'assistant',
+            parts: [
+              part('tcA', 'output-available', { output: 'result A' }),
+              part('tcB', 'input-available'),
+            ],
+          },
+        ]
+        renderComponent()
+
+        await act(async () => {
+          screen.getByTestId('chat-stop').click()
+        })
+
+        const rewritten = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tools')
+        expect(rewritten.content).toEqual([
+          { type: 'tool_call', tool_call_id: 'tcA', output: 'result A' },
+          { type: 'tool_call', tool_call_id: 'tcB', output: undefined },
+        ])
+        expect(rewritten.metadata).toMatchObject({
+          parentId: 'u1',
+          stopped: true,
+          toolErrors: { tcB: expect.stringContaining('Stopped') },
+        })
+        expect(rewritten.metadata.toolErrors).not.toHaveProperty('tcA')
+      })
+
+      // Leaving the thread deletes the loop controller but leaves the call
+      // running. A Stop after coming back, with a newer turn sent since, must
+      // still settle the turn that owns the call.
+      it('Stop after returning to the thread still settles the turn that owns the call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'input-available',
+                    },
+                  ],
+                },
+                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
+                {
+                  id: 'a-newer',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('Stopped'),
+        })
+      })
+
+      // The composer still sends while tools run, so the last message can be a
+      // newer turn. Stop ends the older turn's loop, and that is the turn whose
+      // call must be settled.
+      it('Stop settles the turn whose loop it aborts, not just the last message', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>(() => {})
+        )
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'input-available',
+                    },
+                  ],
+                },
+                { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'again' }] },
+                {
+                  id: 'a-newer',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+
+        try {
+          renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('Stopped'),
+        })
+      })
+
+      // The rendered messages are throttled; the SDK's chat state is current.
+      // A result that landed inside the throttle window must not be saved as a
+      // stopped call while the live copy holds it.
+      it('Stop saves from the live chat state, not the throttled snapshot', async () => {
+        const part = (state: string, extra: object = {}) => ({
+          type: 'tool-fetch',
+          toolCallId: 'tcA',
+          input: {},
+          state,
+          ...extra,
+        })
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tools', role: 'assistant', content: [], metadata: {} },
+        ])
+        // Stale: still waiting on the call.
+        h.chatState.messages = [
+          { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+          { id: 'a-tools', role: 'assistant', parts: [part('input-available')] },
+        ]
+        // Live: the result has just landed, and a second call is unfinished.
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
+                {
+                  id: 'a-tools',
+                  role: 'assistant',
+                  parts: [
+                    part('output-available', { output: 'result A' }),
+                    { ...part('input-available'), toolCallId: 'tcB' },
+                  ],
+                },
+              ],
+            },
+          },
+        }
+        renderComponent()
+
+        try {
+          await act(async () => {
+            screen.getByTestId('chat-stop').click()
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const rewritten = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tools')
+        expect(rewritten.content[0]).toMatchObject({
+          tool_call_id: 'tcA',
+          output: 'result A',
+        })
+        expect(rewritten.metadata.toolErrors).toEqual({
+          tcB: expect.stringContaining('Stopped'),
+        })
+      })
+
       it('drains the runtime queue and times every call', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         renderComponent()
@@ -1232,6 +2031,169 @@ describe('ThreadDetail route', () => {
           expect(runtime.timings[id]?.startedAt).toBeDefined()
           expect(runtime.timings[id]?.endedAt).toBeDefined()
         }
+      })
+
+      // Leaving the thread resolves a pending approval as denied. It must be
+      // recorded, or the call stays "Running" with nothing running, but not as a
+      // refusal by the user: the model reads this on the next turn.
+      it('records a cut-short approval as the chat closing, not a user denial', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let decide: (approved: boolean) => void = () => {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>((resolve) => (decide = resolve))
+        )
+        h.mockAddToolOutput.mockClear()
+
+        const { unmount } = renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+        await act(async () => {
+          decide(false)
+        })
+
+        expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+          expect.objectContaining({
+            toolCallId: 'tcA',
+            state: 'output-error',
+            errorText: expect.stringContaining('chat was closed'),
+          })
+        )
+      })
+
+      // No reply follows once the thread is left, and a reply is what rewrites a
+      // stored turn. Without a rewrite here the call reloads as "Running".
+      it('stores the outcome of a call cut short by leaving the thread', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let decide: (approved: boolean) => void = () => {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>((resolve) => (decide = resolve))
+        )
+        h.messagesState.getMessages = vi.fn(() => [
+          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
+        ])
+        h.chatSessionsState.sessions = {
+          'thread-1': {
+            chat: {
+              messages: [
+                {
+                  id: 'a-tc',
+                  role: 'assistant',
+                  parts: [
+                    {
+                      type: 'tool-fetch',
+                      toolCallId: 'tcA',
+                      input: {},
+                      state: 'output-error',
+                      errorText: 'Tool call cancelled: the chat was closed before it ran.',
+                    },
+                  ],
+                },
+                // The user came back and started another turn meanwhile.
+                {
+                  id: 'a-new',
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: 'a newer turn' }],
+                },
+              ],
+            },
+          },
+        }
+        h.messagesState.updateMessage.mockClear()
+
+        try {
+          const { unmount } = renderComponent()
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+          unmount()
+          await act(async () => {
+            decide(false)
+          })
+        } finally {
+          h.chatSessionsState.sessions = {}
+        }
+
+        const stored = h.messagesState.updateMessage.mock.calls
+          .map((c: any[]) => c[0])
+          .find((m: any) => m.id === 'a-tc')
+        expect(stored.metadata.toolErrors).toEqual({
+          tcA: expect.stringContaining('chat was closed'),
+        })
+        expect(stored.metadata.stopped).toBeUndefined()
+      })
+
+      // The approval promises are shared by every thread's loop. A thread whose
+      // turn is cut off must forget only its own, or the thread in front would
+      // be asked again about a call the user may already have allowed.
+      it('another thread ending does not drop the approval in flight here', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        h.toolApprovalState.requestApproval = vi.fn(
+          () => new Promise<boolean>(() => {})
+        )
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          const onFinishA = (h as any).capturedOnFinish
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await arrive('tcB')
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+
+          // Thread 1's turn is cut off in the background.
+          await act(async () => {
+            await onFinishA({
+              message: {
+                id: 'a-bg',
+                role: 'assistant',
+                parts: [{ type: 'text', text: '' }],
+                metadata: {},
+              },
+              isAbort: true,
+            })
+          })
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+      })
+
+      // The calls queued behind the one awaiting approval are cut short too.
+      it('settles the calls queued behind one whose approval was cut short', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const decide: Record<string, (approved: boolean) => void> = {}
+        h.toolApprovalState.requestApproval = vi.fn(
+          (id: string) =>
+            new Promise<boolean>((resolve) => (decide[id] = resolve))
+        )
+        h.mockAddToolOutput.mockClear()
+
+        const { unmount } = renderComponent()
+        await arrive('tcA', 'tcB')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        unmount()
+        await act(async () => {
+          decide.tcA(false)
+        })
+
+        const settled = h.mockAddToolOutput.mock.calls.map(
+          (c: any[]) => c[0].toolCallId
+        )
+        expect(settled).toEqual(['tcA', 'tcB'])
+        expect(h.mockAddToolOutput).toHaveBeenLastCalledWith(
+          expect.objectContaining({ toolCallId: 'tcB', state: 'output-error' })
+        )
       })
 
       it('keeps going when one call is denied', async () => {

@@ -7,7 +7,7 @@
     "core"
   ],
   "homepage": "https://jan.ai",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "main": "dist/index.js",
   "typings": "dist/types/index.d.ts",
   "files": [
