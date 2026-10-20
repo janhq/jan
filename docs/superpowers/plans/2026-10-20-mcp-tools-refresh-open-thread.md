@@ -57,13 +57,11 @@ Expected: the file's tests PASS. If the run fails on resolving `@janhq/core`, ru
 
 - [ ] **Step 4: Commit nothing; record the exact working command**
 
-Write the command that passed into `docs/superpowers/plans/2026-10-20-mcp-tools-refresh-open-thread.md` under this step, replacing this sentence, and commit:
+Working command (Windows, Node only), passed 7/7 for the transport test:
 ```bash
-git add docs/superpowers/plans/2026-10-20-mcp-tools-refresh-open-thread.md
-git commit -m "docs: record web-app test command
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+yarn test:web web-app/src/lib/prompt-cache-toolcall.test.ts
 ```
+Notes: the file filter takes the repo-root-relative path and no `--` (with `--` the filter is ignored and the whole project runs). Before it works, `yarn build:core` and `yarn build:tauri:plugin:api` must have been run once so `@janhq/core` and the tauri plugin APIs resolve. `corepack enable` needs admin on Windows; use `corepack enable --install-directory <user dir> yarn` and put that dir on PATH.
 
 ---
 
