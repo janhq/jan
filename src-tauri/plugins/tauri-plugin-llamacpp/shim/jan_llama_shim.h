@@ -92,6 +92,13 @@ void jan_llama_load_backends(const char * dir);
 // Never NULL; free the result with jan_llama_string_free.
 char * jan_llama_devices_json(void);
 
+// The same devices as {id, name} only, never asking one for its memory. A
+// worker that stays up lists its devices with this: for a CUDA device the
+// memory query in jan_llama_devices_json creates a context that the process
+// then holds for as long as it runs. Names need no such call.
+// Never NULL; free the result with jan_llama_string_free.
+char * jan_llama_device_identities_json(void);
+
 void jan_llama_string_free(char * s);
 
 // The llama.cpp the shim was compiled against, for the pin assertion in

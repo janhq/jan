@@ -160,6 +160,8 @@
     "deviceListError": "Couldn't read GPU devices",
     "noDevicesDesc": "No GPUs are visible to the llama.cpp engine. Models will run on the CPU.",
     "gpuDisabled": "Disabled",
+    "engineRestartedForDevices": "Your GPUs changed, so the local engine was restarted. Models reload on next use.",
+    "engineBusyDevicesChanged": "Your GPUs changed, but a model is busy. Stop it, then press Refresh to use the new GPU.",
     "backendApiDesc": "How llama.cpp talks to this GPU",
     "backendSelectDesc": "Use this API for this GPU",
     "unifiedMemory": "Unified Memory",

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tauri::{Emitter, Manager, Runtime, State};
 
 use crate::error::{ErrorCode, LlamacppError, ServerError, ServerResult};
-use crate::state::{LlamacppState, SessionInfo};
+use crate::state::{EngineLease, LlamacppState, SessionInfo};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -26,15 +26,20 @@ struct ModelRequestBody<'a> {
 /// One place resolves the worker, so `load_llama_model`, `unload_llama_model`,
 /// `ensure_session_ready`, `find_session_by_model`, `get_loaded_models` and the
 /// health probes all reach it the same way.
+///
+/// The lease comes back with the address and must be held until the request
+/// that uses it is done: without it a device-change restart can stop this
+/// worker between the lookup and the send.
 async fn engine_endpoint<R: Runtime>(
     app_handle: &tauri::AppHandle<R>,
-) -> Result<(u16, String, u32), String> {
+) -> Result<(u16, String, u32, EngineLease), String> {
     let state: State<Arc<LlamacppState>> = app_handle.state();
+    let lease = state.lease().await;
     let guard = state.engine.lock().await;
     let h = guard
         .as_ref()
         .ok_or_else(|| "no llama.cpp engine is running".to_string())?;
-    Ok((h.port, h.api_key.clone(), h.pid))
+    Ok((h.port, h.api_key.clone(), h.pid, lease))
 }
 
 /// Loopback only, so never through a proxy; see `loopback_client_builder`.
@@ -616,7 +621,7 @@ pub async fn load_llama_model<R: Runtime>(
     model_id: String,
     is_embedding: bool,
 ) -> ServerResult<SessionInfo> {
-    let (port, api_key, pid) = engine_endpoint(&app_handle)
+    let (port, api_key, pid, _lease) = engine_endpoint(&app_handle)
         .await
         .map_err(ServerError::InvalidArgument)?;
     post_load(&app_handle, port, &api_key, &model_id).await?;
@@ -634,7 +639,7 @@ pub async fn unload_llama_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,
 ) -> ServerResult<UnloadResult> {
-    let (port, api_key, _pid) = engine_endpoint(&app_handle)
+    let (port, api_key, _pid, _lease) = engine_endpoint(&app_handle)
         .await
         .map_err(ServerError::InvalidArgument)?;
     match post_unload(port, &api_key, &model_id).await {
@@ -660,7 +665,7 @@ pub async fn ensure_session_ready<R: Runtime>(
     model_id: String,
     is_embedding: bool,
 ) -> Result<SessionInfo, String> {
-    let (port, api_key, pid) = engine_endpoint(&app_handle).await?;
+    let (port, api_key, pid, _lease) = engine_endpoint(&app_handle).await?;
     post_load(&app_handle, port, &api_key, &model_id)
         .await
         .map_err(|e| e.to_string())?;
@@ -678,7 +683,7 @@ pub async fn find_session_by_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     model_id: String,
 ) -> Result<Option<SessionInfo>, String> {
-    let (port, api_key, pid) = match engine_endpoint(&app_handle).await {
+    let (port, api_key, pid, _lease) = match engine_endpoint(&app_handle).await {
         Ok(v) => v,
         Err(_) => return Ok(None),
     };
@@ -700,7 +705,7 @@ pub async fn find_session_by_model<R: Runtime>(
 pub async fn get_loaded_models<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<Vec<String>, String> {
-    let (port, api_key, _pid) = match engine_endpoint(&app_handle).await {
+    let (port, api_key, _pid, _lease) = match engine_endpoint(&app_handle).await {
         Ok(v) => v,
         Err(_) => return Ok(Vec::new()),
     };
