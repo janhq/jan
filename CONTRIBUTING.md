@@ -242,6 +242,7 @@ Then go to GitHub → **Settings** → **SSH and GPG keys** → **New SSH key**,
 gpg --full-generate-key                      # follow the prompts, use your GitHub email
 gpg --list-secret-keys --keyid-format=long   # copy the key ID
 gpg --armor --export YOUR_KEY_ID             # paste into GitHub → New GPG key
+git config --global gpg.format openpgp
 git config --global user.signingkey YOUR_KEY_ID
 git config --global commit.gpgsign true
 ```
@@ -250,6 +251,7 @@ With `commit.gpgsign true`, every `git commit` is signed automatically. See [Git
 
 **Already opened a PR with unsigned commits?** Set up signing as above, then replace your branch's commits with one signed commit that has exactly the same content, and force-push:
 ```bash
+git status --short   # must print nothing: commit or stash your changes first
 git fetch upstream
 git branch unsigned-backup
 git reset --soft "$(git merge-base HEAD upstream/main)"

@@ -95,6 +95,7 @@ jobs:
               `If the reason is about a key or an email, fix that on GitHub first (add the key as a **signing key**, verify the email). Then replace the branch's commits with one signed commit with the same content and force-push (\`upstream\` is your remote for janhq/jan, \`origin\` your fork; PRs are squash-merged, so nothing is lost):`,
               ``,
               '```bash',
+              `git status --short   # must print nothing: commit or stash your changes first`,
               `git fetch upstream`,
               `git branch unsigned-backup`,
               `git reset --soft "$(git merge-base HEAD upstream/${pr.base.ref})"`,
