@@ -445,10 +445,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   private engineVersion?: EngineVersion
   private presetPath?: string
   private engineStartLock: Promise<void> | null = null
-  // The offloadable devices as they were when the running worker started. The
-  // worker enumerates once at startup and cannot be asked again, so a GPU that
-  // appears later (a laptop leaving eco mode) is invisible to it until restart.
-  private engineDeviceSnapshot: Promise<string[] | null> = Promise.resolve(null)
+  // Requests holding the engine's port and key (see acquireEngineLease), and the
+  // gate a device restart raises so that none is admitted while it decides.
+  private engineLeases = 0
+  private engineGate: Promise<void> | null = null
   private userModelsMax: number = 1
   private engineEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
@@ -900,13 +900,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     this.enginePort = info.port
     this.engineApiKey = info.api_key
     this.presetPath = presetPath
-    this.engineDeviceSnapshot = this.snapshotDevices(envs)
     // The load log never says which GPU llama.cpp picked, so record what the
-    // worker could choose from and which devices the user's setting names.
-    void this.engineDeviceSnapshot.then((devices) =>
-      logger.info(
-        `Engine devices at start: ${devices?.join(', ') ?? 'unknown'}; device setting: ${String(this.config.device ?? '') || '(auto)'}`
-      )
+    // worker initialised and which devices the user's setting names.
+    logger.info(
+      `Engine devices at start: ${info.devices ? this.deviceKeys(info.devices).join(', ') : 'not reported'}; device setting: ${String(this.config.device ?? '') || '(auto)'}`
     )
     logger.info(
       `Engine worker started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, ${info.models.length} models registered, preset=${presetPath})`
@@ -2523,6 +2520,27 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
+    const release = await this.acquireEngineLease()
+    let streaming = false
+    try {
+      const result = await this.chatOnEngine(opts, abortController)
+      if (opts.stream && Symbol.asyncIterator in result) {
+        // The caller reads the stream after this returns, so the lease goes
+        // with it. Aborting drops it too, in case the stream is never read.
+        streaming = true
+        abortController?.signal.addEventListener('abort', release, { once: true })
+        return this.releaseWhenDone(release, result)
+      }
+      return result
+    } finally {
+      if (!streaming) release()
+    }
+  }
+
+  private async chatOnEngine(
+    opts: chatCompletionRequest,
+    abortController?: AbortController
+  ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
     const sessionInfo = await this.ensureHealthySession(opts.model)
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
@@ -2772,60 +2790,128 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     }
   }
 
-  /** Stable identity of an enumeration: id and name, not the changing free memory. */
-  private async snapshotDevices(
+  /** Stable identity of a device list: id and name, not the changing free memory. */
+  private deviceKeys(list: ReadonlyArray<{ id: string; name: string }>): string[] {
+    return list.map((d) => `${d.id}|${d.name}`).sort()
+  }
+
+  /** The machine's devices right now, or null when they could not be listed. */
+  private async currentDeviceKeys(
     envs: Record<string, string>
   ): Promise<string[] | null> {
     try {
       const list = await engineDevices(envs)
-      if (!Array.isArray(list)) return null
-      return list.map((d) => `${d.id}|${d.name}`).sort()
+      return Array.isArray(list) ? this.deviceKeys(list) : null
     } catch (e) {
-      logger.warn('Could not record the engine device list:', e)
+      logger.warn('Could not enumerate the engine devices:', e)
       return null
     }
   }
 
   /**
+   * A request holds this from before it resolves the worker's port and key
+   * until it is done with them, so a restart cannot stop the worker in between:
+   * `reconcileEngineDevices` declines while any lease is held, and while it
+   * decides, new leases queue behind it. The worker's own idle check cannot
+   * cover that, because it only sees requests the worker has already admitted.
+   */
+  private async acquireEngineLease(): Promise<() => void> {
+    while (this.engineGate) await this.engineGate
+    // No await between the last gate check and this increment.
+    this.engineLeases++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.engineLeases--
+    }
+  }
+
+  private async withEngineLease<T>(fn: () => Promise<T>): Promise<T> {
+    const release = await this.acquireEngineLease()
+    try {
+      return await fn()
+    } finally {
+      release()
+    }
+  }
+
+  /**
+   * Keeps the lease for as long as a stream is being read, and drops it when
+   * the reader finishes, fails or stops early. A stream that is never read
+   * keeps it until the request is aborted; that only defers a restart.
+   */
+  private async *releaseWhenDone<T>(
+    release: () => void,
+    stream: AsyncIterable<T>
+  ): AsyncIterable<T> {
+    try {
+      yield* stream
+    } finally {
+      release()
+    }
+  }
+
+  /**
    * Restarts the engine when the machine now offers different devices than the
-   * running worker started with, so a GPU that appeared after launch is used for
+   * running worker initialised, so a GPU that appeared after launch is used for
    * the next load instead of only being listed in Settings.
    *
-   * It never interrupts work: a generation in flight, or a load of a model other
-   * than `loadingModelId`, returns 'busy' and leaves the worker alone. A load
-   * passes its own id because it is already registered as loading by the time
-   * it asks. With no running worker, or no record of what it started with,
-   * there is nothing to compare, so the answer is 'unchanged'.
+   * The baseline is what the worker itself reported when it started, so it is
+   * right even if the GPU appeared between the worker starting and this call,
+   * and for a worker this page did not start. A worker that reported nothing
+   * has no baseline, so the answer is 'unchanged'.
+   *
+   * It never interrupts work: a request holding a lease, a generation in
+   * flight, or a load of a model other than `loadingModelId` returns 'busy' and
+   * leaves the worker alone. A load passes its own id because it is already
+   * registered as loading by the time it asks.
    */
   async reconcileEngineDevices(
     loadingModelId?: string
   ): Promise<'unchanged' | 'restarted' | 'busy'> {
-    if (!(await this.getEngineInfo())) return 'unchanged'
-    const before = await this.engineDeviceSnapshot
-    if (!before) return 'unchanged'
+    const engine = await pluginGetEngineInfo().catch(() => null)
+    if (!engine?.devices) return 'unchanged'
+    const before = this.deviceKeys(engine.devices)
 
     const envs: Record<string, string> = {}
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
-    const now = await this.snapshotDevices(envs)
+    const now = await this.currentDeviceKeys(envs)
     if (!now || now.join('\n') === before.join('\n')) return 'unchanged'
 
-    const otherLoads = [...this.loadingModels.keys()].some(
-      (id) => id !== loadingModelId
-    )
-    if (otherLoads || !(await engineSlotsIdle())) {
-      logger.info('Device list changed but the engine is busy; not restarting')
-      return 'busy'
-    }
+    // The gate goes up before the idle check and stays up through the stop, so
+    // no request can be admitted between them. The extension targets ES2018,
+    // which has no Promise.withResolvers, hence the executor.
+    let openGate = () => {}
+    this.engineGate = new Promise<void>((resolve) => {
+      openGate = resolve
+    })
+    try {
+      const otherLoads = [...this.loadingModels.keys()].some(
+        (id) => id !== loadingModelId
+      )
+      if (
+        this.engineLeases > 0 ||
+        otherLoads ||
+        !(await engineSlotsIdle())
+      ) {
+        logger.info('Device list changed but the engine is busy; not restarting')
+        return 'busy'
+      }
 
-    logger.info(
-      `Device list changed (${before.join(', ')} -> ${now.join(', ')}); restarting the engine`
-    )
-    await stopEngine()
-    this.loadedChatOrder = []
-    this.enginePort = undefined
-    this.engineApiKey = undefined
-    await this.startEngine()
-    return 'restarted'
+      logger.info(
+        `Device list changed (${before.join(', ')} -> ${now.join(', ')}); restarting the engine`
+      )
+      await stopEngine()
+      this.loadedChatOrder = []
+      this.enginePort = undefined
+      this.engineApiKey = undefined
+      await this.startEngine()
+      return 'restarted'
+    } finally {
+      this.engineGate = null
+      openGate()
+    }
   }
 
   async getDevices(): Promise<DeviceList[]> {
@@ -2980,6 +3066,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * this rather than estimating from character length.
    */
   async countEmbeddingTokens(texts: string[]): Promise<number[]> {
+    return this.withEngineLease(() => this.countEmbeddingTokensOnEngine(texts))
+  }
+
+  private async countEmbeddingTokensOnEngine(
+    texts: string[]
+  ): Promise<number[]> {
     const sInfo = await this.ensureEmbeddingModelLoaded()
     const counts: number[] = []
     for (const text of texts) {
@@ -3025,6 +3117,14 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
+    // Held for every batch: the session's port and key are resolved once, so a
+    // restart between batches would fail the rest of them. Taken before the
+    // model is ensured, so a load this triggers sees a held lease and does not
+    // restart the engine under the embedding it was started for.
+    return this.withEngineLease(() => this.embedOnEngine(text))
+  }
+
+  private async embedOnEngine(text: string[]): Promise<EmbeddingResponse> {
     const sInfo = await this.ensureEmbeddingModelLoaded()
     const batches = buildEmbedBatches(text, await this.embedBatchBudget(sInfo))
 
