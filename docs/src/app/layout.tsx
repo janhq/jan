@@ -9,13 +9,13 @@ import './global.css'
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   robots: isNightly ? { index: false, follow: false } : undefined,
-  title: { default: 'Jan Docs', template: `%s - ${siteName}` },
+  title: { default: siteName, template: `%s | ${siteName}` },
   description: defaultDescription,
   icons: { icon: '/favicon.ico' },
   openGraph: {
     type: 'website',
     siteName,
-    images: [{ url: defaultOgImage, alt: 'Jan-OGImage' }],
+    images: [{ url: defaultOgImage, alt: siteName }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -28,7 +28,7 @@ const structuredData = {
   '@type': 'Organization',
   name: 'Jan',
   url: 'https://jan.ai',
-  logo: 'https://jan.ai/assets/images/general/og-image.png',
+  logo: `${siteUrl}/assets/logo-jan.svg`,
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

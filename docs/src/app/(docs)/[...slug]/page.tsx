@@ -90,13 +90,24 @@ export function generateStaticParams() {
   return source.generateParams().filter((p) => p.slug.length > 0)
 }
 
+// Desktop and Agent both have an "Overview" and a "Quickstart", so in the
+// tab and in search results those get their set's name in front ("Desktop
+// Overview | Jan Docs"). Every other page keeps its own title.
+const SHARED_TITLES = new Set(['overview', 'quickstart'])
+function metaTitle(title: string, url: string) {
+  if (!SHARED_TITLES.has(title.toLowerCase())) return title
+  const set = url.split('/')[1]
+  return `${set.charAt(0).toUpperCase()}${set.slice(1)} ${title}`
+}
+
 export async function generateMetadata(props: Props): Promise<Metadata> {
   const { slug } = await props.params
   const page = source.getPage(slug)
   if (!page) notFound()
 
-  const { title, description, keywords, noindex, ogImage } = page.data
+  const { description, keywords, noindex, ogImage } = page.data
   const image = ogImage ? `/${ogImage.replace(/^\//, '')}` : defaultOgImage
+  const title = metaTitle(page.data.title, page.url)
 
   return {
     title,
