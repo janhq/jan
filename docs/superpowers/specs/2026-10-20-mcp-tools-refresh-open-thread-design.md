@@ -64,10 +64,14 @@ File: `web-app/src/lib/custom-chat-transport.ts`.
 public invalidateFrozenTools(): void {
   this.frozenRoutedTools = null
   this.frozenRoutedSig = ''
+  this.toolsGeneration++
 }
 ```
 
-No other change to `refreshTools()`. Because the key is recomputed on the next
+Generation guard: `refreshTools()` captures `this.toolsGeneration` when it
+starts and writes `this.tools` and the freeze only if no invalidation happened
+meanwhile, so a refresh superseded by a later invalidation discards its result.
+The routing heuristic itself is unchanged. Because the key is recomputed on the next
 `refreshTools()`, a re-route happens exactly once per `mcp-update`; subsequent
 sends with the same key reuse the new frozen list as before.
 
@@ -75,9 +79,10 @@ sends with the same key reuse the new frozen list as before.
 
 File: `web-app/src/hooks/useTools.ts`.
 
-In the `setTools` function (the one that runs on mount and on
-`SystemEvent.MCP_UPDATE`), after `mcpOrchestrator.invalidateCache()` and after
-the store update, iterate over `useChatSessions.getState().sessions` and for each
+In the `setTools` function (it runs on mount and on `SystemEvent.MCP_UPDATE`,
+but only the `mcp-update` handler passes `invalidateSessions: true`; mount
+leaves existing freezes alone), after `mcpOrchestrator.invalidateCache()` and
+after the store update, iterate over `useChatSessions.getState().sessions` and for each
 session call
 
 ```ts
@@ -90,9 +95,9 @@ and its effect only fires when tool *names* change. Going through the session
 store reaches every open thread, including background ones, and fires on every
 `mcp-update` regardless of whether names changed.
 
-`refreshTools()` wraps every await in its own `try/catch`
-(`custom-chat-transport.ts:1049-1194`) and leaves `this.tools` untouched on
-failure, so it does not throw. The loop still wraps each session in a
+`refreshTools()` wraps every await in its own `try/catch`, so it does not
+throw. On a failure it still rebuilds `this.tools`, minus the tools whose load
+failed (see Error handling). The loop still wraps each session in a
 `try/catch` so an unexpected exception from one transport cannot stop the
 others.
 
@@ -100,22 +105,21 @@ others.
 
 File: `web-app/src/hooks/use-chat.ts:110-117`.
 
-```ts
-useEffect(() => {
-  if (transportRef.current) {
-    transportRef.current.invalidateFrozenTools()
-    transportRef.current.refreshTools()
-  }
-}, [mcpToolNames, ragToolNames])
-```
+The effect (deps `[mcpToolNames, ragToolNames]`) keeps the previous names in a
+`useRef` and calls `invalidateFrozenTools()` then `refreshTools()` only when
+the name sets actually changed; it does nothing on mount.
 
 This keeps the existing name-change path correct on its own, so the fix does
 not depend on event ordering between `useTools` and `use-chat`.
 
 ### Error handling
 
-Unchanged from today: a failed Rust call inside `refreshTools()` is logged and
-the transport keeps its last tool list. Invalidation alone never throws.
+If `getServerSummaries` or `getRelevantTools` throws inside `refreshTools()`,
+the error is caught and logged, and `this.tools` is rebuilt without MCP tools
+while the freeze stays cleared, so the next send re-routes. If the
+orchestrator's `getTools` fails it returns `[]`, and that empty list is frozen
+until the next `mcp-update` (or tool-name change). Invalidation alone never
+throws.
 
 ### Prompt-prefix stability
 
