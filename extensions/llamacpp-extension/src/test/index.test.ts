@@ -722,6 +722,56 @@ describe('llamacpp_extension', () => {
       expect(extension['config'].fit).toBe(false)
     })
 
+    it('normalizes numeric checkpoint settings before regenerating the preset', async () => {
+      const checkpointSettings = [
+        {
+          key: 'ctx_checkpoints',
+          title: 'Context Checkpoints',
+          description: '',
+          controllerType: 'input' as const,
+          controllerProps: { value: 32 },
+        },
+        {
+          key: 'checkpoint_min_step',
+          title: 'Checkpoint Minimum Step',
+          description: '',
+          controllerType: 'input' as const,
+          controllerProps: { value: 8192 },
+        },
+      ]
+      savedSettings = structuredClone(checkpointSettings)
+      vi.mocked(store.writeSettingsFile).mockImplementation(async (settings) => {
+        savedSettings = structuredClone(settings)
+      })
+      extension['config'] = {
+        ...extension['config'],
+        ctx_checkpoints: 32,
+        checkpoint_min_step: 8192,
+      }
+
+      await extension.updateSettings(
+        checkpointSettings.map((setting) => ({
+          ...setting,
+          controllerProps: { value: '0' },
+        }))
+      )
+
+      expect(savedSettings.map((setting) => setting.controllerProps.value)).toEqual([
+        0,
+        0,
+      ])
+      expect(extension['config'].ctx_checkpoints).toBe(0)
+      expect(extension['config'].checkpoint_min_step).toBe(0)
+      expect(generatePreset).toHaveBeenCalledWith(
+        '/jan/llamacpp',
+        '/jan',
+        expect.objectContaining({
+          ctx_checkpoints: 0,
+          checkpoint_min_step: 0,
+        })
+      )
+    })
+
     it('leaves startup migrations to the initial engine load', async () => {
       extension['backgroundInit'] = undefined
       await extension.updateSettings([{
