@@ -229,10 +229,10 @@ docs: update installation instructions
 - the key that signed it is added to your GitHub account as a **signing key**, and
 - the commit email (`git config user.email`) is a verified email on that same account.
 
-**SSH signing (quickest, needs Git 2.34+)** — reuse the SSH key you already push with (use whichever key that is, e.g. `id_rsa.pub`):
+**SSH signing (quickest, needs Git 2.34+)** — reuse the SSH key you already push with (use whichever key that is, e.g. `id_rsa`):
 ```bash
 git config --global gpg.format ssh
-git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global user.signingkey ~/.ssh/id_ed25519   # the private key; use the .pub path only if the key is loaded in ssh-agent
 git config --global commit.gpgsign true
 ```
 Then go to GitHub → **Settings** → **SSH and GPG keys** → **New SSH key**, choose **Key type: Signing Key**, and paste the contents of `~/.ssh/id_ed25519.pub`. A key added only as an authentication key won't verify signatures, so add it again as a signing key even if it's already there.
@@ -253,7 +253,7 @@ With `commit.gpgsign true`, every `git commit` is signed automatically. See [Git
 ```bash
 git status --short   # must print nothing: commit or stash your changes first
 git fetch upstream
-git branch unsigned-backup
+git branch -f unsigned-backup   # replaces any older backup with this branch
 git reset --soft "$(git merge-base HEAD upstream/main)"
 git commit -S -m "<your PR title>"
 git diff unsigned-backup HEAD   # must print nothing

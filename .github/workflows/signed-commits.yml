@@ -97,7 +97,7 @@ jobs:
               '```bash',
               `git status --short   # must print nothing: commit or stash your changes first`,
               `git fetch upstream`,
-              `git branch unsigned-backup`,
+              `git branch -f unsigned-backup   # replaces any older backup with this branch`,
               `git reset --soft "$(git merge-base HEAD upstream/${pr.base.ref})"`,
               `git commit -S -m "<your PR title>"`,
               `git diff unsigned-backup HEAD   # must print nothing`,
