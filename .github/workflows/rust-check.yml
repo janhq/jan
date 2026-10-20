@@ -11,6 +11,13 @@ on:
     branches:
       - main
       - dev
+    # A PR that only touches the docs site or top-level markdown has nothing
+    # here to check. Markdown elsewhere stays in: crates include_str! some of it.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
 
 concurrency:
   group: rust-check-${{ github.ref }}
