@@ -7,7 +7,10 @@ import {
   reloadEngineModels,
   startEngine,
 } from '@janhq/tauri-plugin-llamacpp-api'
-import type { ReloadReport } from '@janhq/tauri-plugin-llamacpp-api'
+import type {
+  ReloadReport,
+  SessionInfo,
+} from '@janhq/tauri-plugin-llamacpp-api'
 import { generatePreset } from '../preset'
 import * as store from '../settings-store'
 
@@ -1589,5 +1592,81 @@ describe('reconcileEngineDevices', () => {
 
     expect(await extension.reconcileEngineDevices()).toBe('unchanged')
     expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  // The reporter's log shows the dGPU absent from the engine on roughly a third
+  // of launches. Waiting for a visit to Settings > Hardware leaves every other
+  // load on the iGPU, so the load itself has to notice.
+  describe('before a model load', () => {
+    const session = { model_id: 'm', pid: 1, port: 2, api_key: 'k' }
+
+    const arm = async () => {
+      const spawn = await startedInEcoMode()
+      vi.spyOn(extension as never, 'findSessionByModel' as never).mockResolvedValue(
+        null as never
+      )
+      vi.spyOn(extension as never, 'ensureEngineReady' as never).mockResolvedValue(
+        undefined as never
+      )
+      vi.spyOn(
+        extension as never,
+        'evictChatIfAtCapacity' as never
+      ).mockResolvedValue(undefined as never)
+      vi.mocked(api.loadLlamaModel).mockResolvedValue(session as never)
+      return spawn
+    }
+
+    it('restarts an idle engine first, so the model lands on the GPU that appeared', async () => {
+      const spawn = await arm()
+      vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+      await extension.load('m')
+
+      expect(api.stopEngine).toHaveBeenCalledTimes(1)
+      expect(spawn).toHaveBeenCalledTimes(1)
+      // The model must go to the new engine, not the one that was stopped.
+      expect(
+        vi.mocked(api.stopEngine).mock.invocationCallOrder[0]
+      ).toBeLessThan(vi.mocked(api.loadLlamaModel).mock.invocationCallOrder[0])
+      expect(spawn.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(api.loadLlamaModel).mock.invocationCallOrder[0]
+      )
+    })
+
+    it('leaves the engine alone when the devices are unchanged', async () => {
+      const spawn = await arm()
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
+
+    it('still loads, on the running engine, while another model is loading', async () => {
+      const spawn = await arm()
+      vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+      const inFlight = Promise.withResolvers<SessionInfo>()
+      const loading = extension as unknown as {
+        loadingModels: Map<string, Promise<SessionInfo>>
+      }
+      loading.loadingModels.set('other', inFlight.promise)
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
+
+    it('still loads when the enumeration itself fails', async () => {
+      await arm()
+      vi.mocked(api.engineDevices).mockRejectedValue(new Error('timed out'))
+
+      await extension.load('m')
+
+      expect(api.stopEngine).not.toHaveBeenCalled()
+      expect(api.loadLlamaModel).toHaveBeenCalledTimes(1)
+    })
   })
 })

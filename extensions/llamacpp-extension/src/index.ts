@@ -901,6 +901,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     this.engineApiKey = info.api_key
     this.presetPath = presetPath
     this.engineDeviceSnapshot = this.snapshotDevices(envs)
+    // The load log never says which GPU llama.cpp picked, so record what the
+    // worker could choose from and which devices the user's setting names.
+    void this.engineDeviceSnapshot.then((devices) =>
+      logger.info(
+        `Engine devices at start: ${devices?.join(', ') ?? 'unknown'}; device setting: ${String(this.config.device ?? '') || '(auto)'}`
+      )
+    )
     logger.info(
       `Engine worker started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, ${info.models.length} models registered, preset=${presetPath})`
     )
@@ -2294,6 +2301,15 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     isEmbedding: boolean = false
   ): Promise<SessionInfo> {
     await this.ensureEngineReady()
+    // The worker lists GPUs once, at start. A laptop that left eco mode (or lost
+    // its dGPU) since then would load this model onto the wrong device, and the
+    // user would have to find Settings > Hardware > Refresh to fix it.
+    try {
+      await this.reconcileEngineDevices(modelId)
+    } catch (e) {
+      // A failed restart surfaces as "engine is not running" just below.
+      logger.warn('Could not re-check the engine devices before loading:', e)
+    }
     if (!(await this.getEngineInfo())) {
       throw new Error(
         'The llama.cpp engine is not running. Please restart the app.'
@@ -2775,11 +2791,15 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * running worker started with, so a GPU that appeared after launch is used for
    * the next load instead of only being listed in Settings.
    *
-   * It never interrupts work: a load or a generation in flight returns 'busy'
-   * and leaves the worker alone. With no running worker, or no record of what
-   * it started with, there is nothing to compare, so the answer is 'unchanged'.
+   * It never interrupts work: a generation in flight, or a load of a model other
+   * than `loadingModelId`, returns 'busy' and leaves the worker alone. A load
+   * passes its own id because it is already registered as loading by the time
+   * it asks. With no running worker, or no record of what it started with,
+   * there is nothing to compare, so the answer is 'unchanged'.
    */
-  async reconcileEngineDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
+  async reconcileEngineDevices(
+    loadingModelId?: string
+  ): Promise<'unchanged' | 'restarted' | 'busy'> {
     if (!(await this.getEngineInfo())) return 'unchanged'
     const before = await this.engineDeviceSnapshot
     if (!before) return 'unchanged'
@@ -2789,7 +2809,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const now = await this.snapshotDevices(envs)
     if (!now || now.join('\n') === before.join('\n')) return 'unchanged'
 
-    if (this.loadingModels.size > 0 || !(await engineSlotsIdle())) {
+    const otherLoads = [...this.loadingModels.keys()].some(
+      (id) => id !== loadingModelId
+    )
+    if (otherLoads || !(await engineSlotsIdle())) {
       logger.info('Device list changed but the engine is busy; not restarting')
       return 'busy'
     }
