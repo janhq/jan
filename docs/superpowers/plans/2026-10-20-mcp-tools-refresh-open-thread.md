@@ -52,16 +52,22 @@ Expected: finishes without error. If a native postinstall fails on a package unr
 
 - [ ] **Step 3: Run one existing transport test**
 
-Run: `yarn test:web -- src/lib/prompt-cache-toolcall.test.ts`
+Run: `yarn test:web web-app/src/lib/prompt-cache-toolcall.test.ts`
 Expected: the file's tests PASS. If the run fails on resolving `@janhq/core`, run `yarn build:core` and retry.
 
 - [ ] **Step 4: Commit nothing; record the exact working command**
 
-Working command (Windows, Node only), passed 7/7 for the transport test:
+Setup, in order, from the repo root in Git Bash (Windows, Node only):
 ```bash
-yarn test:web web-app/src/lib/prompt-cache-toolcall.test.ts
+corepack enable --install-directory ~/corepack-bin yarn
+export PATH=~/corepack-bin:$PATH
+yarn --version          # must print 4.5.3
+yarn install
+yarn build:core
+yarn build:tauri:plugin:api
+yarn test:web web-app/src/lib/prompt-cache-toolcall.test.ts   # passed 7/7
 ```
-Notes: the file filter takes the repo-root-relative path and no `--` (with `--` the filter is ignored and the whole project runs). Before it works, `yarn build:core` and `yarn build:tauri:plugin:api` must have been run once so `@janhq/core` and the tauri plugin APIs resolve. `corepack enable` needs admin on Windows; use `corepack enable --install-directory <user dir> yarn` and put that dir on PATH.
+Notes: plain `corepack enable` fails with EPERM without admin, hence `--install-directory`; the PATH export must be repeated in each new shell. The file filter takes the repo-root path with no `--` (with `--` the filter is ignored and the whole project runs). The two build commands are needed once so `@janhq/core` and the tauri plugin APIs resolve.
 
 ---
 
@@ -139,7 +145,7 @@ describe('CustomChatTransport frozen routed tools', () => {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `yarn test:web -- src/lib/custom-chat-transport.frozen-tools.test.ts`
+Run: `yarn test:web web-app/src/lib/custom-chat-transport.frozen-tools.test.ts`
 Expected: the second and third tests FAIL with `invalidateFrozenTools is not a function`; the first may pass.
 
 - [ ] **Step 3: Implement `invalidateFrozenTools(): void` in `web-app/src/lib/custom-chat-transport.ts`**
@@ -148,7 +154,7 @@ Place it directly above `async refreshTools(`. Body: set `this.frozenRoutedTools
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `yarn test:web -- src/lib/custom-chat-transport.frozen-tools.test.ts`
+Run: `yarn test:web web-app/src/lib/custom-chat-transport.frozen-tools.test.ts`
 Expected: all 5 PASS.
 
 - [ ] **Step 5: Commit**
@@ -219,7 +225,7 @@ Note: `setTools` also runs on mount, so expect the mount call plus the event cal
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `yarn test:web -- src/hooks/__tests__/useTools.mcp-update.test.ts`
+Run: `yarn test:web web-app/src/hooks/__tests__/useTools.mcp-update.test.ts`
 Expected: first test FAILS (`invalidateFrozenTools` called 0 times).
 
 - [ ] **Step 3: Implement the session loop in `web-app/src/hooks/useTools.ts`**
@@ -242,12 +248,12 @@ and call it from `setTools`. (Body given because the per-session `try/catch` and
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `yarn test:web -- src/hooks/__tests__/useTools.mcp-update.test.ts`
+Run: `yarn test:web web-app/src/hooks/__tests__/useTools.mcp-update.test.ts`
 Expected: all 3 PASS.
 
 - [ ] **Step 5: Run the existing hooks tests to check nothing regressed**
 
-Run: `yarn test:web -- src/hooks`
+Run: `yarn test:web web-app/src/hooks`
 Expected: PASS (same pass count as before Task 3 plus 3).
 
 - [ ] **Step 6: Commit**
@@ -290,7 +296,7 @@ If `useChat` cannot be rendered in isolation without a large mock surface after 
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `yarn test:web -- src/hooks/__tests__/use-chat.tool-names.test.ts`
+Run: `yarn test:web web-app/src/hooks/__tests__/use-chat.tool-names.test.ts`
 Expected: FAIL (`invalidateFrozenTools` called 0 times).
 
 - [ ] **Step 3: Implement in `web-app/src/hooks/use-chat.ts:110-117`**
@@ -299,7 +305,7 @@ Inside the existing effect, call `transportRef.current.invalidateFrozenTools()` 
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `yarn test:web -- src/hooks/__tests__/use-chat.tool-names.test.ts`
+Run: `yarn test:web web-app/src/hooks/__tests__/use-chat.tool-names.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Run the whole web-app suite and lint**
