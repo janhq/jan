@@ -64,13 +64,13 @@ Jan Agent is a preview. The installers below pull from the `agent-nightly` chann
 nightly-quality builds.
 </Callout>
 
-<Tabs items={['macOS / Linux', 'Windows']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows">
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
@@ -80,8 +80,8 @@ Installs to `%USERPROFILE%\.local\bin`. To also add it to your user `PATH`:
 ```powershell
 & ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
 ```
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 Then check it landed:
 

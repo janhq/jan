@@ -6,10 +6,16 @@ import { cn } from '@/lib/cn'
 import { pageMarkdownUrl } from '@/lib/shared'
 
 // "Copy page": copies the current page as Markdown (the same file as
-// /llms.mdx/…) so it can be pasted into an AI chat. A bordered button (a
-// plain link was too easy to miss): at the bottom of the right sidebar, and
-// under the title where that sidebar is hidden.
-export function CopyPage({ className }: { className?: string }) {
+// /llms.mdx/…) so it can be pasted into an AI chat.
+//   button  bordered, under the title where the right sidebar is hidden
+//   link    "Copy this page", in the right sidebar's footer links
+export function CopyPage({
+  variant = 'button',
+  className,
+}: {
+  variant?: 'button' | 'link'
+  className?: string
+}) {
   const markdownUrl = pageMarkdownUrl(usePathname().split('/').filter(Boolean))
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
@@ -43,6 +49,15 @@ export function CopyPage({ className }: { className?: string }) {
   }
 
   const Icon = state === 'copied' ? Check : Copy
+
+  if (variant === 'link') {
+    return (
+      <button type="button" onClick={copy} aria-live="polite" className={cn('cursor-pointer text-left', className)}>
+        <Icon aria-hidden className="size-3.5" strokeWidth={1.75} />
+        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Couldn’t copy' : 'Copy this page'}
+      </button>
+    )
+  }
 
   return (
     <button

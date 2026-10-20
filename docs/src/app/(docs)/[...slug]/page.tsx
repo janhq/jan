@@ -6,12 +6,12 @@ import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getMDXComponents } from '@/components/mdx'
-import { NextraToc } from '@/components/nextra-toc'
+import { NextraToc, TocMetaProvider } from '@/components/nextra-toc'
 import { NavLinks } from '@/components/nav-links'
 import { PageSection } from '@/components/page-section'
 import { DrawerBanner, DrawerFooter, EmptySlot } from '@/components/sidebar-trigger'
 import { source } from '@/lib/source'
-import { defaultOgImage, isNightly, siteName } from '@/lib/shared'
+import { defaultOgImage, editUrl, isNightly, siteName } from '@/lib/shared'
 import { CopyPage } from '@/components/copy-page'
 
 type Props = { params: Promise<{ slug: string[] }> }
@@ -58,6 +58,7 @@ export default async function Page(props: Props) {
         footer: <DrawerFooter />,
       }}
     >
+    <TocMetaProvider title={page.data.title} editUrl={editUrl(page.path)}>
     <DocsPage
       toc={toc}
       full={page.data.full}
@@ -81,6 +82,7 @@ export default async function Page(props: Props) {
       </DocsBody>
       <NavLinks />
     </DocsPage>
+    </TocMetaProvider>
     </DocsLayout>
   )
 }

@@ -18,32 +18,26 @@ expect nightly-quality builds.
 
 Download the nightly build for your platform:
 
-<Tabs items={['macOS', 'Windows', 'Linux']}>
-<Tabs.Tab>
+<Accordions>
+  <Accordion title="macOS">
+    <DownloadButton href="https://app.jan.ai/download/nightly/mac-universal">Download Jan Nightly for Mac</DownloadButton>
 
-<DownloadButton href="https://app.jan.ai/download/nightly/mac-universal">Download Jan Nightly for Mac</DownloadButton>
+    Open the `.dmg` and drag Jan to **Applications**.
+  </Accordion>
+  <Accordion title="Windows">
+    <DownloadButton href="https://app.jan.ai/download/nightly/win-x64">Download Jan Nightly for Windows</DownloadButton>
 
-Open the `.dmg` and drag Jan to **Applications**.
+    Run the installer, then launch Jan.
+  </Accordion>
+  <Accordion title="Linux">
+    <div className="flex flex-wrap gap-3 [&>a]:!mt-0">
+      <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-deb">Download .deb</DownloadButton>
+      <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-appimage">Download AppImage</DownloadButton>
+    </div>
 
-</Tabs.Tab>
-<Tabs.Tab>
-
-<DownloadButton href="https://app.jan.ai/download/nightly/win-x64">Download Jan Nightly for Windows</DownloadButton>
-
-Run the installer, then launch Jan.
-
-</Tabs.Tab>
-<Tabs.Tab>
-
-<div className="flex flex-wrap gap-3">
-  <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-deb">Download .deb</DownloadButton>
-  <DownloadButton href="https://app.jan.ai/download/nightly/linux-amd64-appimage">Download AppImage</DownloadButton>
-</div>
-
-See [Linux installation](/desktop/install/linux) for the install commands.
-
-</Tabs.Tab>
-</Tabs>
+    See [Linux installation](/desktop/install/linux) for the install commands.
+  </Accordion>
+</Accordions>
 
 ## Starting a Session
 

@@ -7,14 +7,29 @@
  *   out on a short diagonal between levels
  * - the section you're reading: full ink, with a 2px ink stroke over its stretch
  *   of the line; the rest at 60%
- * - sticky footer under a divider: "Copy page"
+ * - sticky footer under a divider: feedback, edit on GitHub, copy this page
  * Plugged into Fumadocs via DocsPage `slots.toc.main`; it reads the TOC and the
  * active heading from Fumadocs' TOC provider.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useActiveAnchor, useTOCItems } from 'fumadocs-ui/components/toc'
+import { SquarePen } from 'lucide-react'
+import { FaGithub } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
 import { CopyPage } from '@/components/copy-page'
+
+/** The page's title and GitHub source, for the footer links. Fumadocs
+ *  renders the TOC with its own props, so the page passes these through
+ *  context. */
+type TocMeta = { title: string; editUrl: string }
+const TocMetaContext = createContext<TocMeta>({ title: '', editUrl: '' })
+
+export function TocMetaProvider({ children, ...meta }: TocMeta & { children: ReactNode }) {
+  return <TocMetaContext value={meta}>{children}</TocMetaContext>
+}
+
+const FOOTER_LINK =
+  'focus-ring inline-flex items-center gap-1.5 rounded-sm text-doc-small transition-colors duration-150 ease-jan hover:text-ink'
 
 // Each level sits 12px further in; text starts 12px past its stretch of line.
 const STEP = 12
@@ -55,7 +70,24 @@ function measure(list: HTMLElement, lvls: number[]): Track | null {
   return { width, height: list.offsetHeight, d, rows }
 }
 
+/** The active row's stretch of the rail. It reaches into the 4px gaps above
+ *  and below only where the rail runs straight on (a neighbour at the same
+ *  level, or the end of the list); where the rail angles in or out, it stops
+ *  at the row so it never runs onto the diagonal. */
+function activeStroke(rows: Track['rows'], i: number) {
+  const row = rows[i]
+  const prev = rows[i - 1]
+  const next = rows[i + 1]
+  const top = !prev || prev.x === row.x ? row.top - 4 : row.top
+  const bottom = !next || next.x === row.x ? row.bottom + 4 : row.bottom
+  return `M${row.x} ${top} L${row.x} ${bottom}`
+}
+
 export function NextraToc() {
+  const { title, editUrl } = use(TocMetaContext)
+  const feedbackUrl = `https://github.com/janhq/jan/issues/new?title=${encodeURIComponent(
+    `Feedback for “${title}”`
+  )}&labels=feedback`
   const items = useTOCItems().filter((item) => item.depth > 1)
   const active = useActiveAnchor()
   const tocRef = useRef<HTMLDivElement>(null)
@@ -110,7 +142,7 @@ export function NextraToc() {
                 <path d={track.d} fill="none" className="stroke-line" strokeWidth={1} />
                 {activeIndex >= 0 && track.rows[activeIndex] && (
                   <path
-                    d={`M${track.rows[activeIndex].x} ${track.rows[activeIndex].top - 4} L${track.rows[activeIndex].x} ${track.rows[activeIndex].bottom + 4}`}
+                    d={activeStroke(track.rows, activeIndex)}
                     fill="none"
                     className="stroke-ink transition-[d] duration-200 ease-jan"
                     strokeWidth={2}
@@ -146,7 +178,20 @@ export function NextraToc() {
             'sticky bottom-0 flex flex-col items-start gap-2 pb-8'
           )}
         >
-          <CopyPage />
+          {/* Icon first: GitHub (feedback opens an issue there), a pen for
+              suggesting an edit (opens the page's source on GitHub, where
+              anyone can propose a change as a pull request), then copy. */}
+          <a href={feedbackUrl} target="_blank" rel="noopener noreferrer" className={cn(FOOTER_LINK, 'text-ink/60')}>
+            <FaGithub aria-hidden className="size-3.5" />
+            Give us feedback
+          </a>
+          {editUrl && (
+            <a href={editUrl} target="_blank" rel="noopener noreferrer" className={cn(FOOTER_LINK, 'text-ink/60')}>
+              <SquarePen aria-hidden className="size-3.5" strokeWidth={1.75} />
+              Suggest an edit
+            </a>
+          )}
+          <CopyPage variant="link" className={cn(FOOTER_LINK, 'text-ink/60')} />
         </div>
       </div>
     </div>

@@ -278,6 +278,18 @@ body {
   filter: brightness(0.9);
 }
 
+/* Code blocks inside an accordion row: no border (the row is already a box),
+   just the fill. In dark mode the accordion takes the surface fill, so the
+   code sits in a darker well (page) instead, copy strip included. */
+.jan-accordions .prose figure.shiki,
+.prose .jan-accordions figure.shiki {
+  border-color: transparent;
+}
+.dark .prose .jan-accordions figure.shiki,
+.dark .prose .jan-accordions figure.shiki .bg-surface {
+  background: var(--color-page);
+}
+
 /* Code blocks as on jan.ai: surface fill, 1px line, 12px radius, 20px
    padding, Geist Mono at doc-small (14/20) in one ink colour (the highlighter's token
    colours are dropped, as jan.ai does). Copy button: components/code-block. */

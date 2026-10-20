@@ -83,6 +83,17 @@ Don't use `rounded-2xl`, `rounded-3xl` or pixel values.
   right. Hover: a step lighter fill and a slightly darker border.
 - **Code blocks**: `surface` fill, 1px `line`, 12px corners, one ink colour,
   copy button on the right. Long lines scroll sideways; they don't wrap.
+- **Tabs**: for picking one of several parallel options (OS, install
+  method, GPU, language). Mono caps labels on a hairline, the current one
+  underlined in ink; the panel flows on the page (no box), so code blocks
+  inside don't get double-framed.
+- **Accordions** (`<Accordions>` with `<Accordion title open>`): one 12px
+  box, rows split by hairlines, title in doc-body Medium with a chevron.
+  Every per-OS split uses it (macOS / Windows / Linux), all rows collapsed
+  by default; readers open the one they need.
+  Code blocks inside a row drop their border (in dark mode they sit in a
+  darker `page` well). Other parallel choices (install method, GPU,
+  language) stay as tabs.
 - **Buttons** (`<Button>`, `<DownloadButton>`): ink fill, Geist Mono caps
   label, 35px tall.
 - **Search field**: white with a 1px `line`, 8px corners; in dark mode it

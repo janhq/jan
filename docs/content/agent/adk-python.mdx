@@ -20,24 +20,24 @@ Install the nightly wheel below instead. The runtime is a separate, prebuilt dow
 
 Create a demo directory and an isolated Python environment, then install the latest nightly wheel:
 
-<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 mkdir jan-python-demo && cd jan-python-demo
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install "$(python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/adk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")"
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows PowerShell">
 ```powershell
 mkdir jan-python-demo; cd jan-python-demo
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install (python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/adk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")
 ```
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 The command looks up the current build and installs its versioned wheel, checked against the
 SHA-256 the build published. The [download page](https://delta.jan.ai/adk-nightly/index.html) shows
@@ -45,20 +45,20 @@ the same command with the URL written out.
 
 Install the `jan` runtime:
 
-<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows PowerShell">
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
 Follow the installer's PATH instructions before continuing.
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 ```bash
 jan cli agent rpc --help

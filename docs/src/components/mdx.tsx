@@ -5,6 +5,7 @@ import { Callout, Link, Steps, Tabs } from '@/components/nextra-compat'
 import { DocCard, DocCards } from '@/components/doc-card'
 import { Button, DownloadButton } from '@/components/download-button'
 import { FAQBox } from '@/components/faq-box'
+import { Accordion, Accordions } from '@/components/accordion'
 import { Mermaid } from '@/components/mermaid'
 import { CodeBlock } from '@/components/code-block'
 import {
@@ -34,6 +35,8 @@ export function getMDXComponents(components?: MDXComponents) {
     Button,
     DownloadButton,
     FAQBox,
+    Accordion,
+    Accordions,
     Mermaid,
     AnthropicIcon,
     ClaudeCodeIcon,
