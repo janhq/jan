@@ -465,6 +465,43 @@ pub async fn engine_slots_idle(
     })
 }
 
+/// Claims the engine for a restart, or says it cannot.
+///
+/// `false` means a request holds the worker (a native proxy or agent request
+/// that resolved its address and has not finished) or a generation is in
+/// flight: restarting now would cut it off. On `true` every new request waits
+/// until `end_engine_restart`, so none resolves the old worker's address after
+/// the caller's idle check, which is the gap the extension's own lease cannot
+/// close from JavaScript.
+#[tauri::command]
+pub async fn begin_engine_restart(
+    state: State<'_, Arc<LlamacppState>>,
+) -> Result<bool, String> {
+    if !state.begin_restart().await {
+        return Ok(false);
+    }
+    // Checked after the claim: nothing new can start from here, so what the
+    // worker reports is everything there will be.
+    let running = {
+        let guard = state.engine.lock().await;
+        guard.as_ref().map(|h| (h.port, h.api_key.clone()))
+    };
+    if let Some((port, api_key)) = running {
+        if !busy_models(port, &api_key).await.is_empty() {
+            state.end_restart().await;
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Lets requests through again. Safe to call without a restart in progress.
+#[tauri::command]
+pub async fn end_engine_restart(state: State<'_, Arc<LlamacppState>>) -> Result<(), String> {
+    state.end_restart().await;
+    Ok(())
+}
+
 /// Drops saved state without a worker, by editing the directory in this
 /// process.
 ///

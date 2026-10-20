@@ -60,7 +60,8 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
       models_max: 1,
     }),
     engineDevices: vi.fn().mockResolvedValue([]),
-    engineSlotsIdle: vi.fn().mockResolvedValue(true),
+    beginEngineRestart: vi.fn().mockResolvedValue(true),
+    endEngineRestart: vi.fn().mockResolvedValue(undefined),
     eraseThreadSlotState: vi.fn().mockResolvedValue(0),
   }
 })
@@ -111,7 +112,7 @@ describe('llamacpp_extension', () => {
   describe('resolveThreadCacheBudget', () => {
     const budget = (cfg: Record<string, unknown>): number => {
       // `config` is populated by onLoad, which is not run here.
-      ;(extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
+      ; (extension as any).config = { ...((extension as any).config ?? {}), ...cfg }
       return (extension as any).resolveThreadCacheBudget()
     }
 
@@ -147,12 +148,12 @@ describe('llamacpp_extension', () => {
   describe('getProviderPath', () => {
     it('should return correct provider path', async () => {
       const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp')
 
       const result = await extension.getProviderPath()
-      
+
       expect(result).toBe('/path/to/jan/llamacpp')
     })
   })
@@ -160,7 +161,7 @@ describe('llamacpp_extension', () => {
   describe('list', () => {
     it('should return empty array when models directory does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models')
       vi.mocked(fs.existsSync)
@@ -170,21 +171,21 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.readdirSync).mockResolvedValue([]) // empty directory after creation
 
       const result = await extension.list()
-      
+
       expect(result).toEqual([])
     })
 
     it('should return model list when models exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')
-      
+
       // Set up providerPath first
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       const modelsDir = '/path/to/jan/llamacpp/models'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
-      
+
       // Mock joinPath to handle the directory traversal logic
       vi.mocked(joinPath).mockImplementation((paths) => {
         if (paths.length === 1) {
@@ -192,15 +193,15 @@ describe('llamacpp_extension', () => {
         }
         return Promise.resolve(paths.join('/'))
       })
-      
+
       vi.mocked(fs.existsSync)
         .mockResolvedValueOnce(true) // modelsDir exists
         .mockResolvedValueOnce(false) // model.yml doesn't exist at modelsDir level
         .mockResolvedValueOnce(true) // model.yml exists in test-model dir
-      
+
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1000 })
-      
+
       vi.mocked(invoke).mockResolvedValue({
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
@@ -208,7 +209,7 @@ describe('llamacpp_extension', () => {
       })
 
       const result = await extension.list()
-      
+
       // Note: There's a bug in the original code where it pushes just the child name
       // instead of the full path, causing the model ID to be empty
       expect(result).toEqual([
@@ -236,7 +237,7 @@ describe('llamacpp_extension', () => {
 
     it('should throw error if model already exists', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/models/test-model/model.yml')
       vi.mocked(fs.existsSync).mockResolvedValue(true)
@@ -254,13 +255,13 @@ describe('llamacpp_extension', () => {
         tensor_count: 1,
         metadata: { 'general.architecture': 'llama' },
       } as any)
-      
+
       const mockDownloadManager = {
         downloadFiles: vi.fn().mockResolvedValue(undefined)
       }
-      
+
       window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
@@ -268,8 +269,8 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
       vi.mocked(invoke).mockResolvedValue(undefined)
 
-      await extension.import('test-model', { 
-        modelPath: 'https://example.com/model.gguf' 
+      await extension.import('test-model', {
+        modelPath: 'https://example.com/model.gguf'
       })
 
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
@@ -331,10 +332,10 @@ describe('llamacpp_extension', () => {
         auto_update_engine: false,
         auto_unload: true
       }
-      
+
       // Set up providerPath
       extension['providerPath'] = '/path/to/jan/llamacpp'
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
 
@@ -470,7 +471,7 @@ describe('llamacpp_extension', () => {
       }
 
       const result = await extension.chat(request)
-      
+
       expect(result).toEqual(mockResponse)
       expect(httpFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
@@ -488,7 +489,7 @@ describe('llamacpp_extension', () => {
   describe('delete', () => {
     it('should throw error if model does not exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(false)
@@ -498,14 +499,14 @@ describe('llamacpp_extension', () => {
 
     it('should delete model successfully', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      
+
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
       vi.mocked(fs.existsSync).mockResolvedValue(true)
       vi.mocked(fs.rm).mockResolvedValue(undefined)
 
       await extension.delete('test-model')
-      
+
       expect(fs.rm).toHaveBeenCalledWith('/path/to/jan/llamacpp/models/test-model')
     })
   })
@@ -1527,7 +1528,8 @@ describe('reconcileEngineDevices', () => {
       devices: ECO.map(({ id, name }) => ({ id, name })),
     })
     vi.mocked(api.engineDevices).mockResolvedValue(ECO as never)
-    vi.mocked(api.engineSlotsIdle).mockResolvedValue(true)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(true)
+    vi.mocked(api.endEngineRestart).mockResolvedValue(undefined)
     vi.mocked(api.stopEngine).mockResolvedValue(undefined)
     extension = new llamacpp_extension()
     // Standing in for the real spawn, which the plugin does.
@@ -1562,7 +1564,7 @@ describe('reconcileEngineDevices', () => {
   it('never interrupts a generation in flight', async () => {
     const spawn = await startedInEcoMode()
     vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
-    vi.mocked(api.engineSlotsIdle).mockResolvedValue(false)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(false)
 
     expect(await extension.reconcileEngineDevices()).toBe('busy')
     expect(api.stopEngine).not.toHaveBeenCalled()
@@ -1597,6 +1599,47 @@ describe('reconcileEngineDevices', () => {
 
     expect(await extension.reconcileEngineDevices()).toBe('unchanged')
     expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  // The native side holds requests back for as long as a restart it agreed to is
+  // open, so it has to hear about the end however the restart goes.
+  it('releases native requests after a restart, once the new worker is up', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.endEngineRestart).mock.invocationCallOrder[0]).toBeGreaterThan(
+      spawn.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('releases native requests even when stopping the worker fails', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.stopEngine).mockRejectedValue(new Error('stop failed'))
+
+    await expect(extension.reconcileEngineDevices()).rejects.toThrow('stop failed')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('releases native requests even when the new worker will not start', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    spawn.mockRejectedValue(new Error('spawn failed'))
+
+    await expect(extension.reconcileEngineDevices()).rejects.toThrow('spawn failed')
+    expect(api.endEngineRestart).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not release anything it never claimed', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.beginEngineRestart).mockResolvedValue(false)
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.endEngineRestart).not.toHaveBeenCalled()
   })
 
   // The worker reports what it initialised, so the baseline cannot be skewed by
@@ -1779,7 +1822,7 @@ describe('reconcileEngineDevices', () => {
     it('keep the engine for as long as a stream is being read', async () => {
       const { spawn } = await armChat()
       vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
-        async function* () {
+        async function*() {
           yield { id: '1' }
           yield { id: '2' }
         } as never
@@ -1803,7 +1846,7 @@ describe('reconcileEngineDevices', () => {
     it('let go of the engine when a reader stops a stream early', async () => {
       await armChat()
       vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
-        async function* () {
+        async function*() {
           yield { id: '1' }
           yield { id: '2' }
         } as never
@@ -1823,7 +1866,7 @@ describe('reconcileEngineDevices', () => {
     it('let go of the engine for a stream whose request was already aborted', async () => {
       await armChat()
       vi.spyOn(extension as never, 'handleStreamingResponse' as never).mockImplementation(
-        async function* () {
+        async function*() {
           yield { id: '1' }
         } as never
       )
@@ -1855,12 +1898,12 @@ describe('reconcileEngineDevices', () => {
       const { spawn, ensureSession } = await armChat()
       httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const idle = Promise.withResolvers<boolean>()
-      vi.mocked(api.engineSlotsIdle)
+      vi.mocked(api.beginEngineRestart)
         .mockReturnValueOnce(idle.promise)
         .mockResolvedValue(false)
 
       const first = extension.reconcileEngineDevices('m')
-      await vi.waitFor(() => expect(api.engineSlotsIdle).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(api.beginEngineRestart).toHaveBeenCalledTimes(1))
       const second = extension.reconcileEngineDevices()
       // Let everything that can settle without the first's idle answer settle.
       // Unqueued, that is the whole of the second one, which returns busy and
@@ -1997,7 +2040,7 @@ describe('engine requests bypass a configured proxy', () => {
       model: 'test-model',
       messages: [{ role: 'user', content: 'hi' }],
     }
-    await extension.chat({ ...request, stream: false }).catch(() => {})
+    await extension.chat({ ...request, stream: false }).catch(() => { })
     expectDirect('/v1/chat/completions')
 
     httpFetch.mockClear()
@@ -2007,7 +2050,7 @@ describe('engine requests bypass a configured proxy', () => {
     })) as AsyncIterable<unknown>
     await stream[Symbol.asyncIterator]()
       .next()
-      .catch(() => {})
+      .catch(() => { })
     expectDirect('/v1/chat/completions')
   })
 })
