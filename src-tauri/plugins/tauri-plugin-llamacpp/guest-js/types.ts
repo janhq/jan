@@ -12,6 +12,12 @@ export interface UnloadResult {
   error?: string
 }
 
+/** Mirrors `engine::worker::DeviceIdentity`: a device without its memory. */
+export interface DeviceIdentity {
+  id: string
+  name: string
+}
+
 /** Mirrors `engine::commands::EngineInfo`. */
 export interface EngineInfo {
   port: number
@@ -19,6 +25,13 @@ export interface EngineInfo {
   pid: number
   /** Model ids the worker registered from the preset. */
   models: string[]
+  /**
+   * The devices the running worker itself initialised, or null when it did not
+   * say. `[]` means the machine has no GPU, which is a real answer. The worker
+   * lists its devices once, at start, so this is what a later enumeration is
+   * compared against to notice a GPU that appeared or vanished.
+   */
+  devices: DeviceIdentity[] | null
 }
 
 /** Mirrors `engine::commands::EngineVersion`. */

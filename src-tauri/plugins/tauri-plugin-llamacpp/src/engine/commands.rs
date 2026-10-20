@@ -20,6 +20,11 @@ pub struct EngineInfo {
     pub pid: u32,
     /// Registered model ids, from the preset the worker read.
     pub models: Vec<String>,
+    /// The devices this worker initialised, `None` when it did not say. Both
+    /// `start_engine` and `get_engine_info` read it off the running worker, so
+    /// a caller that attaches to an existing worker gets that worker's own
+    /// baseline rather than whatever the machine offers now.
+    pub devices: Option<Vec<worker::DeviceIdentity>>,
 }
 
 impl From<&WorkerHandle> for EngineInfo {
@@ -29,6 +34,7 @@ impl From<&WorkerHandle> for EngineInfo {
             api_key: h.api_key.clone(),
             pid: h.pid,
             models: h.models.clone(),
+            devices: h.devices.clone(),
         }
     }
 }

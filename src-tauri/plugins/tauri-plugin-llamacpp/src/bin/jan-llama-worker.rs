@@ -87,6 +87,17 @@ fn parse_args() -> Result<Args, String> {
     Ok(out)
 }
 
+/// The devices this process initialised, as `[{"id","name"}]`, for the
+/// handshake. `null` when they cannot be read: the app treats that as "not
+/// reported", which is different from `[]`, "no GPU on this machine". Uses the
+/// memory-free listing on purpose; see `Engine::device_identities_json`.
+fn device_identities() -> serde_json::Value {
+    tauri_plugin_llamacpp::engine::Engine::device_identities_json()
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
 #[tokio::main]
 async fn main() {
     let args = match parse_args() {
@@ -205,6 +216,9 @@ async fn main() {
             // Set by build.rs for a CUDA engine; null otherwise. The app sets it
             // against the NVIDIA driver to explain a driver that is too old.
             "cuda_toolkit": option_env!("JAN_ENGINE_CUDA_TOOLKIT"),
+            // What this process itself initialised. The app compares it with a
+            // later enumeration to notice a GPU that appeared or vanished since.
+            "devices": device_identities(),
         })
     );
     // stdout is a pipe to the supervisor, so it is block-buffered.
