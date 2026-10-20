@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,7 @@ interface AddProjectDialogProps {
     updated_at: number
     assistantId?: string
   }
-  onSave: (name: string, assistantId?: string) => void
+  onSave: (name: string, assistantId?: string) => void | Promise<void>
 }
 
 export default function AddProjectDialog({
@@ -49,6 +49,8 @@ export default function AddProjectDialog({
   const { folders } = useThreadManagement()
   const { assistants, addAssistant } = useAssistant()
   const [addAssistantDialogOpen, setAddAssistantDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   const selectedAssistant = assistants.find((a) => a.id === selectedAssistantId)
 
@@ -59,8 +61,8 @@ export default function AddProjectDialog({
     }
   }, [open, initialData])
 
-  const handleSave = () => {
-    if (!name.trim()) return
+  const handleSave = async () => {
+    if (savingRef.current || !name.trim()) return
 
     const trimmedName = name.trim()
 
@@ -76,19 +78,27 @@ export default function AddProjectDialog({
       return
     }
 
-    onSave(trimmedName, selectedAssistantId)
-
-    // Show success message
-    if (editingKey) {
-      toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
-    } else {
-      toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
+    savingRef.current = true
+    setSaving(true)
+    try {
+      await onSave(trimmedName, selectedAssistantId)
+      if (editingKey) {
+        toast.success(t('projects.addProjectDialog.updateSuccess', { projectName: trimmedName }))
+      } else {
+        toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
+      }
+      setName('')
+      setSelectedAssistantId(undefined)
+    } catch {
+      toast.error(t('projects.addProjectDialog.saveError'))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
-    setName('')
-    setSelectedAssistantId(undefined)
   }
 
   const handleCancel = () => {
+    if (savingRef.current) return
     onOpenChange(false)
     setName('')
     setSelectedAssistantId(undefined)
@@ -98,11 +108,13 @@ export default function AddProjectDialog({
   const hasChanged = editingKey
     ? name.trim() !== initialData?.name || selectedAssistantId !== initialData?.assistantId
     : true
-  const isButtonDisabled = !name.trim() || (editingKey && !hasChanged)
+  const isButtonDisabled = saving || !name.trim() || (editingKey && !hasChanged)
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!savingRef.current) onOpenChange(nextOpen)
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -113,6 +125,7 @@ export default function AddProjectDialog({
           <div>
             <Input
               value={name}
+              disabled={saving}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('projects.addProjectDialog.namePlaceholder')}
               className="mt-1"
@@ -132,6 +145,7 @@ export default function AddProjectDialog({
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
+                  disabled={saving}
                   className="w-full justify-between rounded-md"
                 >
                   {selectedAssistant ? (
@@ -192,7 +206,7 @@ export default function AddProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button size="sm" variant="ghost" onClick={handleCancel}>
+          <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>
             {t('cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={Boolean(isButtonDisabled)}>

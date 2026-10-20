@@ -280,6 +280,7 @@
     },
     "addProjectDialog": {
       "createTitle": "CrÃ©er un nouveau projet",
+      "saveError": "Impossible d’enregistrer le projet. Veuillez réessayer.",
       "editTitle": "Modifier le projet",
       "nameLabel": "Nom du projet",
       "namePlaceholder": "Entrez le nom du projet...",

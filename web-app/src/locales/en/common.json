@@ -460,7 +460,8 @@
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
-      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully",
+      "saveError": "Could not save project. Please try again."
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",
