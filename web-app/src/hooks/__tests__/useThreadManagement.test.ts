@@ -26,7 +26,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 // Mock useThreads
 const mockUpdateThread = vi.fn()
-const mockDeleteThreadState = vi.fn()
+const mockDeleteAllThreadsByProject = vi.fn()
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: {
     getState: () => ({
@@ -36,7 +36,7 @@ vi.mock('@/hooks/useThreads', () => ({
         't3': { id: 't3', metadata: { project: { id: 'p2' } } },
       },
       updateThread: mockUpdateThread,
-      deleteThread: mockDeleteThreadState,
+      deleteAllThreadsByProject: mockDeleteAllThreadsByProject,
     }),
   },
 }))
@@ -139,12 +139,18 @@ describe('useThreadManagement', () => {
       await result.current.deleteFolderWithThreads('p1')
     })
 
-    // Should delete backend threads for project p1
-    expect(mockDeleteThread).toHaveBeenCalledWith('t1')
-    expect(mockDeleteThread).toHaveBeenCalledWith('t2')
-    expect(mockDeleteThreadState).toHaveBeenCalledWith('t1')
-    expect(mockDeleteThreadState).toHaveBeenCalledWith('t2')
+    expect(mockDeleteAllThreadsByProject).toHaveBeenCalledWith('p1')
+    expect(mockDeleteThread).not.toHaveBeenCalled()
     expect(mockDeleteProject).toHaveBeenCalledWith('p1')
+  })
+
+  it('keeps the project when deleting one of its threads fails', async () => {
+    mockDeleteAllThreadsByProject.mockRejectedValueOnce(new Error('disk denied'))
+    const { result } = renderHook(() => useThreadManagement())
+    await act(async () => {
+      await expect(result.current.deleteFolderWithThreads('p1')).rejects.toThrow('disk denied')
+    })
+    expect(mockDeleteProject).not.toHaveBeenCalled()
   })
 
   it('should get folder by id', async () => {

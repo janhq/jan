@@ -20,10 +20,10 @@ type ThreadState = {
   getFavoriteThreads: () => Thread[]
   getThreadById: (threadId: string) => Thread | undefined
   toggleFavorite: (threadId: string) => void
-  deleteThread: (threadId: string) => void
+  deleteThread: (threadId: string) => Promise<void>
   renameThread: (threadId: string, newTitle: string) => void
-  deleteAllThreads: () => void
-  clearAllThreads: () => void
+  deleteAllThreads: () => Promise<void>
+  clearAllThreads: () => Promise<void>
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
   createThread: (
@@ -38,7 +38,7 @@ type ThreadState = {
   updateCurrentThreadAssistant: (assistant: Assistant) => void
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
-  deleteAllThreadsByProject: (projectId: string) => void
+  deleteAllThreadsByProject: (projectId: string) => Promise<void>
   searchIndex: Fzf<Thread[]> | null
 }
 
@@ -89,6 +89,17 @@ const cleanupThreadArtifacts = (threadId: string) => {
   cleanupVectorDB(threadId)
   cleanupThreadCache(threadId)
   cleanupThreadWorkspace(threadId)
+}
+
+// Wait for every selected deletion: retain failed threads while committing
+// successful removals, then surface the failure to the confirmation dialog.
+const deleteThreads = async (
+  threadIds: string[],
+  deleteThread: (threadId: string) => Promise<void>
+) => {
+  const results = await Promise.allSettled(threadIds.map(deleteThread))
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -189,137 +200,52 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }
     })
   },
-  deleteThread: (threadId) => {
+  deleteThread: async (threadId) => {
+    // Stop producing new content before removing its storage. Keep the session
+    // itself available if deletion fails, along with its generated messages.
+    const session = useChatSessions.getState().sessions[threadId]
+    if (session) await session.chat.stop()
+    // Keep the conversation and its artifacts available until storage confirms
+    // deletion, so a failed operation can be retried without losing UI state.
+    await getServiceHub().threads().deleteThread(threadId)
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
-
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
       cleanupThreadArtifacts(threadId)
-      getServiceHub().threads().deleteThread(threadId)
-
       return {
         threads: remainingThreads,
+        currentThreadId:
+          state.currentThreadId === threadId ? undefined : state.currentThreadId,
         searchIndex: new Fzf<Thread[]>(
           Object.values(remainingThreads).filter(
             (t) => t.id !== TEMPORARY_CHAT_ID && t.title
           ),
-          {
-            selector: (item: Thread) => item.title ?? '',
-          }
+          { selector: (item: Thread) => item.title ?? '' }
         ),
       }
     })
   },
-  deleteAllThreads: () => {
-    set((state) => {
-      const allThreadIds = Object.keys(state.threads)
-
-      // Identify threads to keep (favorites OR have project metadata)
-      const threadsToKeepIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project
-      )
-
-      // Identify threads to delete (non-favorites AND no project metadata)
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project
-      )
-
-      // Delete threads and clean up their out-of-store artifacts. As in
-      // deleteThread: removing the chat session is what ends a turn the thread
-      // still has running in the background.
-      threadsToDeleteIds.forEach((threadId) => {
-        useAgentMode.getState().removeThread(threadId)
-        useChatSessions.getState().removeSession(threadId)
-        useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
-      })
-
-      // Keep favorite threads and threads with project metadata
-      const remainingThreads = threadsToKeepIds.reduce(
-        (acc, threadId) => {
-          acc[threadId] = state.threads[threadId]
-          return acc
-        },
-        {} as Record<string, Thread>
-      )
-
-      return {
-        threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(
-          Object.values(remainingThreads).filter(
-            (t) => t.id !== TEMPORARY_CHAT_ID && t.title
-          ),
-          {
-            selector: (item: Thread) => item.title ?? '',
-          }
-        ),
-      }
-    })
+  deleteAllThreads: async () => {
+    await deleteThreads(
+      Object.values(get().threads)
+        .filter((thread) => !thread.isFavorite && !thread.metadata?.project)
+        .map((thread) => thread.id),
+      get().deleteThread
+    )
   },
-  clearAllThreads: () => {
-    set((state) => {
-      const allThreadIds = Object.keys(state.threads)
-
-      allThreadIds.forEach((threadId) => {
-        useAgentMode.getState().removeThread(threadId)
-        useChatSessions.getState().removeSession(threadId)
-        useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
-      })
-
-      return {
-        threads: {},
-        currentThreadId: undefined,
-        searchIndex: new Fzf<Thread[]>([], {
-          selector: (item: Thread) => item.title ?? '',
-        }),
-      }
-    })
+  clearAllThreads: async () => {
+    await deleteThreads(Object.keys(get().threads), get().deleteThread)
   },
-  deleteAllThreadsByProject: (projectId) => {
-    set((state) => {
-      const allThreadIds = Object.keys(state.threads)
-
-      // Identify threads belonging to this project
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].metadata?.project?.id === projectId
-      )
-
-      threadsToDeleteIds.forEach((threadId) => {
-        useChatSessions.getState().removeSession(threadId)
-        useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
-      })
-
-      // Keep threads that don't belong to this project
-      const remainingThreads = allThreadIds
-        .filter((threadId) => !threadsToDeleteIds.includes(threadId))
-        .reduce(
-          (acc, threadId) => {
-            acc[threadId] = state.threads[threadId]
-            return acc
-          },
-          {} as Record<string, Thread>
-        )
-
-      return {
-        threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID && t.title), {
-          selector: (item: Thread) => item.title ?? '',
-        }),
-      }
-    })
+  deleteAllThreadsByProject: async (projectId) => {
+    await deleteThreads(
+      Object.values(get().threads)
+        .filter((thread) => thread.metadata?.project?.id === projectId)
+        .map((thread) => thread.id),
+      get().deleteThread
+    )
   },
   unstarAllThreads: () => {
     set((state) => {

@@ -67,7 +67,7 @@ function ProjectPageContent() {
   }
 
   const handleDeleteAllThreads = () => {
-    deleteAllThreadsByProject(projectId)
+    return deleteAllThreadsByProject(projectId)
   }
 
   if (!project) {

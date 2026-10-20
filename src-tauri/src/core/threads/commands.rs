@@ -131,7 +131,7 @@ pub async fn delete_thread<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let thread_dir = get_thread_dir(&data_folder, &thread_id);
     if thread_dir.exists() {
-        let _ = fs::remove_dir_all(thread_dir);
+        fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

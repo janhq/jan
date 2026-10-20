@@ -286,14 +286,14 @@ describe('DefaultThreadsService', () => {
       expect(result).toBeUndefined()
     })
 
-    it('should handle deleteThread when extension manager returns null', async () => {
+    it('should reject deletion when extension manager returns null', async () => {
       ;(ExtensionManager.getInstance as any).mockReturnValue({
         get: vi.fn().mockReturnValue(null),
       })
 
-      const result = await threadsService.deleteThread('test-id')
-
-      expect(result).toBeUndefined()
+      await expect(threadsService.deleteThread('test-id')).rejects.toThrow(
+        'Conversational extension not available yet'
+      )
     })
 
     it('should handle fetchThreads with threads missing metadata', async () => {

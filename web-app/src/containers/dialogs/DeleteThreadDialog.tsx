@@ -19,7 +19,7 @@ import { route } from '@/constants/routes'
 
 interface DeleteThreadDialogProps {
   thread: Thread
-  onDelete: (threadId: string) => void
+  onDelete: (threadId: string) => void | Promise<void>
   onDropdownClose?: () => void
   variant?: 'default' | 'project'
   open?: boolean
@@ -39,6 +39,8 @@ export function DeleteThreadDialog({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [internalOpen, setInternalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
 
   const isControlled = open !== undefined
@@ -58,24 +60,28 @@ export function DeleteThreadDialog({
     }
   }
 
-  const handleDelete = () => {
-    onDelete(thread.id)
-    setOpenSafe(false)
-    onDropdownClose?.()
-    toast.success(t('common:toast.deleteThread.title'), {
-      id: 'delete-thread',
-      description: t('common:toast.deleteThread.description'),
-    })
-    if (variant !== 'project') {
-      setTimeout(() => {
-        navigate({ to: route.home })
-      }, 0)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleDelete()
+  const handleDelete = async () => {
+    if (deletingRef.current) return
+    deletingRef.current = true
+    setIsDeleting(true)
+    try {
+      await onDelete(thread.id)
+      setOpenSafe(false)
+      onDropdownClose?.()
+      toast.success(t('common:toast.deleteThread.title'), {
+        id: 'delete-thread',
+        description: t('common:toast.deleteThread.description'),
+      })
+      if (variant !== 'project') {
+        setTimeout(() => {
+          navigate({ to: route.home })
+        }, 0)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      deletingRef.current = false
+      setIsDeleting(false)
     }
   }
 
@@ -109,9 +115,9 @@ export function DeleteThreadDialog({
             <Button
               data-testid="confirm-delete-thread"
               ref={deleteButtonRef}
+              disabled={isDeleting}
               variant="destructive"
               onClick={handleDelete}
-              onKeyDown={handleKeyDown}
               size="sm"
               className="w-full sm:w-auto"
               aria-label={`${t('common:delete')} ${thread.title || t('common:newThread')}`}

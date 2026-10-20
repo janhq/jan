@@ -291,7 +291,7 @@ describe('useThreads - coverage', () => {
     expect(Object.keys(result.current.threads)).toHaveLength(0)
   })
 
-  it('should delete all threads keeping favorites and project threads', () => {
+  it('should delete all threads keeping favorites and project threads', async () => {
     const { result } = renderHook(() => useThreads())
 
     act(() => {
@@ -302,8 +302,8 @@ describe('useThreads - coverage', () => {
       ])
     })
 
-    act(() => {
-      result.current.deleteAllThreads()
+    await act(async () => {
+      await result.current.deleteAllThreads()
     })
 
     expect(result.current.threads['t1']).toBeDefined()
@@ -313,7 +313,7 @@ describe('useThreads - coverage', () => {
 
   // Removing the chat session is what ends a turn still running in the
   // background (#9311), so deleting a thread in bulk must remove it too.
-  it('removes the chat session of each thread deleted in bulk', () => {
+  it('removes the chat session of each thread deleted in bulk', async () => {
     const { result } = renderHook(() => useThreads())
     const session = (id: string) =>
       useChatSessions
@@ -333,15 +333,15 @@ describe('useThreads - coverage', () => {
       session('t2')
     })
 
-    act(() => {
-      result.current.deleteAllThreads()
+    await act(async () => {
+      await result.current.deleteAllThreads()
     })
 
     expect(useChatSessions.getState().sessions['t2']).toBeUndefined()
     expect(useChatSessions.getState().sessions['t1']).toBeDefined()
   })
 
-  it('should clear all threads', () => {
+  it('should clear all threads', async () => {
     const { result } = renderHook(() => useThreads())
 
     act(() => {
@@ -351,15 +351,15 @@ describe('useThreads - coverage', () => {
       ])
     })
 
-    act(() => {
-      result.current.clearAllThreads()
+    await act(async () => {
+      await result.current.clearAllThreads()
     })
 
     expect(result.current.threads).toEqual({})
     expect(result.current.currentThreadId).toBeUndefined()
   })
 
-  it('should delete all threads by project', () => {
+  it('should delete all threads by project', async () => {
     const { result } = renderHook(() => useThreads())
 
     act(() => {
@@ -370,8 +370,8 @@ describe('useThreads - coverage', () => {
       ])
     })
 
-    act(() => {
-      result.current.deleteAllThreadsByProject('p1')
+    await act(async () => {
+      await result.current.deleteAllThreadsByProject('p1')
     })
 
     expect(result.current.threads['t1']).toBeUndefined()

@@ -60,22 +60,10 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 
   deleteFolderWithThreads: async (id) => {
-    // Get all threads that belong to this project
-    const threadsState = useThreads.getState()
-    const projectThreads = Object.values(threadsState.threads).filter(
-      (thread) => thread.metadata?.project?.id === id
-    )
-
-    // Delete threads from backend first
+    // Each successful deletion updates the store; failures keep their threads
+    // and prevent removal of the project so the operation can be retried.
+    await useThreads.getState().deleteAllThreadsByProject(id)
     const serviceHub = getServiceHub()
-    for (const thread of projectThreads) {
-      await serviceHub.threads().deleteThread(thread.id)
-    }
-
-    // Delete threads from frontend state
-    for (const thread of projectThreads) {
-      threadsState.deleteThread(thread.id)
-    }
 
     // Delete the project from storage
     const projectsService = serviceHub.projects()

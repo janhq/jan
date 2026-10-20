@@ -310,6 +310,45 @@ async fn test_modify_and_delete_thread() {
     // Clean up
 }
 
+#[cfg(target_os = "windows")]
+#[tokio::test]
+async fn test_delete_thread_reports_locked_conversation_and_allows_retry() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("Locked thread"))
+        .await
+        .unwrap();
+    let thread_id = created["id"].as_str().unwrap().to_string();
+    let message_path = get_messages_path(&data_dir, &thread_id);
+    fs::write(&message_path, "saved conversation\n").unwrap();
+    // Deny delete sharing, as an editor/backup process can do on Windows.
+    let locked = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&message_path)
+        .unwrap();
+
+    let result = delete_thread(app.handle().clone(), thread_id.clone()).await;
+    assert!(
+        result.is_err(),
+        "A failed disk deletion must not report success"
+    );
+    assert!(
+        message_path.exists(),
+        "The locked conversation remains on disk"
+    );
+
+    drop(locked);
+    delete_thread(app.handle().clone(), thread_id.clone())
+        .await
+        .unwrap();
+    assert!(!get_thread_dir(&data_dir, &thread_id).exists());
+    // Retrying a deletion that already completed remains harmless.
+    delete_thread(app.handle().clone(), thread_id).await.unwrap();
+}
+
+
 #[tokio::test]
 async fn test_modify_and_delete_message() {
     let (app, _data_dir) = mock_app_with_temp_data_dir();

@@ -151,8 +151,10 @@ export class DefaultThreadsService implements ThreadsService {
       return
     }
 
-    await ExtensionManager.getInstance()
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.deleteThread(threadId)
+    const ext = ExtensionManager.getInstance().get<ConversationalExtension>(
+      ExtensionTypeEnum.Conversational
+    )
+    if (!ext) throw new Error('Conversational extension not available yet')
+    await ext.deleteThread(threadId)
   }
 }

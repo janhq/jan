@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 interface DeleteAllThreadsInProjectDialogProps {
   projectName: string
   threadCount: number
-  onDeleteAll: () => void
+  onDeleteAll: () => void | Promise<void>
   onDropdownClose?: () => void
 }
 
@@ -30,6 +30,8 @@ export function DeleteAllThreadsInProjectDialog({
 }: DeleteAllThreadsInProjectDialogProps) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
 
   const handleOpenChange = (open: boolean) => {
@@ -39,19 +41,23 @@ export function DeleteAllThreadsInProjectDialog({
     }
   }
 
-  const handleDeleteAll = () => {
-    onDeleteAll()
-    setIsOpen(false)
-    if (onDropdownClose) onDropdownClose()
-    toast.success(t('common:toast.deleteAllThreads.title'), {
-      id: 'delete-all-threads-in-project',
-      description: t('common:toast.deleteAllThreads.description'),
-    })
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleDeleteAll()
+  const handleDeleteAll = async () => {
+    if (deletingRef.current) return
+    deletingRef.current = true
+    setIsDeleting(true)
+    try {
+      await onDeleteAll()
+      setIsOpen(false)
+      if (onDropdownClose) onDropdownClose()
+      toast.success(t('common:toast.deleteAllThreads.title'), {
+        id: 'delete-all-threads-in-project',
+        description: t('common:toast.deleteAllThreads.description'),
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      deletingRef.current = false
+      setIsDeleting(false)
     }
   }
 
@@ -84,9 +90,9 @@ export function DeleteAllThreadsInProjectDialog({
             </DialogClose>
             <Button
               ref={deleteButtonRef}
+              disabled={isDeleting}
               variant="destructive"
               onClick={handleDeleteAll}
-              onKeyDown={handleKeyDown}
               size="sm"
               className="w-full sm:w-auto"
               aria-label={t('common:deleteAll')}

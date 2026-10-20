@@ -136,7 +136,7 @@ describe('useThreads', () => {
     expect(result.current.getThreadById('nonexistent')).toBeUndefined()
   })
 
-  it('should delete thread', () => {
+  it('should delete thread', async () => {
     const { result } = renderHook(() => useThreads())
 
     const threads = [
@@ -150,8 +150,8 @@ describe('useThreads', () => {
 
     expect(Object.keys(result.current.threads)).toHaveLength(2)
 
-    act(() => {
-      result.current.deleteThread('thread1')
+    await act(async () => {
+      await result.current.deleteThread('thread1')
     })
 
     expect(Object.keys(result.current.threads)).toHaveLength(1)
@@ -206,7 +206,7 @@ describe('useThreads', () => {
     expect(Array.isArray(favorites)).toBe(true)
   })
 
-  it('should delete all threads', () => {
+  it('should delete all threads', async () => {
     const { result } = renderHook(() => useThreads())
 
     const threads = [
@@ -220,8 +220,8 @@ describe('useThreads', () => {
 
     expect(Object.keys(result.current.threads)).toHaveLength(2)
 
-    act(() => {
-      result.current.deleteAllThreads()
+    await act(async () => {
+      await result.current.deleteAllThreads()
     })
 
     expect(result.current.threads).toEqual({})

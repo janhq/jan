@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,8 @@ export function DeleteProjectDialog({
   projectName,
 }: DeleteProjectDialogProps) {
   const { t } = useTranslation()
+  const [isDeleting, setIsDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const threads = useThreads((state) => state.threads)
   const { deleteFolderWithThreads } = useThreadManagement()
@@ -40,7 +42,9 @@ export function DeleteProjectDialog({
   }, [projectId, threads])
 
   const handleConfirm = async () => {
-    if (!projectId) return
+    if (!projectId || deletingRef.current) return
+    deletingRef.current = true
+    setIsDeleting(true)
 
     try {
       await deleteFolderWithThreads(projectId)
@@ -53,12 +57,9 @@ export function DeleteProjectDialog({
     } catch (error) {
       toast.error(t('projects.deleteProjectDialog.error'))
       console.error('Delete project error:', error)
-    }
-  }
-
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      await handleConfirm()
+    } finally {
+      deletingRef.current = false
+      setIsDeleting(false)
     }
   }
 
@@ -91,7 +92,7 @@ export function DeleteProjectDialog({
             size="sm"
             variant="destructive"
             onClick={handleConfirm}
-            onKeyDown={handleKeyDown}
+            disabled={isDeleting}
             aria-label={t('projects.deleteProjectDialog.ariaLabel', {
               projectName: projectName || t('projects.title').toLowerCase(),
             })}
