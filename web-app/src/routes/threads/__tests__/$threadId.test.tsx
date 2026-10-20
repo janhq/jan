@@ -1863,6 +1863,7 @@ describe('ThreadDetail route', () => {
         ])
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 {
@@ -1931,6 +1932,7 @@ describe('ThreadDetail route', () => {
         ])
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 {
@@ -2000,6 +2002,7 @@ describe('ThreadDetail route', () => {
         // Live: the result has just landed, and a second call is unfinished.
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },

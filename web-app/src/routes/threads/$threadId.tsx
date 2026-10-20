@@ -209,6 +209,17 @@ function serverForTool(toolName: string): string | undefined {
     ?.server
 }
 
+// The model a thread's turn runs on. A turn can finish in the background while
+// another thread is open, and the global selection follows the open thread.
+function turnModelOf(threadId: string) {
+  return (
+    useChatSessions
+      .getState()
+      .sessions[threadId]?.transport.getTurnModelSelection() ??
+    useModelProvider.getState()
+  )
+}
+
 // How a call to a chat agent tool name is served. The switch is enforced where
 // the command would run, not only where the tool is offered: a call can still
 // arrive from replayed history or from a turn in flight when it flips. Such a
@@ -455,7 +466,7 @@ function ThreadDetail() {
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
-        const providerState = useModelProvider.getState()
+        const providerState = turnModelOf(threadId)
         const isContextLimit = isContextLimitStop({
           provider: providerState.selectedProvider,
           usage: msgMeta?.usage as
@@ -675,7 +686,10 @@ function ThreadDetail() {
         // Tools run one at a time below, so the rest are genuinely queued.
         useToolCallRuntime
           .getState()
-          .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
+          .enqueue(
+            sessionData.tools.map((tc) => tc.toolCallId),
+            threadId
+          )
       }
 
       // Deleting the thread removes its chat session, and that ends the loop:
@@ -763,13 +777,15 @@ function ThreadDetail() {
 
             // Timed from here, not from approval, so a long approval wait is
             // not reported as the tool being slow.
-            useToolCallRuntime.getState().markRunning(toolCall.toolCallId)
+            useToolCallRuntime
+              .getState()
+              .markRunning(toolCall.toolCallId, serverForTool(toolName))
 
             // A tool result is injected into conversation history verbatim, so a
             // page-sized one can exhaust the context on its own. This is the
             // budget the window this model actually has affords; it is narrowed
             // against the user's configured ceiling where the result is built.
-            const ctxLen = useModelProvider.getState().selectedModel?.settings
+            const ctxLen = turnModelOf(threadId).selectedModel?.settings
               ?.ctx_len?.controller_props?.value
             const maxOutputChars = deriveToolOutputCap(
               typeof ctxLen === 'number' ? ctxLen : undefined
@@ -879,7 +895,7 @@ function ThreadDetail() {
         }
         unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
-        useToolCallRuntime.getState().settleRemaining()
+        useToolCallRuntime.getState().settleRemaining(threadId)
         forgetApprovals(threadId)
         sessionData.tools = []
         // Only this loop's own: a later loop of the thread may have replaced it.
@@ -896,7 +912,7 @@ function ThreadDetail() {
         }
         unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
-        useToolCallRuntime.getState().settleRemaining()
+        useToolCallRuntime.getState().settleRemaining(threadId)
         forgetApprovals(threadId)
         sessionData.tools = []
         if (toolLoopControllers.get(threadId) === callController) {
@@ -942,8 +958,9 @@ function ThreadDetail() {
               .join('\n\n') ||
             useThreads.getState().threads[threadId]?.title
           if (inputText) {
-            const provider = useModelProvider.getState().selectedProvider
-            const modelId = useModelProvider.getState().selectedModel?.id
+            const turnModel = turnModelOf(threadId)
+            const provider = turnModel.selectedProvider
+            const modelId = turnModel.selectedModel?.id
             ;(async () => {
               if (provider === 'llamacpp' && modelId) {
                 let idle = false
@@ -964,7 +981,8 @@ function ThreadDetail() {
               titleAbortRef.current = controller
               const title = await generateThreadTitle(
                 inputText,
-                controller.signal
+                controller.signal,
+                turnModel
               )
               if (!title || controller.signal.aborted) return
               useThreads.getState().updateThread(threadId, { title })
@@ -1273,11 +1291,11 @@ function ThreadDetail() {
   // return (#9311). Only Stop or deleting the thread ends the loop.
   useEffect(() => {
     return () => {
-      // Drop per-thread timing/progress/diff state from the shared runtime
-      // store. The cards for the thread we leave are unmounting, so a thread a
-      // later visit cannot show another thread's diff. (code.tsx re-hydrates
+      // Drop the left thread's settled timing/progress/diff state from the
+      // shared runtime store: its cards are unmounting. Calls its loop still
+      // has queued or running are kept for its return. (code.tsx re-hydrates
       // its own diffs on mount, so it is unaffected by clearing here.)
-      useToolCallRuntime.getState().reset()
+      useToolCallRuntime.getState().releaseSettled(threadId)
     }
   }, [threadId])
 

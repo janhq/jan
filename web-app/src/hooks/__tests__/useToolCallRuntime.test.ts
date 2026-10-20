@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   findRunningToolCallId,
+  queuePositionOf,
   useToolCallRuntime,
   withToolTiming,
 } from '../useToolCallRuntime'
@@ -157,6 +158,73 @@ describe('useToolCallRuntime', () => {
     store().recordDiff('b', 'second')
     store().recordDiff('a', 'first again')
     expect(store().diffs).toEqual({ a: 'first again', b: 'second' })
+  })
+
+  // A turn keeps running when the user opens another thread (#9311), so tool
+  // loops of several threads share the store at once. Each must see and settle
+  // only its own calls.
+  describe('loops of different threads', () => {
+    it('queues each thread behind its own calls only', () => {
+      store().enqueue(['a1', 'a2'], 'thread-a')
+      store().enqueue(['b1', 'b2'], 'thread-b')
+      expect(queuePositionOf(store(), 'a2')).toBe(1)
+      expect(queuePositionOf(store(), 'b1')).toBe(0)
+      expect(queuePositionOf(store(), 'b2')).toBe(1)
+    })
+
+    it("does not take another thread's queue or running call when a turn starts", () => {
+      store().enqueue(['a1', 'a2'], 'thread-a')
+      store().markRunning('a1')
+      store().enqueue(['b1'], 'thread-b')
+      expect(store().timings['a1'].endedAt).toBeUndefined()
+      expect(store().queue).toEqual(['a2', 'b1'])
+    })
+
+    it("leaves another thread's queue alone when a loop ends", () => {
+      store().enqueue(['a1', 'a2'], 'thread-a')
+      store().enqueue(['b1', 'b2'], 'thread-b')
+      store().settleRemaining('thread-a')
+      expect(store().queue).toEqual(['b1', 'b2'])
+      expect(store().timings['a2'].endedAt).toBeDefined()
+      expect(store().timings['b1'].endedAt).toBeUndefined()
+    })
+
+    it("attaches progress to the running call of the update's server", () => {
+      store().enqueue(['a1'], 'thread-a')
+      store().enqueue(['b1'], 'thread-b')
+      store().markRunning('a1', 'github')
+      store().markRunning('b1', 'fetch')
+      store().reportProgress({ server: 'fetch', progress: 1 })
+      expect(store().progress['b1']).toMatchObject({ server: 'fetch' })
+      expect(store().progress['a1']).toBeUndefined()
+    })
+
+    // Nothing in the update says which of them it belongs to.
+    it('drops progress it cannot attribute to one call', () => {
+      store().enqueue(['a1'], 'thread-a')
+      store().enqueue(['b1'], 'thread-b')
+      store().markRunning('a1', 'github')
+      store().markRunning('b1', 'github')
+      store().reportProgress({ server: 'github', progress: 1 })
+      expect(store().progress).toEqual({})
+    })
+
+    it("releases a left thread's settled calls, keeping what its loop still runs", () => {
+      store().enqueue(['a1', 'a2', 'a3'], 'thread-a')
+      store().enqueue(['b1'], 'thread-b')
+      store().markRunning('a1')
+      store().recordDiff('a1', 'diff')
+      store().markSettled('a1')
+      store().markRunning('a2')
+      store().markRunning('b1')
+      store().markSettled('b1')
+      store().releaseSettled('thread-a')
+      expect(store().timings['a1']).toBeUndefined()
+      expect(store().diffs['a1']).toBeUndefined()
+      expect(store().timings['a2'].startedAt).toBeDefined()
+      expect(queuePositionOf(store(), 'a3')).toBe(0)
+      expect(store().timings['b1']).toBeDefined()
+    })
   })
 
   /// Cowork dispatches serially and has no queue to report, but its cards still
