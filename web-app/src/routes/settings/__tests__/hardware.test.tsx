@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // Mock all the dependencies with minimal implementation
@@ -14,9 +14,18 @@ vi.mock('@/containers/HeaderPage', () => ({
 }))
 
 vi.mock('@/containers/Card', () => ({
-  Card: ({ title, children }: { title?: string; children: React.ReactNode }) => (
+  Card: ({
+    title,
+    header,
+    children,
+  }: {
+    title?: string
+    header?: React.ReactNode
+    children: React.ReactNode
+  }) => (
     <div data-testid="card">
       {title && <div>{title}</div>}
+      {header}
       {children}
     </div>
   ),
@@ -81,6 +90,36 @@ vi.mock('@/hooks/useModelProvider', () => ({
     providers: [{ provider: 'llamacpp' }],
     getProviderByName: vi.fn(() => ({ settings: [{ key: 'device', controller_props: { value: 'gpu0' } }] })),
   }),
+}))
+
+// A stable hub, so a test can see exactly what Refresh asked the services to do.
+const hub = vi.hoisted(() => ({
+  reconcile: vi.fn(),
+  setActiveModels: vi.fn(),
+  toast: { info: vi.fn(), warning: vi.fn() },
+}))
+
+vi.mock('sonner', () => ({ toast: hub.toast }))
+
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({
+    window: () => ({ openSystemMonitorWindow: vi.fn() }),
+    hardware: () => ({
+      refreshHardwareInfo: vi.fn().mockResolvedValue(undefined),
+      getHardwareInfo: vi.fn().mockResolvedValue(null),
+      getSystemUsage: vi.fn().mockResolvedValue(null),
+      reconcileLlamacppDevices: hub.reconcile,
+    }),
+    models: () => ({
+      stopAllModels: vi.fn(),
+      getActiveModels: vi.fn().mockResolvedValue([]),
+    }),
+  }),
+}))
+
+vi.mock('@/hooks/useAppState', () => ({
+  useAppState: (sel: (s: unknown) => unknown) =>
+    sel({ setActiveModels: hub.setActiveModels }),
 }))
 
 vi.mock('@/services/hardware', () => ({
@@ -200,6 +239,45 @@ describe('Hardware Settings', () => {
       expect(screen.getByText('CUDA')).toBeInTheDocument()
       expect(screen.getByText('Vulkan')).toBeInTheDocument()
       expect(screen.getAllByTestId('switch').length).toBe(1)
+    })
+  })
+
+  describe('Refresh and a GPU that appeared after launch', () => {
+    const press = async () => {
+      const Component = Route.component as React.ComponentType
+      render(<Component />)
+      // The page renders a placeholder until hardware data arrives.
+      fireEvent.click(await screen.findByText('settings:hardware.refresh'))
+    }
+
+    it('says the engine restarted and clears the loaded-model list', async () => {
+      hub.reconcile.mockResolvedValue('restarted')
+      await press()
+      await waitFor(() =>
+        expect(hub.toast.info).toHaveBeenCalledWith(
+          'settings:hardware.engineRestartedForDevices'
+        )
+      )
+      expect(hub.setActiveModels).toHaveBeenCalledWith([])
+    })
+
+    it('asks the user to stop the busy model instead of interrupting it', async () => {
+      hub.reconcile.mockResolvedValue('busy')
+      await press()
+      await waitFor(() =>
+        expect(hub.toast.warning).toHaveBeenCalledWith(
+          'settings:hardware.engineBusyDevicesChanged'
+        )
+      )
+      expect(hub.setActiveModels).not.toHaveBeenCalled()
+    })
+
+    it('stays quiet when nothing changed', async () => {
+      hub.reconcile.mockResolvedValue('unchanged')
+      await press()
+      await waitFor(() => expect(hub.reconcile).toHaveBeenCalled())
+      expect(hub.toast.info).not.toHaveBeenCalled()
+      expect(hub.toast.warning).not.toHaveBeenCalled()
     })
   })
 

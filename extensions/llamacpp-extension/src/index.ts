@@ -75,6 +75,8 @@ import {
   isModelSupported,
   unloadLlamaModel,
   startEngine,
+  stopEngine,
+  engineSlotsIdle,
   eraseThreadSlotState,
   getEngineInfo as pluginGetEngineInfo,
   getEngineVersion as pluginGetEngineVersion,
@@ -443,6 +445,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   private engineVersion?: EngineVersion
   private presetPath?: string
   private engineStartLock: Promise<void> | null = null
+  // The offloadable devices as they were when the running worker started. The
+  // worker enumerates once at startup and cannot be asked again, so a GPU that
+  // appears later (a laptop leaving eco mode) is invisible to it until restart.
+  private engineDeviceSnapshot: Promise<string[] | null> = Promise.resolve(null)
   private userModelsMax: number = 1
   private engineEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
@@ -894,6 +900,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     this.enginePort = info.port
     this.engineApiKey = info.api_key
     this.presetPath = presetPath
+    this.engineDeviceSnapshot = this.snapshotDevices(envs)
     logger.info(
       `Engine worker started on port ${info.port} (pid ${info.pid}, models_max=${modelsMax}, ${info.models.length} models registered, preset=${presetPath})`
     )
@@ -2747,6 +2754,55 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       })
       throw e
     }
+  }
+
+  /** Stable identity of an enumeration: id and name, not the changing free memory. */
+  private async snapshotDevices(
+    envs: Record<string, string>
+  ): Promise<string[] | null> {
+    try {
+      const list = await engineDevices(envs)
+      if (!Array.isArray(list)) return null
+      return list.map((d) => `${d.id}|${d.name}`).sort()
+    } catch (e) {
+      logger.warn('Could not record the engine device list:', e)
+      return null
+    }
+  }
+
+  /**
+   * Restarts the engine when the machine now offers different devices than the
+   * running worker started with, so a GPU that appeared after launch is used for
+   * the next load instead of only being listed in Settings.
+   *
+   * It never interrupts work: a load or a generation in flight returns 'busy'
+   * and leaves the worker alone. With no running worker, or no record of what
+   * it started with, there is nothing to compare, so the answer is 'unchanged'.
+   */
+  async reconcileEngineDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
+    if (!(await this.getEngineInfo())) return 'unchanged'
+    const before = await this.engineDeviceSnapshot
+    if (!before) return 'unchanged'
+
+    const envs: Record<string, string> = {}
+    if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
+    const now = await this.snapshotDevices(envs)
+    if (!now || now.join('\n') === before.join('\n')) return 'unchanged'
+
+    if (this.loadingModels.size > 0 || !(await engineSlotsIdle())) {
+      logger.info('Device list changed but the engine is busy; not restarting')
+      return 'busy'
+    }
+
+    logger.info(
+      `Device list changed (${before.join(', ')} -> ${now.join(', ')}); restarting the engine`
+    )
+    await stopEngine()
+    this.loadedChatOrder = []
+    this.enginePort = undefined
+    this.engineApiKey = undefined
+    await this.startEngine()
+    return 'restarted'
   }
 
   async getDevices(): Promise<DeviceList[]> {

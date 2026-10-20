@@ -51,6 +51,7 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
       models_max: 1,
     }),
     engineDevices: vi.fn().mockResolvedValue([]),
+    engineSlotsIdle: vi.fn().mockResolvedValue(true),
     eraseThreadSlotState: vi.fn().mockResolvedValue(0),
   }
 })
@@ -1496,5 +1497,97 @@ describe('forgetThreadCache', () => {
     expect(
       vi.mocked(eraseThreadSlotState).mock.calls[0][0].cacheDir
     ).not.toContain('/')
+  })
+})
+
+describe('reconcileEngineDevices', () => {
+  const ECO = [{ id: 'Vulkan0', name: 'Intel UHD', mem: 100, free: 90 }]
+  const HYBRID = [
+    ...ECO,
+    { id: 'CUDA0', name: 'NVIDIA RTX 4060 Laptop', mem: 8000, free: 7000 },
+  ]
+  let extension: llamacpp_extension
+  let api: typeof import('@janhq/tauri-plugin-llamacpp-api')
+
+  // The engine started when only the iGPU was visible.
+  const startedInEcoMode = async () => {
+    api = await import('@janhq/tauri-plugin-llamacpp-api')
+    vi.mocked(api.getEngineInfo).mockResolvedValue({
+      port: 39271,
+      api_key: 'k',
+      pid: 1234,
+      models: [],
+    })
+    vi.mocked(api.engineDevices).mockResolvedValue(ECO as never)
+    vi.mocked(api.engineSlotsIdle).mockResolvedValue(true)
+    vi.mocked(api.stopEngine).mockResolvedValue(undefined)
+    extension = new llamacpp_extension()
+    const spawn = vi
+      .spyOn(extension as never, 'runStartEngine' as never)
+      .mockImplementation((async function (this: any) {
+        this.engineDeviceSnapshot = this.snapshotDevices({})
+      }) as never)
+    await extension['startEngine']()
+    spawn.mockClear()
+    return spawn
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('restarts once a GPU has appeared, so the next load can use it', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('restarted')
+    expect(api.stopEngine).toHaveBeenCalledTimes(1)
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the engine alone when the devices are the same', async () => {
+    const spawn = await startedInEcoMode()
+    // Free memory moves constantly; it must not count as a change.
+    vi.mocked(api.engineDevices).mockResolvedValue([
+      { ...ECO[0], free: 12 },
+    ] as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('never interrupts a generation in flight', async () => {
+    const spawn = await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    vi.mocked(api.engineSlotsIdle).mockResolvedValue(false)
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('never interrupts a model that is still loading', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+    ;(extension as any).loadingModels.set('m', new Promise(() => {}))
+
+    expect(await extension.reconcileEngineDevices()).toBe('busy')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when no engine is running', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.getEngineInfo).mockResolvedValue(null as never)
+    vi.mocked(api.engineDevices).mockResolvedValue(HYBRID as never)
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
+  })
+
+  it('does not restart on a failed enumeration, since that says nothing about GPUs', async () => {
+    await startedInEcoMode()
+    vi.mocked(api.engineDevices).mockRejectedValue(new Error('timed out'))
+
+    expect(await extension.reconcileEngineDevices()).toBe('unchanged')
+    expect(api.stopEngine).not.toHaveBeenCalled()
   })
 })
