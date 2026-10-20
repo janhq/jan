@@ -57,8 +57,10 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * Records an MCP progress update against the running call. The notification
    * carries no tool call id, so the running call is the only thing it can
    * belong to: a loop runs its tools one at a time, and when loops of several
-   * threads each have one running, the update's server picks between them. An
-   * update that still matches more than one call is dropped, not guessed.
+   * threads each have one running, the update's server picks between them. A
+   * call whose server is known and differs never takes it, and an update that
+   * still matches more than one call is dropped, not guessed. (Cowork does not
+   * record servers; its calls take an update whenever they are the only one.)
    */
   reportProgress: (update: ToolProgressUpdate) => void
   /** Records a display-only diff against the call that produced it. */
@@ -73,7 +75,7 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * unmount. Its queued and running calls are kept: the loop may still be going
    * in the background, and what it settles from now on is there on return.
    */
-  releaseSettled: (owner: string) => void
+  releaseSettled: (owner?: string) => void
   reset: () => void
 }
 
@@ -179,9 +181,13 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
 
   reportProgress: (update) =>
     set((s) => {
-      let running = Object.keys(s.timings).filter((id) =>
-        isToolCallRunning(s.timings[id])
-      )
+      let running = Object.keys(s.timings).filter((id) => {
+        const timing = s.timings[id]
+        return (
+          isToolCallRunning(timing) &&
+          (timing.server === undefined || timing.server === update.server)
+        )
+      })
       if (running.length > 1) {
         running = running.filter((id) => s.timings[id].server === update.server)
       }
@@ -207,12 +213,12 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: s.queue.filter((id) => !settled.includes(id)), timings }
     }),
 
-  releaseSettled: (owner) =>
+  releaseSettled: (owner = NO_OWNER) =>
     set((s) => {
       const released = new Set(
         Object.keys(s.timings).filter(
           (id) =>
-            s.timings[id].owner === owner &&
+            (s.timings[id].owner ?? NO_OWNER) === owner &&
             !s.queue.includes(id) &&
             !isToolCallRunning(s.timings[id])
         )

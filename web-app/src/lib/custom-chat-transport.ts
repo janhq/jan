@@ -910,13 +910,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * The model a request runs on. A follow-up after the turn's tool calls all
-   * have outcomes continues that turn on its model; anything else starts a
-   * turn on the current selection.
+   * The model a request runs on. The SDK's automatic follow-up, sent once the
+   * turn's tool calls all have outcomes, continues that turn on its model.
+   * Anything else starts a turn on the current selection, including a
+   * regenerate, whose history can end on the same completed tool calls.
    */
-  private resolveTurnModelSelection(messages: UIMessage[]): ModelSelection {
+  private resolveTurnModelSelection(
+    messages: UIMessage[],
+    trigger: 'submit-message' | 'regenerate-message'
+  ): ModelSelection {
     const continuesTurn =
       this.turnModelSelection !== null &&
+      trigger === 'submit-message' &&
       lastAssistantMessageIsCompleteWithToolCalls({ messages })
     if (!continuesTurn) {
       const { selectedProvider, selectedModel } = this.getModelSelection()
@@ -1047,7 +1052,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
-  async refreshTools(abortSignal?: AbortSignal) {
+  /**
+   * @param modelSelection The model the tools are built for: the request's own
+   * when called from sendMessages, else the current selection.
+   */
+  async refreshTools(
+    abortSignal?: AbortSignal,
+    modelSelection: ModelSelection = this.getModelSelection()
+  ) {
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
     // cached inside agentTools, so this is one IPC round-trip per store change.
@@ -1066,8 +1078,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = (this.turnModelSelection ?? this.getModelSelection())
-      .selectedModel
+    const selectedModel = modelSelection.selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -1375,8 +1386,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const { selectedModel, selectedProvider: providerId } =
-      this.resolveTurnModelSelection(options.messages)
+    const turnModelSelection = this.resolveTurnModelSelection(
+      options.messages,
+      options.trigger
+    )
+    const { selectedModel, selectedProvider: providerId } = turnModelSelection
     const modelId = selectedModel?.id
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
@@ -1474,7 +1488,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       throw engineFailure('model-errors:createModelFailed', error)
     }
 
-    await this.refreshTools(options.abortSignal)
+    await this.refreshTools(options.abortSignal, turnModelSelection)
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and

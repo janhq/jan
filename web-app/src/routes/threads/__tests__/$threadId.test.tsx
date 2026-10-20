@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -1012,6 +1012,107 @@ describe('ThreadDetail route', () => {
     })
   })
 
+  // #9311: a turn keeps running after the user opens another thread, and its
+  // onFinish is a closure of the render that created its chat. What the open
+  // thread set up for its own next reply, and its banners, must not be taken
+  // or shown by the background thread's turn.
+  describe('a turn finishing behind another thread', () => {
+    const Component = () => Route.component as React.ComponentType
+    const text = (value: string) => [
+      { type: 'text', text: { value, annotations: [] } },
+    ]
+    const threadB = [
+      { id: 'b-u1', role: 'user', created_at: 1, content: text('q'), metadata: { parentId: null } },
+      { id: 'b-a1', role: 'assistant', created_at: 2, content: text('r'), metadata: { parentId: 'b-u1' } },
+    ]
+    const openThreadB = (rerender: (ui: React.ReactElement) => void) => {
+      const C = Component()
+      h.routeParams.threadId = 'thread-2'
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2',
+        title: 'Other',
+        metadata: {},
+        assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const threadA = h.messagesState.getMessages()
+      h.messagesState.getMessages = vi.fn((id?: string) =>
+        id === 'thread-2' ? threadB : threadA
+      )
+      h.chatState.messages = [
+        { id: 'b-u1', role: 'user', parts: [{ type: 'text', text: 'q' }] },
+        { id: 'b-a1', role: 'assistant', parts: [{ type: 'text', text: 'r' }] },
+      ]
+      rerender(<C />)
+    }
+    const persisted = (id: string) =>
+      h.messagesState.addMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.id === id)
+
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+    })
+
+    it("leaves the open thread's pending reply parent for its own reply", () => {
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      openThreadB(rerender)
+      // The open thread starts a new version of its reply.
+      act(() => {
+        screen.getByTestId('regen-b-a1').click()
+      })
+
+      act(() => {
+        onFinishA({
+          message: { id: 'a-bg', role: 'assistant', parts: [{ type: 'text', text: 'A' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      expect(persisted('a-bg').thread_id).toBe('thread-1')
+      expect(persisted('a-bg').metadata.parentId).not.toBe('b-u1')
+
+      act(() => {
+        ;(h as any).capturedOnFinish({
+          message: { id: 'b-a2', role: 'assistant', parts: [{ type: 'text', text: 'B' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      expect(persisted('b-a2').metadata.parentId).toBe('b-u1')
+    })
+
+    it("does not show its context-limit banner on the open thread", () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      openThreadB(rerender)
+
+      act(() => {
+        onFinishA({
+          message: {
+            id: 'a-len',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer' }],
+            metadata: {
+              finishReason: 'length',
+              usage: { inputTokens: 30000, outputTokens: 4000 },
+            },
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+
+      expect(screen.queryByText('Increase Context Size')).toBeNull()
+      // Stamped on its own thread instead, which shows it on return.
+      const stamped = h.messagesState.updateMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.metadata?.contextError)
+      expect(stamped?.id).toBe('u1')
+    })
+  })
+
   describe('empty replies (#9228)', () => {
     beforeEach(() => {
       useMessageErrors.getState().clearAll()
@@ -1649,6 +1750,61 @@ describe('ThreadDetail route', () => {
         unmount()
 
         expect(cancel).not.toHaveBeenCalled()
+      })
+
+      // Deleting the thread is the one other way a running call ends: its result
+      // would have nowhere to go.
+      it('deleting the thread cancels its running MCP call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(cancel).not.toHaveBeenCalled()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+      })
+
+      // The left thread's finished cards unmount, so their runtime state goes;
+      // a call its loop is still running stays for its return, and another
+      // thread's state is not touched.
+      it("leaving a thread releases only its own settled runtime state", async () => {
+        const runtime = useToolCallRuntime.getState()
+        runtime.enqueue(['a-done', 'a-running'], 'thread-1')
+        runtime.markRunning('a-done')
+        runtime.markSettled('a-done')
+        runtime.markRunning('a-running')
+        runtime.enqueue(['b-done'], 'thread-3')
+        runtime.markRunning('b-done')
+        runtime.markSettled('b-done')
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+
+        const { timings } = useToolCallRuntime.getState()
+        expect(timings['a-done']).toBeUndefined()
+        expect(timings['a-running']?.startedAt).toBeDefined()
+        expect(timings['b-done']).toBeDefined()
       })
 
       // A turn of a thread that was left can finish in the background, after

@@ -119,12 +119,16 @@ const toolTurn = (id: string): UIMessage =>
     ],
   }) as UIMessage
 
-const send = (transport: CustomChatTransport, messages: UIMessage[]) =>
+const send = (
+  transport: CustomChatTransport,
+  messages: UIMessage[],
+  trigger: 'submit-message' | 'regenerate-message' = 'submit-message'
+) =>
   transport.sendMessages({
     chatId: 'thread-a',
     messages,
     abortSignal: undefined,
-    trigger: 'submit-message',
+    trigger,
     messageId: undefined,
   })
 
@@ -168,6 +172,27 @@ describe('CustomChatTransport: a turn keeps its model', () => {
 
     openOtherThreadOnRemoteModel()
     await send(transport, [user('u1', 'look it up'), toolTurn('a1'), user('u2', 'next')])
+
+    expect(h.createModelMock).toHaveBeenLastCalledWith(
+      'remote-model',
+      providers.openai,
+      expect.anything()
+    )
+  })
+
+  // Regenerating the reply that followed a tool step sends the same history as
+  // the automatic follow-up did, but the user asked for a new reply: it runs on
+  // the model selected now.
+  it('regenerates a follow-up reply on the current selection', async () => {
+    const transport = new CustomChatTransport(undefined, 'thread-a')
+    await send(transport, [user('u1', 'look it up')])
+
+    openOtherThreadOnRemoteModel()
+    await send(
+      transport,
+      [user('u1', 'look it up'), toolTurn('a1')],
+      'regenerate-message'
+    )
 
     expect(h.createModelMock).toHaveBeenLastCalledWith(
       'remote-model',

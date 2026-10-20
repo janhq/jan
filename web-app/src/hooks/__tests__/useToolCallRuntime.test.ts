@@ -209,6 +209,33 @@ describe('useToolCallRuntime', () => {
       expect(store().progress).toEqual({})
     })
 
+    it('does not attach progress to the only running call when its server differs', () => {
+      store().enqueue(['a1'], 'thread-a')
+      store().markRunning('a1', 'github')
+      store().reportProgress({ server: 'fetch', progress: 1 })
+      expect(store().progress).toEqual({})
+    })
+
+    // Cowork records no server, so its call is matched by being the only one.
+    it('attaches progress to the only running call when its server is unknown', () => {
+      store().enqueue(['c1'])
+      store().markRunning('c1')
+      store().reportProgress({ server: 'fetch', progress: 1 })
+      expect(store().progress['c1']).toMatchObject({ server: 'fetch' })
+    })
+
+    it('releases calls enqueued without an owner when asked for none', () => {
+      store().enqueue(['c1'])
+      store().markRunning('c1')
+      store().markSettled('c1')
+      store().enqueue(['a1'], 'thread-a')
+      store().markRunning('a1')
+      store().markSettled('a1')
+      store().releaseSettled()
+      expect(store().timings['c1']).toBeUndefined()
+      expect(store().timings['a1']).toBeDefined()
+    })
+
     it("releases a left thread's settled calls, keeping what its loop still runs", () => {
       store().enqueue(['a1', 'a2', 'a3'], 'thread-a')
       store().enqueue(['b1'], 'thread-b')
