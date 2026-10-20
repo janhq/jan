@@ -105,6 +105,14 @@ describe('useTools mcp-update', () => {
     errSpy.mockRestore()
   })
 
+  it('removes the mcp-update listener on unmount', async () => {
+    useChatSessions.setState({ sessions: {} })
+    const { hook } = await mountAndGetHandler()
+    expect(unlisten).not.toHaveBeenCalled()
+    hook.unmount()
+    expect(unlisten).toHaveBeenCalledTimes(1)
+  })
+
   it('does nothing with no sessions', async () => {
     useChatSessions.setState({ sessions: {} })
     const { handler } = await mountAndGetHandler()

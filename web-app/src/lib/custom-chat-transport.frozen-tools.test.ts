@@ -96,11 +96,39 @@ describe('CustomChatTransport frozen routed tools', () => {
     expect(mcpOrchestrator.getRelevantTools).toHaveBeenCalledTimes(2)
   })
 
-  it('invalidate during refresh does not throw', async () => {
+  it('a refresh superseded by invalidateFrozenTools() does not overwrite the newer result', async () => {
+    const tool = (name: string) => ({
+      name,
+      server: 'fs',
+      description: '',
+      inputSchema: { type: 'object' },
+    })
+    let resolveA!: (tools: unknown) => void
+    vi.mocked(mcpOrchestrator.getRelevantTools)
+      .mockReset()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveA = resolve)) as never
+      )
+      .mockResolvedValueOnce([tool('b_tool')] as never)
+
     const t = new CustomChatTransport('sys', 'thread-1')
-    const p = t.refreshTools()
-    expect(() => t.invalidateFrozenTools()).not.toThrow()
-    await expect(p).resolves.toBeUndefined()
+    const refreshA = t.refreshTools()
+    await vi.waitFor(() =>
+      expect(mcpOrchestrator.getRelevantTools).toHaveBeenCalledTimes(1)
+    )
+    t.invalidateFrozenTools()
+    await t.refreshTools()
+    resolveA([tool('a_tool')])
+    await refreshA
+
+    expect(mcpOrchestrator.getRelevantTools).toHaveBeenCalledTimes(2)
+    expect(Object.keys(t.getTools())).toContain('b_tool')
+    expect(Object.keys(t.getTools())).not.toContain('a_tool')
+    // The freeze holds B too: an unchanged-key refresh reuses it.
+    await t.refreshTools()
+    expect(mcpOrchestrator.getRelevantTools).toHaveBeenCalledTimes(2)
+    expect(Object.keys(t.getTools())).toContain('b_tool')
+    expect(Object.keys(t.getTools())).not.toContain('a_tool')
   })
 
   it('is a no-op when routing is disabled', async () => {

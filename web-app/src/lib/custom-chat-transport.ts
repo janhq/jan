@@ -863,6 +863,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   // re-route only when the connected servers or disabled-tool set changes.
   private frozenRoutedTools: MCPTool[] | null = null
   private frozenRoutedSig = ''
+  // Bumped by invalidateFrozenTools(); a refreshTools() run that started
+  // before the bump discards its result instead of overwriting a newer one.
+  private toolsGeneration = 0
   private onTokenUsage?: TokenUsageCallback
   private hasDocuments = false
   private modelSupportsTools = false
@@ -1017,15 +1020,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   invalidateFrozenTools(): void {
     this.frozenRoutedTools = null
     this.frozenRoutedSig = ''
+    this.toolsGeneration++
   }
 
   async refreshTools(abortSignal?: AbortSignal) {
+    const gen = this.toolsGeneration
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
     // cached inside agentTools, so this is one IPC round-trip per store change.
     await refreshMemoryDigest()
     if (!this.serviceHub) {
-      this.tools = {}
+      if (gen === this.toolsGeneration) this.tools = {}
       return
     }
 
@@ -1139,8 +1144,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 abortSignal,
               }
             )
-            this.frozenRoutedTools = mcpTools
-            this.frozenRoutedSig = routedSig
+            if (gen === this.toolsGeneration) {
+              this.frozenRoutedTools = mcpTools
+              this.frozenRoutedSig = routedSig
+            }
           }
         } else {
           mcpTools = await mcpService.getTools()
@@ -1202,6 +1209,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    // A later invalidateFrozenTools() superseded this run; keep the newer result.
+    if (gen !== this.toolsGeneration) return
     this.tools = toolsRecord
   }
 

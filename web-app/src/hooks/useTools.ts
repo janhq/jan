@@ -79,15 +79,15 @@ export const useTools = () => {
     }
     setTools({ invalidateSessions: false })
 
-    let unsubscribe = () => {}
+    let unsub: (() => void) | undefined
     const onMcpUpdate = () => setTools({ invalidateSessions: true })
-    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, onMcpUpdate).then((unsub) => {
-      // Unsubscribe from the event when the component unmounts
-      unsubscribe = unsub
+    getServiceHub().events().listen(SystemEvent.MCP_UPDATE, onMcpUpdate).then((u) => {
+      unsub = u
     }).catch((error) => {
       console.error('Failed to set up MCP update listener:', error)
     })
-    return unsubscribe
+    // Read unsub at cleanup time; it is assigned after listen() resolves.
+    return () => unsub?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 }
