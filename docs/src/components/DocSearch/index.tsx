@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/router'
 import { Search as SearchIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -34,7 +33,6 @@ const DocSearch = ({
   className,
   onNavigate,
 }: DocSearchProps) => {
-  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -113,7 +111,9 @@ const DocSearch = ({
     setQuery('')
     inputRef.current?.blur()
     onNavigate?.()
-    router.push(hit.href)
+    // Request the document so Pages can redirect legacy docs URLs to Stable.
+    // Client routing would load the old exported page bundle and bypass _redirects.
+    window.location.assign(hit.href)
   }
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

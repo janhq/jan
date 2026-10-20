@@ -28,6 +28,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
@@ -1179,9 +1180,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it.
+      // already withholds shell when no sandbox backend can confine it. A user
+      // who switched it off (#9222) gets none of it.
       try {
-        for (const schema of await getAgentToolSchemas()) {
+        const shellOn = useChatShell.getState().shellEnabled
+        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
           if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
           toolsRecord[schema.function.name] = {
             description: schema.function.description,
@@ -1811,12 +1814,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces, because shell is then
-   * withheld too — stating limits for a tool that is not offered would only
-   * confuse the model, and an empty string keeps the prompt prefix stable.
-   */
-  /**
    * A self-contained digest of the newest memory notes. Chat advertises no
    * memory tools, so a catalog it cannot dereference would be useless; whole
    * notes under a strict budget are what fit a conversation surface. Empty when
@@ -1834,8 +1831,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     ].join('\n')
   }
 
+  /**
+   * Static instruction for the one built-in tool chat offers: the sandboxed
+   * shell. Empty when no sandbox backend enforces or when the user has turned
+   * the shell off, because shell is then withheld too — stating limits for a
+   * tool that is not offered would only confuse the model, and an empty string
+   * keeps the prompt prefix stable.
+   */
   buildAgentToolsSystemInstruction(): string {
-    if (!sandboxEnforces()) return ''
+    // Describing a tool the model was not given only invites it to ask for it.
+    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
     // Stating the limits up front is cheaper than letting the model discover
     // them by having a command refused.
     return [

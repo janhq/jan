@@ -701,6 +701,34 @@ fn finish_reason_str(reason: Option<&genai::chat::StopReason>) -> Option<&'stati
     })
 }
 
+/// Why one attempt did not produce a completion.
+enum AttemptError {
+    /// `genai` reported the failure.
+    Upstream(genai::Error),
+    /// The connection closed before the provider signalled the end of its
+    /// response. `partial` is whether any answer had arrived by then.
+    Truncated { partial: bool },
+}
+
+impl From<genai::Error> for AttemptError {
+    fn from(err: genai::Error) -> Self {
+        Self::Upstream(err)
+    }
+}
+
+/// The failure for a stream that closed early. Not retried: the provider did
+/// answer (the status was a success), so another attempt would either replay
+/// output the consumer has already seen or hide a provider that answers with
+/// nothing. The caller reports it as a failed run, never as a finished answer.
+fn truncated_stream_message(partial: bool) -> String {
+    if partial {
+        "Upstream request failed: the provider closed the stream before it finished its answer, so the response is incomplete".to_string()
+    } else {
+        "Upstream request failed: the provider closed the stream without sending an answer"
+            .to_string()
+    }
+}
+
 /// Tracks a streaming tool call so `ToolCallStarted` fires once and
 /// `ToolCallArgsDelta` carries only new bytes.
 #[derive(Default)]
@@ -762,7 +790,10 @@ pub(crate) async fn stream_chat_completions(
             .await
             {
                 Ok(completion) => return Ok(completion),
-                Err(err) => {
+                Err(AttemptError::Truncated { partial }) => {
+                    return Err(truncated_stream_message(partial));
+                }
+                Err(AttemptError::Upstream(err)) => {
                     let (status, err_body, headers) = http_parts(&err);
                     let described = describe_error(&err);
                     last_err = match status {
@@ -875,7 +906,7 @@ async fn run_once(
     options: &ChatOptions,
     events: &mpsc::UnboundedSender<StreamEvent>,
     progressed: &mut bool,
-) -> Result<serde_json::Value, genai::Error> {
+) -> Result<serde_json::Value, AttemptError> {
     let response = client
         .exec_chat_stream(model, chat_req, Some(options))
         .await?;
@@ -887,6 +918,12 @@ async fn run_once(
     let mut final_calls: Vec<serde_json::Value> = Vec::new();
     let mut finish: Option<&'static str> = None;
     let mut usage: Option<genai::chat::Usage> = None;
+    // Whether the provider sent its own completion signal (`[DONE]`, Anthropic's
+    // `message_stop`). A connection that closes without one has been cut off.
+    // `genai` hands over a `finish_reason` only together with this event, so a
+    // server that sends one and then closes without `[DONE]` is treated the same
+    // way: nothing here can tell it from a stream cut mid-answer.
+    let mut ended = false;
 
     while let Some(event) = stream.next().await {
         match event? {
@@ -943,6 +980,7 @@ async fn run_once(
             }
             ChatStreamEvent::ThoughtSignatureChunk(_) => {}
             ChatStreamEvent::End(end) => {
+                ended = true;
                 finish = finish_reason_str(end.captured_stop_reason.as_ref());
                 usage = end.captured_usage.clone();
                 if let Some(tool_calls) = end.captured_tool_calls() {
@@ -977,6 +1015,12 @@ async fn run_once(
                 }
             }
         }
+    }
+
+    if !ended {
+        return Err(AttemptError::Truncated {
+            partial: !content.is_empty() || !reasoning.is_empty() || !calls.is_empty(),
+        });
     }
 
     Ok(completion_json(
@@ -1754,5 +1798,74 @@ mod tests {
         assert!(matches!(disposition_for_status(400), Disposition::Fatal));
         assert!(matches!(disposition_for_status(404), Disposition::Fatal));
         assert!(matches!(disposition_for_status(422), Disposition::Fatal));
+    }
+
+    /// An SSE reply with no `[DONE]`: the provider's connection closes where the
+    /// stream was cut, which is what a dropped upstream looks like.
+    fn cut_off_response(events: &[&str]) -> String {
+        let body: String = events.iter().map(|e| format!("data: {e}\n\n")).collect();
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    /// Only one reply is queued, so a retry would hit a closed listener and
+    /// report a transport error instead: the message proves the cut-off itself
+    /// reached the caller as the failure.
+    #[tokio::test]
+    async fn a_stream_cut_off_mid_answer_fails_instead_of_finishing() {
+        let (url, server) = serve(vec![Some(cut_off_response(&[
+            r#"{"choices":[{"delta":{"content":"partial"}}]}"#,
+        ]))])
+        .await;
+
+        let (tx, mut rx) = sink();
+        let err = run(&url, &[], &tx)
+            .await
+            .expect_err("a cut-off answer is not a completed one");
+        assert!(err.contains("before it finished its answer"), "{err}");
+
+        // What arrived is still shown to the consumer as it streamed.
+        drop(tx);
+        let mut tokens = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::Token { text } = ev {
+                tokens.push(text);
+            }
+        }
+        assert_eq!(tokens, vec!["partial".to_string()]);
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn an_empty_successful_stream_fails_instead_of_finishing() {
+        let (url, server) = serve(vec![Some(cut_off_response(&[]))]).await;
+
+        let (tx, _rx) = sink();
+        let err = run(&url, &[], &tx)
+            .await
+            .expect_err("no answer at all is not a completed one");
+        assert!(err.contains("without sending an answer"), "{err}");
+        server.await.expect("server");
+    }
+
+    /// The provider's own terminal outcomes are answers, whatever they say.
+    #[tokio::test]
+    async fn a_provider_terminal_outcome_is_kept_as_it_was_sent() {
+        for reason in ["stop", "length", "content_filter"] {
+            let chunk = format!(r#"{{"choices":[{{"delta":{{}},"finish_reason":"{reason}"}}]}}"#);
+            let (url, server) = serve(vec![Some(sse_response(&[
+                r#"{"choices":[{"delta":{"content":"text"}}]}"#,
+                chunk.as_str(),
+            ]))])
+            .await;
+
+            let (tx, _rx) = sink();
+            let completion = run(&url, &[], &tx).await.expect("a terminal outcome is a completion");
+            assert_eq!(completion["choices"][0]["finish_reason"], reason);
+            assert_eq!(completion["choices"][0]["message"]["content"], "text");
+            server.await.expect("server");
+        }
     }
 }

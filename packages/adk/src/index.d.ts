@@ -83,6 +83,8 @@ export declare class JanRpcError extends Error {
 
 /** The runtime process failed: spawn, handshake, protocol version, or exit. */
 export declare class JanRuntimeError extends Error {
+  /** What a listener raised, when this error is the runtime failing on it. */
+  cause?: unknown
   exitCode?: number | null
   signal?: string | null
   stderr?: string
@@ -223,7 +225,9 @@ export declare class JanSession {
   readonly maxBufferedEvents: number
   /** Observe the session's events: `'event'` for the stream, `'*'` for
    * everything the session reports, or one event tag (`'token'`,
-   * `'tool_request'`, `'permission_request'`, ...). */
+   * `'tool_request'`, `'permission_request'`, ...). A listener that throws, or
+   * returns a promise that rejects, fails the runtime: open turns settle with a
+   * `JanRuntimeError` whose `cause` is what it raised. */
   on(kind: EventTag | 'event' | '*', listener: (event: StreamEvent) => void): () => void
   prompt(input: string | unknown[] | { text: string } | { content: unknown[] }): Promise<JanTurn>
   steer(input: string | { text: string }): Promise<null>
@@ -232,6 +236,9 @@ export declare class JanSession {
   getTools(): Promise<ToolSetView>
   setTools(tools: HostTool[]): Promise<ToolSetView>
   setModel(model: string): Promise<string>
+  /** A new session with this one's history. Without `tools` it answers for the
+   * source's host tools with the same handlers; `tools` replaces them, and
+   * `[]` drops them. */
   fork(options?: { tools?: HostTool[] }): Promise<JanSession>
   archive(): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): Promise<null>
@@ -252,7 +259,10 @@ export declare class JanRuntime {
   on(kind: 'exit' | 'event' | 'notification', listener: (payload: unknown) => void): () => void
   createSession(options?: CreateSessionOptions): Promise<JanSession>
   listSessions(): Promise<SessionSummary[]>
+  /** A session this client already holds is returned as it is, with its turns,
+   * listeners and handlers; the runtime only knows this process's sessions. */
   resumeSession(sessionId: string): Promise<JanSession>
+  /** As `JanSession.fork`. */
   forkSession(sessionId: string, options?: { tools?: HostTool[] }): Promise<JanSession>
   request<M extends RpcMethod>(method: M, params?: RpcParams<M>, options?: { timeoutMs?: number }): Promise<RpcResponses[M]>
   close(options?: { force?: boolean }): Promise<{ code: number | null; signal: string | null }>

@@ -515,7 +515,7 @@ enum NoticeKind {
     MonitorTimedOut,
     ShellFinished,
     ShellFailed,
-    /// Anything else (a hook notice, a still-running shell): a plain note.
+    /// Anything else (a hook notice): a plain note.
     Other,
 }
 
@@ -2112,23 +2112,57 @@ impl AgentRow {
     }
 }
 
-/// The dispatch row for a `dispatch_subagent` call: every child it names, each
-/// brief's first line under it (named, when there are several).
-fn dispatch_row(args: &serde_json::Value) -> AgentRow {
-    let subagents: Vec<(String, String)> = args
+/// The worker names a `dispatch_subagent` call gives its children. While the
+/// call is in flight only its arguments are known, so they are numbered the
+/// way dispatch numbers them (`explore`, `explore-2`) without the names the
+/// session already holds; `reported`, the names the dispatch result lists,
+/// replaces that guess once it lands. A call saved before workers were named
+/// after their agent carries its own `name`, kept so an old transcript replays
+/// readable.
+fn dispatched_workers<'a>(
+    args: &'a serde_json::Value,
+    reported: Option<&[String]>,
+) -> Vec<(String, &'a serde_json::Value)> {
+    let subs: Vec<(&str, &serde_json::Value)> = args
         .get("subagents")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|s| {
-                    let name = s.get("name").and_then(|v| v.as_str())?;
-                    let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
-                    let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
-                    Some((name.to_string(), brief.unwrap_or("").to_string()))
+                    let label = s.get("agent").or_else(|| s.get("name"))?.as_str()?;
+                    Some((label, s))
                 })
                 .collect()
         })
         .unwrap_or_default();
+    let names = match reported {
+        Some(names) if names.len() == subs.len() => names.to_vec(),
+        _ if subs.iter().all(|(_, s)| s.get("agent").is_none()) => {
+            subs.iter().map(|(name, _)| (*name).to_string()).collect()
+        }
+        _ => crate::core::agent::subagent::number_workers(
+            subs.iter().map(|(agent, _)| *agent),
+            |_| false,
+        ),
+    };
+    names
+        .into_iter()
+        .zip(subs.into_iter().map(|(_, sub)| sub))
+        .collect()
+}
+
+/// The dispatch row for a `dispatch_subagent` call: every child it names, each
+/// brief's first line under it (named, when there are several). `reported` is
+/// the worker names from the dispatch result, once it has landed.
+fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentRow {
+    let subagents: Vec<(String, String)> = dispatched_workers(args, reported)
+        .into_iter()
+        .map(|(name, s)| {
+            let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
+            let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
+            (name, brief.unwrap_or("").to_string())
+        })
+        .collect();
     let dim = Style::new().fg(theme::muted());
     let several = subagents.len() > 1;
     let briefs = subagents
@@ -2393,6 +2427,9 @@ struct Transcript {
     /// Standalone (edit/write) call rows still awaiting their result. Several
     /// can be open at once: a batch emits every `ToolCall` before any result.
     pending_rows: Vec<PendingToolRow>,
+    /// The arguments of each dispatch whose result has not landed, so the row
+    /// can be relabeled with the worker names that result reports.
+    dispatch_args: HashMap<String, serde_json::Value>,
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
@@ -2594,7 +2631,8 @@ impl Transcript {
             self.finalize_tool_group();
             self.gap(Kind::Tool);
             if name == "dispatch_subagent" {
-                self.push_row(RowKind::Agent(Box::new(dispatch_row(args))));
+                self.push_row(RowKind::Agent(Box::new(dispatch_row(args, None))));
+                self.dispatch_args.insert(id.clone(), args.clone());
             } else {
                 self.push_row(RowKind::Tool {
                     state: ToolState::Running,
@@ -3390,13 +3428,25 @@ impl Transcript {
             Some(path) if created => format!("Created {path}"),
             _ => row.done,
         };
+        let dispatch_args = self.dispatch_args.remove(id);
         let call = match &self.rows[row.idx].kind {
             // A dispatch keeps its row; the result only confirms what the row
-            // already says unless it failed.
+            // already says unless it failed -- and names each worker as the
+            // dispatch actually named it, which only the result knows.
             RowKind::Agent(agent) => {
+                let reported = match &result {
+                    RowKind::Result { content: Some(text), .. } if !is_error => {
+                        crate::core::agent::subagent::worker_names_in(text)
+                    }
+                    _ => None,
+                };
+                let relabeled = dispatch_args
+                    .as_ref()
+                    .zip(reported.as_deref())
+                    .map(|(args, names)| dispatch_row(args, Some(names)));
                 let call = RowKind::Agent(Box::new(AgentRow {
                     state: ToolState::of(is_error),
-                    ..(**agent).clone()
+                    ..relabeled.unwrap_or_else(|| (**agent).clone())
                 }));
                 if !is_error {
                     self.rows[row.idx] = call.into();
@@ -5193,6 +5243,7 @@ impl App {
         self.starting.clear();
         self.transcript.groups.clear();
         self.transcript.pending_rows.clear();
+        self.transcript.dispatch_args.clear();
         self.transcript.reasoning_blocks.clear();
         self.transcript.expanded_traces.clear();
         self.transcript.subagent_blocks.clear();
@@ -10048,22 +10099,12 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
-/// The name of the first subagent in a phased `dispatch_subagent` call. The
-/// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
-/// names the first, mirroring the web card (`firstPlannedSubagent`).
 /// The dispatch row's subject: the one child's name, or `N subagents: a, b, c`
 /// for a fan-out. Every name is listed, since once the live dock has scrolled
 /// away this row is the only on-screen account of what was dispatched.
 fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
-    let names: Vec<&str> = args
-        .get("subagents")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.get("name").and_then(|v| v.as_str()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let names: Vec<String> =
+        dispatched_workers(args, None).into_iter().map(|(name, _)| name).collect();
     match names.as_slice() {
         [] => format!("{verb} subagent"),
         [one] => format!("{verb} subagent {one}"),
@@ -13409,30 +13450,57 @@ fn strip_row_chrome(line: &str) -> Option<String> {
     }
 }
 
+/// Writes `text` to the macOS pasteboard through `pbcopy`.
+///
+/// Not `arboard`: its AppKit write logs `-[NSPasteboard _setData:...] returns
+/// false` to stderr whenever the pasteboard is contended, and stderr is the
+/// terminal the TUI is drawing on, so the line lands on top of the screen. The
+/// failure is not visible to the caller either way, so nothing is lost by
+/// sending `pbcopy`'s own stderr to the void.
+#[cfg(target_os = "macos")]
+fn set_system_clipboard(text: String) {
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = io::Write::write_all(&mut stdin, text.as_bytes());
+    }
+    let _ = child.wait();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_system_clipboard(text: String) {
+    let Ok(mut clip) = arboard::Clipboard::new() else {
+        return;
+    };
+    // X11/Wayland ownership lives with the setter, so this thread parks inside
+    // `wait()` until something else claims the clipboard; returning immediately
+    // would drop the text on the floor.
+    #[cfg(target_os = "linux")]
+    {
+        use arboard::SetExtLinux;
+        let _ = clip.set().wait().text(text);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = clip.set_text(text);
+    }
+}
+
 /// Put a selection on the system clipboard by both routes available to a TUI:
-/// `arboard`, which serves it for as long as this process runs, and OSC 52,
-/// which hands it to the terminal emulator so it survives `jan` exiting and
-/// crosses an ssh/tmux session. OSC 52 goes second so that where it is supported
-/// the terminal ends up owning the selection.
+/// the OS clipboard, which serves it for as long as this process runs, and
+/// OSC 52, which hands it to the terminal emulator so it survives `jan`
+/// exiting and crosses an ssh/tmux session. OSC 52 goes second so that where it
+/// is supported the terminal ends up owning the selection.
 fn copy_to_clipboard(text: &str) {
     let owned = text.to_string();
-    std::thread::spawn(move || {
-        let Ok(mut clip) = arboard::Clipboard::new() else {
-            return;
-        };
-        // X11/Wayland ownership lives with the setter, so this thread parks
-        // inside `wait()` until something else claims the clipboard; returning
-        // immediately would drop the text on the floor.
-        #[cfg(target_os = "linux")]
-        {
-            use arboard::SetExtLinux;
-            let _ = clip.set().wait().text(owned);
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = clip.set_text(owned);
-        }
-    });
+    std::thread::spawn(move || set_system_clipboard(owned));
     if text.len() <= OSC52_MAX_BYTES {
         use base64::Engine;
         let payload = base64::engine::general_purpose::STANDARD.encode(text);
@@ -16625,7 +16693,7 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: SMOL_MODEL_KEY,
         label: "smol_model",
-        desc: "cheap model for subagents with model = \"smol\" and /goal checks",
+        desc: "cheap model for subagents with model = \"smol\", /goal checks and compaction",
         // Unset falls back to the session's model; there is no fixed id to show.
         kind: AgentSettingKind::Text {
             default: "the main model",
@@ -24789,12 +24857,12 @@ mod tests {
             id: "d1".into(),
             name: "dispatch_subagent".into(),
             args: json!({ "subagents": [
-                { "name": "kv-review", "task": "Review the store.\nThen report." },
-                { "name": "docs-writer", "task": "Write the docs." },
+                { "agent": "review", "task": "Review the store.\nThen report." },
+                { "agent": "general", "task": "Write the docs." },
             ] }),
         });
         let text = transcript_text(&app);
-        assert!(text.contains("• Dispatching kv-review, docs-writer"), "{text}");
+        assert!(text.contains("• Dispatching review, general"), "{text}");
         app.apply(StreamEvent::ToolResult {
             id: "d1".into(),
             content: "dispatched".into(),
@@ -24804,14 +24872,66 @@ mod tests {
         let text = transcript_text(&app);
         assert!(
             text.contains(concat!(
-                "• Dispatched kv-review, docs-writer\n",
-                "  └ kv-review: Review the store.\n",
-                "    docs-writer: Write the docs."
+                "• Dispatched review, general\n",
+                "  └ review: Review the store.\n",
+                "    general: Write the docs."
             )),
             "{text}"
         );
         assert!(!text.contains("dispatched\n"), "a clean result adds no row: {text}");
         assert!(has_dispatch_state(&app, ToolState::Success));
+    }
+
+    /// The row names each worker as the dispatch actually named it: an
+    /// earlier `explore` in the session makes this one `explore-2`, which only
+    /// the dispatch result knows.
+    #[test]
+    fn a_dispatch_row_takes_the_worker_names_the_result_reports() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the store." },
+                { "agent": "general", "task": "Write the docs." },
+            ] }),
+        });
+        assert!(transcript_text(&app).contains("• Dispatching explore, general"));
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: format!(
+                "Dispatched 2 subagent(s).\n{}",
+                crate::core::agent::subagent::worker_names_line(&[
+                    "explore-2".to_string(),
+                    "general".to_string(),
+                ])
+            ),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(
+            text.contains(concat!(
+                "• Dispatched explore-2, general\n",
+                "  └ explore-2: Find the store.\n",
+                "    general: Write the docs."
+            )),
+            "{text}"
+        );
+    }
+
+    /// A dispatch saved before workers were named after their agent carries
+    /// its own `name`; replayed, it still shows those names and briefs.
+    #[test]
+    fn a_legacy_named_dispatch_replays_with_its_names() {
+        let dispatch = json!({ "subagents": [
+            { "name": "kv-review", "task": "x" },
+            { "name": "docs-writer", "task": "y" },
+        ] });
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched 2 subagents kv-review, docs-writer"
+        );
     }
 
     /// A dispatch the run never resolved reads as interrupted, not running.
@@ -24821,11 +24941,11 @@ mod tests {
         app.apply(StreamEvent::ToolCall {
             id: "d1".into(),
             name: "dispatch_subagent".into(),
-            args: json!({ "subagents": [{ "name": "solo", "task": "go" }] }),
+            args: json!({ "subagents": [{ "agent": "general", "task": "go" }] }),
         });
         app.transcript.settle(true);
         assert!(has_dispatch_state(&app, ToolState::Interrupted));
-        assert!(transcript_text(&app).contains("• Dispatching solo\n  └ go"));
+        assert!(transcript_text(&app).contains("• Dispatching general\n  └ go"));
     }
 
     fn has_dispatch_state(app: &App, state: ToolState) -> bool {
@@ -25364,7 +25484,7 @@ mod tests {
     /// quietly turning a failure back into a dim note.
     #[test]
     fn notice_kinds_classify_the_real_headlines() {
-        use crate::core::agent::bg_shell::{headline, still_running_headline};
+        use crate::core::agent::bg_shell::headline;
         use tauri_plugin_agent_tools::tools::monitor::headline as monitor_headline;
         use tauri_plugin_agent_tools::tools::ShellDone;
         let done = |failed| ShellDone {
@@ -25384,7 +25504,6 @@ mod tests {
             ),
             (headline(&done(false)), NoticeKind::ShellFinished),
             (headline(&done(true)), NoticeKind::ShellFailed),
-            (still_running_headline("npm run dev"), NoticeKind::Other),
             ("hook 'fmt' failed: exit 2".to_string(), NoticeKind::Other),
         ];
         for (text, kind) in cases {
@@ -28771,14 +28890,14 @@ mod tests {
 
     #[test]
     fn subagent_tool_rows_have_readable_labels() {
-        let dispatch = json!({ "subagents": [{ "name": "reviewer", "task": "x" }] });
+        let dispatch = json!({ "subagents": [{ "agent": "review", "task": "x" }] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching subagent reviewer"
+            "Dispatching subagent review"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched subagent reviewer"
+            "Dispatched subagent review"
         );
         let await_args = json!({ "run_id": "sub-sycl-cuda-gap-explorer-1" });
         assert_eq!(
@@ -28800,17 +28919,17 @@ mod tests {
     #[test]
     fn a_multi_dispatch_row_names_every_subagent() {
         let dispatch = json!({ "subagents": [
-            { "name": "counter", "task": "x" },
-            { "name": "waster", "task": "y" },
-            { "name": "reader", "task": "z" },
+            { "agent": "explore", "task": "x" },
+            { "agent": "general", "task": "y" },
+            { "agent": "explore", "task": "z" },
         ] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching 3 subagents counter, waster, reader"
+            "Dispatching 3 subagents explore, general, explore-2"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched 3 subagents counter, waster, reader"
+            "Dispatched 3 subagents explore, general, explore-2"
         );
     }
 
@@ -31750,7 +31869,7 @@ mod tests {
         assert_eq!(picker.kind, PickerKind::SubagentModels);
         let labels: Vec<_> = picker.items.iter().map(|i| i.value.as_str()).collect();
         // The saved explorer and reviewer sit beside the built-in catalog.
-        assert_eq!(labels, ["debug", "explore", "explorer", "research", "review", "reviewer"]);
+        assert_eq!(labels, ["debug", "explore", "explorer", "general", "research", "review", "reviewer"]);
         let hint = |name: &str| {
             let item = picker.items.iter().find(|i| i.value == name).unwrap();
             item.hint.clone().unwrap_or_default()
@@ -43152,9 +43271,7 @@ mod tests {
         app.submit_user("start the build".into());
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         // The model answered and the run ended: background work no longer
         // holds it open, so the session is idle.
@@ -43191,9 +43308,7 @@ mod tests {
             .push(serde_json::json!({ "role": "assistant", "content": "building" }));
         app.shell_set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: Some("/tmp/build.log".to_string()),
         });
         app.shell_set.finish(ShellDone {
             id: 1,
@@ -43232,9 +43347,7 @@ mod tests {
 
         set.start(ShellBackgrounded {
             id: 1,
-            command: "cargo build".to_string(),
             timeout_secs: 30,
-            output_path: None,
         });
         set.finish(ShellDone {
             id: 1,

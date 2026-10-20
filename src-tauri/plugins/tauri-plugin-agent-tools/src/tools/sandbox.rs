@@ -155,6 +155,58 @@ pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> P
     }
 }
 
+/// Why `name` cannot safely be a file name on Windows, or `None` if it can.
+///
+/// The tools address files through a `\\?\` path (the project root is one), and
+/// Windows skips its name normalisation for those. A name Win32 would have
+/// rewritten is then created exactly as given: `aux` and `con.txt` are
+/// reserved device names and `name.` loses its dot, so every ordinary Windows
+/// tool (PowerShell, Explorer, `del`) reports the path as not found, and a
+/// `:` addresses an NTFS alternate data stream that no directory listing shows.
+/// The tool would still report success, so the model believes the file exists.
+///
+/// Platform-independent on purpose, so it is testable anywhere; callers gate it
+/// with [`refuse_windows_name`].
+pub fn windows_name_problem(name: &str) -> Option<&'static str> {
+    if name.contains(':') {
+        return Some("contains ':' (an NTFS alternate data stream, not a file)");
+    }
+    if name.ends_with('.') || name.ends_with(' ') {
+        return Some("ends with a dot or a space, which Windows silently strips");
+    }
+    // Reserved with or without an extension: `con.txt` is as reserved as `con`.
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    // COM1-9 and LPT1-9; Windows also reserves the superscript digits.
+    let numbered = ["COM", "LPT"].iter().any(|prefix| {
+        let mut digit = upper.strip_prefix(prefix).into_iter().flat_map(str::chars);
+        matches!(
+            (digit.next(), digit.next()),
+            (Some('1'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+        )
+    });
+    let reserved =
+        numbered || matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$");
+    reserved.then_some("is a reserved Windows device name")
+}
+
+/// On Windows, the first component of `raw` that is not a valid file name, with
+/// the reason; `None` elsewhere and for a path that is fine. Drive and root
+/// components are not names, and `.`/`..` are resolved before they reach disk.
+pub fn refuse_windows_name(raw: &str) -> Option<(String, &'static str)> {
+    if !cfg!(windows) {
+        return None;
+    }
+    use std::path::Component;
+    Path::new(raw).components().find_map(|c| match c {
+        Component::Normal(name) => {
+            let name = name.to_string_lossy();
+            windows_name_problem(&name).map(|why| (name.into_owned(), why))
+        }
+        _ => None,
+    })
+}
+
 /// The spelling to hand a tool-facing path back to the model: the inverse of
 /// [`resolve_path`]. On Linux a file inside the scratch is named `/tmp/...`, the
 /// one name that works from both the filesystem tools (which remap it back) and
@@ -405,6 +457,45 @@ fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
                 return Err(format!("no existing ancestor for {:?}", path));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod windows_name_tests {
+    use super::windows_name_problem as problem;
+
+    #[test]
+    fn reserved_device_names_are_refused_with_or_without_an_extension() {
+        for n in [
+            "con", "CON", "Prn", "aux", "NUL", "con.txt", "aux.tar.gz", "nul.", "CONIN$", "CONOUT$",
+            "com1", "COM9", "lpt1", "LPT9", "com1.log", "com\u{b9}", "lpt\u{b2}.txt", "aux .txt",
+        ] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn names_that_only_resemble_reserved_ones_are_fine() {
+        for n in [
+            "auxiliary", "console.log", "com0", "com10", "lpt0", "com", "lpt", "conf", "nulls.txt",
+            "a.con", "my.aux", ".aux", "x.nul.y", "readme.md", ".gitignore", "a.b.c", "x y.txt",
+        ] {
+            assert_eq!(problem(n), None, "{n:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn trailing_dot_or_space_and_colon_are_refused() {
+        for n in ["name.", "name ", "name.txt.", "a.txt:stream", "a.txt::$DATA", "C:x"] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn the_refusal_gives_a_reason_the_model_can_act_on() {
+        assert!(problem("aux").unwrap().contains("reserved"));
+        assert!(problem("a:b").unwrap().contains("stream"));
+        assert!(problem("a.").unwrap().contains("dot or a space"));
     }
 }
 

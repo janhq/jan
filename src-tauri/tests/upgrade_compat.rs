@@ -3,10 +3,12 @@
 //!
 //! Everything under `tests/fixtures/upgrade/` is real bytes written by the
 //! named release (0.8.3 stable on Windows for `store.json` and
-//! `mcp_config.json`, 0.8.3 stable on macOS for the thread files), committed
+//! `mcp_config.json`, 0.8.3 stable on macOS for the thread files, and 0.8.5
+//! stable on macOS for its `store.json`), committed
 //! so a schema drift that would silently eat user data fails here instead of
 //! on a user machine. Threads are plain per-thread JSON/JSONL files; the store
-//! marks the MCP schema version (3 on 0.8.3, 4 from 0.8.4) that
+//! marks the MCP schema version (3 on 0.8.3, 4 from 0.8.4, 5 from the release
+//! that removes the default Exa entry) that
 //! `core/setup.rs migrate_mcp_servers` migrates against.
 //!
 //! When a release intentionally changes one of these schemas, commit the old
@@ -21,7 +23,10 @@
 #![cfg(not(feature = "cli"))]
 
 use app_lib::core::mcp::models::McpSettings;
-use app_lib::core::setup::{is_default_exa_server, CURRENT_MCP_SCHEMA_VERSION};
+use app_lib::core::setup::{
+    is_default_exa_server, is_hosted_default_exa_server, remove_default_exa_from_config,
+    schema_after_exa_cutover, CURRENT_MCP_SCHEMA_VERSION,
+};
 use app_lib::core::threads::helpers::read_messages_from_file;
 use app_lib::core::threads::utils::{get_messages_path, get_thread_dir, get_thread_metadata_path};
 use serde_json::Value;
@@ -248,24 +253,16 @@ fn mcp_config_written_by_0_8_3_parses_with_current_settings_schema() {
     // reading is wrong: 0.8.3's own `migrate_exa_to_http` wrote this entry with
     // `active: true` (`git show v0.8.3:src-tauri/src/core/setup.rs`), so it is
     // byte-for-byte 0.8.3's *default*, not evidence that a user activated
-    // anything. The contract pinned below is therefore "an exa entry as 0.8.3
-    // left it survives the 0.8.4 cutover" -- true precisely because 0.8.3's
-    // default is active.
-    //
-    // That is recorded as current behaviour, not endorsed: 0.8.3 wrote this
-    // shape for every user, so the cutover is close to a no-op for the whole
-    // 0.8.3 population. Widening it is a separate change against the shipping
-    // migration -- see janhq/jan#9010 and the note on `remove_exa_server`.
-    // If that widening lands, this assertion is expected to flip, and
-    // flipping it is the signal that the behaviour changed rather than a
-    // regression.
+    // anything. Migration 4 therefore leaves it alone, and it ran once for
+    // everyone on 0.8.4 or later; migration 5 is the step that removes it (see
+    // `the_exa_default_0_8_3_wrote_is_removed_by_migration_5` below).
     let servers = config["mcpServers"].as_object().expect("mcpServers object");
     let fixture_exa = servers
         .get("exa")
         .expect("0.8.3 config carried an exa entry");
     assert!(
         !is_default_exa_server(fixture_exa),
-        "an exa entry as 0.8.3 wrote it must not be classified as the removable default"
+        "migration 4 must keep leaving an exa entry as 0.8.3 wrote it alone"
     );
     let untouched_default = serde_json::json!({
         "type": "http",
@@ -278,5 +275,163 @@ fn mcp_config_written_by_0_8_3_parses_with_current_settings_schema() {
     assert!(
         is_default_exa_server(&untouched_default),
         "the never-activated default exa entry is what migration 4 removes"
+    );
+}
+
+/// Migration 5 (#9010): the hosted Exa default 0.8.3 wrote for everyone is
+/// removed, and only that. These rows decide who loses configuration.
+#[test]
+fn the_exa_default_0_8_3_wrote_is_removed_by_migration_5() {
+    let hosted = |active: bool| {
+        serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.exa.ai/mcp",
+            "command": "",
+            "args": [],
+            "env": {},
+            "active": active
+        })
+    };
+    // 0.8.3's migration 3, and the same entry deactivated by the user.
+    assert!(is_hosted_default_exa_server(&hosted(true)));
+    assert!(is_hosted_default_exa_server(&hosted(false)));
+
+    // A key keeps it, whatever else it looks like.
+    let mut keyed = hosted(true);
+    keyed["env"] = serde_json::json!({ "EXA_API_KEY": "sk-real" });
+    assert!(!is_hosted_default_exa_server(&keyed));
+
+    // Authentication headers are credentials: an entry that carries any is the
+    // user's, even when it is the hosted url, active, and has no env.
+    let mut headers = hosted(true);
+    headers["headers"] = serde_json::json!({ "Authorization": "Bearer sk-real" });
+    assert!(!is_hosted_default_exa_server(&headers));
+    // An empty headers map is what the default looks like with none set.
+    let mut no_headers = hosted(true);
+    no_headers["headers"] = serde_json::json!({});
+    assert!(is_hosted_default_exa_server(&no_headers));
+    // A field this migration does not know is the user's too.
+    let mut unknown = hosted(true);
+    unknown["timeout"] = serde_json::json!(60);
+    assert!(!is_hosted_default_exa_server(&unknown));
+
+    // Another url, transport, command or args is not the default.
+    let mut proxy = hosted(false);
+    proxy["url"] = serde_json::json!("https://exa.proxy.internal/mcp");
+    assert!(!is_hosted_default_exa_server(&proxy));
+    let mut stdio = hosted(true);
+    stdio["type"] = serde_json::json!("stdio");
+    assert!(!is_hosted_default_exa_server(&stdio));
+    let mut command = hosted(true);
+    command["command"] = serde_json::json!("npx");
+    command["args"] = serde_json::json!(["-y", "exa-mcp-server"]);
+    assert!(!is_hosted_default_exa_server(&command));
+
+    // A malformed entry is not something to delete.
+    for malformed in [
+        serde_json::json!("exa"),
+        serde_json::json!(null),
+        serde_json::json!(7),
+    ] {
+        assert!(!is_hosted_default_exa_server(&malformed));
+    }
+}
+
+#[test]
+fn migration_5_removes_the_exa_entry_from_a_real_0_8_3_config_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp_config.json");
+    std::fs::copy(fixture_root("0.8.3").join("mcp_config.json"), &path).unwrap();
+    let before: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+
+    assert!(remove_default_exa_from_config(&path).unwrap());
+
+    let after: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(after["mcpServers"].get("exa").is_none());
+    // Every other server, and the settings, are byte-for-byte what they were.
+    let mut expected = before["mcpServers"].as_object().unwrap().clone();
+    expected.remove("exa");
+    assert_eq!(after["mcpServers"], Value::Object(expected));
+    assert_eq!(after["mcpSettings"], before["mcpSettings"]);
+
+    // Once it is gone there is nothing left for a second run to do.
+    assert!(!remove_default_exa_from_config(&path).unwrap());
+}
+
+#[test]
+fn migration_5_leaves_a_config_it_does_not_recognise_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp_config.json");
+
+    // No file yet: nothing to do, and nothing created.
+    assert!(!remove_default_exa_from_config(&path).unwrap());
+    assert!(!path.exists());
+
+    for config in [
+        // A keyed entry.
+        serde_json::json!({ "mcpServers": { "exa": {
+            "type": "http", "url": "https://mcp.exa.ai/mcp", "command": "", "args": [],
+            "env": { "EXA_API_KEY": "sk-real" }, "active": true } } }),
+        // The hosted url, active, with authentication headers.
+        serde_json::json!({ "mcpServers": { "exa": {
+            "type": "http", "url": "https://mcp.exa.ai/mcp", "command": "", "args": [],
+            "env": {}, "headers": { "Authorization": "Bearer sk-real" }, "active": true } } }),
+        // The hosted url with a field this migration does not know.
+        serde_json::json!({ "mcpServers": { "exa": {
+            "type": "http", "url": "https://mcp.exa.ai/mcp", "command": "", "args": [],
+            "env": {}, "timeout": 60, "active": true } } }),
+        // A custom endpoint, inactive and keyless.
+        serde_json::json!({ "mcpServers": { "exa": {
+            "type": "http", "url": "https://exa.proxy.internal/mcp", "command": "", "args": [],
+            "env": {}, "active": false } } }),
+        // A malformed entry.
+        serde_json::json!({ "mcpServers": { "exa": "oops" } }),
+        // No exa at all.
+        serde_json::json!({ "mcpServers": { "fetch": { "command": "uvx", "args": [], "env": {} } } }),
+        // No servers object.
+        serde_json::json!({ "mcpSettings": {} }),
+    ] {
+        std::fs::write(&path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!remove_default_exa_from_config(&path).unwrap(), "{config}");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "{config}");
+    }
+}
+
+/// A cutover that could not read or write the config just then must not be
+/// recorded as done: the next startup has to try it again, or the entry stays for
+/// good even after the problem is gone.
+#[test]
+fn a_failed_exa_cutover_is_retried_at_the_next_startup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp_config.json");
+
+    // A config that cannot be read right now (a directory stands in for it).
+    std::fs::create_dir(&path).unwrap();
+    let failed = remove_default_exa_from_config(&path).map(|_| ());
+    assert!(failed.is_err());
+    let recorded = schema_after_exa_cutover(&failed);
+    assert!(
+        recorded < CURRENT_MCP_SCHEMA_VERSION,
+        "a failed cutover recorded as schema {recorded} would never run again"
+    );
+
+    // The next startup: the config is readable again, so the cutover runs.
+    std::fs::remove_dir(&path).unwrap();
+    std::fs::copy(fixture_root("0.8.3").join("mcp_config.json"), &path).unwrap();
+    let retried = remove_default_exa_from_config(&path).map(|_| ());
+    assert!(retried.is_ok());
+    assert_eq!(
+        schema_after_exa_cutover(&retried),
+        CURRENT_MCP_SCHEMA_VERSION
+    );
+    let config: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(config["mcpServers"].get("exa").is_none());
+
+    // Nothing to remove is a success too: no reason to keep retrying.
+    let nothing = remove_default_exa_from_config(&path).map(|_| ());
+    assert_eq!(
+        schema_after_exa_cutover(&nothing),
+        CURRENT_MCP_SCHEMA_VERSION
     );
 }

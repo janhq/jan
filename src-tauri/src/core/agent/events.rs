@@ -512,6 +512,22 @@ impl Usage {
             cache_write_tokens,
         })
     }
+
+    /// Two requests' usage as one charge: each count is the sum of whatever
+    /// either side reported, and stays `None` only when neither reported it.
+    pub(crate) fn plus(&self, other: &Self) -> Self {
+        let sum = |a: Option<u64>, b: Option<u64>| match (a, b) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0).saturating_add(b.unwrap_or(0))),
+        };
+        Self {
+            prompt_tokens: sum(self.prompt_tokens, other.prompt_tokens),
+            completion_tokens: sum(self.completion_tokens, other.completion_tokens),
+            total_tokens: sum(self.total_tokens, other.total_tokens),
+            cached_tokens: sum(self.cached_tokens, other.cached_tokens),
+            cache_write_tokens: sum(self.cache_write_tokens, other.cache_write_tokens),
+        }
+    }
 }
 
 /// Test-only, and reachable from the sibling test in `core::cli::run_report`

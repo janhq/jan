@@ -258,7 +258,7 @@ export const config: WebdriverIO.Config = {
   // The cost is that this list is maintained by hand: a new spec that is not
   // added here does not run, and nothing reports its absence.
   //
-  // The order below is smoke -> chat -> message-actions -> cowork-channel,
+  // The order below is smoke -> chat -> message-actions -> image-limit -> cowork-channel,
   // pristine first and most-configured last. message-actions.e2e.ts registers a
   // second provider and leaves two threads behind, so it has to come after
   // anything that cares what the profile holds. cowork-channel.e2e.ts writes
@@ -269,6 +269,7 @@ export const config: WebdriverIO.Config = {
     './specs/smoke.e2e.ts',
     './specs/chat.e2e.ts',
     './specs/message-actions.e2e.ts',
+    './specs/image-limit.e2e.ts',
     './specs/cowork-channel.e2e.ts',
   ],
   maxInstances: 1,

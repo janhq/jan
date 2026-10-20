@@ -5,7 +5,7 @@
   "description": "Enables conversations and state persistence via your file system.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",

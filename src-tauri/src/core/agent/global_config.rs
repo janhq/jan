@@ -16,9 +16,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
 #
 # default_model = "my-model"        # used when no --model / agent.toml model is set
-# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation and
-#                                     # subagents with model = "smol"); defaults to the
-#                                     # session's model when unset
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation,
+#                                     # compaction summaries and subagents with
+#                                     # model = "smol"); defaults to the session's model
 # mouse = false                      # disable TUI mouse tracking (scroll wheel,
 #                                     # click-to-expand); on by default
 # sandbox = true                      # run `shell` under OS confinement (same as
@@ -105,8 +105,8 @@ struct GlobalConfigToml {
     /// flag nor `agent.toml` names one. Takes precedence over any derived guess.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_model: Option<String>,
-    /// Fast, cheap model for the `smol` role: goal evaluation and other
-    /// lightweight side calls. Falls back to `default_model` when unset.
+    /// Fast, cheap model for the `smol` role: goal evaluation, compaction
+    /// summaries and other lightweight side calls. Falls back to `default_model` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     smol_model: Option<String>,
     /// TUI mouse tracking (wheel scrolling, click-to-expand). `None` = the

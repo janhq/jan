@@ -17,7 +17,7 @@ from collections import deque
 from typing import Any, Callable, Deque, Dict, List, Optional, Sequence, Union
 
 from ._generated import PROTOCOL_VERSION
-from .errors import JanRpcError, JanRuntimeError
+from .errors import JanRpcError, JanRuntimeError, describe_error
 from .session import HostTool, JanSession
 
 try:  # The version is for the handshake's clientInfo; a source checkout has no metadata.
@@ -252,27 +252,47 @@ class JanRuntime:
     def resume_session(self, session_id: str) -> JanSession:
         """Reopen a session of this process from its id.
 
-        Host tools are not inherited: declare them again with
-        :meth:`JanSession.set_tools`.
+        A session this client already holds is returned as it is, not rebuilt:
+        it keeps its turns, listeners, host tool handlers and pending calls, so
+        work in flight settles on the object the caller already has. The
+        runtime only knows the sessions this process created, so an id this
+        client has not seen is not expected; one that does arrive is attached
+        without handlers.
         """
-        return self._session(self.request("session/resume", {"sessionId": session_id}))
+        view = self.request("session/resume", {"sessionId": session_id})
+        known = self._sessions.get(session_id)
+        if known is not None:
+            known.model = view.get("model") or known.model
+            return known
+        return self._session(view)
 
-    def fork_session(self, session_id: str, tools: Sequence[HostTool] = ()) -> JanSession:
+    def fork_session(self, session_id: str, tools: Optional[Sequence[HostTool]] = None) -> JanSession:
         """A new session with another session's history.
 
-        Host tools are not inherited - a declaration belongs to the session that
-        made it - so they are re-declared here when given.
+        Without ``tools`` it takes the source's host tools and handlers; with
+        them, those replace the set.
         """
         source = self._sessions.get(session_id)
-        forked = self.request("session/fork", {"sessionId": session_id})["sessionId"]
-        view = self.request("session/tools/get", {"sessionId": forked})
-        # The tools view carries the tools and nothing else: the id and the
-        # model have to come from the fork itself and from the session it was
-        # forked from, which the runtime rebuilt it from.
-        session = self._session({**view, "sessionId": forked, "model": source.model if source is not None else None})
-        if tools:
-            session.set_tools(tools)
-        return session
+
+        def work() -> JanSession:
+            forked = self.request("session/fork", {"sessionId": session_id})["sessionId"]
+            view = self.request("session/tools/get", {"sessionId": forked})
+            # The tools view carries the tools and nothing else: the id and the
+            # model have to come from the fork itself and from the session it
+            # was forked from, which the runtime rebuilt it from.
+            session = self._session({**view, "sessionId": forked, "model": source.model if source is not None else None})
+            if tools is not None:
+                session.set_tools(tools)
+            elif source is not None:
+                session._declare(source._declarations())
+            return session
+
+        # After the source's pending tool changes, and before later ones, so the
+        # runtime clones the same tools whose handlers are copied here.
+        if source is None:
+            return work()
+        with source._mutations:
+            return work()
 
     def request(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: Optional[float] = None) -> Any:
         """One JSON-RPC request, answered or refused.
@@ -283,6 +303,10 @@ class JanRuntime:
             raise self._failure
         if self._closing:
             raise JanRuntimeError("the runtime is closing")
+        # Encoded before anything is registered: a value that cannot be encoded (a
+        # Path, a circular reference) is the caller's to hear about as it is, and
+        # must neither leave a pending entry behind nor read as a failed write.
+        params_json = json.dumps(params or {})
         with self._lock:
             request_id = self._next_id
             self._next_id += 1
@@ -290,7 +314,9 @@ class JanRuntime:
             self._pending[request_id] = pending
             try:
                 assert self._process.stdin is not None
-                self._process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}) + "\n")
+                self._process.stdin.write(
+                    f'{{"jsonrpc": "2.0", "id": {request_id}, "method": {json.dumps(method)}, "params": {params_json}}}\n'
+                )
                 self._process.stdin.flush()
             except (BrokenPipeError, ValueError, OSError) as error:
                 self._pending.pop(request_id, None)
@@ -474,7 +500,7 @@ class JanRuntime:
             try:
                 listener(payload)
             except Exception as error:  # noqa: BLE001 - a listener chose to raise
-                self._fail(JanRuntimeError(f"an event listener raised: {error}", stderr=self.stderr))
+                self._fail(JanRuntimeError(f"an event listener raised: {describe_error(error)}", stderr=self.stderr))
                 return
 
     def _fail(self, error: JanRuntimeError, *, notify_exit: bool = False) -> None:
