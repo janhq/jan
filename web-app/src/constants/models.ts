@@ -135,6 +135,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  superbot: {
+    models: ['superbot', 'superbot-fast'],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: [],
+    supportsImages: [],
+    supportsToolCalls: true,
+    supportsN: false,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
