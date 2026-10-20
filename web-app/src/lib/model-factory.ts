@@ -1011,8 +1011,10 @@ export class ModelFactory {
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
-      case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
+
+      case 'minimax':
+        return this.createOpenAICompatibleModel(modelId, provider, parameters)
 
       case 'mistral':
         return this.createMistralModel(modelId, provider, parameters)

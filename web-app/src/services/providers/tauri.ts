@@ -11,7 +11,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
-import { getModelCapabilities } from '@/lib/models'
+import { getModelCapabilities, suggestedModelIds } from '@/lib/models'
 import {
   API_KEY_FALLBACKS_SETTING_KEY,
   providerRemoteApiKeyChain,
@@ -223,23 +223,28 @@ export class TauriProvidersService extends DefaultProvidersService {
         const data = await response.json()
 
         if (data.data && Array.isArray(data.data)) {
-          return data.data
-            .map((model: { id: string }) => model.id)
-            .filter(Boolean)
+          return suggestedModelIds(
+            provider.provider,
+            data.data.map((model: { id: string }) => model.id).filter(Boolean)
+          )
         }
         if (Array.isArray(data)) {
-          return data
-            .filter(Boolean)
-            .map((model) =>
+          return suggestedModelIds(
+            provider.provider,
+            data.filter(Boolean).map((model) =>
               typeof model === 'object' && 'id' in model ? model.id : model
             )
+          )
         }
         if (data.models && Array.isArray(data.models)) {
-          return data.models
-            .map((model: string | { id: string }) =>
-              typeof model === 'string' ? model : model.id
-            )
-            .filter(Boolean)
+          return suggestedModelIds(
+            provider.provider,
+            data.models
+              .map((model: string | { id: string }) =>
+                typeof model === 'string' ? model : model.id
+              )
+              .filter(Boolean)
+          )
         }
         console.warn('Unexpected response format from provider API:', data)
         return []

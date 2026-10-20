@@ -1,12 +1,12 @@
 ---
 title: MiniMax API
-description: Connect Jan to MiniMax-M3 and MiniMax-M2.7 through OpenAI-compatible or Anthropic-compatible endpoints.
+description: Connect Jan to MiniMax-M3 and MiniMax-M3.1-Flash through OpenAI-compatible or Anthropic-compatible endpoints.
 keywords:
   [
     Jan,
     MiniMax,
     MiniMax-M3,
-    MiniMax-M2.7,
+    MiniMax-M3.1-Flash,
     OpenAI-compatible,
     Anthropic-compatible,
     API key,
@@ -20,8 +20,9 @@ import { Settings, Plus } from 'lucide-react'
 
 # MiniMax
 
-Jan includes MiniMax as a built-in cloud provider. The model list includes **MiniMax-M3**, with
-tool use and vision support, and **MiniMax-M2.7**, with text and tool use support.
+Jan includes MiniMax as a built-in cloud provider. The model list offers **MiniMax-M3.1-Flash**
+first, followed by **MiniMax-M3**, both with tool use and vision support. Saved models and
+manually entered model IDs remain available; refreshing discovery does not reset them.
 
 ## Use the built-in provider
 
@@ -42,7 +43,7 @@ The built-in provider uses the global OpenAI-compatible endpoint.
 
 ### Select a model
 
-Start or open a chat, then select **MiniMax-M3** or **MiniMax-M2.7** from the model selector.
+Start or open a chat, then select **MiniMax-M3** or **MiniMax-M3.1-Flash** from the model selector.
 
 </Steps>
 
@@ -63,8 +64,13 @@ To use a custom endpoint:
 1. In **Settings** > **Model Providers**, click **Add Provider**
    (<Plus width={16} height={16} style={{display:"inline"}}/>).
 2. Select the API format shown in the table and enter the matching base URL and API key.
-3. Add `MiniMax-M3` or `MiniMax-M2.7` to the provider's model list. Enable tools and vision for
-   MiniMax-M3, or tools for MiniMax-M2.7.
+3. Add `MiniMax-M3.1-Flash` or `MiniMax-M3` to the provider's model list. Enable tools and vision.
+
+MiniMax-M3.1-Flash uses adaptive thinking by default. Leave thinking and effort unset for the
+server defaults; it does not support disabling thinking or an effort of `none`. For explicit
+custom parameters, supported efforts are `low`, `medium`, `high`, `xhigh`, and `max` (default).
+The compatible chat API uses `reasoning_effort`; the Anthropic-compatible API uses
+`output_config.effort`. Do not send `service_tier` or `reasoning_split: false` for Flash.
 
 <Callout type="warning">
 For Anthropic-compatible endpoints, enter the base URL exactly as shown, ending in `/anthropic`.

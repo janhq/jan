@@ -8,8 +8,29 @@ import {
   extractQuantLabel,
   getModelCapabilities,
   selectDefaultQuant,
+  suggestedModelIds,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
+
+describe('MiniMax discovery', () => {
+  it('offers Flash first without mutating saved or media model IDs', () => {
+    const saved = ['MiniMax-M2.7', 'MiniMax-M3', 'speech-02-hd', 'MiniMax-M3.1-Flash']
+    expect(suggestedModelIds('minimax', saved)).toEqual([
+      'MiniMax-M3.1-Flash', 'speech-02-hd', 'MiniMax-M3',
+    ])
+    expect(saved[0]).toBe('MiniMax-M2.7')
+    expect(suggestedModelIds('custom', saved)).toBe(saved)
+  })
+
+  it('retains only verified gateway text IDs and preserves unrelated entries', () => {
+    expect(suggestedModelIds('openrouter', [
+      'other/model', 'minimax/minimax-m2.7', 'minimax/minimax-m3',
+      'other/second', 'minimax/minimax-m3.1-flash', 'minimax/minimax-m3.1-flash:free',
+    ])).toEqual([
+      'other/model', 'minimax/minimax-m3.1-flash:free', 'other/second', 'minimax/minimax-m3',
+    ])
+  })
+})
 
 // Mock the token.js module
 vi.mock('token.js', () => ({
@@ -352,7 +373,8 @@ describe('getModelCapabilities', () => {
     const m3Capabilities = getModelCapabilities('minimax', 'MiniMax-M3')
     const m27Capabilities = getModelCapabilities('minimax', 'MiniMax-M2.7')
 
-    expect(defaultModel('minimax')).toBe('MiniMax-M3')
+    expect(defaultModel('minimax')).toBe('MiniMax-M3.1-Flash')
+    expect(getModelCapabilities('minimax', 'MiniMax-M3.1-Flash')).toEqual(m3Capabilities)
     expect(m3Capabilities).toEqual([
       ModelCapabilities.COMPLETION,
       ModelCapabilities.TOOLS,

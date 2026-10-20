@@ -109,12 +109,13 @@ export const providerModels = {
     supportsN: true,
   },
   minimax: {
-    models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    models: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
     supportsCompletion: true,
-    supportsStreaming: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    // Preserve capabilities for explicitly saved legacy models.
+    supportsStreaming: ['MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsJSON: [],
-    supportsImages: ['MiniMax-M3'],
-    supportsToolCalls: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsImages: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
+    supportsToolCalls: ['MiniMax-M3.1-Flash', 'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsN: true,
   },
   openrouter: {
