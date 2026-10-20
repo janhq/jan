@@ -449,6 +449,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   // gate a device restart raises so that none is admitted while it decides.
   private engineLeases = 0
   private engineGate: Promise<void> | null = null
+  // Reconciliations run one after another; see reconcileEngineDevices.
+  private reconcileQueue: Promise<void> = Promise.resolve()
   private userModelsMax: number = 1
   private engineEmbeddingBonus: number = 0
   private loadedChatOrder: string[] = []
@@ -2866,8 +2868,31 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    * flight, or a load of a model other than `loadingModelId` returns 'busy' and
    * leaves the worker alone. A load passes its own id because it is already
    * registered as loading by the time it asks.
+   *
+   * Known limit: the lease covers this extension's own requests. The native
+   * local API proxy, the agent loop and the model-lifecycle commands read the
+   * worker's address in Rust and send a moment later, outside any lease, so a
+   * restart that lands in that window fails that one request. It only happens
+   * when the device set has just changed and nothing else is running.
    */
   async reconcileEngineDevices(
+    loadingModelId?: string
+  ): Promise<'unchanged' | 'restarted' | 'busy'> {
+    // One at a time. Each owns the gate from its idle check until its restart is
+    // done; a second one raising its own gate would, on finishing, clear it
+    // while the first is still deciding, and a request admitted in between
+    // would never be seen by the first one's idle check.
+    const run = this.reconcileQueue.then(() =>
+      this.reconcileOnce(loadingModelId)
+    )
+    this.reconcileQueue = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
+  private async reconcileOnce(
     loadingModelId?: string
   ): Promise<'unchanged' | 'restarted' | 'busy'> {
     const engine = await pluginGetEngineInfo().catch(() => null)

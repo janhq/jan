@@ -1825,6 +1825,39 @@ describe('reconcileEngineDevices', () => {
       expect(await extension.reconcileEngineDevices()).toBe('restarted')
     })
 
+    // Settings > Hardware > Refresh and a model load can both ask at once. The
+    // second must not raise its own gate over the first's and clear it on its
+    // way out while the first is still deciding.
+    it('are not admitted while an earlier restart is still deciding, however many ask', async () => {
+      const { spawn, ensureSession } = await armChat()
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+      )
+      const idle = Promise.withResolvers<boolean>()
+      vi.mocked(api.engineSlotsIdle)
+        .mockReturnValueOnce(idle.promise)
+        .mockResolvedValue(false)
+
+      const first = extension.reconcileEngineDevices('m')
+      await vi.waitFor(() => expect(api.engineSlotsIdle).toHaveBeenCalledTimes(1))
+      const second = extension.reconcileEngineDevices()
+      // Let everything that can settle without the first's idle answer settle.
+      // Unqueued, that is the whole of the second one, which returns busy and
+      // clears the gate the first still needs.
+      for (let i = 0; i < 50; i++) await Promise.resolve()
+      const chat = extension.chat(request)
+
+      idle.resolve(true)
+      expect(await first).toBe('restarted')
+      await second
+      await chat
+
+      expect(spawn.mock.invocationCallOrder[0]).toBeLessThan(
+        ensureSession.mock.invocationCallOrder[0]
+      )
+    })
+
     it('keep the engine for every batch of an embedding', async () => {
       await armChat()
       vi.spyOn(extension as never, 'ensureEmbeddingModelLoaded' as never).mockResolvedValue(
