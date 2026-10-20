@@ -468,9 +468,6 @@ function ThreadDetail() {
   const backendError = isLlamacppActive ? backendErrorRaw : undefined
 
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
-  const setContinueFromContentRef = useRef<((content: string) => void) | null>(
-    null
-  )
   const setChatMessagesRef = useRef<
     ((updater: (prev: UIMessage[]) => UIMessage[]) => void) | null
   >(null)
@@ -2042,9 +2039,13 @@ function ThreadDetail() {
     // Consume any pending partial captured at the `finishReason === 'length'`
     // event so the regenerate resumes from where the stream stopped, and the
     // "Growing the Mind…" shimmer renders while the model reloads.
+    // The prefill goes on this thread's own transport: the user may have
+    // opened another thread while the model reloaded.
     const pending = takeFrom(pendingContinuations, threadId)
     if (pending) {
-      setContinueFromContentRef.current?.(pending.text)
+      useChatSessions
+        .getState()
+        .sessions[threadId]?.transport.setContinueFromContent(pending.text)
       setPendingContinue({ threadId, message: pending.message })
     }
 
@@ -2062,7 +2063,6 @@ function ThreadDetail() {
 
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
-  setContinueFromContentRef.current = setContinueFromContent
   setChatMessagesRef.current = setChatMessages
 
   useEffect(() => {
