@@ -50,7 +50,7 @@ export function CopyPage({ className }: { className?: string }) {
       onClick={copy}
       aria-live="polite"
       className={cn(
-        'focus-ring inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-line px-2.5 text-doc-small text-ink/60 transition-colors duration-150 ease-jan hover:bg-surface hover:text-ink',
+        'focus-ring inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-line px-2.5 text-doc-small text-ink/60 transition-colors duration-150 ease-jan hover:bg-surface hover:text-ink dark:bg-surface dark:hover:bg-raised',
         className
       )}
     >

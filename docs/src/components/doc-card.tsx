@@ -1,12 +1,13 @@
 import type { PropsWithChildren, ReactNode } from 'react'
-import { ArrowRight, ArrowUpRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
 // Link card: an icon on a round neutral chip, then the title (doc-body
-// Medium), a one-phrase description (doc-small at 60%) and a "Read →" call
-// to action pinned to the bottom so a row of cards lines up. Cards that leave the docs say "Visit ↗".
-// 1px line, 12px corners; on hover the card fills with the palest grey, the
-// border darkens a step and the arrow nudges along.
+// Medium), a one-phrase description (doc-small at 60%) and a bare → in the
+// bottom-right corner, pinned so a row of cards lines up. One arrow for every
+// card, inside or outside the docs (no "Read"/"Visit" wording); external
+// cards open in a new tab. 1px line, 12px corners; on hover the card fills a
+// step lighter, the border darkens and the arrow nudges along.
 // Phones: a compact row (chip left, title and description beside it, a bare
 // arrow on the right), so a group of cards takes half the scroll.
 type DocCardProps = {
@@ -18,27 +19,27 @@ type DocCardProps = {
 
 export function DocCard({ title, href, icon, iconClassName, children }: DocCardProps) {
   const isExternal = href.startsWith('http')
-  const Arrow = isExternal ? ArrowUpRight : ArrowRight
 
   return (
     <a
       href={href}
       {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
       className={cn(
-        'group focus-ring not-prose grid items-center gap-x-4 rounded-xl border border-line bg-page p-4 no-underline transition-colors duration-150 ease-jan hover:border-ink/15 hover:bg-surface',
+        'group focus-ring not-prose grid items-center gap-x-4 rounded-xl border border-line bg-page p-4 no-underline transition-colors duration-150 ease-jan hover:border-ink/15 hover:bg-surface dark:bg-surface dark:hover:border-line-strong dark:hover:bg-raised',
         'sm:flex sm:flex-col sm:items-stretch sm:p-5',
         icon ? 'grid-cols-[auto_1fr_auto]' : 'grid-cols-[1fr_auto]'
       )}
     >
       {icon && (
         // The icon sits on a round neutral chip (palest grey, white while the
-        // card itself turns grey on hover), in ink. Company logos are solid;
+        // card itself turns grey on hover; in dark mode a well darker than
+        // the card, the page colour), in ink. Company logos are solid;
         // everything else is a Lucide line icon, thinned to a 1.75 stroke (only
         // Lucide's: icon packs draw solid logos with a zero-width stroke that
         // a wider one would fatten).
         <span
           className={cn(
-            'row-span-2 flex size-9 items-center justify-center rounded-full bg-surface text-ink transition-colors duration-150 ease-jan group-hover:bg-page [&_svg]:size-[18px] [&_svg.lucide]:stroke-[1.75]',
+            'row-span-2 flex size-9 items-center justify-center rounded-full bg-surface text-ink transition-colors duration-150 ease-jan group-hover:bg-page dark:bg-page dark:group-hover:bg-page [&_svg]:size-[18px] [&_svg.lucide]:stroke-[1.75]',
             iconClassName
           )}
         >
@@ -49,23 +50,13 @@ export function DocCard({ title, href, icon, iconClassName, children }: DocCardP
         {title}
       </span>
       {children && <span className="self-start text-doc-small text-ink/60 sm:mt-1 sm:self-auto">{children}</span>}
-      <span
-        className={cn(
-          'row-span-2 row-start-1 inline-flex items-center gap-1.5 text-doc-small font-medium text-ink sm:mt-auto sm:pt-5',
-          icon ? 'col-start-3' : 'col-start-2'
-        )}
-      >
-        <span className="max-sm:sr-only">{isExternal ? 'Visit' : 'Read'}</span>
-        <Arrow
+      <span className={cn('row-span-2 row-start-1 sm:mt-auto sm:self-end sm:pt-5', icon ? 'col-start-3' : 'col-start-2')}>
+        <ArrowRight
           aria-hidden
-          className={cn(
-            'size-4 transition-transform duration-150 ease-jan',
-            isExternal
-              ? 'motion-safe:group-hover:-translate-y-0.5 motion-safe:group-hover:translate-x-0.5'
-              : 'motion-safe:group-hover:translate-x-0.5'
-          )}
+          className="size-4 text-ink/60 transition-[color,transform] duration-150 ease-jan group-hover:text-ink motion-safe:group-hover:translate-x-0.5"
         />
       </span>
+      {isExternal && <span className="sr-only">(opens in a new tab)</span>}
     </a>
   )
 }

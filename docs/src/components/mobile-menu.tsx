@@ -41,17 +41,22 @@ export function MobileMenuTop({ onSearch }: { onSearch?: () => void }) {
   return (
     <div className="flex flex-col gap-4 pb-2">
       <div className="jan-menu-row flex items-center justify-between gap-3" style={{ '--i': 0 } as CSSProperties}>
-        <ul className="-ml-3 flex items-center gap-1">
+        {/* Segmented control: a 44px track as wide as the row allows (its
+            left edge on the content line, like the search field), the two
+            sets as equal halves, the current one filled. 8px track (a
+            control, like the search field under it), 4px segments 4px in:
+            concentric corners on the radius scale. */}
+        <ul className="grid h-11 flex-1 grid-cols-2 rounded-lg border border-line p-[3px]">
           {TABS.map(({ label, href }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`)
             return (
-              <li key={href}>
+              <li key={href} className="flex">
                 <a
                   href={href}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'focus-ring flex h-11 items-center rounded-lg px-3 text-doc-h3 font-medium transition-colors duration-150 ease-jan',
-                    active ? 'bg-surface text-ink' : 'text-ink/60 hover:text-ink'
+                    'focus-ring flex flex-1 items-center justify-center rounded-sm text-doc-body font-medium transition-colors duration-150 ease-jan',
+                    active ? 'bg-chip text-ink dark:bg-raised' : 'text-ink/60 hover:text-ink'
                   )}
                 >
                   {label}

@@ -10,9 +10,10 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { MENU_BUTTON, MenuIcon } from '@/components/menu-icon'
 import { DownloadJan, MobileMenuFooter, MobileMenuTop, TABS } from '@/components/mobile-menu'
 
-// Docs navbar: wordmark and the two doc sets as tabs on the left; search and
-// theme as bare icons, then Download, on the right. Below lg the tabs,
-// theme and download fold into a menu panel under the bar.
+// Docs navbar: wordmark and the two doc sets as tabs on the left, text only
+// (the current one in full ink, the other at 60%; the phone menu's tabs keep
+// a fill); search and theme as bare icons, then Download, on the right.
+// Below lg the tabs, theme and download fold into a menu panel under the bar.
 
 /** "Jan" wordmark, as in jan.ai's navbar. Colour is baked into each SVG, so
  *  swap files per theme. Nudged up 1px: it sits a touch low against the tabs. */
@@ -97,7 +98,7 @@ export function Navbar() {
                       aria-current={active ? 'page' : undefined}
                       className={cn(
                         'focus-ring flex items-center rounded-lg px-3 py-1 text-doc-body font-medium transition-colors duration-150 ease-jan',
-                        active ? 'bg-surface text-ink' : 'text-ink/60 hover:text-ink'
+                        active ? 'text-ink' : 'text-ink/60 hover:text-ink'
                       )}
                     >
                       {label}

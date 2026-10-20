@@ -28,6 +28,29 @@
 }
 
 @theme {
+  /* Jan's waving-hand logo beside the docs home title. */
+  --animate-wave: wave 2.4s ease-in-out infinite;
+  @keyframes wave {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0deg);
+    }
+    10%,
+    30% {
+      transform: rotate(14deg);
+    }
+    20% {
+      transform: rotate(-8deg);
+    }
+    40% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(10deg);
+    }
+  }
+
   /* Corner radius: four steps, nothing else.
        round   rounded-full  chips, step numbers, pills
        box     rounded-xl    12px  cards, callouts, code, images, dialogs, FAQ
@@ -70,7 +93,9 @@
      body 70%, muted 60%, meta 40%, e.g. `text-ink/70`. */
   --color-page: var(--color-jan-neutral-0);
   --color-surface: var(--color-jan-neutral-50); /* sidebar, cards, code */
+  --color-raised: var(--color-jan-neutral-50); /* hover, dialogs (dark: a step up) */
   --color-line: var(--color-jan-neutral-200); /* borders, rules */
+  --color-line-strong: var(--color-jan-neutral-300); /* table heads, quotes */
   --color-ink: var(--color-jan-neutral-950);
   --color-link: var(--color-jan-blue);
   --color-chip: var(--color-jan-neutral-100); /* inline code */
@@ -99,7 +124,7 @@
      for running text, Medium (500) for anything that leads: headings, titles,
      the current page, bold. Every line height is a multiple of 4.
 
-     doc-display  36/44  Medium  docs home and 404 title
+     doc-display  36–56 fluid (jan.ai display-lg)  Medium  docs home and 404 title
      doc-title    28/36  Medium  page title (h1)
      doc-h2       20/28  Medium  section heading
      doc-h3       16/24  Medium  sub-heading, step, FAQ question, next/prev
@@ -109,9 +134,9 @@
 
      mono-button is jan.ai's button style (14/16 SemiBold), kept as is so the
      Download buttons match jan.ai. */
-  --text-doc-display: 2.25rem;
-  --text-doc-display--line-height: 2.75rem;
-  --text-doc-display--letter-spacing: -0.03em;
+  --text-doc-display: clamp(2.25rem, 1.7857rem + 1.9048vw, 3.5rem);
+  --text-doc-display--line-height: clamp(2.5rem, 2.0357rem + 1.9048vw, 3.75rem);
+  --text-doc-display--letter-spacing: -0.04em;
   --text-doc-display--font-weight: 500;
   --text-doc-title: 1.75rem;
   --text-doc-title--line-height: 2.25rem;
@@ -150,17 +175,25 @@
 /* Dark theme: the same ramp, inverted. Ink stays off pure white for long
    reading. Fumadocs puts `.dark` on <html>. */
 .dark {
+  /* Dark mode by the usual conventions: layers get lighter as they come
+     forward (no shadows), borders are translucent white so they hold on any
+     layer, and text is a step off pure white to cut glare.
+       page     950  background
+       surface  900  cards, code, inputs
+       raised   800  hover, active, dialogs, popovers */
   --color-page: var(--color-jan-neutral-950);
   --color-surface: var(--color-jan-neutral-900);
-  --color-line: var(--color-jan-neutral-800);
-  --color-ink: var(--color-jan-neutral-50);
+  --color-raised: var(--color-jan-neutral-800);
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.2);
+  --color-ink: var(--color-jan-neutral-100);
   --color-chip: var(--color-jan-neutral-800);
 
   --color-fd-background: var(--color-page);
   --color-fd-foreground: var(--color-ink);
   --color-fd-muted: var(--color-surface);
-  --color-fd-muted-foreground: #9b9a9c; /* ink at 60% on page */
-  --color-fd-popover: var(--color-surface);
+  --color-fd-muted-foreground: color-mix(in oklab, var(--color-ink) 60%, var(--color-page));
+  --color-fd-popover: var(--color-raised);
   --color-fd-popover-foreground: var(--color-ink);
   --color-fd-card: var(--color-surface);
   --color-fd-card-foreground: var(--color-ink);
@@ -169,7 +202,7 @@
   --color-fd-primary-foreground: var(--color-page);
   --color-fd-secondary: var(--color-surface);
   --color-fd-secondary-foreground: var(--color-ink);
-  --color-fd-accent: var(--color-surface);
+  --color-fd-accent: rgb(255 255 255 / 0.08); /* highlight on any layer */
   --color-fd-accent-foreground: var(--color-ink);
   --color-fd-ring: var(--color-link);
 }
@@ -236,6 +269,13 @@ body {
   #nd-page {
     padding-inline: 1.25rem;
   }
+}
+
+/* Dark mode: light screenshots would glare, so content images are dimmed a
+   little. No edge: many screenshots have transparent padding baked in, and
+   an outline would trace the file, not the window. */
+.dark #nd-page .prose :where(img, video):not(:where(.not-prose, .not-prose *)) {
+  filter: brightness(0.9);
 }
 
 /* Code blocks as on jan.ai: surface fill, 1px line, 12px radius, 20px
@@ -455,25 +495,19 @@ figure.shiki .line {
   vertical-align: top;
 }
 #nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
-  border-bottom-color: var(--color-jan-neutral-300);
+  border-bottom-color: var(--color-line-strong);
   font-weight: 500;
   color: var(--color-ink);
   background: transparent;
-}
-.dark #nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
-  border-bottom-color: var(--color-jan-neutral-700);
 }
 #nd-page .prose :where(tbody tr):not(:where(.not-prose, .not-prose *)) {
   background: transparent;
 }
 #nd-page .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
-  border-inline-start: 2px solid var(--color-jan-neutral-300);
+  border-inline-start: 2px solid var(--color-line-strong);
   padding-inline-start: 1.25rem;
   font-style: normal;
   color: inherit;
-}
-.dark #nd-page .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
-  border-inline-start-color: var(--color-jan-neutral-700);
 }
 #nd-page .prose blockquote p::before,
 #nd-page .prose blockquote p::after {
@@ -529,6 +563,9 @@ figure.shiki .line {
   border: 1px solid var(--color-line);
   border-radius: 9999px;
   background: var(--color-page);
+}
+.dark #nd-page .prose .jan-steps h3::before {
+  background: var(--color-surface);
   font-family: var(--font-mono);
   font-size: var(--text-doc-label);
   font-weight: var(--text-doc-label--font-weight);
