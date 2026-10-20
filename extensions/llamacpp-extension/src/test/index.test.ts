@@ -22,6 +22,11 @@ vi.mock('../backend-settings')
 // Mock fetch globally
 global.fetch = vi.fn()
 
+// The engine requests go through the Tauri HTTP plugin (reqwest), not the
+// webview's fetch.
+const httpFetch = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
 // Mock tauri-plugin-llamacpp-api (partial mock)
 vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
   const actual = await vi.importActual<
@@ -453,7 +458,7 @@ describe('llamacpp_extension', () => {
         }]
       }
 
-      global.fetch = vi.fn().mockResolvedValue({
+      httpFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(mockResponse)
       })
@@ -467,7 +472,7 @@ describe('llamacpp_extension', () => {
       const result = await extension.chat(request)
       
       expect(result).toEqual(mockResponse)
-      expect(fetch).toHaveBeenCalledWith(
+      expect(httpFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
         expect.objectContaining({
           method: 'POST',
@@ -1728,16 +1733,16 @@ describe('reconcileEngineDevices', () => {
       return { spawn, ensureSession }
     }
 
-    afterEach(() => vi.unstubAllGlobals())
+    // Chat and embeddings go out through the no-proxy client, not global fetch.
+    beforeEach(() => httpFetch.mockReset())
 
     it('are not cut off by a restart while one is in flight, even if the worker looks idle', async () => {
       const { spawn } = await armChat()
       const reply = Promise.withResolvers<Response>()
-      const fetchMock = vi.fn().mockReturnValue(reply.promise)
-      vi.stubGlobal('fetch', fetchMock)
+      httpFetch.mockReturnValue(reply.promise)
 
       const chat = extension.chat(request)
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
       expect(api.stopEngine).not.toHaveBeenCalled()
@@ -1751,10 +1756,7 @@ describe('reconcileEngineDevices', () => {
 
     it('wait for a restart under way and then use the new engine', async () => {
       const { spawn, ensureSession } = await armChat()
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
-      )
+      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const stopped = Promise.withResolvers<void>()
       vi.mocked(api.stopEngine).mockReturnValue(stopped.promise)
 
@@ -1830,10 +1832,7 @@ describe('reconcileEngineDevices', () => {
     // way out while the first is still deciding.
     it('are not admitted while an earlier restart is still deciding, however many ask', async () => {
       const { spawn, ensureSession } = await armChat()
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
-      )
+      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const idle = Promise.withResolvers<boolean>()
       vi.mocked(api.engineSlotsIdle)
         .mockReturnValueOnce(idle.promise)
@@ -1867,11 +1866,10 @@ describe('reconcileEngineDevices', () => {
         512 as never
       )
       const reply = Promise.withResolvers<Response>()
-      const fetchMock = vi.fn().mockReturnValue(reply.promise)
-      vi.stubGlobal('fetch', fetchMock)
+      httpFetch.mockReturnValue(reply.promise)
 
       const embedding = extension.embed(['a'])
-      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
 
@@ -1883,5 +1881,112 @@ describe('reconcileEngineDevices', () => {
 
       expect(await extension.reconcileEngineDevices()).toBe('restarted')
     })
+  })
+})
+
+// Jan's requests to its own engine must not be captured by a proxy. reqwest
+// reads HTTP(S)_PROXY and the OS proxy and only skips loopback when NO_PROXY
+// names it, so each request names a proxy of its own whose no-proxy list
+// covers every loopback host (#9352).
+describe('engine requests bypass a configured proxy', () => {
+  let extension: llamacpp_extension
+  const session = {
+    model_id: 'test-model',
+    pid: 1,
+    port: 3000,
+    api_key: 'test-key',
+  }
+
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body })
+
+  const expectDirect = (urlPart: string) => {
+    const call = httpFetch.mock.calls.find(([url]) =>
+      String(url).includes(urlPart)
+    )
+    expect(call, `no plugin-http request to ${urlPart}`).toBeDefined()
+    const noProxy = (call![1] as { proxy?: { all?: { noProxy?: string } } })
+      .proxy?.all?.noProxy
+    expect(noProxy?.split(',')).toEqual(
+      expect.arrayContaining(['localhost', '127.0.0.1', '::1'])
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    httpFetch.mockReset()
+    extension = new llamacpp_extension()
+  })
+
+  it('sends the embeddings request direct', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded' as never
+    ).mockResolvedValue(session as never)
+    vi.spyOn(extension as never, 'embedBatchBudget' as never).mockResolvedValue(
+      512 as never
+    )
+    httpFetch.mockResolvedValue(
+      okJson({ data: [{ embedding: [0.1], index: 0 }], usage: {} })
+    )
+
+    await extension.embed(['hello'])
+
+    expectDirect('/v1/embeddings')
+  })
+
+  it('sends the tokenize request direct', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureEmbeddingModelLoaded' as never
+    ).mockResolvedValue(session as never)
+    httpFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
+
+    await expect(extension.countEmbeddingTokens(['hello'])).resolves.toEqual([3])
+
+    expectDirect('/tokenize')
+  })
+
+  it('sends the props request direct', async () => {
+    vi.spyOn(extension as never, 'getEngineInfo' as never).mockResolvedValue({
+      port: 3000,
+      apiKey: 'k',
+    } as never)
+    vi.spyOn(extension as never, 'getLoadedModels' as never).mockResolvedValue([
+      'test-model',
+    ] as never)
+    httpFetch.mockResolvedValue(
+      okJson({ default_generation_settings: { n_ctx: 4096 } })
+    )
+
+    await expect(extension.getModelProps('test-model')).resolves.toMatchObject({
+      nCtx: 4096,
+    })
+
+    expectDirect('/props')
+  })
+
+  it('sends chat requests direct, streaming or not', async () => {
+    vi.spyOn(
+      extension as never,
+      'ensureHealthySession' as never
+    ).mockResolvedValue(session as never)
+    httpFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
+
+    const request = {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hi' }],
+    }
+    await extension.chat({ ...request, stream: false }).catch(() => {})
+    expectDirect('/v1/chat/completions')
+
+    httpFetch.mockClear()
+    const stream = (await extension.chat({
+      ...request,
+      stream: true,
+    })) as AsyncIterable<unknown>
+    await stream[Symbol.asyncIterator]()
+      .next()
+      .catch(() => {})
+    expectDirect('/v1/chat/completions')
   })
 })

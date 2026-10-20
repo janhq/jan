@@ -48,6 +48,7 @@ import {
   setDefaultEmbeddingModelId,
   type EmbedBatchResult,
 } from './util'
+import { loopbackFetch } from './loopback-fetch'
 import {
   generatePreset,
   threadCacheDir,
@@ -1073,7 +1074,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     }
     try {
       const url = `http://127.0.0.1:${engine.port}/props?model=${encodeURIComponent(modelId)}`
-      const res = await fetch(url, {
+      const res = await loopbackFetch(url, {
         headers: { Authorization: `Bearer ${engine.apiKey}` },
       })
       if (!res.ok) return undefined
@@ -2432,7 +2433,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         )
       }
     }
-    const response = await fetch(url, {
+    const response = await loopbackFetch(url, {
       method: 'POST',
       headers,
       body,
@@ -2566,7 +2567,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       return this.handleStreamingResponse(url, headers, body, abortController)
     }
     // Handle non-streaming response
-    const response = await fetch(url, {
+    const response = await loopbackFetch(url, {
       method: 'POST',
       headers,
       body,
@@ -3100,7 +3101,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const sInfo = await this.ensureEmbeddingModelLoaded()
     const counts: number[] = []
     for (const text of texts) {
-      const res = await fetch(`http://localhost:${sInfo.port}/tokenize`, {
+      const res = await loopbackFetch(`http://localhost:${sInfo.port}/tokenize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3167,7 +3168,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         model: session.model_id,
         encoding_format: 'float',
       })
-      const response = await fetch(baseUrl, {
+      const response = await loopbackFetch(baseUrl, {
         method: 'POST',
         headers,
         body,
