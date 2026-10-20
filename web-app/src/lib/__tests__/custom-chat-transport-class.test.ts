@@ -133,17 +133,15 @@ describe('CustomChatTransport', () => {
       },
     ] as UIMessage[]
 
-    const first = transport.mapUserInlineAttachments(messages)
-    const second = transport.mapUserInlineAttachments(messages)
-
-    expect(first).toEqual(second)
-    expect(first[0]).not.toBe(messages[0])
-    expect(first[0].parts).not.toBe(messages[0].parts)
+    // The chat passes the same message objects on every turn (#9022), so each
+    // mapping must inline the file exactly once.
+    for (let turn = 0; turn < 3; turn++) {
+      const mapped = transport.mapUserInlineAttachments(messages)
+      expect(mapped[0].parts).toEqual([
+        { type: 'text', text: 'Check this\n\nFile: file.txt\nhello world' },
+      ])
+    }
     expect(messages[0].parts).toEqual([{ type: 'text', text: 'Check this' }])
-    expect(first[0].parts[0]).toEqual({
-      type: 'text',
-      text: 'Check this\n\nFile: file.txt\nhello world',
-    })
   })
 
   it('mapUserInlineAttachments ignores entries without content', () => {
