@@ -7,18 +7,21 @@
 name: Signed Commits
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    # edited: a PR retargeted to another base has a different commit list.
+    types: [opened, synchronize, reopened, edited]
     branches:
       - main
       - release
       - 'release/**'
 
-concurrency:
-  group: signed-commits-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   check_signatures:
+    # Title and body edits also fire edited; only a base change matters.
+    if: github.event.action != 'edited' || github.event.changes.base
+    # Job-level so a skipped title edit can't cancel a real check.
+    concurrency:
+      group: signed-commits-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,11 +92,14 @@ jobs:
               ...rows,
               ...truncated,
               ``,
-              `If the reason is about a key or an email, fix that on GitHub first (add the key as a **signing key**, verify the email). Then re-sign the branch and force-push (\`upstream\` is your remote for janhq/jan, \`origin\` your fork):`,
+              `If the reason is about a key or an email, fix that on GitHub first (add the key as a **signing key**, verify the email). Then replace the branch's commits with one signed commit with the same content and force-push (\`upstream\` is your remote for janhq/jan, \`origin\` your fork; PRs are squash-merged, so nothing is lost):`,
               ``,
               '```bash',
               `git fetch upstream`,
-              `git rebase --force-rebase --gpg-sign upstream/${pr.base.ref}`,
+              `git branch unsigned-backup`,
+              `git reset --soft "$(git merge-base HEAD upstream/${pr.base.ref})"`,
+              `git commit -S -m "<your PR title>"`,
+              `git diff unsigned-backup HEAD   # must print nothing`,
               `git push --force-with-lease origin HEAD`,
               '```',
               ``,

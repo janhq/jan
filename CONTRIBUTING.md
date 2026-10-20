@@ -248,13 +248,16 @@ git config --global commit.gpgsign true
 
 With `commit.gpgsign true`, every `git commit` is signed automatically. See [GitHub's commit signing docs](https://docs.github.com/en/authentication/managing-commit-signature-verification) for details.
 
-**Already opened a PR with unsigned commits?** Set up signing as above, then re-sign every commit on your branch and force-push:
+**Already opened a PR with unsigned commits?** Set up signing as above, then replace your branch's commits with one signed commit that has exactly the same content, and force-push:
 ```bash
 git fetch upstream
-git rebase --force-rebase --gpg-sign upstream/main
+git branch unsigned-backup
+git reset --soft "$(git merge-base HEAD upstream/main)"
+git commit -S -m "<your PR title>"
+git diff unsigned-backup HEAD   # must print nothing
 git push --force-with-lease origin HEAD
 ```
-`upstream` is whatever your remote for `janhq/jan` is called and `origin` is your fork (check with `git remote -v`). `--force-rebase` matters: without it, Git skips commits that are already on top of `main`, and they stay unsigned. It also flattens any merge commits on your branch into a straight line; that's fine for a PR. After the push, every commit on the PR's **Commits** tab shows a **Verified** badge and the bot comment disappears.
+`upstream` is whatever your remote for `janhq/jan` is called and `origin` is your fork (check with `git remote -v`). PRs are squash-merged, so collapsing them into one commit loses nothing. Unlike a rebase, this keeps changes made in merge commits. If `git diff` prints anything, stop and restore with `git reset --hard unsigned-backup`. After the push, every commit on the PR's **Commits** tab shows a **Verified** badge and the bot comment disappears.
 
 ### Pull Request Requirements
 - Include a screenshot or screen recording in your PR description showing the change in action
