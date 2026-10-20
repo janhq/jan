@@ -28,6 +28,19 @@
 }
 
 @theme {
+  /* Corner radius: four steps, nothing else.
+       round   rounded-full  chips, step numbers, pills
+       box     rounded-xl    12px  cards, callouts, code, images, dialogs, FAQ
+       control rounded-lg    8px   buttons, tabs, inputs, icon buttons, list rows
+       inline  rounded-sm    4px   inline code, kbd, focus rings on text
+     Fumadocs' own rounded-md (6px) and rounded-xs (2px) are folded into
+     control and inline so its pieces stay on the scale too. */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
   --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
   --font-serif: var(--font-sans);
   --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -80,69 +93,54 @@
   --color-fd-accent-foreground: var(--color-ink);
   --color-fd-ring: var(--color-link);
 
-  /* Type scale (jan.ai's Figma text styles). Display, Lead and Tagline are
-     fluid between 390px and 1440px wide; the rest are fixed. Pair the mono
-     styles with `font-mono uppercase`. */
-  --text-display-md: clamp(2rem, 1.7214rem + 1.1429vw, 2.75rem); /* 32 → 44 */
-  --text-display-md--line-height: clamp(2.25rem, 1.9714rem + 1.1429vw, 3rem);
-  --text-display-md--letter-spacing: -0.04em;
-  --text-display-md--font-weight: 600;
-  --text-lead: clamp(1.5rem, 1.4071rem + 0.381vw, 1.75rem); /* 24 → 28 */
-  --text-lead--line-height: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem);
-  --text-lead--letter-spacing: -0.02em;
-  --text-lead--font-weight: 600;
-  --text-tagline: clamp(1.125rem, 1.0554rem + 0.2857vw, 1.3125rem); /* 18 → 21 */
-  --text-tagline--line-height: clamp(1.5rem, 1.4071rem + 0.381vw, 1.75rem);
-  --text-tagline--letter-spacing: -0.02em;
-  --text-tagline--font-weight: 500;
-  --text-card-title: 1.3125rem; /* 21 / 28 SemiBold */
-  --text-card-title--line-height: 1.75rem;
-  --text-card-title--letter-spacing: -0.02em;
-  --text-card-title--font-weight: 600;
-  --text-body-strong: 1.0625rem; /* 17 / 26 SemiBold */
-  --text-body-strong--line-height: 1.625rem;
-  --text-body-strong--letter-spacing: -0.02em;
-  --text-body-strong--font-weight: 600;
-  --text-caption-strong: 0.875rem; /* 14 / 20 SemiBold */
-  --text-caption-strong--line-height: 1.25rem;
-  --text-caption-strong--letter-spacing: -0.02em;
-  --text-caption-strong--font-weight: 600;
-  --text-mono-badge: 0.8125rem; /* 13 / 16 Medium */
-  --text-mono-badge--line-height: 1rem;
-  --text-mono-badge--letter-spacing: 0.02em;
-  --text-mono-badge--font-weight: 500;
-  --text-body: 1.0625rem; /* 17 / 26 Medium */
-  --text-body--line-height: 1.625rem;
-  --text-body--letter-spacing: -0.02em;
-  --text-body--font-weight: 500;
-  --text-body-sm: 1rem; /* 16 / 24 Medium (UI labels) */
-  --text-body-sm--line-height: 1.5rem;
-  --text-body-sm--letter-spacing: -0.02em;
-  --text-body-sm--font-weight: 500;
-  --text-caption: 0.875rem; /* 14 / 20 Medium */
-  --text-caption--line-height: 1.25rem;
-  --text-caption--letter-spacing: -0.02em;
-  --text-caption--font-weight: 500;
-  --text-fine-print: 0.75rem; /* 12 / 16 */
-  --text-fine-print--line-height: 1rem;
-  --text-fine-print--letter-spacing: -0.02em;
-  --text-fine-print--font-weight: 400;
-  --text-mono-button: 0.875rem; /* 14 / 16 SemiBold */
+  /* Docs type scale. Seven steps, two weights. Reading text sits at 14–16px
+     (docs are read, not skimmed); headings climb from there in clear jumps
+     (16 → 20 → 28 → 36) and lean on size and space, not weight. Regular (400)
+     for running text, Medium (500) for anything that leads: headings, titles,
+     the current page, bold. Every line height is a multiple of 4.
+
+     doc-display  36/44  Medium  docs home and 404 title
+     doc-title    28/36  Medium  page title (h1)
+     doc-h2       20/28  Medium  section heading
+     doc-h3       16/24  Medium  sub-heading, step, FAQ question, next/prev
+     doc-body     15/24  Regular page text, callouts, card titles (Medium)
+     doc-small    14/20  Regular sidebar, TOC, tables, code, card text, UI
+     doc-label    12/16  Medium  Geist Mono caps: section labels, tabs, tags
+
+     mono-button is jan.ai's button style (14/16 SemiBold), kept as is so the
+     Download buttons match jan.ai. */
+  --text-doc-display: 2.25rem;
+  --text-doc-display--line-height: 2.75rem;
+  --text-doc-display--letter-spacing: -0.03em;
+  --text-doc-display--font-weight: 500;
+  --text-doc-title: 1.75rem;
+  --text-doc-title--line-height: 2.25rem;
+  --text-doc-title--letter-spacing: -0.025em;
+  --text-doc-title--font-weight: 500;
+  --text-doc-h2: 1.25rem;
+  --text-doc-h2--line-height: 1.75rem;
+  --text-doc-h2--letter-spacing: -0.02em;
+  --text-doc-h2--font-weight: 500;
+  --text-doc-h3: 1rem;
+  --text-doc-h3--line-height: 1.5rem;
+  --text-doc-h3--letter-spacing: -0.01em;
+  --text-doc-h3--font-weight: 500;
+  --text-doc-body: 0.9375rem;
+  --text-doc-body--line-height: 1.5rem;
+  --text-doc-body--letter-spacing: -0.01em;
+  --text-doc-body--font-weight: 400;
+  --text-doc-small: 0.875rem;
+  --text-doc-small--line-height: 1.25rem;
+  --text-doc-small--letter-spacing: -0.005em;
+  --text-doc-small--font-weight: 400;
+  --text-doc-label: 0.75rem;
+  --text-doc-label--line-height: 1rem;
+  --text-doc-label--letter-spacing: 0.04em;
+  --text-doc-label--font-weight: 500;
+  --text-mono-button: 0.875rem;
   --text-mono-button--line-height: 1rem;
   --text-mono-button--letter-spacing: 0.01em;
   --text-mono-button--font-weight: 600;
-  --text-mono-link: 0.875rem; /* 14 / 16 Medium */
-  --text-mono-link--line-height: 1rem;
-  --text-mono-link--letter-spacing: 0.02em;
-  --text-mono-link--font-weight: 500;
-  --text-mono-nav: 0.8125rem; /* 13 / 16 Medium (footer) */
-  --text-mono-nav--line-height: 1rem;
-  --text-mono-nav--letter-spacing: 0.02em;
-  --text-mono-nav--font-weight: 500;
-  --text-mono-label: 0.6875rem; /* 11 / 16 Medium */
-  --text-mono-label--line-height: 1rem;
-  --text-mono-label--letter-spacing: 0.04em;
-  --text-mono-label--font-weight: 500;
 
   /* One motion curve for everything (quick start, soft landing). Hovers use
      duration-150, menus duration-200. */
@@ -184,11 +182,17 @@
   }
 }
 
-/* Height of the Jan navbar that sits above the Fumadocs layout: jan.ai's
-   35px controls + 8px above and below + the 1px bottom border. */
+/* Height of the Jan navbar that sits above the Fumadocs layout, as jan.ai's:
+   8px above and below + the 1px bottom border around the 44px menu button
+   below lg, 35px controls from lg. */
 :root {
-  --jan-nav-height: 52px;
+  --jan-nav-height: 61px;
   --fd-banner-height: var(--jan-nav-height);
+}
+@media (min-width: 1024px) {
+  :root {
+    --jan-nav-height: 52px;
+  }
 }
 
 html {
@@ -217,17 +221,30 @@ body {
 .jan-container {
   margin-inline: auto;
   max-width: 90rem;
-  padding-left: max(env(safe-area-inset-left), 1.5rem);
-  padding-right: max(env(safe-area-inset-right), 1.5rem);
+  padding-left: max(env(safe-area-inset-left), 1.25rem);
+  padding-right: max(env(safe-area-inset-right), 1.25rem);
+}
+/* 20px side padding below lg (jan.ai's), 24px from lg where the bar lines up
+   with the sidebar. Page content on phones takes the same 20px. */
+@media (min-width: 1024px) {
+  .jan-container {
+    padding-left: max(env(safe-area-inset-left), 1.5rem);
+    padding-right: max(env(safe-area-inset-right), 1.5rem);
+  }
+}
+@media (max-width: 767px) {
+  #nd-page {
+    padding-inline: 1.25rem;
+  }
 }
 
 /* Code blocks as on jan.ai: surface fill, 1px line, 12px radius, 20px
-   padding, Geist Mono 14/20 in one ink colour (the highlighter's token
+   padding, Geist Mono at doc-small (14/20) in one ink colour (the highlighter's token
    colours are dropped, as jan.ai does). Copy button: components/code-block. */
 .prose figure.shiki {
   background: var(--color-surface);
   border: 1px solid var(--color-line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-xl);
   box-shadow: none;
   color: var(--color-ink);
 }
@@ -235,8 +252,8 @@ body {
 .prose figure.shiki > div[role='region'] {
   padding: 1.25rem 3.5rem 1.25rem 0.25rem;
   font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
+  font-size: var(--text-doc-small);
+  line-height: var(--text-doc-small--line-height);
 }
 .prose figure.shiki pre,
 .prose figure.shiki code {
@@ -253,7 +270,7 @@ body {
   border-color: var(--color-line);
   color: color-mix(in oklab, var(--color-ink) 60%, transparent);
   font-family: var(--font-mono);
-  font-size: var(--text-mono-label);
+  font-size: var(--text-doc-label);
 }
 .prose figure.shiki:has(> div > figcaption) > div[role='region'] {
   padding-right: 0.25rem;
@@ -265,37 +282,37 @@ figure.shiki .line {
 }
 
 /* ---------------------------------------------------------------------------
-   Page content, as jan.ai's post content (janhq/jan.ai src/styles/ds-prose.scss)
-   adapted to docs:
-   Text       15/24 Regular, ink at 80% (docs are read longer and denser than
-              posts: smaller, darker and lighter than jan.ai's 17/26 60%
-              Medium); bold by weight only; blocks 24px apart
-   Title      28 → 32 SemiBold (docs scale: jan.ai's 44px Display read as a
-              marketing page)
-   h2         22/30 SemiBold, full strength; 48px above, 16px below
-   h3, h4     Body/Strong, full strength; 40px above, sits on its paragraph
-   Links      body font in jan-blue with an up-right arrow (jan.ai's mono
-              caps read oddly in link-dense docs)
+   Page content, built on jan.ai's post content (janhq/jan.ai
+   src/styles/ds-prose.scss) at the docs type scale (see @theme):
+   Title      doc-title
+   Text       doc-body, ink at 80%; bold is Medium in the text's own colour;
+              blocks 24px apart
+   h2         doc-h2, full ink; 40px above, 12px below
+   h3         doc-h3; 32px above, sits on its paragraph
+   h4–h6      doc-body Medium
+   Links      jan-blue in the text's font; an up-right arrow only on links
+              that leave the docs
    Code       inline: a grey chip; blocks: see figure.shiki above
+   Tables     doc-small, ruled rows, Medium header
    Images     12px radius
-   Tables     ruled rows, Caption text
    --------------------------------------------------------------------------- */
 #nd-page h1 {
-  font-size: clamp(1.75rem, 1.6571rem + 0.381vw, 2rem); /* 28 → 32 */
-  line-height: clamp(2.125rem, 2.0321rem + 0.381vw, 2.375rem); /* 34 → 38 */
-  letter-spacing: -0.03em;
-  font-weight: 600;
+  font-size: var(--text-doc-title);
+  line-height: var(--text-doc-title--line-height);
+  letter-spacing: var(--text-doc-title--letter-spacing);
+  font-weight: var(--text-doc-title--font-weight);
   color: var(--color-ink);
   text-wrap: balance;
 }
-/* 24px between the title and the page's first line. */
+/* 24px between the title and the page's first line (the page column already
+   spaces its children 16px apart). */
 #nd-page .prose {
-  margin-top: 1.5rem;
+  margin-top: 0.5rem;
   --tw-prose-body: color-mix(in oklab, var(--color-ink) 80%, transparent);
-  font-size: 0.9375rem;
-  line-height: 1.5rem;
-  letter-spacing: -0.01em;
-  font-weight: 400;
+  font-size: var(--text-doc-body);
+  line-height: var(--text-doc-body--line-height);
+  letter-spacing: var(--text-doc-body--letter-spacing);
+  font-weight: var(--text-doc-body--font-weight);
   color: color-mix(in oklab, var(--color-ink) 80%, transparent);
 }
 #nd-page .prose :where(p, ul, ol, blockquote, table, figure, img, video, iframe, details, .jan-tabs, .jan-steps):not(:where(.not-prose, .not-prose *)) {
@@ -312,30 +329,36 @@ figure.shiki .line {
   scroll-margin-top: calc(var(--jan-nav-height) + 1.5rem);
 }
 #nd-page .prose :where(h2):not(:where(.not-prose, .not-prose *)) {
-  font-size: 1.375rem;
-  line-height: 1.875rem;
-  letter-spacing: -0.02em;
-  font-weight: 600;
-  margin-top: 3rem;
-}
-#nd-page .prose :where(h3, h4, h5, h6):not(:where(.not-prose, .not-prose *)) {
-  font-size: var(--text-body-strong);
-  line-height: var(--text-body-strong--line-height);
-  letter-spacing: var(--text-body-strong--letter-spacing);
-  font-weight: var(--text-body-strong--font-weight);
+  font-size: var(--text-doc-h2);
+  line-height: var(--text-doc-h2--line-height);
+  letter-spacing: var(--text-doc-h2--letter-spacing);
+  font-weight: var(--text-doc-h2--font-weight);
   margin-top: 2.5rem;
 }
+#nd-page .prose :where(h3):not(:where(.not-prose, .not-prose *)) {
+  font-size: var(--text-doc-h3);
+  line-height: var(--text-doc-h3--line-height);
+  letter-spacing: var(--text-doc-h3--letter-spacing);
+  font-weight: var(--text-doc-h3--font-weight);
+  margin-top: 2rem;
+}
+#nd-page .prose :where(h4, h5, h6):not(:where(.not-prose, .not-prose *)) {
+  font-size: var(--text-doc-body);
+  line-height: var(--text-doc-body--line-height);
+  letter-spacing: var(--text-doc-body--letter-spacing);
+  font-weight: 500;
+  margin-top: 1.5rem;
+}
 #nd-page .prose :where(h2 + *):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
 }
 #nd-page .prose :where(h3, h4, h5, h6) + :where(p, ul, ol) {
   margin-top: 0.25rem;
 }
-/* Bold stands out by weight only, in the text's own colour, so a step reads
-   as one shade (jan.ai's darker bold made docs, which bold every UI label,
-   look patchy). */
+/* Bold is Medium in the text's own colour, so a step reads as one shade
+   (jan.ai's darker bold made docs, which bold every UI label, look patchy). */
 #nd-page .prose :where(strong):not(:where(.not-prose, .not-prose *)) {
-  font-weight: 600;
+  font-weight: 500;
   color: inherit;
 }
 /* Lists: just enough indent for the marker, so bullets and numbers start at
@@ -363,7 +386,7 @@ figure.shiki .line {
    leave the docs (full URLs other than docs.jan.ai) get an up-right arrow. */
 #nd-page .prose :where(a):not(:where(.not-prose, .not-prose *, [style], h1 a, h2 a, h3 a, h4 a, h5 a, h6 a)) {
   border: 0;
-  border-radius: 0.125rem;
+  border-radius: var(--radius-sm);
   font-weight: inherit;
   text-decoration: none;
   color: var(--color-link);
@@ -401,7 +424,7 @@ figure.shiki .line {
   letter-spacing: normal;
   padding: 0.125rem 0.25rem;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
   background: var(--color-chip);
   color: var(--color-ink);
 }
@@ -409,7 +432,7 @@ figure.shiki .line {
 #nd-page .prose :where(code)::after {
   content: none;
 }
-/* Tables: ruled rows in Caption, header in Caption/Strong. Wide ones scroll
+/* Tables: ruled rows in doc-small, Medium header. Wide ones scroll
    sideways. */
 #nd-page .prose :where(table):not(:where(.not-prose, .not-prose *)) {
   display: block;
@@ -420,9 +443,9 @@ figure.shiki .line {
   border-collapse: collapse;
   border-radius: 0;
   background: transparent;
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  letter-spacing: var(--text-caption--letter-spacing);
+  font-size: var(--text-doc-small);
+  line-height: var(--text-doc-small--line-height);
+  letter-spacing: var(--text-doc-small--letter-spacing);
 }
 #nd-page .prose :where(th, td):not(:where(.not-prose, .not-prose *)) {
   border: 0;
@@ -433,7 +456,7 @@ figure.shiki .line {
 }
 #nd-page .prose :where(th):not(:where(.not-prose, .not-prose *)) {
   border-bottom-color: var(--color-jan-neutral-300);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-ink);
   background: transparent;
 }
@@ -460,7 +483,7 @@ figure.shiki .line {
    (jan.ai's 24px is for its large post images; docs screenshots are smaller
    and it read too round.) */
 #nd-page .prose :where(img, video, iframe):not(:where(.not-prose, .not-prose *)) {
-  border-radius: 0.75rem;
+  border-radius: var(--radius-xl);
 }
 #nd-page .prose :where(hr):not(:where(.not-prose, .not-prose *)) {
   margin: 3.5rem 0;
@@ -468,12 +491,22 @@ figure.shiki .line {
 }
 
 /* <Steps>: every h3 is a numbered step. The number sits in a mono chip on a
-   thin line that runs down the steps. */
+   thin line that runs down the steps and fades out over its last 96px, so
+   the steps trail off rather than stop. */
 .jan-steps {
+  position: relative;
   counter-reset: step;
   margin-inline-start: 0.875rem;
   padding-inline-start: 1.75rem;
-  border-inline-start: 1px solid var(--color-line);
+}
+.jan-steps::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, var(--color-line) calc(100% - 6rem), transparent);
+  pointer-events: none;
 }
 #nd-page .prose .jan-steps h3 {
   position: relative;
@@ -486,7 +519,7 @@ figure.shiki .line {
 #nd-page .prose .jan-steps h3::before {
   content: counter(step);
   position: absolute;
-  top: 0;
+  top: -0.125rem; /* 28px chip centred on the 24px heading line */
   inset-inline-start: -2.6875rem;
   display: flex;
   align-items: center;
@@ -497,8 +530,8 @@ figure.shiki .line {
   border-radius: 9999px;
   background: var(--color-page);
   font-family: var(--font-mono);
-  font-size: var(--text-mono-badge);
-  font-weight: 500;
+  font-size: var(--text-doc-label);
+  font-weight: var(--text-doc-label--font-weight);
   letter-spacing: normal;
   color: var(--color-ink);
 }
@@ -508,7 +541,7 @@ figure.shiki .line {
   padding: 8px;
 }
 .img-rounded-shadow img {
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.42);
 }
 
@@ -520,26 +553,173 @@ figure.shiki .line {
 #nd-sidebar {
   background: var(--color-page);
   border-inline-end: 1px solid var(--color-line);
-  font-size: 0.9375rem;
+  font-size: var(--text-doc-small);
 }
-/* Fumadocs' sidebar header (title, search) is switched off in
-   lib/layout.shared.tsx; drop its empty padded box so the list starts at the
-   top. */
-#nd-sidebar > div:first-child:has(> div:only-child:empty) {
+/* Fumadocs' sidebar header and footer: its title and search are switched off
+   (lib/layout.shared.tsx) and the banner and footer hold the phone menu, so
+   the desktop sidebar drops both and the list starts at the top. The drawer drops
+   its own close button: the navbar's menu button turns into the X. */
+#nd-sidebar > div:first-child,
+#nd-sidebar > div:nth-child(3) {
   display: none;
 }
-/* Page links and folder triggers: 15px, ink at 80%, full on hover. Same
-   rules for the phone drawer (#nd-sidebar-mobile). */
+/* Phone drawer: the menu above and Download below line up with the page
+   list's text (24px in, as the home menu), Download 16px under its hairline. */
+#nd-sidebar-mobile > div:first-child,
+#nd-sidebar-mobile > div:last-child {
+  padding-inline: 1.25rem;
+}
+#nd-sidebar-mobile > div:last-child {
+  padding-top: 1rem;
+}
+/* Phone menus (the navbar's on the home page, the page-list drawer on doc
+   pages) open as jan.ai's do: the panel unrolls down from the bar, easing out
+   long; each row (--i is its place) drifts up out of a soft blur, 40ms after
+   the one above. Closing, the panel rolls back up, quicker. Replaces
+   Fumadocs' slide-in for the drawer. Reduced motion: it simply appears. */
+@keyframes jan-menu-unroll {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes jan-menu-rollup {
+  from {
+    clip-path: inset(0);
+  }
+  to {
+    clip-path: inset(0 0 100% 0);
+  }
+}
+@keyframes jan-menu-row {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(3px);
+  }
+}
+.jan-menu-panel,
+#nd-sidebar-mobile[data-state='open'] {
+  animation: jan-menu-unroll 420ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.jan-menu-panel--closing,
+#nd-sidebar-mobile[data-state='closed'] {
+  animation: jan-menu-rollup 220ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+.jan-menu-row,
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > * {
+  animation: jan-menu-row 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(120ms + min(var(--i, 0), 12) * 40ms);
+}
+/* The drawer is mounted (hidden) before it first opens, so its menu rows
+   would have played already: hold them while it's closed so each opening
+   replays the cascade. */
+#nd-sidebar-mobile:not([data-state='open']) .jan-menu-row {
+  animation: none;
+}
+/* Page-list rows follow the search field (rows 0 and 1). */
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(1) {
+  --i: 2;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(2) {
+  --i: 3;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(3) {
+  --i: 4;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(4) {
+  --i: 5;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(5) {
+  --i: 6;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(6) {
+  --i: 7;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(7) {
+  --i: 8;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(8) {
+  --i: 9;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(9) {
+  --i: 10;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(10) {
+  --i: 11;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(11) {
+  --i: 12;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(12) {
+  --i: 13;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(13) {
+  --i: 14;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(14) {
+  --i: 15;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(15) {
+  --i: 16;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(16) {
+  --i: 17;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(17) {
+  --i: 18;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(18) {
+  --i: 19;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(19) {
+  --i: 20;
+}
+#nd-sidebar-mobile[data-state='open'] [data-radix-scroll-area-viewport] > div > :nth-child(20) {
+  --i: 21;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jan-menu-panel,
+  .jan-menu-row,
+  #nd-sidebar-mobile,
+  #nd-sidebar-mobile [data-radix-scroll-area-viewport] > div > * {
+    animation: none !important;
+  }
+}
+
+/* Page list: Fumadocs' 16px scroll padding + the rows' 8px would put the text
+   24px in; 12px brings it level with the search field above. */
+#nd-sidebar-mobile [data-radix-scroll-area-viewport] {
+  padding-inline: 0.75rem;
+}
+#nd-sidebar-mobile > div:first-child > div:first-child {
+  display: none;
+}
+/* The drawer opens under the navbar (which stays on top, its menu button
+   turned into an X) and fills the screen, like the navbar's own menu on the
+   docs home. */
+#nd-sidebar-mobile {
+  top: var(--jan-nav-height);
+  width: 100%;
+  max-width: none;
+  border: 0;
+  box-shadow: none;
+  font-size: var(--text-doc-small);
+}
+/* Page links and folder triggers: doc-small, ink at 80%, full on hover; rows
+   30px tall. Same rules for the phone drawer (#nd-sidebar-mobile). */
 #nd-sidebar a[style*='padding-inline-start'],
 #nd-sidebar-mobile a[style*='padding-inline-start'],
 #nd-sidebar button[style*='padding-inline-start'],
 #nd-sidebar-mobile button[style*='padding-inline-start'] {
-  font-size: 0.9375rem;
-  line-height: 1.375rem;
+  font-size: var(--text-doc-small);
+  line-height: var(--text-doc-small--line-height);
   font-weight: 400;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  border-radius: 0.375rem;
+  padding-top: 0.3125rem;
+  padding-bottom: 0.3125rem;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: color-mix(in oklab, var(--color-ink) 80%, transparent);
   transition:
@@ -576,15 +756,15 @@ figure.shiki .line {
   height: 0.875rem;
   color: color-mix(in oklab, var(--color-ink) 40%, transparent);
 }
-/* Section labels ("Get started", "Core concepts", ...): Geist Mono caps
-   (Mono/Label), ink at 60%, with room above to separate the groups. */
+/* Section labels ("Get started", "Core concepts", ...): doc-label (Geist
+   Mono caps), ink at 60%, with room above to separate the groups. */
 #nd-sidebar p[style*='padding-inline-start'],
 #nd-sidebar-mobile p[style*='padding-inline-start'] {
   font-family: var(--font-mono);
-  font-size: var(--text-mono-label);
-  line-height: var(--text-mono-label--line-height);
-  letter-spacing: var(--text-mono-label--letter-spacing);
-  font-weight: var(--text-mono-label--font-weight);
+  font-size: var(--text-doc-label);
+  line-height: var(--text-doc-label--line-height);
+  letter-spacing: var(--text-doc-label--letter-spacing);
+  font-weight: var(--text-doc-label--font-weight);
   text-transform: uppercase;
   color: color-mix(in oklab, var(--color-ink) 60%, transparent);
   margin-top: 1.5rem;
@@ -599,6 +779,19 @@ figure.shiki .line {
 }
 #nd-sidebar-mobile p[style*='padding-inline-start']:first-child {
   margin-top: 0;
+}
+/* Phones: the page list sizes up to jan.ai's phone menu: 16px text in 44px
+   rows, so every page is an easy tap. */
+#nd-sidebar-mobile a[style*='padding-inline-start'],
+#nd-sidebar-mobile button[style*='padding-inline-start'] {
+  font-size: var(--text-doc-h3);
+  line-height: var(--text-doc-h3--line-height);
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+#nd-sidebar-mobile button[style*='padding-inline-start'] svg {
+  width: 1rem;
+  height: 1rem;
 }
 /* Folders read as a file tree: their pages hang off a thin guide line
    (Fumadocs' ::before, in --color-line, 10px in). Each page row starts 6px

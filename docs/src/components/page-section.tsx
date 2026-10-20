@@ -29,5 +29,5 @@ export function PageSection() {
 
   if (!section) return null
   // mt-4: level with the first section label in the sidebar
-  return <p className="mb-1 mt-4 font-mono text-mono-label uppercase text-ink/60">{section}</p>
+  return <p className="mb-2 mt-4 font-mono text-doc-label uppercase text-ink/60">{section}</p>
 }

@@ -18,7 +18,8 @@ keywords:
     thread history,
   ]
 ---
-import { Settings, Trash2, EllipsisVertical, Cpu, Zap, Sparkles, Brain, Globe, Network, Wind, GitBranch } from 'lucide-react'
+import { Cpu, Zap } from 'lucide-react'
+import { RiOpenaiFill } from 'react-icons/ri'
 
 This guide shows you how to add, customize, and delete models within Jan.
 
@@ -90,7 +91,7 @@ To free disk space quickly, open **Settings > Llama.cpp** (or **MLX**) and click
 
 If you already have model files on your computer, you can import them directly via the engine settings:
 
-<DocCards cols={2}>
+<DocCards>
   <DocCard title="Llama.cpp" href="/desktop/local-engine/llama-cpp" icon={<Cpu size={20} />}>Import GGUF models for CPU or GPU</DocCard>
   <DocCard title="MLX" href="/desktop/local-engine/mlx" icon={<Zap size={20} />}>Import MLX models for Apple Silicon</DocCard>
 </DocCards>
@@ -99,11 +100,11 @@ If you already have model files on your computer, you can import them directly v
 
 Jan supports connecting to various AI cloud providers. Go to **Settings > Model Providers**, select your provider, and enter your API key.
 
-<DocCards cols={2}>
-  <DocCard title="OpenAI" href="/desktop/remote-models/openai" icon={<Sparkles size={20} />}>Use GPT-4o, o3 and other OpenAI models</DocCard>
-  <DocCard title="Anthropic" href="/desktop/remote-models/anthropic" icon={<Brain size={20} />}>Use Claude models from Anthropic</DocCard>
-  <DocCard title="Google" href="/desktop/remote-models/google" icon={<Globe size={20} />}>Use Gemini models from Google</DocCard>
-  <DocCard title="Groq" href="/desktop/remote-models/groq" icon={<Zap size={20} />}>Fast inference for open-source models</DocCard>
-  <DocCard title="Mistral" href="/desktop/remote-models/mistralai" icon={<Wind size={20} />}>Use Mistral AI models</DocCard>
-  <DocCard title="OpenRouter" href="/desktop/remote-models/openrouter" icon={<Network size={20} />}>Hundreds of models through one API</DocCard>
+<DocCards>
+  <DocCard title="OpenAI" href="/desktop/remote-models/openai" icon={<RiOpenaiFill />}>Use GPT-4o, o3 and other OpenAI models</DocCard>
+  <DocCard title="Anthropic" href="/desktop/remote-models/anthropic" icon={<AnthropicIcon />}>Use Claude models from Anthropic</DocCard>
+  <DocCard title="Google" href="/desktop/remote-models/google" icon={<GoogleIcon />}>Use Gemini models from Google</DocCard>
+  <DocCard title="Groq" href="/desktop/remote-models/groq" icon={<GroqIcon />}>Fast inference for open-source models</DocCard>
+  <DocCard title="Mistral" href="/desktop/remote-models/mistralai" icon={<MistralIcon />}>Use Mistral AI models</DocCard>
+  <DocCard title="OpenRouter" href="/desktop/remote-models/openrouter" icon={<OpenRouterIcon />}>Hundreds of models through one API</DocCard>
 </DocCards>

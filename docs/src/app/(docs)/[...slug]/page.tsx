@@ -1,6 +1,6 @@
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { DocsBody, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page'
-import { TOCPopover, TOCProvider } from 'fumadocs-ui/layouts/docs/page/slots/toc'
+import { TOCProvider } from 'fumadocs-ui/layouts/docs/page/slots/toc'
 import { baseOptions } from '@/lib/layout.shared'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
@@ -9,6 +9,7 @@ import { getMDXComponents } from '@/components/mdx'
 import { NextraToc } from '@/components/nextra-toc'
 import { NavLinks } from '@/components/nav-links'
 import { PageSection } from '@/components/page-section'
+import { DrawerBanner, DrawerFooter, EmptySlot } from '@/components/sidebar-trigger'
 import { source } from '@/lib/source'
 import { defaultOgImage, isNightly, siteName } from '@/lib/shared'
 import { CopyPage } from '@/components/copy-page'
@@ -48,7 +49,14 @@ export default async function Page(props: Props) {
       // Jan Desktop / Jan Agent are root folders, so the sidebar shows one at
       // a time. The navbar tabs switch between them, so no sidebar switcher.
       tabs={false}
-      sidebar={{ defaultOpenLevel: 0, collapsible: false }}
+      // banner / footer: the phone menu around the page list (the desktop
+      // sidebar gets them too; global.css hides them there)
+      sidebar={{
+        defaultOpenLevel: 0,
+        collapsible: false,
+        banner: <DrawerBanner />,
+        footer: <DrawerFooter />,
+      }}
     >
     <DocsPage
       toc={toc}
@@ -56,7 +64,7 @@ export default async function Page(props: Props) {
       breadcrumb={{ enabled: false }}
       // "On This Page" is a port of Nextra's TOC (one active heading at a time).
       tableOfContent={{ single: true }}
-      slots={{ toc: { provider: TOCProvider, main: NextraToc, popover: TOCPopover } }}
+      slots={{ toc: { provider: TOCProvider, main: NextraToc, popover: EmptySlot } }}
       // Prev/next as on jan.ai/docs (title + arrow), not Fumadocs' cards.
       footer={{ enabled: false }}
     >
@@ -64,12 +72,9 @@ export default async function Page(props: Props) {
           column spaces its children 16px apart). */}
       <div>
         <PageSection />
-        <div className="flex items-start justify-between gap-4">
-          <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
-          {/* In the right sidebar from xl; here below that. Nudged down to sit
-              level with the title's first line. */}
-          <CopyPage className="mt-2 xl:hidden" />
-        </div>
+        <DocsTitle className="mt-0">{page.data.title}</DocsTitle>
+        {/* In the right sidebar from xl; under the title below that */}
+        <CopyPage className="mt-4 xl:hidden" />
       </div>
       <DocsBody>
         {body}

@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Provider searchPages={getSearchPages()}>
           <Navbar />
           {isNightly && (
-            <aside aria-label="Nightly documentation" className="border-b border-amber-300 bg-amber-50 px-6 py-3 text-center text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+            <aside aria-label="Nightly documentation" className="border-b border-amber-300 bg-amber-50 px-6 py-3 text-center text-doc-small text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
               <strong>Nightly documentation.</strong> These docs cover unreleased changes and may be unstable.{' '}
               <a href="https://docs.jan.ai" className="font-medium underline underline-offset-2">View stable docs</a>.
             </aside>

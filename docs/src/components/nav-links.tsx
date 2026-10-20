@@ -60,8 +60,8 @@ function PageLink({ page, side }: { page: PageTree.Item; side: 'prev' | 'next' }
         strokeWidth={1.75}
       />
       <span className="flex flex-col gap-1">
-        <span className="text-caption text-ink/60">{side === 'prev' ? 'Previous' : 'Next'}</span>
-        <span className="text-body text-ink transition-colors duration-150 ease-jan group-hover:text-link">
+        <span className="text-doc-small text-ink/60">{side === 'prev' ? 'Previous' : 'Next'}</span>
+        <span className="text-doc-h3 text-ink transition-colors duration-150 ease-jan group-hover:text-link">
           {page.name}
         </span>
       </span>

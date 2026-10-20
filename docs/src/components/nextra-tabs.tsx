@@ -20,7 +20,7 @@ export function NextraTabs({
   return (
     <RadixTabs.Root defaultValue={String(defaultIndex)} className="jan-tabs">
       <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain">
-        {/* Mono/Badge labels on a rule, like jan.ai's filter tabs: the
+        {/* doc-label tabs on a rule, like jan.ai's filter tabs: the
             selected tab at full ink with an ink underline, the rest at 60%. */}
         <RadixTabs.List className="flex w-max min-w-full gap-5 border-b border-line">
           {items.map((item, i) => {
@@ -32,7 +32,7 @@ export function NextraTabs({
                 value={String(i)}
                 disabled={disabled}
                 className={cn(
-                  'focus-ring -mb-px select-none border-b-2 pb-2.5 pt-1 font-mono text-mono-badge uppercase transition-colors duration-150 ease-jan',
+                  'focus-ring -mb-px select-none border-b-2 pb-2.5 pt-1 font-mono text-doc-label uppercase transition-colors duration-150 ease-jan',
                   'border-transparent text-ink/60 hover:text-ink',
                   'data-[state=active]:border-ink data-[state=active]:text-ink',
                   disabled && 'pointer-events-none text-ink/40'

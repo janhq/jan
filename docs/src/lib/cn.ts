@@ -1,27 +1,20 @@
 import { extendTailwindMerge } from 'tailwind-merge'
 
-// tailwind-merge only knows Tailwind's own sizes, so it reads `text-body` or
-// `text-mono-button` as a colour and drops it next to `text-ink`. Register the
+// tailwind-merge only knows Tailwind's own sizes, so it reads `text-doc-body`
+// or `text-mono-button` as a colour and drops it next to `text-ink`. Register the
 // type scale from global.css as font sizes.
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
       text: [
-        'display-md',
-        'lead',
-        'tagline',
-        'card-title',
-        'body',
-        'body-strong',
-        'caption-strong',
-        'mono-badge',
-        'body-sm',
-        'caption',
-        'fine-print',
+        'doc-display',
+        'doc-title',
+        'doc-h2',
+        'doc-h3',
+        'doc-body',
+        'doc-small',
+        'doc-label',
         'mono-button',
-        'mono-link',
-        'mono-label',
-        'mono-nav',
       ],
     },
   },

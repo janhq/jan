@@ -33,14 +33,14 @@ export function SearchField({
       <SearchIcon className="absolute left-3 size-4 text-ink/40 pointer-events-none" />
       <span
         className={cn(
-          'w-full border border-line bg-page pl-9 pr-12 text-sm text-ink/40',
+          'w-full border border-line bg-page pl-9 pr-12 text-doc-small text-ink/40',
           'transition-colors hover:border-ink/25',
-          variant === 'hero' ? 'rounded-2xl py-3.5' : 'flex h-full items-center rounded-lg'
+          variant === 'hero' ? 'rounded-lg py-3.5' : 'flex h-full items-center rounded-lg'
         )}
       >
         Search docs…
       </span>
-      <kbd className="absolute right-2 hidden rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] font-medium text-ink/40 sm:block">
+      <kbd className="absolute right-2 hidden rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-doc-label text-ink/40 sm:block">
         ⌘K
       </kbd>
     </button>
