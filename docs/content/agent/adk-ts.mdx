@@ -1,6 +1,6 @@
 ---
 title: JavaScript Quickstart
-description: Install the preview ADK, connect a model, and stream your first Jan Agent response from Node.js.
+description: Install the preview Jan ADK, connect a model and stream your first agent response from Node.js.
 keywords: [Jan, Jan Agent, ADK, JavaScript, TypeScript, Node.js, quickstart]
 ---
 
@@ -20,22 +20,22 @@ Install the nightly package below instead. The runtime is a separate, prebuilt d
 
 In a new directory, install the latest nightly ADK package:
 
-<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 mkdir jan-js-demo && cd jan-js-demo
 npm init -y
 npm install "$(node -e "fetch('https://delta.jan.ai/adk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")"
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows PowerShell">
 ```powershell
 mkdir jan-js-demo; cd jan-js-demo
 npm init -y
 npm install (node -e "fetch('https://delta.jan.ai/adk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")
 ```
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 The command looks up the current build and installs its versioned package URL, so
 `package.json` pins that exact build. The [download page](https://delta.jan.ai/adk-nightly/index.html)
@@ -43,20 +43,20 @@ shows the same command with the URL written out.
 
 Install the `jan` runtime:
 
-<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows PowerShell">
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
 Follow the installer's PATH instructions before continuing.
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 ```bash
 jan cli agent rpc --help

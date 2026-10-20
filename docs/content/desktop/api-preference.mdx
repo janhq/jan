@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: API endpoints supported by Jan's local API server
+description: Endpoints exposed by Jan's local OpenAI-compatible and Anthropic-compatible API server, with examples.
 keywords:
   [
     Jan,
@@ -12,8 +12,6 @@ keywords:
     local AI,
   ]
 ---
-
-import { Bot, Code2 } from 'lucide-react'
 
 Jan's local API server exposes an OpenAI-compatible REST API at `http://127.0.0.1:1337`. Use it as a drop-in replacement for cloud APIs in any application that supports OpenAI-compatible endpoints.
 
@@ -81,9 +79,9 @@ curl http://127.0.0.1:1337/v1/messages \
 
 Jan's local API is designed to wire directly into AI agents and coding tools — no cloud account needed.
 
-<DocCards cols={2}>
-  <DocCard title="Claude Code" href="/desktop/integrations/claude-code" icon={<Code2 size={20} />}>Point Claude Code at Jan's local server to run Opus, Sonnet, and Haiku tiers on your own hardware.</DocCard>
-  <DocCard title="OpenClaw" href="/desktop/integrations/openclaw" icon={<Bot size={20} />}>Wire OpenClaw to Jan's local API for a fully private autonomous agent — no cloud, no usage fees.</DocCard>
+<DocCards>
+  <DocCard title="Claude Code" href="/desktop/integrations/claude-code" icon={<ClaudeCodeIcon />}>Run Claude Code on Jan's local server</DocCard>
+  <DocCard title="OpenClaw" href="/desktop/integrations/openclaw" icon={<OpenClawIcon />}>A private autonomous agent on your machine</DocCard>
 </DocCards>
 
 ## Using with OpenAI SDK

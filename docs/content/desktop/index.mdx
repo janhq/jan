@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Jan is a local, privacy-first AI — a Claude-class alternative you own and control
+description: Jan is an open-source AI app that runs models on your own hardware and keeps your data private.
 keywords:
   [
     Jan,
@@ -22,7 +22,8 @@ keywords:
   ]
 ---
 
-import { Rocket, Package, Bot, Plug, Monitor, Globe, Server, Brain, Terminal, Layers, MessageCircle, Hammer } from 'lucide-react'
+import { Rocket, Package, Bot, Plug, Monitor, Globe, Server, Brain, Terminal, Layers, Hammer } from 'lucide-react'
+import { FaDiscord, FaRedditAlien } from 'react-icons/fa'
 
 <Callout type="info">
 **Jan 0.8.6 is now live!** This hotfix for 0.8.5 fixes Linux AppImage model-loading crashes, NVIDIA Turing GPU compatibility, Qwen3.8 speculative-decoding slowdowns, and image handling for MCP tools. [Read the release notes.](https://github.com/janhq/jan/releases/tag/v0.8.6)
@@ -33,29 +34,29 @@ Jan is an open-source replacement for Claude and ChatGPT. It comes with built-in
 ## Get Started
 
 <DocCards>
-  <DocCard title="Quickstart" href="/desktop/quickstart" icon={<Rocket size={20} />}>Install Jan on macOS, Windows, or Linux and chat with AI in minutes — no account needed.</DocCard>
-  <DocCard title="Models" href="/desktop/jan-models/jan-code-4b" icon={<Package size={20} />}>Jan ships with foundation models built for reasoning, agents, and deep research — ready to run on your computer.</DocCard>
-  <DocCard title="Cowork (Preview)" href="/desktop/cowork" icon={<Hammer size={20} />}>Give Jan a task and it works on it autonomously — files, commands, and web research.</DocCard>
-  <DocCard title="Agents" href="/agent" icon={<Bot size={20} />}>Autonomous AI agents that run on your hardware — read files, manage calendars, and take actions via WhatsApp, Discord, or Slack.</DocCard>
-  <DocCard title="Integrations" href="/desktop/integrations/claude-code" icon={<Plug size={20} />}>Connect Jan with Claude Code, OpenClaw, MCP servers, and more.</DocCard>
+  <DocCard title="Quickstart" href="/desktop/quickstart" icon={<Rocket size={20} />}>Install Jan and start chatting in minutes</DocCard>
+  <DocCard title="Models" href="/desktop/jan-models/jan-code-4b" icon={<Package size={20} />}>Jan models for reasoning, agents and research</DocCard>
+  <DocCard title="Cowork (Preview)" href="/desktop/cowork" icon={<Hammer size={20} />}>Hand Jan a task and let it work</DocCard>
+  <DocCard title="Agents" href="/agent" icon={<Bot size={20} />}>Autonomous agents that run on your hardware</DocCard>
+  <DocCard title="Integrations" href="/desktop/integrations/claude-code" icon={<Plug size={20} />}>Connect Claude Code, OpenClaw, MCP servers and more</DocCard>
 </DocCards>
 
 ## Ecosystem
 
 <DocCards>
-  <DocCard title="Jan Desktop" href="/desktop/quickstart" icon={<Monitor size={20} />}>macOS, Windows, and Linux apps with full offline support.</DocCard>
-  <DocCard title="Jan Web" href="https://chat.jan.ai" icon={<Globe size={20} />}>Jan in the browser — a direct alternative to chatgpt.com.</DocCard>
-  <DocCard title="Jan Server" href="/desktop/api-server" icon={<Server size={20} />}>Run a local OpenAI-compatible API server on your machine.</DocCard>
-  <DocCard title="Jan Models" href="/desktop/jan-models/jan-code-4b" icon={<Brain size={20} />}>Optimized for reasoning, agents, and deep research — built to match frontier AI capabilities and small enough to run on your personal computer.</DocCard>
-  <DocCard title="Jan CLI" href="/desktop/cli" icon={<Terminal size={20} />}>Install Jan Agent separately and connect it to Desktop's Local API Server.</DocCard>
-  <DocCard title="Jan Platform" href="https://jan.ai" icon={<Layers size={20} />}>The infrastructure layer for building AI products on top of Jan. (Coming Soon)</DocCard>
+  <DocCard title="Jan Desktop" href="/desktop/quickstart" icon={<Monitor size={20} />}>Offline apps for macOS, Windows and Linux</DocCard>
+  <DocCard title="Jan Web" href="https://chat.jan.ai" icon={<Globe size={20} />}>Jan in your browser</DocCard>
+  <DocCard title="Jan Server" href="/desktop/api-server" icon={<Server size={20} />}>A local OpenAI-compatible API server</DocCard>
+  <DocCard title="Jan Models" href="/desktop/jan-models/jan-code-4b" icon={<Brain size={20} />}>Small models built for reasoning and research</DocCard>
+  <DocCard title="Jan CLI" href="/desktop/cli" icon={<Terminal size={20} />}>Use Jan Agent with Desktop's local server</DocCard>
+  <DocCard title="Jan Platform" href="https://jan.ai" icon={<Layers size={20} />}>Infrastructure for building on Jan (coming soon)</DocCard>
 </DocCards>
 
 ## Community
 
 <DocCards>
-  <DocCard title="Discord" href="https://discord.gg/FTk2MvZwJH" icon={<MessageCircle size={20} />}>Join the Jan community — get help, share your setup, and talk local AI.</DocCard>
-  <DocCard title="Reddit" href="https://www.reddit.com/r/askjan/" icon={<MessageCircle size={20} />}>Ask questions, share setups, and discuss local AI on r/askjan.</DocCard>
+  <DocCard title="Discord" href="https://discord.gg/FTk2MvZwJH" icon={<FaDiscord />}>Get help and share your setup</DocCard>
+  <DocCard title="Reddit" href="https://www.reddit.com/r/askjan/" icon={<FaRedditAlien />}>Ask questions on r/askjan</DocCard>
 </DocCards>
 
 ## Principles

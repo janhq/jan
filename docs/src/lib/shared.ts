@@ -1,12 +1,16 @@
-export const siteName = 'Jan'
+export const siteName = 'Jan Docs'
 // Set by the build/development command, not by the deployed static host.
 export const docsChannel = process.env.DOCS_CHANNEL ?? 'stable'
 export const isNightly = docsChannel === 'nightly'
 export const siteUrl = isNightly ? 'https://docs-nightly.jan.ai' : 'https://docs.jan.ai'
 export const marketingUrl = 'https://jan.ai'
 export const defaultDescription =
-  'Documentation for Jan Desktop and Jan Agent: run models locally or in the cloud, build and embed agents.'
-export const defaultOgImage = '/assets/images/general/og-image-docs.png'
+  'Everything you need to run Jan on your computer and in your terminal.'
+// Link-preview image. Previews build their URLs from docs.jan.ai, so the
+// file keeps this path (a new path would 404 on PR previews until merged);
+// to change the image, replace the file and bump ?v= so social sites
+// fetch it again instead of showing their cached copy.
+export const defaultOgImage = '/assets/images/general/og-image-docs.png?v=2'
 
 export const gitConfig = {
   user: 'janhq',

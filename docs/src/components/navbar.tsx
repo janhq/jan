@@ -1,271 +1,156 @@
 'use client'
 /* eslint-disable @next/next/no-img-element */
-import { useEffect, useState, type ComponentProps } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronDown } from 'lucide-react'
-import { FaDiscord, FaGithub } from 'react-icons/fa'
-import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
+import { Search } from 'lucide-react'
+import { useSearchContext } from 'fumadocs-ui/contexts/search'
 import { cn } from '@/lib/cn'
-import { marketingUrl } from '@/lib/shared'
-import { useDownloadLink } from '@/lib/use-download-link'
-import { SearchField } from '@/components/search-field'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { MENU_BUTTON, MenuIcon } from '@/components/menu-icon'
+import { DownloadJan, MobileMenuFooter, MobileMenuTop, TABS } from '@/components/mobile-menu'
 
-type MenuItem = {
-  name: string
-  href: string
-  external?: boolean
-  children?: { name: string; href: string; external?: boolean }[]
-}
+// Docs navbar: wordmark and the two doc sets as tabs on the left, text only
+// (the current one in full ink, the other at 60%; the phone menu's tabs keep
+// a fill); search and theme as bare icons, then Download, on the right.
+// Below lg the tabs, theme and download fold into a menu panel under the bar.
 
-// Same menu as the old jan.ai/docs navbar. Docs links are local; marketing
-// pages now live on jan.ai.
-const MENU_ITEMS: MenuItem[] = [
-  {
-    name: 'Jan',
-    href: '/desktop/quickstart',
-    children: [
-      { name: 'Jan Desktop', href: '/desktop/quickstart' },
-      { name: 'Jan Agent', href: '/agent/quickstart' },
-    ],
-  },
-  { name: 'Research', href: `${marketingUrl}/research` },
-  { name: 'Docs', href: '/' },
-  {
-    name: 'Company',
-    href: '#',
-    children: [
-      { name: 'Blog', href: `${marketingUrl}/blog` },
-      { name: 'Careers', href: 'https://menlo.ai/careers', external: true },
-    ],
-  },
-]
-
-const SOCIALS = [
-  { href: 'https://discord.com/invite/FTk2MvZwJH', Icon: FaDiscord, label: 'Discord' },
-  { href: 'https://twitter.com/jandotai', Icon: FaXTwitter, label: 'X' },
-  { href: 'https://github.com/janhq/jan', Icon: FaGithub, label: 'GitHub' },
-  {
-    href: 'https://linkedin.com/company/opensuperintelligence',
-    Icon: FaLinkedinIn,
-    label: 'LinkedIn',
-  },
-]
-
-// Only local routes use client navigation; external URLs and hash anchors stay native.
-function MenuLink({ href, ...props }: ComponentProps<'a'> & { href: string }) {
-  if (href === '#') return <span className={props.className}>{props.children}</span>
-  const Component = href.startsWith('/') && !href.startsWith('//') ? Link : 'a'
-  return <Component href={href} {...props} />
-}
-
-function Socials({ className }: { className?: string }) {
+/** "Jan" wordmark, as in jan.ai's navbar. Colour is baked into each SVG, so
+ *  swap files per theme. Nudged up 1px: it sits a touch low against the tabs. */
+function Logo() {
   return (
-    <div className={cn('flex gap-4 text-black', className)}>
-      {SOCIALS.map(({ href, Icon, label }) => (
-        <a
-          key={label}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={label}
-          className="rounded-lg flex items-center justify-center hover:opacity-70"
-        >
-          <Icon className="size-5" />
-        </a>
-      ))}
-    </div>
+    <>
+      <img src="/assets/brand/jan-wordmark.svg" alt="Jan" className="h-3.5 w-auto -translate-y-px dark:hidden" />
+      <img
+        src="/assets/brand/jan-wordmark-white.svg"
+        alt="Jan"
+        className="hidden h-3.5 w-auto -translate-y-px dark:block"
+      />
+    </>
   )
 }
 
-function DownloadJan({ className }: { className?: string }) {
-  const downloadHref = useDownloadLink()
+function SearchButton({ onOpen }: { onOpen?: () => void }) {
+  const { setOpenSearch } = useSearchContext()
   return (
-    <a
-      href={downloadHref}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        'inline-flex h-9 items-center justify-center whitespace-nowrap rounded-md bg-black px-4 text-base font-medium text-white transition-colors hover:bg-black/85',
-        className
-      )}
+    <button
+      type="button"
+      aria-label="Search docs"
+      onClick={() => {
+        onOpen?.()
+        setOpenSearch(true)
+      }}
+      className="focus-ring flex size-9 cursor-pointer items-center justify-center rounded-lg text-ink/60 transition-colors duration-150 ease-jan hover:text-ink"
     >
-      Download Jan
-    </a>
+      <Search className="size-[18px]" strokeWidth={1.75} />
+    </button>
   )
 }
 
 export function Navbar() {
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const isDocsHome = pathname === '/'
+  // The home menu stays on screen while 'closing' so it can roll back up
+  // before it's removed (straight to 'closed' with reduced motion).
+  const [menu, setMenu] = useState<'closed' | 'open' | 'closing'>('closed')
+  const menuOpen = menu === 'open'
+  const closeMenu = () =>
+    setMenu((state) =>
+      state !== 'open'
+        ? state
+        : window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'closed'
+          : 'closing'
+    )
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
+  // Close the menu on navigation, and lock page scroll while it is open.
+  useEffect(() => setMenu('closed'), [pathname])
   useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : ''
+    if (!menuOpen) return
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeMenu()
+    window.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = ''
+      window.removeEventListener('keydown', onKey)
     }
-  }, [mobileOpen])
-
-  const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href
+  }, [menuOpen])
 
   return (
     <div
       id="navbar"
-      className="sticky top-0 z-50 h-(--jan-nav-height) w-full border-b border-black/10 bg-white text-black lg:px-6"
+      className="sticky top-0 z-50 h-(--jan-nav-height) w-full border-b border-line bg-page text-ink"
     >
-      <div className="jan-container flex h-full items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <img src="/assets/logo-jan.svg" alt="Jan" className="h-6 w-6" />
-          <span className="text-xl font-bold">Jan</span>
-        </Link>
+      <div className="jan-container relative flex h-full items-center justify-between gap-4">
+        <div className="flex items-center gap-8">
+          <Link href="/" aria-label="Jan Docs home" className="focus-ring flex items-center rounded-sm">
+            <Logo />
+          </Link>
 
-        <nav className="hidden lg:block">
-          <ul className="flex items-center space-x-8">
-            {MENU_ITEMS.map((item) => (
-              <li
-                key={item.name}
-                className={cn(item.children && 'group relative py-2')}
-              >
-                <MenuLink
-                  href={item.href}
-                  target={item.external ? '_blank' : undefined}
-                  rel={item.external ? 'noopener noreferrer' : undefined}
-                  className={cn(
-                    'flex items-center gap-1 transition-opacity hover:opacity-70',
-                    isActive(item.href) && 'font-semibold'
-                  )}
-                >
-                  {item.name}
-                  {item.children && (
-                    <ChevronDown className="size-3.5 transition-transform duration-200 group-hover:rotate-180" />
-                  )}
-                </MenuLink>
-                {item.children && (
-                  <div className="invisible absolute left-0 top-full z-50 translate-y-1 pt-2 opacity-0 transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
-                    <div className="min-w-[180px] overflow-hidden rounded-xl border border-black bg-white shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]">
-                      {item.children.map((child) => (
-                        <MenuLink
-                          key={child.name}
-                          href={child.href}
-                          target={child.external ? '_blank' : undefined}
-                          rel={child.external ? 'noopener noreferrer' : undefined}
-                          className="block whitespace-nowrap px-4 py-2 text-black transition-colors hover:bg-jan-blue-soft hover:text-jan-blue"
-                        >
-                          {child.name}
-                        </MenuLink>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </li>
-            ))}
-            {/* The docs home has its own large search field. */}
-            {!isDocsHome && (
-              <li>
-                <SearchField />
-              </li>
-            )}
-            <li>
-              <DownloadJan />
-            </li>
-            <li>
-              <Socials />
-            </li>
-          </ul>
-        </nav>
+          <nav aria-label="Documentation" className="hidden lg:block">
+            <ul className="flex items-center gap-1">
+              {TABS.map(({ label, href }) => {
+                const active = isActive(href)
+                return (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'focus-ring flex items-center rounded-lg px-3 py-1 text-doc-body font-medium transition-colors duration-150 ease-jan',
+                        active ? 'text-ink' : 'text-ink/60 hover:text-ink'
+                      )}
+                    >
+                      {label}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </nav>
+        </div>
 
-        <button
-          className="flex h-8 w-8 flex-col items-center justify-center lg:hidden"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label="Toggle mobile menu"
-        >
-          <span
-            className={cn(
-              'block h-0.5 w-6 bg-black transition-all duration-300',
-              mobileOpen && 'translate-y-1.5 rotate-45'
-            )}
-          />
-          <span
-            className={cn(
-              'mt-1 block h-0.5 w-6 bg-black transition-all duration-300',
-              mobileOpen && 'opacity-0'
-            )}
-          />
-          <span
-            className={cn(
-              'mt-1 block h-0.5 w-6 bg-black transition-all duration-300',
-              mobileOpen && '-translate-y-1.5 -rotate-45'
-            )}
-          />
-        </button>
+        {/* Search and theme as bare icons, then Download at the far right */}
+        <div className="flex items-center gap-1">
+          <SearchButton />
+          <ThemeToggle className="hidden lg:flex" />
+          <DownloadJan className="ml-2 hidden lg:inline-flex" />
+
+          {/* Phones on doc pages: the menu button opens the page list instead
+              (rendered here by DocsLayout, components/sidebar-trigger.tsx), and
+              this one steps aside. */}
+          <span id="docs-sidebar-trigger" className="peer flex empty:hidden md:hidden" />
+          <button
+            type="button"
+            onClick={() => (menuOpen ? closeMenu() : setMenu('open'))}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="docs-menu"
+            className={cn(MENU_BUTTON, 'lg:hidden max-md:peer-[:not(:empty)]:hidden')}
+          >
+            <MenuIcon open={menuOpen} />
+          </button>
+        </div>
       </div>
 
-      {mobileOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div className="fixed bottom-0 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-3xl bg-white lg:hidden">
-            <div className="p-6">
-              <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <img src="/assets/logo-jan.svg" alt="Jan" className="h-6 w-6" />
-                  <span className="text-2xl font-bold text-black">Jan</span>
-                </div>
-                <button
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  onClick={() => setMobileOpen(false)}
-                  aria-label="Close menu"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="mb-6">
-                <SearchField variant="panel" onOpen={() => setMobileOpen(false)} />
-              </div>
-              <nav className="mb-6">
-                <ul className="space-y-4">
-                  {MENU_ITEMS.map((item) => (
-                    <li key={item.name}>
-                      <MenuLink
-                        href={item.href}
-                        className={cn(
-                          'block py-2 text-lg font-medium text-black transition-colors hover:text-gray-600',
-                          isActive(item.href) && 'font-bold text-blue-600'
-                        )}
-                        onClick={() => setMobileOpen(false)}
-                      >
-                        {item.name}
-                      </MenuLink>
-                      {item.children && (
-                        <ul className="space-y-2 pl-4">
-                          {item.children.map((child) => (
-                            <li key={child.name}>
-                              <MenuLink
-                                href={child.href}
-                                target={child.external ? '_blank' : undefined}
-                                rel={child.external ? 'noopener noreferrer' : undefined}
-                                className="block py-1 text-base text-gray-600 transition-colors hover:text-black"
-                                onClick={() => setMobileOpen(false)}
-                              >
-                                {child.name}
-                              </MenuLink>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-              <DownloadJan className="mb-6 w-full" />
-              <Socials />
+      {menu !== 'closed' && (
+        <div
+          id="docs-menu"
+          className={cn(
+            'jan-menu-panel fixed inset-x-0 bottom-0 top-(--jan-nav-height) z-50 overflow-y-auto bg-page lg:hidden',
+            menu === 'closing' && 'jan-menu-panel--closing'
+          )}
+          onAnimationEnd={(e) => {
+            if (menu === 'closing' && e.target === e.currentTarget) setMenu('closed')
+          }}
+        >
+          <div className="jan-container flex min-h-full flex-col py-5">
+            <MobileMenuTop onSearch={() => setMenu('closed')} />
+            <div className="mt-auto border-t border-line pt-4">
+              <MobileMenuFooter />
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

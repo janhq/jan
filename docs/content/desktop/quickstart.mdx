@@ -1,7 +1,7 @@
 ---
 sidebarTitle: "Quickstart"
-title: QuickStart
-description: Get started with Jan and start chatting with AI in minutes.
+title: Quickstart
+description: Install Jan, download a model and start chatting with local or cloud AI in a few minutes.
 keywords:
   [
     Jan,
@@ -24,9 +24,32 @@ Get up and running with Jan in minutes. This guide will help you install Jan, do
 
 ### Install Jan
 
-1. <Link href="https://jan.ai/download" target="_blank" rel="noopener noreferrer">Download Jan</Link>
-2. Install the app ([Mac](/desktop/install/mac), [Windows](/desktop/install/windows), [Linux](/desktop/install/linux))
-3. Launch Jan
+Download Jan for your computer, install it and open the app.
+
+<DownloadButton href="https://jan.ai/download">Download Jan</DownloadButton>
+
+<Accordions>
+  <Accordion title="macOS">
+    - macOS 13.6 or later
+    - Apple Silicon (M1 or later)
+    - Installer: `.dmg`
+
+    [Mac install guide](/desktop/install/mac)
+  </Accordion>
+  <Accordion title="Windows">
+    - Windows 10 or later
+    - x64 with AVX2, or ARM64
+    - Installer: `.exe`
+
+    [Windows install guide](/desktop/install/windows)
+  </Accordion>
+  <Accordion title="Linux">
+    - Flatpak (recommended, any distribution)
+    - `.deb` for Ubuntu and Debian, or AppImage
+
+    [Linux install guide](/desktop/install/linux)
+  </Accordion>
+</Accordions>
 
 ### Getting Ready
 
@@ -93,11 +116,11 @@ See all [Cloud Providers](/desktop/remote-models/openai) for per-provider setup.
 Jan is more than a chat interface. Organize your work with Projects, build custom Assistants, run autonomous Agents, and connect external tools via MCP.
 
 <DocCards>
-  <DocCard title="Cowork (Preview)" href="/desktop/cowork" icon={<Hammer size={20} />}>Hand Jan a task it works through on its own — in a sandbox or directly on your project.</DocCard>
-  <DocCard title="Projects" href="/desktop/projects" icon={<FolderOpen size={20} />}>Organize conversations with shared instructions and files.</DocCard>
-  <DocCard title="Assistants" href="/desktop/assistants" icon={<Bot size={20} />}>Set up a personal AI assistant tailored to how you work.</DocCard>
-  <DocCard title="Agents" href="/agent" icon={<Cpu size={20} />}>Autonomous AI that reads files, manages calendars, and takes actions.</DocCard>
-  <DocCard title="Connectors (MCP)" href="/desktop/mcp" icon={<Plug size={20} />}>Extend your AI with web search, code execution, databases, and more.</DocCard>
+  <DocCard title="Cowork (Preview)" href="/desktop/cowork" icon={<Hammer size={20} />}>Hand Jan a task and let it work</DocCard>
+  <DocCard title="Projects" href="/desktop/projects" icon={<FolderOpen size={20} />}>Group chats with shared instructions and files</DocCard>
+  <DocCard title="Assistants" href="/desktop/assistants" icon={<Bot size={20} />}>Assistants tailored to how you work</DocCard>
+  <DocCard title="Agents" href="/agent" icon={<Cpu size={20} />}>Autonomous AI that reads files and takes actions</DocCard>
+  <DocCard title="Connectors (MCP)" href="/desktop/mcp" icon={<Plug size={20} />}>Add web search, code execution and more</DocCard>
 </DocCards>
 
 ## Models
@@ -105,7 +128,7 @@ Jan is more than a chat interface. Organize your work with Projects, build custo
 Beyond the default model, Jan comes with a range of foundation models for different tasks — from image understanding and reasoning to coding.
 
 <DocCards>
-  <DocCard title="Jan-Code-4B" href="/desktop/jan-models/jan-code-4b" icon={<Brain size={20} />}>Optimized for code generation and reasoning tasks.</DocCard>
-  <DocCard title="Jan-v3-4B" href="/desktop/jan-models/jan-v3-4b-base-instruct" icon={<Brain size={20} />}>General purpose instruction-following model.</DocCard>
-  <DocCard title="Jan-v2-VL" href="/desktop/jan-models/jan-v2-vl-med" icon={<Brain size={20} />}>Vision-language model with strong reasoning capability for image understanding.</DocCard>
+  <DocCard title="Jan-Code-4B" href="/desktop/jan-models/jan-code-4b" icon={<Brain size={20} />}>Built for code generation and reasoning</DocCard>
+  <DocCard title="Jan-v3-4B" href="/desktop/jan-models/jan-v3-4b-base-instruct" icon={<Brain size={20} />}>General-purpose instruction following</DocCard>
+  <DocCard title="Jan-v2-VL" href="/desktop/jan-models/jan-v2-vl-med" icon={<Brain size={20} />}>Vision-language model for image understanding</DocCard>
 </DocCards>

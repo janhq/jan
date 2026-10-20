@@ -1,113 +1,173 @@
-/* eslint-disable @next/next/no-img-element */
 import Link from 'next/link'
-import { Bot, Computer, Rocket, type LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { FaDiscord, FaGithub, FaLinkedinIn, FaXTwitter } from 'react-icons/fa6'
+import type { IconType } from 'react-icons'
 import { SearchField } from '@/components/search-field'
+import { AgentDrawing, DesktopDrawing } from '@/components/home-drawings'
 
-// Port of the old DocsHome (jan.ai/docs), now the docs.jan.ai landing page.
+// docs.jan.ai landing page, short on purpose:
+//   1. waving-hand title, intro and search
+//   2. a tile per doc set: a picture (white line art of the product on a
+//      jan.ai brand gradient), then its title and description in ink. On
+//      hover the gradient slowly zooms and the drawing lifts.
+//   3. "Start here": each set's most-read pages, under its tile
+//   4. Jan's socials
+
 type Section = {
-  icon: LucideIcon
   title: string
   description: string
-  tags: string
   href: string
-  chip: string
+  drawing: ReactNode
+  /** jan.ai brand gradient (public/images/home), behind the drawing only. */
+  background: string
+  /** Most-read pages, listed under "Start here". */
+  links: { title: string; href: string }[]
 }
 
 const SECTIONS: Section[] = [
   {
-    icon: Computer,
     title: 'Jan Desktop',
     description:
-      'The cowork-style desktop app — chat, models, MCP connectors, and local API server.',
-    tags: 'Quickstart · Models · CLI',
+      'The desktop app: chat, models, MCP connectors and the local API server.',
     href: '/desktop',
-    chip: 'bg-[#E0EEFE] text-[#0668D5]',
+    drawing: <DesktopDrawing />,
+    background: '/images/home/desktop.webp',
+    links: [
+      { title: 'Quickstart', href: '/desktop/quickstart' },
+      { title: 'Install on Mac', href: '/desktop/install/mac' },
+      { title: 'Local API Server', href: '/desktop/api-server' },
+    ],
   },
   {
-    icon: Bot,
     title: 'Jan Agent',
     description:
-      'The standalone agent, distributed separately — launch autonomous coding agents against a local model.',
-    tags: 'Quickstart · Skills · Memory',
+      'The terminal agent: run coding tasks against a local or cloud model.',
     href: '/agent',
-    chip: 'bg-[#FDE68A]/60 text-[#92400E]',
+    drawing: <AgentDrawing />,
+    background: '/images/home/agent.webp',
+    links: [
+      { title: 'Quickstart', href: '/agent/quickstart' },
+      { title: 'CLI', href: '/agent/cli' },
+      { title: 'Skills', href: '/agent/skills' },
+    ],
   },
 ]
 
-const COMMON_PATHS: { icon: LucideIcon; title: string; href: string }[] = [
-  { icon: Rocket, title: 'Desktop Quickstart', href: '/desktop/quickstart' },
-  { icon: Bot, title: 'Jan Agent Quickstart', href: '/agent/quickstart' },
+// Same accounts as jan.ai's menu.
+const SOCIALS: { label: string; href: string; Icon: IconType }[] = [
+  {
+    label: 'Discord',
+    href: 'https://discord.com/invite/FTk2MvZwJH',
+    Icon: FaDiscord,
+  },
+  { label: 'X', href: 'https://x.com/jandotai', Icon: FaXTwitter },
+  { label: 'GitHub', href: 'https://github.com/janhq/jan', Icon: FaGithub },
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/company/opensuperintelligence',
+    Icon: FaLinkedinIn,
+  },
 ]
 
 export function DocsHome() {
   return (
     <div className="jan-container py-16 lg:py-24">
-      <div className="mx-auto max-w-2xl px-4 text-center">
-        <h1 className="flex items-center justify-center gap-3 font-serif text-5xl font-semibold leading-none lg:gap-4 lg:text-6xl">
-          <img src="/assets/logo-jan.svg" alt="" className="size-11 animate-wave lg:size-14" />
-          Jan Docs
-        </h1>
-        <p className="mt-5 text-lg leading-relaxed text-black/60">
-          References for Jan Desktop and Jan Agent.
-        </p>
-        <SearchField variant="hero" className="mx-auto mt-8 max-w-xl" />
-      </div>
+      <div className="mx-auto max-w-5xl">
+        {/* 1. Intro */}
+        <div className="mx-auto max-w-2xl text-center">
+          <h1 className="flex items-center justify-center gap-3 text-doc-display text-ink">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/logo-jan.svg"
+              alt=""
+              className="size-[0.9em] motion-safe:animate-wave"
+            />
+            Jan Docs
+          </h1>
+          <p className="mt-3 text-doc-h3 font-normal text-ink/60">
+            Everything you need to run Jan on your computer and in your terminal.
+          </p>
+          <SearchField variant="hero" className="mx-auto mt-8 max-w-xl" />
+        </div>
 
-      <div className="mx-auto mt-16 grid max-w-3xl gap-5 px-4 md:grid-cols-2 lg:mt-20">
-        {SECTIONS.map((section) => (
-          <Link
-            key={section.title}
-            href={section.href}
-            className="group flex flex-col rounded-2xl border border-black/10 bg-black/[0.02] p-7 transition-all duration-200 hover:-translate-y-0.5 hover:border-black hover:bg-white hover:shadow-[0px_4px_0px_0px_rgba(0,0,0,1)]"
-          >
-            <span
-              className={`inline-flex size-12 items-center justify-center rounded-xl ${section.chip}`}
-            >
-              <section.icon className="size-6" strokeWidth={2} />
-            </span>
-            <h3 className="mt-5 text-xl font-semibold">{section.title}</h3>
-            <p className="mt-2 flex-1 text-sm leading-relaxed text-black/60">
-              {section.description}
-            </p>
-            <div className="mt-6 flex items-center justify-between border-t border-black/[0.07] pt-4">
-              <span className="text-xs text-black/40">{section.tags}</span>
-              <span className="inline-flex items-center gap-1 text-sm font-medium">
-                Read docs
-                <span
-                  aria-hidden
-                  className="transition-transform duration-200 group-hover:translate-x-0.5"
-                >
-                  →
-                </span>
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      <div className="mx-auto mt-16 max-w-3xl px-4 lg:mt-20">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-black/40">
-          Common paths
-        </h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {COMMON_PATHS.map((path) => (
+        {/* 2. Doc sets */}
+        <div className="mt-16 grid gap-x-4 gap-y-10 md:grid-cols-2 lg:mt-20">
+          {SECTIONS.map(({ title, description, href, drawing, background }) => (
             <Link
-              key={path.href}
-              href={path.href}
-              className="group flex items-center gap-3 rounded-2xl border border-black/10 bg-black/[0.02] p-4 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:border-black hover:bg-white hover:shadow-[0px_3px_0px_0px_rgba(0,0,0,1)]"
+              key={title}
+              href={href}
+              className="group focus-ring flex flex-col rounded-xl"
             >
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-black/[0.07] bg-white text-black/60">
-                <path.icon className="size-4" strokeWidth={2} />
-              </span>
-              {path.title}
-              <span
-                aria-hidden
-                className="ml-auto text-black/30 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-black"
-              >
-                →
-              </span>
+              <div className="relative isolate flex items-center justify-center overflow-hidden rounded-xl px-8 py-10 sm:px-12 sm:py-14">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={background}
+                  alt=""
+                  className="absolute inset-0 -z-10 size-full object-cover transition-transform duration-700 ease-jan motion-safe:group-hover:scale-110"
+                />
+                <div className="w-full max-w-[320px] transition-transform duration-500 ease-jan motion-safe:group-hover:-translate-y-1.5">
+                  {drawing}
+                </div>
+              </div>
+              <h2 className="mt-5 text-doc-h2 text-ink">{title}</h2>
+              <p className="mt-1 text-doc-body text-ink/60">{description}</p>
             </Link>
           ))}
+        </div>
+
+        {/* 3. Start here: each set's most-read pages, in the tiles' columns */}
+        <div className="mt-16 lg:mt-20">
+          <h2 className="font-mono text-doc-label uppercase text-ink/60">
+            Start here
+          </h2>
+          <div className="mt-6 grid gap-x-4 gap-y-8 md:grid-cols-2">
+            {SECTIONS.map(({ title, links }) => (
+              <div key={title}>
+                <h3 className="mb-2 font-mono text-doc-label uppercase text-ink/40">
+                  {title.replace('Jan ', '')}
+                </h3>
+                <ul className="border-t border-line">
+                  {links.map((link) => (
+                    <li key={link.href} className="border-b border-line">
+                      <Link
+                        href={link.href}
+                        className="group focus-ring flex min-h-[52px] items-center gap-3 rounded-sm py-3"
+                      >
+                        <span className="text-doc-body text-ink/80 transition-colors duration-150 ease-jan group-hover:text-ink">
+                          {link.title}
+                        </span>
+                        <ArrowRight className="ml-auto size-4 shrink-0 text-ink/40 transition-[color,transform] duration-150 ease-jan group-hover:text-ink motion-safe:group-hover:translate-x-0.5" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Socials */}
+        <div className="mt-16 flex flex-col items-center gap-3 lg:mt-20">
+          <h2 className="font-mono text-doc-label uppercase text-ink/60">
+            Join the community
+          </h2>
+          <ul className="flex gap-1">
+            {SOCIALS.map(({ label, href, Icon }) => (
+              <li key={label}>
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  title={label}
+                  className="focus-ring flex size-11 items-center justify-center rounded-lg text-ink/60 transition-colors duration-150 ease-jan hover:text-ink"
+                >
+                  <Icon className="size-5" />
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>

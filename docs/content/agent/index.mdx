@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Jan Agent is a terminal AI agent that reads, writes, and runs code in your project - powered by the models you already configured.
+description: Jan Agent is a terminal AI agent that reads, edits and runs code in your project. Install it here.
 keywords:
   [
     Jan,
@@ -64,13 +64,13 @@ Jan Agent is a preview. The installers below pull from the `agent-nightly` chann
 nightly-quality builds.
 </Callout>
 
-<Tabs items={['macOS / Linux', 'Windows']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows">
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
@@ -80,8 +80,8 @@ Installs to `%USERPROFILE%\.local\bin`. To also add it to your user `PATH`:
 ```powershell
 & ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
 ```
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 Then check it landed:
 
@@ -112,12 +112,12 @@ Desktop's [local API server](/desktop/api-server), with `jan config set --base-u
 ## Get started
 
 <DocCards>
-  <DocCard title="Quickstart" href="/agent/quickstart" icon={<Rocket size={20} />}>Install Jan Agent, connect a provider, and finish your first task.</DocCard>
-  <DocCard title="Interactive console" href="/agent/console" icon={<SquareTerminal size={20} />}>Slash commands, keyboard shortcuts, and how a session works.</DocCard>
-  <DocCard title="Tools & permissions" href="/agent/permissions" icon={<Wrench size={20} />}>What the agent can do, and how approval keeps you in control.</DocCard>
-  <DocCard title="Configuration" href="/agent/project-config" icon={<Settings size={20} />}>Providers, `agent.toml`, and per-project instructions.</DocCard>
-  <DocCard title="Subagents" href="/agent/subagents" icon={<Users size={20} />}>Delegate parts of a task to agents that run in parallel.</DocCard>
-  <DocCard title="CLI reference" href="/agent/cli" icon={<Terminal size={20} />}>Every flag and subcommand, including headless runs for scripts and CI.</DocCard>
+  <DocCard title="Quickstart" href="/agent/quickstart" icon={<Rocket size={20} />}>Install, connect a provider, run a first task</DocCard>
+  <DocCard title="Interactive console" href="/agent/console" icon={<SquareTerminal size={20} />}>Slash commands, shortcuts and sessions</DocCard>
+  <DocCard title="Tools & permissions" href="/agent/permissions" icon={<Wrench size={20} />}>What the agent can do, and approvals</DocCard>
+  <DocCard title="Configuration" href="/agent/project-config" icon={<Settings size={20} />}>Providers, agent.toml and project instructions</DocCard>
+  <DocCard title="Subagents" href="/agent/subagents" icon={<Users size={20} />}>Run parts of a task in parallel</DocCard>
+  <DocCard title="CLI reference" href="/agent/cli" icon={<Terminal size={20} />}>Every flag and subcommand</DocCard>
 </DocCards>
 
 ## Staying in control

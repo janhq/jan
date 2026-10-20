@@ -20,7 +20,9 @@ export function NextraTabs({
   return (
     <RadixTabs.Root defaultValue={String(defaultIndex)} className="jan-tabs">
       <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain">
-        <RadixTabs.List className="mt-4 flex w-max min-w-full border-b border-[#e5e7eb] pb-px">
+        {/* doc-label tabs on a rule, like jan.ai's filter tabs: the
+            selected tab at full ink with an ink underline, the rest at 60%. */}
+        <RadixTabs.List className="flex w-max min-w-full gap-5 border-b border-line">
           {items.map((item, i) => {
             const label = typeof item === 'object' ? item.label : item
             const disabled = typeof item === 'object' && item.disabled
@@ -30,10 +32,10 @@ export function NextraTabs({
                 value={String(i)}
                 disabled={disabled}
                 className={cn(
-                  '-mb-0.5 mr-2 select-none rounded-t border-b-2 p-2 font-medium leading-5 transition-colors',
-                  'border-transparent text-[#4b5563] hover:border-[#e5e7eb] hover:text-black',
-                  'data-[state=active]:border-jan-blue data-[state=active]:text-jan-blue',
-                  disabled && 'pointer-events-none text-[#9ca3af]'
+                  'focus-ring -mb-px select-none border-b-2 pb-2.5 pt-1 font-mono text-doc-label uppercase transition-colors duration-150 ease-jan',
+                  'border-transparent text-ink/60 hover:text-ink',
+                  'data-[state=active]:border-ink data-[state=active]:text-ink',
+                  disabled && 'pointer-events-none text-ink/40'
                 )}
               >
                 {label}
@@ -49,7 +51,7 @@ export function NextraTabs({
           key={i}
           value={String(i)}
           forceMount
-          className="rounded pt-6 data-[state=inactive]:hidden"
+          className="pt-6 data-[state=inactive]:hidden [&>:first-child]:!mt-0"
         >
           {panel}
         </RadixTabs.Content>

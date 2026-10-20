@@ -1,7 +1,7 @@
 ---
 sidebarTitle: "Quickstart"
-title: QuickStart
-description: Install Jan Agent, connect a provider, and finish your first task in the terminal.
+title: Quickstart
+description: Install Jan Agent, connect a model provider and finish your first task in the terminal.
 keywords:
   [
     Jan,
@@ -30,16 +30,16 @@ Jan Agent is a preview. The installers below pull from the `agent-nightly` chann
 nightly-quality builds.
 </Callout>
 
-<Tabs items={['macOS / Linux', 'Windows']}>
-  <Tabs.Tab>
+<Accordions>
+<Accordion title="macOS / Linux">
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```
 
 Installs to `~/.local/bin` by default. Override it with `JAN_INSTALL_DIR=/usr/local/bin`, and make
 sure the directory is on your `PATH`.
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Accordion>
+<Accordion title="Windows">
 ```powershell
 irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
@@ -50,8 +50,8 @@ it to your user `PATH` in one go, then open a new terminal:
 ```powershell
 & ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
 ```
-  </Tabs.Tab>
-</Tabs>
+  </Accordion>
+</Accordions>
 
 Check it worked:
 
@@ -193,10 +193,10 @@ jan --safe --task "fix the failing test in tests/auth"
 ## Where to go next
 
 <DocCards>
-  <DocCard title="Interactive console" href="/agent/console" icon={<SquareTerminal size={20} />}>Every slash command and keyboard shortcut.</DocCard>
-  <DocCard title="Tools & permissions" href="/agent/permissions" icon={<Wrench size={20} />}>What the agent can reach, and how to widen or narrow it.</DocCard>
-  <DocCard title="Configuration" href="/agent/project-config" icon={<Settings size={20} />}>Per-project instructions, models, and budgets.</DocCard>
-  <DocCard title="Subagents" href="/agent/subagents" icon={<Users size={20} />}>Split a big job across agents running in parallel.</DocCard>
+  <DocCard title="Interactive console" href="/agent/console" icon={<SquareTerminal size={20} />}>Every slash command and shortcut</DocCard>
+  <DocCard title="Tools & permissions" href="/agent/permissions" icon={<Wrench size={20} />}>Widen or narrow what the agent can reach</DocCard>
+  <DocCard title="Configuration" href="/agent/project-config" icon={<Settings size={20} />}>Per-project instructions, models and budgets</DocCard>
+  <DocCard title="Subagents" href="/agent/subagents" icon={<Users size={20} />}>Split a big job across parallel agents</DocCard>
 </DocCards>
 
 ## Troubleshooting

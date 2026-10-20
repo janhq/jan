@@ -2,73 +2,114 @@
 /**
  * "On This Page" column ported from nextra-theme-docs 2.13 (src/components/toc.tsx)
  * so it looks and behaves as on jan.ai/docs:
- * - title "On This Page", h2 entries semibold, deeper levels indented
- * - active entry in Jan blue, no indicator line
- * - sticky footer: feedback, edit on GitHub, View as Markdown, "Scroll to top"
- *   (hidden until the page is scrolled 300px)
+ * - the headings (no title), doc-small; nested headings indent one step per
+ *   level, and a thin line down the left follows the indents, stepping in and
+ *   out on a short diagonal between levels
+ * - the section you're reading: full ink, with a 2px ink stroke over its stretch
+ *   of the line; the rest at 60%
+ * - sticky footer under a divider: feedback, edit on GitHub, copy this page
  * Plugged into Fumadocs via DocsPage `slots.toc.main`; it reads the TOC and the
  * active heading from Fumadocs' TOC provider.
  */
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, use, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useActiveAnchor, useTOCItems } from 'fumadocs-ui/components/toc'
+import { SquarePen } from 'lucide-react'
+import { FaGithub } from 'react-icons/fa6'
 import { cn } from '@/lib/cn'
+import { CopyPage } from '@/components/copy-page'
 
-// Nextra's text-xs had an 18px line height (Tailwind 3 + its base styles).
-const linkClassName = 'text-xs/[18px] font-medium text-[#6b7280] hover:text-[#111827]'
+/** The page's title and GitHub source, for the footer links. Fumadocs
+ *  renders the TOC with its own props, so the page passes these through
+ *  context. */
+type TocMeta = { title: string; editUrl: string }
+const TocMetaContext = createContext<TocMeta>({ title: '', editUrl: '' })
 
-const DEPTH_CLASS: Record<number, string> = {
-  2: 'font-semibold',
-  3: 'pl-4',
-  4: 'pl-8',
-  5: 'pl-12',
-  6: 'pl-16',
-}
-
-function ArrowRightIcon({ className }: { className?: string }) {
-  return (
-    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" className={className}>
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
-
-function BackToTop() {
-  const ref = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const toggle = () =>
-      ref.current?.classList.toggle('opacity-0', document.documentElement.scrollTop < 300)
-    toggle()
-    window.addEventListener('scroll', toggle)
-    return () => window.removeEventListener('scroll', toggle)
-  }, [])
-  return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-      className={cn('flex items-center gap-1.5 opacity-0 transition', linkClassName)}
-    >
-      Scroll to top
-      <ArrowRightIcon className="h-3.5 w-3.5 -rotate-90 rounded-full border border-current" />
-    </button>
-  )
-}
-
-export type NextraTocMeta = { title: string; editUrl: string; markdownUrl: string }
-
-// Fumadocs renders slots.toc.main itself (with its own props), so the page
-// metadata reaches it through context set by the page.
-const TocMetaContext = createContext<NextraTocMeta>({ title: '', editUrl: '#', markdownUrl: '#' })
-
-export function NextraTocMeta({ children, ...meta }: NextraTocMeta & { children: ReactNode }) {
+export function TocMetaProvider({ children, ...meta }: TocMeta & { children: ReactNode }) {
   return <TocMetaContext value={meta}>{children}</TocMetaContext>
 }
 
+const FOOTER_LINK =
+  'focus-ring inline-flex items-center gap-1.5 rounded-sm text-doc-small transition-colors duration-150 ease-jan hover:text-ink'
+
+// Each level sits 12px further in; text starts 12px past its stretch of line.
+const STEP = 12
+const LEVEL_CLASS = ['pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15']
+const lineX = (level: number) => level * STEP + 0.5
+
+/** Nesting level of each heading (0 = top): how many headings above it it
+ *  sits under. Uses the heading tree, not raw h2/h3, so an h3 with no h2
+ *  above it (a page that opens with <Steps>) sits at the top level instead of
+ *  indenting, and the next h2 doesn't step back out past it. */
+function levels(depths: number[]): number[] {
+  const stack: number[] = []
+  return depths.map((depth) => {
+    while (stack.length && stack[stack.length - 1] >= depth) stack.pop()
+    const level = stack.length
+    stack.push(depth)
+    return level
+  })
+}
+
+type Track = { width: number; height: number; d: string; rows: { x: number; top: number; bottom: number }[] }
+
+/** The line's path, measured from the rendered rows: a vertical run beside each
+ *  row (inset by its 4px padding) and a diagonal from one row's end to the
+ *  next row's start, so changes of level read as a step. */
+function measure(list: HTMLElement, lvls: number[]): Track | null {
+  const links = Array.from(list.querySelectorAll<HTMLAnchorElement>(':scope > li > a'))
+  if (links.length === 0) return null
+  const rows = links.map((a, i) => ({
+    x: lineX(lvls[i]),
+    top: a.offsetTop + 4,
+    bottom: a.offsetTop + a.offsetHeight - 4,
+  }))
+  const d = rows
+    .map((r, i) => (i === 0 ? `M${r.x} ${r.top}` : `L${r.x} ${r.top}`) + ` L${r.x} ${r.bottom}`)
+    .join(' ')
+  const width = Math.max(...rows.map((r) => r.x)) + 2
+  return { width, height: list.offsetHeight, d, rows }
+}
+
+/** The active row's stretch of the rail. It reaches into the 4px gaps above
+ *  and below only where the rail runs straight on (a neighbour at the same
+ *  level, or the end of the list); where the rail angles in or out, it stops
+ *  at the row so it never runs onto the diagonal. */
+function activeStroke(rows: Track['rows'], i: number) {
+  const row = rows[i]
+  const prev = rows[i - 1]
+  const next = rows[i + 1]
+  const top = !prev || prev.x === row.x ? row.top - 4 : row.top
+  const bottom = !next || next.x === row.x ? row.bottom + 4 : row.bottom
+  return `M${row.x} ${top} L${row.x} ${bottom}`
+}
+
 export function NextraToc() {
-  const { title, editUrl, markdownUrl } = useContext(TocMetaContext)
+  const { title, editUrl } = use(TocMetaContext)
+  const feedbackUrl = `https://github.com/janhq/jan/issues/new?title=${encodeURIComponent(
+    `Feedback for “${title}”`
+  )}&labels=feedback`
   const items = useTOCItems().filter((item) => item.depth > 1)
   const active = useActiveAnchor()
   const tocRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const [track, setTrack] = useState<Track | null>(null)
+  const activeIndex = items.findIndex((item) => item.url.slice(1) === active)
+
+  // Draw the line once the rows are laid out, and again when they reflow
+  // (wrapping titles, font load, resize).
+  const itemLevels = levels(items.map((item) => item.depth))
+  const levelKey = itemLevels.join(',')
+  const redraw = useCallback(() => {
+    if (listRef.current) setTrack(measure(listRef.current, levelKey.split(',').map(Number)))
+  }, [levelKey])
+  useLayoutEffect(() => {
+    redraw()
+    const list = listRef.current
+    if (!list) return
+    const observer = new ResizeObserver(redraw)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [redraw, items.length])
 
   // Keep the active entry in view inside the scrollable column, as Nextra did.
   useEffect(() => {
@@ -80,10 +121,6 @@ export function NextraToc() {
     box.scrollTo({ top, behavior: 'smooth' })
   }, [active])
 
-  const feedback = `https://github.com/janhq/jan/issues/new?title=${encodeURIComponent(
-    `Feedback for “${title}”`
-  )}&labels=feedback`
-
   return (
     <div
       id="nd-toc"
@@ -91,24 +128,39 @@ export function NextraToc() {
     >
       <div
         ref={tocRef}
-        className="max-h-full overflow-y-auto pl-4 pr-4 pt-6 text-sm/[21px] [hyphens:auto]"
+        className="max-h-full overflow-y-auto pl-4 pr-4 pt-6 text-doc-small [hyphens:auto]"
       >
         {items.length > 0 && (
-          <>
-            <p className="mb-4 font-semibold tracking-tight text-black">On This Page</p>
-            <ul>
-              {items.map((item) => {
+          <div className="relative">
+            {track && (
+              <svg
+                aria-hidden
+                className="pointer-events-none absolute left-0 top-0 overflow-visible"
+                width={track.width}
+                height={track.height}
+              >
+                <path d={track.d} fill="none" className="stroke-line" strokeWidth={1} />
+                {activeIndex >= 0 && track.rows[activeIndex] && (
+                  <path
+                    d={activeStroke(track.rows, activeIndex)}
+                    fill="none"
+                    className="stroke-ink transition-[d] duration-200 ease-jan"
+                    strokeWidth={2}
+                  />
+                )}
+              </svg>
+            )}
+            <ul ref={listRef}>
+              {items.map((item, i) => {
                 const id = item.url.slice(1)
                 return (
-                  <li key={item.url} className="my-2 scroll-my-6 scroll-py-6">
+                  <li key={item.url} className="scroll-my-6 scroll-py-6">
                     <a
                       href={item.url}
                       className={cn(
-                        DEPTH_CLASS[item.depth],
-                        'inline-block w-full break-words',
-                        active === id
-                          ? 'text-[#006be6] subpixel-antialiased'
-                          : 'text-[#6b7280] hover:text-[#111827]'
+                        LEVEL_CLASS[Math.min(itemLevels[i], LEVEL_CLASS.length - 1)],
+                        'block break-words py-1 transition-colors duration-150 ease-jan',
+                        active === id ? 'text-ink' : 'text-ink/60 hover:text-ink'
                       )}
                     >
                       {item.title}
@@ -117,25 +169,29 @@ export function NextraToc() {
                 )
               })}
             </ul>
-          </>
+          </div>
         )}
         <div
           className={cn(
             items.length > 0 &&
-              'mt-8 border-t border-[#e5e7eb] bg-white pt-8 shadow-[0_-12px_16px_white]',
+              'mt-8 border-t border-line bg-page pt-8 shadow-[0_-12px_16px_var(--color-page)]',
             'sticky bottom-0 flex flex-col items-start gap-2 pb-8'
           )}
         >
-          <a href={feedback} target="_blank" rel="noreferrer" className={linkClassName}>
-            Question? Give us feedback →
+          {/* Icon first: GitHub (feedback opens an issue there), a pen for
+              suggesting an edit (opens the page's source on GitHub, where
+              anyone can propose a change as a pull request), then copy. */}
+          <a href={feedbackUrl} target="_blank" rel="noopener noreferrer" className={cn(FOOTER_LINK, 'text-ink/60')}>
+            <FaGithub aria-hidden className="size-3.5" />
+            Give us feedback
           </a>
-          <a href={editUrl} target="_blank" rel="noreferrer" className={linkClassName}>
-            Edit this page on GitHub →
-          </a>
-          <a href={markdownUrl} target="_blank" rel="noreferrer" className={linkClassName}>
-            View as Markdown →
-          </a>
-          <BackToTop />
+          {editUrl && (
+            <a href={editUrl} target="_blank" rel="noopener noreferrer" className={cn(FOOTER_LINK, 'text-ink/60')}>
+              <SquarePen aria-hidden className="size-3.5" strokeWidth={1.75} />
+              Suggest an edit
+            </a>
+          )}
+          <CopyPage variant="link" className={cn(FOOTER_LINK, 'text-ink/60')} />
         </div>
       </div>
     </div>
