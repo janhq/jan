@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useCallback } from "react"
+import React, { ReactNode, useEffect, useCallback, useState } from "react"
 import i18next, { loadTranslations } from "./setup"
 import { useGeneralSetting } from "@/hooks/useGeneralSetting"
 import { TranslationContext } from "./context"
@@ -7,6 +7,7 @@ import { TranslationContext } from "./context"
 export const TranslationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 	// Get the current language from general settings
 	const { currentLanguage } = useGeneralSetting()
+	const [, setAppliedLanguage] = useState(i18next.language)
 
 	// Load translations once when the component mounts
 	useEffect(() => {
@@ -21,6 +22,8 @@ export const TranslationProvider: React.FC<{ children: ReactNode }> = ({ childre
 	useEffect(() => {
 		if (currentLanguage) {
 			i18next.changeLanguage(currentLanguage)
+			// Refresh consumers after asynchronous settings hydration changes the locale.
+			setAppliedLanguage(i18next.language)
 		}
 	}, [currentLanguage])
 

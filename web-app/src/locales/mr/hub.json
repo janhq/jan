@@ -1,0 +1,19 @@
+{
+  "sortNewest": "सर्वात नवीन",
+  "sortMostDownloaded": "सर्वाधिक डाउनलोड केले",
+  "newChat": "नवीन चॅट",
+  "download": "डाउनलोड करा",
+  "downloadFailed": "डाउनलोड सुरू करण्यात अयशस्वी",
+  "downloaded": "डाउनलोड केले",
+  "loadingModels": "मॉडेल लोड करत आहे...",
+  "noModels": "कोणतेही मॉडेल आढळले नाहीत",
+  "by": "द्वारे",
+  "downloads": "डाउनलोड",
+  "variants": "रूपे",
+  "showVariants": "रूपे दाखवा",
+  "useModel": "हे मॉडेल वापरा",
+  "downloadModel": "मॉडेल डाउनलोड करा",
+  "tools": "साधने",
+  "searchPlaceholder": "Hugging Face वर मॉडेल शोधा...",
+  "resumeUnavailable": "हे डाउनलोड पुन्हा सुरू करू शकत नाही. कृपया ते पुन्हा सुरू करा."
+}

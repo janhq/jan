@@ -1,0 +1,18 @@
+{
+  "addProvider": "प्रदाता जोडा",
+  "addOpenAIProvider": "कस्टम प्रदाता जोडा",
+  "enterNameForProvider": "प्रदात्याचे नाव (उदा. my-llm-server)",
+  "apiTypeLabel": "API स्वरूप",
+  "apiTypeOpenAI": "OpenAI-सुसंगत",
+  "apiTypeAnthropic": "Anthropic-सुसंगत",
+  "baseUrlLabel": "बेस URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API की",
+  "apiKeyPlaceholder": "तुमची API की पेस्ट करा",
+  "invalidBaseUrl": "बेस URL वैध http(s) URL असणे आवश्यक आहे",
+  "globalSettings": "जागतिक सेटिंग्ज",
+  "stripReasoning": "संदर्भातून तर्क काढा",
+  "stripReasoningDesc": "सर्व प्रदात्यांवर, इतिहास पुन्हा पाठवण्याआधी आधीच्या वळणांची विचार/तर्क सामग्री काढून टाका. स्थानिक मॉडेल्ससाठी केव्ही-कॅशेचा पुनर्वापर सुधारतो, परंतु काही मॉडेल्स (उदा. नवीन क्वेन रिलीझ) चांगल्या मल्टी-टर्न रिजनिंगसाठी ते ठेवण्याची शिफारस करतात.",
+  "providerAlreadyExists": "{{name}} नावाचा प्रदाता आधीपासून अस्तित्वात आहे."
+}

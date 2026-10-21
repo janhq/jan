@@ -1,0 +1,101 @@
+{
+  "editServer": "MCP सर्व्हर संपादित करा",
+  "addServer": "MCP सर्व्हर जोडा",
+  "browserExtension": {
+    "connecting": {
+      "checking": "विस्तार स्थिती तपासत आहे..."
+    },
+    "notInstalled": {
+      "title": "Jan तुमच्या ब्राउझरमधील कार्ये पूर्ण करते",
+      "description": "Jan ब्राउझर प्रवेश देण्यासाठी विस्तार स्थापित करा",
+      "getExtension": "एक्स्टेंशन मिळवा"
+    }
+  },
+  "serverName": "सर्व्हरचे नाव",
+  "enterServerName": "सर्व्हरचे नाव प्रविष्ट करा",
+  "command": "कमांड",
+  "enterCommand": "कमांड एंटर करा (uvx किंवा npx)",
+  "arguments": "युक्तिवाद",
+  "argument": "युक्तिवाद {{index}}",
+  "envVars": "पर्यावरण परिवर्तने",
+  "key": "की",
+  "value": "मूल्य",
+  "save": "जतन करा",
+  "status": "स्थिती",
+  "connected": "जोडलेले",
+  "disconnected": "डिस्कनेक्ट केले",
+  "deleteServer": {
+    "title": "MCP सर्व्हर हटवा",
+    "description": "तुमची खात्री आहे की तुम्ही MCP सर्व्हर {{serverName}} हटवू इच्छिता? ही क्रिया पूर्ववत केली जाऊ शकत नाही.",
+    "delete": "हटवा",
+    "success": "MCP सर्व्हर {{serverName}} यशस्वीरित्या हटवला"
+  },
+  "editJson": {
+    "title": "MCP सर्व्हरसाठी JSON संपादित करा: {{serverName}}",
+    "titleAll": "सर्व MCP सर्व्हर संपादित करा JSON",
+    "placeholder": "JSON कॉन्फिगरेशन प्रविष्ट करा",
+    "errorParse": "प्रारंभिक डेटा पार्स करण्यात अयशस्वी",
+    "errorPaste": "पेस्ट केलेल्या सामग्रीमध्ये अवैध JSON स्वरूप",
+    "errorFormat": "अवैध JSON स्वरूप",
+    "errorServerName": "सर्व्हरचे नाव आवश्यक आहे आणि ते रिक्त असू शकत नाही",
+    "errorMissingServerNameKey": "JSON {\"serverName\": {config}} प्रमाणे संरचित करणे आवश्यक आहे - सर्व्हर नाव की गहाळ आहे",
+    "errorInvalidType": "सर्व्हर '{{serverName}}' साठी अवैध प्रकार '{{type}}'. प्रकार 'stdio', 'http', किंवा 'sse' असणे आवश्यक आहे",
+    "save": "जतन करा"
+  },
+  "checkParams": "कृपया ट्यूटोरियलनुसार पॅरामीटर्स तपासा.",
+  "title": "MCP सर्व्हर",
+  "experimental": "प्रायोगिक",
+  "editAllJson": "सर्व सर्व्हर संपादित करा JSON",
+  "findMore": "येथे अधिक MCP सर्व्हर शोधा",
+  "allowPermissions": "सर्व MCP टूल परवानग्यांना अनुमती द्या",
+  "allowPermissionsDesc": "सक्षम केल्यावर, परवानगी संवाद न दाखवता सर्व MCP टूल कॉल स्वयंचलितपणे मंजूर केले जातील. हे सेटिंग नवीन चॅट्ससह सर्व संभाषणांना जागतिक स्तरावर लागू होते.",
+  "noServers": "कोणतेही MCP सर्व्हर आढळले नाहीत",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "सर्व्हर {{serverKey}} यशस्वीरित्या सक्रिय झाला",
+  "serverStatusInactive": "सर्व्हर {{serverKey}} यशस्वीरित्या निष्क्रिय केले",
+  "runtimeSettings": {
+    "title": "रनटाइम सेटिंग्ज",
+    "description": "Jan MCP सर्व्हर कसे व्यवस्थापित करते आणि पुन्हा प्रयत्न करतात ते कॉन्फिगर करा.",
+    "toolCallTimeout": "टूल कॉल टाइमआउट (सेकंद)",
+    "toolCallTimeoutDesc": "वेळ संपण्यापूर्वी MCP साधन प्रतिसादाची प्रतीक्षा करण्यासाठी कमाल वेळ.",
+    "maxToolOutputChars": "कमाल साधन आउटपुट वर्ण",
+    "maxToolOutputCharsDesc": "सर्वात लांब साधन परिणाम संभाषणात ठेवले. यानंतरची कोणतीही गोष्ट ट्रिम केली आहे आणि ट्रंकेटेड म्हणून चिन्हांकित केली आहे, त्यामुळे एक मोठा परिणाम मॉडेलचा संदर्भ संपवू शकत नाही. परिणाम संपूर्ण ठेवण्यासाठी 0 वर सेट करा.",
+    "smartToolRouting": "स्मार्ट MCP टूल रूटिंग",
+    "smartToolRoutingDesc": "सक्षम केल्यावर, साधने लोड करण्यापूर्वी Jan संबंधित MCP सर्व्हर निवडते. संपूर्ण MCP टूल सूची नेहमी लोड करण्यासाठी अक्षम करा.",
+    "useLightweightRouterModel": "रूटिंगसाठी समर्पित मॉडेल वापरा",
+    "useLightweightRouterModelDesc": "स्मार्ट रूटिंग चालू असताना, चॅट मॉडेलऐवजी वेगळ्या (बहुतेकदा लहान) मॉडेलसह राउटिंग पायरी चालवा. रूटिंगसाठी नेहमी सक्रिय चॅट मॉडेल वापरण्यासाठी बंद करा.",
+    "routerModel": "राउटिंग मॉडेल",
+    "routerModelDesc": "एकाच ठिकाणी प्रदाता आणि मॉडेल निवडा. फक्त हलके मॉडेल सूचीबद्ध केले आहेत त्यामुळे राउटिंग जलद आणि स्वस्त राहते.",
+    "selectRouterModelPlaceholder": "राउटिंग मॉडेल निवडा...",
+    "routerModelSearchPlaceholder": "मॉडेल शोधा…",
+    "routerModelEmptyList": "कोणतेही हलके मॉडेल उपलब्ध नाहीत. एक लहान मॉडेल जोडा किंवा मॉडेल्समध्ये API की कॉन्फिगर करा.",
+    "routerModelEmptySearch": "“{{query}}” साठी कोणतेही जुळत नाहीत."
+  },
+  "auth": {
+    "label": "प्रमाण:",
+    "state": {
+      "notApplicable": "आवश्यक नाही",
+      "staticHeader": "अधिकृतता शीर्षलेख",
+      "authenticated": "प्रमाणीकृत",
+      "expired": "कालबाह्य",
+      "staleResource": "दुसऱ्या URL साठी जारी केले",
+      "unauthenticated": "प्रमाणीकृत नाही"
+    },
+    "expiresIn": "{{duration}} मध्ये कालबाह्य होईल",
+    "authenticate": "साइन इन करा",
+    "reauthenticate": "पुन्हा प्रमाणीकृत करा",
+    "clear": "प्रमाणीकरण साफ करा",
+    "waiting": "ब्राउझरची वाट पाहत आहे...",
+    "openSignInPage": "साइन-इन पृष्ठ उघडा",
+    "needsAuth": "{{serverName}} प्रमाणीकरण आवश्यक आहे",
+    "needsAuthHint": "कनेक्ट करण्यासाठी या सर्व्हरवर साइन इन करा.",
+    "authorized": "{{serverName}} मध्ये साइन इन केले",
+    "authorizeFailed": "{{serverName}} साठी साइन इन अयशस्वी",
+    "cleared": "{{serverName}} साठी संचयित क्रेडेंशियल साफ केले",
+    "nothingToClear": "{{serverName}} मध्ये कोणतेही संचयित क्रेडेन्शियल नव्हते",
+    "clearFailed": "{{serverName}} साठी क्रेडेन्शियल साफ करता आले नाहीत",
+    "renew": "सत्राचे नूतनीकरण करा",
+    "expiredAgo": "{{duration}} पूर्वी कालबाह्य झाले"
+  }
+}

@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "कोड",
+    "preview": "पूर्वावलोकन",
+    "previewStreaming": "जनरेशन पूर्ण झाल्यावर उपलब्ध",
+    "unresolvedAssets_one": "1 मालमत्ता संदर्भ पूर्वावलोकनामध्ये लोड करू शकत नाही. रिलेटिव्ह पथांना विरुद्ध निराकरण करण्यासाठी कोणताही आधार URL नाही.",
+    "unresolvedAssets_other": "{{count}} मालमत्ता संदर्भ पूर्वावलोकनामध्ये लोड होऊ शकत नाहीत. सापेक्ष मार्गांना विरुद्ध निराकरण करण्यासाठी कोणताही आधार नाही URL."
+  },
+  "assistants": "सहाय्यक",
+  "hardware": "हार्डवेअर",
+  "mcp-servers": "MCP सर्व्हर",
+  "local_api_server": "स्थानिक API सर्व्हर",
+  "remote_access": "दूरस्थ प्रवेश",
+  "integrations": "एकत्रीकरण",
+  "experimental": "प्रायोगिक",
+  "claude_code": "क्लॉड कोड",
+  "https_proxy": "HTTPS प्रॉक्सी",
+  "web_search": "वेब शोध",
+  "shell": "कमांड लाइन",
+  "browse": "ब्राउझ करा",
+  "moreControls": "अधिक नियंत्रणे",
+  "starting": "सुरू करत आहे...",
+  "activeSuffix": "(सक्रिय)",
+  "extensions": "विस्तार",
+  "attachments": "संलग्नक",
+  "general": "सामान्य",
+  "settings": "सेटिंग्ज",
+  "modelProviders": "मॉडेल प्रदाते",
+  "localProviders": "स्थानिक",
+  "remoteProviders": "रिमोट",
+  "manageProviders": "प्रदाते व्यवस्थापित करा",
+  "hiddenProviders": "{{count}} अक्षम",
+  "hideProvider": "प्रदाता लपवा",
+  "showProvider": "प्रदाता दर्शवा",
+  "interface": "इंटरफेस",
+  "appearance": "देखावा",
+  "privacy": "गोपनीयता",
+  "keyboardShortcuts": "शॉर्टकट",
+  "home": "मुख्यपृष्ठ",
+  "cowork": "Cowork",
+  "newSession": "नवीन सत्र",
+  "artifacts": "तयार केलेली सामग्री",
+  "customize": "सानुकूल करा",
+  "local": "स्थानिक",
+  "selectFolder": "फोल्डर निवडा",
+  "selectModel": "प्रथम एक मॉडेल निवडा",
+  "commands": "आज्ञा",
+  "cmdHelp": "उपलब्ध आदेशांची यादी करा",
+  "cmdClear": "हे सत्र साफ करा",
+  "cmdModels": "सक्रिय मॉडेल स्विच करा",
+  "cmdModelsHint": "/models लिहा आणि नंतर यादीतून मॉडेल निवडा",
+  "cmdModelSwitched": "{{name}} वर स्विच केले",
+  "cmdUnknown": "अज्ञात कमांड: {{name}}. /help वापरून पहा",
+  "cmdBusy": "एजंट चालू असताना ते करू शकत नाही",
+  "cmdCompact": "सत्राचा संदर्भ सारांशात संक्षिप्त करा",
+  "cmdCompacted": "संक्षिप्त {{before}} -> {{after}} संदेश",
+  "cmdNothingToCompact": "अद्याप कॉम्पॅक्ट करण्यासाठी काहीही नाही",
+  "cmdCompactFailed": "कॉम्पॅक्शन अयशस्वी: {{error}}",
+  "cmdPlan": "योजना मोड टॉगल करा (केवळ-वाचनीय: एजंट न लिहिता प्रस्ताव देतो)",
+  "cmdPlanOn": "योजना मोड चालू: एजंट न लिहिता वाचतो आणि प्रस्ताव देतो",
+  "cmdPlanOff": "योजना मोड बंद: सामान्य अंमलबजावणी",
+  "cmdTodo": "प्रगती पॅनल उघडा",
+  "cmdTasks": "बॅकग्राउंड टास्क पॅनल उघडा",
+  "cmdInit": "प्रकल्पाचा अभ्यास करा आणि कौशल्ये व स्मृती लिहा",
+  "cmdInitRunning": "या प्रकल्पात ऑनबोर्डिंग",
+  "skills": "कौशल्य",
+  "skillsInContext": "एजंटला उपलब्ध कौशल्ये हे चालवतात",
+  "skillsTitle": "कौशल्ये व्यवस्थापित करा",
+  "skillsScopeProject": "{{folder}} साठी कौशल्ये",
+  "skillsScopeGlobal": "जागतिक कौशल्ये, प्रत्येक सत्रासाठी उपलब्ध",
+  "skillsScopeMerged": "{{folder}} साठी कौशल्ये, तसेच जागतिक कौशल्ये प्रत्येक सत्रात सामायिक केली जातात",
+  "skillOriginFolder": "फोल्डर",
+  "skillOriginGlobal": "जागतिक",
+  "skillsEmpty": "अजून कौशल्य नाही",
+  "skillsPickOrNew": "संपादित करण्यासाठी एक कौशल्य निवडा किंवा नवीन तयार करा.",
+  "skillNew": "नवीन कौशल्य",
+  "skillDelete": "कौशल्य हटवा",
+  "skillSave": "जतन करा",
+  "skillSaved": "कौशल्य जतन केले",
+  "skillNameRequired": "कौशल्य नाव आवश्यक आहे",
+  "skillNamePlaceholder": "कौशल्य-नाव",
+  "skillContentPlaceholder": "Markdown मध्ये पुन्हा वापरण्यायोग्य प्रक्रियेचे वर्णन करा…",
+  "skillHubImport": "हबमधून आयात करा",
+  "skillHubTitle": "Anthropic कौशल्य केंद्र",
+  "skillHubEmpty": "हबवर कोणतेही कौशल्य आढळले नाही",
+  "skillImport": "आयात करा",
+  "skillReimport": "पुन्हा आयात करा",
+  "skillImported": "{{name}} आयात केले",
+  "sessions": "सत्रे",
+  "deleteSession": "सत्र हटवा",
+  "deleteSessionTitle": "सत्र हटवायचे?",
+  "deleteSessionBody": "\"{{title}}\" आणि त्याचा उतारा कायमचा हटवला जाईल. हे पूर्ववत केले जाऊ शकत नाही.",
+  "newChat": "नवीन चॅट",
+  "newAgentChat": "एजंटसोबत नवीन चॅट",
+  "chats": "गप्पा",
+  "favorites": "आवडते",
+  "recents": "अलीकडील",
+  "hub": "हब",
+  "helpSupport": "मदत आणि समर्थन",
+  "helpUsImproveJan": "आम्हाला सुधारण्यात मदत करा Jan",
+  "analyticsConsentDetail": "वैशिष्ट्याचा वापर समजून घेण्यासाठी आम्ही निनावी डेटा गोळा करतो. तुमच्या चॅट्स आणि वैयक्तिक माहितीचा कधीही मागोवा घेतला जात नाही. तुम्ही सेटिंग्ज > गोपनीयता मध्ये हे कधीही बदलू शकता.",
+  "analyticsConsentQuestion": "तुम्ही आम्हाला Jan सुधारण्यासाठी मदत करू इच्छिता?",
+  "unstarAll": "सर्व अनस्टार करा",
+  "unstar": "तारांकित करा",
+  "deleteAll": "सर्व हटवा",
+  "star": "तारा",
+  "rename": "नाव बदला",
+  "delete": "हटवा",
+  "copied": "कॉपी केले!",
+  "dataFolder": "डेटा फोल्डर",
+  "others": "इतर",
+  "language": "भाषा",
+  "login": "लॉग इन करा",
+  "loginWith": "{{provider}} सह लॉग इन करा",
+  "loginFailed": "लॉग इन करण्यात अयशस्वी",
+  "logout": "लॉग आउट करा",
+  "loggingOut": "लॉग आउट करत आहे...",
+  "loggedOut": "यशस्वीरित्या लॉग आउट झाले",
+  "logoutFailed": "लॉग आउट करण्यात अयशस्वी",
+  "profile": "प्रोफाइल",
+  "reset": "रीसेट करा",
+  "search": "शोधा",
+  "searchThreads": "संभाषणे शोधा...",
+  "toNavigate": "नेव्हिगेट करण्यासाठी",
+  "toSelect": "निवडण्यासाठी",
+  "toClose": "बंद करण्यासाठी",
+  "clearRecent": "साफ करा",
+  "name": "नाव",
+  "cancel": "रद्द करा",
+  "dismiss": "डिसमिस करा",
+  "create": "तयार करा",
+  "save": "जतन करा",
+  "edit": "संपादित करा",
+  "copy": "कॉपी करा",
+  "back": "मागे",
+  "close": "बंद करा",
+  "done": "पूर्ण झाले",
+  "next": "पुढे",
+  "finish": "समाप्त करा",
+  "skip": "वगळा",
+  "allow": "परवानगी द्या",
+  "deny": "नकार द्या",
+  "start": "सुरू करा",
+  "stop": "थांबवा",
+  "preview": {
+    "loading": "उघडत आहे…",
+    "unsupported": "Jan या प्रकारची फाइल दाखवू शकत नाही. ते दुसऱ्या ॲपमध्ये पाहण्यासाठी ते उघडा.",
+    "outside": "ही फाइल यापुढे सत्र कार्यक्षेत्रात नाही.",
+    "tooLarge": "पूर्वावलोकन करण्यासाठी खूप मोठे. ते दुसऱ्या ॲपमध्ये पाहण्यासाठी ते उघडा.",
+    "reload": "रीलोड करा",
+    "allowNetwork": "नेटवर्कला परवानगी द्या",
+    "unsandboxed": "अनसँडबॉक्स चालवा: जतन केलेला डेटा आणि स्थानिक फाइल्स कार्य करतात",
+    "unresolvedRefs_one": "1 फाईल ज्याला हे पृष्ठ लिंक करते पूर्वावलोकनामध्ये लोड करू शकत नाही. ब्राउझरमध्ये पाहण्यासाठी ते उघडा.",
+    "unresolvedRefs_other": "{{count}} फाइल ज्या या पृष्ठाशी लिंक करतात त्या पूर्वावलोकनामध्ये लोड होऊ शकत नाहीत. ब्राउझरमध्ये पाहण्यासाठी ते उघडा.",
+    "externalRefs_one": "हे पृष्ठ वेबवरून लोड होणारे 1 संसाधन अवरोधित केले आहे. ते लोड करण्यासाठी \"नेटवर्कला परवानगी द्या\" चालू करा.",
+    "externalRefs_other": "{{count}} संसाधने हे पृष्ठ वेबवरून लोड करत आहेत. ते लोड करण्यासाठी \"नेटवर्कला परवानगी द्या\" चालू करा.",
+    "scriptErrors_one": "पृष्ठाने त्रुटी नोंदवली: {{message}}",
+    "scriptErrors_other": "पृष्ठाने {{count}} त्रुटी नोंदवल्या. प्रथम: {{message}}"
+  },
+  "changes": {
+    "title": "एजंट बदलतो",
+    "empty": "एजंटने लिहिलेल्या किंवा संपादित केलेल्या फाइल्स येथे दिसतील.",
+    "a11y": "एजंट बदल: {{files}} फाइल्स, {{additions}} जोडल्या, {{deletions}} काढल्या"
+  },
+  "modelPanel": {
+    "title": "मॉडेल सेटिंग्ज",
+    "a11y": "मॉडेल सेटिंग्ज उघडा",
+    "contextTooltip": "संदर्भ विंडो: {{value}} पैकी {{max}} टोकन"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "कौशल्य '{{name}}' उपलब्ध नाही",
+    "kind": {
+      "skill": "कौशल्य",
+      "command": "कमांड",
+      "model": "मॉडेल"
+    }
+  },
+  "compactWidth": "संक्षिप्त रुंदी",
+  "fullWidth": "पूर्ण रुंदी",
+  "dark": "गडद",
+  "light": "प्रकाश",
+  "system": "प्रणाली",
+  "auto": "ऑटो",
+  "english": "इंग्रजी",
+  "medium": "मध्यम",
+  "newThread": "नवीन धागा",
+  "noResultsFound": "कोणतेही परिणाम आढळले नाहीत",
+  "noThreadsYet": "अद्याप कोणतेही धागे नाहीत",
+  "noThreadsYetDesc": "तुमचा थ्रेड इतिहास येथे पाहण्यासाठी नवीन संभाषण सुरू करा.",
+  "downloads": "डाउनलोड",
+  "downloading": "डाउनलोड करत आहे",
+  "uploadingAttachments": "संलग्नक अपलोड करत आहे...",
+  "cancelDownload": "डाउनलोड रद्द करा",
+  "downloadCancelled": "डाउनलोड रद्द केले",
+  "downloadComplete": "डाउनलोड पूर्ण",
+  "thinking": "विचार करत आहे...",
+  "thought": "विचार केला",
+  "callingTool": "कॉलिंग साधन",
+  "completed": "पूर्ण झाले",
+  "image": "प्रतिमा",
+  "vision": "दृष्टी",
+  "multimodal": "बहुविध",
+  "embeddings": "एम्बेडिंग",
+  "tools": "साधने",
+  "webSearch": "वेब शोध",
+  "reasoning": "तर्क",
+  "proactive": "सक्रिय",
+  "selectAModel": "एक मॉडेल निवडा",
+  "noToolsAvailable": "कोणतीही साधने उपलब्ध नाहीत",
+  "noModelsFoundFor": "\"{{searchValue}}\" साठी कोणतेही मॉडेल आढळले नाहीत",
+  "failedToLoadModels": "मॉडेल लोड करण्यात अयशस्वी",
+  "noModels": "कोणतेही मॉडेल आढळले नाहीत",
+  "noAssistant": "सहाय्यक नाही",
+  "customAvatar": "सानुकूल अवतार",
+  "editAssistant": "सहाय्यक संपादित करा",
+  "jan": "Jan",
+  "metadata": "मेटाडेटा",
+  "regenerate": "पुन्हा निर्माण करा",
+  "threadImage": "थ्रेड प्रतिमा",
+  "editMessage": "संदेश संपादित करा",
+  "deleteMessage": "संदेश हटवा",
+  "deleteThread": "थ्रेड हटवा",
+  "renameThread": "थ्रेडचे नाव बदला",
+  "threadTitle": "थ्रेड शीर्षक",
+  "deleteAllThreads": "सर्व थ्रेड्स हटवा",
+  "allThreadsUnfavorited": "सर्व धागे आवडत नाहीत",
+  "deleteAllThreadsConfirm": "तुमची खात्री आहे की तुम्ही सर्व थ्रेड हटवू इच्छिता? ही क्रिया पूर्ववत केली जाऊ शकत नाही.",
+  "addProvider": "प्रदाता जोडा",
+  "addOpenAIProvider": "OpenAI प्रदाता जोडा",
+  "enterNameForProvider": "तुमच्या प्रदात्यासाठी नाव एंटर करा",
+  "providerAlreadyExists": "\"{{name}}\" नावाचा प्रदाता आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव निवडा.",
+  "adjustFontSize": "फॉन्ट आकार समायोजित करा",
+  "changeLanguage": "भाषा बदला",
+  "editTheme": "थीम संपादित करा",
+  "editCodeBlockStyle": "कोड ब्लॉक शैली संपादित करा",
+  "editServerHost": "सर्व्हर होस्ट संपादित करा",
+  "pickColorWindowBackground": "रंग विंडो पार्श्वभूमी निवडा",
+  "pickColorAppMainView": "कलर ॲप मुख्य दृश्य निवडा",
+  "pickColorAppPrimary": "रंग ॲप प्राथमिक निवडा",
+  "pickColorAppAccent": "कलर ॲप एक्सेंट निवडा",
+  "pickColorAppDestructive": "कलर ॲप डिस्ट्रक्टिव्ह निवडा",
+  "apiKeyRequired": "API की आवश्यक आहे",
+  "enterTrustedHosts": "विश्वसनीय होस्ट प्रविष्ट करा",
+  "placeholder": {
+    "chatInput": "मला काहीही विचारा..."
+  },
+  "confirm": "पुष्टी करा",
+  "continue": "सुरू ठेवा",
+  "loading": "लोड होत आहे...",
+  "settingUpJan": "बूट करत आहे Jan…",
+  "registeringExtensions": "विस्तारांची नोंदणी करत आहे...",
+  "loadingExtensions": "विस्तार लोड करत आहे... ({{done}}/{{total}})",
+  "error": "त्रुटी",
+  "success": "यश",
+  "warning": "चेतावणी",
+  "conversationNotAvailable": "संभाषण उपलब्ध नाही",
+  "conversationNotAvailableDescription": "तुम्ही ज्या संभाषणात प्रवेश करण्याचा प्रयत्न करत आहात ते उपलब्ध नाही किंवा ते हटवले गेले आहे.",
+  "temporaryChat": "तात्पुरत्या गप्पा",
+  "temporaryChatTooltip": "तात्पुरत्या गप्पा तुमच्या इतिहासात दिसणार नाहीत",
+  "noResultsFoundDesc": "आम्हाला तुमच्या शोधाशी जुळणारे कोणतेही चॅट सापडले नाहीत. भिन्न कीवर्ड वापरून पहा.",
+  "searchModels": "मॉडेल शोधा...",
+  "searchStyles": "शैली शोधा...",
+  "createAssistant": "असिस्टंट तयार करा",
+  "enterApiKey": "API की प्रविष्ट करा",
+  "scrollToBottom": "तळाशी स्क्रोल करा",
+  "generateAiResponse": "AI प्रतिसाद व्युत्पन्न करा",
+  "continueAiResponse": "AI प्रतिसाद सुरू ठेवा",
+  "addModel": {
+    "title": "मॉडेल जोडा",
+    "modelId": "मॉडेल आयडी",
+    "enterModelId": "मॉडेल आयडी प्रविष्ट करा",
+    "addModel": "मॉडेल जोडा",
+    "description": "प्रदाता एक नवीन मॉडेल जोडा",
+    "exploreModels": "प्रदात्याकडून मॉडेल सूची पहा"
+  },
+  "mcpServers": {
+    "editServer": "सर्व्हर संपादित करा",
+    "addServer": "सर्व्हर जोडा",
+    "serverName": "सर्व्हरचे नाव",
+    "enterServerName": "सर्व्हरचे नाव प्रविष्ट करा",
+    "command": "कमांड",
+    "enterCommand": "कमांड एंटर करा",
+    "arguments": "युक्तिवाद",
+    "argument": "युक्तिवाद {{index}}",
+    "envVars": "पर्यावरण परिवर्तने",
+    "key": "की",
+    "value": "मूल्य",
+    "save": "जतन करा"
+  },
+  "deleteServer": {
+    "title": "सर्व्हर हटवा",
+    "delete": "हटवा"
+  },
+  "editJson": {
+    "errorParse": "JSON पार्स करण्यात अयशस्वी",
+    "errorPaste": "JSON पेस्ट करण्यात अयशस्वी",
+    "errorFormat": "अवैध JSON स्वरूप",
+    "titleAll": "सर्व सर्व्हर कॉन्फिगरेशन संपादित करा",
+    "placeholder": "JSON कॉन्फिगरेशन प्रविष्ट करा...",
+    "save": "जतन करा"
+  },
+  "editModel": {
+    "title": "मॉडेल संपादित करा: {{modelId}}",
+    "description": "खालील पर्याय टॉगल करून मॉडेल क्षमता कॉन्फिगर करा.",
+    "capabilities": "क्षमता",
+    "tools": "साधने",
+    "vision": "दृष्टी",
+    "embeddings": "एम्बेडिंग",
+    "notAvailable": "अजून उपलब्ध नाही"
+  },
+  "outOfContextError": {
+    "truncateInput": "इनपुट ट्रंकेट करा",
+    "title": "संदर्भाबाहेर त्रुटी",
+    "description": "व्हाईटबोर्ड भरल्याप्रमाणे ही चॅट एआयच्या मेमरी मर्यादेपर्यंत पोहोचत आहे. आम्ही मेमरी विंडो विस्तृत करू शकतो (ज्याला संदर्भ आकार म्हणतात) त्यामुळे ती अधिक लक्षात ठेवते, परंतु ती तुमच्या संगणकाची अधिक मेमरी वापरू शकते. आम्ही इनपुट देखील कापून टाकू शकतो, याचा अर्थ नवीन संदेशांसाठी जागा तयार करण्यासाठी तो काही चॅट इतिहास विसरेल.",
+    "increaseContextSizeDescription": "तुम्हाला संदर्भ आकार वाढवायचा आहे का?",
+    "increaseContextSize": "संदर्भ आकार वाढवा"
+  },
+  "toolApproval": {
+    "title": "साधन परवानगी विनंती",
+    "description": "सहाय्यकाला <strong>{{toolName}}</strong> वापरायचे आहे",
+    "securityNotice": "तुमचा विश्वास असलेल्या साधनांनाच अनुमती द्या. साधने तुमची प्रणाली आणि डेटा ऍक्सेस करू शकतात.",
+    "deny": "नकार द्या",
+    "allowOnce": "एकदाच परवानगी द्या",
+    "alwaysAllow": "नेहमी परवानगी द्या"
+  },
+  "deleteModel": {
+    "title": "मॉडेल हटवा: {{modelId}}",
+    "description": "तुम्हाला खात्री आहे की तुम्ही हे मॉडेल हटवू इच्छिता? ही क्रिया पूर्ववत केली जाऊ शकत नाही.",
+    "success": "मॉडेल {{modelId}} कायमचे हटवले गेले आहे.",
+    "cancel": "रद्द करा",
+    "delete": "हटवा"
+  },
+  "deleteProvider": {
+    "title": "प्रदाता हटवा",
+    "description": "हा प्रदाता आणि त्याचे सर्व मॉडेल हटवा. ही क्रिया पूर्ववत केली जाऊ शकत नाही.",
+    "success": "प्रदाता {{provider}} कायमचा हटवला गेला आहे.",
+    "confirmTitle": "प्रदाता हटवा: {{provider}}",
+    "confirmDescription": "तुमची खात्री आहे की तुम्ही हा प्रदाता हटवू इच्छिता? ही क्रिया पूर्ववत केली जाऊ शकत नाही.",
+    "cancel": "रद्द करा",
+    "delete": "हटवा"
+  },
+  "modelSettings": {
+    "title": "मॉडेल सेटिंग्ज - {{modelId}}",
+    "description": "कार्यप्रदर्शन आणि वर्तन ऑप्टिमाइझ करण्यासाठी मॉडेल सेटिंग्ज कॉन्फिगर करा.",
+    "nglDisabledByFit": "स्वयं-फिट GPU स्तर निवडत आहे. हे व्यक्तिचलितपणे सेट करण्यासाठी ऑटो-फिट बंद करा.",
+    "samplingDefaults": {
+      "title": "डीफॉल्ट सॅम्पलिंग पॅरामीटर्स",
+      "description": "या मॉडेलसाठी डीफॉल्ट सॅम्पलर सेटिंग्ज. प्रति-सहाय्यक किंवा प्रति-विनंती मूल्यांद्वारे अधिलिखित केल्याशिवाय वापरले जाते."
+    },
+    "specDraft": {
+      "section": "सट्टा डिकोडिंग",
+      "enable": "सट्टा डीकोडिंग सक्षम करा",
+      "enableDescription": "प्रति स्टेप अनेक टोकन्सचा मसुदा तयार करा आणि एका पासमध्ये त्यांची पडताळणी करा, ज्यामुळे निर्मितीची गती वाढते. मॉडेलचे अंगभूत MTP हेड, किंवा त्यासह डाउनलोड केलेले मसुदा मॉडेल (MTP, Eagle3, DFlash किंवा DSpark) वापरते.",
+      "nMax": "कमाल मसुदा टोकन",
+      "nMaxDescription": "प्रति चरण मसुदा करण्यासाठी टोकनची कमाल संख्या. डीफॉल्ट 16.",
+      "nMin": "किमान मसुदा टोकन",
+      "nMinDescription": "प्रति चरण मसुदा करण्यासाठी टोकनची किमान संख्या. डीफॉल्ट 0.",
+      "pMin": "किमान मसुदा संभाव्यता",
+      "pMinDescription": "लोभी मसुदा तयार करण्यासाठी किमान संभाव्यता (0-1). डीफॉल्ट 0.75."
+    },
+    "templateKwargs": {
+      "section": "चॅट टेम्पलेट पर्याय",
+      "description": "या मॉडेलचे चॅट टेम्पलेट स्वीकारणारे अतिरिक्त पर्याय. प्रत्येक विनंतीवर chat_template_kwargs म्हणून पाठवले; टेम्प्लेट ठरवू देण्यासाठी त्याच्या डीफॉल्टवर मूल्य सोडा.",
+      "addCustom": "सानुकूल पर्याय जोडा",
+      "keyPlaceholder": "नाव",
+      "valuePlaceholder": "मूल्य",
+      "add": "जोडा",
+      "cancel": "रद्द करा",
+      "remove": "काढा"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "मॉडेल सेटिंग्ज अपडेट करू शकलो नाही"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "डेटा फोल्डर स्थान बदला",
+      "description": "तुम्हाला खात्री आहे की तुम्ही डेटा फोल्डरचे स्थान बदलू इच्छिता? हे तुमचा सर्व डेटा नवीन स्थानावर हलवेल आणि अनुप्रयोग रीस्टार्ट करेल.",
+      "currentLocation": "सध्याचे स्थान:",
+      "newLocation": "नवीन स्थान:",
+      "cancel": "रद्द करा",
+      "changeLocation": "स्थान बदला"
+    },
+    "deleteAllThreads": {
+      "title": "सर्व थ्रेड्स हटवा",
+      "description": "सर्व धागे हटवले जातील. ही क्रिया पूर्ववत केली जाऊ शकत नाही."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "सर्व संभाषणे हटवा",
+      "description": "\"{{projectName}}\" मधील {{count}} संभाषणे हटवली जातील. ही क्रिया पूर्ववत केली जाऊ शकत नाही."
+    },
+    "deleteThread": {
+      "description": "तुमची खात्री आहे की तुम्ही हा थ्रेड हटवू इच्छिता? ही क्रिया पूर्ववत केली जाऊ शकत नाही."
+    },
+    "editMessage": {
+      "title": "संदेश संपादित करा"
+    },
+    "messageMetadata": {
+      "title": "मेसेज मेटाडेटा"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "काहीतरी चूक झाली",
+    "details": "तपशील"
+  },
+  "missingDependenciesDialog": {
+    "title": "गहाळ सिस्टम लायब्ररी",
+    "description": "{{backend}} स्थापित केले होते परंतु काही आवश्यक सिस्टम लायब्ररी आढळू शकल्या नाहीत. ते CPU वर परत येऊ शकते किंवा योग्यरित्या चालत नाही.",
+    "installLabel": "याचे निराकरण करण्यासाठी, खालील स्थापित करा:",
+    "download": "डाउनलोड करा",
+    "additionalLibraries": "अतिरिक्त गहाळ लायब्ररी:",
+    "missingLibraries": "गहाळ लायब्ररी:",
+    "showRawLibraries": "{{count}} गहाळ लायब्ररीची नावे दर्शवा"
+  },
+  "projects": {
+    "title": "प्रकल्प",
+    "new": "नवीन प्रकल्प",
+    "addProject": "प्रकल्प जोडा",
+    "addToProject": "प्रकल्पात जोडा",
+    "removeFromProject": "प्रकल्पातून काढून टाका",
+    "createNewProject": "नवीन प्रकल्प तयार करा",
+    "editProject": "प्रकल्प संपादित करा",
+    "deleteProject": "प्रकल्प हटवा",
+    "projectName": "प्रकल्पाचे नाव",
+    "enterProjectName": "प्रकल्पाचे नाव एंटर करा...",
+    "noProjectsAvailable": "कोणतेही प्रकल्प उपलब्ध नाहीत",
+    "noProjectsYet": "अद्याप कोणतेही प्रकल्प नाहीत",
+    "noProjectsYetDesc": "प्रकल्प जोडा बटणावर क्लिक करून नवीन प्रकल्प सुरू करा.",
+    "projectNotFound": "प्रकल्प सापडला नाही",
+    "projectNotFoundDesc": "तुम्ही शोधत असलेला प्रकल्प अस्तित्वात नाही किंवा हटवला गेला आहे.",
+    "selectAssistant": "सहाय्यक निवडा",
+    "noAssistantAssigned": "या प्रकल्पासाठी सहाय्यक नियुक्त केलेले नाहीत",
+    "files": "फाईल्स",
+    "filesDescription": "या प्रकल्पातील संदर्भासाठी PDF, दस्तऐवज किंवा इतर मजकूर जोडा.",
+    "uploadingFiles": "फाइल्सवर प्रक्रिया करत आहे...",
+    "processButton": "जोडा",
+    "deleteProjectDialog": {
+      "title": "प्रकल्प हटवा",
+      "permanentDelete": "हे सर्व थ्रेड्स कायमचे हटवेल.",
+      "permanentDeleteWarning": "या कृतीमुळे प्रकल्पातील सर्व थ्रेड कायमचे हटवले जातील!",
+      "deleteEmptyProject": "ही क्रिया प्रकल्प \"{{projectName}}\" हटवेल.",
+      "saveThreadsAdvice": "थ्रेड सेव्ह करण्यासाठी, हटवण्यापूर्वी त्यांना तुमच्या थ्रेड सूचीवर किंवा दुसऱ्या प्रोजेक्टमध्ये हलवा.",
+      "starredWarning": "तुमच्याकडे अजूनही प्रोजेक्टमध्ये तारांकित थ्रेड आहेत.",
+      "deleteButton": "हटवा",
+      "successWithName": "प्रकल्प \"{{projectName}}\" यशस्वीरित्या हटवला",
+      "successWithoutName": "प्रकल्प यशस्वीरित्या हटवला",
+      "error": "प्रकल्प हटवण्यात अयशस्वी. कृपया पुन्हा प्रयत्न करा.",
+      "ariaLabel": "{{projectName}} हटवा"
+    },
+    "addProjectDialog": {
+      "createTitle": "नवीन प्रकल्प तयार करा",
+      "editTitle": "प्रकल्प संपादित करा",
+      "nameLabel": "प्रकल्पाचे नाव",
+      "namePlaceholder": "प्रकल्पाचे नाव एंटर करा...",
+      "assistant": "सहाय्यक",
+      "selectAssistant": "सहाय्यक निवडा (पर्यायी)",
+      "noAssistant": "सहाय्यक नाही",
+      "addAssistant": "सहाय्यक जोडा",
+      "createButton": "तयार करा",
+      "updateButton": "अद्यतनित करा",
+      "alreadyExists": "प्रकल्प \"{{projectName}}\" आधीपासून अस्तित्वात आहे",
+      "createSuccess": "प्रकल्प \"{{projectName}}\" यशस्वीरित्या तयार केला",
+      "updateSuccess": "प्रकल्प \"{{projectName}}\" यशस्वीरित्या अद्यतनित केला"
+    },
+    "noConversationsIn": "{{projectName}} मध्ये कोणतेही संभाषण नाही",
+    "startNewConversation": "खाली {{projectName}} सह नवीन संभाषण सुरू करा",
+    "conversationsIn": "{{projectName}} मध्ये संभाषणे",
+    "conversationsDescription": "चॅटिंग सुरू ठेवण्यासाठी कोणत्याही संभाषणावर क्लिक करा किंवा खाली एक नवीन सुरू करा.",
+    "conversation": "संभाषण",
+    "instructions": "सूचना",
+    "setup": "सेटअप",
+    "instructionsDescription": "टोन आणि प्रतिसादाची शैली सानुकूलित करा",
+    "manageInstructions": "सूचना व्यवस्थापित करा",
+    "thread": "धागा",
+    "threads": "धागे",
+    "updated": "अद्यतनित:",
+    "collapseProject": "प्रकल्प संकुचित करा",
+    "expandProject": "प्रकल्पाचा विस्तार करा",
+    "update": "अद्यतनित करा",
+    "searchProjects": "प्रकल्प शोधा...",
+    "noProjectsFound": "कोणतेही प्रकल्प आढळले नाहीत",
+    "tryDifferentSearch": "भिन्न शोध संज्ञा वापरून पहा"
+  },
+  "attachmentsIngestion": {
+    "title": "संलग्नक कसे अंतर्भूत करायचे ते निवडा",
+    "description": "या फायली थेट चॅटमध्ये समाविष्ट करायच्या किंवा त्याऐवजी एम्बेडिंग म्हणून अनुक्रमित करा किंवा नाही ते निवडा.",
+    "inline": "चॅटमध्ये इंजेक्ट करा",
+    "embeddings": "एम्बेडिंग वापरा"
+  },
+  "attachmentInjectedIndicator": "गप्पांमध्ये टोचले",
+  "attachmentEmbeddedIndicator": "RAG साठी एम्बेड केलेले",
+  "viewInjectedContent": "इंजेक्ट केलेली सामग्री पहा",
+  "injectedContentTitle": "इंजेक्ट केलेली फाइल सामग्री",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "सर्व धागे आवडत नाहीत",
+      "description": "तुमच्या आवडीतून सर्व धागे काढले गेले आहेत."
+    },
+    "deleteAllThreads": {
+      "title": "सर्व थ्रेड्स हटवा",
+      "description": "सर्व धागे कायमचे हटवले गेले आहेत."
+    },
+    "renameThread": {
+      "title": "थ्रेडचे नाव बदला",
+      "description": "थ्रेडचे शीर्षक '{{title}}' असे बदलले गेले आहे"
+    },
+    "deleteThread": {
+      "title": "थ्रेड हटवा",
+      "description": "हा धागा कायमचा हटवला गेला आहे."
+    },
+    "errorCopied": {
+      "title": "कॉपी यशस्वी",
+      "description": "त्रुटी माहिती क्लिपबोर्डवर कॉपी केली"
+    },
+    "errorCopyFailed": {
+      "title": "कॉपी करण्यात अयशस्वी",
+      "description": "क्लिपबोर्डवर त्रुटी माहिती कॉपी करण्यात अयशस्वी"
+    },
+    "editMessage": {
+      "title": "संदेश संपादित करा",
+      "description": "संदेश यशस्वीरित्या संपादित केला. कृपया मॉडेलच्या प्रतिसादाची प्रतीक्षा करा."
+    },
+    "appUpdateDownloaded": {
+      "title": "ॲप अपडेट डाउनलोड केले",
+      "description": "ॲप अपडेट यशस्वीरित्या डाउनलोड केले गेले आहे."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "ॲप अपडेट डाउनलोड अयशस्वी",
+      "description": "ॲप अपडेट डाउनलोड करण्यात अयशस्वी. कृपया पुन्हा प्रयत्न करा."
+    },
+    "downloadComplete": {
+      "title": "डाउनलोड पूर्ण",
+      "description": "{{item}} डाउनलोड केले गेले आहे"
+    },
+    "downloadCancelled": {
+      "title": "डाउनलोड रद्द केले",
+      "description": "डाउनलोड प्रक्रिया रद्द करण्यात आली"
+    },
+    "downloadFailed": {
+      "title": "डाउनलोड अयशस्वी",
+      "description": "{{item}} डाउनलोड अयशस्वी",
+      "descriptionWithReason": "{{item}} डाउनलोड अयशस्वी: {{reason}}",
+      "reason": {
+        "dns": "सर्व्हरचे नाव सोडवता आले नाही",
+        "refused": "कनेक्शन नाकारले होते",
+        "timeout": "कनेक्शन कालबाह्य झाले",
+        "tls": "सुरक्षित कनेक्शन स्थापित करणे शक्य नाही",
+        "proxy": "प्रॉक्सी पोहोचू शकलो नाही",
+        "unreachable": "सर्व्हरपर्यंत पोहोचता आले नाही"
+      }
+    },
+    "openSettings": "सेटिंग्ज उघडा",
+    "openLogs": "नोंदी उघडा",
+    "downloadTokenRequired": {
+      "title": "Hugging Face टोकन आवश्यक",
+      "description": "या मॉडेलसाठी Hugging Face प्रवेश टोकन आवश्यक आहे. सेटिंग्जमध्ये तुमचे टोकन जोडा आणि पुन्हा प्रयत्न करा."
+    },
+    "downloadLicenseRequired": {
+      "title": "Hugging Face वर मॉडेल परवाना स्वीकारा",
+      "description": "डाउनलोड करण्यापूर्वी तुम्ही मॉडेलचा परवाना त्याच्या Hugging Face पृष्ठावर स्वीकारला पाहिजे."
+    },
+    "downloadRateLimited": {
+      "title": "दर Hugging Face ने मर्यादित",
+      "description": "तुम्ही रेट-मर्यादित आहात. टोकन जोडल्याने दर मर्यादा वाढू शकते. कृपया नंतर पुन्हा प्रयत्न करा."
+    },
+    "modelValidationStarted": {
+      "title": "प्रमाणित मॉडेल",
+      "description": "\"{{modelId}}\" मॉडेल यशस्वीरित्या डाउनलोड केले. अखंडता पडताळत आहे..."
+    },
+    "modelValidationFailed": {
+      "title": "मॉडेल प्रमाणीकरण अयशस्वी",
+      "description": "डाउनलोड केलेले मॉडेल \"{{modelId}}\" अखंडता पडताळणी अयशस्वी झाले आणि काढले गेले. फाइल दूषित किंवा छेडछाड केली जाऊ शकते."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "डाउनलोड पूर्ण",
+      "description": "मॉडेल \"{{item}}\" डाउनलोड आणि यशस्वीरित्या सत्यापित"
+    },
+    "projectCreated": {
+      "title": "प्रकल्प तयार केला",
+      "description": "प्रकल्प \"{{projectName}}\" यशस्वीरित्या तयार केला"
+    },
+    "projectRenamed": {
+      "title": "प्रकल्पाचे नाव बदलले",
+      "description": "प्रकल्पाचे नाव \"{{oldName}}\" वरून \"{{newName}}\" केले"
+    },
+    "projectDeleted": {
+      "title": "प्रकल्प हटवला",
+      "description": "प्रकल्प \"{{projectName}}\" यशस्वीरित्या हटवला"
+    },
+    "projectAlreadyExists": {
+      "title": "प्रकल्प आधीच अस्तित्वात आहे",
+      "description": "प्रकल्प \"{{projectName}}\" आधीपासून अस्तित्वात आहे"
+    },
+    "projectDeleteFailed": {
+      "title": "हटवणे अयशस्वी",
+      "description": "प्रकल्प हटवण्यात अयशस्वी. कृपया पुन्हा प्रयत्न करा."
+    },
+    "threadAssignedToProject": {
+      "title": "धागा असाइन केला",
+      "description": "थ्रेड \"{{projectName}}\" ला यशस्वीरित्या नियुक्त केला"
+    },
+    "threadRemovedFromProject": {
+      "title": "धागा काढला",
+      "description": "\"{{projectName}}\" मधून थ्रेड यशस्वीरित्या काढला"
+    },
+    "fileUploaded": {
+      "title": "फाइल प्रक्रिया केली",
+      "description": "फाइलवर प्रक्रिया केली गेली आणि यशस्वीरित्या अनुक्रमित केली गेली"
+    },
+    "uploadFailed": {
+      "title": "प्रक्रिया अयशस्वी",
+      "description": "फाइलवर प्रक्रिया करण्यात अयशस्वी",
+      "subjectThisFile": "ही फाईल",
+      "pdfMalformedXref": "{{subject}} मध्ये एक विकृत PDF क्रॉस-रेफरेंस सारणी आहे आणि ती पार्स केली जाऊ शकत नाही. ते PDF दर्शकामध्ये उघडण्याचा प्रयत्न करा आणि ते पुन्हा सेव्ह करा (फाइल → प्रिंट → PDF म्हणून सेव्ह करा), नंतर पुन्हा अपलोड करा.",
+      "pdfScanned": "{{subject}} स्कॅन केलेले किंवा इमेज-आधारित PDF असल्याचे दिसते. OCR अद्याप समर्थित नाही — कृपया मजकूर-आधारित PDF अपलोड करा.",
+      "pdfEncrypted": "{{subject}} पासवर्ड-संरक्षित आहे. पासवर्ड काढा आणि पुन्हा प्रयत्न करा.",
+      "pdfUnsupportedFeature": "{{subject}} PDF वैशिष्ट्य वापरते Jan अद्याप विश्लेषित करू शकत नाही (उदा. पोस्टस्क्रिप्ट रंग/शेडिंग कार्ये). ते सपाट करण्यासाठी ते पुन्हा सेव्ह करण्याचा प्रयत्न करा (फाइल → प्रिंट → PDF म्हणून सेव्ह करा), नंतर पुन्हा अपलोड करा.",
+      "pdfGeneric": "{{subject}} PDF म्हणून विश्लेषित करणे शक्य नाही. फाइल दूषित असू शकते किंवा असमर्थित PDF वैशिष्ट्य वापरते.",
+      "fileTooLarge": "{{subject}} खूप मोठे आहे. {{message}}.",
+      "unsupportedType": "फाइल प्रकार \"{{type}}\" समर्थित नाही.",
+      "ioError": "{{subject}} वाचू शकलो नाही: {{message}}",
+      "parseGeneric": "{{subject}} विश्लेषित करणे शक्य नाही: {{message}}",
+      "fallback": "{{subject}} प्रक्रिया करण्यात अयशस्वी."
+    },
+    "fileDeleted": {
+      "title": "फाइल हटवली",
+      "description": "प्रकल्पातून फाइल काढून टाकण्यात आली आहे"
+    },
+    "deleteFailed": {
+      "title": "हटवणे अयशस्वी",
+      "description": "फाइल हटवण्यात अयशस्वी"
+    },
+    "fileAlreadyExists": {
+      "title": "फाइल आधीपासून अस्तित्वात आहे",
+      "description": "या प्रकल्पाशी फाइल आधीच जोडलेली आहे"
+    },
+    "unsupportedFileType": {
+      "title": "असमर्थित फाइल प्रकार",
+      "description": "प्रकल्प संदर्भासाठी फाइल विस्तार \".{{extension}}\" समर्थित नाही."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "संलग्नक अक्षम",
+      "description": "संलग्नक सेटिंग्जमध्ये अक्षम केले आहेत"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "फाइल खूप मोठी आहे",
+    "fileTooLargeDescription": "{{fileName}} {{maxFileSizeMB}}MB मर्यादा ओलांडते"
+  },
+  "files": {
+    "chunksCount": "{{count}} भाग",
+    "title": "फाईल्स",
+    "empty": "तुम्ही संलग्न केलेल्या फाइल आणि एजंट तयार केलेल्या फाइल येथे दिसतील.",
+    "a11y": "फाइल्स: {{count}}",
+    "attachments": "संलग्नक",
+    "notImported": "कार्यक्षेत्रात नाही"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp अजूनही व्यस्त आहे",
+    "description": "एक किंवा अधिक मॉडेल वेळेत अनलोड झाले नाहीत. सक्तीने सोडणे llama.cpp संपुष्टात येईल आणि सक्रिय प्रतिसादांमध्ये व्यत्यय आणू शकते.",
+    "forceQuit": "सक्तीने सोडले",
+    "forcing": "सक्तीने सोडणे…",
+    "shuttingDown": "बंद करत आहे..."
+  },
+  "duration": {
+    "seconds": "{{count}}",
+    "minutes": "{{count}}m",
+    "hours": "{{count}} ता"
+  },
+  "collapse": "संकुचित करा",
+  "expand": "विस्तृत करा",
+  "todoPanelTitle": "प्रगती",
+  "todoPanelEmpty": "अद्याप टूडू यादी नाही.",
+  "backgroundTasks": "पार्श्वभूमी कार्ये",
+  "subagentsRunning_one": "चालू असलेले उपसहाय्यक: {{count}}",
+  "subagentsRunning_other": "चालू असलेले उपसहाय्यक: {{count}}",
+  "monitorsRunning_one": "चालू असलेली निरीक्षणे: {{count}}",
+  "monitorsRunning_other": "चालू असलेली निरीक्षणे: {{count}}",
+  "backgroundRunning_one": "पार्श्वभूमीत चालू असलेली कामे: {{count}}",
+  "backgroundRunning_other": "पार्श्वभूमीत चालू असलेली कामे: {{count}}",
+  "monitors": "मॉनिटर्स",
+  "monitorPolling": "मतदान",
+  "monitorMatched": "जुळले",
+  "monitorTimedOut": "कालबाह्य",
+  "monitorStopped": "थांबला",
+  "monitorEnded": "संपले",
+  "coworkWatching_one": "लक्ष ठेवलेली निरीक्षणे: {{count}}…",
+  "coworkWatching_other": "लक्ष ठेवलेली निरीक्षणे: {{count}}…",
+  "coworkWaitingBackground": "पार्श्वभूमी कार्यांची प्रतीक्षा करत आहे...",
+  "noBackgroundTasks": "अद्याप कोणतीही पार्श्वभूमी कार्ये नाहीत.",
+  "running": "धावत आहे",
+  "queued": "रांगेत",
+  "waiting": "वाट पाहत आहे",
+  "finished": "संपले",
+  "subagentPhase": "टप्पा {{phase}}",
+  "subagentWaiting": "वाट पाहणे",
+  "viewTranscript": "उतारा पहा",
+  "taskWorking": "कार्यरत आहे…",
+  "taskNoOutput": "सबएजंटने कोणतेही दृश्यमान आउटपुट तयार केले नाही.",
+  "subagentToolUses_one": "साधन वापरांची संख्या: {{count}}",
+  "subagentToolUses_other": "साधन वापरांची संख्या: {{count}}",
+  "artifactGroupCode": "कोड",
+  "artifactGroupImage": "प्रतिमा",
+  "artifactGroupDocument": "दस्तऐवज",
+  "artifactGroupVideo": "व्हिडिओ",
+  "artifactGroupAudio": "ऑडिओ",
+  "artifactOpenPreview": "पूर्वावलोकन उघडा",
+  "artifactOpenExternal": "उघडा",
+  "artifactMoreActions": "अधिक क्रिया",
+  "artifactShowInFolder": "फोल्डरमध्ये दाखवा",
+  "skillsUsedLabel": "कौशल्य वापरले",
+  "skillsUsed": "वापरलेली कौशल्ये: {{skills}}",
+  "artifactsAll": "सर्व",
+  "artifactsEmpty": "अद्याप काहीही उत्पादन झाले नाही. Cowork धावांच्या कलाकृती येथे दाखवल्या जातात.",
+  "artifactsNoMatch": "कोणत्याही कलाकृती जुळत नाहीत.",
+  "artifactsSearch": "कलाकृती शोधा",
+  "artifactsShowMore": "अधिक {{count}} दर्शवा",
+  "workspace": {
+    "readsFrom": "मध्ये काम करतो",
+    "writable": "वाचा आणि लिहा",
+    "footnote": "एजंट हे फोल्डर थेट वाचतो आणि संपादित करतो. डिफ पॅनेलमध्ये काय बदलले याचे पुनरावलोकन करा.",
+    "footnoteEmpty": "एजंटला तुमच्या प्रकल्पावर काम करू देण्यासाठी फोल्डर संलग्न करा. ते त्यातील फाइल्स वाचू आणि संपादित करू शकते.",
+    "attach": "फोल्डर संलग्न करा",
+    "change": "फोल्डर बदला",
+    "detach": "फोल्डर वेगळे करा",
+    "open": "उघडा",
+    "reveal": "प्रकट करा",
+    "unavailable": "कार्यक्षेत्र अनुपलब्ध",
+    "missing": "वर्कस्पेस फोल्डर {{folder}} यापुढे उपलब्ध नाही. वेगळे फोल्डर निवडा.",
+    "openFailed": "कार्यस्थान उघडू शकलो नाही",
+    "revealFailed": "कार्यक्षेत्र उघड करू शकलो नाही",
+    "a11yWithFolder": "प्रोजेक्ट फोल्डर {{folder}}, वाचन आणि लेखन प्रवेशासह संलग्न. ते बदला किंवा वेगळे करा.",
+    "a11yNoFolder": "कोणतेही प्रोजेक्ट फोल्डर संलग्न केलेले नाही. एक संलग्न करा."
+  },
+  "coworkEmpty": {
+    "title": "आम्ही काय काम करत आहोत?",
+    "subtitleSandbox": "Jan एक कार्य द्या. ते फायली वाचते आणि लिहिते, कमांड चालवते आणि स्वतःच पायऱ्यांमधून कार्य करते.",
+    "subtitleFolder": "Jan एक कार्य द्या. हे थेट {{folder}} मध्ये कार्य करते, स्वतःच फाइल्स वाचते आणि संपादित करते.",
+    "try": "प्रयत्न करा",
+    "sandbox": {
+      "first": "एक पायथन स्क्रिप्ट लिहा जी फाइल्स घेतल्या गेल्या तारखेनुसार पुनर्नामित करते",
+      "second": "मी पेस्ट करीन CSV वरून एकल-पृष्ठ डॅशबोर्ड तयार करा",
+      "third": "मी तुम्हाला वर्णन केलेल्या प्रकल्पासाठी README मसुदा तयार करा"
+    },
+    "folder": {
+      "first": "{{folder}} कसे एकत्र केले जाते ते स्पष्ट करा",
+      "second": "प्रत्येक TODO {{folder}} मध्ये शोधा आणि त्यांना क्षेत्रानुसार गटबद्ध करा",
+      "third": "मी तुम्हाला सूचित करतो त्या {{folder}} भागासाठी चाचण्या लिहा"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "टर्मिनल नाही",
+    "a11y": "रनिंग कमांड बंद आहे. तपशील.",
+    "title": "रनिंग कमांड बंद आहे",
+    "body": "Jan एजंटला शेल कमांड्स फक्त तेव्हाच चालवू देते जेव्हा तुमची सिस्टम त्यांना मर्यादित करू शकते. येथे कोणताही सँडबॉक्स उपलब्ध नाही, त्यामुळे एजंट त्याच्या सँडबॉक्समधील फायली वाचू, लिहू आणि संपादित करू शकतो — परंतु काहीही चालवू शकत नाही.",
+    "fixLinux": "Linux बबलरॅप वापरते. ते स्थापित करा, नंतर Jan रीस्टार्ट करा.",
+    "fixMac": "macOS /usr/bin/sandbox-exec येथे अंगभूत सँडबॉक्स वापरते. एकदा उपलब्ध झाल्यावर Jan रीस्टार्ट करा.",
+    "fixWindows": "Windows AppContainer वापरते. पुन्हा प्रयत्न करण्यासाठी Jan रीस्टार्ट करा.",
+    "recheck": "पुन्हा तपासा"
+  },
+  "planMode": {
+    "label": "योजना",
+    "tooltipOff": "प्रथम योजना करा - एजंट न लिहिता वाचतो आणि प्रस्ताव देतो.",
+    "tooltipOn": "नियोजन. एजंटला फाइल्स लिहू देण्यासाठी हे बंद करा.",
+    "onAnnounce": "योजना मोड चालू",
+    "placeholder": "योजना विचारा. एजंट कोणत्याही फाइल बदलणार नाही."
+  },
+  "budget": {
+    "stoppedSteps": "{{max}} पावलांवर थांबले. एजंट संपला नाही.",
+    "keepGoing": "चालू ठेवा",
+    "stoppedTokens": "थांबले - हे सत्र त्याच्या टोकन बजेटवर पोहोचले.",
+    "compact": "संक्षिप्त",
+    "newSession": "नवीन सत्र"
+  },
+  "run": {
+    "stopped": "थांबला.",
+    "failed": "धाव लवकर थांबली.",
+    "tryAgain": "पुन्हा प्रयत्न करा"
+  },
+  "modelNoTools": "{{model}} टूलला कॉल करू शकत नाही, त्यामुळे ते एजंट म्हणून काम करू शकत नाही. टूल-कॉलिंग मॉडेल निवडा.",
+  "askContinue": "सुरू ठेवा",
+  "askNext": "पुढचा प्रश्न",
+  "askPrev": "मागील प्रश्न",
+  "askRecommended": "शिफारस केली",
+  "askSelectedCount": "{{count}} निवडले",
+  "askSomethingElse": "अजून काही",
+  "askSomethingElsePlaceholder": "तुमचे स्वतःचे उत्तर टाइप करा",
+  "submit": "सबमिट करा"
+}
