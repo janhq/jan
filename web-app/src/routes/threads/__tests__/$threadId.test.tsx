@@ -1056,15 +1056,18 @@ describe('ThreadDetail route', () => {
       expect(screen.queryByText('Increase Context Size')).toBeNull()
     })
 
-    it('still offers Increase Context Size for a local model near ctx_len', () => {
+    // A reply that fills a local model's context was generated; dropping it left
+    // the user with only their own message and a banner.
+    it('keeps the partial reply of a local model near ctx_len, with the banner', () => {
       h.modelProviderState.selectedProvider = 'llamacpp'
       renderComponent()
       act(() => {
         finishAtLength()
       })
-      expect(
-        h.messagesState.addMessage.mock.calls.some((c: any[]) => c[0].id === 'a-len')
-      ).toBe(false)
+      const added = h.messagesState.addMessage.mock.calls.map((c: any[]) => c[0])
+      const persisted = added.find((m: any) => m.id === 'a-len')
+      expect(persisted).toBeTruthy()
+      expect(persisted.metadata.stopped).toBe(true)
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
     })
   })

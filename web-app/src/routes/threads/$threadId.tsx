@@ -535,7 +535,7 @@ function ThreadDetail() {
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
-          // button — auto-increase was removed; the user explicitly opts in.
+          // button - auto-increase was removed; the user explicitly opts in.
           const partialText = message.parts
             .filter((p) => p.type === 'text')
             .map((p) => (p as { type: 'text'; text: string }).text)
@@ -549,10 +549,11 @@ function ThreadDetail() {
           if (openThreadIdRef.current === threadId) {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
           }
-          return
+          // Falls through to store the partial as a stopped reply: returning
+          // here dropped everything the model had generated.
         }
-        // Non-context-limit length truncation: fall through and persist the
-        // partial marked as stopped so the "Continue" button can resume it.
+        // Any other length stop is the output-token cap: the partial is stored
+        // as stopped so the "Continue" button can resume it.
       }
 
       if (!isAbort && message.parts.length) clearPendingContinue(threadId)
@@ -2069,10 +2070,13 @@ function ThreadDetail() {
         .getState()
         .sessions[threadId]?.transport.setContinueFromContent(pending.text)
       setPendingContinue({ threadId, message: pending.message })
+      // The partial is stored (see onFinish), so the resumed reply replaces it
+      // in place rather than forking a second version of the same answer.
+      continueReplaceIds.set(threadId, pending.message.id)
     }
 
     setTimeout(() => {
-      handleRegenerate()
+      handleRegenerate(pending?.message.id)
     }, 1000)
   }, [
     selectedModel,
@@ -2254,12 +2258,15 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                // A banner error stands in for the failed assistant turn:
-                // regenerate/reload restarts it from scratch, so hide the
-                // partial (tool calls, "Worked for Ns") and show only the banner.
+                // An out-of-memory or backend error stands in for the failed
+                // assistant turn: regenerate/reload restarts it from scratch, so
+                // hide the partial (tool calls, "Worked for Ns") and show only
+                // the banner. A context-limit stop keeps its partial: that text
+                // was generated and stored, and the banner only offers a bigger
+                // context to resume it.
                 if (
                   isLastMessage &&
-                  hasBannerError &&
+                  (oomError || backendError) &&
                   message.role === 'assistant'
                 )
                   return null
