@@ -91,10 +91,14 @@ pub async fn is_local_engine_process_running<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     pid: i32,
 ) -> Result<bool, String> {
-    use sysinfo::{Pid, System};
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+    let target = Pid::from(pid as usize);
     let mut system = System::new();
-    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    let alive = system.process(Pid::from(pid as usize)).is_some();
+    // Only the one PID: refreshing every process walks the whole table and
+    // allocates an entry per process, which is wasteful for a liveness probe
+    // that a UI may call on a timer.
+    system.refresh_processes(ProcessesToUpdate::Some(&[target]), true);
+    let alive = system.process(target).is_some();
 
     if !alive {
         let state: State<LocalEngineState> = app_handle.state();

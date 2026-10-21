@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -438,6 +438,33 @@ pub fn engine_package_spec(engine: &str) -> Option<(&'static str, &'static str)>
     }
 }
 
+/// How many trailing lines of an installer's output are kept for the error
+/// message. The rest is logged, not buffered: pip's progress output can be
+/// tens of MB, and `.output()` held all of it.
+const INSTALL_TAIL_LINES: usize = 40;
+
+/// Logs an installer's output line by line and returns only its tail.
+fn spawn_tail<R>(
+    stream: R,
+    prefix: &'static str,
+) -> tokio::task::JoinHandle<Vec<String>>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stream).lines();
+        let mut tail: VecDeque<String> = VecDeque::with_capacity(INSTALL_TAIL_LINES);
+        while let Ok(Some(line)) = lines.next_line().await {
+            log::info!("[{prefix}] {line}");
+            if tail.len() == INSTALL_TAIL_LINES {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+        tail.into_iter().collect()
+    })
+}
+
 /// Installs an engine's runtime into a virtualenv Jan manages.
 ///
 /// The virtualenv lives at `<app data>/local-engine/<engine>/venv`, which is
@@ -492,22 +519,43 @@ pub async fn install_runtime<R: Runtime>(
     log::info!("installing the {engine} runtime ({pip_names}) into {venv_dir:?}");
     let pip_program =
         engine_helper_binary(engine, &venv_python).unwrap_or_else(|| venv_python.clone());
-    let output = hidden_command(&pip_program)
+    // `pip_names` can name more than one package ("openvino openvino-genai"),
+    // so each name is its own argument.
+    let mut child = hidden_command(&pip_program)
         .arg("-m")
         .arg("pip")
         .arg("install")
         .arg("--upgrade")
-        .arg(pip_names)
-        .output()
-        .await
-        .map_err(|e| {
-            LocalEngineError::SpawnFailed(format!("could not run pip: {e}"))
-        })?;
+        .args(pip_names.split_whitespace())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| LocalEngineError::SpawnFailed(format!("could not run pip: {e}")))?;
 
-    if !output.status.success() {
+    let stdout_tail = child
+        .stdout
+        .take()
+        .map(|stream| spawn_tail(stream, "pip"));
+    let stderr_tail = child
+        .stderr
+        .take()
+        .map(|stream| spawn_tail(stream, "pip"));
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| LocalEngineError::SpawnFailed(format!("pip did not finish: {e}")))?;
+    if let Some(task) = stdout_tail {
+        let _ = task.await;
+    }
+    let stderr_lines = match stderr_tail {
+        Some(task) => task.await.unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    if !status.success() {
         return Err(LocalEngineError::SpawnFailed(format!(
             "pip install failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            stderr_lines.join("\n").trim()
         )));
     }
 
