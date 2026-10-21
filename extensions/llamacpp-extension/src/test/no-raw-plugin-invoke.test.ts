@@ -50,21 +50,28 @@ function collect(dir: string): string[] {
 }
 
 describe('invoke for plugin:llamacpp stays in guest-js', () => {
-  it('has no raw plugin:llamacpp invoke in production source', () => {
-    const offenders: string[] = []
-    for (const dir of SEARCH_DIRS) {
-      for (const file of collect(dir)) {
-        readFileSync(file, 'utf8')
-          .split('\n')
-          .forEach((line, i) => {
-            if (RAW_INVOKE.test(line)) {
-              offenders.push(
-                `${file.slice(REPO_ROOT.length + 1)}:${i + 1}: ${line.trim()}`
-              )
-            }
-          })
+  // The scan reads every source file in the repo, so it is bound by disk
+  // latency rather than by anything the test does. The default timeout is
+  // too tight when the machine is busy.
+  it(
+    'has no raw plugin:llamacpp invoke in production source',
+    () => {
+      const offenders: string[] = []
+      for (const dir of SEARCH_DIRS) {
+        for (const file of collect(dir)) {
+          readFileSync(file, 'utf8')
+            .split('\n')
+            .forEach((line, i) => {
+              if (RAW_INVOKE.test(line)) {
+                offenders.push(
+                  `${file.slice(REPO_ROOT.length + 1)}:${i + 1}: ${line.trim()}`
+                )
+              }
+            })
+        }
       }
-    }
-    expect(offenders, offenders.join('\n')).toEqual([])
-  })
+      expect(offenders, offenders.join('\n')).toEqual([])
+    },
+    60_000
+  )
 })
