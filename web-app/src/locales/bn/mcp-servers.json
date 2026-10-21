@@ -1,0 +1,101 @@
+{
+  "editServer": "MCP সার্ভার সম্পাদনা করুন",
+  "addServer": "MCP সার্ভার যোগ করুন",
+  "browserExtension": {
+    "connecting": {
+      "checking": "এক্সটেনশন স্থিতি পরীক্ষা করা হচ্ছে..."
+    },
+    "notInstalled": {
+      "title": "Jan আপনার ব্রাউজারে কাজগুলি সম্পূর্ণ করে",
+      "description": "Jan ব্রাউজার অ্যাক্সেস দিতে এক্সটেনশনটি ইনস্টল করুন",
+      "getExtension": "এক্সটেনশন পান"
+    }
+  },
+  "serverName": "সার্ভারের নাম",
+  "enterServerName": "সার্ভারের নাম লিখুন",
+  "command": "কমান্ড",
+  "enterCommand": "কমান্ড লিখুন (uvx বা npx)",
+  "arguments": "যুক্তি",
+  "argument": "যুক্তি {{index}}",
+  "envVars": "এনভায়রনমেন্ট ভেরিয়েবল",
+  "key": "কী",
+  "value": "মান",
+  "save": "সংরক্ষণ করুন",
+  "status": "স্ট্যাটাস",
+  "connected": "সংযুক্ত",
+  "disconnected": "সংযোগ বিচ্ছিন্ন",
+  "deleteServer": {
+    "title": "MCP সার্ভার মুছুন",
+    "description": "আপনি কি MCP সার্ভার {{serverName}} মুছতে চান? এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷",
+    "delete": "মুছুন",
+    "success": "MCP সার্ভার {{serverName}} সফলভাবে মুছে ফেলা হয়েছে৷"
+  },
+  "editJson": {
+    "title": "MCP সার্ভারের জন্য JSON সম্পাদনা করুন: {{serverName}}",
+    "titleAll": "সমস্ত MCP সার্ভারগুলি সম্পাদনা করুন JSON",
+    "placeholder": "JSON কনফিগারেশন লিখুন",
+    "errorParse": "প্রাথমিক ডেটা পার্স করতে ব্যর্থ হয়েছে৷",
+    "errorPaste": "আটকানো সামগ্রীতে অবৈধ JSON বিন্যাস",
+    "errorFormat": "অবৈধ JSON বিন্যাস",
+    "errorServerName": "সার্ভারের নাম প্রয়োজন এবং খালি হতে পারে না",
+    "errorMissingServerNameKey": "JSON অবশ্যই {\"serverName\": {config}} হিসাবে গঠন করতে হবে - সার্ভারের নাম কী অনুপস্থিত",
+    "errorInvalidType": "'{{serverName}}' সার্ভারের জন্য অবৈধ টাইপ '{{type}}'। প্রকার অবশ্যই 'stdio', 'http', বা 'sse' হতে হবে",
+    "save": "সংরক্ষণ করুন"
+  },
+  "checkParams": "টিউটোরিয়াল অনুযায়ী প্যারামিটার চেক করুন.",
+  "title": "MCP সার্ভার",
+  "experimental": "পরীক্ষামূলক",
+  "editAllJson": "সমস্ত সার্ভার সম্পাদনা করুন JSON",
+  "findMore": "এখানে আরও MCP সার্ভার খুঁজুন",
+  "allowPermissions": "সমস্ত MCP টুল অনুমতির অনুমতি দিন",
+  "allowPermissionsDesc": "সক্রিয় করা হলে, সমস্ত MCP টুল কল অনুমতি ডায়ালগ না দেখিয়ে স্বয়ংক্রিয়ভাবে অনুমোদিত হবে৷ এই সেটিংটি নতুন চ্যাট সহ সমস্ত কথোপকথনে বিশ্বব্যাপী প্রযোজ্য।",
+  "noServers": "কোনো MCP সার্ভার পাওয়া যায়নি",
+  "args": "আর্গস",
+  "env": "পরিবেশ",
+  "serverStatusActive": "সার্ভার {{serverKey}} সফলভাবে সক্রিয় হয়েছে৷",
+  "serverStatusInactive": "সার্ভার {{serverKey}} সফলভাবে নিষ্ক্রিয় করা হয়েছে৷",
+  "runtimeSettings": {
+    "title": "রানটাইম সেটিংস",
+    "description": "কিভাবে Jan পরিচালনা করে এবং MCP সার্ভার পুনরায় চেষ্টা করে তা কনফিগার করুন।",
+    "toolCallTimeout": "টুল কল টাইমআউট (সেকেন্ড)",
+    "toolCallTimeoutDesc": "সময় শেষ হওয়ার আগে একটি MCP টুল প্রতিক্রিয়ার জন্য অপেক্ষা করার জন্য সর্বাধিক সময়।",
+    "maxToolOutputChars": "সর্বোচ্চ টুল আউটপুট অক্ষর",
+    "maxToolOutputCharsDesc": "কথোপকথনে রাখা দীর্ঘতম টুল ফলাফল. এর অতীতের যেকোন কিছু ছাঁটাই করা হয়েছে এবং ছাঁটা হিসাবে চিহ্নিত করা হয়েছে, তাই একটি বড় ফলাফল মডেলের প্রসঙ্গটি শেষ করতে পারে না। ফলাফল সম্পূর্ণ রাখতে 0 এ সেট করুন।",
+    "smartToolRouting": "স্মার্ট MCP টুল রাউটিং",
+    "smartToolRoutingDesc": "সক্রিয় করা হলে, টুল লোড করার আগে Jan প্রাসঙ্গিক MCP সার্ভার নির্বাচন করে। সর্বদা সম্পূর্ণ MCP টুল তালিকা লোড করতে অক্ষম করুন।",
+    "useLightweightRouterModel": "রাউটিং জন্য একটি ডেডিকেটেড মডেল ব্যবহার করুন",
+    "useLightweightRouterModelDesc": "যখন স্মার্ট রাউটিং চালু থাকে, তখন চ্যাট মডেলের পরিবর্তে একটি পৃথক (প্রায়ই ছোট) মডেল দিয়ে রাউটিং ধাপটি চালান। রাউটিংয়ের জন্য সর্বদা সক্রিয় চ্যাট মডেল ব্যবহার করতে বন্ধ করুন।",
+    "routerModel": "রাউটিং মডেল",
+    "routerModelDesc": "এক জায়গায় প্রদানকারী এবং মডেল চয়ন করুন. শুধুমাত্র লাইটওয়েট মডেল তালিকাভুক্ত করা হয়েছে তাই রাউটিং দ্রুত এবং সস্তা থাকে।",
+    "selectRouterModelPlaceholder": "রাউটিং মডেল নির্বাচন করুন...",
+    "routerModelSearchPlaceholder": "মডেল খুঁজুন…",
+    "routerModelEmptyList": "কোন হালকা মডেল উপলব্ধ. একটি ছোট মডেল যোগ করুন বা মডেলগুলিতে API কীগুলি কনফিগার করুন৷",
+    "routerModelEmptySearch": "“{{query}}”-এর জন্য কোনো মিল নেই।"
+  },
+  "auth": {
+    "label": "প্রমাণ:",
+    "state": {
+      "notApplicable": "প্রয়োজন নেই",
+      "staticHeader": "অনুমোদন হেডার",
+      "authenticated": "প্রমাণিত",
+      "expired": "মেয়াদ শেষ",
+      "staleResource": "অন্য URL এর জন্য জারি করা হয়েছে",
+      "unauthenticated": "প্রমাণিত নয়"
+    },
+    "expiresIn": "{{duration}}-এ মেয়াদ শেষ হবে",
+    "authenticate": "সাইন ইন করুন",
+    "reauthenticate": "পুনরায় প্রমাণীকরণ করুন",
+    "clear": "সাফ প্রমাণীকরণ",
+    "waiting": "ব্রাউজারের জন্য অপেক্ষা করা হচ্ছে...",
+    "openSignInPage": "সাইন-ইন পৃষ্ঠা খুলুন",
+    "needsAuth": "{{serverName}} এর প্রমাণীকরণ প্রয়োজন",
+    "needsAuthHint": "সংযোগ করতে এই সার্ভারে সাইন ইন করুন.",
+    "authorized": "{{serverName}} এ সাইন ইন করেছেন",
+    "authorizeFailed": "{{serverName}}-এর জন্য সাইন-ইন ব্যর্থ হয়েছে৷",
+    "cleared": "{{serverName}}-এর জন্য সঞ্চিত শংসাপত্রগুলি সাফ করা হয়েছে",
+    "nothingToClear": "{{serverName}} এর কোনো সঞ্চিত শংসাপত্র ছিল না",
+    "clearFailed": "{{serverName}}-এর জন্য শংসাপত্রগুলি সাফ করা যায়নি",
+    "renew": "সেশন রিনিউ করুন",
+    "expiredAgo": "{{duration}} আগে মেয়াদ শেষ হয়েছে"
+  }
+}

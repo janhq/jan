@@ -1,0 +1,10 @@
+{
+  "newVersion": "নতুন সংস্করণ {{version}}",
+  "updateAvailable": "আপডেট উপলব্ধ",
+  "nightlyBuild": "নাইটলি বিল্ড",
+  "showReleaseNotes": "রিলিজ নোট দেখান",
+  "hideReleaseNotes": "রিলিজ নোট লুকান",
+  "remindMeLater": "আমাকে পরে মনে করিয়ে দিন",
+  "downloading": "ডাউনলোড হচ্ছে...",
+  "updateNow": "এখনই আপডেট করুন"
+}

@@ -1,5 +1,5 @@
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useAppTranslation } from '@/i18n'
+import { useAppTranslation } from '@/i18n/hooks'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,7 @@ const LANGUAGES = [
   { value: 'fr', label: 'Français' },
   { value: 'it', label: 'Italiano' },
   { value: 'hi', label: 'हिंदी' },
+  { value: 'bn', label: 'বাংলা' },
   { value: 'id', label: 'Bahasa' },
   { value: 'pl', label: 'Polski' },
   { value: 'vn', label: 'Tiếng Việt' },

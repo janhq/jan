@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "কোড",
+    "preview": "পূর্বরূপ",
+    "previewStreaming": "জেনারেশন শেষ হলে পাওয়া যাবে",
+    "unresolvedAssets_one": "প্রিভিউতে 1টি সম্পদের রেফারেন্স লোড করা যাবে না। আপেক্ষিক পাথের কোন ভিত্তি নেই URL এর বিরুদ্ধে সমাধান করার জন্য।",
+    "unresolvedAssets_other": "{{count}} সম্পদের উল্লেখ পূর্বরূপ লোড করা যাবে না। আপেক্ষিক পাথের কোন ভিত্তি নেই URL এর বিরুদ্ধে সমাধান করার জন্য।"
+  },
+  "assistants": "সহকারীসমূহ",
+  "hardware": "হার্ডওয়্যার",
+  "mcp-servers": "MCP সার্ভার",
+  "local_api_server": "স্থানীয় API সার্ভার",
+  "remote_access": "দূরবর্তী অ্যাক্সেস",
+  "integrations": "ইন্টিগ্রেশন",
+  "experimental": "পরীক্ষামূলক",
+  "claude_code": "ক্লদ কোড",
+  "https_proxy": "HTTPS প্রক্সি",
+  "web_search": "ওয়েব অনুসন্ধান",
+  "shell": "শেল",
+  "browse": "ব্রাউজ করুন",
+  "moreControls": "আরও নিয়ন্ত্রণ",
+  "starting": "শুরু হচ্ছে...",
+  "activeSuffix": "(সক্রিয়)",
+  "extensions": "এক্সটেনশন",
+  "attachments": "সংযুক্তি",
+  "general": "সাধারণ",
+  "settings": "সেটিংস",
+  "modelProviders": "মডেল প্রদানকারী",
+  "localProviders": "স্থানীয়",
+  "remoteProviders": "দূরবর্তী",
+  "manageProviders": "প্রদানকারীদের পরিচালনা করুন",
+  "hiddenProviders": "{{count}} অক্ষম",
+  "hideProvider": "প্রদানকারী লুকান",
+  "showProvider": "প্রদানকারী দেখান",
+  "interface": "ইন্টারফেস",
+  "appearance": "চেহারা",
+  "privacy": "গোপনীয়তা",
+  "keyboardShortcuts": "শর্টকাট",
+  "home": "বাড়ি",
+  "cowork": "Cowork",
+  "newSession": "নতুন অধিবেশন",
+  "artifacts": "শিল্পকর্ম",
+  "customize": "কাস্টমাইজ করুন",
+  "local": "স্থানীয়",
+  "selectFolder": "ফোল্ডার নির্বাচন করুন",
+  "selectModel": "প্রথমে একটি মডেল নির্বাচন করুন",
+  "commands": "কমান্ড",
+  "cmdHelp": "উপলব্ধ কমান্ড তালিকা",
+  "cmdClear": "এই অধিবেশন সাফ করুন",
+  "cmdModels": "সক্রিয় মডেল স্যুইচ করুন",
+  "cmdModelsHint": "/মডেল টাইপ করুন তারপর তালিকা থেকে একটি মডেল বেছে নিন",
+  "cmdModelSwitched": "{{name}} এ স্যুইচ করা হয়েছে",
+  "cmdUnknown": "অজানা কমান্ড: {{name}}। / সাহায্য করার চেষ্টা করুন",
+  "cmdBusy": "যখন এজেন্ট চলছে তখন তা করা যাবে না",
+  "cmdCompact": "সেশনের প্রেক্ষাপটকে একটি সারাংশে কম্প্যাক্ট করুন",
+  "cmdCompacted": "সংক্ষিপ্ত {{before}} -> {{after}} বার্তা",
+  "cmdNothingToCompact": "এখনও কম্প্যাক্ট কিছুই",
+  "cmdCompactFailed": "সংযোজন ব্যর্থ হয়েছে: {{error}}",
+  "cmdPlan": "প্ল্যান মোড টগল করুন (কেবল-পঠন: এজেন্ট না লিখে প্রস্তাব দেয়)",
+  "cmdPlanOn": "প্ল্যান মোড চালু: এজেন্ট লেখা ছাড়াই পড়ে এবং প্রস্তাব দেয়",
+  "cmdPlanOff": "প্ল্যান মোড বন্ধ: স্বাভাবিক সঞ্চালন",
+  "cmdTodo": "অগ্রগতি প্যানেল খুলুন",
+  "cmdTasks": "ব্যাকগ্রাউন্ড টাস্ক প্যানেল খুলুন",
+  "cmdInit": "প্রকল্প অধ্যয়ন এবং দক্ষতা এবং স্মৃতি লিখুন",
+  "cmdInitRunning": "এই প্রকল্প অনবোর্ডিং",
+  "skills": "দক্ষতা",
+  "skillsInContext": "এজেন্ট এই রান উপলব্ধ দক্ষতা",
+  "skillsTitle": "দক্ষতা পরিচালনা করুন",
+  "skillsScopeProject": "{{folder}} এর জন্য দক্ষতা",
+  "skillsScopeGlobal": "বিশ্বব্যাপী দক্ষতা, প্রতিটি সেশনে উপলব্ধ",
+  "skillsScopeMerged": "{{folder}} এর জন্য দক্ষতা, সাথে প্রতি সেশন শেয়ার করে বিশ্বব্যাপী দক্ষতা",
+  "skillOriginFolder": "ফোল্ডার",
+  "skillOriginGlobal": "বিশ্বব্যাপী",
+  "skillsEmpty": "এখনো কোনো দক্ষতা নেই",
+  "skillsPickOrNew": "সম্পাদনা করার জন্য একটি দক্ষতা নির্বাচন করুন বা একটি নতুন তৈরি করুন৷",
+  "skillNew": "নতুন দক্ষতা",
+  "skillDelete": "দক্ষতা মুছে ফেলুন",
+  "skillSave": "সংরক্ষণ করুন",
+  "skillSaved": "দক্ষতা সংরক্ষিত",
+  "skillNameRequired": "দক্ষতার নাম প্রয়োজন",
+  "skillNamePlaceholder": "দক্ষতা-নাম",
+  "skillContentPlaceholder": "Markdown এ পুনরায় ব্যবহারযোগ্য পদ্ধতি বর্ণনা করুন...",
+  "skillHubImport": "হাব থেকে আমদানি করুন",
+  "skillHubTitle": "Anthropic দক্ষতা হাব",
+  "skillHubEmpty": "হাবে কোন দক্ষতা পাওয়া যায় নি",
+  "skillImport": "আমদানি",
+  "skillReimport": "পুনরায় আমদানি করুন",
+  "skillImported": "আমদানি করা {{name}}",
+  "sessions": "সেশন",
+  "deleteSession": "অধিবেশন মুছুন",
+  "deleteSessionTitle": "সেশন মুছবেন?",
+  "deleteSessionBody": "\"{{title}}\" এবং এর প্রতিলিপি স্থায়ীভাবে মুছে ফেলা হবে। এটি পূর্বাবস্থায় ফেরানো যাবে না।",
+  "newChat": "নতুন চ্যাট",
+  "newAgentChat": "নতুন এজেন্ট চ্যাট",
+  "chats": "চ্যাট",
+  "favorites": "প্রিয়",
+  "recents": "সাম্প্রতিক",
+  "hub": "হাব",
+  "helpSupport": "সাহায্য এবং সমর্থন",
+  "helpUsImproveJan": "আমাদের উন্নতিতে সাহায্য করুন Jan",
+  "analyticsConsentDetail": "বৈশিষ্ট্যের ব্যবহার বোঝার জন্য আমরা বেনামী ডেটা সংগ্রহ করি। আপনার চ্যাট এবং ব্যক্তিগত তথ্য ট্র্যাক করা হয় না. আপনি সেটিংস > গোপনীয়তায় যেকোনও সময় এটি পরিবর্তন করতে পারেন।",
+  "analyticsConsentQuestion": "আপনি কি আমাদেরকে Jan উন্নত করতে সাহায্য করতে চান?",
+  "unstarAll": "সমস্ত তারকা মুক্ত করুন",
+  "unstar": "তারা বাদ দিন",
+  "deleteAll": "সব মুছুন",
+  "star": "তারা",
+  "rename": "নাম পরিবর্তন করুন",
+  "delete": "মুছুন",
+  "copied": "অনুলিপি করা হয়েছে!",
+  "dataFolder": "ডেটা ফোল্ডার",
+  "others": "অন্যান্য",
+  "language": "ভাষা",
+  "login": "লগ ইন করুন",
+  "loginWith": "{{provider}} দিয়ে লগ ইন করুন",
+  "loginFailed": "লগ ইন করতে ব্যর্থ",
+  "logout": "লগ আউট করুন",
+  "loggingOut": "লগ আউট হচ্ছে...",
+  "loggedOut": "সফলভাবে লগ আউট হয়েছে",
+  "logoutFailed": "লগ আউট করতে ব্যর্থ হয়েছে৷",
+  "profile": "প্রোফাইল",
+  "reset": "পুনরায় সেট করুন",
+  "search": "খুঁজুন",
+  "searchThreads": "থ্রেড অনুসন্ধান করুন...",
+  "toNavigate": "নেভিগেট করতে",
+  "toSelect": "নির্বাচন করতে",
+  "toClose": "বন্ধ করতে",
+  "clearRecent": "পরিষ্কার",
+  "name": "নাম",
+  "cancel": "বাতিল করুন",
+  "dismiss": "খারিজ",
+  "create": "তৈরি করুন",
+  "save": "সংরক্ষণ করুন",
+  "edit": "সম্পাদনা করুন",
+  "copy": "কপি করুন",
+  "back": "ফিরে যান",
+  "close": "বন্ধ করুন",
+  "done": "সম্পন্ন",
+  "next": "পরবর্তী",
+  "finish": "শেষ করুন",
+  "skip": "এড়িয়ে যান",
+  "allow": "অনুমতি দিন",
+  "deny": "অনুমতি দেবেন না",
+  "start": "শুরু করুন",
+  "stop": "থামান",
+  "preview": {
+    "loading": "খোলা হচ্ছে...",
+    "unsupported": "Jan এই ধরনের ফাইল দেখাতে পারে না। অন্য অ্যাপে দেখতে এটি খুলুন।",
+    "outside": "এই ফাইলটি আর সেশন ওয়ার্কস্পেসে নেই।",
+    "tooLarge": "প্রিভিউ করার জন্য খুব বড়। অন্য অ্যাপে দেখতে এটি খুলুন।",
+    "reload": "পুনরায় লোড করুন",
+    "allowNetwork": "নেটওয়ার্কের অনুমতি দিন",
+    "unsandboxed": "স্যান্ডবক্স ছাড়া চালান: সংরক্ষিত ডেটা এবং স্থানীয় ফাইলগুলি কাজ করে",
+    "unresolvedRefs_one": "1 ফাইল এই পৃষ্ঠার লিঙ্ক পূর্বরূপ লোড করতে পারবেন না. এটি একটি ব্রাউজারে দেখতে এটি খুলুন।",
+    "unresolvedRefs_other": "{{count}} ফাইলগুলি এই পৃষ্ঠার সাথে লিঙ্ক করে প্রিভিউতে লোড করা যায় না৷ এটি একটি ব্রাউজারে দেখতে এটি খুলুন।",
+    "externalRefs_one": "1টি সংস্থান এই পৃষ্ঠাটি ওয়েব থেকে লোড করে ব্লক করা হয়েছে৷ এটি লোড করতে \"নেটওয়ার্ককে অনুমতি দিন\" চালু করুন।",
+    "externalRefs_other": "{{count}} সংস্থানগুলি এই পৃষ্ঠাটি ওয়েব থেকে লোড করে ব্লক করা হয়েছে৷ সেগুলি লোড করতে \"নেটওয়ার্ককে অনুমতি দিন\" চালু করুন৷",
+    "scriptErrors_one": "পৃষ্ঠাটি একটি ত্রুটি রিপোর্ট করেছে: {{message}}",
+    "scriptErrors_other": "পৃষ্ঠাটি {{count}} ত্রুটির প্রতিবেদন করেছে। প্রথম: {{message}}"
+  },
+  "changes": {
+    "title": "এজেন্ট পরিবর্তন",
+    "empty": "এজেন্টের লেখা বা সম্পাদনা করা ফাইলগুলি এখানে দেখানো হবে।",
+    "a11y": "এজেন্ট পরিবর্তন: {{files}} ফাইল, {{additions}} যোগ করা হয়েছে, {{deletions}} সরানো হয়েছে"
+  },
+  "modelPanel": {
+    "title": "মডেল সেটিংস",
+    "a11y": "মডেল সেটিংস খুলুন",
+    "contextTooltip": "প্রসঙ্গ উইন্ডো: {{max}} টোকেনের মধ্যে {{value}}"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "দক্ষতা '{{name}}' উপলব্ধ নয়",
+    "kind": {
+      "skill": "দক্ষতা",
+      "command": "কমান্ড",
+      "model": "মডেল"
+    }
+  },
+  "compactWidth": "কমপ্যাক্ট প্রস্থ",
+  "fullWidth": "সম্পূর্ণ প্রস্থ",
+  "dark": "অন্ধকার",
+  "light": "আলো",
+  "system": "সিস্টেম",
+  "auto": "অটো",
+  "english": "ইংরেজি",
+  "medium": "মাঝারি",
+  "newThread": "নতুন থ্রেড",
+  "noResultsFound": "কোন ফলাফল পাওয়া যায়নি",
+  "noThreadsYet": "এখনও কোন থ্রেড",
+  "noThreadsYetDesc": "এখানে আপনার থ্রেড ইতিহাস দেখতে একটি নতুন কথোপকথন শুরু করুন.",
+  "downloads": "ডাউনলোড",
+  "downloading": "ডাউনলোড হচ্ছে",
+  "uploadingAttachments": "সংযুক্তি আপলোড হচ্ছে...",
+  "cancelDownload": "ডাউনলোড বাতিল করুন",
+  "downloadCancelled": "ডাউনলোড বাতিল হয়েছে",
+  "downloadComplete": "ডাউনলোড সম্পূর্ণ",
+  "thinking": "ভাবছে...",
+  "thought": "চিন্তা",
+  "callingTool": "কলিং টুল",
+  "completed": "সম্পন্ন",
+  "image": "ছবি",
+  "vision": "দৃষ্টি",
+  "multimodal": "মাল্টিমডাল",
+  "embeddings": "এমবেডিং",
+  "tools": "টুলসমূহ",
+  "webSearch": "ওয়েব অনুসন্ধান",
+  "reasoning": "যুক্তি",
+  "proactive": "সক্রিয়",
+  "selectAModel": "একটি মডেল নির্বাচন করুন",
+  "noToolsAvailable": "কোন সরঞ্জাম উপলব্ধ",
+  "noModelsFoundFor": "\"{{searchValue}}\" এর জন্য কোনো মডেল পাওয়া যায়নি",
+  "failedToLoadModels": "মডেল লোড করতে ব্যর্থ হয়েছে",
+  "noModels": "কোন মডেল পাওয়া যায়নি",
+  "noAssistant": "সহকারী নেই",
+  "customAvatar": "কাস্টম অবতার",
+  "editAssistant": "সহকারী সম্পাদনা করুন",
+  "jan": "Jan",
+  "metadata": "মেটাডেটা",
+  "regenerate": "আবার তৈরি করুন",
+  "threadImage": "থ্রেড ইমেজ",
+  "editMessage": "বার্তা সম্পাদনা করুন",
+  "deleteMessage": "বার্তা মুছুন",
+  "deleteThread": "থ্রেড মুছুন",
+  "renameThread": "থ্রেডের নাম পরিবর্তন করুন",
+  "threadTitle": "থ্রেড শিরোনাম",
+  "deleteAllThreads": "সমস্ত থ্রেড মুছুন",
+  "allThreadsUnfavorited": "সব থ্রেড অপছন্দিত",
+  "deleteAllThreadsConfirm": "আপনি কি নিশ্চিত আপনি সব থ্রেড মুছে দিতে চান? এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷",
+  "addProvider": "প্রদানকারী যোগ করুন",
+  "addOpenAIProvider": "OpenAI প্রদানকারী যোগ করুন",
+  "enterNameForProvider": "আপনার প্রদানকারীর জন্য একটি নাম লিখুন",
+  "providerAlreadyExists": "\"{{name}}\" নামের প্রদানকারী ইতিমধ্যেই বিদ্যমান। একটি ভিন্ন নাম চয়ন করুন.",
+  "adjustFontSize": "ফন্টের আকার সামঞ্জস্য করুন",
+  "changeLanguage": "ভাষা পরিবর্তন করুন",
+  "editTheme": "থিম সম্পাদনা করুন",
+  "editCodeBlockStyle": "কোড ব্লক স্টাইল সম্পাদনা করুন",
+  "editServerHost": "সার্ভার হোস্ট সম্পাদনা করুন",
+  "pickColorWindowBackground": "রঙের উইন্ডো ব্যাকগ্রাউন্ড বেছে নিন",
+  "pickColorAppMainView": "রঙ অ্যাপের প্রধান ভিউ বেছে নিন",
+  "pickColorAppPrimary": "প্রাথমিক রঙের অ্যাপ বেছে নিন",
+  "pickColorAppAccent": "কালার অ্যাপ অ্যাকসেন্ট বাছুন",
+  "pickColorAppDestructive": "রঙিন অ্যাপ ধ্বংসাত্মক বাছুন",
+  "apiKeyRequired": "API কী প্রয়োজন",
+  "enterTrustedHosts": "বিশ্বস্ত হোস্টগুলো লিখুন",
+  "placeholder": {
+    "chatInput": "আমাকে কিছু জিজ্ঞাসা করুন ..."
+  },
+  "confirm": "নিশ্চিত করুন",
+  "continue": "চালিয়ে যান",
+  "loading": "লোড হচ্ছে...",
+  "settingUpJan": "বুট আপ করা হচ্ছে Jan...",
+  "registeringExtensions": "এক্সটেনশন নিবন্ধন করা হচ্ছে...",
+  "loadingExtensions": "এক্সটেনশনগুলি লোড হচ্ছে... ({{done}}/{{total}})",
+  "error": "ত্রুটি",
+  "success": "সফলতা",
+  "warning": "সতর্কতা",
+  "conversationNotAvailable": "কথোপকথন উপলব্ধ নয়",
+  "conversationNotAvailableDescription": "আপনি যে কথোপকথনটি অ্যাক্সেস করার চেষ্টা করছেন সেটি উপলব্ধ নয় বা মুছে ফেলা হয়েছে৷",
+  "temporaryChat": "অস্থায়ী চ্যাট",
+  "temporaryChatTooltip": "অস্থায়ী চ্যাট আপনার ইতিহাসে প্রদর্শিত হবে না",
+  "noResultsFoundDesc": "আমরা আপনার অনুসন্ধানের সাথে মেলে এমন কোনো চ্যাট খুঁজে পাইনি৷ একটি ভিন্ন কীওয়ার্ড চেষ্টা করুন.",
+  "searchModels": "মডেল অনুসন্ধান করুন...",
+  "searchStyles": "শৈলী অনুসন্ধান করুন...",
+  "createAssistant": "সহকারী তৈরি করুন",
+  "enterApiKey": "API কী লিখুন",
+  "scrollToBottom": "নীচে স্ক্রোল করুন",
+  "generateAiResponse": "এআই রেসপন্স জেনারেট করুন",
+  "continueAiResponse": "এআই রেসপন্স দিয়ে চালিয়ে যান",
+  "addModel": {
+    "title": "মডেল যোগ করুন",
+    "modelId": "মডেল আইডি",
+    "enterModelId": "মডেলের আইডি লিখুন",
+    "addModel": "মডেল যোগ করুন",
+    "description": "প্রদানকারী একটি নতুন মডেল যোগ করুন",
+    "exploreModels": "প্রদানকারী থেকে মডেল তালিকা দেখুন"
+  },
+  "mcpServers": {
+    "editServer": "সার্ভার সম্পাদনা করুন",
+    "addServer": "সার্ভার যোগ করুন",
+    "serverName": "সার্ভারের নাম",
+    "enterServerName": "সার্ভারের নাম লিখুন",
+    "command": "কমান্ড",
+    "enterCommand": "কমান্ড লিখুন",
+    "arguments": "যুক্তি",
+    "argument": "যুক্তি {{index}}",
+    "envVars": "এনভায়রনমেন্ট ভেরিয়েবল",
+    "key": "কী",
+    "value": "মান",
+    "save": "সংরক্ষণ করুন"
+  },
+  "deleteServer": {
+    "title": "সার্ভার মুছুন",
+    "delete": "মুছুন"
+  },
+  "editJson": {
+    "errorParse": "পার্স করতে ব্যর্থ হয়েছে JSON",
+    "errorPaste": "আটকাতে ব্যর্থ হয়েছে JSON",
+    "errorFormat": "অবৈধ JSON বিন্যাস",
+    "titleAll": "সমস্ত সার্ভার কনফিগারেশন সম্পাদনা করুন",
+    "placeholder": "JSON কনফিগারেশন লিখুন...",
+    "save": "সংরক্ষণ করুন"
+  },
+  "editModel": {
+    "title": "মডেল সম্পাদনা করুন: {{modelId}}",
+    "description": "নীচের বিকল্পগুলি টগল করে মডেল ক্ষমতাগুলি কনফিগার করুন৷",
+    "capabilities": "ক্ষমতা",
+    "tools": "টুলসমূহ",
+    "vision": "দৃষ্টি",
+    "embeddings": "এমবেডিং",
+    "notAvailable": "এখনো পাওয়া যায় নি"
+  },
+  "outOfContextError": {
+    "truncateInput": "ইনপুট কাটা",
+    "title": "প্রসঙ্গের বাইরে ত্রুটি",
+    "description": "এই চ্যাটটি AI এর মেমরির সীমাতে পৌঁছে যাচ্ছে, একটি হোয়াইটবোর্ড ফিলিং আপের মতো। আমরা মেমরি উইন্ডোটি প্রসারিত করতে পারি (যাকে প্রসঙ্গ আকার বলা হয়) যাতে এটি আরও মনে রাখে, তবে এটি আপনার কম্পিউটারের মেমরির বেশি ব্যবহার করতে পারে। আমরা ইনপুটটিও ছেঁটে ফেলতে পারি, যার অর্থ এটি নতুন বার্তাগুলির জন্য জায়গা তৈরি করতে কিছু চ্যাট ইতিহাস ভুলে যাবে৷",
+    "increaseContextSizeDescription": "আপনি প্রসঙ্গ আকার বৃদ্ধি করতে চান?",
+    "increaseContextSize": "প্রসঙ্গ আকার বাড়ান"
+  },
+  "toolApproval": {
+    "title": "টুল অনুমতি অনুরোধ",
+    "description": "সহকারী <strong>{{toolName}}</strong> ব্যবহার করতে চায়",
+    "securityNotice": "শুধুমাত্র আপনার বিশ্বাসযোগ্য সরঞ্জামগুলির অনুমতি দিন। টুলগুলি আপনার সিস্টেম এবং ডেটা অ্যাক্সেস করতে পারে।",
+    "deny": "অনুমতি দেবেন না",
+    "allowOnce": "একবার অনুমতি দিন",
+    "alwaysAllow": "সর্বদা অনুমতি দিন"
+  },
+  "deleteModel": {
+    "title": "মডেল মুছুন: {{modelId}}",
+    "description": "আপনি কি এই মডেলটি মুছতে চান? এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷",
+    "success": "মডেল {{modelId}} স্থায়ীভাবে মুছে ফেলা হয়েছে।",
+    "cancel": "বাতিল করুন",
+    "delete": "মুছুন"
+  },
+  "deleteProvider": {
+    "title": "প্রদানকারী মুছুন",
+    "description": "এই প্রদানকারী এবং এর সমস্ত মডেল মুছুন। এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷",
+    "success": "প্রদানকারী {{provider}} স্থায়ীভাবে মুছে ফেলা হয়েছে।",
+    "confirmTitle": "প্রদানকারী মুছুন: {{provider}}",
+    "confirmDescription": "আপনি কি নিশ্চিত আপনি এই প্রদানকারী মুছে দিতে চান? এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷",
+    "cancel": "বাতিল করুন",
+    "delete": "মুছুন"
+  },
+  "modelSettings": {
+    "title": "মডেল সেটিংস - {{modelId}}",
+    "description": "কর্মক্ষমতা এবং আচরণ অপ্টিমাইজ করতে মডেল সেটিংস কনফিগার করুন।",
+    "nglDisabledByFit": "স্বতঃ-ফিট GPU স্তর নির্বাচন করছে। এটি ম্যানুয়ালি সেট করতে অটো-ফিট বন্ধ করুন।",
+    "samplingDefaults": {
+      "title": "ডিফল্ট নমুনা পরামিতি",
+      "description": "এই মডেলের জন্য ডিফল্ট নমুনা সেটিংস। প্রতি-সহকারী বা প্রতি-অনুরোধের মান দ্বারা ওভাররাইড না করা পর্যন্ত ব্যবহার করা হয়।"
+    },
+    "specDraft": {
+      "section": "অনুমানমূলক ডিকোডিং",
+      "enable": "অনুমানমূলক ডিকোডিং সক্ষম করুন",
+      "enableDescription": "প্রতি ধাপে বেশ কয়েকটি টোকেন খসড়া করুন এবং সেগুলিকে এক পাসে যাচাই করুন, যা প্রজন্মের গতি বাড়ায়। মডেলের অন্তর্নির্মিত MTP হেড ব্যবহার করে, অথবা এটির সাথে ডাউনলোড করা খসড়া মডেল ব্যবহার করে (MTP, Eagle3, DFlash বা DSpark)।",
+      "nMax": "সর্বোচ্চ খসড়া টোকেন",
+      "nMaxDescription": "প্রতি ধাপে ড্রাফ্ট করার জন্য সর্বাধিক সংখ্যক টোকেন। ডিফল্ট 16.",
+      "nMin": "সর্বনিম্ন খসড়া টোকেন",
+      "nMinDescription": "প্রতি ধাপে খসড়া করার জন্য টোকেনের ন্যূনতম সংখ্যা। ডিফল্ট 0",
+      "pMin": "ন্যূনতম খসড়া সম্ভাবনা",
+      "pMinDescription": "লোভী খসড়া তৈরির ন্যূনতম সম্ভাবনা (0-1)। ডিফল্ট 0.75।"
+    },
+    "templateKwargs": {
+      "section": "চ্যাট টেমপ্লেট বিকল্প",
+      "description": "অতিরিক্ত বিকল্পগুলি এই মডেলের চ্যাট টেমপ্লেট গ্রহণ করে৷ প্রতিটি অনুরোধে chat_template_kwargs হিসাবে পাঠানো হয়; টেমপ্লেটকে সিদ্ধান্ত নেওয়ার জন্য ডিফল্টে একটি মান ছেড়ে দিন।",
+      "addCustom": "কাস্টম বিকল্প যোগ করুন",
+      "keyPlaceholder": "নাম",
+      "valuePlaceholder": "মান",
+      "add": "যোগ করুন",
+      "cancel": "বাতিল করুন",
+      "remove": "সরান"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "মডেল সেটিংস আপডেট করা যায়নি"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "ডেটা ফোল্ডারের অবস্থান পরিবর্তন করুন",
+      "description": "আপনি কি নিশ্চিত আপনি ডেটা ফোল্ডার অবস্থান পরিবর্তন করতে চান? এটি আপনার সমস্ত ডেটা নতুন অবস্থানে নিয়ে যাবে এবং অ্যাপ্লিকেশনটি পুনরায় চালু করবে।",
+      "currentLocation": "বর্তমান অবস্থান:",
+      "newLocation": "নতুন অবস্থান:",
+      "cancel": "বাতিল করুন",
+      "changeLocation": "অবস্থান পরিবর্তন করুন"
+    },
+    "deleteAllThreads": {
+      "title": "সমস্ত থ্রেড মুছুন",
+      "description": "সব থ্রেড মুছে ফেলা হবে. এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "সমস্ত কথোপকথন মুছুন",
+      "description": "{{count}} কথোপকথন \"{{projectName}}\" মুছে ফেলা হবে। এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷"
+    },
+    "deleteThread": {
+      "description": "আপনি কি এই থ্রেড মুছে ফেলার বিষয়ে নিশ্চিত? এই ক্রিয়াটি পূর্বাবস্থায় ফেরানো যাবে না৷"
+    },
+    "editMessage": {
+      "title": "বার্তা সম্পাদনা করুন"
+    },
+    "messageMetadata": {
+      "title": "মেসেজ মেটাডেটা"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "কিছু ভুল হয়েছে",
+    "details": "বিস্তারিত"
+  },
+  "missingDependenciesDialog": {
+    "title": "অনুপস্থিত সিস্টেম লাইব্রেরি",
+    "description": "{{backend}} ইনস্টল করা হয়েছে কিন্তু কিছু প্রয়োজনীয় সিস্টেম লাইব্রেরি খুঁজে পাওয়া যায়নি। এটি CPU এ ফিরে যেতে পারে বা সঠিকভাবে চলতে পারে না।",
+    "installLabel": "এটি ঠিক করতে, নিম্নলিখিতগুলি ইনস্টল করুন:",
+    "download": "ডাউনলোড করুন",
+    "additionalLibraries": "অতিরিক্ত অনুপস্থিত লাইব্রেরি:",
+    "missingLibraries": "অনুপস্থিত লাইব্রেরি:",
+    "showRawLibraries": "{{count}} অনুপস্থিত লাইব্রেরির নাম দেখান"
+  },
+  "projects": {
+    "title": "প্রকল্পসমূহ",
+    "new": "নতুন প্রকল্প",
+    "addProject": "প্রকল্প যোগ করুন",
+    "addToProject": "প্রকল্পে যোগ করুন",
+    "removeFromProject": "প্রকল্প থেকে সরান",
+    "createNewProject": "নতুন প্রকল্প তৈরি করুন",
+    "editProject": "প্রকল্প সম্পাদনা করুন",
+    "deleteProject": "প্রকল্প মুছুন",
+    "projectName": "প্রকল্পের নাম",
+    "enterProjectName": "প্রকল্পের নাম লিখুন...",
+    "noProjectsAvailable": "কোন প্রকল্প উপলব্ধ",
+    "noProjectsYet": "এখনো কোনো প্রকল্প নেই",
+    "noProjectsYetDesc": "প্রকল্প যোগ করুন বোতামে ক্লিক করে একটি নতুন প্রকল্প শুরু করুন।",
+    "projectNotFound": "প্রকল্প পাওয়া যায়নি",
+    "projectNotFoundDesc": "আপনি যে প্রকল্পটি খুঁজছেন সেটি বিদ্যমান নেই বা মুছে ফেলা হয়েছে।",
+    "selectAssistant": "সহকারী নির্বাচন করুন",
+    "noAssistantAssigned": "এই প্রকল্পে কোন সহকারী নিযুক্ত নেই",
+    "files": "ফাইল",
+    "filesDescription": "এই প্রকল্পে উল্লেখ করার জন্য PDF, নথি, বা অন্যান্য পাঠ্য যোগ করুন।",
+    "uploadingFiles": "ফাইল প্রসেস করা হচ্ছে...",
+    "processButton": "যোগ করুন",
+    "deleteProjectDialog": {
+      "title": "প্রকল্প মুছুন",
+      "permanentDelete": "এটি স্থায়ীভাবে সমস্ত থ্রেড মুছে ফেলবে।",
+      "permanentDeleteWarning": "এই ক্রিয়াটি স্থায়ীভাবে প্রকল্পের সমস্ত থ্রেড মুছে ফেলবে!",
+      "deleteEmptyProject": "এই ক্রিয়াটি \"{{projectName}}\" প্রকল্প মুছে ফেলবে।",
+      "saveThreadsAdvice": "থ্রেড সংরক্ষণ করতে, মুছে ফেলার আগে তাদের আপনার থ্রেড তালিকা বা অন্য প্রকল্পে সরান।",
+      "starredWarning": "আপনি এখনও প্রকল্পের মধ্যে তারকাচিহ্নিত থ্রেড আছে.",
+      "deleteButton": "মুছুন",
+      "successWithName": "প্রকল্প \"{{projectName}}\" সফলভাবে মুছে ফেলা হয়েছে৷",
+      "successWithoutName": "প্রকল্প সফলভাবে মুছে ফেলা হয়েছে",
+      "error": "প্রকল্প মুছে ফেলতে ব্যর্থ হয়েছে৷ আবার চেষ্টা করুন.",
+      "ariaLabel": "মুছুন {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "নতুন প্রকল্প তৈরি করুন",
+      "editTitle": "প্রকল্প সম্পাদনা করুন",
+      "nameLabel": "প্রকল্পের নাম",
+      "namePlaceholder": "প্রকল্পের নাম লিখুন...",
+      "assistant": "সহকারী",
+      "selectAssistant": "একজন সহকারী নির্বাচন করুন (ঐচ্ছিক)",
+      "noAssistant": "সহকারী নেই",
+      "addAssistant": "সহকারী যোগ করুন",
+      "createButton": "তৈরি করুন",
+      "updateButton": "হালনাগাদ করুন",
+      "alreadyExists": "প্রকল্প \"{{projectName}}\" ইতিমধ্যেই বিদ্যমান",
+      "createSuccess": "প্রকল্প \"{{projectName}}\" সফলভাবে তৈরি হয়েছে৷",
+      "updateSuccess": "প্রকল্প \"{{projectName}}\" সফলভাবে আপডেট হয়েছে"
+    },
+    "noConversationsIn": "{{projectName}} এ কোনো কথোপকথন নেই",
+    "startNewConversation": "নীচে {{projectName}} এর সাথে একটি নতুন কথোপকথন শুরু করুন৷",
+    "conversationsIn": "{{projectName}} এ কথোপকথন",
+    "conversationsDescription": "চ্যাটিং চালিয়ে যেতে যেকোনো কথোপকথনে ক্লিক করুন, অথবা নীচে একটি নতুন শুরু করুন।",
+    "conversation": "কথোপকথন",
+    "instructions": "নির্দেশনা",
+    "setup": "সেটআপ",
+    "instructionsDescription": "স্বন এবং প্রতিক্রিয়া শৈলী কাস্টমাইজ করুন",
+    "manageInstructions": "নির্দেশাবলী পরিচালনা করুন",
+    "thread": "থ্রেড",
+    "threads": "থ্রেড",
+    "updated": "আপডেট করা হয়েছে:",
+    "collapseProject": "প্রকল্প সঙ্কুচিত করুন",
+    "expandProject": "প্রকল্প প্রসারিত করুন",
+    "update": "হালনাগাদ করুন",
+    "searchProjects": "প্রকল্প অনুসন্ধান করুন...",
+    "noProjectsFound": "কোন প্রকল্প পাওয়া যায়নি",
+    "tryDifferentSearch": "একটি ভিন্ন অনুসন্ধান শব্দ চেষ্টা করুন"
+  },
+  "attachmentsIngestion": {
+    "title": "সংযুক্তিগুলি কীভাবে গ্রহণ করবেন তা চয়ন করুন৷",
+    "description": "এই ফাইলগুলিকে সরাসরি চ্যাটে অন্তর্ভুক্ত করবেন বা পরিবর্তে এম্বেডিং হিসাবে সূচী করবেন কিনা তা চয়ন করুন৷",
+    "inline": "চ্যাটে ইনজেক্ট করুন",
+    "embeddings": "এম্বেডিং ব্যবহার করুন"
+  },
+  "attachmentInjectedIndicator": "আড্ডায় ইনজেকশন",
+  "attachmentEmbeddedIndicator": "RAG-এর জন্য এমবেড করা",
+  "viewInjectedContent": "ইনজেকশনের বিষয়বস্তু দেখুন",
+  "injectedContentTitle": "ইনজেক্ট করা ফাইল সামগ্রী",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "সব থ্রেড অপছন্দিত",
+      "description": "সমস্ত থ্রেড আপনার প্রিয় থেকে সরানো হয়েছে."
+    },
+    "deleteAllThreads": {
+      "title": "সমস্ত থ্রেড মুছুন",
+      "description": "সব থ্রেড স্থায়ীভাবে মুছে ফেলা হয়েছে."
+    },
+    "renameThread": {
+      "title": "থ্রেডের নাম পরিবর্তন করুন",
+      "description": "থ্রেড শিরোনামের নাম পরিবর্তন করে '{{title}}' করা হয়েছে"
+    },
+    "deleteThread": {
+      "title": "থ্রেড মুছুন",
+      "description": "এই থ্রেড স্থায়ীভাবে মুছে ফেলা হয়েছে."
+    },
+    "errorCopied": {
+      "title": "কপি সফল",
+      "description": "ক্লিপবোর্ডে ত্রুটির তথ্য কপি করা হয়েছে"
+    },
+    "errorCopyFailed": {
+      "title": "অনুলিপি করতে ব্যর্থ হয়েছে",
+      "description": "ক্লিপবোর্ডে ত্রুটির তথ্য অনুলিপি করতে ব্যর্থ হয়েছে৷"
+    },
+    "editMessage": {
+      "title": "বার্তা সম্পাদনা করুন",
+      "description": "বার্তা সফলভাবে সম্পাদনা করা হয়েছে. মডেল প্রতিক্রিয়া জন্য অপেক্ষা করুন."
+    },
+    "appUpdateDownloaded": {
+      "title": "অ্যাপ আপডেট ডাউনলোড করা হয়েছে",
+      "description": "অ্যাপ আপডেটটি সফলভাবে ডাউনলোড করা হয়েছে।"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "অ্যাপ আপডেট ডাউনলোড করা যায়নি",
+      "description": "অ্যাপ আপডেট ডাউনলোড করতে ব্যর্থ হয়েছে। আবার চেষ্টা করুন."
+    },
+    "downloadComplete": {
+      "title": "ডাউনলোড সম্পূর্ণ",
+      "description": "{{item}} ডাউনলোড করা হয়েছে"
+    },
+    "downloadCancelled": {
+      "title": "ডাউনলোড বাতিল হয়েছে",
+      "description": "ডাউনলোড প্রক্রিয়া বাতিল করা হয়েছে"
+    },
+    "downloadFailed": {
+      "title": "ডাউনলোড ব্যর্থ হয়েছে৷",
+      "description": "{{item}} ডাউনলোড ব্যর্থ হয়েছে৷",
+      "descriptionWithReason": "{{item}} ডাউনলোড ব্যর্থ হয়েছে: {{reason}}",
+      "reason": {
+        "dns": "সার্ভার নাম সমাধান করা যায়নি",
+        "refused": "সংযোগ প্রত্যাখ্যান করা হয়েছিল",
+        "timeout": "সংযোগের সময় শেষ",
+        "tls": "একটি নিরাপদ সংযোগ স্থাপন করা যায়নি",
+        "proxy": "প্রক্সি পৌঁছানো যায়নি",
+        "unreachable": "সার্ভারে পৌঁছানো যায়নি"
+      }
+    },
+    "openSettings": "সেটিংস খুলুন",
+    "openLogs": "লগ খুলুন",
+    "downloadTokenRequired": {
+      "title": "Hugging Face টোকেন প্রয়োজন",
+      "description": "এই মডেলটির জন্য একটি Hugging Face অ্যাক্সেস টোকেন প্রয়োজন৷ সেটিংসে আপনার টোকেন যোগ করুন এবং পুনরায় চেষ্টা করুন।"
+    },
+    "downloadLicenseRequired": {
+      "title": "Hugging Face এ মডেল লাইসেন্স গ্রহণ করুন",
+      "description": "ডাউনলোড করার আগে আপনাকে অবশ্যই এর Hugging Face পৃষ্ঠায় মডেলের লাইসেন্স গ্রহণ করতে হবে।"
+    },
+    "downloadRateLimited": {
+      "title": "রেট Hugging Face দ্বারা সীমিত",
+      "description": "আপনি হার-সীমিত করা হয়েছে. একটি টোকেন যোগ করলে হারের সীমা বাড়তে পারে। পরে আবার চেষ্টা করুন."
+    },
+    "modelValidationStarted": {
+      "title": "মডেল যাচাইকরণ",
+      "description": "\"{{modelId}}\" মডেলটি সফলভাবে ডাউনলোড হয়েছে৷ সততা যাচাই করা হচ্ছে..."
+    },
+    "modelValidationFailed": {
+      "title": "মডেল যাচাইকরণ ব্যর্থ হয়েছে৷",
+      "description": "ডাউনলোড করা মডেল \"{{modelId}}\" অখণ্ডতা যাচাইকরণে ব্যর্থ হয়েছে এবং সরানো হয়েছে৷ ফাইলটি দূষিত বা টেম্পারড হতে পারে।"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ডাউনলোড সম্পূর্ণ",
+      "description": "মডেল \"{{item}}\" ডাউনলোড করা হয়েছে এবং সফলভাবে যাচাই করা হয়েছে৷"
+    },
+    "projectCreated": {
+      "title": "প্রজেক্ট তৈরি",
+      "description": "প্রকল্প \"{{projectName}}\" সফলভাবে তৈরি হয়েছে৷"
+    },
+    "projectRenamed": {
+      "title": "প্রকল্পের নাম পরিবর্তন করা হয়েছে",
+      "description": "প্রকল্পের নাম \"{{oldName}}\" থেকে \"{{newName}}\" করা হয়েছে"
+    },
+    "projectDeleted": {
+      "title": "প্রকল্প মুছে ফেলা হয়েছে",
+      "description": "প্রকল্প \"{{projectName}}\" সফলভাবে মুছে ফেলা হয়েছে৷"
+    },
+    "projectAlreadyExists": {
+      "title": "প্রকল্প ইতিমধ্যে বিদ্যমান",
+      "description": "প্রকল্প \"{{projectName}}\" ইতিমধ্যেই বিদ্যমান"
+    },
+    "projectDeleteFailed": {
+      "title": "মুছে ফেলতে ব্যর্থ হয়েছে",
+      "description": "প্রকল্প মুছে ফেলতে ব্যর্থ হয়েছে৷ আবার চেষ্টা করুন."
+    },
+    "threadAssignedToProject": {
+      "title": "থ্রেড বরাদ্দ",
+      "description": "থ্রেড \"{{projectName}}\" সফলভাবে বরাদ্দ করা হয়েছে৷"
+    },
+    "threadRemovedFromProject": {
+      "title": "থ্রেড সরানো হয়েছে",
+      "description": "থ্রেড \"{{projectName}}\" থেকে সফলভাবে সরানো হয়েছে"
+    },
+    "fileUploaded": {
+      "title": "ফাইল প্রসেসড",
+      "description": "ফাইল প্রক্রিয়া করা হয়েছে এবং সফলভাবে ইন্ডেক্স করা হয়েছে৷"
+    },
+    "uploadFailed": {
+      "title": "প্রক্রিয়াকরণ ব্যর্থ হয়েছে৷",
+      "description": "ফাইল প্রক্রিয়া করতে ব্যর্থ হয়েছে",
+      "subjectThisFile": "এই ফাইল",
+      "pdfMalformedXref": "{{subject}} এর একটি বিকৃত PDF ক্রস-রেফারেন্স টেবিল আছে এবং পার্স করা যায়নি। এটি একটি PDF ভিউয়ারে খোলার চেষ্টা করুন এবং এটি পুনরায় সংরক্ষণ করুন (ফাইল → মুদ্রণ → PDF হিসাবে সংরক্ষণ করুন), তারপর আবার আপলোড করুন৷",
+      "pdfScanned": "{{subject}} একটি স্ক্যান করা বা চিত্র-ভিত্তিক PDF বলে মনে হচ্ছে। OCR এখনও সমর্থিত নয় — অনুগ্রহ করে একটি পাঠ্য-ভিত্তিক PDF আপলোড করুন।",
+      "pdfEncrypted": "{{subject}} পাসওয়ার্ড-সুরক্ষিত। পাসওয়ার্ড সরান এবং আবার চেষ্টা করুন.",
+      "pdfUnsupportedFeature": "{{subject}} একটি PDF বৈশিষ্ট্য ব্যবহার করে Jan এখনও পার্স করতে পারে না (যেমন পোস্টস্ক্রিপ্ট রঙ/শেডিং ফাংশন)। এটিকে পুনরায় সংরক্ষণ করার চেষ্টা করুন (ফাইল → প্রিন্ট → PDF হিসাবে সংরক্ষণ করুন) সমতল করতে, তারপর আবার আপলোড করুন।",
+      "pdfGeneric": "{{subject}} কে PDF হিসাবে পার্স করা যাবে না। ফাইলটি দূষিত হতে পারে বা একটি অসমর্থিত PDF বৈশিষ্ট্য ব্যবহার করতে পারে৷",
+      "fileTooLarge": "{{subject}} খুব বড়। {{message}}।",
+      "unsupportedType": "ফাইলের ধরন \"{{type}}\" সমর্থিত নয়।",
+      "ioError": "{{subject}} পড়া যায়নি: {{message}}",
+      "parseGeneric": "{{subject}} পার্স করা যায়নি: {{message}}",
+      "fallback": "{{subject}} প্রক্রিয়া করতে ব্যর্থ হয়েছে৷"
+    },
+    "fileDeleted": {
+      "title": "ফাইল মুছে ফেলা হয়েছে",
+      "description": "প্রকল্প থেকে ফাইল সরানো হয়েছে"
+    },
+    "deleteFailed": {
+      "title": "মুছে ফেলতে ব্যর্থ হয়েছে",
+      "description": "ফাইল মুছে ফেলতে ব্যর্থ হয়েছে৷"
+    },
+    "fileAlreadyExists": {
+      "title": "ফাইল ইতিমধ্যেই বিদ্যমান৷",
+      "description": "ফাইল ইতিমধ্যে এই প্রকল্পের সাথে সংযুক্ত করা হয়েছে"
+    },
+    "unsupportedFileType": {
+      "title": "অসমর্থিত ফাইল প্রকার",
+      "description": "ফাইল এক্সটেনশন \"{{extension}}\" প্রকল্পের রেফারেন্সের জন্য সমর্থিত নয়।"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "সংযুক্তি নিষ্ক্রিয়",
+      "description": "সংযুক্তিগুলি সেটিংসে অক্ষম করা হয়েছে৷"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "ফাইল খুব বড়",
+    "fileTooLargeDescription": "{{fileName}} {{maxFileSizeMB}}MB সীমা অতিক্রম করেছে"
+  },
+  "files": {
+    "chunksCount": "{{count}} খণ্ড",
+    "title": "ফাইল",
+    "empty": "আপনার সংযুক্ত করা ফাইল এবং এজেন্টের তৈরি করা ফাইলগুলি এখানে দেখা যাবে।",
+    "a11y": "ফাইল: {{count}}",
+    "attachments": "সংযুক্তি",
+    "notImported": "কর্মক্ষেত্রে নয়"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp এখনও ব্যস্ত",
+    "description": "এক বা একাধিক মডেল সময়মতো আনলোড হয়নি। বলপ্রয়োগ করা llama.cpp বন্ধ করবে এবং সক্রিয় প্রতিক্রিয়াগুলিকে বাধা দিতে পারে।",
+    "forceQuit": "জোর করে প্রস্থান করুন",
+    "forcing": "জোর করে ছেড়ে দেওয়া হচ্ছে...",
+    "shuttingDown": "বন্ধ হচ্ছে..."
+  },
+  "duration": {
+    "seconds": "{{count}}সে",
+    "minutes": "{{count}}মি",
+    "hours": "{{count}}ঘণ্টা"
+  },
+  "collapse": "সঙ্কুচিত",
+  "expand": "প্রসারিত করুন",
+  "todoPanelTitle": "অগ্রগতি",
+  "todoPanelEmpty": "এখনো কোনো করণীয় তালিকা নেই।",
+  "backgroundTasks": "পটভূমি কাজ",
+  "subagentsRunning_one": "{{count}} সাবএজেন্ট চলছে",
+  "subagentsRunning_other": "{{count}} সাবএজেন্ট চলছে",
+  "monitorsRunning_one": "{{count}} মনিটর চলছে",
+  "monitorsRunning_other": "{{count}} মনিটর চলছে",
+  "backgroundRunning_one": "{{count}} ব্যাকগ্রাউন্ড টাস্ক চলছে",
+  "backgroundRunning_other": "{{count}} ব্যাকগ্রাউন্ড টাস্ক চলছে",
+  "monitors": "মনিটর",
+  "monitorPolling": "পোলিং",
+  "monitorMatched": "মিলে গেছে",
+  "monitorTimedOut": "সময় শেষ",
+  "monitorStopped": "থেমে গেল",
+  "monitorEnded": "শেষ হয়েছে",
+  "coworkWatching_one": "{{count}} মনিটর দেখা হচ্ছে...",
+  "coworkWatching_other": "{{count}} মনিটর দেখা হচ্ছে...",
+  "coworkWaitingBackground": "ব্যাকগ্রাউন্ড টাস্কের জন্য অপেক্ষা করা হচ্ছে...",
+  "noBackgroundTasks": "এখনো কোনো ব্যাকগ্রাউন্ড টাস্ক নেই।",
+  "running": "চলমান",
+  "queued": "সারিবদ্ধ",
+  "waiting": "অপেক্ষা করছে",
+  "finished": "সমাপ্ত",
+  "subagentPhase": "পর্যায় {{phase}}",
+  "subagentWaiting": "অপেক্ষা",
+  "viewTranscript": "প্রতিলিপি দেখুন",
+  "taskWorking": "কাজ করছে...",
+  "taskNoOutput": "সাবজেন্ট কোন দৃশ্যমান আউটপুট উত্পাদিত.",
+  "subagentToolUses_one": "{{count}} টুল ব্যবহার",
+  "subagentToolUses_other": "{{count}} টুল ব্যবহার করে",
+  "artifactGroupCode": "কোড",
+  "artifactGroupImage": "ছবি",
+  "artifactGroupDocument": "দলিল",
+  "artifactGroupVideo": "ভিডিও",
+  "artifactGroupAudio": "অডিও",
+  "artifactOpenPreview": "পূর্বরূপ খুলুন",
+  "artifactOpenExternal": "খোলা",
+  "artifactMoreActions": "আরো কর্ম",
+  "artifactShowInFolder": "ফোল্ডারে দেখান",
+  "skillsUsedLabel": "দক্ষতা ব্যবহার করা হয়েছে",
+  "skillsUsed": "ব্যবহৃত দক্ষতা: {{skills}}",
+  "artifactsAll": "সব",
+  "artifactsEmpty": "কিছুই এখনও উত্পাদিত. Cowork রানের আর্টিফ্যাক্টগুলি এখানে দেখানো হবে।",
+  "artifactsNoMatch": "কোন নিদর্শন মেলে না.",
+  "artifactsSearch": "নিদর্শন অনুসন্ধান করুন",
+  "artifactsShowMore": "আরও {{count}} দেখান৷",
+  "workspace": {
+    "readsFrom": "কাজ করে",
+    "writable": "পড়ুন এবং লিখুন",
+    "footnote": "এজেন্ট এই ফোল্ডারটি সরাসরি পড়ে এবং সম্পাদনা করে। ডিফ প্যানেলে কী পরিবর্তন হয়েছে তা পর্যালোচনা করুন।",
+    "footnoteEmpty": "এজেন্টকে আপনার প্রকল্পে কাজ করতে দেওয়ার জন্য একটি ফোল্ডার সংযুক্ত করুন। এটি এর ভিতরে থাকা ফাইলগুলি পড়তে এবং সম্পাদনা করতে পারে।",
+    "attach": "একটি ফোল্ডার সংযুক্ত করুন",
+    "change": "ফোল্ডার পরিবর্তন করুন",
+    "detach": "ফোল্ডার বিচ্ছিন্ন করুন",
+    "open": "খোলা",
+    "reveal": "প্রকাশ",
+    "unavailable": "ওয়ার্কস্পেস অনুপলব্ধ৷",
+    "missing": "ওয়ার্কস্পেস ফোল্ডার {{folder}} আর উপলব্ধ নেই৷ একটি ভিন্ন ফোল্ডার চয়ন করুন.",
+    "openFailed": "ওয়ার্কস্পেস খোলা যায়নি",
+    "revealFailed": "কর্মক্ষেত্র প্রকাশ করা যায়নি",
+    "a11yWithFolder": "প্রজেক্ট ফোল্ডার {{folder}}, রিড এবং রাইট অ্যাক্সেসের সাথে সংযুক্ত। এটি পরিবর্তন করুন বা বিচ্ছিন্ন করুন।",
+    "a11yNoFolder": "কোনো প্রোজেক্ট ফোল্ডার সংযুক্ত নেই। একটি সংযুক্ত করুন."
+  },
+  "coworkEmpty": {
+    "title": "আমরা কি কাজ করছি?",
+    "subtitleSandbox": "Jan একটি টাস্ক দিন। এটি ফাইলগুলি পড়ে এবং লেখে, কমান্ড চালায় এবং নিজেই ধাপগুলির মাধ্যমে কাজ করে।",
+    "subtitleFolder": "Jan একটি টাস্ক দিন। এটি সরাসরি {{folder}}-এ কাজ করে, নিজে থেকে ফাইল পড়া এবং সম্পাদনা করে।",
+    "try": "চেষ্টা করুন",
+    "sandbox": {
+      "first": "একটি পাইথন স্ক্রিপ্ট লিখুন যা ফাইলগুলি যে তারিখে নেওয়া হয়েছিল তার নাম পরিবর্তন করে",
+      "second": "একটি CSV থেকে একটি একক-পৃষ্ঠা ড্যাশবোর্ড তৈরি করুন আমি পেস্ট করব৷",
+      "third": "আমি আপনাকে বর্ণনা করছি এমন একটি প্রকল্পের জন্য একটি README খসড়া তৈরি করুন"
+    },
+    "folder": {
+      "first": "ব্যাখ্যা করুন কিভাবে {{folder}} একসাথে রাখা হয়",
+      "second": "{{folder}}-এ প্রতিটি TODO খুঁজুন এবং এলাকা অনুসারে গোষ্ঠীভুক্ত করুন",
+      "third": "আমি আপনাকে নির্দেশ করছি {{folder}} এর অংশের জন্য পরীক্ষা লিখুন"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "টার্মিনাল নেই",
+    "a11y": "রানিং কমান্ড বন্ধ করা আছে। বিস্তারিত",
+    "title": "রানিং কমান্ড বন্ধ করা আছে",
+    "body": "Jan এজেন্টকে শেল কমান্ড চালাতে দেয় শুধুমাত্র যখন আপনার সিস্টেম সেগুলিকে সীমাবদ্ধ করতে পারে। এখানে কোনো স্যান্ডবক্স উপলব্ধ নেই, তাই এজেন্ট তার স্যান্ডবক্সে ফাইল পড়তে, লিখতে এবং সম্পাদনা করতে পারে — কিন্তু কিছু চালাতে পারবে না।",
+    "fixLinux": "Linux বাবল র‍্যাপ ব্যবহার করে। এটি ইনস্টল করুন, তারপর Jan পুনরায় চালু করুন।",
+    "fixMac": "macOS /usr/bin/sandbox-exec-এ অন্তর্নির্মিত স্যান্ডবক্স ব্যবহার করে। এটি উপলব্ধ হলে পুনরায় চালু করুন Jan।",
+    "fixWindows": "Windows AppContainer ব্যবহার করে। আবার চেষ্টা করতে Jan রিস্টার্ট করুন।",
+    "recheck": "আবার চেক করুন"
+  },
+  "planMode": {
+    "label": "পরিকল্পনা",
+    "tooltipOff": "প্রথমে পরিকল্পনা করুন - এজেন্ট না লিখেই পড়েন এবং প্রস্তাব করেন।",
+    "tooltipOn": "পরিকল্পনা। এজেন্টকে ফাইল লিখতে দেওয়ার জন্য এটি বন্ধ করুন।",
+    "onAnnounce": "প্ল্যান মোড চালু",
+    "placeholder": "একটি পরিকল্পনা জন্য জিজ্ঞাসা করুন. এজেন্ট কোনো ফাইল পরিবর্তন করবে না।"
+  },
+  "budget": {
+    "stoppedSteps": "{{max}} ধাপে থামে। এজেন্ট শেষ করেনি।",
+    "keepGoing": "চালিয়ে যান",
+    "stoppedTokens": "থেমে গেছে — এই অধিবেশনটি তার টোকেন বাজেটে আঘাত করেছে।",
+    "compact": "কমপ্যাক্ট",
+    "newSession": "নতুন অধিবেশন"
+  },
+  "run": {
+    "stopped": "থেমে গেল।",
+    "failed": "রান তাড়াতাড়ি থেমে গেল।",
+    "tryAgain": "আবার চেষ্টা করুন"
+  },
+  "modelNoTools": "{{model}} টুল কল করতে পারে না, তাই এটি এজেন্ট হিসেবে কাজ করতে পারে না। একটি টুল কলিং মডেল বাছুন।",
+  "askContinue": "চালিয়ে যান",
+  "askNext": "পরবর্তী প্রশ্ন",
+  "askPrev": "আগের প্রশ্ন",
+  "askRecommended": "প্রস্তাবিত",
+  "askSelectedCount": "{{count}} নির্বাচিত",
+  "askSomethingElse": "অন্য কিছু",
+  "askSomethingElsePlaceholder": "আপনার নিজের উত্তর টাইপ করুন",
+  "submit": "জমা দিন"
+}

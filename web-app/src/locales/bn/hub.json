@@ -1,0 +1,19 @@
+{
+  "sortNewest": "সবথেকে নতুন",
+  "sortMostDownloaded": "সর্বাধিক ডাউনলোড করা হয়েছে",
+  "newChat": "নতুন চ্যাট",
+  "download": "ডাউনলোড করুন",
+  "downloadFailed": "ডাউনলোড শুরু করতে ব্যর্থ হয়েছে৷",
+  "downloaded": "ডাউনলোড করা হয়েছে",
+  "loadingModels": "মডেল লোড হচ্ছে...",
+  "noModels": "কোন মডেল পাওয়া যায়নি",
+  "by": "দ্বারা",
+  "downloads": "ডাউনলোড",
+  "variants": "বৈকল্পিক",
+  "showVariants": "বৈকল্পিক দেখান",
+  "useModel": "এই মডেল ব্যবহার করুন",
+  "downloadModel": "মডেল ডাউনলোড করুন",
+  "tools": "টুলসমূহ",
+  "searchPlaceholder": "Hugging Face এ মডেলের জন্য অনুসন্ধান করুন...",
+  "resumeUnavailable": "এই ডাউনলোড পুনরায় শুরু করা যাবে না. আবার শুরু করুন."
+}

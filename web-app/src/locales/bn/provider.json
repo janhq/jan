@@ -1,0 +1,18 @@
+{
+  "addProvider": "প্রদানকারী যোগ করুন",
+  "addOpenAIProvider": "কাস্টম প্রদানকারী যোগ করুন",
+  "enterNameForProvider": "প্রদানকারীর নাম (যেমন my-llm-server)",
+  "apiTypeLabel": "API বিন্যাস",
+  "apiTypeOpenAI": "OpenAI-সামঞ্জস্যপূর্ণ",
+  "apiTypeAnthropic": "Anthropic-সামঞ্জস্যপূর্ণ",
+  "baseUrlLabel": "ভিত্তি URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API কী",
+  "apiKeyPlaceholder": "আপনার API কী আটকান",
+  "invalidBaseUrl": "ভিত্তি URL অবশ্যই একটি বৈধ http(গুলি) URL হতে হবে",
+  "globalSettings": "গ্লোবাল সেটিংস",
+  "stripReasoning": "প্রসঙ্গ থেকে স্ট্রিপ যুক্তি",
+  "stripReasoningDesc": "সমস্ত প্রদানকারী জুড়ে, ইতিহাস পুনরায় পাঠানোর আগে পূর্বের বাঁকগুলির চিন্তা/যুক্তিযুক্ত বিষয়বস্তু সরান৷ স্থানীয় মডেলের জন্য KV-ক্যাশে পুনঃব্যবহার উন্নত করে, কিন্তু কিছু মডেল (যেমন নতুন Qwen রিলিজ) এটিকে আরও ভালো মাল্টি-টার্ন যুক্তির জন্য রাখার সুপারিশ করে।",
+  "providerAlreadyExists": "{{name}} নামের একটি প্রদানকারী ইতিমধ্যেই বিদ্যমান।"
+}

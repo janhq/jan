@@ -4,6 +4,7 @@ type Language =
   | 'fr'
   | 'it'
   | 'hi'
+  | 'bn'
   | 'id'
   | 'vn'
   | 'pl'
