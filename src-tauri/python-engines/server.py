@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import queue
@@ -33,6 +34,16 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Iterator, Sequence
+
+# A chat body carries the whole transcript, images included, on every turn. The
+# cap is generous for text and small enough that a runaway client cannot make
+# the sidecar allocate an arbitrary buffer: one request holds the raw bytes,
+# the decoded JSON and the parsed object at once.
+MAX_BODY_BYTES = 16 * 1024 * 1024
+
+
+class BodyTooLarge(ValueError):
+    """A request whose declared length exceeds `MAX_BODY_BYTES`."""
 
 # ---------------------------------------------------------------------------
 # Backends
@@ -116,20 +127,27 @@ class LiteRtLmBackend(EngineBackend):
         history = [dict(m) for m in messages[:-1]]
         last = dict(messages[-1])
 
-        conversation = self._engine.create_conversation(
-            messages=history,
-            max_output_tokens=max_output_tokens,
-        )
-        try:
-            for chunk in conversation.send_message_async(last):
-                thinking = self._thinking_text(chunk)
-                if thinking:
-                    yield ("reasoning", thinking)
-                text = self._message_text(chunk)
-                if text:
-                    yield ("content", text)
-        finally:
-            conversation.close()
+        # One engine, one conversation at a time. `openvino` already serializes;
+        # without the same lock here, a chat turn and the thread-title
+        # summarizer could each create a conversation and a KV cache against
+        # one Engine, doubling the allocation at up to `ctx_size` each.
+        # Holding the lock across the yield loop also makes an aborted request
+        # release it promptly, when the handler closes this generator.
+        with self._lock:
+            conversation = self._engine.create_conversation(
+                messages=history,
+                max_output_tokens=max_output_tokens,
+            )
+            try:
+                for chunk in conversation.send_message_async(last):
+                    thinking = self._thinking_text(chunk)
+                    if thinking:
+                        yield ("reasoning", thinking)
+                    text = self._message_text(chunk)
+                    if text:
+                        yield ("content", text)
+            finally:
+                conversation.close()
 
     def token_count(self, text: str) -> int:
         try:
@@ -151,7 +169,31 @@ class OpenVinoBackend(EngineBackend):
 
         device = os.environ.get("JAN_OPENVINO_DEVICE", "CPU")
         self._ov = ov
-        self._pipeline = ov.LLMPipeline(model_path, device=device)
+        # Apply the configured window to the pipeline itself. Without it the
+        # pipeline runs at the model's own maximum no matter what the UI says,
+        # so the token meter warns about a 4k window while the KV cache grows
+        # to the model's trained context. The property names have moved between
+        # OpenVINO releases, so a runtime that rejects them still works: the
+        # per-request `max_length` and prompt fit below are the fallback.
+        properties: dict[str, Any] = {}
+        if ctx_size > 0:
+            reserve = max(64, min(512, ctx_size // 8))
+            properties = {
+                "MAX_PROMPT_LEN": max(128, ctx_size - reserve),
+                "MIN_RESPONSE_LEN": reserve,
+            }
+        try:
+            self._pipeline = ov.LLMPipeline(
+                model_path, device=device, **properties
+            )
+        except Exception as exc:
+            print(
+                f"[jan-engine] the runtime rejected the context properties "
+                f"({exc}); falling back to its own window",
+                file=sys.stderr,
+                flush=True,
+            )
+            self._pipeline = ov.LLMPipeline(model_path, device=device)
         self._tokenizer = self._pipeline.get_tokenizer()
         # One compiled pipeline serves one generation at a time. Two requests
         # that overlap (a chat and the thread-title summarizer, say) would
@@ -162,6 +204,10 @@ class OpenVinoBackend(EngineBackend):
     def _apply_generation_config(self, params: dict[str, Any]) -> None:
         """Applies the request's sampling parameters to the pipeline."""
         wanted: dict[str, Any] = {}
+        if self.ctx_size > 0:
+            # Total prompt + answer, so a long prompt cannot grow the KV cache
+            # past the window the user (and the token meter) believes in.
+            wanted["max_length"] = self.ctx_size
         temperature = params.get("temperature")
         top_p = params.get("top_p")
         if temperature is not None:
@@ -173,7 +219,16 @@ class OpenVinoBackend(EngineBackend):
         if not wanted:
             return
         try:
-            self._pipeline.set_generation_config(self._ov.GenerationConfig(**wanted))
+            config = self._ov.GenerationConfig(**wanted)
+        except Exception:
+            # An older runtime without `max_length`: keep sampling, drop the cap
+            # (the pipeline properties and prompt fit are still in force).
+            wanted.pop("max_length", None)
+            if not wanted:
+                return
+            config = self._ov.GenerationConfig(**wanted)
+        try:
+            self._pipeline.set_generation_config(config)
         except Exception as exc:
             print(
                 f"[jan-engine] could not apply the generation config: {exc}",
@@ -181,28 +236,82 @@ class OpenVinoBackend(EngineBackend):
                 flush=True,
             )
 
+    def _fit_prompt(self, prompt: str, max_new_tokens: int) -> str:
+        """Truncates the rendered prompt to the configured window.
+
+        Keeps the tail, which holds the chat template's generation prompt and
+        the most recent turns; dropping the oldest text is what the model would
+        have to do anyway at its limit. Best effort: a tokenizer that does not
+        expose `encode`/`decode` as expected leaves the prompt alone rather than
+        failing the request.
+        """
+        if self.ctx_size <= 0:
+            return prompt
+        budget = max(1, self.ctx_size - max_new_tokens)
+        try:
+            encoded = self._tokenizer.encode(prompt)
+            ids = encoded.input_ids
+            values = list(ids.data) if hasattr(ids, "data") else list(ids)
+            if len(values) <= budget:
+                return prompt
+            trimmed = self._tokenizer.decode(values[-budget:])
+            print(
+                f"[jan-engine] prompt was {len(values)} tokens, trimmed to "
+                f"{budget} to fit the {self.ctx_size}-token window",
+                file=sys.stderr,
+                flush=True,
+            )
+            return trimmed if isinstance(trimmed, str) else prompt
+        except Exception:
+            return prompt
+
     def generate(
         self, messages: Sequence[dict[str, Any]], params: dict[str, Any]
     ) -> Iterator[tuple[str, str]]:
         max_new_tokens = int(params.get("max_tokens") or 0) or 256
+        if self.ctx_size > 0:
+            max_new_tokens = min(max_new_tokens, max(1, self.ctx_size - 1))
         prompt = self._tokenizer.apply_chat_template(
             [dict(m) for m in messages], add_generation_prompt=True
         )
+        prompt = self._fit_prompt(prompt, max_new_tokens)
 
-        chunks: "queue.Queue[tuple[str, str] | None]" = queue.Queue()
-        self._chunks = chunks
-        streamed: list[str] = []
+        # Bounded, so a client that stops reading cannot let the generator run
+        # ahead and pile the whole answer up in memory.
+        chunks: "queue.Queue[tuple[str, str] | None]" = queue.Queue(maxsize=64)
+        # Set when the consumer goes away (Stop, a dropped connection) or the
+        # generator is closed; the worker stops at the next token instead of
+        # generating to `max_new_tokens` for nobody.
+        cancelled = threading.Event()
+        # Running length, not a list of every token: the joined string was the
+        # answer copied a second time, and the result a third.
+        streamed_len = 0
 
-        def streamer(token: Any) -> None:
+        def put(item: "tuple[str, str] | None") -> bool:
+            while not cancelled.is_set():
+                try:
+                    chunks.put(item, timeout=0.1)
+                    return True
+                except queue.Full:
+                    continue
+            return False
+
+        def streamer(token: Any) -> Any:
+            nonlocal streamed_len
+            if cancelled.is_set():
+                # Returning True ends the generation after this token.
+                return True
             text = token
             if isinstance(token, bytes):
                 text = text.decode("utf-8", errors="replace")
             if text:
-                streamed.append(text)
-                chunks.put(("content", text))
+                streamed_len += len(text)
+                if not put(("content", text)):
+                    return True
             # The return value is NOT a continue/stop flag: returning True
             # ends the generation after this token, which is how the answer
             # used to arrive two words long. None keeps it going.
+            return None
 
         # One compiled pipeline runs one generation at a time. Two requests
         # that overlap -- a chat and the thread-title summarizer, say --
@@ -211,24 +320,18 @@ class OpenVinoBackend(EngineBackend):
         def worker() -> None:
             try:
                 with self._lock:
+                    if cancelled.is_set():
+                        return
                     self._apply_generation_config(params)
                     result = self._pipeline.generate(
                         prompt, max_new_tokens=max_new_tokens, streamer=streamer
                     )
-                # The streamer reports every token, so the text it produced
-                # is the whole answer. What generate() returns is the same
-                # text; if it is longer, send the difference so that nothing
-                # is lost.
+                # The streamer reports every token, so its count is the length
+                # of what the client already has. If `generate` also returns
+                # text, send only the part beyond that count.
                 full = result if isinstance(result, str) else ""
-                joined = "".join(streamed)
-                if full.startswith(joined):
-                    remainder = full[len(joined):]
-                elif not joined:
-                    remainder = full
-                else:
-                    remainder = ""
-                if remainder:
-                    chunks.put(("content", remainder))
+                if full and len(full) > streamed_len:
+                    put(("content", full[streamed_len:]))
             except Exception as exc:
                 print(
                     f"[jan-engine] openvino generate failed: {exc}",
@@ -236,7 +339,7 @@ class OpenVinoBackend(EngineBackend):
                     flush=True,
                 )
             finally:
-                chunks.put(None)
+                put(None)
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
@@ -247,8 +350,14 @@ class OpenVinoBackend(EngineBackend):
                     break
                 yield item
         finally:
-            self._chunks = None
-            thread.join(timeout=30)
+            cancelled.set()
+            # Drop anything the worker had queued; the consumer is gone.
+            try:
+                while True:
+                    chunks.get_nowait()
+            except queue.Empty:
+                pass
+            thread.join(timeout=5)
 
     def token_count(self, text: str) -> int:
         try:
@@ -304,12 +413,20 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return {}
+        if length > MAX_BODY_BYTES:
+            # Do not read it: reading first is the allocation this cap exists
+            # to prevent. The connection is closed because the unread body
+            # would otherwise be parsed as the next request.
+            self.close_connection = True
+            raise BodyTooLarge(
+                f"request body is {length} bytes; the limit is {MAX_BODY_BYTES}"
+            )
         raw = self.rfile.read(length)
-        # Some clients (and Windows editors) prefix the payload with a UTF-8
-        # BOM, which json.loads rejects.
-        text = raw.decode("utf-8-sig", errors="replace")
+        # Parse the bytes directly: `json.loads` detects UTF-8/UTF-16 and a
+        # UTF-8 BOM on its own, so the body is not decoded into a second copy
+        # first. A chat body carries the whole transcript, images included.
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(raw)
         except ValueError as exc:
             raise ValueError(f"invalid JSON body: {exc}") from exc
         if not isinstance(parsed, dict):
@@ -353,6 +470,9 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
 
         try:
             body = self._read_body()
+        except BodyTooLarge as exc:
+            self._send_json({"error": {"message": str(exc)}}, 413)
+            return
         except ValueError as exc:
             self._send_json({"error": {"message": str(exc)}}, 400)
             return
@@ -378,25 +498,33 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
 
         if not stream:
+            # One buffer each, rather than a list of every token plus a join:
+            # a buffered answer used to be held twice before it was sent.
+            content = io.StringIO()
+            reasoning = io.StringIO()
+            generator = self.backend.generate(messages, params)
             try:
-                content: list[str] = []
-                reasoning: list[str] = []
-                for kind, piece in self.backend.generate(messages, params):
+                for kind, piece in generator:
                     if kind == "reasoning":
-                        reasoning.append(piece)
+                        reasoning.write(piece)
                     else:
-                        content.append(piece)
+                        content.write(piece)
             except Exception as exc:
                 self._send_json(
                     {"error": {"message": str(exc), "type": type(exc).__name__}}, 500
                 )
                 return
+            finally:
+                # Release the engine lock (and the conversation / worker) even
+                # when the client is gone or the backend raised.
+                generator.close()
             message: dict[str, Any] = {
                 "role": "assistant",
-                "content": "".join(content),
+                "content": content.getvalue(),
             }
-            if reasoning:
-                message["reasoning_content"] = "".join(reasoning)
+            reasoning_text = reasoning.getvalue()
+            if reasoning_text:
+                message["reasoning_content"] = reasoning_text
             self._send_json(
                 {
                     "id": completion_id,
@@ -441,9 +569,10 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"\r\n")
             self.wfile.flush()
 
+        generator = self.backend.generate(messages, params)
         try:
             write_chunked(chunk({"role": "assistant", "content": ""}))
-            for kind, piece in self.backend.generate(messages, params):
+            for kind, piece in generator:
                 delta = (
                     {"reasoning_content": piece}
                     if kind == "reasoning"
@@ -456,8 +585,11 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
-            # The client aborted the request; stop generating.
-            pass
+            # The client aborted the request. Closing the generator cancels the
+            # generation -- and, for OpenVINO, releases the engine lock -- in
+            # its own `finally`; without this it ran to `max_new_tokens` while
+            # the next request waited behind it.
+            self.close_connection = True
         except Exception as exc:
             try:
                 payload = {
@@ -467,6 +599,8 @@ class EngineRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except Exception:
                 pass
+        finally:
+            generator.close()
 
 
 def serve(args: argparse.Namespace) -> int:
