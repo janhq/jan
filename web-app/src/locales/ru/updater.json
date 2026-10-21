@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Скрыть примечания",
   "remindMeLater": "Отложить",
   "downloading": "Загрузка…",
-  "updateNow": "Обновить"
+  "updateNow": "Обновить",
+  "retry": "Повторить",
+  "restartFailed": "Не удалось перезапустить"
 }
