@@ -559,3 +559,72 @@ describe('createCustomFetch — llamacpp 500 handling', () => {
     expect(onErr).not.toHaveBeenCalled()
   })
 })
+
+
+describe('createCustomFetch sampling retry response handling', () => {
+  const progress = 'event: progress\ndata: {"type":"progress","percent":10}\n\n'
+  const completion = 'data: {"id":"reply","model":"fixture","created":1,"choices":[{"index":0,"delta":{"content":"Hello"}}]}\n\n'
+  const done = 'data: [DONE]\n\n'
+  const rejected = () => new Response(JSON.stringify({ error: { message: 'Unsupported parameter: temperature' } }), {
+    status: 400, headers: { 'content-type': 'application/json' },
+  })
+  const streamed = () => new Response(progress + completion + done, {
+    status: 200, statusText: 'OK', headers: { 'content-type': 'text/event-stream', 'x-request-id': 'fixture-request' },
+  })
+
+  it('filters a successful retry and keeps its response metadata', async () => {
+    const baseFetch = vi.fn().mockResolvedValueOnce(rejected()).mockResolvedValueOnce(streamed())
+    const wrapped = createCustomFetch(baseFetch, { temperature: 0.2 }, false, undefined, true)
+    const signal = new AbortController().signal
+    const response = await wrapped('https://example.invalid/v1/chat/completions', {
+      method: 'POST', body: JSON.stringify({ model: 'fixture', messages: [], stream: true }), signal,
+    })
+    expect(await response.text()).toBe(completion + done)
+    expect(response.status).toBe(200)
+    expect(response.statusText).toBe('OK')
+    expect(response.headers.get('x-request-id')).toBe('fixture-request')
+    expect(baseFetch).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(baseFetch.mock.calls[0][1].body).temperature).toBe(0.2)
+    expect(JSON.parse(baseFetch.mock.calls[1][1].body)).not.toHaveProperty('temperature')
+    expect(baseFetch.mock.calls[1][1].signal).toBe(signal)
+  })
+
+  it('delivers retried completions through the real compatible SDK without a progress validation error', async () => {
+    const actual = await vi.importActual<typeof import('@ai-sdk/openai-compatible')>('@ai-sdk/openai-compatible')
+    const baseFetch = vi.fn().mockResolvedValueOnce(rejected()).mockResolvedValueOnce(streamed())
+    const sdk = actual.createOpenAICompatible({
+      name: 'fixture', baseURL: 'https://example.invalid/v1',
+      fetch: createCustomFetch(baseFetch, { temperature: 0.2 }, false, undefined, true),
+    })
+    const { stream } = await sdk.languageModel('fixture').doStream({
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+    })
+    const reader = stream.getReader()
+    const parts = []
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      parts.push(next.value)
+    }
+    expect(parts.filter((part) => part.type === 'error')).toEqual([])
+    expect(parts.filter((part) => part.type === 'text-delta').map((part) => part.delta).join('')).toBe('Hello')
+    expect(baseFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps native named-event protocols untouched when filtering is disabled', async () => {
+    const baseFetch = vi.fn().mockResolvedValueOnce(rejected()).mockResolvedValueOnce(streamed())
+    const response = await createCustomFetch(baseFetch, { temperature: 0.2 })('https://example.invalid/messages', {
+      method: 'POST', body: '{}',
+    })
+    expect(await response.text()).toBe(progress + completion + done)
+  })
+
+  it('leaves a successful non-streaming retry response unchanged', async () => {
+    const success = new Response('{"choices":[]}', { headers: { 'content-type': 'application/json' } })
+    const baseFetch = vi.fn().mockResolvedValueOnce(rejected()).mockResolvedValueOnce(success)
+    const response = await createCustomFetch(baseFetch, { temperature: 0.2 }, false, undefined, true)('https://example.invalid/v1/chat/completions', {
+      method: 'POST', body: '{}',
+    })
+    expect(response).toBe(success)
+  })
+})
