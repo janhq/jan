@@ -12,6 +12,7 @@ type Language =
   | 'de-DE'
   | 'cs'
   | 'pt-BR'
+  | 'pt-PT'
   | 'ko'
   | 'ja'
   | 'ru'

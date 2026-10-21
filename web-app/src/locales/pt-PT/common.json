@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "Código",
+    "preview": "Pré-visualização",
+    "previewStreaming": "Disponível quando a geração terminar",
+    "unresolvedAssets_one": "Não é possível carregar 1 referência de recurso na pré-visualização. Os caminhos relativos não têm um URL base para serem resolvidos.",
+    "unresolvedAssets_other": "Não é possível carregar {{count}} referências de recursos na pré-visualização. Os caminhos relativos não têm um URL base para serem resolvidos."
+  },
+  "assistants": "Assistentes",
+  "hardware": "Hardware",
+  "mcp-servers": "Servidores MCP",
+  "local_api_server": "Servidor de API Local",
+  "remote_access": "Acesso remoto",
+  "integrations": "Integrações",
+  "experimental": "Experimental",
+  "claude_code": "Claude Code",
+  "https_proxy": "Proxy HTTPS",
+  "web_search": "Busca na Web",
+  "shell": "Shell",
+  "browse": "Procurar",
+  "moreControls": "Mais controlos",
+  "starting": "A iniciar...",
+  "activeSuffix": " (Ativo)",
+  "extensions": "Extensões",
+  "attachments": "Anexos",
+  "general": "Geral",
+  "settings": "Definições",
+  "modelProviders": "Fornecedores de Modelo",
+  "localProviders": "Local",
+  "remoteProviders": "Remoto",
+  "manageProviders": "Gerir fornecedores",
+  "hiddenProviders": "Número de fornecedores desativados: {{count}}",
+  "hideProvider": "Ocultar fornecedor",
+  "showProvider": "Mostrar fornecedor",
+  "interface": "Interface",
+  "appearance": "Aparência",
+  "privacy": "Privacidade",
+  "keyboardShortcuts": "Atalhos",
+  "home": "Início",
+  "cowork": "Cowork",
+  "newSession": "Nova sessão",
+  "artifacts": "Artefactos",
+  "customize": "Personalizar",
+  "local": "Local",
+  "selectFolder": "Selecionar pasta",
+  "selectModel": "Selecione primeiro um modelo",
+  "commands": "Comandos",
+  "cmdHelp": "Listar os comandos disponíveis",
+  "cmdClear": "Limpar esta sessão",
+  "cmdModels": "Mudar o modelo ativo",
+  "cmdModelsHint": "Escreva /models e selecione um modelo na lista",
+  "cmdModelSwitched": "Modelo alterado para {{name}}",
+  "cmdUnknown": "Comando desconhecido: {{name}}. Experimente /help",
+  "cmdBusy": "Não é possível fazê-lo enquanto o agente está em execução",
+  "cmdCompact": "Resumir o contexto da sessão",
+  "cmdCompacted": "Mensagens reduzidas de {{before}} para {{after}}",
+  "cmdNothingToCompact": "Ainda não existe conteúdo para resumir",
+  "cmdCompactFailed": "Não foi possível resumir: {{error}}",
+  "cmdPlan": "Alternar o modo de planeamento (só de leitura: o agente propõe sem escrever)",
+  "cmdPlanOn": "Modo de planeamento ativo: o agente lê e propõe sem escrever",
+  "cmdPlanOff": "Modo de planeamento desativado: execução normal",
+  "cmdTodo": "Abrir o painel de progresso",
+  "cmdTasks": "Abrir o painel de tarefas em segundo plano",
+  "cmdInit": "Estudar o projeto e escrever competências e memórias",
+  "cmdInitRunning": "A analisar inicialmente este projeto",
+  "skills": "Competências",
+  "skillsInContext": "Competências disponíveis para o agente nesta execução",
+  "skillsTitle": "Gerir competências",
+  "skillsScopeProject": "Competências de {{folder}}",
+  "skillsScopeGlobal": "Competências globais, disponíveis em todas as sessões",
+  "skillsScopeMerged": "Competências de {{folder}}, juntamente com as competências globais partilhadas por todas as sessões",
+  "skillOriginFolder": "pasta",
+  "skillOriginGlobal": "global",
+  "skillsEmpty": "Ainda não existem competências",
+  "skillsPickOrNew": "Selecione uma competência para editar ou crie uma nova.",
+  "skillNew": "Nova competência",
+  "skillDelete": "Eliminar competência",
+  "skillSave": "Guardar",
+  "skillSaved": "Competência guardada",
+  "skillNameRequired": "O nome da competência é obrigatório",
+  "skillNamePlaceholder": "nome-da-competência",
+  "skillContentPlaceholder": "Descreva o procedimento reutilizável em Markdown…",
+  "skillHubImport": "Importar do hub",
+  "skillHubTitle": "Hub de competências da Anthropic",
+  "skillHubEmpty": "Não foram encontradas competências no hub",
+  "skillImport": "Importar",
+  "skillReimport": "Importar novamente",
+  "skillImported": "{{name}} importado",
+  "sessions": "Sessões",
+  "deleteSession": "Eliminar sessão",
+  "deleteSessionTitle": "Eliminar sessão?",
+  "deleteSessionBody": "\"{{title}}\" e a respetiva transcrição serão eliminados permanentemente. Esta ação não pode ser anulada.",
+  "newChat": "Nova conversa",
+  "newAgentChat": "Nova conversa com agente",
+  "chats": "Conversas",
+  "favorites": "Favoritos",
+  "recents": "Recentes",
+  "hub": "Hub",
+  "helpSupport": "Ajuda e Suporte",
+  "helpUsImproveJan": "Ajude-nos a Melhorar o Jan",
+  "analyticsConsentDetail": "Recolhemos dados anónimos para compreender a utilização das funcionalidades. As suas conversas e informações pessoais nunca são monitorizadas. Pode alterar esta opção em qualquer altura em Definições > Privacidade.",
+  "analyticsConsentQuestion": "Gostaria de nos ajudar a melhorar o Jan?",
+  "unstarAll": "Remover todos os favoritos",
+  "unstar": "Remover Favorito",
+  "deleteAll": "Apagar Tudo",
+  "star": "Favoritar",
+  "rename": "Renomear",
+  "delete": "Eliminar",
+  "copied": "Copiado!",
+  "dataFolder": "Pasta de dados",
+  "others": "Outros",
+  "language": "Idioma",
+  "login": "Iniciar sessão",
+  "loginWith": "Iniciar sessão com {{provider}}",
+  "loginFailed": "Não foi possível iniciar sessão",
+  "logout": "Terminar sessão",
+  "loggingOut": "A terminar sessão...",
+  "loggedOut": "Sessão terminada com sucesso",
+  "logoutFailed": "Não foi possível terminar sessão",
+  "profile": "Perfil",
+  "reset": "Repor",
+  "search": "Procurar",
+  "searchThreads": "Procurar conversas...",
+  "toNavigate": "para navegar",
+  "toSelect": "para selecionar",
+  "toClose": "para fechar",
+  "clearRecent": "Limpar",
+  "name": "Nome",
+  "cancel": "Cancelar",
+  "dismiss": "Dispensar",
+  "create": "Criar",
+  "save": "Guardar",
+  "edit": "Editar",
+  "copy": "Copiar",
+  "back": "Voltar",
+  "close": "Fechar",
+  "done": "Concluído",
+  "next": "Seguinte",
+  "finish": "Finalizar",
+  "skip": "Ignorar",
+  "allow": "Permitir",
+  "deny": "Recusar",
+  "start": "Iniciar",
+  "stop": "Parar",
+  "preview": {
+    "loading": "A abrir…",
+    "unsupported": "O Jan não consegue apresentar este tipo de ficheiro. Abra-o para o ver noutra aplicação.",
+    "outside": "Este ficheiro já não se encontra na área de trabalho da sessão.",
+    "tooLarge": "Demasiado grande para pré-visualizar. Abra-o para o ver noutra aplicação.",
+    "reload": "Recarregar",
+    "allowNetwork": "Permitir rede",
+    "unsandboxed": "Executar sem isolamento: os dados guardados e os ficheiros locais funcionam",
+    "unresolvedRefs_one": "Não é possível carregar na pré-visualização 1 ficheiro ligado a esta página. Abra-o para o ver num navegador.",
+    "unresolvedRefs_other": "Não é possível carregar na pré-visualização {{count}} ficheiros ligados a esta página. Abra-os para os ver num navegador.",
+    "externalRefs_one": "Está bloqueado 1 recurso que esta página carrega da Web. Ative \"Permitir rede\" para o carregar.",
+    "externalRefs_other": "Estão bloqueados {{count}} recursos que esta página carrega da Web. Ative \"Permitir rede\" para os carregar.",
+    "scriptErrors_one": "A página comunicou um erro: {{message}}",
+    "scriptErrors_other": "A página comunicou {{count}} erros. Primeiro: {{message}}"
+  },
+  "changes": {
+    "title": "Alterações do agente",
+    "empty": "Os ficheiros que o agente escrever ou editar serão apresentados aqui.",
+    "a11y": "Alterações do agente: {{files}} ficheiros, {{additions}} adições, {{deletions}} remoções"
+  },
+  "modelPanel": {
+    "title": "Definições do modelo",
+    "a11y": "Abrir definições do modelo",
+    "contextTooltip": "Janela de contexto: {{value}} de {{max}} tokens"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "A competência '{{name}}' não está disponível",
+    "kind": {
+      "skill": "Competência",
+      "command": "Comando",
+      "model": "Modelo"
+    }
+  },
+  "compactWidth": "Largura Compacta",
+  "fullWidth": "Largura Completa",
+  "dark": "Escuro",
+  "light": "Claro",
+  "system": "Sistema",
+  "auto": "Automático",
+  "english": "Inglês",
+  "medium": "Médio",
+  "newThread": "Nova Conversa",
+  "noResultsFound": "Nenhum resultado encontrado",
+  "noThreadsYet": "Nenhuma conversa ainda",
+  "noThreadsYetDesc": "Inicie uma nova conversa para ver aqui o histórico das suas conversas.",
+  "downloads": "Transferências",
+  "downloading": "Baixando",
+  "uploadingAttachments": "Enviando anexos…",
+  "cancelDownload": "Cancelar transferência",
+  "downloadCancelled": "Transferência cancelada",
+  "downloadComplete": "Transferência concluída",
+  "thinking": "Pensando...",
+  "thought": "Pensamento",
+  "callingTool": "Chamando ferramenta",
+  "completed": "Concluído",
+  "image": "Imagem",
+  "vision": "Visão",
+  "multimodal": "Multimodal",
+  "embeddings": "Embeddings",
+  "tools": "Ferramentas",
+  "webSearch": "Busca na Web",
+  "reasoning": "Raciocínio",
+  "proactive": "Proativo",
+  "selectAModel": "Selecione um modelo",
+  "noToolsAvailable": "Nenhuma ferramenta disponível",
+  "noModelsFoundFor": "Nenhum modelo encontrado para \"{{searchValue}}\"",
+  "failedToLoadModels": "Falha ao carregar modelos",
+  "noModels": "Nenhum modelo encontrado",
+  "noAssistant": "Sem assistente",
+  "customAvatar": "Avatar personalizado",
+  "editAssistant": "Editar Assistente",
+  "jan": "Jan",
+  "metadata": "Metadados",
+  "regenerate": "Regenerar",
+  "threadImage": "Imagem da conversa",
+  "editMessage": "Editar Mensagem",
+  "deleteMessage": "Apagar Mensagem",
+  "deleteThread": "Apagar Conversa",
+  "renameThread": "Renomear Conversa",
+  "threadTitle": "Título da Conversa",
+  "deleteAllThreads": "Apagar Todas as Conversas",
+  "allThreadsUnfavorited": "Todas as Conversas Removidas dos Favoritos",
+  "deleteAllThreadsConfirm": "Tem a certeza de que pretende eliminar todas as conversas? Esta ação não pode ser anulada.",
+  "addProvider": "Adicionar Fornecedor",
+  "addOpenAIProvider": "Adicionar Fornecedor OpenAI",
+  "enterNameForProvider": "Digite um nome para seu fornecedor",
+  "providerAlreadyExists": "Já existe um fornecedor com o nome \"{{name}}\". Escolha outro nome.",
+  "adjustFontSize": "Ajustar Tamanho da Fonte",
+  "changeLanguage": "Alterar Idioma",
+  "editTheme": "Editar Tema",
+  "editCodeBlockStyle": "Editar Estilo do Bloco de Código",
+  "editServerHost": "Editar Host do Servidor",
+  "pickColorWindowBackground": "Escolher Cor do Fundo da Janela",
+  "pickColorAppMainView": "Escolher Cor da Visualização Principal do App",
+  "pickColorAppPrimary": "Escolher Cor Primária do App",
+  "pickColorAppAccent": "Escolher Cor de Destaque do App",
+  "pickColorAppDestructive": "Escolher Cor Destrutiva do App",
+  "apiKeyRequired": "Chave API é obrigatória",
+  "enterTrustedHosts": "Digite os hosts confiáveis",
+  "placeholder": {
+    "chatInput": "Pergunte-me qualquer coisa..."
+  },
+  "confirm": "Confirmar",
+  "continue": "Continuar",
+  "loading": "A carregar...",
+  "settingUpJan": "A iniciar o Jan…",
+  "registeringExtensions": "A registar extensões…",
+  "loadingExtensions": "A carregar extensões… ({{done}}/{{total}})",
+  "error": "Erro",
+  "success": "Sucesso",
+  "warning": "Aviso",
+  "conversationNotAvailable": "Conversa não disponível",
+  "conversationNotAvailableDescription": "A conversa a que está a tentar aceder não está disponível ou foi eliminada.",
+  "temporaryChat": "Conversa temporária",
+  "temporaryChatTooltip": "A conversa temporária não será apresentada no histórico",
+  "noResultsFoundDesc": "Não foram encontradas conversas correspondentes à pesquisa. Experimente outra palavra-chave.",
+  "searchModels": "Procurar modelos...",
+  "searchStyles": "Procurar estilos...",
+  "createAssistant": "Criar Assistente",
+  "enterApiKey": "Digite a Chave API",
+  "scrollToBottom": "Rolar até embaixo",
+  "generateAiResponse": "Gerar Resposta da IA",
+  "continueAiResponse": "Continuar a resposta da IA",
+  "addModel": {
+    "title": "Adicionar Modelo",
+    "modelId": "ID do Modelo",
+    "enterModelId": "Digite o ID do Modelo",
+    "addModel": "Adicionar Modelo",
+    "description": "Adicionar um novo modelo ao fornecedor",
+    "exploreModels": "Ver lista de modelos do fornecedor"
+  },
+  "mcpServers": {
+    "editServer": "Editar Servidor",
+    "addServer": "Adicionar Servidor",
+    "serverName": "Nome do Servidor",
+    "enterServerName": "Digite o nome do servidor",
+    "command": "Comando",
+    "enterCommand": "Digite o comando",
+    "arguments": "Argumentos",
+    "argument": "Argumento {{index}}",
+    "envVars": "Variáveis de Ambiente",
+    "key": "Chave",
+    "value": "Valor",
+    "save": "Guardar"
+  },
+  "deleteServer": {
+    "title": "Remover Servidor",
+    "delete": "Eliminar"
+  },
+  "editJson": {
+    "errorParse": "Falha ao analisar JSON",
+    "errorPaste": "Falha ao colar JSON",
+    "errorFormat": "Formato JSON inválido",
+    "titleAll": "Editar Configuração de Todos os Servidores",
+    "placeholder": "Entre com a configuração do JSON...",
+    "save": "Guardar"
+  },
+  "editModel": {
+    "title": "Editar Modelo: {{modelId}}",
+    "description": "Configure as capacidades do modelo ativando ou desativando as opções abaixo.",
+    "capabilities": "Capacidades",
+    "tools": "Ferramentas",
+    "vision": "Visão",
+    "embeddings": "Embeddings",
+    "notAvailable": "Ainda não disponível"
+  },
+  "outOfContextError": {
+    "truncateInput": "Truncar Entrada",
+    "title": "Erro de contexto esgotado",
+    "description": "Esta conversa está a atingir o limite de memória da IA, como um quadro que fica cheio. Podemos aumentar a janela de memória (chamada tamanho do contexto) para que se recorde de mais informação, mas isso pode consumir mais memória do computador. Também podemos truncar a entrada, o que elimina parte do histórico da conversa para dar espaço a novas mensagens.",
+    "increaseContextSizeDescription": "Pretende aumentar o tamanho do contexto?",
+    "increaseContextSize": "Aumentar Tamanho do Contexto"
+  },
+  "toolApproval": {
+    "title": "Solicitação de Permissão para Ferramenta",
+    "description": "O assistente pretende utilizar <strong>{{toolName}}</strong>",
+    "securityNotice": "Permita apenas ferramentas em que confia. As ferramentas podem aceder ao seu sistema e aos seus dados.",
+    "deny": "Recusar",
+    "allowOnce": "Permitir uma vez",
+    "alwaysAllow": "Sempre Permitir"
+  },
+  "deleteModel": {
+    "title": "Remover Modelo: {{modelId}}",
+    "description": "Tem a certeza de que pretende eliminar este modelo? Esta ação não pode ser anulada.",
+    "success": "O modelo {{modelId}} foi eliminado permanentemente.",
+    "cancel": "Cancelar",
+    "delete": "Eliminar"
+  },
+  "deleteProvider": {
+    "title": "Remover Fornecedor",
+    "description": "Eliminar este fornecedor e todos os seus modelos. Esta ação não pode ser anulada.",
+    "success": "O fornecedor {{provider}} foi eliminado permanentemente.",
+    "confirmTitle": "Remover Fornecedor: {{provider}}",
+    "confirmDescription": "Tem a certeza de que pretende eliminar este fornecedor? Esta ação não pode ser anulada.",
+    "cancel": "Cancelar",
+    "delete": "Eliminar"
+  },
+  "modelSettings": {
+    "title": "Definições do Modelo - {{modelId}}",
+    "description": "Configure as definições do modelo para otimizar o desempenho e o comportamento.",
+    "nglDisabledByFit": "O ajuste automático está a escolher as camadas de GPU. Desative-o para definir este valor manualmente.",
+    "samplingDefaults": {
+      "title": "Parâmetros de amostragem predefinidos",
+      "description": "Definições de amostragem predefinidas deste modelo. São utilizadas salvo se forem substituídas por valores do assistente ou do pedido."
+    },
+    "specDraft": {
+      "section": "Descodificação especulativa",
+      "enable": "Ativar descodificação especulativa",
+      "enableDescription": "Gere um rascunho de vários tokens por passo e verifique-os numa só passagem para acelerar a geração. Utiliza as cabeças MTP integradas no modelo ou o modelo de rascunho transferido em conjunto (MTP, Eagle3, DFlash ou DSpark).",
+      "nMax": "Máximo de tokens de rascunho",
+      "nMaxDescription": "Número máximo de tokens de rascunho por passo. Predefinição: 16.",
+      "nMin": "Mínimo de tokens de rascunho",
+      "nMinDescription": "Número mínimo de tokens de rascunho por passo. Predefinição: 0.",
+      "pMin": "Probabilidade mínima de rascunho",
+      "pMinDescription": "Probabilidade mínima para gerar rascunhos de forma gulosa (0–1). Predefinição: 0.75."
+    },
+    "templateKwargs": {
+      "section": "Opções do modelo de conversa",
+      "description": "Opções adicionais aceites pelo modelo de conversa. São enviadas como chat_template_kwargs em cada pedido; mantenha o valor predefinido para deixar o modelo decidir.",
+      "addCustom": "Adicionar opção personalizada",
+      "keyPlaceholder": "nome",
+      "valuePlaceholder": "valor",
+      "add": "Adicionar",
+      "cancel": "Cancelar",
+      "remove": "Remover"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "Não foi possível atualizar as definições do modelo"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Alterar Localização da Pasta de Dados",
+      "description": "Tem a certeza de que pretende alterar a localização da pasta de dados? Todos os dados serão movidos para a nova localização e a aplicação será reiniciada.",
+      "currentLocation": "Localização Atual:",
+      "newLocation": "Nova Localização:",
+      "cancel": "Cancelar",
+      "changeLocation": "Alterar Localização"
+    },
+    "deleteAllThreads": {
+      "title": "Apagar Todas as Conversas",
+      "description": "Todas as conversas serão eliminadas. Esta ação não pode ser anulada."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Eliminar todas as conversas",
+      "description": "Serão eliminadas {{count}} conversas em \"{{projectName}}\". Esta ação não pode ser anulada."
+    },
+    "deleteThread": {
+      "description": "Tem a certeza de que pretende eliminar esta conversa? Esta ação não pode ser anulada."
+    },
+    "editMessage": {
+      "title": "Editar Mensagem"
+    },
+    "messageMetadata": {
+      "title": "Metadados da Mensagem"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Algo deu errado",
+    "details": "Detalhes"
+  },
+  "missingDependenciesDialog": {
+    "title": "Bibliotecas do sistema em falta",
+    "description": "O {{backend}} foi instalado, mas não foram encontradas algumas bibliotecas do sistema necessárias. Poderá recorrer à CPU ou não funcionar corretamente.",
+    "installLabel": "Para resolver o problema, instale o seguinte:",
+    "download": "Transferir",
+    "additionalLibraries": "Outras bibliotecas em falta:",
+    "missingLibraries": "Bibliotecas em falta:",
+    "showRawLibraries": "Mostrar os nomes de {{count}} bibliotecas em falta"
+  },
+  "projects": {
+    "title": "Projetos",
+    "new": "Novos Projetos",
+    "addProject": "Adicionar Projeto",
+    "addToProject": "Adicionar ao projeto",
+    "removeFromProject": "Remover do projeto",
+    "createNewProject": "Criar Novo Projeto",
+    "editProject": "Editar Projeto",
+    "deleteProject": "Remover Projeto",
+    "projectName": "Nome do Projeto",
+    "enterProjectName": "Digite o nome do projeto...",
+    "noProjectsAvailable": "Nenhum projeto disponível",
+    "noProjectsYet": "Nenhum Projeto Ainda",
+    "noProjectsYetDesc": "Inicie um novo projeto clicando no botão Adicionar projeto.",
+    "projectNotFound": "Projeto Não Encontrado",
+    "projectNotFoundDesc": "O projeto que procura não existe ou foi eliminado.",
+    "selectAssistant": "Selecionar assistente",
+    "noAssistantAssigned": "Nenhum assistente atribuído a este projeto",
+    "files": "Ficheiros",
+    "filesDescription": "Adicione PDF, documentos ou outro texto para usar como referência neste projeto.",
+    "uploadingFiles": "Processando ficheiros…",
+    "processButton": "Adicionar",
+    "deleteProjectDialog": {
+      "title": "Remover Projeto",
+      "permanentDelete": "ThiIsso removerá permanentemente todas as conversas.",
+      "permanentDeleteWarning": "Esta ação irá eliminar permanentemente TODAS as conversas do projeto!",
+      "deleteEmptyProject": "Esta ação irá eliminar o projeto \"{{projectName}}\".",
+      "saveThreadsAdvice": "Para guardar as conversas, mova-as para a sua lista de conversas ou para outro projeto antes de eliminar.",
+      "starredWarning": "Ainda existem conversas marcadas como favoritas no projeto.",
+      "deleteButton": "Eliminar",
+      "successWithName": "Projeto \"{{projectName}}\" eliminado com sucesso",
+      "successWithoutName": "Projeto removido com sucesso",
+      "error": "Falha ao remover projeto. Tente novamente.",
+      "ariaLabel": "Remover {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Criar Novo Projeto",
+      "editTitle": "Editar Projeto",
+      "nameLabel": "Nome do Projeto",
+      "namePlaceholder": "Digite o nome do projeto...",
+      "assistant": "Assistente",
+      "selectAssistant": "Selecionar um assistente (opcional)",
+      "noAssistant": "Sem assistente",
+      "addAssistant": "Adicionar Assistente",
+      "createButton": "Criar",
+      "updateButton": "Atualizar",
+      "alreadyExists": "Projeto \"{{projectName}}\" já existe",
+      "createSuccess": "Projeto \"{{projectName}}\" criado com sucesso",
+      "updateSuccess": "Projeto \"{{projectName}}\" atualizado com sucesso"
+    },
+    "noConversationsIn": "Nenhuma Conversa em {{projectName}}",
+    "startNewConversation": "Inicie uma nova conversa com {{projectName}} abaixo",
+    "conversationsIn": "Conversas em {{projectName}}",
+    "conversationsDescription": "Clique numa conversa para continuar ou inicie uma nova abaixo.",
+    "conversation": "Conversa",
+    "instructions": "Instruções",
+    "setup": "Configuração",
+    "instructionsDescription": "Personalize o tom e o estilo da resposta",
+    "manageInstructions": "Gerir instruções",
+    "thread": "conversa",
+    "threads": "conversas",
+    "updated": "Atualizado:",
+    "collapseProject": "Recolher projeto",
+    "expandProject": "Expandir projeto",
+    "update": "Atualizar",
+    "searchProjects": "Procurar projetos...",
+    "noProjectsFound": "Nenhum projeto encontrado",
+    "tryDifferentSearch": "Tente um termo de busca diferente"
+  },
+  "attachmentsIngestion": {
+    "title": "Escolher como processar os anexos",
+    "description": "Escolha se pretende incluir estes ficheiros diretamente na conversa ou indexá-los como embeddings.",
+    "inline": "Inserir na conversa",
+    "embeddings": "Utilizar embeddings"
+  },
+  "attachmentInjectedIndicator": "Inserido na conversa",
+  "attachmentEmbeddedIndicator": "Incorporado para RAG",
+  "viewInjectedContent": "Ver conteúdo injetado",
+  "injectedContentTitle": "Conteúdo de ficheiro injetado",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Todas as Conversas Removidas dos Favoritos",
+      "description": "Todas as conversas foram removidas dos favoritos."
+    },
+    "deleteAllThreads": {
+      "title": "Apagar Todas as Conversas",
+      "description": "Todas as conversas foram removidas permanentemente."
+    },
+    "renameThread": {
+      "title": "Renomear Conversa",
+      "description": "Título da conversa foi renomeado para '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Apagar Conversa",
+      "description": "Esta conversa foi removida permanentemente."
+    },
+    "errorCopied": {
+      "title": "Cópia realizada com sucesso",
+      "description": "As informações do erro foram copiadas para a área de transferência"
+    },
+    "errorCopyFailed": {
+      "title": "Falha ao copiar",
+      "description": "Não foi possível copiar as informações do erro para a área de transferência"
+    },
+    "editMessage": {
+      "title": "Editar Mensagem",
+      "description": "Mensagem editada com sucesso. Aguarde a resposta do modelo."
+    },
+    "appUpdateDownloaded": {
+      "title": "Atualização do App Baixada",
+      "description": "A atualização da aplicação foi transferida com sucesso."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Falha na transferência da atualização da aplicação",
+      "description": "Não foi possível transferir a atualização da aplicação. Tente novamente."
+    },
+    "downloadComplete": {
+      "title": "Transferência concluída",
+      "description": " {{item}} foi baixado"
+    },
+    "downloadCancelled": {
+      "title": "Transferência cancelada",
+      "description": "O processo de transferência foi cancelado"
+    },
+    "downloadFailed": {
+      "title": "Falha na transferência",
+      "description": "Não foi possível transferir {{item}}",
+      "descriptionWithReason": "Não foi possível transferir {{item}}: {{reason}}",
+      "reason": {
+        "dns": "não foi possível resolver o nome do servidor",
+        "refused": "a ligação foi recusada",
+        "timeout": "o tempo limite da ligação foi excedido",
+        "tls": "não foi possível estabelecer uma ligação segura",
+        "proxy": "não foi possível contactar o proxy",
+        "unreachable": "não foi possível contactar o servidor"
+      }
+    },
+    "openSettings": "Abrir Definições",
+    "openLogs": "Abrir registos",
+    "downloadTokenRequired": {
+      "title": "Token do Hugging Face necessário",
+      "description": "Este modelo requer um token de acesso do Hugging Face. Adicione o token nas Definições e tente novamente."
+    },
+    "downloadLicenseRequired": {
+      "title": "Aceitar a licença do modelo no Hugging Face",
+      "description": "Tem de aceitar a licença do modelo na respetiva página do Hugging Face antes de o transferir."
+    },
+    "downloadRateLimited": {
+      "title": "Limite de pedidos do Hugging Face atingido",
+      "description": "Atingiu o limite de pedidos. Adicionar um token pode aumentar esse limite. Tente novamente mais tarde."
+    },
+    "modelValidationStarted": {
+      "title": "Validando Modelo",
+      "description": "Modelo \"{{modelId}}\" transferido com sucesso. A verificar a integridade..."
+    },
+    "modelValidationFailed": {
+      "title": "Falha na Validação do Modelo",
+      "description": "O modelo transferido \"{{modelId}}\" não passou na verificação de integridade e foi removido. O ficheiro poderá estar corrompido ou ter sido adulterado."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Transferência concluída",
+      "description": "Modelo \"{{item}}\" transferido e verificado com sucesso"
+    },
+    "projectCreated": {
+      "title": "Projeto Criado",
+      "description": "Projeto \"{{projectName}}\" criado com sucesso"
+    },
+    "projectRenamed": {
+      "title": "Projeto Renomeado",
+      "description": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projeto Removido",
+      "description": "Projeto \"{{projectName}}\" eliminado com sucesso"
+    },
+    "projectAlreadyExists": {
+      "title": "Projeto Já Existe",
+      "description": "Projeto \"{{projectName}}\" já existe"
+    },
+    "projectDeleteFailed": {
+      "title": "Falha ao Remover",
+      "description": "Falha ao remover projeto. Tente novamente."
+    },
+    "threadAssignedToProject": {
+      "title": "Conversa Atribuída",
+      "description": "Conversa atribuída a \"{{projectName}}\" com sucesso"
+    },
+    "threadRemovedFromProject": {
+      "title": "Conversa Removida",
+      "description": "Conversa removida de \"{{projectName}}\" com sucesso"
+    },
+    "fileUploaded": {
+      "title": "Ficheiro processado",
+      "description": "O ficheiro foi processado e indexado com sucesso"
+    },
+    "uploadFailed": {
+      "title": "Falha no processamento",
+      "description": "Não foi possível processar o ficheiro",
+      "subjectThisFile": "Este ficheiro",
+      "pdfMalformedXref": "{{subject}} tem uma tabela de referências cruzadas PDF inválida e não pôde ser analisado. Tente abri-lo num visualizador de PDF e guardá-lo novamente (Ficheiro → Imprimir → Guardar como PDF) e depois envie-o de novo.",
+      "pdfScanned": "{{subject}} parece ser um PDF digitalizado ou baseado em imagens. O OCR ainda não é suportado — envie um PDF baseado em texto.",
+      "pdfEncrypted": "{{subject}} está protegido por palavra-passe. Remova a palavra-passe e tente novamente.",
+      "pdfUnsupportedFeature": "{{subject}} utiliza uma funcionalidade PDF que o Jan ainda não consegue analisar (por exemplo, funções de cor ou sombreamento PostScript). Tente guardá-lo novamente (Ficheiro → Imprimir → Guardar como PDF) para o simplificar e depois envie-o de novo.",
+      "pdfGeneric": "Não foi possível analisar {{subject}} como PDF. O ficheiro poderá estar corrompido ou utilizar uma funcionalidade PDF não suportada.",
+      "fileTooLarge": "{{subject}} é demasiado grande. {{message}}.",
+      "unsupportedType": "O tipo de ficheiro \"{{type}}\" não é suportado.",
+      "ioError": "Não foi possível ler {{subject}}: {{message}}",
+      "parseGeneric": "Não foi possível analisar {{subject}}: {{message}}",
+      "fallback": "Não foi possível processar {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "Ficheiro eliminado",
+      "description": "O ficheiro foi removido do projeto"
+    },
+    "deleteFailed": {
+      "title": "Falha ao Remover",
+      "description": "Não foi possível eliminar o ficheiro"
+    },
+    "fileAlreadyExists": {
+      "title": "O ficheiro já existe",
+      "description": "O ficheiro já está anexado a este projeto"
+    },
+    "unsupportedFileType": {
+      "title": "Tipo de ficheiro não suportado",
+      "description": "A extensão \".{{extension}}\" não é suportada como referência do projeto."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Anexos desativados",
+      "description": "Os anexos estão desativados nas Definições"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "Ficheiro demasiado grande",
+    "fileTooLargeDescription": "{{fileName}} excede o limite de {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "Número de blocos: {{count}}",
+    "title": "Ficheiros",
+    "empty": "Os ficheiros que anexar e os que o agente criar serão apresentados aqui.",
+    "a11y": "Ficheiros: {{count}}",
+    "attachments": "Anexos",
+    "notImported": "fora da área de trabalho"
+  },
+  "llamacppBusyOnExit": {
+    "title": "O llama.cpp ainda está ocupado",
+    "description": "Um ou mais modelos não foram descarregados da memória a tempo. Forçar o encerramento termina o llama.cpp e pode interromper respostas em curso.",
+    "forceQuit": "Forçar encerramento",
+    "forcing": "A forçar o encerramento…",
+    "shuttingDown": "A encerrar…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  },
+  "collapse": "Recolher",
+  "expand": "Expandir",
+  "todoPanelTitle": "Progresso",
+  "todoPanelEmpty": "Ainda não existe uma lista de tarefas.",
+  "backgroundTasks": "Tarefas em segundo plano",
+  "subagentsRunning_one": "Subagentes em execução: {{count}}",
+  "subagentsRunning_other": "Subagentes em execução: {{count}}",
+  "monitorsRunning_one": "Monitores em execução: {{count}}",
+  "monitorsRunning_other": "Monitores em execução: {{count}}",
+  "backgroundRunning_one": "Tarefas em segundo plano em execução: {{count}}",
+  "backgroundRunning_other": "Tarefas em segundo plano em execução: {{count}}",
+  "monitors": "Monitores",
+  "monitorPolling": "A verificar periodicamente",
+  "monitorMatched": "Correspondência encontrada",
+  "monitorTimedOut": "Tempo limite excedido",
+  "monitorStopped": "Parado",
+  "monitorEnded": "Terminado",
+  "coworkWatching_one": "Número de monitores acompanhados: {{count}}…",
+  "coworkWatching_other": "Número de monitores acompanhados: {{count}}…",
+  "coworkWaitingBackground": "A aguardar as tarefas em segundo plano…",
+  "noBackgroundTasks": "Ainda não existem tarefas em segundo plano.",
+  "running": "Em execução",
+  "queued": "Em fila de espera",
+  "waiting": "A aguardar",
+  "finished": "Terminado",
+  "subagentPhase": "fase {{phase}}",
+  "subagentWaiting": "a aguardar",
+  "viewTranscript": "Ver transcrição",
+  "taskWorking": "A trabalhar…",
+  "taskNoOutput": "O subagente não produziu resultados visíveis.",
+  "subagentToolUses_one": "Número de utilizações de ferramentas: {{count}}",
+  "subagentToolUses_other": "Número de utilizações de ferramentas: {{count}}",
+  "artifactGroupCode": "Código",
+  "artifactGroupImage": "Imagem",
+  "artifactGroupDocument": "Documento",
+  "artifactGroupVideo": "Vídeo",
+  "artifactGroupAudio": "Áudio",
+  "artifactOpenPreview": "Abrir pré-visualização",
+  "artifactOpenExternal": "Abrir",
+  "artifactMoreActions": "Mais ações",
+  "artifactShowInFolder": "Mostrar na pasta",
+  "skillsUsedLabel": "Competências utilizadas",
+  "skillsUsed": "Competências utilizadas: {{skills}}",
+  "artifactsAll": "Todos",
+  "artifactsEmpty": "Ainda não existem resultados. Os artefactos das execuções do Cowork serão apresentados aqui.",
+  "artifactsNoMatch": "Nenhum artefacto correspondente.",
+  "artifactsSearch": "Procurar artefactos",
+  "artifactsShowMore": "Mostrar mais {{count}}",
+  "workspace": {
+    "readsFrom": "Trabalha em",
+    "writable": "leitura e escrita",
+    "footnote": "O agente lê e edita esta pasta diretamente. Reveja as alterações no painel de diferenças.",
+    "footnoteEmpty": "Anexe uma pasta para permitir ao agente trabalhar no seu projeto. Pode ler e editar os ficheiros que contém.",
+    "attach": "Anexar pasta",
+    "change": "Alterar pasta",
+    "detach": "Desanexar pasta",
+    "open": "Abrir",
+    "reveal": "Mostrar",
+    "unavailable": "Área de trabalho indisponível",
+    "missing": "A pasta da área de trabalho {{folder}} já não está disponível. Escolha outra pasta.",
+    "openFailed": "Não foi possível abrir a área de trabalho",
+    "revealFailed": "Não foi possível mostrar a área de trabalho",
+    "a11yWithFolder": "Pasta do projeto {{folder}}, anexada com acesso de leitura e escrita. Altere-a ou desanexe-a.",
+    "a11yNoFolder": "Nenhuma pasta de projeto anexada. Anexe uma."
+  },
+  "coworkEmpty": {
+    "title": "Em que vamos trabalhar?",
+    "subtitleSandbox": "Dê uma tarefa ao Jan. Lê e escreve ficheiros, executa comandos e percorre os passos autonomamente.",
+    "subtitleFolder": "Dê uma tarefa ao Jan. Trabalha diretamente em {{folder}}, lendo e editando ficheiros autonomamente.",
+    "try": "Experimente",
+    "sandbox": {
+      "first": "Escreve um script Python que mude os nomes dos ficheiros de acordo com a data em que foram captados",
+      "second": "Cria um painel de uma só página a partir de um CSV que vou colar",
+      "third": "Redige um README para um projeto que te vou descrever"
+    },
+    "folder": {
+      "first": "Explica como {{folder}} está organizado",
+      "second": "Encontra todos os TODO em {{folder}} e agrupa-os por área",
+      "third": "Escreve testes para a parte de {{folder}} que eu indicar"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "Sem terminal",
+    "a11y": "A execução de comandos está desativada. Detalhes.",
+    "title": "A execução de comandos está desativada",
+    "body": "O Jan só permite ao agente executar comandos de shell quando o sistema consegue confiná-los. Não existe um ambiente isolado disponível aqui, pelo que o agente pode ler, escrever e editar ficheiros na sua área isolada — mas não executar programas.",
+    "fixLinux": "O Linux utiliza bubblewrap. Instale-o e reinicie o Jan.",
+    "fixMac": "O macOS utiliza o ambiente isolado integrado em /usr/bin/sandbox-exec. Reinicie o Jan quando estiver disponível.",
+    "fixWindows": "O Windows utiliza AppContainer. Reinicie o Jan para tentar novamente.",
+    "recheck": "Verificar novamente"
+  },
+  "planMode": {
+    "label": "Plano",
+    "tooltipOff": "Planear primeiro — o agente lê e propõe, sem escrever.",
+    "tooltipOn": "A planear. Desative para permitir ao agente escrever ficheiros.",
+    "onAnnounce": "Modo de planeamento ativo",
+    "placeholder": "Peça um plano. O agente não irá alterar ficheiros."
+  },
+  "budget": {
+    "stoppedSteps": "Parou aos {{max}} passos. O agente ainda não terminou.",
+    "keepGoing": "Continuar",
+    "stoppedTokens": "Parou — esta sessão atingiu o seu limite de tokens.",
+    "compact": "Resumir",
+    "newSession": "Nova sessão"
+  },
+  "run": {
+    "stopped": "Parou.",
+    "failed": "A execução terminou antecipadamente.",
+    "tryAgain": "Tentar novamente"
+  },
+  "modelNoTools": "{{model}} não consegue chamar ferramentas, pelo que não pode atuar como agente. Escolha um modelo com suporte de ferramentas.",
+  "askContinue": "Continuar",
+  "askNext": "Pergunta seguinte",
+  "askPrev": "Pergunta anterior",
+  "askRecommended": "Recomendado",
+  "askSelectedCount": "Número de opções selecionadas: {{count}}",
+  "askSomethingElse": "Outra opção",
+  "askSomethingElsePlaceholder": "Escreva a sua resposta",
+  "submit": "Submeter"
+}

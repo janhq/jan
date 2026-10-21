@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Mais Recentes",
+  "sortMostDownloaded": "Mais Baixados",
+  "newChat": "Nova conversa",
+  "download": "Transferir",
+  "downloadFailed": "Não foi possível iniciar a transferência",
+  "downloaded": "Baixado",
+  "loadingModels": "A carregar modelos...",
+  "noModels": "Nenhum modelo encontrado",
+  "by": "Por",
+  "downloads": "Transferências",
+  "variants": "Variantes",
+  "showVariants": "Mostrar variantes",
+  "useModel": "Usar este modelo",
+  "downloadModel": "Transferir modelo",
+  "tools": "Ferramentas",
+  "searchPlaceholder": "Procurar modelos no Hugging Face...",
+  "resumeUnavailable": "Não é possível retomar esta transferência. Inicie-a novamente."
+}

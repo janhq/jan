@@ -1,0 +1,38 @@
+{
+  "welcome": "Olá, como está?",
+  "description": "Como posso ajudar hoje?",
+  "temporaryChat": "Conversa temporária",
+  "temporaryChatDescription": "Inicie uma conversa temporária que não será guardada no histórico de conversas.",
+  "status": {
+    "empty": "Nenhuma conversa encontrada"
+  },
+  "sendMessage": "Enviar Mensagem",
+  "newConversation": "Nova Conversa",
+  "clearHistory": "Limpar Histórico",
+  "embeddings": {
+    "title": "A preparar os seus documentos",
+    "description": "A indexar os ficheiros anexados para permitir pesquisas e citações. Este processo pode demorar algum tempo com documentos grandes."
+  },
+  "actions": {
+    "regenerate": "Gerar novamente a resposta",
+    "askAgain": "Perguntar novamente",
+    "continue": "Continuar a gerar",
+    "remember": "Memorizar isto",
+    "rememberSaved": "Guardado na memória como \"{{name}}\"",
+    "rememberExists": "Já existe na memória como \"{{name}}\"",
+    "rememberFailed": "Não foi possível guardar na memória"
+  },
+  "done": "Concluído",
+  "webSources": "Número de fontes: {{count}}",
+  "reasoning": {
+    "label": "A raciocinar...",
+    "thinking": "A pensar",
+    "working": "A trabalhar...",
+    "showFullTimeline": "Mostrar toda a cronologia",
+    "showCurrentStep": "Mostrar apenas o passo atual",
+    "thoughtForAWhile": "Pensou durante alguns segundos",
+    "thoughtFor": "Pensou durante {{duration}}",
+    "workedForAWhile": "Trabalhou durante alguns segundos",
+    "workedFor": "Trabalhou durante {{duration}}"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "editServer": "Editar Servidor MCP",
+  "addServer": "Adicionar Servidor MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "A verificar status da extensão..."
+    },
+    "notInstalled": {
+      "title": "Jan completa tarefas no seu navegador",
+      "description": "Instale a extensão para dar ao Jan acesso ao navegador",
+      "getExtension": "Obter Extensão"
+    }
+  },
+  "serverName": "Nome do Servidor",
+  "enterServerName": "Digite o nome do servidor",
+  "command": "Comando",
+  "enterCommand": "Digite o comando (uvx ou npx)",
+  "arguments": "Argumentos",
+  "argument": "Argumento {{index}}",
+  "envVars": "Variáveis de Ambiente",
+  "key": "Chave",
+  "value": "Valor",
+  "save": "Guardar",
+  "status": "Estado",
+  "connected": "Conectado",
+  "disconnected": "Desconectado",
+  "deleteServer": {
+    "title": "Remover Servidor MCP",
+    "description": "Tem a certeza de que pretende eliminar o servidor MCP {{serverName}}? Esta ação não pode ser anulada.",
+    "delete": "Eliminar",
+    "success": "Servidor MCP {{serverName}} eliminado com sucesso"
+  },
+  "editJson": {
+    "title": "Editar JSON para Servidor MCP: {{serverName}}",
+    "titleAll": "Editar JSON de Todos os Servidores MCP",
+    "placeholder": "Digite a configuração JSON",
+    "errorParse": "Falha ao analisar dados iniciais",
+    "errorPaste": "Formato JSON inválido no conteúdo colado",
+    "errorFormat": "Formato JSON inválido",
+    "errorServerName": " Nome do servidor é obrigatório e não pode estar vazio",
+    "errorMissingServerNameKey": "O JSON deve ter a estrutura {\"serverName\": {config}} - falta a chave do nome do servidor",
+    "errorInvalidType": "Tipo '{{type}}' inválido para o servidor '{{serverName}}'. O tipo deve ser 'stdio', 'http' ou 'sse'",
+    "save": "Guardar"
+  },
+  "checkParams": "Verifique os parâmetros de acordo com o tutorial.",
+  "title": "Servidores MCP",
+  "experimental": "Experimental",
+  "editAllJson": "Editar JSON de Todos os Servidores",
+  "findMore": "Encontre mais servidores MCP em",
+  "allowPermissions": "Permitir Todas as Permissões de Ferramentas MCP",
+  "allowPermissionsDesc": "Quando ativado, todas as chamadas a ferramentas MCP são aprovadas automaticamente, sem apresentar diálogos de permissão. Esta definição aplica-se a todas as conversas, incluindo as novas.",
+  "noServers": "Nenhum servidor MCP encontrado",
+  "args": "Argumentos",
+  "env": "Ambiente",
+  "serverStatusActive": "Servidor {{serverKey}} ativado com sucesso",
+  "serverStatusInactive": "Servidor {{serverKey}} desativado com sucesso",
+  "runtimeSettings": {
+    "title": "Definições de Execução",
+    "description": "Configure a gestão e as novas tentativas dos servidores MCP pelo Jan.",
+    "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
+    "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de esgotar o prazo.",
+    "maxToolOutputChars": "Máximo de caracteres do resultado da ferramenta",
+    "maxToolOutputCharsDesc": "Comprimento máximo do resultado de uma ferramenta a manter na conversa. O conteúdo adicional é cortado e assinalado como truncado, para que um resultado grande não esgote o contexto do modelo. Defina 0 para manter os resultados completos.",
+    "smartToolRouting": "Roteamento inteligente de ferramentas MCP",
+    "smartToolRoutingDesc": "Quando ativado, o Jan seleciona os servidores MCP relevantes antes de carregar as ferramentas. Desative para carregar sempre a lista completa de ferramentas MCP.",
+    "useLightweightRouterModel": "Usar um modelo dedicado para roteamento",
+    "useLightweightRouterModelDesc": "Com o encaminhamento inteligente ativo, execute o passo de encaminhamento com um modelo separado, normalmente mais pequeno, em vez do modelo da conversa. Desative para usar sempre o modelo ativo da conversa.",
+    "routerModel": "Modelo de roteamento",
+    "routerModelDesc": "Escolha o fornecedor e o modelo no mesmo local. Apenas são apresentados modelos leves, para manter o encaminhamento rápido e económico.",
+    "selectRouterModelPlaceholder": "Selecionar modelo de roteamento…",
+    "routerModelSearchPlaceholder": "Pesquisar modelos…",
+    "routerModelEmptyList": "Não existem modelos leves disponíveis. Adicione um modelo mais pequeno ou configure as chaves de API em Modelos.",
+    "routerModelEmptySearch": "Nenhum resultado para “{{query}}”."
+  },
+  "auth": {
+    "label": "Autenticação:",
+    "state": {
+      "notApplicable": "não necessária",
+      "staticHeader": "Cabeçalho de autorização",
+      "authenticated": "autenticado",
+      "expired": "expirado",
+      "staleResource": "emitido para outro URL",
+      "unauthenticated": "não autenticado"
+    },
+    "expiresIn": "expira dentro de {{duration}}",
+    "authenticate": "Iniciar sessão",
+    "reauthenticate": "Autenticar novamente",
+    "clear": "Limpar autenticação",
+    "waiting": "A aguardar o navegador...",
+    "openSignInPage": "Abrir a página de início de sessão",
+    "needsAuth": "O servidor {{serverName}} requer autenticação",
+    "needsAuthHint": "Inicie sessão neste servidor para estabelecer ligação.",
+    "authorized": "Sessão iniciada em {{serverName}}",
+    "authorizeFailed": "Não foi possível iniciar sessão em {{serverName}}",
+    "cleared": "Credenciais guardadas de {{serverName}} removidas",
+    "nothingToClear": "Não existiam credenciais guardadas de {{serverName}}",
+    "clearFailed": "Não foi possível remover as credenciais de {{serverName}}",
+    "renew": "Renovar sessão",
+    "expiredAgo": "expirou há {{duration}}"
+  }
+}
