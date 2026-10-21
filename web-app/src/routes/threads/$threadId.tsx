@@ -1563,10 +1563,19 @@ function ThreadDetail() {
             )
           }
           // ChatInput cleared the input on submit and nothing was sent, so
-          // hand the draft and attachments back as the cancelled-choice path
-          // does; the user fixes the cause and sends again.
-          setAttachmentsForThread(attachmentsKey, allAttachments)
-          usePrompt.getState().setPrompt(draft)
+          // hand the draft and attachments back; the user fixes the cause and
+          // sends again. Attachments are keyed by thread and go back in front
+          // of anything added since. The prompt store is shared by every
+          // thread, so the draft returns only to its own thread's composer
+          // and only if nothing has been typed there since.
+          setAttachmentsForThread(attachmentsKey, (prev) => [
+            ...allAttachments,
+            ...prev,
+          ])
+          const composer = usePrompt.getState()
+          if (openThreadIdRef.current === threadId && !composer.prompt) {
+            composer.setPrompt(draft)
+          }
           return
         } finally {
           useAppState.getState().setThreadEmbedding(threadId, false)
