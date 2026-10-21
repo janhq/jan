@@ -65,6 +65,19 @@ describe('parseEngineError', () => {
 
     expect(parsed?.missingLibraries).toBeUndefined()
   })
+
+  // #9270: start_engine hands the wrong-processor failure over as JSON inside
+  // the error text, and the UI must still recover its code from it.
+  it('recovers a wrong-processor engine start from the error text', () => {
+    const parsed = parseEngineError(
+      new Error(
+        'Failed to start model: {"code":"UNSUPPORTED_CPU","message":"The llama.cpp engine in this Jan build does not support this computer\'s processor.","details":"Bad CPU type in executable (os error 86)"}'
+      )
+    )
+
+    expect(parsed?.code).toBe('UNSUPPORTED_CPU')
+    expect(parsed?.details).toBe('Bad CPU type in executable (os error 86)')
+  })
 })
 
 describe('describeEngineError', () => {

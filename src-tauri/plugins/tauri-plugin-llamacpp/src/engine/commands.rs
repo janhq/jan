@@ -11,6 +11,7 @@ use tauri_plugin_hardware::vendor::nvidia::{nvidia_driver, CudaVersion, NvidiaDr
 
 use super::driver;
 use super::worker::{self, WorkerHandle};
+use crate::error::{ErrorCode, LlamacppError};
 use crate::state::LlamacppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +183,26 @@ async fn record_nvidia_driver(versions: Arc<EngineVersions>) {
     let _ = versions.driver.set(driver);
 }
 
+/// A start failure as the `String` this command returns. A wrong-processor
+/// worker crosses as the structured error, which `parseEngineError` on the web
+/// side recovers from the message, so it is shown from its code. Every other
+/// failure keeps its plain text.
+fn worker_error_string(err: worker::WorkerError) -> String {
+    match err {
+        worker::WorkerError::WrongArchitecture(detail) => {
+            let structured = LlamacppError::new(
+                ErrorCode::UnsupportedCpu,
+                "The llama.cpp engine in this Jan build does not support this computer's \
+                 processor."
+                    .into(),
+                Some(detail),
+            );
+            serde_json::to_string(&structured).unwrap_or(structured.message)
+        }
+        other => other.to_string(),
+    }
+}
+
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
 /// cache directory; 0 turns cross-session KV persistence off, which is a
 /// user-facing setting because a single saved conversation is hundreds of MiB.
@@ -216,7 +237,7 @@ pub async fn start_engine<R: tauri::Runtime>(
         Some(fault_emitter(app_handle.clone(), versions.clone())),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(worker_error_string)?;
     if let Some(v) = handle.cuda_toolkit {
         let _ = versions.toolkit.set(v);
     }
@@ -664,6 +685,22 @@ mod tests {
         assert_eq!(a.len(), 64, "32 bytes hex-encoded");
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b, "two keys must not collide");
+    }
+
+    // The UI shows an engine error from its code, and recovers the code from the
+    // message text, so the wrong-processor failure has to cross as that JSON.
+    // Any other spawn failure keeps its plain text.
+    #[test]
+    fn a_wrong_processor_reaches_the_ui_as_its_own_code() {
+        let text = worker_error_string(worker::WorkerError::WrongArchitecture(
+            "Bad CPU type in executable (os error 86)".into(),
+        ));
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["code"], "UNSUPPORTED_CPU");
+        assert_eq!(json["details"], "Bad CPU type in executable (os error 86)");
+
+        let plain = worker_error_string(worker::WorkerError::Spawn("no such file".into()));
+        assert_eq!(plain, "could not start jan-llama-worker: no such file");
     }
 
     // resolve_worker_exe now needs an AppHandle for the bundle lookup, so the

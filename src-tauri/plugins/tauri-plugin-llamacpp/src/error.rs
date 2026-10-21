@@ -18,6 +18,9 @@ pub enum ErrorCode {
     EngineStopped,
     /// The worker is alive, but its loopback port cannot be reached.
     EngineUnreachable,
+    /// The bundled engine has no build for this computer's processor, so it
+    /// cannot start at all: the Apple Silicon engine on an Intel Mac.
+    UnsupportedCpu,
 
     // --- Configuration Errors ---
     InvalidArgument,
@@ -267,6 +270,7 @@ mod tests {
             (ErrorCode::ModelArchNotSupported, "MODEL_ARCH_NOT_SUPPORTED"),
             (ErrorCode::ModelLoadTimedOut, "MODEL_LOAD_TIMED_OUT"),
             (ErrorCode::MissingSharedLibrary, "MISSING_SHARED_LIBRARY"),
+            (ErrorCode::UnsupportedCpu, "UNSUPPORTED_CPU"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
             (ErrorCode::EngineStopped, "ENGINE_STOPPED"),

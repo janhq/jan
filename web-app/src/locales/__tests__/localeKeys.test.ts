@@ -68,6 +68,7 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'engine.OUT_OF_MEMORY',
     'engine.ENGINE_STOPPED',
     'engine.ENGINE_UNREACHABLE',
+    'engine.UNSUPPORTED_CPU',
     'engine.INVALID_ARGUMENT',
     'engine.IO_ERROR',
     'engine.INTERNAL_ERROR',
