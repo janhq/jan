@@ -534,6 +534,18 @@ describe('ChatInput', () => {
     ).toBeInTheDocument()
   })
 
+  it('keeps document attachment selection available before a model is selected', () => {
+    selectedModelOverride = null
+    renderInput()
+    expect(screen.getByText('Add documents or files').closest('button')).toBeEnabled()
+  })
+
+  it('keeps document attachment selection disabled for models without tool support', () => {
+    selectedModelOverride = { id: 'model-no-tools', capabilities: [] }
+    renderInput()
+    expect(screen.getByText('Add documents or files').closest('button')).toBeDisabled()
+  })
+
   it('does not submit if isComposing (IME) is true', () => {
     promptState = 'hello'
     const onSubmit = vi.fn()
