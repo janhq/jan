@@ -106,6 +106,7 @@ import {
 import {
   applyIngestionChoices,
   needsIngestionChoice,
+  parseModeForModel,
   promptIngestionChoices,
   resolveAutoInlineBudget,
 } from '@/lib/attachmentProcessing'
@@ -1106,6 +1107,8 @@ const ChatInput = memo(function ChatInput({
       const paths = Array.isArray(selection) ? selection : [selection]
       if (!paths.length) return
 
+      const modelSupportsTools = !!selectedModel?.capabilities?.includes('tools')
+
       // Prepare attachments with file sizes
       const preparedAttachments: Attachment[] = []
       for (const p of paths) {
@@ -1124,7 +1127,7 @@ const ChatInput = memo(function ChatInput({
             path: p,
             fileType,
             size,
-            parseMode: parsePreference,
+            parseMode: parseModeForModel(parsePreference, modelSupportsTools),
           })
         )
       }
@@ -1179,6 +1182,12 @@ const ChatInput = memo(function ChatInput({
       }
 
       if (newDocAttachments.length > 0) {
+        if (!modelSupportsTools) {
+          toast.info('Documents are added to the prompt', {
+            description:
+              "This model can't search files, so each document is sent as text with your message.",
+          })
+        }
         await processNewDocumentAttachments(newDocAttachments)
       }
     } catch (e) {
@@ -2378,10 +2387,7 @@ const ChatInput = memo(function ChatInput({
                       </DropdownMenuItem>
                     )}
                     {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
-                    >
+                    <DropdownMenuItem onClick={handleAttachDocsIngest}>
                       {ingestingDocs ? (
                         <IconLoader2
                           size={18}

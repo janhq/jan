@@ -1527,6 +1527,10 @@ function ThreadDetail() {
             projectId,
             serviceHub,
             selectedProvider,
+            modelSupportsTools:
+              useModelProvider
+                .getState()
+                .selectedModel?.capabilities?.includes('tools') ?? false,
             parsePreference,
             contextThreshold,
           })
@@ -1557,6 +1561,24 @@ function ThreadDetail() {
             setChatMessages((prev) =>
               prev.filter((m) => m.id !== messageId)
             )
+          }
+          // ChatInput cleared the input on submit and nothing was sent, so
+          // hand the draft and attachments back; the user fixes the cause and
+          // sends again. Attachments are keyed by thread and go back in front
+          // of anything added since. The prompt store is shared by every
+          // thread and Home, so the draft returns only while this thread is
+          // still the open one (the store clears it on leaving) and only if
+          // nothing has been typed there since.
+          setAttachmentsForThread(attachmentsKey, (prev) => [
+            ...allAttachments,
+            ...prev,
+          ])
+          const composer = usePrompt.getState()
+          if (
+            useThreads.getState().currentThreadId === threadId &&
+            !composer.prompt
+          ) {
+            composer.setPrompt(draft)
           }
           return
         } finally {

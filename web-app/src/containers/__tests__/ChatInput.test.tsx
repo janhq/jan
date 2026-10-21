@@ -852,4 +852,22 @@ describe('ChatInput', () => {
       }
     })
   })
+
+  // #9363: the option was greyed out, with no reason given, for any model
+  // without the `tools` capability, so such a model could take no document at
+  // all. A document can still go into the prompt as text.
+  describe('document attachments', () => {
+    const attachDocs = () =>
+      screen.getByText('Add documents or files').closest('button')!
+
+    it('stay available for a model that cannot call tools', () => {
+      selectedModelOverride = {
+        id: 'no-tools-model',
+        capabilities: ['completion'],
+        provider: 'llamacpp',
+      }
+      renderInput()
+      expect(attachDocs()).not.toBeDisabled()
+    })
+  })
  })

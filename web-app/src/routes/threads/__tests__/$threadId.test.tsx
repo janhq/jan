@@ -699,6 +699,63 @@ describe('ThreadDetail route', () => {
     h.attachmentsState.getAttachments = vi.fn(() => [])
   })
 
+  describe('when processing a document fails', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const later = { name: 'later.png', type: 'image', path: '/later.png' }
+
+    // `openThreadId` is the thread the store reports as open when the failure
+    // lands: its own, or null after the user went Home. The attachments are
+    // keyed by thread, so they go back to it either way.
+    const sendAndFail = async (openThreadId: string | null = 'thread-1') => {
+      h.threadsState.currentThreadId = openThreadId ?? undefined
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(
+        new Error("Couldn't read sheet.xlsx as text.")
+      )
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+          'thread-1',
+          expect.any(Function)
+        )
+      })
+    }
+
+    afterEach(() => {
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('gives back the draft and attachments, ahead of any added since', async () => {
+      await sendAndFail()
+
+      const updater = vi
+        .mocked(h.attachmentsState.setAttachments)
+        .mock.calls.map((c) => c[1])
+        .find((u) => typeof u === 'function')
+      expect(updater?.([later])).toEqual([sheet, later])
+      expect(usePrompt.getState().prompt).toBe('hello world')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+    })
+
+    it('keeps what the user typed while the document was processing', async () => {
+      usePrompt.getState().setPrompt('typed meanwhile')
+      await sendAndFail()
+
+      expect(usePrompt.getState().prompt).toBe('typed meanwhile')
+    })
+
+    it('does not write the draft into another screen after the user left the thread', async () => {
+      await sendAndFail(null)
+
+      expect(usePrompt.getState().prompt).toBe('')
+    })
+  })
+
   describe('when the auto-inline budget is gone at send time', () => {
     const sheet = {
       name: 'sheet.xlsx',
