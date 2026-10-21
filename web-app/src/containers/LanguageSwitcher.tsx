@@ -1,5 +1,5 @@
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useAppTranslation } from '@/i18n'
+import { useAppTranslation } from '@/i18n/hooks'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +12,7 @@ import { ChevronsUpDown } from 'lucide-react'
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
+  { value: 'ar', label: 'العربية' },
   { value: 'es', label: 'Español' },
   { value: 'fr', label: 'Français' },
   { value: 'it', label: 'Italiano' },

@@ -1,0 +1,18 @@
+{
+  "addProvider": "إضافة موفر",
+  "addOpenAIProvider": "إضافة موفر مخصص",
+  "enterNameForProvider": "اسم الموفر (على سبيل المثال، my-llm-server)",
+  "apiTypeLabel": "تنسيق API",
+  "apiTypeOpenAI": "OpenAI-متوافق",
+  "apiTypeAnthropic": "Anthropic-متوافق",
+  "baseUrlLabel": "قاعدة URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API مفتاح",
+  "apiKeyPlaceholder": "الصق مفتاح API الخاص بك",
+  "invalidBaseUrl": "يجب أن تكون القاعدة URL عبارة عن http(s) صالح URL",
+  "globalSettings": "الإعدادات العالمية",
+  "stripReasoning": "تجريد المنطق من السياق",
+  "stripReasoningDesc": "قم بإزالة محتوى التفكير/الاستدلال الخاص بالمنعطفات السابقة قبل إعادة إرسال السجل، عبر جميع مقدمي الخدمة. يعمل على تحسين إعادة استخدام ذاكرة التخزين المؤقت KV للنماذج المحلية، ولكن بعض النماذج (مثل إصدارات Qwen الأحدث) توصي بالاحتفاظ بها لتحسين التفكير متعدد المنعطفات.",
+  "providerAlreadyExists": "موفر اسمه {{name}} موجود بالفعل."
+}

@@ -1,0 +1,38 @@
+{
+  "welcome": "مرحبًا، كيف حالك؟",
+  "description": "كيف يمكنني مساعدتك اليوم؟",
+  "temporaryChat": "محادثة مؤقتة",
+  "temporaryChatDescription": "ابدأ محادثة مؤقتة لن تُحفظ في سجل المحادثات.",
+  "status": {
+    "empty": "لم يُعثر على محادثات"
+  },
+  "sendMessage": "إرسال رسالة",
+  "newConversation": "محادثة جديدة",
+  "clearHistory": "مسح السجل",
+  "embeddings": {
+    "title": "جارٍ تجهيز مستنداتك",
+    "description": "تجري فهرسة الملفات المرفقة حتى يمكن البحث فيها والاستشهاد بها. قد يستغرق ذلك بعض الوقت مع المستندات الكبيرة."
+  },
+  "actions": {
+    "regenerate": "إعادة توليد الرد",
+    "askAgain": "السؤال مجددًا",
+    "continue": "متابعة التوليد",
+    "remember": "تذكّر هذا",
+    "rememberSaved": "حُفظ في الذاكرة باسم «{{name}}»",
+    "rememberExists": "موجود بالفعل في الذاكرة باسم «{{name}}»",
+    "rememberFailed": "تعذّر الحفظ في الذاكرة"
+  },
+  "done": "تم",
+  "webSources": "عدد المصادر: {{count}}",
+  "reasoning": {
+    "label": "التفكير...",
+    "thinking": "يفكّر",
+    "working": "جارٍ العمل...",
+    "showFullTimeline": "عرض التسلسل الزمني الكامل",
+    "showCurrentStep": "عرض الخطوة الحالية فقط",
+    "thoughtForAWhile": "استغرق التفكير بضع ثوانٍ",
+    "thoughtFor": "استغرق التفكير {{duration}}",
+    "workedForAWhile": "استغرق العمل بضع ثوانٍ",
+    "workedFor": "استغرق العمل {{duration}}"
+  }
+}

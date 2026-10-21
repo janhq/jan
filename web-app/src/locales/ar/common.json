@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "الكود",
+    "preview": "معاينة",
+    "previewStreaming": "تتاح المعاينة عند اكتمال التوليد",
+    "unresolvedAssets_one": "عدد مراجع الأصول التي تعذّر تحميلها في المعاينة: 1. لا يوجد عنوان URL أساسي لحل المسارات النسبية.",
+    "unresolvedAssets_other": "عدد مراجع الأصول التي تعذّر تحميلها في المعاينة: {{count}}. لا يوجد عنوان URL أساسي لحل المسارات النسبية."
+  },
+  "assistants": "المساعدون",
+  "hardware": "الأجهزة",
+  "mcp-servers": "خوادم MCP",
+  "local_api_server": "خادم API محلي",
+  "remote_access": "الوصول عن بعد",
+  "integrations": "التكامل",
+  "experimental": "تجريبي",
+  "claude_code": "كلود كود",
+  "https_proxy": "وكيل HTTPS",
+  "web_search": "بحث الويب",
+  "shell": "سطر الأوامر",
+  "browse": "تصفح",
+  "moreControls": "المزيد من الضوابط",
+  "starting": "جارٍ البدء...",
+  "activeSuffix": "(نشط)",
+  "extensions": "ملحقات",
+  "attachments": "المرفقات",
+  "general": "عام",
+  "settings": "الإعدادات",
+  "modelProviders": "مقدمو النماذج",
+  "localProviders": "محلي",
+  "remoteProviders": "بعيد",
+  "manageProviders": "إدارة مقدمي الخدمة",
+  "hiddenProviders": "{{count}} معطل",
+  "hideProvider": "إخفاء المزود",
+  "showProvider": "إظهار المزود",
+  "interface": "الواجهة",
+  "appearance": "المظهر",
+  "privacy": "الخصوصية",
+  "keyboardShortcuts": "الاختصارات",
+  "home": "الرئيسية",
+  "cowork": "Cowork",
+  "newSession": "جلسة جديدة",
+  "artifacts": "المخرجات",
+  "customize": "تخصيص",
+  "local": "محلي",
+  "selectFolder": "حدد المجلد",
+  "selectModel": "حدد نموذجًا أولاً",
+  "commands": "الأوامر",
+  "cmdHelp": "قائمة الأوامر المتاحة",
+  "cmdClear": "مسح هذه الجلسة",
+  "cmdModels": "تبديل النموذج النشط",
+  "cmdModelsHint": "اكتب /models ثم اختر نموذجًا من القائمة",
+  "cmdModelSwitched": "تم التحويل إلى {{name}}",
+  "cmdUnknown": "أمر غير معروف: {{name}}. جرّب /help",
+  "cmdBusy": "لا يمكن فعل ذلك أثناء تشغيل الوكيل",
+  "cmdCompact": "ضغط سياق الجلسة في ملخص",
+  "cmdCompacted": "رسائل مضغوطة {{before}} -> {{after}}.",
+  "cmdNothingToCompact": "لا يوجد شيء للضغط حتى الآن",
+  "cmdCompactFailed": "فشل الضغط: {{error}}",
+  "cmdPlan": "تبديل وضع الخطة (للقراءة فقط: يقترح الوكيل دون كتابة)",
+  "cmdPlanOn": "وضع الخطة قيد التشغيل: يقرأ الوكيل ويقترح دون كتابة",
+  "cmdPlanOff": "وضع الخطة معطل: التنفيذ العادي",
+  "cmdTodo": "افتح لوحة التقدم",
+  "cmdTasks": "افتح لوحة المهام الخلفية",
+  "cmdInit": "دراسة المشروع وكتابة المهارات والذاكرة",
+  "cmdInitRunning": "تأهيل هذا المشروع",
+  "skills": "مهارات",
+  "skillsInContext": "المهارات المتاحة للوكيل في هذا التشغيل",
+  "skillsTitle": "إدارة المهارات",
+  "skillsScopeProject": "مهارات {{folder}}",
+  "skillsScopeGlobal": "مهارات عالمية، متاحة لكل جلسة",
+  "skillsScopeMerged": "مهارات {{folder}}، بالإضافة إلى المهارات العالمية التي تشاركها كل جلسة",
+  "skillOriginFolder": "المجلد",
+  "skillOriginGlobal": "عام",
+  "skillsEmpty": "لا توجد مهارات بعد",
+  "skillsPickOrNew": "حدد مهارة لتحريرها أو إنشاء مهارة جديدة.",
+  "skillNew": "مهارة جديدة",
+  "skillDelete": "حذف المهارة",
+  "skillSave": "حفظ",
+  "skillSaved": "تم حفظ المهارة",
+  "skillNameRequired": "اسم المهارة مطلوب",
+  "skillNamePlaceholder": "اسم المهارة",
+  "skillContentPlaceholder": "قم بوصف الإجراء القابل لإعادة الاستخدام في Markdown...",
+  "skillHubImport": "استيراد من المحور",
+  "skillHubTitle": "مركز مهارات Anthropic",
+  "skillHubEmpty": "لم يتم العثور على مهارات في المركز",
+  "skillImport": "استيراد",
+  "skillReimport": "إعادة الاستيراد",
+  "skillImported": "تم استيراد {{name}}",
+  "sessions": "الجلسات",
+  "deleteSession": "حذف الجلسة",
+  "deleteSessionTitle": "هل تريد حذف الجلسة؟",
+  "deleteSessionBody": "سيتم حذف \"{{title}}\" ونصه نهائيًا. لا يمكن التراجع عن هذا.",
+  "newChat": "محادثة جديدة",
+  "newAgentChat": "محادثة جديدة مع الوكيل",
+  "chats": "الدردشات",
+  "favorites": "المفضلة",
+  "recents": "الأخيرة",
+  "hub": "المركز",
+  "helpSupport": "المساعدة والدعم",
+  "helpUsImproveJan": "ساعدنا على تحسين Jan",
+  "analyticsConsentDetail": "نقوم بجمع بيانات مجهولة المصدر لفهم استخدام الميزات. لا يتم تعقب محادثاتك ومعلوماتك الشخصية أبدًا. يمكنك تغيير هذا في أي وقت من خلال الإعدادات > الخصوصية.",
+  "analyticsConsentQuestion": "هل ترغب في مساعدتنا في تحسين Jan؟",
+  "unstarAll": "إلغاء تمييز الكل",
+  "unstar": "إلغاء النجمة",
+  "deleteAll": "حذف الكل",
+  "star": "نجمة",
+  "rename": "إعادة تسمية",
+  "delete": "حذف",
+  "copied": "منسوخ!",
+  "dataFolder": "مجلد البيانات",
+  "others": "أخرى",
+  "language": "اللغة",
+  "login": "تسجيل الدخول",
+  "loginWith": "تسجيل الدخول باستخدام {{provider}}",
+  "loginFailed": "فشل في تسجيل الدخول",
+  "logout": "تسجيل الخروج",
+  "loggingOut": "تسجيل الخروج...",
+  "loggedOut": "تم تسجيل الخروج بنجاح",
+  "logoutFailed": "فشل في تسجيل الخروج",
+  "profile": "الملف الشخصي",
+  "reset": "إعادة الضبط",
+  "search": "بحث",
+  "searchThreads": "البحث في المحادثات...",
+  "toNavigate": "للتنقل",
+  "toSelect": "لتحديد",
+  "toClose": "للإغلاق",
+  "clearRecent": "مسح",
+  "name": "الاسم",
+  "cancel": "إلغاء",
+  "dismiss": "استبعاد",
+  "create": "إنشاء",
+  "save": "حفظ",
+  "edit": "تعديل",
+  "copy": "نسخ",
+  "back": "رجوع",
+  "close": "إغلاق",
+  "done": "تم",
+  "next": "التالي",
+  "finish": "إنهاء",
+  "skip": "تخطي",
+  "allow": "السماح",
+  "deny": "رفض",
+  "start": "بدء",
+  "stop": "إيقاف",
+  "preview": {
+    "loading": "جارٍ الفتح…",
+    "unsupported": "Jan لا يمكنه إظهار هذا النوع من الملفات. افتحه لرؤيته في تطبيق آخر.",
+    "outside": "لم يعد هذا الملف موجودًا في مساحة عمل الجلسة.",
+    "tooLarge": "كبير جدًا بحيث لا يمكن معاينته. افتحه لرؤيته في تطبيق آخر.",
+    "reload": "إعادة تحميل",
+    "allowNetwork": "السماح للشبكة",
+    "unsandboxed": "التشغيل بدون وضع الحماية: تعمل البيانات المحفوظة والملفات المحلية",
+    "unresolvedRefs_one": "عدد الملفات المرتبطة التي تعذّر تحميلها في المعاينة: 1. افتح الصفحة لعرضها في المتصفح.",
+    "unresolvedRefs_other": "عدد الملفات المرتبطة التي تعذّر تحميلها في المعاينة: {{count}}. افتح الصفحة لعرضها في المتصفح.",
+    "externalRefs_one": "عدد الموارد التي حُظر تحميلها من الويب: 1. فعّل «السماح بالشبكة» لتحميلها.",
+    "externalRefs_other": "عدد الموارد التي حُظر تحميلها من الويب: {{count}}. فعّل «السماح بالشبكة» لتحميلها.",
+    "scriptErrors_one": "أبلغت الصفحة عن خطأ: {{message}}",
+    "scriptErrors_other": "عدد الأخطاء التي أبلغت عنها الصفحة: {{count}}. أول خطأ: {{message}}"
+  },
+  "changes": {
+    "title": "تغييرات الوكيل",
+    "empty": "ستظهر هنا الملفات التي يكتبها الوكيل أو يعدّلها.",
+    "a11y": "تغييرات الوكيل: ملفات {{files}}، تمت إضافة {{additions}}، وإزالة {{deletions}}"
+  },
+  "modelPanel": {
+    "title": "إعدادات النموذج",
+    "a11y": "افتح إعدادات النموذج",
+    "contextTooltip": "نافذة السياق: {{value}} من {{max}} الرموز المميزة"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "المهارة '{{name}}' غير متوفرة",
+    "kind": {
+      "skill": "مهارة",
+      "command": "الأمر",
+      "model": "نموذج"
+    }
+  },
+  "compactWidth": "عرض مدمج",
+  "fullWidth": "العرض الكامل",
+  "dark": "الظلام",
+  "light": "ضوء",
+  "system": "النظام",
+  "auto": "تلقائي",
+  "english": "الإنجليزية",
+  "medium": "متوسط",
+  "newThread": "موضوع جديد",
+  "noResultsFound": "لم يتم العثور على نتائج",
+  "noThreadsYet": "لا توجد مواضيع حتى الآن",
+  "noThreadsYetDesc": "ابدأ محادثة جديدة لترى سجل موضوعك هنا.",
+  "downloads": "التنزيلات",
+  "downloading": "جارٍ التنزيل",
+  "uploadingAttachments": "جارٍ تحميل المرفقات…",
+  "cancelDownload": "إلغاء التنزيل",
+  "downloadCancelled": "تم إلغاء التنزيل",
+  "downloadComplete": "اكتمل التنزيل",
+  "thinking": "أفكر...",
+  "thought": "الفكر",
+  "callingTool": "أداة الدعوة",
+  "completed": "مكتمل",
+  "image": "صورة",
+  "vision": "الرؤية",
+  "multimodal": "متعدد الوسائط",
+  "embeddings": "التضمين",
+  "tools": "الأدوات",
+  "webSearch": "بحث الويب",
+  "reasoning": "المنطق",
+  "proactive": "استباقية",
+  "selectAModel": "حدد نموذجًا",
+  "noToolsAvailable": "لا توجد أدوات متاحة",
+  "noModelsFoundFor": "لم يتم العثور على نماذج ل \"{{searchValue}}\"",
+  "failedToLoadModels": "فشل تحميل النماذج",
+  "noModels": "لم يتم العثور على نماذج",
+  "noAssistant": "لا مساعد",
+  "customAvatar": "الصورة الرمزية المخصصة",
+  "editAssistant": "مساعد التحرير",
+  "jan": "Jan",
+  "metadata": "البيانات الوصفية",
+  "regenerate": "تجديد",
+  "threadImage": "صورة الموضوع",
+  "editMessage": "تحرير الرسالة",
+  "deleteMessage": "حذف الرسالة",
+  "deleteThread": "حذف الموضوع",
+  "renameThread": "إعادة تسمية الموضوع",
+  "threadTitle": "عنوان الموضوع",
+  "deleteAllThreads": "حذف كافة المواضيع",
+  "allThreadsUnfavorited": "جميع المواضيع غير مفضلة",
+  "deleteAllThreadsConfirm": "هل أنت متأكد أنك تريد حذف كافة المواضيع؟ لا يمكن التراجع عن هذا الإجراء.",
+  "addProvider": "إضافة موفر",
+  "addOpenAIProvider": "إضافة OpenAI مقدم",
+  "enterNameForProvider": "أدخل اسمًا لمزود الخدمة الخاص بك",
+  "providerAlreadyExists": "الموفر بالاسم \"{{name}}\" موجود بالفعل. الرجاء اختيار اسم مختلف.",
+  "adjustFontSize": "ضبط حجم الخط",
+  "changeLanguage": "تغيير اللغة",
+  "editTheme": "تحرير الموضوع",
+  "editCodeBlockStyle": "تحرير نمط كتلة التعليمات البرمجية",
+  "editServerHost": "تحرير مضيف الخادم",
+  "pickColorWindowBackground": "اختر لون خلفية النافذة",
+  "pickColorAppMainView": "اختر العرض الرئيسي لتطبيق اللون",
+  "pickColorAppPrimary": "اختر تطبيق اللون الأساسي",
+  "pickColorAppAccent": "اختر لون لهجة التطبيق",
+  "pickColorAppDestructive": "اختر تطبيق اللون المدمر",
+  "apiKeyRequired": "API المفتاح مطلوب",
+  "enterTrustedHosts": "أدخل المضيفين الموثوق بهم",
+  "placeholder": {
+    "chatInput": "اسألني أي شيء..."
+  },
+  "confirm": "تأكيد",
+  "continue": "متابعة",
+  "loading": "جارٍ التحميل...",
+  "settingUpJan": "التمهيد Jan…",
+  "registeringExtensions": "جارٍ تسجيل الملحقات…",
+  "loadingExtensions": "جارٍ تحميل الامتدادات… ({{done}}/{{total}})",
+  "error": "خطأ",
+  "success": "النجاح",
+  "warning": "تحذير",
+  "conversationNotAvailable": "المحادثة غير متوفرة",
+  "conversationNotAvailableDescription": "المحادثة التي تحاول الوصول إليها غير متاحة أو تم حذفها.",
+  "temporaryChat": "الدردشة المؤقتة",
+  "temporaryChatTooltip": "لن تظهر الدردشة المؤقتة في سجلك",
+  "noResultsFoundDesc": "لم نتمكن من العثور على أي محادثات تطابق بحثك. جرّب كلمة رئيسية مختلفة.",
+  "searchModels": "نماذج البحث...",
+  "searchStyles": "أنماط البحث...",
+  "createAssistant": "إنشاء مساعد",
+  "enterApiKey": "أدخل API مفتاح",
+  "scrollToBottom": "قم بالتمرير إلى الأسفل",
+  "generateAiResponse": "توليد استجابة الذكاء الاصطناعي",
+  "continueAiResponse": "تابع مع استجابة الذكاء الاصطناعي",
+  "addModel": {
+    "title": "إضافة نموذج",
+    "modelId": "معرف النموذج",
+    "enterModelId": "أدخل معرف النموذج",
+    "addModel": "إضافة نموذج",
+    "description": "إضافة نموذج جديد إلى الموفر",
+    "exploreModels": "انظر قائمة النماذج من الموفر"
+  },
+  "mcpServers": {
+    "editServer": "تحرير الخادم",
+    "addServer": "أضف الخادم",
+    "serverName": "اسم الخادم",
+    "enterServerName": "أدخل اسم الخادم",
+    "command": "الأمر",
+    "enterCommand": "أدخل الأمر",
+    "arguments": "الحجج",
+    "argument": "الحجة {{index}}",
+    "envVars": "متغيرات البيئة",
+    "key": "المفتاح",
+    "value": "قيمة",
+    "save": "حفظ"
+  },
+  "deleteServer": {
+    "title": "حذف الخادم",
+    "delete": "حذف"
+  },
+  "editJson": {
+    "errorParse": "فشل التحليل JSON",
+    "errorPaste": "فشل اللصق JSON",
+    "errorFormat": "تنسيق JSON غير صالح",
+    "titleAll": "تحرير تكوين كافة الخوادم",
+    "placeholder": "أدخل JSON التكوين...",
+    "save": "حفظ"
+  },
+  "editModel": {
+    "title": "تعديل الموديل : {{modelId}}",
+    "description": "قم بتكوين إمكانيات النموذج عن طريق تبديل الخيارات أدناه.",
+    "capabilities": "القدرات",
+    "tools": "الأدوات",
+    "vision": "الرؤية",
+    "embeddings": "التضمين",
+    "notAvailable": "غير متوفر بعد"
+  },
+  "outOfContextError": {
+    "truncateInput": "اقتطاع الإدخال",
+    "title": "خطأ خارج السياق",
+    "description": "وصلت هذه الدردشة إلى الحد الأقصى لذاكرة الذكاء الاصطناعي، مثل امتلاء السبورة البيضاء. يمكننا توسيع نافذة الذاكرة (وتسمى حجم السياق) بحيث تتذكر المزيد، ولكنها قد تستخدم المزيد من ذاكرة جهاز الكمبيوتر الخاص بك. يمكننا أيضًا اقتطاع الإدخال، مما يعني أنه سينسى بعضًا من سجل الدردشة لإفساح المجال للرسائل الجديدة.",
+    "increaseContextSizeDescription": "هل تريد زيادة حجم السياق؟",
+    "increaseContextSize": "زيادة حجم السياق"
+  },
+  "toolApproval": {
+    "title": "طلب إذن الأداة",
+    "description": "يريد المساعد استخدام <strong>{{toolName}}</strong>",
+    "securityNotice": "السماح فقط للأدوات التي تثق بها. يمكن للأدوات الوصول إلى النظام والبيانات الخاصة بك.",
+    "deny": "رفض",
+    "allowOnce": "السماح مرة واحدة",
+    "alwaysAllow": "السماح دائما"
+  },
+  "deleteModel": {
+    "title": "حذف الموديل: {{modelId}}",
+    "description": "هل أنت متأكد أنك تريد حذف هذا النموذج؟ لا يمكن التراجع عن هذا الإجراء.",
+    "success": "تم حذف الموديل {{modelId}} نهائيًا.",
+    "cancel": "إلغاء",
+    "delete": "حذف"
+  },
+  "deleteProvider": {
+    "title": "حذف الموفر",
+    "description": "احذف هذا الموفر وجميع نماذجه. لا يمكن التراجع عن هذا الإجراء.",
+    "success": "تم حذف المزود {{provider}} نهائيًا.",
+    "confirmTitle": "حذف المزود: {{provider}}",
+    "confirmDescription": "هل أنت متأكد أنك تريد حذف هذا الموفر؟ لا يمكن التراجع عن هذا الإجراء.",
+    "cancel": "إلغاء",
+    "delete": "حذف"
+  },
+  "modelSettings": {
+    "title": "إعدادات النموذج - {{modelId}}",
+    "description": "تكوين إعدادات النموذج لتحسين الأداء والسلوك.",
+    "nglDisabledByFit": "الاحتواء التلقائي هو اختيار GPU طبقة. قم بإيقاف تشغيل الاحتواء التلقائي لتعيين ذلك يدويًا.",
+    "samplingDefaults": {
+      "title": "معلمات أخذ العينات الافتراضية",
+      "description": "إعدادات أخذ العينات الافتراضية لهذا النموذج. يُستخدم ما لم يتم تجاوزه بواسطة قيم لكل مساعد أو لكل طلب."
+    },
+    "specDraft": {
+      "section": "فك التشفير التخميني",
+      "enable": "تمكين فك التشفير المضاربة",
+      "enableDescription": "قم بصياغة عدة رموز مميزة في كل خطوة والتحقق منها في مسار واحد، مما يؤدي إلى تسريع عملية الإنشاء. يستخدم رؤوس MTP المدمجة في النموذج، أو نموذج المسودة الذي تم تنزيله معه (MTP أو Eagle3 أو DFlash أو DSpark).",
+      "nMax": "ماكس مشروع الرموز",
+      "nMaxDescription": "الحد الأقصى لعدد الرموز المميزة التي سيتم صياغتها في كل خطوة. الافتراضي 16.",
+      "nMin": "الحد الأدنى من الرموز المميزة",
+      "nMinDescription": "الحد الأدنى لعدد الرموز المميزة التي سيتم صياغتها في كل خطوة. الافتراضي 0.",
+      "pMin": "الحد الأدنى لاحتمال المسودة",
+      "pMinDescription": "الحد الأدنى من احتمال الصياغة الجشعة (0-1). الافتراضي 0.75."
+    },
+    "templateKwargs": {
+      "section": "خيارات قالب الدردشة",
+      "description": "خيارات إضافية يقبلها قالب الدردشة الخاص بهذا النموذج. يتم إرساله كـ chat_template_kwargs عند كل طلب؛ اترك قيمة في وضعها الافتراضي للسماح للقالب باتخاذ القرار.",
+      "addCustom": "إضافة خيار مخصص",
+      "keyPlaceholder": "اسم",
+      "valuePlaceholder": "قيمة",
+      "add": "إضافة",
+      "cancel": "إلغاء",
+      "remove": "إزالة"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "لا يمكن تحديث إعدادات النموذج"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "تغيير موقع مجلد البيانات",
+      "description": "هل أنت متأكد أنك تريد تغيير موقع مجلد البيانات؟ سيؤدي هذا إلى نقل جميع بياناتك إلى الموقع الجديد وإعادة تشغيل التطبيق.",
+      "currentLocation": "الموقع الحالي:",
+      "newLocation": "الموقع الجديد:",
+      "cancel": "إلغاء",
+      "changeLocation": "تغيير الموقع"
+    },
+    "deleteAllThreads": {
+      "title": "حذف كافة المواضيع",
+      "description": "سيتم حذف كافة المواضيع. لا يمكن التراجع عن هذا الإجراء."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "حذف كافة المحادثات",
+      "description": "سيتم حذف {{count}} المحادثات في \"{{projectName}}\". لا يمكن التراجع عن هذا الإجراء."
+    },
+    "deleteThread": {
+      "description": "هل أنت متأكد أنك تريد حذف هذا الموضوع؟ لا يمكن التراجع عن هذا الإجراء."
+    },
+    "editMessage": {
+      "title": "تحرير الرسالة"
+    },
+    "messageMetadata": {
+      "title": "بيانات تعريف الرسالة"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "حدث خطأ ما",
+    "details": "التفاصيل"
+  },
+  "missingDependenciesDialog": {
+    "title": "مكتبات النظام مفقودة",
+    "description": "تم تثبيت {{backend}} ولكن تعذر العثور على بعض مكتبات النظام المطلوبة. قد يعود إلى CPU أو لا يعمل بشكل صحيح.",
+    "installLabel": "لإصلاح ذلك، قم بتثبيت ما يلي:",
+    "download": "تنزيل",
+    "additionalLibraries": "المكتبات الإضافية المفقودة:",
+    "missingLibraries": "المكتبات المفقودة:",
+    "showRawLibraries": "إظهار {{count}} أسماء المكتبات المفقودة"
+  },
+  "projects": {
+    "title": "المشاريع",
+    "new": "مشاريع جديدة",
+    "addProject": "أضف المشروع",
+    "addToProject": "أضف إلى المشروع",
+    "removeFromProject": "إزالة من المشروع",
+    "createNewProject": "إنشاء مشروع جديد",
+    "editProject": "تحرير المشروع",
+    "deleteProject": "حذف المشروع",
+    "projectName": "اسم المشروع",
+    "enterProjectName": "أدخل إسم المشروع...",
+    "noProjectsAvailable": "لا توجد مشاريع متاحة",
+    "noProjectsYet": "لا توجد مشاريع حتى الآن",
+    "noProjectsYetDesc": "ابدأ مشروعًا جديدًا بالنقر فوق الزر \"إضافة مشروع\".",
+    "projectNotFound": "لم يتم العثور على المشروع",
+    "projectNotFoundDesc": "المشروع الذي تبحث عنه غير موجود أو تم حذفه.",
+    "selectAssistant": "اختر مساعد",
+    "noAssistantAssigned": "لم يتم تعيين مساعد لهذا المشروع",
+    "files": "ملفات",
+    "filesDescription": "أضف ملفات PDF أو المستندات أو أي نص آخر للرجوع إليه في هذا المشروع.",
+    "uploadingFiles": "جارٍ معالجة الملفات…",
+    "processButton": "إضافة",
+    "deleteProjectDialog": {
+      "title": "حذف المشروع",
+      "permanentDelete": "سيؤدي هذا إلى حذف جميع المواضيع نهائيًا.",
+      "permanentDeleteWarning": "سيؤدي هذا الإجراء إلى حذف جميع سلاسل الرسائل داخل المشروع نهائيًا!",
+      "deleteEmptyProject": "سيؤدي هذا الإجراء إلى حذف المشروع \"{{projectName}}\".",
+      "saveThreadsAdvice": "لحفظ المواضيع، قم بنقلها إلى قائمة المواضيع الخاصة بك أو إلى مشروع آخر قبل الحذف.",
+      "starredWarning": "لا يزال لديك المواضيع المميزة بنجمة داخل المشروع.",
+      "deleteButton": "حذف",
+      "successWithName": "تم حذف المشروع \"{{projectName}}\" بنجاح",
+      "successWithoutName": "تم حذف المشروع بنجاح",
+      "error": "فشل في حذف المشروع. يرجى المحاولة مرة أخرى.",
+      "ariaLabel": "حذف {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "إنشاء مشروع جديد",
+      "editTitle": "تحرير المشروع",
+      "nameLabel": "اسم المشروع",
+      "namePlaceholder": "أدخل إسم المشروع...",
+      "assistant": "المساعد",
+      "selectAssistant": "اختر مساعدًا (اختياري)",
+      "noAssistant": "لا مساعد",
+      "addAssistant": "إضافة مساعد",
+      "createButton": "إنشاء",
+      "updateButton": "تحديث",
+      "alreadyExists": "مشروع \"{{projectName}}\" موجود بالفعل",
+      "createSuccess": "تم إنشاء المشروع \"{{projectName}}\" بنجاح",
+      "updateSuccess": "تم تحديث المشروع \"{{projectName}}\" بنجاح"
+    },
+    "noConversationsIn": "لا توجد محادثات في {{projectName}}",
+    "startNewConversation": "ابدأ محادثة جديدة مع {{projectName}} أدناه",
+    "conversationsIn": "المحادثات في {{projectName}}",
+    "conversationsDescription": "انقر على أي محادثة لمواصلة الدردشة، أو ابدأ محادثة جديدة أدناه.",
+    "conversation": "محادثة",
+    "instructions": "التعليمات",
+    "setup": "الإعداد",
+    "instructionsDescription": "تخصيص لهجة وأسلوب الاستجابة",
+    "manageInstructions": "إدارة التعليمات",
+    "thread": "موضوع",
+    "threads": "المواضيع",
+    "updated": "تم التحديث:",
+    "collapseProject": "طي المشروع",
+    "expandProject": "قم بتوسيع المشروع",
+    "update": "تحديث",
+    "searchProjects": "مشاريع البحث...",
+    "noProjectsFound": "لم يتم العثور على مشاريع",
+    "tryDifferentSearch": "حاول استخدام مصطلح بحث مختلف"
+  },
+  "attachmentsIngestion": {
+    "title": "اختر كيفية استيعاب المرفقات",
+    "description": "اختر ما إذا كنت تريد تضمين هذه الملفات مباشرة في الدردشة أو فهرستها كتضمينات بدلاً من ذلك.",
+    "inline": "أدخل في الدردشة",
+    "embeddings": "استخدم التضمينات"
+  },
+  "attachmentInjectedIndicator": "أدخلت في الدردشة",
+  "attachmentEmbeddedIndicator": "جزءا لا يتجزأ من RAG",
+  "viewInjectedContent": "عرض المحتوى المحقون",
+  "injectedContentTitle": "محتوى الملف الذي تم حقنه",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "جميع المواضيع غير مفضلة",
+      "description": "تمت إزالة كافة المواضيع من المفضلة لديك."
+    },
+    "deleteAllThreads": {
+      "title": "حذف كافة المواضيع",
+      "description": "لقد تم حذف كافة المواضيع نهائيا."
+    },
+    "renameThread": {
+      "title": "إعادة تسمية الموضوع",
+      "description": "تم تغيير عنوان الموضوع إلى '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "حذف الموضوع",
+      "description": "لقد تم حذف هذا الموضوع نهائيا."
+    },
+    "errorCopied": {
+      "title": "تم النسخ بنجاح",
+      "description": "تم نسخ معلومات الخطأ إلى الحافظة"
+    },
+    "errorCopyFailed": {
+      "title": "فشل النسخ",
+      "description": "فشل نسخ معلومات الخطأ إلى الحافظة"
+    },
+    "editMessage": {
+      "title": "تحرير الرسالة",
+      "description": "تم تحرير الرسالة بنجاح. يرجى الانتظار حتى يستجيب النموذج."
+    },
+    "appUpdateDownloaded": {
+      "title": "تم تنزيل تحديث التطبيق",
+      "description": "تم تنزيل تحديث التطبيق بنجاح."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "فشل تنزيل تحديث التطبيق",
+      "description": "فشل تنزيل تحديث التطبيق. يرجى المحاولة مرة أخرى."
+    },
+    "downloadComplete": {
+      "title": "اكتمل التنزيل",
+      "description": "تم تنزيل {{item}}"
+    },
+    "downloadCancelled": {
+      "title": "تم إلغاء التنزيل",
+      "description": "تم إلغاء عملية التنزيل"
+    },
+    "downloadFailed": {
+      "title": "فشل التنزيل",
+      "description": "{{item}} فشل التنزيل",
+      "descriptionWithReason": "{{item}} فشل التنزيل: {{reason}}",
+      "reason": {
+        "dns": "لا يمكن حل اسم الخادم",
+        "refused": "تم رفض الاتصال",
+        "timeout": "انتهت مهلة الاتصال",
+        "tls": "لا يمكن تأسيس اتصال آمن",
+        "proxy": "لا يمكن الوصول إلى الوكيل",
+        "unreachable": "لا يمكن الوصول إلى الخادم"
+      }
+    },
+    "openSettings": "افتح الإعدادات",
+    "openLogs": "فتح السجلات",
+    "downloadTokenRequired": {
+      "title": "مطلوب Hugging Face رمز مميز",
+      "description": "يتطلب هذا النموذج رمز وصول Hugging Face. أضف الرمز المميز الخاص بك في الإعدادات وأعد المحاولة."
+    },
+    "downloadLicenseRequired": {
+      "title": "قبول ترخيص النموذج على Hugging Face",
+      "description": "يجب عليك قبول ترخيص النموذج على صفحته Hugging Face قبل التنزيل."
+    },
+    "downloadRateLimited": {
+      "title": "السعر محدود بـ Hugging Face",
+      "description": "لقد تم تقييد المعدل. يمكن أن تؤدي إضافة رمز مميز إلى زيادة حدود المعدل. يرجى المحاولة مرة أخرى في وقت لاحق."
+    },
+    "modelValidationStarted": {
+      "title": "التحقق من صحة النموذج",
+      "description": "تم تنزيل النموذج \"{{modelId}}\" بنجاح. التحقق من النزاهة..."
+    },
+    "modelValidationFailed": {
+      "title": "فشل التحقق من صحة النموذج",
+      "description": "فشل النموذج الذي تم تنزيله \"{{modelId}}\" في التحقق من سلامته وتمت إزالته. قد يكون الملف تالفًا أو تم العبث به."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "اكتمل التنزيل",
+      "description": "تم تنزيل النموذج \"{{item}}\" والتحقق منه بنجاح"
+    },
+    "projectCreated": {
+      "title": "تم إنشاء المشروع",
+      "description": "تم إنشاء المشروع \"{{projectName}}\" بنجاح"
+    },
+    "projectRenamed": {
+      "title": "تمت إعادة تسمية المشروع",
+      "description": "تمت إعادة تسمية المشروع من \"{{oldName}}\" إلى \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "تم حذف المشروع",
+      "description": "تم حذف المشروع \"{{projectName}}\" بنجاح"
+    },
+    "projectAlreadyExists": {
+      "title": "المشروع موجود بالفعل",
+      "description": "مشروع \"{{projectName}}\" موجود بالفعل"
+    },
+    "projectDeleteFailed": {
+      "title": "فشل الحذف",
+      "description": "فشل في حذف المشروع. يرجى المحاولة مرة أخرى."
+    },
+    "threadAssignedToProject": {
+      "title": "تم تعيين الموضوع",
+      "description": "تم تعيين الموضوع إلى \"{{projectName}}\" بنجاح"
+    },
+    "threadRemovedFromProject": {
+      "title": "تمت إزالة الموضوع",
+      "description": "تمت إزالة الموضوع من \"{{projectName}}\" بنجاح"
+    },
+    "fileUploaded": {
+      "title": "تمت معالجة الملف",
+      "description": "تمت معالجة الملف وفهرسته بنجاح"
+    },
+    "uploadFailed": {
+      "title": "فشلت المعالجة",
+      "description": "فشلت معالجة الملف",
+      "subjectThisFile": "هذا الملف",
+      "pdfMalformedXref": "{{subject}} يحتوي على جدول إسناد ترافقي PDF مشوه ولا يمكن تحليله. حاول فتحه في عارض PDF وأعد حفظه (ملف → طباعة → حفظ باسم PDF)، ثم قم بتحميله مرة أخرى.",
+      "pdfScanned": "يبدو أن {{subject}} عبارة عن PDF ممسوحة ضوئيًا أو مستندة إلى صورة. التعرف الضوئي على الحروف (OCR) غير مدعوم حتى الآن — يرجى تحميل PDF نصي.",
+      "pdfEncrypted": "{{subject}} محمي بكلمة مرور. قم بإزالة كلمة المرور وحاول مرة أخرى.",
+      "pdfUnsupportedFeature": "{{subject}} يستخدم ميزة PDF Jan لا يمكنه التحليل بعد (على سبيل المثال، وظائف ألوان/تظليل بوستسكريبت). حاول إعادة حفظه (ملف → طباعة → حفظ باسم PDF) لتسويته، ثم قم بتحميله مرة أخرى.",
+      "pdfGeneric": "لا يمكن تحليل {{subject}} كـ PDF. قد يكون الملف تالفًا أو يستخدم ميزة PDF غير مدعومة.",
+      "fileTooLarge": "{{subject}} كبير جدًا. {{message}}.",
+      "unsupportedType": "نوع الملف \"{{type}}\" غير مدعوم.",
+      "ioError": "لا يمكن قراءة {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} لا يمكن تحليله: {{message}}",
+      "fallback": "فشلت معالجة {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "تم حذف الملف",
+      "description": "تمت إزالة الملف من المشروع"
+    },
+    "deleteFailed": {
+      "title": "فشل الحذف",
+      "description": "فشل في حذف الملف"
+    },
+    "fileAlreadyExists": {
+      "title": "الملف موجود بالفعل",
+      "description": "الملف مرفق بالفعل بهذا المشروع"
+    },
+    "unsupportedFileType": {
+      "title": "نوع الملف غير مدعوم",
+      "description": "امتداد الملف \".{{extension}}\" غير مدعوم كمرجع للمشروع."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "المرفقات معطلة",
+      "description": "تم تعطيل المرفقات في الإعدادات"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "الملف كبير جدًا",
+    "fileTooLargeDescription": "{{fileName}} يتجاوز الحد {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} قطع",
+    "title": "ملفات",
+    "empty": "ستظهر هنا الملفات التي ترفقها والملفات التي ينشئها الوكيل.",
+    "a11y": "الملفات: {{count}}",
+    "attachments": "المرفقات",
+    "notImported": "ليس في مساحة العمل"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp لا يزال مشغولاً",
+    "description": "لم يتم تفريغ نموذج واحد أو أكثر في الوقت المناسب. سيؤدي الإقلاع عن التدخين إلى إنهاء llama.cpp وقد يقطع الاستجابات النشطة.",
+    "forceQuit": "فرض الإقلاع عن التدخين",
+    "forcing": "فرض الانسحاب…",
+    "shuttingDown": "جارٍ إيقاف…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}م",
+    "hours": "{{count}}ح"
+  },
+  "collapse": "طي",
+  "expand": "توسيع",
+  "todoPanelTitle": "التقدم",
+  "todoPanelEmpty": "لا توجد قائمة ما يجب فعله حتى الآن.",
+  "backgroundTasks": "مهام الخلفية",
+  "subagentsRunning_one": "الوكلاء الفرعيون النشطون: {{count}}",
+  "subagentsRunning_other": "الوكلاء الفرعيون النشطون: {{count}}",
+  "monitorsRunning_one": "أدوات المراقبة النشطة: {{count}}",
+  "monitorsRunning_other": "أدوات المراقبة النشطة: {{count}}",
+  "backgroundRunning_one": "المهام في الخلفية: {{count}}",
+  "backgroundRunning_other": "المهام في الخلفية: {{count}}",
+  "monitors": "الشاشات",
+  "monitorPolling": "الاقتراع",
+  "monitorMatched": "متطابق",
+  "monitorTimedOut": "انتهت المهلة",
+  "monitorStopped": "توقف",
+  "monitorEnded": "انتهى",
+  "coworkWatching_one": "المراقبات قيد المتابعة: {{count}}…",
+  "coworkWatching_other": "المراقبات قيد المتابعة: {{count}}…",
+  "coworkWaitingBackground": "في انتظار مهام الخلفية...",
+  "noBackgroundTasks": "لا توجد مهام خلفية حتى الآن.",
+  "running": "الجري",
+  "queued": "في قائمة الانتظار",
+  "waiting": "في انتظار",
+  "finished": "انتهى",
+  "subagentPhase": "المرحلة {{phase}}",
+  "subagentWaiting": "الانتظار",
+  "viewTranscript": "عرض النص",
+  "taskWorking": "العمل…",
+  "taskNoOutput": "لم ينتج الوكيل الفرعي أي مخرجات مرئية.",
+  "subagentToolUses_one": "مرات استخدام الأدوات: {{count}}",
+  "subagentToolUses_other": "مرات استخدام الأدوات: {{count}}",
+  "artifactGroupCode": "الكود",
+  "artifactGroupImage": "صورة",
+  "artifactGroupDocument": "وثيقة",
+  "artifactGroupVideo": "فيديو",
+  "artifactGroupAudio": "الصوت",
+  "artifactOpenPreview": "فتح المعاينة",
+  "artifactOpenExternal": "مفتوح",
+  "artifactMoreActions": "المزيد من الإجراءات",
+  "artifactShowInFolder": "عرض في المجلد",
+  "skillsUsedLabel": "المهارات المستخدمة",
+  "skillsUsed": "المهارات المستخدمة: {{skills}}",
+  "artifactsAll": "الكل",
+  "artifactsEmpty": "لم يتم إنتاج أي شيء حتى الآن. تظهر هنا القطع الأثرية من Cowork.",
+  "artifactsNoMatch": "لا توجد قطع أثرية متطابقة.",
+  "artifactsSearch": "البحث عن التحف",
+  "artifactsShowMore": "عرض {{count}} المزيد",
+  "workspace": {
+    "readsFrom": "يعمل في",
+    "writable": "القراءة والكتابة",
+    "footnote": "يقوم الوكيل بقراءة هذا المجلد وتحريره مباشرة. راجع ما تغير في لوحة الفرق.",
+    "footnoteEmpty": "قم بإرفاق مجلد للسماح للوكيل بالعمل على مشروعك. يمكنه قراءة وتحرير الملفات الموجودة بداخله.",
+    "attach": "إرفاق مجلد",
+    "change": "تغيير المجلد",
+    "detach": "فصل المجلد",
+    "open": "مفتوح",
+    "reveal": "كشف",
+    "unavailable": "مساحة العمل غير متوفرة",
+    "missing": "مجلد مساحة العمل {{folder}} لم يعد متاحًا. اختر مجلدًا مختلفًا.",
+    "openFailed": "لا يمكن فتح مساحة العمل",
+    "revealFailed": "لا يمكن الكشف عن مساحة العمل",
+    "a11yWithFolder": "مجلد المشروع {{folder}}، مرفق مع إمكانية القراءة والكتابة. تغييره أو فصله.",
+    "a11yNoFolder": "لم يتم إرفاق مجلد المشروع. إرفاق واحدة."
+  },
+  "coworkEmpty": {
+    "title": "ما الذي نعمل عليه؟",
+    "subtitleSandbox": "أعط Jan مهمة. فهو يقرأ الملفات ويكتبها، ويقوم بتشغيل الأوامر، ويعمل من خلال الخطوات من تلقاء نفسه.",
+    "subtitleFolder": "أعط Jan مهمة. يعمل مباشرة في {{folder}}، ويقرأ الملفات ويحررها من تلقاء نفسه.",
+    "try": "حاول",
+    "sandbox": {
+      "first": "اكتب برنامج Python النصي الذي يعيد تسمية الملفات حسب تاريخ التقاطها",
+      "second": "أنشئ لوحة معلومات من صفحة واحدة من CSV سألصقها",
+      "third": "قم بصياغة الملف التمهيدي للمشروع الذي أصفه لك"
+    },
+    "folder": {
+      "first": "اشرح كيفية تجميع {{folder}} معًا",
+      "second": "ابحث عن كل المهام في {{folder}} وقم بتجميعها حسب المنطقة",
+      "third": "اكتب اختبارات للجزء من {{folder}} الذي أشير إليه"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "لا محطة",
+    "a11y": "تم إيقاف تشغيل الأوامر. تفاصيل.",
+    "title": "تم إيقاف تشغيل الأوامر",
+    "body": "Jan يتيح للوكيل تشغيل أوامر shell فقط عندما يتمكن نظامك من تقييدها. لا يتوفر هنا وضع الحماية، لذا يستطيع الوكيل قراءة الملفات وكتابتها وتحريرها في وضع الحماية الخاص به - ولكن لا يمكنه تشغيل أي شيء.",
+    "fixLinux": "Linux يستخدم غلاف الفقاعات. قم بتثبيته ثم أعد تشغيل Jan.",
+    "fixMac": "macOS يستخدم صندوق الحماية المدمج في /usr/bin/sandbox-exec. أعد تشغيل Jan بمجرد توفره.",
+    "fixWindows": "Windows يستخدم AppContainer. أعد تشغيل Jan للمحاولة مرة أخرى.",
+    "recheck": "تحقق مرة أخرى"
+  },
+  "planMode": {
+    "label": "خطة",
+    "tooltipOff": "خطط أولاً – يقرأ الوكيل ويقترح، دون الكتابة.",
+    "tooltipOn": "التخطيط. قم بإيقاف تشغيل هذا للسماح للوكيل بكتابة الملفات.",
+    "onAnnounce": "وضع الخطة قيد التشغيل",
+    "placeholder": "اطلب خطة. لن يقوم الوكيل بتغيير أي ملفات."
+  },
+  "budget": {
+    "stoppedSteps": "توقفت عند {{max}} خطوة. الوكيل لم ينته",
+    "keepGoing": "استمر",
+    "stoppedTokens": "توقفت — وصلت هذه الجلسة إلى ميزانيتها الرمزية.",
+    "compact": "مدمج",
+    "newSession": "جلسة جديدة"
+  },
+  "run": {
+    "stopped": "توقف.",
+    "failed": "توقف الركض في وقت مبكر.",
+    "tryAgain": "حاول مجددًا"
+  },
+  "modelNoTools": "{{model}} لا يمكنه استدعاء الأدوات، لذلك لا يمكنه العمل كوكيل. اختر نموذجًا لاستدعاء الأداة.",
+  "askContinue": "متابعة",
+  "askNext": "السؤال التالي",
+  "askPrev": "السؤال السابق",
+  "askRecommended": "موصى به",
+  "askSelectedCount": "{{count}} تم التحديد",
+  "askSomethingElse": "شيء آخر",
+  "askSomethingElsePlaceholder": "اكتب إجابتك الخاصة",
+  "submit": "إرسال"
+}

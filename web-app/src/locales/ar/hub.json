@@ -1,0 +1,19 @@
+{
+  "sortNewest": "الأحدث",
+  "sortMostDownloaded": "الأكثر تحميلا",
+  "newChat": "محادثة جديدة",
+  "download": "تنزيل",
+  "downloadFailed": "فشل بدء التنزيل",
+  "downloaded": "تم التنزيل",
+  "loadingModels": "جارٍ تحميل النماذج...",
+  "noModels": "لم يتم العثور على نماذج",
+  "by": "بواسطة",
+  "downloads": "التنزيلات",
+  "variants": "المتغيرات",
+  "showVariants": "إظهار المتغيرات",
+  "useModel": "استخدم هذا النموذج",
+  "downloadModel": "تحميل النموذج",
+  "tools": "الأدوات",
+  "searchPlaceholder": "ابحث عن الموديلات على Hugging Face...",
+  "resumeUnavailable": "لا يمكن استئناف هذا التنزيل. يرجى البدء مرة أخرى."
+}

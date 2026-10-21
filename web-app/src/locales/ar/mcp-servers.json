@@ -1,0 +1,101 @@
+{
+  "editServer": "تعديل MCP الخادم",
+  "addServer": "إضافة MCP خادم",
+  "browserExtension": {
+    "connecting": {
+      "checking": "التحقق من حالة التمديد..."
+    },
+    "notInstalled": {
+      "title": "Jan يكمل المهام في متصفحك",
+      "description": "قم بتثبيت الامتداد لمنح Jan إمكانية الوصول إلى المتصفح",
+      "getExtension": "احصل على الامتداد"
+    }
+  },
+  "serverName": "اسم الخادم",
+  "enterServerName": "أدخل اسم الخادم",
+  "command": "الأمر",
+  "enterCommand": "أدخل الأمر (uvx أو npx)",
+  "arguments": "الحجج",
+  "argument": "الحجة {{index}}",
+  "envVars": "متغيرات البيئة",
+  "key": "المفتاح",
+  "value": "قيمة",
+  "save": "حفظ",
+  "status": "الحالة",
+  "connected": "متصل",
+  "disconnected": "غير متصل",
+  "deleteServer": {
+    "title": "حذف MCP الخادم",
+    "description": "هل أنت متأكد أنك تريد حذف MCP الخادم {{serverName}}؟ لا يمكن التراجع عن هذا الإجراء.",
+    "delete": "حذف",
+    "success": "MCP تم حذف الخادم {{serverName}} بنجاح"
+  },
+  "editJson": {
+    "title": "تعديل JSON لـ MCP الخادم: {{serverName}}",
+    "titleAll": "تعديل جميع MCP السيرفرات JSON",
+    "placeholder": "أدخل JSON التكوين",
+    "errorParse": "فشل في تحليل البيانات الأولية",
+    "errorPaste": "تنسيق JSON غير صالح في المحتوى المُلصق",
+    "errorFormat": "تنسيق JSON غير صالح",
+    "errorServerName": "اسم الخادم مطلوب ولا يمكن أن يكون فارغًا",
+    "errorMissingServerNameKey": "يجب أن يتم تنظيم JSON كـ {\"serverName\": {config}} - مفتاح اسم الخادم مفقود",
+    "errorInvalidType": "النوع \"{{type}}\" غير صالح للخادم \"{{serverName}}\". يجب أن يكون النوع \"stdio\" أو \"http\" أو \"sse\"",
+    "save": "حفظ"
+  },
+  "checkParams": "يرجى التحقق من المعلمات وفقا للبرنامج التعليمي.",
+  "title": "MCP الخوادم",
+  "experimental": "تجريبي",
+  "editAllJson": "تعديل كافة السيرفرات JSON",
+  "findMore": "ابحث عن المزيد من الخوادم MCP على",
+  "allowPermissions": "السماح لجميع أذونات الأداة MCP",
+  "allowPermissionsDesc": "عند التمكين، ستتم الموافقة على جميع استدعاءات الأداة MCP تلقائيًا دون إظهار مربعات حوار الأذونات. ينطبق هذا الإعداد عالميًا على جميع المحادثات، بما في ذلك الدردشات الجديدة.",
+  "noServers": "لم يتم العثور على خوادم MCP",
+  "args": "الحجج",
+  "env": "البيئة",
+  "serverStatusActive": "تم تفعيل السيرفر {{serverKey}} بنجاح",
+  "serverStatusInactive": "تم إلغاء تفعيل السيرفر {{serverKey}} بنجاح",
+  "runtimeSettings": {
+    "title": "إعدادات وقت التشغيل",
+    "description": "قم بتكوين كيفية إدارة Jan لخوادم MCP وإعادة تجربتها.",
+    "toolCallTimeout": "مهلة استدعاء الأداة (بالثواني)",
+    "toolCallTimeoutDesc": "الحد الأقصى للوقت لانتظار استجابة الأداة MCP قبل انتهاء المهلة.",
+    "maxToolOutputChars": "الحد الأقصى لعدد أحرف إخراج الأداة",
+    "maxToolOutputCharsDesc": "أطول نتيجة للأداة تم الاحتفاظ بها في المحادثة. يتم قطع أي شيء يتجاوز ذلك ووضع علامة عليه على أنه مقطوع، لذا لا يمكن لنتيجة واحدة كبيرة أن تستنفد سياق النموذج. اضبط على 0 للحفاظ على النتائج كاملة.",
+    "smartToolRouting": "توجيه أداة MCP الذكية",
+    "smartToolRoutingDesc": "عند التمكين، يقوم Jan بتحديد خوادم MCP ذات الصلة قبل تحميل الأدوات. تعطيل لتحميل قائمة الأدوات MCP الكاملة دائمًا.",
+    "useLightweightRouterModel": "استخدم نموذجًا مخصصًا للتوجيه",
+    "useLightweightRouterModelDesc": "عند تشغيل التوجيه الذكي، قم بتشغيل خطوة التوجيه باستخدام نموذج منفصل (أصغر غالبًا) بدلاً من نموذج الدردشة. قم بإيقاف التشغيل لاستخدام نموذج الدردشة النشطة دائمًا للتوجيه.",
+    "routerModel": "نموذج التوجيه",
+    "routerModelDesc": "اختر المزود والطراز في مكان واحد. تم إدراج الطرازات خفيفة الوزن فقط بحيث يظل التوجيه سريعًا ورخيصًا.",
+    "selectRouterModelPlaceholder": "حدد نموذج التوجيه...",
+    "routerModelSearchPlaceholder": "نماذج البحث...",
+    "routerModelEmptyList": "لا توجد نماذج خفيفة الوزن متاحة. أضف نموذجًا أصغر أو قم بتكوين مفاتيح API في النماذج.",
+    "routerModelEmptySearch": "لا توجد نتائج مطابقة لـ \"{{query}}\"."
+  },
+  "auth": {
+    "label": "المصادقة:",
+    "state": {
+      "notApplicable": "غير مطلوب",
+      "staticHeader": "رأس التفويض",
+      "authenticated": "مصادق عليه",
+      "expired": "انتهت صلاحيتها",
+      "staleResource": "صدر لآخر URL",
+      "unauthenticated": "غير مصادق عليه"
+    },
+    "expiresIn": "تنتهي في {{duration}}",
+    "authenticate": "تسجيل الدخول",
+    "reauthenticate": "إعادة المصادقة",
+    "clear": "مصادقة واضحة",
+    "waiting": "في انتظار المتصفح...",
+    "openSignInPage": "افتح صفحة تسجيل الدخول",
+    "needsAuth": "{{serverName}} يحتاج إلى مصادقة",
+    "needsAuthHint": "قم بتسجيل الدخول إلى هذا الخادم للاتصال.",
+    "authorized": "تم تسجيل الدخول إلى {{serverName}}",
+    "authorizeFailed": "فشل تسجيل الدخول بمبلغ {{serverName}}",
+    "cleared": "مسح بيانات الاعتماد المخزنة لـ {{serverName}}",
+    "nothingToClear": "{{serverName}} ليس لديه بيانات اعتماد مخزنة",
+    "clearFailed": "تعذر مسح بيانات الاعتماد لـ {{serverName}}",
+    "renew": "تجديد الجلسة",
+    "expiredAgo": "انتهت صلاحيتها منذ {{duration}}"
+  }
+}
