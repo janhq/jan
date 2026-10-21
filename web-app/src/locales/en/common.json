@@ -356,7 +356,11 @@
       "nMin": "Min draft tokens",
       "nMinDescription": "Minimum number of tokens to draft per step. Default 0.",
       "pMin": "Min draft probability",
-      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75."
+      "pMinDescription": "Minimum probability for greedy drafting (0–1). Default 0.75.",
+      "probabilistic": "Probabilistic draft sampling",
+      "probabilisticDescription": "Sample the draft instead of taking its most likely token, and have the model verify it by rejection sampling. Off uses greedy drafting (the default).",
+      "nUbatch": "Draft batch size",
+      "nUbatchDescription": "Physical batch size of the draft context. Lower it to save VRAM. 0 uses the model's batch size (the default)."
     },
     "templateKwargs": {
       "section": "Chat template options",

@@ -127,6 +127,7 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  'ubatch_size',
  'n_cpu_moe',
  'n_cpu_ffn',
+ 'moe_cache_mib',
  'no_kv_offload',
  'device',
  'split_mode',
@@ -2667,6 +2668,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
  }> {
   const path = await joinPath([
    await this.getProviderPath(),
@@ -2683,6 +2686,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    spec_draft_n_max?: number
    spec_draft_n_min?: number
    spec_draft_p_min?: number
+   spec_draft_sampling?: string
+   spec_draft_n_ubatch?: number
   }
   return {
    mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
@@ -2690,6 +2695,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    spec_draft_n_max: cfg.spec_draft_n_max,
    spec_draft_n_min: cfg.spec_draft_n_min,
    spec_draft_p_min: cfg.spec_draft_p_min,
+   spec_draft_sampling: cfg.spec_draft_sampling,
+   spec_draft_n_ubatch: cfg.spec_draft_n_ubatch,
   }
  }
 
@@ -2700,6 +2707,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    spec_draft_n_max?: number | null
    spec_draft_n_min?: number | null
    spec_draft_p_min?: number | null
+   spec_draft_sampling?: string | null
+   spec_draft_n_ubatch?: number | null
   }
  ): Promise<void> {
   const configPath = await joinPath([
@@ -2716,11 +2725,17 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    spec_draft_n_max?: number
    spec_draft_n_min?: number
    spec_draft_p_min?: number
+   spec_draft_sampling?: string
+   spec_draft_n_ubatch?: number
   }
 
   if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
   const assignNumeric = (
-   key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+   key:
+    | 'spec_draft_n_max'
+    | 'spec_draft_n_min'
+    | 'spec_draft_p_min'
+    | 'spec_draft_n_ubatch',
    value: number | null | undefined
   ) => {
    if (value === null) {
@@ -2732,6 +2747,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
   if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
   if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
+  if ('spec_draft_n_ubatch' in patch)
+   assignNumeric('spec_draft_n_ubatch', patch.spec_draft_n_ubatch)
+  if (patch.spec_draft_sampling === null) {
+   delete cfg.spec_draft_sampling
+  } else if (typeof patch.spec_draft_sampling === 'string') {
+   cfg.spec_draft_sampling = patch.spec_draft_sampling
+  }
 
   await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 

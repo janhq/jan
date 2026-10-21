@@ -277,6 +277,62 @@ describe('generatePreset 0.4.0 keys', () => {
 
 // A slot of a hybrid model with speculative decoding holds (1 + n_max) rows
 // of recurrent state, so auto's 4 slots overflowed a 12 GB card in 0.8.5.
+describe('generatePreset 0.7.0 keys', () => {
+  it('emits moe-cache-mib when set, and omits it at 0', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { moe_cache_mib: 4096 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('moe-cache-mib = 4096')
+
+    await generatePreset('/p', '/jan', { moe_cache_mib: 0 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
+
+  it('emits the draft sampling mode and ubatch with speculative decoding', async () => {
+    setupModel('glm', {
+      mtp: true,
+      mtp_layers: 1,
+      spec_draft_sampling: 'probabilistic',
+      spec_draft_n_ubatch: 128,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-draft-sampling = probabilistic')
+    expect(ini).toContain('spec-draft-n-ubatch = 128')
+  })
+
+  // greedy and 0 (follow ubatch-size) are upstream's defaults.
+  it('omits the draft keys at their defaults or when an unknown mode is recorded', async () => {
+    setupModel('glm', {
+      mtp: true,
+      mtp_layers: 1,
+      spec_draft_sampling: 'greedy',
+      spec_draft_n_ubatch: 0,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    let ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+    expect(ini).not.toContain('spec-draft-n-ubatch')
+
+    setupModel('glm', { mtp: true, mtp_layers: 1, spec_draft_sampling: 'bogus' })
+    await generatePreset('/p', '/jan', CONFIG)
+    ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+  })
+
+  it('omits the draft keys when speculative decoding is off', async () => {
+    setupModel('glm', {
+      mtp: false,
+      mtp_layers: 1,
+      spec_draft_sampling: 'probabilistic',
+      spec_draft_n_ubatch: 128,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+    expect(ini).not.toContain('spec-draft-n-ubatch')
+  })
+})
+
 describe('generatePreset parallel with speculative decoding', () => {
   const section = (ini: string, id: string) =>
     ini.split(`[${id}]`)[1].split('load-on-startup')[0]

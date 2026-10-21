@@ -47,6 +47,8 @@ type ModelYaml = ModelConfig & {
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
   n_cpu_ffn?: number
@@ -109,6 +111,13 @@ const SPEC_TYPES = new Set([
   'draft-dspark',
 ])
 const DEFAULT_SPEC_TYPE = 'draft-mtp'
+
+/**
+ * The non-default `--spec-draft-sampling` mode (common/arg.cpp, added in
+ * 0.7.0). `greedy` is upstream's default and is never written, so a model
+ * keeps tracking it.
+ */
+const NON_DEFAULT_DRAFT_SAMPLING = 'probabilistic'
 
 /**
  * A built-in template name (`chatml`, `llama3`, ...) as opposed to a template
@@ -350,10 +359,19 @@ export async function generatePreset(
   ) {
     lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
   }
+  // moe-cache-mib default = 0 (off). A GPU cache for the MoE experts that
+  // n-cpu-moe keeps in host memory, added in 0.7.0; inert without them.
+  if (
+    typeof config.moe_cache_mib === 'number' &&
+    Number.isFinite(config.moe_cache_mib) &&
+    config.moe_cache_mib > 0
+  ) {
+    lines.push(`moe-cache-mib = ${Math.floor(config.moe_cache_mib)}`)
+  }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
   // to match llama.cpp's own flag and the existing no_mmap setting.
   // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
-  // half of the kv-offload pair (arg.cpp:2403-2410) and inverts it, so `true`
+  // half of the kv-offload pair (arg.cpp:2417-2424) and inverts it, so `true`
   // here does disable offloading.
   if (config.no_kv_offload === true) {
     lines.push('no-kv-offload = true')
@@ -722,6 +740,19 @@ export async function generatePreset(
         mc.spec_draft_p_min <= 1
       ) {
         lines.push(`spec-draft-p-min = ${mc.spec_draft_p_min}`)
+      }
+      // Both added in 0.7.0. Upstream throws on an unknown sampling mode or a
+      // negative ubatch, which would abort the load, so anything else is
+      // dropped; 0 means "same as ubatch-size".
+      if (mc.spec_draft_sampling === NON_DEFAULT_DRAFT_SAMPLING) {
+        lines.push(`spec-draft-sampling = ${NON_DEFAULT_DRAFT_SAMPLING}`)
+      }
+      if (
+        typeof mc.spec_draft_n_ubatch === 'number' &&
+        Number.isFinite(mc.spec_draft_n_ubatch) &&
+        mc.spec_draft_n_ubatch > 0
+      ) {
+        lines.push(`spec-draft-n-ubatch = ${Math.floor(mc.spec_draft_n_ubatch)}`)
       }
     }
 

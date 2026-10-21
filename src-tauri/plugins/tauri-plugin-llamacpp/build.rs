@@ -13,10 +13,10 @@
 // vendor/llama.cpp and with engine::PINNED_* on the Rust side; the shim
 // re-exports llama_version()/llama_build_number() so a mismatch is caught at
 // runtime instead of producing a silently wrong engine.
-pub const LLAMA_CPP_TAG: &str = "b11146";
-pub const LLAMA_CPP_BUILD_NUMBER: u32 = 11146;
-pub const LLAMA_CPP_COMMIT: &str = "7fe450e19305b828c199d602c23a8337aaa1f03b";
-pub const LLAMA_CPP_VERSION: &str = "0.5.0";
+pub const LLAMA_CPP_TAG: &str = "b11669";
+pub const LLAMA_CPP_BUILD_NUMBER: u32 = 11669;
+pub const LLAMA_CPP_COMMIT: &str = "620d2225cc436ab0b001e3200e590e3b286ef9ab";
+pub const LLAMA_CPP_VERSION: &str = "0.7.0";
 
 const COMMANDS: &[&str] = &[
     // Cleanup command
@@ -400,7 +400,7 @@ mod engine {
     ///
     /// Separate from stage 2 because `GGML_CPU_ALL_VARIANTS` requires
     /// `GGML_BACKEND_DL`, which requires `BUILD_SHARED_LIBS`
-    /// (ggml/src/CMakeLists.txt:188-190 and :485-487, both hard errors) --
+    /// (ggml/src/CMakeLists.txt:188-190 and :490-492, both hard errors) --
     /// while we still want a *static* libllama/libcommon/server-context. Two
     /// configures is the only way to have both.
     ///
@@ -556,7 +556,7 @@ mod engine {
         } else if feature_enabled("engine-cuda")
             && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
         {
-            // A foreign JAN_LLAMA_CPP_DIR tree is not the b11146 the list was
+            // A foreign JAN_LLAMA_CPP_DIR tree is not the b11669 the list was
             // copied from, so only the vendored pin is held to it.
             if env::var_os("JAN_LLAMA_CPP_DIR").is_none() {
                 check_upstream_cuda_archs(src);
@@ -624,7 +624,7 @@ mod engine {
         if feature_enabled("engine-cuda") {
             // NCCL is multi-GPU collective communication for distributed
             // inference. It is found opportunistically and defaults ON
-            // (ggml/CMakeLists.txt:210), which would make the shipped
+            // (ggml/CMakeLists.txt:211), which would make the shipped
             // ggml-cuda module depend on whatever libnccl the build host
             // happened to have.
             cfg.arg("-DGGML_CUDA_NCCL=OFF");
@@ -667,7 +667,7 @@ mod engine {
             // follow this flag.
             "-DBUILD_SHARED_LIBS=OFF",
             // Use stage 1's ggml instead of building a second, static one
-            // (CMakeLists.txt:204-208 -> find_package(ggml REQUIRED)).
+            // (CMakeLists.txt:214-216 -> find_package(ggml REQUIRED)).
             "-DLLAMA_USE_SYSTEM_GGML=ON",
             "-DLLAMA_BUILD_TESTS=OFF",
             "-DLLAMA_BUILD_EXAMPLES=OFF",
@@ -928,7 +928,7 @@ mod engine {
         words
     }
 
-    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b11146,
+    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b11669,
     /// with 75-virtual changed to 75-real (see the call site).
     /// check_upstream_cuda_archs fails the build if a tag bump changes it.
     fn default_cuda_archs(v: (u32, u32)) -> String {
@@ -988,7 +988,7 @@ mod engine {
         assert!(
             upstream == ours,
             "{} names CUDA archs {upstream:?}, but default_cuda_archs (copied from \
-             b11146) covers {ours:?}. Update default_cuda_archs to the new list, \
+             b11669) covers {ours:?}. Update default_cuda_archs to the new list, \
              keeping 75 as -real (#9185), or set JAN_ENGINE_CUDA_ARCHS.",
             cml.display()
         );
@@ -1003,7 +1003,7 @@ mod engine {
     }
 
     /// `GGML_CPU_ALL_VARIANTS` hard-errors on architectures it has no variant
-    /// table for (ggml/src/CMakeLists.txt:581), so it is opt-in per arch rather
+    /// table for (ggml/src/CMakeLists.txt:593), so it is opt-in per arch rather
     /// than unconditional.
     ///
     /// The table is keyed on (arch, OS), not arch alone: the ARM branch covers

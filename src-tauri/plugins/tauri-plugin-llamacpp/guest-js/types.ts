@@ -36,9 +36,9 @@ export interface EngineInfo {
 
 /** Mirrors `engine::commands::EngineVersion`. */
 export interface EngineVersion {
-  /** llama.cpp's own version, e.g. "0.5.0". */
+  /** llama.cpp's own version, e.g. "0.7.0". */
   version: string
-  /** Upstream build tag the source was taken from, e.g. "b11146". */
+  /** Upstream build tag the source was taken from, e.g. "b11669". */
   tag: string
   /** The tag's build number, as a string. */
   build_number: string
@@ -96,6 +96,8 @@ export type LlamacppConfig = {
   ubatch_size: number
   n_cpu_moe: number
   n_cpu_ffn: number
+  /** GPU cache in MiB for the MoE experts kept on the CPU. 0 = off. */
+  moe_cache_mib: number
   no_kv_offload: boolean
   device: string
   split_mode: string
