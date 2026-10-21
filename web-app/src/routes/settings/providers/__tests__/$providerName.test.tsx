@@ -63,9 +63,33 @@ const h = vi.hoisted(() => {
     ],
   }
 
+  const litertProvider: any = {
+    provider: 'litert-lm',
+    active: true,
+    models: [
+      {
+        id: 'qwen3-0.6b',
+        model: 'qwen3-0.6b',
+        name: 'Qwen3 0.6B',
+        capabilities: [],
+        settings: {},
+      },
+    ],
+    settings: [
+      {
+        key: 'ctx_size',
+        title: 'Context Size',
+        description: 'context window',
+        controller_type: 'input',
+        controller_props: { value: '4096' },
+      },
+    ],
+  }
+
   const providerMap: Record<string, any> = {
     openai: openaiProvider,
     llamacpp: llamacppProvider,
+    'litert-lm': litertProvider,
   }
 
   const updateProvider = vi.fn()
@@ -126,6 +150,7 @@ const h = vi.hoisted(() => {
     toastInfo,
     openaiProvider,
     llamacppProvider,
+    litertProvider,
     providerMap,
     modelProviderStore,
     updateProvider,
@@ -226,6 +251,16 @@ vi.mock('@/containers/dialogs/ImportMlxModelDialog', () => ({
 
 vi.mock('@/containers/ModelSetting', () => ({
   ModelSetting: () => <div data-testid="model-setting" />,
+}))
+
+vi.mock('@/containers/LocalEngineRuntimeBanner', () => ({
+  LocalEngineRuntimeBanner: () => <div data-testid="runtime-banner" />,
+}))
+
+vi.mock('@/containers/dialogs/ImportLocalEngineModelDialog', () => ({
+  ImportLocalEngineModelDialog: ({ trigger }: any) => (
+    <div data-testid="import-local-engine">{trigger}</div>
+  ),
 }))
 
 vi.mock('@/containers/dialogs/DeleteModel', () => ({
@@ -464,6 +499,14 @@ describe('ProviderDetail route', () => {
   })
 
   describe('API key management', () => {
+    it('hides the API key card for local engines', () => {
+      h.params.providerName = 'litert-lm'
+      renderComponent()
+      expect(
+        screen.queryByPlaceholderText('providers:apiKeys.primaryPlaceholder')
+      ).not.toBeInTheDocument()
+    })
+
     it('seeds the primary key input from api_key', () => {
       renderComponent()
       const primary = screen.getByPlaceholderText('providers:apiKeys.primaryPlaceholder') as HTMLInputElement

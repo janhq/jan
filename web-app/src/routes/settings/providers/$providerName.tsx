@@ -15,6 +15,7 @@ import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ImportLocalEngineModelDialog } from '@/containers/dialogs/ImportLocalEngineModelDialog'
 import { LocalEngineRuntimeBanner } from '@/containers/LocalEngineRuntimeBanner'
 import {
+  isLocalEngineId,
   isManagedCpuEngine,
   MANAGED_CPU_ENGINES,
 } from '@/lib/localProviders'
@@ -822,9 +823,9 @@ function ProviderDetail() {
               </Card>
               )}
 
-              {provider &&
-                provider.provider !== 'llamacpp' &&
-                provider.provider !== 'mlx' && (
+              {/* Local engines have no remote credential: their sidecar key is
+                  generated per session and never entered here. */}
+              {provider && !isLocalEngineId(provider.provider) && (
                   <Card>
                     {provider.provider === 'azure' && (
                       <div className="space-y-2 mb-4">
