@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "รหัส",
+    "preview": "ดูตัวอย่าง",
+    "previewStreaming": "ใช้ได้เมื่อการสร้างเสร็จสิ้น",
+    "unresolvedAssets_one": "โหลดการอ้างอิงเนื้อหา 1 รายการในหน้าตัวอย่างไม่ได้ เส้นทางสัมพัทธ์ไม่มีฐาน URL ที่ต้องแก้ไข",
+    "unresolvedAssets_other": "ไม่สามารถโหลดการอ้างอิงเนื้อหา {{count}} ในหน้าตัวอย่างได้ เส้นทางสัมพัทธ์ไม่มีฐาน URL ที่จะแก้ไข"
+  },
+  "assistants": "ผู้ช่วย",
+  "hardware": "ฮาร์ดแวร์",
+  "mcp-servers": "MCP เซิร์ฟเวอร์",
+  "local_api_server": "เซิร์ฟเวอร์ท้องถิ่น API",
+  "remote_access": "การเข้าถึงระยะไกล",
+  "integrations": "บูรณาการ",
+  "experimental": "การทดลอง",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS พร็อกซี",
+  "web_search": "ค้นหาเว็บ",
+  "shell": "เชลล์",
+  "browse": "เรียกดู",
+  "moreControls": "การควบคุมเพิ่มเติม",
+  "starting": "กำลังเริ่ม...",
+  "activeSuffix": "(ใช้งานอยู่)",
+  "extensions": "ส่วนขยาย",
+  "attachments": "ไฟล์แนบ",
+  "general": "ทั่วไป",
+  "settings": "การตั้งค่า",
+  "modelProviders": "ผู้ให้บริการโมเดล",
+  "localProviders": "ท้องถิ่น",
+  "remoteProviders": "ระยะไกล",
+  "manageProviders": "จัดการผู้ให้บริการ",
+  "hiddenProviders": "{{count}} ปิดการใช้งาน",
+  "hideProvider": "ซ่อนผู้ให้บริการ",
+  "showProvider": "แสดงผู้ให้บริการ",
+  "interface": "อินเทอร์เฟซ",
+  "appearance": "ลักษณะที่ปรากฏ",
+  "privacy": "ความเป็นส่วนตัว",
+  "keyboardShortcuts": "ทางลัด",
+  "home": "บ้าน",
+  "cowork": "Cowork",
+  "newSession": "เซสชันใหม่",
+  "artifacts": "สิ่งประดิษฐ์",
+  "customize": "ปรับแต่ง",
+  "local": "ท้องถิ่น",
+  "selectFolder": "เลือกโฟลเดอร์",
+  "selectModel": "เลือกรุ่นก่อน",
+  "commands": "คำสั่ง",
+  "cmdHelp": "แสดงรายการคำสั่งที่ใช้ได้",
+  "cmdClear": "ล้างเซสชันนี้",
+  "cmdModels": "สลับรุ่นที่ใช้งานอยู่",
+  "cmdModelsHint": "พิมพ์ /models แล้วเลือกโมเดลจากรายการ",
+  "cmdModelSwitched": "เปลี่ยนเป็น {{name}}",
+  "cmdUnknown": "ไม่รู้จักคำสั่ง: {{name}} ลองใช้ /help",
+  "cmdBusy": "ไม่สามารถทำได้ในขณะที่ตัวแทนกำลังทำงานอยู่",
+  "cmdCompact": "กระชับบริบทของเซสชันให้เป็นบทสรุป",
+  "cmdCompacted": "กระชับข้อความ {{before}} -> {{after}}",
+  "cmdNothingToCompact": "ยังไม่มีสิ่งใดที่จะกระชับ",
+  "cmdCompactFailed": "การบดอัดล้มเหลว: {{error}}",
+  "cmdPlan": "สลับโหมดแผน (อ่านอย่างเดียว: ตัวแทนเสนอโดยไม่ต้องเขียน)",
+  "cmdPlanOn": "เปิดโหมดแผน: เจ้าหน้าที่อ่านและเสนอโดยไม่ต้องเขียน",
+  "cmdPlanOff": "ปิดโหมดแผน: การดำเนินการตามปกติ",
+  "cmdTodo": "เปิดแผงความคืบหน้า",
+  "cmdTasks": "เปิดแผงงานพื้นหลัง",
+  "cmdInit": "ศึกษาโครงงานและเขียนทักษะและความจำ",
+  "cmdInitRunning": "การเริ่มต้นใช้งานโปรเจ็กต์นี้",
+  "skills": "ทักษะ",
+  "skillsInContext": "ทักษะที่มีให้กับตัวแทนรันครั้งนี้",
+  "skillsTitle": "จัดการทักษะ",
+  "skillsScopeProject": "ทักษะสำหรับ {{folder}}",
+  "skillsScopeGlobal": "ทักษะระดับสากลพร้อมสำหรับทุกเซสชั่น",
+  "skillsScopeMerged": "ทักษะราคา {{folder}} บวกกับทักษะระดับโลกที่ทุกเซสชั่นแชร์",
+  "skillOriginFolder": "โฟลเดอร์",
+  "skillOriginGlobal": "ทั่วโลก",
+  "skillsEmpty": "ยังไม่มีทักษะเลย",
+  "skillsPickOrNew": "เลือกทักษะที่จะแก้ไขหรือสร้างทักษะใหม่",
+  "skillNew": "ทักษะใหม่",
+  "skillDelete": "ลบทักษะ",
+  "skillSave": "บันทึก",
+  "skillSaved": "บันทึกทักษะแล้ว",
+  "skillNameRequired": "ต้องระบุชื่อทักษะ",
+  "skillNamePlaceholder": "ชื่อทักษะ",
+  "skillContentPlaceholder": "อธิบายขั้นตอนการใช้ซ้ำใน Markdown...",
+  "skillHubImport": "นำเข้าจากฮับ",
+  "skillHubTitle": "Anthropic ศูนย์ทักษะ",
+  "skillHubEmpty": "ไม่พบทักษะบนฮับ",
+  "skillImport": "นำเข้า",
+  "skillReimport": "นำเข้าอีกครั้ง",
+  "skillImported": "นำเข้า {{name}}",
+  "sessions": "เซสชัน",
+  "deleteSession": "ลบเซสชัน",
+  "deleteSessionTitle": "ลบเซสชันใช่ไหม",
+  "deleteSessionBody": "\"{{title}}\" และข้อความถอดเสียงจะถูกลบอย่างถาวร การดำเนินการนี้ไม่สามารถยกเลิกได้",
+  "newChat": "แชทใหม่",
+  "newAgentChat": "แชทตัวแทนใหม่",
+  "chats": "แชท",
+  "favorites": "รายการโปรด",
+  "recents": "ล่าสุด",
+  "hub": "ฮับ",
+  "helpSupport": "ช่วยเหลือและสนับสนุน",
+  "helpUsImproveJan": "ช่วยเราปรับปรุง Jan",
+  "analyticsConsentDetail": "เรารวบรวมข้อมูลที่ไม่เปิดเผยตัวตนเพื่อทำความเข้าใจการใช้งานฟีเจอร์ การแชทและข้อมูลส่วนบุคคลของคุณจะไม่ถูกติดตาม คุณสามารถเปลี่ยนแปลงได้ตลอดเวลาในการตั้งค่า > ความเป็นส่วนตัว",
+  "analyticsConsentQuestion": "คุณต้องการช่วยเราปรับปรุง Jan หรือไม่?",
+  "unstarAll": "เลิกติดดาวทั้งหมด",
+  "unstar": "ยกเลิกการติดดาว",
+  "deleteAll": "ลบทั้งหมด",
+  "star": "ดาว",
+  "rename": "เปลี่ยนชื่อ",
+  "delete": "ลบ",
+  "copied": "คัดลอก!",
+  "dataFolder": "โฟลเดอร์ข้อมูล",
+  "others": "อื่นๆ",
+  "language": "ภาษา",
+  "login": "เข้าสู่ระบบ",
+  "loginWith": "เข้าสู่ระบบด้วย {{provider}}",
+  "loginFailed": "ไม่สามารถเข้าสู่ระบบได้",
+  "logout": "ออกจากระบบ",
+  "loggingOut": "กำลังออกจากระบบ...",
+  "loggedOut": "ออกจากระบบเรียบร้อยแล้ว",
+  "logoutFailed": "ไม่สามารถออกจากระบบได้",
+  "profile": "โปรไฟล์",
+  "reset": "รีเซ็ต",
+  "search": "ค้นหา",
+  "searchThreads": "ค้นหากระทู้...",
+  "toNavigate": "เพื่อนำทาง",
+  "toSelect": "เพื่อเลือก",
+  "toClose": "เพื่อปิด",
+  "clearRecent": "ชัดเจน",
+  "name": "ชื่อ",
+  "cancel": "ยกเลิก",
+  "dismiss": "ยกเลิก",
+  "create": "สร้าง",
+  "save": "บันทึก",
+  "edit": "แก้ไข",
+  "copy": "คัดลอก",
+  "back": "ย้อนกลับ",
+  "close": "ปิด",
+  "done": "เสร็จแล้ว",
+  "next": "ถัดไป",
+  "finish": "เสร็จสิ้น",
+  "skip": "ข้าม",
+  "allow": "อนุญาต",
+  "deny": "ปฏิเสธ",
+  "start": "เริ่ม",
+  "stop": "หยุด",
+  "preview": {
+    "loading": "กำลังเปิด...",
+    "unsupported": "Jan ไม่สามารถแสดงไฟล์ประเภทนี้ได้ เปิดเพื่อดูในแอปอื่น",
+    "outside": "ไฟล์นี้ไม่อยู่ในพื้นที่ทำงานของเซสชันอีกต่อไป",
+    "tooLarge": "ใหญ่เกินกว่าจะดูตัวอย่างได้ เปิดเพื่อดูในแอปอื่น",
+    "reload": "โหลดซ้ำ",
+    "allowNetwork": "อนุญาตเครือข่าย",
+    "unsandboxed": "เรียกใช้นอกแซนด์บ็อกซ์: ข้อมูลที่บันทึกไว้และไฟล์ในเครื่องใช้งานได้",
+    "unresolvedRefs_one": "โหลด 1 ไฟล์ที่หน้านี้ลิงก์ไปไม่ได้ในหน้าตัวอย่าง เปิดเพื่อดูในเบราว์เซอร์",
+    "unresolvedRefs_other": "ไม่สามารถโหลดไฟล์ {{count}} ที่หน้านี้ลิงก์ไปในหน้าตัวอย่าง เปิดเพื่อดูในเบราว์เซอร์",
+    "externalRefs_one": "ทรัพยากร 1 รายการที่หน้านี้โหลดจากเว็บถูกบล็อก เปิด \"อนุญาตเครือข่าย\" เพื่อโหลด",
+    "externalRefs_other": "ทรัพยากร {{count}} ที่หน้านี้โหลดจากเว็บถูกบล็อก เปิด \"อนุญาตเครือข่าย\" เพื่อโหลด",
+    "scriptErrors_one": "หน้านี้รายงานข้อผิดพลาด: {{message}}",
+    "scriptErrors_other": "หน้านี้รายงานข้อผิดพลาด {{count}} อันแรก: {{message}}"
+  },
+  "changes": {
+    "title": "การเปลี่ยนแปลงตัวแทน",
+    "empty": "ไฟล์ที่ตัวแทนเขียนหรือแก้ไขจะแสดงที่นี่",
+    "a11y": "การเปลี่ยนแปลงตัวแทน: {{files}} ไฟล์, {{additions}} เพิ่ม, {{deletions}} ถูกลบออก"
+  },
+  "modelPanel": {
+    "title": "การตั้งค่าโมเดล",
+    "a11y": "เปิดการตั้งค่าโมเดล",
+    "contextTooltip": "หน้าต่างบริบท: โทเค็น {{value}} จาก {{max}}"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "ทักษะ '{{name}}' ไม่สามารถใช้งานได้",
+    "kind": {
+      "skill": "ทักษะ",
+      "command": "Command",
+      "model": "โมเดล"
+    }
+  },
+  "compactWidth": "ความกว้างกะทัดรัด",
+  "fullWidth": "ความกว้างเต็ม",
+  "dark": "มืด",
+  "light": "เบา",
+  "system": "ระบบ",
+  "auto": "อัตโนมัติ",
+  "english": "อังกฤษ",
+  "medium": "ปานกลาง",
+  "newThread": "กระทู้ใหม่",
+  "noResultsFound": "ไม่พบผลลัพธ์",
+  "noThreadsYet": "ยังไม่มีกระทู้",
+  "noThreadsYetDesc": "เริ่มการสนทนาใหม่เพื่อดูประวัติกระทู้ของคุณที่นี่",
+  "downloads": "ดาวน์โหลด",
+  "downloading": "กำลังดาวน์โหลด",
+  "uploadingAttachments": "กำลังอัปโหลดไฟล์แนบ...",
+  "cancelDownload": "ยกเลิกการดาวน์โหลด",
+  "downloadCancelled": "ดาวน์โหลดถูกยกเลิก",
+  "downloadComplete": "ดาวน์โหลดเสร็จสมบูรณ์",
+  "thinking": "กำลังคิด...",
+  "thought": "คิด",
+  "callingTool": "เครื่องมือการโทร",
+  "completed": "เสร็จสิ้น",
+  "image": "รูปภาพ",
+  "vision": "วิสัยทัศน์",
+  "multimodal": "ต่อเนื่องหลายรูปแบบ",
+  "embeddings": "การฝัง",
+  "tools": "เครื่องมือ",
+  "webSearch": "ค้นหาเว็บ",
+  "reasoning": "การใช้เหตุผล",
+  "proactive": "เชิงรุก",
+  "selectAModel": "เลือกรุ่น",
+  "noToolsAvailable": "ไม่มีเครื่องมือให้ใช้งาน",
+  "noModelsFoundFor": "ไม่พบรุ่นสำหรับ \"{{searchValue}}\"",
+  "failedToLoadModels": "โหลดโมเดลไม่สำเร็จ",
+  "noModels": "ไม่พบรุ่น",
+  "noAssistant": "ไม่มีผู้ช่วย",
+  "customAvatar": "อวตารที่กำหนดเอง",
+  "editAssistant": "แก้ไขผู้ช่วย",
+  "jan": "Jan",
+  "metadata": "ข้อมูลเมตา",
+  "regenerate": "สร้างใหม่",
+  "threadImage": "ภาพกระทู้",
+  "editMessage": "แก้ไขข้อความ",
+  "deleteMessage": "ลบข้อความ",
+  "deleteThread": "ลบกระทู้",
+  "renameThread": "เปลี่ยนชื่อกระทู้",
+  "threadTitle": "ชื่อกระทู้",
+  "deleteAllThreads": "ลบกระทู้ทั้งหมด",
+  "allThreadsUnfavorited": "กระทู้ทั้งหมดไม่เป็นที่ชื่นชอบ",
+  "deleteAllThreadsConfirm": "คุณแน่ใจหรือไม่ว่าต้องการลบกระทู้ทั้งหมด? การดำเนินการนี้ไม่สามารถยกเลิกได้",
+  "addProvider": "เพิ่มผู้ให้บริการ",
+  "addOpenAIProvider": "เพิ่มผู้ให้บริการ OpenAI",
+  "enterNameForProvider": "ป้อนชื่อผู้ให้บริการของคุณ",
+  "providerAlreadyExists": "มีผู้ให้บริการชื่อ \"{{name}}\" อยู่แล้ว โปรดเลือกชื่ออื่น",
+  "adjustFontSize": "ปรับขนาดตัวอักษร",
+  "changeLanguage": "เปลี่ยนภาษา",
+  "editTheme": "แก้ไขธีม",
+  "editCodeBlockStyle": "แก้ไขสไตล์บล็อกโค้ด",
+  "editServerHost": "แก้ไขโฮสต์เซิร์ฟเวอร์",
+  "pickColorWindowBackground": "เลือกพื้นหลังหน้าต่างสี",
+  "pickColorAppMainView": "เลือกมุมมองหลักของแอปสี",
+  "pickColorAppPrimary": "เลือกแอปสีหลัก",
+  "pickColorAppAccent": "เลือกสำเนียงแอปสี",
+  "pickColorAppDestructive": "เลือกสีแอปทำลายล้าง",
+  "apiKeyRequired": "API จำเป็นต้องระบุรหัส",
+  "enterTrustedHosts": "ป้อนโฮสต์ที่เชื่อถือได้",
+  "placeholder": {
+    "chatInput": "ถามอะไรหน่อยสิ..."
+  },
+  "confirm": "ยืนยัน",
+  "continue": "ดำเนินการต่อ",
+  "loading": "กำลังโหลด...",
+  "settingUpJan": "กำลังบูตเครื่อง Jan…",
+  "registeringExtensions": "กำลังลงทะเบียนส่วนขยาย...",
+  "loadingExtensions": "กำลังโหลดส่วนขยาย… ({{done}}/{{total}})",
+  "error": "ข้อผิดพลาด",
+  "success": "ความสำเร็จ",
+  "warning": "คำเตือน",
+  "conversationNotAvailable": "ไม่สามารถสนทนาได้",
+  "conversationNotAvailableDescription": "การสนทนาที่คุณพยายามเข้าถึงไม่พร้อมใช้งานหรือถูกลบไปแล้ว",
+  "temporaryChat": "แชทชั่วคราว",
+  "temporaryChatTooltip": "การแชทชั่วคราวจะไม่ปรากฏในประวัติของคุณ",
+  "noResultsFoundDesc": "เราไม่พบการแชทที่ตรงกับการค้นหาของคุณ ลองใช้คำหลักอื่น",
+  "searchModels": "ค้นหารุ่น...",
+  "searchStyles": "รูปแบบการค้นหา...",
+  "createAssistant": "สร้างผู้ช่วย",
+  "enterApiKey": "ป้อน API คีย์",
+  "scrollToBottom": "เลื่อนไปที่ด้านล่าง",
+  "generateAiResponse": "สร้างการตอบสนองของ AI",
+  "continueAiResponse": "ดำเนินการต่อด้วยการตอบสนองของ AI",
+  "addModel": {
+    "title": "เพิ่มรุ่น",
+    "modelId": "รหัสรุ่น",
+    "enterModelId": "ป้อนรหัสรุ่น",
+    "addModel": "เพิ่มรุ่น",
+    "description": "เพิ่มโมเดลใหม่ให้กับผู้ให้บริการ",
+    "exploreModels": "ดูรายการรุ่นจากผู้ให้บริการ"
+  },
+  "mcpServers": {
+    "editServer": "แก้ไขเซิร์ฟเวอร์",
+    "addServer": "เพิ่มเซิร์ฟเวอร์",
+    "serverName": "ชื่อเซิร์ฟเวอร์",
+    "enterServerName": "ป้อนชื่อเซิร์ฟเวอร์",
+    "command": "Command",
+    "enterCommand": "ป้อนคำสั่ง",
+    "arguments": "ข้อโต้แย้ง",
+    "argument": "อาร์กิวเมนต์ {{index}}",
+    "envVars": "ตัวแปรสภาพแวดล้อม",
+    "key": "คีย์",
+    "value": "ความคุ้มค่า",
+    "save": "บันทึก"
+  },
+  "deleteServer": {
+    "title": "ลบเซิร์ฟเวอร์",
+    "delete": "ลบ"
+  },
+  "editJson": {
+    "errorParse": "ไม่สามารถแยกวิเคราะห์ JSON",
+    "errorPaste": "ไม่สามารถวาง JSON",
+    "errorFormat": "รูปแบบ JSON ไม่ถูกต้อง",
+    "titleAll": "แก้ไขการกำหนดค่าเซิร์ฟเวอร์ทั้งหมด",
+    "placeholder": "ป้อนการกำหนดค่า JSON...",
+    "save": "บันทึก"
+  },
+  "editModel": {
+    "title": "แก้ไขโมเดล: {{modelId}}",
+    "description": "กำหนดค่าความสามารถของโมเดลโดยการสลับตัวเลือกด้านล่าง",
+    "capabilities": "ความสามารถ",
+    "tools": "เครื่องมือ",
+    "vision": "วิสัยทัศน์",
+    "embeddings": "การฝัง",
+    "notAvailable": "ยังไม่มีให้บริการ"
+  },
+  "outOfContextError": {
+    "truncateInput": "ตัดอินพุต",
+    "title": "ข้อผิดพลาดนอกบริบท",
+    "description": "แชทนี้ถึงขีดจำกัดหน่วยความจำของ AI เหมือนกระดานไวท์บอร์ดเต็ม เราสามารถขยายหน้าต่างหน่วยความจำได้ (เรียกว่าขนาดบริบท) เพื่อให้จดจำได้มากขึ้น แต่อาจใช้หน่วยความจำของคอมพิวเตอร์ของคุณมากขึ้น นอกจากนี้เรายังสามารถตัดทอนอินพุตได้ ซึ่งหมายความว่าระบบจะลืมประวัติการแชทบางส่วนเพื่อให้มีที่ว่างสำหรับข้อความใหม่",
+    "increaseContextSizeDescription": "คุณต้องการเพิ่มขนาดบริบทหรือไม่?",
+    "increaseContextSize": "เพิ่มขนาดบริบท"
+  },
+  "toolApproval": {
+    "title": "คำขออนุญาตเครื่องมือ",
+    "description": "ผู้ช่วยต้องการใช้ <strong>{{toolName}}</strong>",
+    "securityNotice": "อนุญาตเฉพาะเครื่องมือที่คุณเชื่อถือเท่านั้น เครื่องมือสามารถเข้าถึงระบบและข้อมูลของคุณได้",
+    "deny": "ปฏิเสธ",
+    "allowOnce": "อนุญาตครั้งเดียว",
+    "alwaysAllow": "อนุญาตเสมอ"
+  },
+  "deleteModel": {
+    "title": "ลบโมเดล: {{modelId}}",
+    "description": "คุณแน่ใจหรือไม่ว่าต้องการลบโมเดลนี้ การดำเนินการนี้ไม่สามารถยกเลิกได้",
+    "success": "โมเดล {{modelId}} ถูกลบอย่างถาวรแล้ว",
+    "cancel": "ยกเลิก",
+    "delete": "ลบ"
+  },
+  "deleteProvider": {
+    "title": "ลบผู้ให้บริการ",
+    "description": "ลบผู้ให้บริการรายนี้และโมเดลทั้งหมด การดำเนินการนี้ไม่สามารถยกเลิกได้",
+    "success": "ผู้ให้บริการ {{provider}} ถูกลบอย่างถาวรแล้ว",
+    "confirmTitle": "ลบผู้ให้บริการ: {{provider}}",
+    "confirmDescription": "คุณแน่ใจหรือไม่ว่าต้องการลบผู้ให้บริการรายนี้ การดำเนินการนี้ไม่สามารถยกเลิกได้",
+    "cancel": "ยกเลิก",
+    "delete": "ลบ"
+  },
+  "modelSettings": {
+    "title": "การตั้งค่าโมเดล - {{modelId}}",
+    "description": "กำหนดการตั้งค่าโมเดลเพื่อเพิ่มประสิทธิภาพและพฤติกรรม",
+    "nglDisabledByFit": "การปรับพอดีอัตโนมัติกำลังเลือก GPU เลเยอร์ ปิดการปรับพอดีอัตโนมัติเพื่อตั้งค่านี้ด้วยตนเอง",
+    "samplingDefaults": {
+      "title": "พารามิเตอร์การสุ่มตัวอย่างเริ่มต้น",
+      "description": "การตั้งค่าตัวอย่างเริ่มต้นสำหรับรุ่นนี้ ใช้เว้นแต่จะถูกลบล้างด้วยค่าต่อผู้ช่วยหรือต่อคำขอ"
+    },
+    "specDraft": {
+      "section": "การถอดรหัสเก็งกำไร",
+      "enable": "เปิดใช้งานการถอดรหัสแบบเก็งกำไร",
+      "enableDescription": "ร่างโทเค็นหลายรายการต่อขั้นตอนและตรวจสอบในรอบเดียว ซึ่งจะช่วยเร่งความเร็วในการสร้าง ใช้หัว MTP ในตัวของโมเดลหรือโมเดลแบบร่างที่ดาวน์โหลดมาด้วย (MTP, Eagle3, DFlash หรือ DSpark)",
+      "nMax": "โทเค็นร่างสูงสุด",
+      "nMaxDescription": "จำนวนโทเค็นสูงสุดที่จะร่างต่อขั้นตอน ค่าเริ่มต้น 16",
+      "nMin": "โทเค็นร่างขั้นต่ำ",
+      "nMinDescription": "จำนวนโทเค็นขั้นต่ำที่จะร่างต่อขั้นตอน ค่าเริ่มต้น 0",
+      "pMin": "ความน่าจะเป็นแบบร่างขั้นต่ำ",
+      "pMinDescription": "ความน่าจะเป็นขั้นต่ำสำหรับการร่างแบบละโมบ (0–1) ค่าเริ่มต้น 0.75"
+    },
+    "templateKwargs": {
+      "section": "ตัวเลือกเทมเพลตการแชท",
+      "description": "ตัวเลือกพิเศษที่เทมเพลตแชทของโมเดลนี้ยอมรับ ส่งเป็น chat_template_kwargs ในแต่ละคำขอ ปล่อยให้ค่าเป็นค่าเริ่มต้นเพื่อให้เทมเพลตตัดสินใจ",
+      "addCustom": "เพิ่มตัวเลือกที่กำหนดเอง",
+      "keyPlaceholder": "ชื่อ",
+      "valuePlaceholder": "ค่า",
+      "add": "เพิ่ม",
+      "cancel": "ยกเลิก",
+      "remove": "นำออก"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "ไม่สามารถอัปเดตการตั้งค่าโมเดลได้"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "เปลี่ยนตำแหน่งโฟลเดอร์ข้อมูล",
+      "description": "คุณแน่ใจหรือไม่ว่าต้องการเปลี่ยนตำแหน่งโฟลเดอร์ข้อมูล การดำเนินการนี้จะย้ายข้อมูลทั้งหมดของคุณไปยังตำแหน่งใหม่และรีสตาร์ทแอปพลิเคชัน",
+      "currentLocation": "ที่ตั้งปัจจุบัน:",
+      "newLocation": "ตำแหน่งใหม่:",
+      "cancel": "ยกเลิก",
+      "changeLocation": "เปลี่ยนสถานที่"
+    },
+    "deleteAllThreads": {
+      "title": "ลบกระทู้ทั้งหมด",
+      "description": "กระทู้ทั้งหมดจะถูกลบ การดำเนินการนี้ไม่สามารถยกเลิกได้"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "ลบการสนทนาทั้งหมด",
+      "description": "{{count}} การสนทนาใน \"{{projectName}}\" จะถูกลบ การดำเนินการนี้ไม่สามารถยกเลิกได้"
+    },
+    "deleteThread": {
+      "description": "คุณแน่ใจหรือว่าต้องการลบกระทู้นี้? การดำเนินการนี้ไม่สามารถยกเลิกได้"
+    },
+    "editMessage": {
+      "title": "แก้ไขข้อความ"
+    },
+    "messageMetadata": {
+      "title": "ข้อมูลเมตาของข้อความ"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "มีบางอย่างผิดพลาด",
+    "details": "รายละเอียด"
+  },
+  "missingDependenciesDialog": {
+    "title": "ไลบรารีระบบหายไป",
+    "description": "ติดตั้ง {{backend}} แล้ว แต่ไม่พบไลบรารีระบบที่จำเป็นบางไลบรารี อาจถอยกลับไปเป็น CPU หรือทำงานไม่ถูกต้อง",
+    "installLabel": "หากต้องการแก้ไขปัญหานี้ ให้ติดตั้งสิ่งต่อไปนี้:",
+    "download": "ดาวน์โหลด",
+    "additionalLibraries": "ไลบรารีที่ขาดหายไปเพิ่มเติม:",
+    "missingLibraries": "ห้องสมุดที่ขาดหายไป:",
+    "showRawLibraries": "แสดง {{count}} ชื่อไลบรารีที่หายไป"
+  },
+  "projects": {
+    "title": "โครงการ",
+    "new": "โครงการใหม่",
+    "addProject": "เพิ่มโครงการ",
+    "addToProject": "เพิ่มในโครงการ",
+    "removeFromProject": "ลบออกจากโครงการ",
+    "createNewProject": "สร้างโครงการใหม่",
+    "editProject": "แก้ไขโครงการ",
+    "deleteProject": "ลบโครงการ",
+    "projectName": "ชื่อโครงการ",
+    "enterProjectName": "ใส่ชื่อโครงการ...",
+    "noProjectsAvailable": "ไม่มีโครงการที่มีอยู่",
+    "noProjectsYet": "ยังไม่มีโครงการ",
+    "noProjectsYetDesc": "เริ่มโครงการใหม่โดยคลิกปุ่มเพิ่มโครงการ",
+    "projectNotFound": "ไม่พบโครงการ",
+    "projectNotFoundDesc": "โครงการที่คุณกำลังมองหาไม่มีอยู่หรือถูกลบไปแล้ว",
+    "selectAssistant": "เลือกผู้ช่วย",
+    "noAssistantAssigned": "ไม่มีผู้ช่วยที่ได้รับมอบหมายให้ทำโปรเจ็กต์นี้",
+    "files": "ไฟล์",
+    "filesDescription": "เพิ่ม PDF เอกสาร หรือข้อความอื่นเพื่ออ้างอิงในโครงการนี้",
+    "uploadingFiles": "กำลังประมวลผลไฟล์...",
+    "processButton": "เพิ่ม",
+    "deleteProjectDialog": {
+      "title": "ลบโครงการ",
+      "permanentDelete": "การดำเนินการนี้จะลบเธรดทั้งหมดอย่างถาวร",
+      "permanentDeleteWarning": "การดำเนินการนี้จะลบเธรดทั้งหมดภายในโครงการอย่างถาวร!",
+      "deleteEmptyProject": "การดำเนินการนี้จะลบโปรเจ็กต์ \"{{projectName}}\"",
+      "saveThreadsAdvice": "หากต้องการบันทึกเธรด ให้ย้ายไปยังรายการเธรดของคุณหรือโปรเจ็กต์อื่นก่อนที่จะลบ",
+      "starredWarning": "คุณยังคงมีชุดข้อความที่ติดดาวภายในโครงการ",
+      "deleteButton": "ลบ",
+      "successWithName": "ลบโปรเจ็กต์ \"{{projectName}}\" สำเร็จแล้ว",
+      "successWithoutName": "ลบโครงการเรียบร้อยแล้ว",
+      "error": "ลบโครงการไม่สำเร็จ โปรดลองอีกครั้ง",
+      "ariaLabel": "ลบ {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "สร้างโครงการใหม่",
+      "editTitle": "แก้ไขโครงการ",
+      "nameLabel": "ชื่อโครงการ",
+      "namePlaceholder": "ใส่ชื่อโครงการ...",
+      "assistant": "ผู้ช่วย",
+      "selectAssistant": "เลือกผู้ช่วย (ไม่จำเป็น)",
+      "noAssistant": "ไม่มีผู้ช่วย",
+      "addAssistant": "เพิ่มผู้ช่วย",
+      "createButton": "สร้าง",
+      "updateButton": "อัปเดต",
+      "alreadyExists": "มีโปรเจ็กต์ \"{{projectName}}\" อยู่แล้ว",
+      "createSuccess": "สร้างโปรเจ็กต์ \"{{projectName}}\" สำเร็จแล้ว",
+      "updateSuccess": "อัปเดตโปรเจ็กต์ \"{{projectName}}\" สำเร็จแล้ว"
+    },
+    "noConversationsIn": "ไม่มีการสนทนาใน {{projectName}}",
+    "startNewConversation": "เริ่มการสนทนาใหม่ด้วย {{projectName}} ด้านล่าง",
+    "conversationsIn": "บทสนทนาใน {{projectName}}",
+    "conversationsDescription": "คลิกที่การสนทนาใดๆ เพื่อสนทนาต่อ หรือเริ่มการสนทนาใหม่ด้านล่าง",
+    "conversation": "การสนทนา",
+    "instructions": "คำแนะนำ",
+    "setup": "ตั้งค่า",
+    "instructionsDescription": "ปรับแต่งน้ำเสียงและสไตล์การตอบรับ",
+    "manageInstructions": "จัดการคำแนะนำ",
+    "thread": "ด้าย",
+    "threads": "หัวข้อ",
+    "updated": "อัปเดต:",
+    "collapseProject": "ยุบโครงการ",
+    "expandProject": "ขยายโครงการ",
+    "update": "อัปเดต",
+    "searchProjects": "ค้นหาโครงการ...",
+    "noProjectsFound": "ไม่พบโครงการ",
+    "tryDifferentSearch": "ลองใช้คำค้นหาอื่น"
+  },
+  "attachmentsIngestion": {
+    "title": "เลือกวิธีการนำเข้าไฟล์แนบ",
+    "description": "เลือกว่าจะรวมไฟล์เหล่านี้ในการแชทโดยตรงหรือจัดทำดัชนีเป็นการฝังแทน",
+    "inline": "แทรกเข้าไปในแชท",
+    "embeddings": "Use embeddings"
+  },
+  "attachmentInjectedIndicator": "Injected into chat",
+  "attachmentEmbeddedIndicator": "Embedded for RAG",
+  "viewInjectedContent": "View injected content",
+  "injectedContentTitle": "Injected file content",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "กระทู้ทั้งหมดไม่เป็นที่ชื่นชอบ",
+      "description": "กระทู้ทั้งหมดได้ถูกลบออกจากรายการโปรดของคุณแล้ว"
+    },
+    "deleteAllThreads": {
+      "title": "ลบกระทู้ทั้งหมด",
+      "description": "กระทู้ทั้งหมดถูกลบอย่างถาวรแล้ว"
+    },
+    "renameThread": {
+      "title": "เปลี่ยนชื่อกระทู้",
+      "description": "ชื่อกระทู้ถูกเปลี่ยนชื่อเป็น '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "ลบกระทู้",
+      "description": "กระทู้นี้ถูกลบอย่างถาวรแล้ว"
+    },
+    "errorCopied": {
+      "title": "Copy successful",
+      "description": "คัดลอกข้อมูลข้อผิดพลาดไปยังคลิปบอร์ดแล้ว"
+    },
+    "errorCopyFailed": {
+      "title": "Failed to copy",
+      "description": "ไม่สามารถคัดลอกข้อมูลข้อผิดพลาดไปยังคลิปบอร์ด"
+    },
+    "editMessage": {
+      "title": "แก้ไขข้อความ",
+      "description": "แก้ไขข้อความเรียบร้อยแล้ว โปรดรอให้โมเดลตอบกลับ"
+    },
+    "appUpdateDownloaded": {
+      "title": "App Update Downloaded",
+      "description": "ดาวน์โหลดการอัปเดตแอปเรียบร้อยแล้ว"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "ดาวน์โหลดการอัปเดตแอปไม่สำเร็จ",
+      "description": "ดาวน์โหลดการอัปเดตแอปไม่สำเร็จ โปรดลองอีกครั้ง"
+    },
+    "downloadComplete": {
+      "title": "ดาวน์โหลดเสร็จสมบูรณ์",
+      "description": "ดาวน์โหลด {{item}} แล้ว"
+    },
+    "downloadCancelled": {
+      "title": "ดาวน์โหลดถูกยกเลิก",
+      "description": "กระบวนการดาวน์โหลดถูกยกเลิก"
+    },
+    "downloadFailed": {
+      "title": "Download Failed",
+      "description": "การดาวน์โหลด {{item}} ล้มเหลว",
+      "descriptionWithReason": "{{item}} ดาวน์โหลดล้มเหลว: {{reason}}",
+      "reason": {
+        "dns": "ชื่อเซิร์ฟเวอร์ไม่สามารถแก้ไขได้",
+        "refused": "การเชื่อมต่อถูกปฏิเสธ",
+        "timeout": "the connection timed out",
+        "tls": "ไม่สามารถสร้างการเชื่อมต่อที่ปลอดภัยได้",
+        "proxy": "ไม่สามารถเข้าถึงพรอกซีได้",
+        "unreachable": "ไม่สามารถเข้าถึงเซิร์ฟเวอร์ได้"
+      }
+    },
+    "openSettings": "เปิดการตั้งค่า",
+    "openLogs": "Open logs",
+    "downloadTokenRequired": {
+      "title": "Hugging Face token required",
+      "description": "โมเดลนี้ต้องมีโทเค็นเพื่อการเข้าถึง Hugging Face เพิ่มโทเค็นของคุณในการตั้งค่าแล้วลองอีกครั้ง"
+    },
+    "downloadLicenseRequired": {
+      "title": "ยอมรับใบอนุญาตรุ่นบน Hugging Face",
+      "description": "คุณต้องยอมรับใบอนุญาตของโมเดลในหน้า Hugging Face ก่อนที่จะดาวน์โหลด"
+    },
+    "downloadRateLimited": {
+      "title": "จำกัดอัตราไว้ที่ Hugging Face",
+      "description": "คุณถูกจำกัดอัตรา การเพิ่มโทเค็นสามารถเพิ่มขีดจำกัดอัตราได้ โปรดลองอีกครั้งในภายหลัง"
+    },
+    "modelValidationStarted": {
+      "title": "Validating Model",
+      "description": "ดาวน์โหลดโมเดล \"{{modelId}}\" เรียบร้อยแล้ว Verifying integrity..."
+    },
+    "modelValidationFailed": {
+      "title": "การตรวจสอบโมเดลล้มเหลว",
+      "description": "โมเดลที่ดาวน์โหลด \"{{modelId}}\" ไม่ผ่านการตรวจสอบความสมบูรณ์และถูกลบออก ไฟล์อาจเสียหายหรือถูกดัดแปลง"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ดาวน์โหลดเสร็จสมบูรณ์",
+      "description": "ดาวน์โหลดและยืนยันโมเดล \"{{item}}\" สำเร็จแล้ว"
+    },
+    "projectCreated": {
+      "title": "สร้างโครงการแล้ว",
+      "description": "สร้างโปรเจ็กต์ \"{{projectName}}\" สำเร็จแล้ว"
+    },
+    "projectRenamed": {
+      "title": "เปลี่ยนชื่อโครงการแล้ว",
+      "description": "เปลี่ยนชื่อโครงการจาก \"{{oldName}}\" เป็น \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "ลบโครงการแล้ว",
+      "description": "ลบโปรเจ็กต์ \"{{projectName}}\" สำเร็จแล้ว"
+    },
+    "projectAlreadyExists": {
+      "title": "มีโครงการอยู่แล้ว",
+      "description": "มีโปรเจ็กต์ \"{{projectName}}\" อยู่แล้ว"
+    },
+    "projectDeleteFailed": {
+      "title": "ลบไม่สำเร็จ",
+      "description": "ลบโครงการไม่สำเร็จ โปรดลองอีกครั้ง"
+    },
+    "threadAssignedToProject": {
+      "title": "กำหนดหัวข้อแล้ว",
+      "description": "กำหนดเธรดให้กับ \"{{projectName}}\" สำเร็จแล้ว"
+    },
+    "threadRemovedFromProject": {
+      "title": "ลบเธรดแล้ว",
+      "description": "ลบกระทู้ออกจาก \"{{projectName}}\" เรียบร้อยแล้ว"
+    },
+    "fileUploaded": {
+      "title": "ประมวลผลไฟล์แล้ว",
+      "description": "ไฟล์ได้รับการประมวลผลและจัดทำดัชนีเรียบร้อยแล้ว"
+    },
+    "uploadFailed": {
+      "title": "การประมวลผลล้มเหลว",
+      "description": "ล้มเหลวในการประมวลผลไฟล์",
+      "subjectThisFile": "ไฟล์นี้",
+      "pdfMalformedXref": "{{subject}} มีตารางตัวอ้างอิงโยง PDF ที่มีรูปแบบไม่ถูกต้อง และไม่สามารถแยกวิเคราะห์ได้ ลองเปิดในโปรแกรมดู PDF แล้วบันทึกใหม่ (ไฟล์ → พิมพ์ → บันทึกเป็น PDF) จากนั้นอัปโหลดอีกครั้ง",
+      "pdfScanned": "{{subject}} ดูเหมือนจะเป็นแบบสแกนหรือแบบรูปภาพ PDF ยังไม่รองรับ OCR — โปรดอัปโหลดแบบข้อความ PDF",
+      "pdfEncrypted": "{{subject}} มีการป้องกันด้วยรหัสผ่าน ลบรหัสผ่านแล้วลองอีกครั้ง",
+      "pdfUnsupportedFeature": "{{subject}} ใช้คุณลักษณะ PDF Jan ยังไม่สามารถแยกวิเคราะห์ได้ (เช่น ฟังก์ชั่นสี/แรเงา PostScript) ลองบันทึกอีกครั้ง (ไฟล์ → พิมพ์ → บันทึกเป็น PDF) เพื่อทำให้แบนราบ แล้วอัปโหลดอีกครั้ง",
+      "pdfGeneric": "{{subject}} ไม่สามารถแยกวิเคราะห์เป็น PDF ไฟล์อาจเสียหายหรือใช้คุณสมบัติ PDF ที่ไม่รองรับ",
+      "fileTooLarge": "{{subject}} ใหญ่เกินไป {{message}}.",
+      "unsupportedType": "ไม่รองรับไฟล์ประเภท \"{{type}}\"",
+      "ioError": "ไม่สามารถอ่าน {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} ไม่สามารถแยกวิเคราะห์ได้: {{message}}",
+      "fallback": "ล้มเหลวในการประมวลผล {{subject}}"
+    },
+    "fileDeleted": {
+      "title": "ลบไฟล์แล้ว",
+      "description": "ไฟล์ถูกลบออกจากโครงการแล้ว"
+    },
+    "deleteFailed": {
+      "title": "ลบไม่สำเร็จ",
+      "description": "ไม่สามารถลบไฟล์ได้"
+    },
+    "fileAlreadyExists": {
+      "title": "มีไฟล์อยู่แล้ว",
+      "description": "แนบไฟล์กับโปรเจ็กต์นี้แล้ว"
+    },
+    "unsupportedFileType": {
+      "title": "ประเภทไฟล์ที่ไม่รองรับ",
+      "description": "นามสกุลไฟล์ \".{{extension}}\" ไม่ได้รับการสนับสนุนสำหรับการอ้างอิงโครงการ"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "สิ่งที่แนบมาถูกปิดใช้งาน",
+      "description": "สิ่งที่แนบมาถูกปิดใช้งานในการตั้งค่า"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "ไฟล์มีขนาดใหญ่เกินไป",
+    "fileTooLargeDescription": "{{fileName}} เกินขีดจำกัด {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} ชิ้น",
+    "title": "ไฟล์",
+    "empty": "ไฟล์ที่คุณแนบและไฟล์ที่ตัวแทนสร้างจะแสดงที่นี่",
+    "a11y": "ไฟล์: {{count}}",
+    "attachments": "ไฟล์แนบ",
+    "notImported": "ไม่ได้อยู่ในพื้นที่ทำงาน"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp ยังยุ่งอยู่",
+    "description": "โมเดลอย่างน้อยหนึ่งโมเดลไม่ได้ขนถ่ายทันเวลา การบังคับออกจะยุติ llama.cpp และอาจขัดจังหวะการตอบสนองที่ใช้งานอยู่",
+    "forceQuit": "บังคับให้ออก",
+    "forcing": "บังคับให้เลิก...",
+    "shuttingDown": "กำลังปิดเครื่อง…"
+  },
+  "duration": {
+    "seconds": "{{count}}ส",
+    "minutes": "{{count}}ม",
+    "hours": "{{count}}ชม"
+  },
+  "collapse": "ยุบ",
+  "expand": "ขยาย",
+  "todoPanelTitle": "ความคืบหน้า",
+  "todoPanelEmpty": "ยังไม่มีรายการสิ่งที่ต้องทำ",
+  "backgroundTasks": "งานเบื้องหลัง",
+  "subagentsRunning_one": "จำนวนเอเจนต์ย่อยที่กำลังทำงาน: {{count}}",
+  "subagentsRunning_other": "จำนวนเอเจนต์ย่อยที่กำลังทำงาน: {{count}}",
+  "monitorsRunning_one": "{{count}} มอนิเตอร์ทำงานอยู่",
+  "monitorsRunning_other": "{{count}} มอนิเตอร์ทำงานอยู่",
+  "backgroundRunning_one": "{{count}} งานพื้นหลังกำลังทำงานอยู่",
+  "backgroundRunning_other": "{{count}} งานพื้นหลังกำลังทำงานอยู่",
+  "monitors": "จอภาพ",
+  "monitorPolling": "การเลือกตั้ง",
+  "monitorMatched": "ตรงกัน",
+  "monitorTimedOut": "หมดเวลาแล้ว",
+  "monitorStopped": "หยุดแล้ว",
+  "monitorEnded": "สิ้นสุดแล้ว",
+  "coworkWatching_one": "กำลังรับชม {{count}} มอนิเตอร์…",
+  "coworkWatching_other": "กำลังรับชมจอภาพ {{count}}…",
+  "coworkWaitingBackground": "กำลังรองานเบื้องหลัง...",
+  "noBackgroundTasks": "ยังไม่มีงานพื้นหลัง",
+  "running": "วิ่ง",
+  "queued": "เข้าคิว",
+  "waiting": "กำลังรอ",
+  "finished": "เสร็จแล้ว",
+  "subagentPhase": "เฟส {{phase}}",
+  "subagentWaiting": "กำลังรอ",
+  "viewTranscript": "ดูการถอดเสียง",
+  "taskWorking": "กำลังทำงาน...",
+  "taskNoOutput": "สารย่อยไม่ได้สร้างผลลัพธ์ที่มองเห็นได้",
+  "subagentToolUses_one": "{{count}} การใช้เครื่องมือ",
+  "subagentToolUses_other": "{{count}} การใช้เครื่องมือ",
+  "artifactGroupCode": "รหัส",
+  "artifactGroupImage": "รูปภาพ",
+  "artifactGroupDocument": "เอกสาร",
+  "artifactGroupVideo": "วีดีโอ",
+  "artifactGroupAudio": "เสียง",
+  "artifactOpenPreview": "เปิดตัวอย่าง",
+  "artifactOpenExternal": "เปิด",
+  "artifactMoreActions": "การดำเนินการเพิ่มเติม",
+  "artifactShowInFolder": "แสดงในโฟลเดอร์",
+  "skillsUsedLabel": "ทักษะที่ใช้",
+  "skillsUsed": "ทักษะที่ใช้: {{skills}}",
+  "artifactsAll": "ทั้งหมด",
+  "artifactsEmpty": "ยังไม่มีการผลิตอะไรเลย สิ่งประดิษฐ์จากการวิ่ง Cowork แสดงที่นี่",
+  "artifactsNoMatch": "ไม่มีอาร์ติแฟกต์ที่ตรงกัน",
+  "artifactsSearch": "ค้นหาสิ่งประดิษฐ์",
+  "artifactsShowMore": "แสดงอีก {{count}}",
+  "workspace": {
+    "readsFrom": "ทำงานใน",
+    "writable": "อ่านและเขียน",
+    "footnote": "ตัวแทนอ่านและแก้ไขโฟลเดอร์นี้โดยตรง ตรวจสอบสิ่งที่เปลี่ยนแปลงไปในแผงส่วนต่าง",
+    "footnoteEmpty": "แนบโฟลเดอร์เพื่อให้ตัวแทนทำงานในโครงการของคุณ สามารถอ่านและแก้ไขไฟล์ภายในได้",
+    "attach": "แนบโฟลเดอร์",
+    "change": "เปลี่ยนโฟลเดอร์",
+    "detach": "แยกโฟลเดอร์",
+    "open": "เปิด",
+    "reveal": "เปิดเผย",
+    "unavailable": "พื้นที่ทำงานไม่พร้อมใช้งาน",
+    "missing": "โฟลเดอร์พื้นที่ทำงาน {{folder}} ไม่สามารถใช้งานได้อีกต่อไป เลือกโฟลเดอร์อื่น",
+    "openFailed": "ไม่สามารถเปิดพื้นที่ทำงาน",
+    "revealFailed": "ไม่สามารถเปิดเผยพื้นที่ทำงาน",
+    "a11yWithFolder": "โฟลเดอร์โปรเจ็กต์ {{folder}} แนบมาพร้อมกับสิทธิ์การอ่านและเขียน เปลี่ยนหรือถอดออก",
+    "a11yNoFolder": "ไม่ได้แนบโฟลเดอร์โครงการ แนบอันหนึ่ง"
+  },
+  "coworkEmpty": {
+    "title": "เรากำลังทำอะไรอยู่?",
+    "subtitleSandbox": "ให้งาน Jan โดยจะอ่านและเขียนไฟล์ รันคำสั่ง และทำงานตามขั้นตอนต่างๆ ในตัวมันเอง",
+    "subtitleFolder": "ให้งาน Jan มันทำงานได้โดยตรงใน {{folder}} โดยสามารถอ่านและแก้ไขไฟล์ได้ด้วยตัวเอง",
+    "try": "ลอง",
+    "sandbox": {
+      "first": "เขียนสคริปต์ Python ที่เปลี่ยนชื่อไฟล์ตามวันที่ที่ไฟล์ถูกถ่าย",
+      "second": "สร้างแดชบอร์ดหน้าเดียวจาก CSV ฉันจะวางเข้าไป",
+      "third": "ร่าง README สำหรับโครงการที่ฉันอธิบายให้คุณฟัง"
+    },
+    "folder": {
+      "first": "อธิบายว่า {{folder}} รวมเข้าด้วยกันอย่างไร",
+      "second": "ค้นหาสิ่งที่ต้องทำทั้งหมดใน {{folder}} และจัดกลุ่มตามพื้นที่",
+      "third": "เขียนแบบทดสอบในส่วนของ {{folder}} ฉันชี้ให้คุณดู"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "ไม่มีเทอร์มินัล",
+    "a11y": "คำสั่งการรันถูกปิด รายละเอียด.",
+    "title": "คำสั่งการรันถูกปิด",
+    "body": "Jan อนุญาตให้เอเจนต์รันคำสั่งเชลล์เฉพาะเมื่อระบบของคุณสามารถจำกัดคำสั่งเหล่านั้นได้ ไม่มีแซนด์บ็อกซ์ที่นี่ ดังนั้นตัวแทนจึงสามารถอ่าน เขียน และแก้ไขไฟล์ในแซนด์บ็อกซ์ได้ แต่ไม่สามารถดำเนินการใดๆ ได้",
+    "fixLinux": "Linux ใช้บับเบิ้ลแรป ติดตั้งแล้วรีสตาร์ท Jan",
+    "fixMac": "macOS ใช้แซนด์บ็อกซ์ในตัวที่ /usr/bin/sandbox-exec รีสตาร์ท Jan เมื่อพร้อมใช้งาน",
+    "fixWindows": "Windows ใช้ AppContainer รีสตาร์ท Jan เพื่อลองอีกครั้ง",
+    "recheck": "ตรวจสอบอีกครั้ง"
+  },
+  "planMode": {
+    "label": "แผน",
+    "tooltipOff": "วางแผนก่อน — ตัวแทนอ่านและเสนอโดยไม่ต้องเขียน",
+    "tooltipOn": "การวางแผน ปิดการทำงานนี้เพื่อให้ตัวแทนเขียนไฟล์",
+    "onAnnounce": "เปิดโหมดแผน",
+    "placeholder": "ขอแผนครับ. เจ้าหน้าที่จะไม่เปลี่ยนแปลงไฟล์ใดๆ"
+  },
+  "budget": {
+    "stoppedSteps": "หยุดที่ {{max}} ก้าว ตัวแทนยังไม่จบ",
+    "keepGoing": "ทำต่อไป",
+    "stoppedTokens": "หยุดแล้ว — เซสชันนี้ใช้งบประมาณโทเค็นหมดแล้ว",
+    "compact": "กะทัดรัด",
+    "newSession": "เซสชันใหม่"
+  },
+  "run": {
+    "stopped": "หยุดแล้ว",
+    "failed": "การวิ่งหยุดก่อนเวลา",
+    "tryAgain": "ลองอีกครั้ง"
+  },
+  "modelNoTools": "{{model}} ไม่สามารถเรียกเครื่องมือได้ ดังนั้นจึงไม่สามารถทำหน้าที่เป็นตัวแทนได้ เลือกโมเดลการเรียกเครื่องมือ",
+  "askContinue": "ดำเนินการต่อ",
+  "askNext": "คำถามต่อไป",
+  "askPrev": "คำถามก่อนหน้า",
+  "askRecommended": "แนะนำ",
+  "askSelectedCount": "เลือกแล้ว {{count}}",
+  "askSomethingElse": "อย่างอื่น",
+  "askSomethingElsePlaceholder": "พิมพ์คำตอบของคุณเอง",
+  "submit": "ส่ง"
+}

@@ -1,0 +1,19 @@
+{
+  "sortNewest": "ใหม่ล่าสุด",
+  "sortMostDownloaded": "ดาวน์โหลดมากที่สุด",
+  "newChat": "แชทใหม่",
+  "download": "ดาวน์โหลด",
+  "downloadFailed": "ไม่สามารถเริ่มการดาวน์โหลดได้",
+  "downloaded": "ดาวน์โหลดแล้ว",
+  "loadingModels": "กำลังโหลดโมเดล...",
+  "noModels": "ไม่พบรุ่น",
+  "by": "โดย",
+  "downloads": "ดาวน์โหลด",
+  "variants": "สายพันธุ์",
+  "showVariants": "แสดงตัวแปร",
+  "useModel": "ใช้รุ่นนี้",
+  "downloadModel": "ดาวน์โหลดโมเดล",
+  "tools": "เครื่องมือ",
+  "searchPlaceholder": "ค้นหารุ่นบน Hugging Face...",
+  "resumeUnavailable": "ไม่สามารถดำเนินการดาวน์โหลดต่อได้ โปรดเริ่มต้นใหม่อีกครั้ง"
+}

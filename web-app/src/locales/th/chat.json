@@ -1,0 +1,38 @@
+{
+  "welcome": "สวัสดี เป็นอย่างไรบ้าง?",
+  "description": "วันนี้มีอะไรให้ช่วยบ้าง?",
+  "temporaryChat": "แชทชั่วคราว",
+  "temporaryChatDescription": "เริ่มการสนทนาชั่วคราวที่จะไม่ถูกบันทึกในประวัติการแชตของคุณ",
+  "status": {
+    "empty": "ไม่พบการแชท"
+  },
+  "sendMessage": "ส่งข้อความ",
+  "newConversation": "บทสนทนาใหม่",
+  "clearHistory": "ล้างประวัติ",
+  "embeddings": {
+    "title": "กำลังเตรียมเอกสารของคุณ",
+    "description": "กำลังสร้างดัชนีไฟล์แนบเพื่อให้ค้นหาและใช้อ้างอิงได้ เอกสารขนาดใหญ่อาจใช้เวลาสักครู่"
+  },
+  "actions": {
+    "regenerate": "สร้างการตอบสนองขึ้นมาใหม่",
+    "askAgain": "ถามอีกครั้ง",
+    "continue": "ผลิตต่อไป",
+    "remember": "จำสิ่งนี้ไว้",
+    "rememberSaved": "บันทึกในหน่วยความจำชื่อ \"{{name}}\" แล้ว",
+    "rememberExists": "มีอยู่ในหน่วยความจำชื่อ \"{{name}}\" แล้ว",
+    "rememberFailed": "ไม่สามารถบันทึกลงในหน่วยความจำได้"
+  },
+  "done": "เสร็จแล้ว",
+  "webSources": "จำนวนแหล่งข้อมูล: {{count}}",
+  "reasoning": {
+    "label": "การใช้เหตุผล...",
+    "thinking": "กำลังคิด",
+    "working": "กำลังทำงาน...",
+    "showFullTimeline": "แสดงไทม์ไลน์แบบเต็ม",
+    "showCurrentStep": "แสดงขั้นตอนปัจจุบันเท่านั้น",
+    "thoughtForAWhile": "คิดอยู่ไม่กี่วินาที",
+    "thoughtFor": "คิดราคา {{duration}}",
+    "workedForAWhile": "ทำงานไม่กี่วินาที",
+    "workedFor": "ทำงานเพื่อ {{duration}}"
+  }
+}

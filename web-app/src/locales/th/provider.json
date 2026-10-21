@@ -1,0 +1,18 @@
+{
+  "addProvider": "เพิ่มผู้ให้บริการ",
+  "addOpenAIProvider": "เพิ่มผู้ให้บริการที่กำหนดเอง",
+  "enterNameForProvider": "ชื่อผู้ให้บริการ (เช่น my-llm-server)",
+  "apiTypeLabel": "API รูปแบบ",
+  "apiTypeOpenAI": "OpenAI-เข้ากันได้",
+  "apiTypeAnthropic": "Anthropic-เข้ากันได้",
+  "baseUrlLabel": "ฐาน URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API คีย์",
+  "apiKeyPlaceholder": "วางคีย์ API ของคุณ",
+  "invalidBaseUrl": "ฐาน URL ต้องเป็น http(s) URL ที่ถูกต้อง",
+  "globalSettings": "การตั้งค่าส่วนกลาง",
+  "stripReasoning": "ตัดการให้เหตุผลออกจากบริบท",
+  "stripReasoningDesc": "ลบเนื้อหาการคิด/การให้เหตุผลของผลัดกันก่อนหน้าก่อนที่จะส่งประวัติอีกครั้งกับผู้ให้บริการทุกราย ปรับปรุงการนำ KV-cache มาใช้ซ้ำสำหรับรุ่นท้องถิ่น แต่บางรุ่น (เช่น Qwen รุ่นใหม่กว่า) แนะนำให้เก็บไว้เพื่อการให้เหตุผลแบบหลายรอบที่ดีขึ้น",
+  "providerAlreadyExists": "มีผู้ให้บริการชื่อ {{name}} อยู่แล้ว"
+}

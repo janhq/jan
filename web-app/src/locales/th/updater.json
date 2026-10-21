@@ -1,0 +1,10 @@
+{
+  "newVersion": "เวอร์ชันใหม่ {{version}}",
+  "updateAvailable": "อัปเดตพร้อมใช้งาน",
+  "nightlyBuild": "สร้างทุกคืน",
+  "showReleaseNotes": "แสดงบันทึกประจำรุ่น",
+  "hideReleaseNotes": "ซ่อนบันทึกประจำรุ่น",
+  "remindMeLater": "เตือนฉันในภายหลัง",
+  "downloading": "กำลังดาวน์โหลด...",
+  "updateNow": "อัปเดตทันที"
+}
