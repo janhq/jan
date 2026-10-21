@@ -645,6 +645,66 @@ describe('ProviderDetail route', () => {
     })
   })
 
+  describe('LiteLLM provider (user-set URL, optional key)', () => {
+    beforeEach(() => {
+      h.providerMap.litellm = {
+        provider: 'litellm',
+        active: true,
+        api_key: '',
+        base_url: 'http://localhost:4000/v1',
+        models: [],
+        settings: [
+          {
+            key: 'api-key',
+            title: 'API Key',
+            description: 'The API key',
+            controller_type: 'input',
+            controller_props: { value: '', type: 'password' },
+          },
+        ],
+      }
+      h.params.providerName = 'litellm'
+    })
+
+    it('shows an editable base URL and commits it on blur', () => {
+      renderComponent()
+      const input = screen.getByPlaceholderText(
+        'http://localhost:4000/v1'
+      ) as HTMLInputElement
+      expect(input.value).toBe('http://localhost:4000/v1')
+      fireEvent.change(input, { target: { value: 'http://gateway:4000/v1' } })
+      fireEvent.blur(input)
+      expect(h.updateProvider).toHaveBeenCalledWith(
+        'litellm',
+        expect.objectContaining({ base_url: 'http://gateway:4000/v1' })
+      )
+    })
+
+    it('refreshes models without an api key', async () => {
+      h.providersSvc.fetchModelsFromProvider = vi
+        .fn()
+        .mockResolvedValue(['gpt-6-luna', 'text-embedding-3-large'])
+      renderComponent()
+      const addModel = screen.getByTestId('add-model')
+      const refreshBtn = addModel.parentElement?.querySelector('button') as HTMLButtonElement
+      await act(async () => {
+        fireEvent.click(refreshBtn)
+      })
+      await waitFor(() => {
+        expect(h.updateProvider).toHaveBeenCalledWith(
+          'litellm',
+          expect.objectContaining({
+            models: [
+              expect.objectContaining({ id: 'gpt-6-luna' }),
+              expect.objectContaining({ id: 'text-embedding-3-large' }),
+            ],
+          })
+        )
+      })
+      expect(h.toastError).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Model start/stop (llamacpp)', () => {
     beforeEach(() => {
       h.params.providerName = 'llamacpp'

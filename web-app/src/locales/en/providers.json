@@ -105,7 +105,8 @@
   "enterNameForProvider": "Enter name for provider",
   "baseUrl": {
     "title": "Base URL",
-    "azureDescription": "Your Azure OpenAI endpoint. Replace YOUR-RESOURCE-NAME with your Azure resource name."
+    "azureDescription": "Your Azure OpenAI endpoint. Replace YOUR-RESOURCE-NAME with your Azure resource name.",
+    "litellmDescription": "The address of your LiteLLM proxy, including /v1. The default is http://localhost:4000/v1."
   },
   "apiKeys": {
     "title": "API keys",
