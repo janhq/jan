@@ -1,0 +1,38 @@
+{
+  "welcome": "ሰላም፣ እንዴት ነዎት?",
+  "description": "ዛሬ እንዴት ልርዳዎ?",
+  "temporaryChat": "ጊዜያዊ ውይይት",
+  "temporaryChatDescription": "በውይይት ታሪክዎ የማይቀመጥ ጊዜያዊ ውይይት ይጀምሩ።",
+  "status": {
+    "empty": "ምንም ቻቶች አልተገኙም።"
+  },
+  "sendMessage": "መልእክት ላክ",
+  "newConversation": "አዲስ ውይይት",
+  "clearHistory": "ታሪክ አጽዳ",
+  "embeddings": {
+    "title": "ሰነዶችዎን በማዘጋጀት ላይ",
+    "description": "ተያይዘው የቀረቡትን ፋይሎች ለመፈለግ እና ለመጥቀስ መረጃ ጠቋሚ ማድረግ። ይህ ለትልቅ ሰነዶች ትንሽ ጊዜ ሊወስድ ይችላል."
+  },
+  "actions": {
+    "regenerate": "ምላሽን ያድሱ",
+    "askAgain": "እንደገና ጠይቅ",
+    "continue": "ማመንጨትዎን ይቀጥሉ",
+    "remember": "ይህንን አስታውሱ",
+    "rememberSaved": "እንደ \"{{name}}\" ወደ ማህደረ ትውስታ ተቀምጧል",
+    "rememberExists": "ቀድሞውኑ በማስታወስ ውስጥ እንደ \"{{name}}\"",
+    "rememberFailed": "ወደ ማህደረ ትውስታ ማስቀመጥ አልተቻለም"
+  },
+  "done": "ተከናውኗል",
+  "webSources": "የምንጮች ብዛት፦ {{count}}",
+  "reasoning": {
+    "label": "ማመዛዘን...",
+    "thinking": "ማሰብ",
+    "working": "በመስራት ላይ...",
+    "showFullTimeline": "ሙሉ የጊዜ መስመር አሳይ",
+    "showCurrentStep": "የአሁኑን ደረጃ ብቻ አሳይ",
+    "thoughtForAWhile": "ለጥቂት ሰከንዶች ያህል አስብ",
+    "thoughtFor": "የታሰበበት ለ{{duration}}",
+    "workedForAWhile": "ለጥቂት ሰከንዶች ሰርቷል",
+    "workedFor": "ለ{{duration}} ሰርቷል"
+  }
+}

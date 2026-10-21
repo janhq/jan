@@ -1,0 +1,10 @@
+{
+  "newVersion": "አዲስ ስሪት {{version}}",
+  "updateAvailable": "ማዘመን አለ።",
+  "nightlyBuild": "የምሽት ግንባታ",
+  "showReleaseNotes": "የመልቀቂያ ማስታወሻዎችን አሳይ",
+  "hideReleaseNotes": "የመልቀቂያ ማስታወሻዎችን ደብቅ",
+  "remindMeLater": "በኋላ አስታውሰኝ",
+  "downloading": "በማውረድ ላይ...",
+  "updateNow": "አሁን አዘምን"
+}

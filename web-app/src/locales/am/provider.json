@@ -1,0 +1,18 @@
+{
+  "addProvider": "አቅራቢን ያክሉ",
+  "addOpenAIProvider": "ብጁ አቅራቢን ያክሉ",
+  "enterNameForProvider": "የአቅራቢ ስም (ለምሳሌ my-lm-አገልጋይ)",
+  "apiTypeLabel": "API ቅርጸት",
+  "apiTypeOpenAI": "OpenAI-ተኳሃኝ",
+  "apiTypeAnthropic": "Anthropic-ተኳሃኝ",
+  "baseUrlLabel": "መሠረት URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API ቁልፍ",
+  "apiKeyPlaceholder": "የእርስዎን API ቁልፍ ይለጥፉ",
+  "invalidBaseUrl": "ቤዝ URL የሚሰራ http(ዎች) URL መሆን አለበት",
+  "globalSettings": "ዓለም አቀፍ ቅንብሮች",
+  "stripReasoning": "ከዐውደ-ጽሑፉ የራቀ ምክንያት",
+  "stripReasoningDesc": "ታሪክን ዳግም ከመላክዎ በፊት የቀደሙ ተራዎችን አስተሳሰብ/ማመዛዘን ይዘትን ያስወግዱ በሁሉም አቅራቢዎች። ለአካባቢያዊ ሞዴሎች የKV-cache ዳግመኛ ጥቅም ላይ ማዋልን ያሻሽላል፣ ነገር ግን አንዳንድ ሞዴሎች (ለምሳሌ አዳዲስ የQwen ልቀቶች) ለተሻለ ባለብዙ ዙር ምክንያት እንዲይዙት ይመክራሉ።",
+  "providerAlreadyExists": "{{name}} የሚባል አቅራቢ አስቀድሞ አለ።"
+}

@@ -1,0 +1,101 @@
+{
+  "editServer": "አርትዕ MCP አገልጋይ",
+  "addServer": "MCP አገልጋይ አክል",
+  "browserExtension": {
+    "connecting": {
+      "checking": "የኤክስቴንሽን ሁኔታን በመፈተሽ ላይ..."
+    },
+    "notInstalled": {
+      "title": "Jan በአሳሽዎ ውስጥ ስራዎችን ያጠናቅቃል",
+      "description": "Jan የአሳሽ መዳረሻ ለመስጠት ቅጥያውን ይጫኑ",
+      "getExtension": "ቅጥያ ያግኙ"
+    }
+  },
+  "serverName": "የአገልጋይ ስም",
+  "enterServerName": "የአገልጋይ ስም አስገባ",
+  "command": "Command",
+  "enterCommand": "ትዕዛዝ ያስገቡ (uvx ወይም npx)",
+  "arguments": "ክርክሮች",
+  "argument": "ክርክር {{index}}",
+  "envVars": "የአካባቢ ተለዋዋጮች",
+  "key": "ቁልፍ",
+  "value": "ዋጋ",
+  "save": "አስቀምጥ",
+  "status": "ሁኔታ",
+  "connected": "ተገናኝቷል።",
+  "disconnected": "ግንኙነት ተቋርጧል",
+  "deleteServer": {
+    "title": "ሰርዝ MCP አገልጋይ",
+    "description": "እርግጠኛ ነዎት MCP አገልጋይ {{serverName}} ማጥፋት ይፈልጋሉ? ይህ እርምጃ ሊቀለበስ አይችልም።",
+    "delete": "ሰርዝ",
+    "success": "MCP አገልጋይ {{serverName}} በተሳካ ሁኔታ ተሰርዟል።"
+  },
+  "editJson": {
+    "title": "አርትዕ JSON ለMCP አገልጋይ፡ {{serverName}}",
+    "titleAll": "ሁሉንም አርትዕ MCP አገልጋዮች JSON",
+    "placeholder": "JSON ውቅረት አስገባ",
+    "errorParse": "የመጀመሪያ ውሂብን መተንተን አልተሳካም።",
+    "errorPaste": "ልክ ያልሆነ JSON ቅርጸት በተለጠፈ ይዘት",
+    "errorFormat": "ልክ ያልሆነ የJSON ቅርጸት",
+    "errorServerName": "የአገልጋይ ስም ያስፈልጋል እና ባዶ ሊሆን አይችልም።",
+    "errorMissingServerNameKey": "JSON እንደ {\"የአገልጋይ ስም\": {config}} መዋቀር አለበት - የጠፋ የአገልጋይ ስም ቁልፍ",
+    "errorInvalidType": "ልክ ያልሆነ አይነት '{{type}}' ለአገልጋይ '{{serverName}}'። አይነት 'stdio'፣ 'http' ወይም 'sse' መሆን አለበት",
+    "save": "አስቀምጥ"
+  },
+  "checkParams": "እባክዎ በአጋዥ ስልጠናው መሰረት መለኪያዎችን ያረጋግጡ።",
+  "title": "MCP አገልጋዮች",
+  "experimental": "የሙከራ",
+  "editAllJson": "ሁሉንም አገልጋዮች አርትዕ JSON",
+  "findMore": "ተጨማሪ MCP አገልጋዮችን በ ላይ ያግኙ",
+  "allowPermissions": "ሁሉንም MCP የመሳሪያ ፈቃዶችን ፍቀድ",
+  "allowPermissionsDesc": "ሲነቃ ሁሉም MCP የመሳሪያ ጥሪዎች የፍቃድ ንግግሮችን ሳያሳዩ በራስ ሰር ይፀድቃሉ። ይህ ቅንብር አዲስ ውይይቶችን ጨምሮ በሁሉም ንግግሮች ላይ ተፈጻሚ ይሆናል።",
+  "noServers": "ምንም MCP አገልጋዮች አልተገኙም።",
+  "args": "አርግስ",
+  "env": "ኢንቨስት",
+  "serverStatusActive": "አገልጋይ {{serverKey}} በተሳካ ሁኔታ ነቅቷል።",
+  "serverStatusInactive": "አገልጋይ {{serverKey}} በተሳካ ሁኔታ ቦዝኗል",
+  "runtimeSettings": {
+    "title": "የአሂድ ጊዜ ቅንብሮች",
+    "description": "Jan እንዴት እንደሚያስተዳድር እና MCP አገልጋዮችን እንደሚሞክር አዋቅር።",
+    "toolCallTimeout": "የመሳሪያ ጥሪ ጊዜ ማብቂያ (ሰከንዶች)",
+    "toolCallTimeoutDesc": "ጊዜው ከማብቃቱ በፊት ለ MCP መሳሪያ ምላሽ ለመጠበቅ ከፍተኛው ጊዜ።",
+    "maxToolOutputChars": "ከፍተኛው የመሣሪያ ውፅዓት ቁምፊዎች",
+    "maxToolOutputCharsDesc": "በንግግሩ ውስጥ ረጅሙ የመሳሪያ ውጤት ተቀምጧል። ከዚህ ያለፈ ማንኛውም ነገር ተቆርጧል እና እንደተቆረጠ ምልክት ተደርጎበታል፣ ስለዚህ አንድ ትልቅ ውጤት የአምሳያው አውድ ሊያሟጥጥ አይችልም። ውጤቱን በሙሉ ለማቆየት ወደ 0 ያቀናብሩ።",
+    "smartToolRouting": "ብልጥ MCP መሳሪያ ማዘዋወር",
+    "smartToolRoutingDesc": "ሲነቃ Jan አስፈላጊ የሆኑ MCP አገልጋዮችን ከመጫንዎ በፊት ይመርጣል። ሙሉውን MCP የመሳሪያ ዝርዝርን ሁልጊዜ ለመጫን አሰናክል።",
+    "useLightweightRouterModel": "ለማዘዋወር የተለየ ሞዴል ተጠቀም",
+    "useLightweightRouterModelDesc": "ብልጥ ማዞሪያ ሲበራ የማዘዋወር እርምጃውን ከቻት ሞዴል ይልቅ በተለየ (ብዙውን ጊዜ ትንሽ) ሞዴል ያሂዱ። ለማዘዋወር ሁልጊዜ ንቁውን የውይይት ሞዴል ለመጠቀም ያጥፉ።",
+    "routerModel": "የማዞሪያ ሞዴል",
+    "routerModelDesc": "በአንድ ቦታ አቅራቢ እና ሞዴል ይምረጡ። ቀላል ክብደት ያላቸው ሞዴሎች ብቻ ተዘርዝረዋል ስለዚህ ማዞሪያው ፈጣን እና ርካሽ ይቆያል።",
+    "selectRouterModelPlaceholder": "የማዞሪያ ሞዴል ምረጥ…",
+    "routerModelSearchPlaceholder": "ሞዴሎችን ፈልግ…",
+    "routerModelEmptyList": "ቀላል ክብደት ያላቸው ሞዴሎች የሉም። ትንሽ ሞዴል ያክሉ ወይም በሞዴሎች ውስጥ API ቁልፎችን ያዋቅሩ።",
+    "routerModelEmptySearch": "ለ\"{{query}}\" ምንም ተዛማጅ የለም።"
+  },
+  "auth": {
+    "label": "ማረጋገጫ፡",
+    "state": {
+      "notApplicable": "አያስፈልግም",
+      "staticHeader": "የፈቃድ ራስጌ",
+      "authenticated": "የተረጋገጠ",
+      "expired": "ጊዜው አልፎበታል።",
+      "staleResource": "ለሌላ URL የተሰጠ",
+      "unauthenticated": "የተረጋገጠ አይደለም"
+    },
+    "expiresIn": "ጊዜው የሚያበቃው በ{{duration}} ነው",
+    "authenticate": "ይግቡ",
+    "reauthenticate": "እንደገና ያረጋግጡ",
+    "clear": "ማረጋገጫን አጽዳ",
+    "waiting": "አሳሽ በመጠበቅ ላይ...",
+    "openSignInPage": "የመግቢያ ገጹን ይክፈቱ",
+    "needsAuth": "{{serverName}} ማረጋገጫ ያስፈልገዋል",
+    "needsAuthHint": "ለመገናኘት ወደዚህ አገልጋይ ይግቡ።",
+    "authorized": "ወደ {{serverName}} ገብቷል",
+    "authorizeFailed": "ለ{{serverName}} መግባት አልተሳካም።",
+    "cleared": "የተከማቹ ምስክርነቶች ለ {{serverName}}",
+    "nothingToClear": "{{serverName}} ምንም የተከማቸ ምስክርነት አልነበራቸውም።",
+    "clearFailed": "ለ {{serverName}} ምስክርነቶችን ማጽዳት አልተቻለም",
+    "renew": "ክፍለ-ጊዜን ያድሱ",
+    "expiredAgo": "ጊዜው ያለፈበት {{duration}} በፊት"
+  }
+}

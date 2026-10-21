@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "ኮድ",
+    "preview": "ቅድመ እይታ",
+    "previewStreaming": "ትውልድ ሲያልቅ ይገኛል።",
+    "unresolvedAssets_one": "1 የንብረት ማጣቀሻ በቅድመ-እይታ ውስጥ መጫን አይችልም። አንጻራዊ ዱካዎች በተቃውሞ ለመፍታት ምንም መሠረት የላቸውም URL።",
+    "unresolvedAssets_other": "{{count}} የንብረት ማጣቀሻዎች በቅድመ-እይታ ላይ መጫን አይችሉም። አንጻራዊ ዱካዎች ለመቃወም ምንም መሠረት የላቸውም URL።"
+  },
+  "assistants": "ረዳቶች",
+  "hardware": "ሃርድዌር",
+  "mcp-servers": "MCP አገልጋዮች",
+  "local_api_server": "የሀገር ውስጥ API አገልጋይ",
+  "remote_access": "የርቀት መዳረሻ",
+  "integrations": "ውህደቶች",
+  "experimental": "የሙከራ",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS ፕሮክሲ",
+  "web_search": "የድር ፍለጋ",
+  "shell": "ዛጎል",
+  "browse": "አስስ",
+  "moreControls": "ተጨማሪ መቆጣጠሪያዎች",
+  "starting": "በመጀመር ላይ...",
+  "activeSuffix": "(ገባሪ)",
+  "extensions": "ቅጥያዎች",
+  "attachments": "አባሪዎች",
+  "general": "አጠቃላይ",
+  "settings": "ቅንብሮች",
+  "modelProviders": "ሞዴል አቅራቢዎች",
+  "localProviders": "አካባቢያዊ",
+  "remoteProviders": "የርቀት",
+  "manageProviders": "አቅራቢዎችን ያስተዳድሩ",
+  "hiddenProviders": "{{count}} የአካል ጉዳተኛ",
+  "hideProvider": "አቅራቢን ደብቅ",
+  "showProvider": "አቅራቢ አሳይ",
+  "interface": "በይነገጽ",
+  "appearance": "መልክ",
+  "privacy": "ግላዊነት",
+  "keyboardShortcuts": "አቋራጮች",
+  "home": "ቤት",
+  "cowork": "Cowork",
+  "newSession": "አዲስ ክፍለ ጊዜ",
+  "artifacts": "ቅርሶች",
+  "customize": "አብጅ",
+  "local": "አካባቢያዊ",
+  "selectFolder": "አቃፊ ይምረጡ",
+  "selectModel": "መጀመሪያ ሞዴል ይምረጡ",
+  "commands": "ትዕዛዞች",
+  "cmdHelp": "የሚገኙ ትዕዛዞችን ይዘርዝሩ",
+  "cmdClear": "ይህን ክፍለ ጊዜ አጽዳ",
+  "cmdModels": "ንቁውን ሞዴል ይቀይሩ",
+  "cmdModelsHint": "/models ይጻፉ፣ ከዚያ ከዝርዝሩ ሞዴል ይምረጡ",
+  "cmdModelSwitched": "ወደ {{name}} ተቀይሯል",
+  "cmdUnknown": "ያልታወቀ ትእዛዝ፦ {{name}}። /help ይሞክሩ",
+  "cmdBusy": "ወኪሉ እየሮጠ እያለ ይህን ማድረግ አይቻልም",
+  "cmdCompact": "የክፍለ-ጊዜውን አውድ ወደ ማጠቃለያ ያጠቃልሉት",
+  "cmdCompacted": "የታመቁ {{before}} -> {{after}} መልእክቶች",
+  "cmdNothingToCompact": "እስካሁን ምንም የሚያጠቃልለው የለም።",
+  "cmdCompactFailed": "መጨናነቅ አልተሳካም: {{error}}",
+  "cmdPlan": "የፕላን ሁነታን ቀይር (ተነባቢ-ብቻ፡ ወኪሉ ያለመፃፍ ሃሳብ ያቀርባል)",
+  "cmdPlanOn": "ሁነታን ያቅዱ፡ ወኪሉ ሳይጽፍ ያነብባል እና ሃሳብ ያቀርባል",
+  "cmdPlanOff": "የዕቅድ ሁነታ ጠፍቷል፡ መደበኛ አፈጻጸም",
+  "cmdTodo": "የሂደት ፓነልን ይክፈቱ",
+  "cmdTasks": "የበስተጀርባ ተግባራት ፓነልን ይክፈቱ",
+  "cmdInit": "ፕሮጀክቱን አጥኑ እና ክህሎቶችን እና ትውስታዎችን ይፃፉ",
+  "cmdInitRunning": "በዚህ ፕሮጀክት በመሳፈር ላይ",
+  "skills": "ችሎታዎች",
+  "skillsInContext": "በዚህ ሩጫ ለወኪሉ የሚገኙ ችሎታዎች",
+  "skillsTitle": "ክህሎቶችን ያስተዳድሩ",
+  "skillsScopeProject": "ችሎታዎች ለ {{folder}}",
+  "skillsScopeGlobal": "ዓለም አቀፍ ችሎታዎች፣ ለእያንዳንዱ ክፍለ ጊዜ ይገኛል።",
+  "skillsScopeMerged": "ችሎታዎች ለ {{folder}}፣ እና የአለምአቀፍ ችሎታዎች እያንዳንዱ ክፍለ ጊዜ ይጋራል።",
+  "skillOriginFolder": "አቃፊ",
+  "skillOriginGlobal": "ዓለም አቀፍ",
+  "skillsEmpty": "እስካሁን ምንም ችሎታ የለም።",
+  "skillsPickOrNew": "ለማርትዕ ወይም አዲስ ለመፍጠር ችሎታ ይምረጡ።",
+  "skillNew": "አዲስ ችሎታ",
+  "skillDelete": "ችሎታን ሰርዝ",
+  "skillSave": "አስቀምጥ",
+  "skillSaved": "ችሎታ ተቀምጧል",
+  "skillNameRequired": "የክህሎት ስም ያስፈልጋል",
+  "skillNamePlaceholder": "ችሎታ-ስም",
+  "skillContentPlaceholder": "እንደገና ጥቅም ላይ ሊውል የሚችለውን አሰራር በ Markdown ይግለጹ…",
+  "skillHubImport": "ከ hub አስመጣ",
+  "skillHubTitle": "Anthropic የክህሎት ማዕከል",
+  "skillHubEmpty": "በማዕከሉ ላይ ምንም ችሎታዎች አልተገኙም።",
+  "skillImport": "አስመጣ",
+  "skillReimport": "እንደገና አስመጣ",
+  "skillImported": "ከውጭ የመጣ {{name}}",
+  "sessions": "ክፍለ-ጊዜዎች",
+  "deleteSession": "ክፍለ-ጊዜን ሰርዝ",
+  "deleteSessionTitle": "ክፍለ ጊዜ ይሰረዝ?",
+  "deleteSessionBody": "\"{{title}}\" እና ግልባጩ እስከመጨረሻው ይሰረዛል። ይህ ሊቀለበስ አይችልም።",
+  "newChat": "አዲስ ውይይት",
+  "newAgentChat": "አዲስ ወኪል ውይይት",
+  "chats": "ቻቶች",
+  "favorites": "ተወዳጆች",
+  "recents": "የቅርብ ጊዜ",
+  "hub": "ሃብ",
+  "helpSupport": "እገዛ እና ድጋፍ",
+  "helpUsImproveJan": "እንድናሻሽል እርዳን Jan",
+  "analyticsConsentDetail": "የባህሪ አጠቃቀምን ለመረዳት ስም-አልባ ውሂብ እንሰበስባለን። የእርስዎ ውይይቶች እና የግል መረጃ በጭራሽ ክትትል አይደረግባቸውም። ይህንን በማንኛውም ጊዜ በቅንብሮች > ግላዊነት ውስጥ መቀየር ይችላሉ።",
+  "analyticsConsentQuestion": "እንድናሻሽል ሊረዱን ይፈልጋሉ Jan?",
+  "unstarAll": "ሁሉንም ኮከብ አንሳ",
+  "unstar": "ኮከብ አንሳ",
+  "deleteAll": "ሁሉንም ሰርዝ",
+  "star": "ኮከብ",
+  "rename": "እንደገና ይሰይሙ",
+  "delete": "ሰርዝ",
+  "copied": "ተቀድቷል!",
+  "dataFolder": "የውሂብ አቃፊ",
+  "others": "ሌላ",
+  "language": "ቋንቋ",
+  "login": "ግባ",
+  "loginWith": "በ{{provider}} ይግቡ",
+  "loginFailed": "መግባት አልተሳካም።",
+  "logout": "ውጣ",
+  "loggingOut": "በመውጣት ላይ...",
+  "loggedOut": "በተሳካ ሁኔታ ወጥቷል።",
+  "logoutFailed": "መውጣት አልተሳካም።",
+  "profile": "መገለጫ",
+  "reset": "ዳግም አስጀምር",
+  "search": "ፈልግ",
+  "searchThreads": "ክሮች ፈልግ...",
+  "toNavigate": "ለማሰስ",
+  "toSelect": "ለመምረጥ",
+  "toClose": "ለመዝጋት",
+  "clearRecent": "ግልጽ",
+  "name": "ስም",
+  "cancel": "ይቅር",
+  "dismiss": "አሰናብት",
+  "create": "ፍጠር",
+  "save": "አስቀምጥ",
+  "edit": "አርትዕ",
+  "copy": "ቅዳ",
+  "back": "ተመለስ",
+  "close": "ዝጋ",
+  "done": "ተከናውኗል",
+  "next": "ቀጣይ",
+  "finish": "ጨርስ",
+  "skip": "ዝለል",
+  "allow": "ፍቀድ",
+  "deny": "መካድ",
+  "start": "ጀምር",
+  "stop": "አቁም",
+  "preview": {
+    "loading": "በመክፈት ላይ…",
+    "unsupported": "Jan ይህን አይነት ፋይል ማሳየት አይችልም። በሌላ መተግበሪያ ውስጥ ለማየት ይክፈቱት።",
+    "outside": "ይህ ፋይል ከአሁን በኋላ በክፍለ-ጊዜው የስራ ቦታ ላይ የለም።",
+    "tooLarge": "ለማየት በጣም ትልቅ ነው። በሌላ መተግበሪያ ውስጥ ለማየት ይክፈቱት።",
+    "reload": "እንደገና ጫን",
+    "allowNetwork": "አውታረ መረብ ፍቀድ",
+    "unsandboxed": "ከማጠሪያ ውጭ ያሂዱ፡ የተቀመጠ ውሂብ እና የአካባቢ ፋይሎች ይሰራሉ",
+    "unresolvedRefs_one": "1 ይህ ገጽ አገናኞችን ፋይል ያድርጉ በቅድመ-እይታ ውስጥ መጫን አይቻልም። በአሳሽ ውስጥ ለማየት ይክፈቱት።",
+    "unresolvedRefs_other": "{{count}} የዚህ ገጽ ማያያዣዎች ፋይሎች በቅድመ እይታ ውስጥ መጫን አይችሉም። በአሳሽ ውስጥ ለማየት ይክፈቱት።",
+    "externalRefs_one": "ይህ ገጽ ከድሩ የሚጫነው 1 ግብአት ታግዷል። እሱን ለመጫን \"አውታረ መረብ ፍቀድ\" የሚለውን ያብሩት።",
+    "externalRefs_other": "{{count}} ይህ ገጽ ከድሩ የሚጫነው ሃብቶች ታግደዋል። እነሱን ለመጫን \"አውታረ መረብ ፍቀድ\" የሚለውን ያብሩ።",
+    "scriptErrors_one": "ገጹ ስህተት ዘግቧል፡ {{message}}",
+    "scriptErrors_other": "ገጹ {{count}} ስህተቶችን ዘግቧል። መጀመሪያ፡ {{message}}"
+  },
+  "changes": {
+    "title": "ወኪል ይቀየራል።",
+    "empty": "ወኪሉ የሚጽፋቸው ወይም የሚያርሙ ፋይሎች እዚህ ይታያሉ።",
+    "a11y": "የወኪል ለውጦች፡ {{files}} ፋይሎች፣ {{additions}} ታክለዋል፣ {{deletions}} ተወግደዋል"
+  },
+  "modelPanel": {
+    "title": "የሞዴል ቅንጅቶች",
+    "a11y": "የሞዴል ቅንብሮችን ይክፈቱ",
+    "contextTooltip": "የአውድ መስኮት፡ {{value}} ከ{{max}} ቶከኖች"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "ክህሎት '{{name}}' አይገኝም",
+    "kind": {
+      "skill": "ችሎታ",
+      "command": "Command",
+      "model": "ሞዴል"
+    }
+  },
+  "compactWidth": "የታመቀ ስፋት",
+  "fullWidth": "ሙሉ ስፋት",
+  "dark": "ጨለማ",
+  "light": "ብርሃን",
+  "system": "ስርዓት",
+  "auto": "መኪና",
+  "english": "እንግሊዝኛ",
+  "medium": "መካከለኛ",
+  "newThread": "አዲስ ክር",
+  "noResultsFound": "ምንም ውጤቶች አልተገኙም።",
+  "noThreadsYet": "እስካሁን ምንም ክሮች የሉም",
+  "noThreadsYetDesc": "የክር ታሪክህን እዚህ ለማየት አዲስ ውይይት ጀምር።",
+  "downloads": "ውርዶች",
+  "downloading": "በማውረድ ላይ",
+  "uploadingAttachments": "አባሪዎችን በመስቀል ላይ…",
+  "cancelDownload": "ማውረድ ሰርዝ",
+  "downloadCancelled": "ማውረድ ተሰርዟል።",
+  "downloadComplete": "ማውረድ ተጠናቋል",
+  "thinking": "በማሰብ...",
+  "thought": "ሀሳብ",
+  "callingTool": "የመደወያ መሳሪያ",
+  "completed": "ተጠናቀቀ",
+  "image": "ምስል",
+  "vision": "ራዕይ",
+  "multimodal": "መልቲሞዳል",
+  "embeddings": "መክተቻዎች",
+  "tools": "መሣሪያዎች",
+  "webSearch": "የድር ፍለጋ",
+  "reasoning": "ማመዛዘን",
+  "proactive": "ንቁ",
+  "selectAModel": "ሞዴል ይምረጡ",
+  "noToolsAvailable": "ምንም መሳሪያዎች የሉም",
+  "noModelsFoundFor": "ለ\"{{searchValue}}\" ምንም ሞዴሎች አልተገኙም",
+  "failedToLoadModels": "ሞዴሎችን መጫን አልተሳካም።",
+  "noModels": "ምንም ሞዴሎች አልተገኙም።",
+  "noAssistant": "ረዳት የለም።",
+  "customAvatar": "ብጁ አምሳያ",
+  "editAssistant": "ረዳትን ያርትዑ",
+  "jan": "Jan",
+  "metadata": "ዲበ ውሂብ",
+  "regenerate": "እንደገና ማመንጨት",
+  "threadImage": "የክር ምስል",
+  "editMessage": "መልእክት ያርትዑ",
+  "deleteMessage": "መልእክት ሰርዝ",
+  "deleteThread": "ክር ሰርዝ",
+  "renameThread": "ክር እንደገና ይሰይሙ",
+  "threadTitle": "የክር ርዕስ",
+  "deleteAllThreads": "ሁሉንም ክሮች ሰርዝ",
+  "allThreadsUnfavorited": "ሁሉም ክሮች ያልተወደዱ",
+  "deleteAllThreadsConfirm": "እርግጠኛ ነህ ሁሉንም ክሮች መሰረዝ ትፈልጋለህ? ይህ እርምጃ ሊቀለበስ አይችልም።",
+  "addProvider": "አቅራቢን ያክሉ",
+  "addOpenAIProvider": "OpenAI አቅራቢን ይጨምሩ",
+  "enterNameForProvider": "ለአቅራቢዎ ስም ያስገቡ",
+  "providerAlreadyExists": "\"{{name}}\" የሚል ስም ያለው አቅራቢ አስቀድሞ አለ። እባክዎ የተለየ ስም ይምረጡ።",
+  "adjustFontSize": "የቅርጸ ቁምፊ መጠንን ያስተካክሉ",
+  "changeLanguage": "ቋንቋ ቀይር",
+  "editTheme": "ገጽታን ያርትዑ",
+  "editCodeBlockStyle": "ኮድ አግድ ዘይቤን ያርትዑ",
+  "editServerHost": "የአገልጋይ አስተናጋጅ አርትዕ",
+  "pickColorWindowBackground": "የቀለም መስኮት ዳራ ይምረጡ",
+  "pickColorAppMainView": "የቀለም መተግበሪያ ዋና እይታን ይምረጡ",
+  "pickColorAppPrimary": "የቀለም መተግበሪያ ቀዳሚ ይምረጡ",
+  "pickColorAppAccent": "የቀለም መተግበሪያ አክሰንት ይምረጡ",
+  "pickColorAppDestructive": "የቀለም መተግበሪያ አጥፊ ይምረጡ",
+  "apiKeyRequired": "API ቁልፍ ያስፈልጋል",
+  "enterTrustedHosts": "የታመኑ አስተናጋጆችን አስገባ",
+  "placeholder": {
+    "chatInput": "ማንኛውንም ነገር ጠይቁኝ..."
+  },
+  "confirm": "አረጋግጥ",
+  "continue": "ቀጥል",
+  "loading": "በመጫን ላይ...",
+  "settingUpJan": "በማስነሳት ላይ Jan…",
+  "registeringExtensions": "ቅጥያዎችን በመመዝገብ ላይ…",
+  "loadingExtensions": "ቅጥያዎችን በመጫን ላይ… ({{done}}/{{total}})",
+  "error": "ስህተት",
+  "success": "ስኬት",
+  "warning": "ማስጠንቀቂያ",
+  "conversationNotAvailable": "ውይይት አይገኝም",
+  "conversationNotAvailableDescription": "ለማግኘት እየሞከሩት ያለው ውይይት አይገኝም ወይም ተሰርዟል።",
+  "temporaryChat": "ጊዜያዊ ውይይት",
+  "temporaryChatTooltip": "ጊዜያዊ ውይይት በታሪክዎ ውስጥ አይታይም።",
+  "noResultsFoundDesc": "ከፍለጋህ ጋር የሚዛመድ ምንም አይነት ውይይት ልናገኝ አልቻልንም። የተለየ ቁልፍ ቃል ይሞክሩ።",
+  "searchModels": "ሞዴሎችን ፈልግ...",
+  "searchStyles": "የፍለጋ ቅጦች...",
+  "createAssistant": "ረዳት ይፍጠሩ",
+  "enterApiKey": "API ቁልፍ አስገባ",
+  "scrollToBottom": "ወደ ታች ይሸብልሉ",
+  "generateAiResponse": "የ AI ምላሽ ይፍጠሩ",
+  "continueAiResponse": "በ AI ምላሽ ይቀጥሉ",
+  "addModel": {
+    "title": "ሞዴል አክል",
+    "modelId": "የሞዴል መታወቂያ",
+    "enterModelId": "የሞዴል መታወቂያ አስገባ",
+    "addModel": "ሞዴል አክል",
+    "description": "አዲስ ሞዴል ወደ አቅራቢው ያክሉ",
+    "exploreModels": "የሞዴል ዝርዝርን ከአቅራቢው ይመልከቱ"
+  },
+  "mcpServers": {
+    "editServer": "አገልጋይ አርትዕ",
+    "addServer": "አገልጋይ አክል",
+    "serverName": "የአገልጋይ ስም",
+    "enterServerName": "የአገልጋይ ስም አስገባ",
+    "command": "Command",
+    "enterCommand": "ትዕዛዝ አስገባ",
+    "arguments": "ክርክሮች",
+    "argument": "ክርክር {{index}}",
+    "envVars": "የአካባቢ ተለዋዋጮች",
+    "key": "ቁልፍ",
+    "value": "ዋጋ",
+    "save": "አስቀምጥ"
+  },
+  "deleteServer": {
+    "title": "አገልጋይ ሰርዝ",
+    "delete": "ሰርዝ"
+  },
+  "editJson": {
+    "errorParse": "JSONን መተንተን አልተሳካም",
+    "errorPaste": "JSON መለጠፍ አልተሳካም",
+    "errorFormat": "ልክ ያልሆነ የJSON ቅርጸት",
+    "titleAll": "ሁሉንም የአገልጋይ ውቅር ያርትዑ",
+    "placeholder": "JSON ውቅረት አስገባ...",
+    "save": "አስቀምጥ"
+  },
+  "editModel": {
+    "title": "ሞዴል አርትዕ፡ {{modelId}}",
+    "description": "ከታች ያሉትን አማራጮች በመቀያየር የሞዴል ችሎታዎችን ያዋቅሩ።",
+    "capabilities": "ችሎታዎች",
+    "tools": "መሣሪያዎች",
+    "vision": "ራዕይ",
+    "embeddings": "መክተቻዎች",
+    "notAvailable": "እስካሁን አልተገኘም።"
+  },
+  "outOfContextError": {
+    "truncateInput": "ግቤት መቆራረጥ",
+    "title": "ከአውድ ስህተት ውጪ",
+    "description": "ይህ ውይይት ልክ እንደ ነጭ ሰሌዳ መሙላት የ AI ማህደረ ትውስታ ገደብ ላይ እየደረሰ ነው። የማስታወሻ መስኮቱን ማስፋፋት እንችላለን (የአውድ መጠን ተብሎ የሚጠራው) ስለዚህ የበለጠ ያስታውሳል፣ ነገር ግን ብዙ የኮምፒውተርዎን ማህደረ ትውስታ ሊጠቀም ይችላል። እንዲሁም ግብአቱን መቁረጥ እንችላለን፣ ይህ ማለት ለአዲስ መልእክት ቦታ ለመስጠት አንዳንድ የውይይት ታሪክን ይረሳል ማለት ነው።",
+    "increaseContextSizeDescription": "የአውድ መጠን መጨመር ይፈልጋሉ?",
+    "increaseContextSize": "የአውድ መጠን ጨምር"
+  },
+  "toolApproval": {
+    "title": "የመሳሪያ ፍቃድ ጥያቄ",
+    "description": "ረዳቱ <strong>{{toolName}}</strong> መጠቀም ይፈልጋል።",
+    "securityNotice": "የሚያምኗቸውን መሳሪያዎች ብቻ ፍቀድ። መሳሪያዎች የእርስዎን ስርዓት እና ውሂብ መድረስ ይችላሉ።",
+    "deny": "መካድ",
+    "allowOnce": "አንዴ ፍቀድ",
+    "alwaysAllow": "ሁሌም ፍቀድ"
+  },
+  "deleteModel": {
+    "title": "ሞዴል ሰርዝ: {{modelId}}",
+    "description": "እርግጠኛ ነዎት ይህን ሞዴል መሰረዝ ይፈልጋሉ? ይህ እርምጃ ሊቀለበስ አይችልም።",
+    "success": "ሞዴል {{modelId}} እስከመጨረሻው ተሰርዟል።",
+    "cancel": "ይቅር",
+    "delete": "ሰርዝ"
+  },
+  "deleteProvider": {
+    "title": "አቅራቢን ሰርዝ",
+    "description": "ይህንን አቅራቢ እና ሁሉንም ሞዴሎቹን ይሰርዙ። ይህ እርምጃ ሊቀለበስ አይችልም።",
+    "success": "አቅራቢ {{provider}} እስከመጨረሻው ተሰርዟል።",
+    "confirmTitle": "አቅራቢን ሰርዝ: {{provider}}",
+    "confirmDescription": "እርግጠኛ ነዎት ይህን አቅራቢ መሰረዝ ይፈልጋሉ? ይህ እርምጃ ሊቀለበስ አይችልም።",
+    "cancel": "ይቅር",
+    "delete": "ሰርዝ"
+  },
+  "modelSettings": {
+    "title": "የሞዴል ቅንጅቶች - {{modelId}}",
+    "description": "አፈጻጸምን እና ባህሪን ለማመቻቸት የሞዴል ቅንብሮችን ያዋቅሩ።",
+    "nglDisabledByFit": "አውቶማቲክ ተስማሚ GPU ንብርብሮችን እየመረጠ ነው። ይህንን እራስዎ ለማዘጋጀት ራስ-አመጣጥን ያጥፉ።",
+    "samplingDefaults": {
+      "title": "ነባሪ ናሙና መለኪያዎች",
+      "description": "ለዚህ ሞዴል ነባሪ ናሙና ቅንብሮች። በረዳት ወይም በጥያቄ ዋጋዎች ካልተሻረ በቀር ጥቅም ላይ ይውላል።"
+    },
+    "specDraft": {
+      "section": "ግምታዊ ዲኮዲንግ",
+      "enable": "ግምታዊ ኮድ ማውጣትን አንቃ",
+      "enableDescription": "በየደረጃው ብዙ ቶከኖችን ይቅረጹ እና በአንድ ማለፊያ ያረጋግጡ፣ ይህም ትውልድን ያፋጥናል። የአምሳያው አብሮገነብ ኤምቲፒ ራሶችን ወይም ከእሱ ጋር የወረደውን ረቂቅ ሞዴል (MTP፣ Eagle3፣ DFlash ወይም DSpark) ይጠቀማል።",
+      "nMax": "ከፍተኛው ረቂቅ ቶከኖች",
+      "nMaxDescription": "በእያንዳንዱ እርምጃ የሚፈቀደው ከፍተኛው የቶከኖች ብዛት። ነባሪ 16.",
+      "nMin": "አነስተኛ ረቂቅ ምልክቶች",
+      "nMinDescription": "በየደረጃው ለመቅረጽ ዝቅተኛው የቶከኖች ብዛት። ነባሪ 0.",
+      "pMin": "አነስተኛ ረቂቅ ፕሮባቢሊቲ",
+      "pMinDescription": "የስግብግብ ረቂቅ (0-1) ዝቅተኛ ዕድል። ነባሪ 0.75."
+    },
+    "templateKwargs": {
+      "section": "የውይይት አብነት አማራጮች",
+      "description": "የዚህ ሞዴል የውይይት አብነት ተጨማሪ አማራጮችን ይቀበላል። በእያንዳንዱ ጥያቄ እንደ chat_template_kwargs ተልኳል; አብነቱ እንዲወስን አንድ እሴት በነባሪ ይተው።",
+      "addCustom": "ብጁ አማራጭ ያክሉ",
+      "keyPlaceholder": "ስም",
+      "valuePlaceholder": "ዋጋ",
+      "add": "ጨምር",
+      "cancel": "ይቅር",
+      "remove": "አስወግድ"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "የሞዴል ቅንብሮችን ማዘመን አልተቻለም"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "የውሂብ አቃፊ ቦታን ቀይር",
+      "description": "እርግጠኛ ነዎት የውሂብ አቃፊውን ቦታ መቀየር ይፈልጋሉ? ይሄ ሁሉንም ውሂብዎን ወደ አዲሱ ቦታ ያንቀሳቅሳል እና መተግበሪያውን እንደገና ያስጀምረዋል.",
+      "currentLocation": "የአሁኑ አካባቢ፡",
+      "newLocation": "አዲስ ቦታ፡",
+      "cancel": "ይቅር",
+      "changeLocation": "አካባቢን ቀይር"
+    },
+    "deleteAllThreads": {
+      "title": "ሁሉንም ክሮች ሰርዝ",
+      "description": "ሁሉም ክሮች ይሰረዛሉ። ይህ እርምጃ ሊቀለበስ አይችልም።"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "ሁሉንም ንግግሮች ሰርዝ",
+      "description": "በ\"{{projectName}}\" ውስጥ ያሉ {{count}} ንግግሮች ይሰረዛሉ። ይህ እርምጃ ሊቀለበስ አይችልም።"
+    },
+    "deleteThread": {
+      "description": "እርግጠኛ ነዎት ይህን ተከታታይ መሰረዝ ይፈልጋሉ? ይህ እርምጃ ሊቀለበስ አይችልም።"
+    },
+    "editMessage": {
+      "title": "መልእክት ያርትዑ"
+    },
+    "messageMetadata": {
+      "title": "የመልዕክት ዲበ ውሂብ"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "የሆነ ችግር ተፈጥሯል።",
+    "details": "ዝርዝሮች"
+  },
+  "missingDependenciesDialog": {
+    "title": "የስርዓት ቤተ-ፍርግሞች ይጎድላሉ",
+    "description": "{{backend}} ተጭኗል ነገርግን አንዳንድ አስፈላጊ የሲስተም ላይብረሪዎች ሊገኙ አልቻሉም። ወደ CPU ሊወድቅ ወይም በትክክል ላይሰራ ይችላል።",
+    "installLabel": "ይህንን ለማስተካከል የሚከተሉትን ይጫኑ",
+    "download": "አውርድ",
+    "additionalLibraries": "ተጨማሪ የጎደሉ ቤተ መጻሕፍት፡",
+    "missingLibraries": "የጠፉ ቤተ መጻሕፍት፡",
+    "showRawLibraries": "{{count}} የጎደሉ የቤተ መፃህፍት ስሞችን አሳይ"
+  },
+  "projects": {
+    "title": "ፕሮጀክቶች",
+    "new": "አዳዲስ ፕሮጀክቶች",
+    "addProject": "ፕሮጀክት አክል",
+    "addToProject": "ወደ ፕሮጀክት ያክሉ",
+    "removeFromProject": "ከፕሮጀክት አስወግድ",
+    "createNewProject": "አዲስ ፕሮጀክት ይፍጠሩ",
+    "editProject": "ፕሮጀክት አርትዕ",
+    "deleteProject": "ፕሮጀክት ሰርዝ",
+    "projectName": "የፕሮጀክት ስም",
+    "enterProjectName": "የፕሮጀክት ስም አስገባ...",
+    "noProjectsAvailable": "ምንም ፕሮጀክቶች የሉም",
+    "noProjectsYet": "እስካሁን ምንም ፕሮጀክቶች የሉም",
+    "noProjectsYetDesc": "የፕሮጀክት አክል አዝራሩን ጠቅ በማድረግ አዲስ ፕሮጀክት ይጀምሩ።",
+    "projectNotFound": "ፕሮጀክት አልተገኘም።",
+    "projectNotFoundDesc": "የሚፈልጉት ፕሮጀክት የለም ወይም ተሰርዟል።",
+    "selectAssistant": "ረዳትን ይምረጡ",
+    "noAssistantAssigned": "ለዚህ ፕሮጀክት ምንም ረዳት አልተመደበም።",
+    "files": "ፋይሎች",
+    "filesDescription": "በዚህ ፕሮጀክት ውስጥ ለማጣቀሻ ፒዲኤፍ፣ ሰነዶች ወይም ሌላ ጽሑፍ ያክሉ።",
+    "uploadingFiles": "ፋይሎችን በማሰናዳት ላይ…",
+    "processButton": "ጨምር",
+    "deleteProjectDialog": {
+      "title": "ፕሮጀክት ሰርዝ",
+      "permanentDelete": "ይህ ሁሉንም ክሮች እስከመጨረሻው ይሰርዛል።",
+      "permanentDeleteWarning": "ይህ እርምጃ በፕሮጀክቱ ውስጥ ያሉትን ሁሉንም ክሮች በቋሚነት ይሰርዛል!",
+      "deleteEmptyProject": "ይህ እርምጃ ፕሮጀክትን \"{{projectName}}\" ይሰርዛል።",
+      "saveThreadsAdvice": "ክሮችን ለማስቀመጥ ከመሰረዝዎ በፊት ወደ የእርስዎ ክር ዝርዝር ወይም ሌላ ፕሮጀክት ይውሰዱ።",
+      "starredWarning": "አሁንም በፕሮጀክቱ ውስጥ ኮከብ የተደረገባቸው ክሮች አሉዎት።",
+      "deleteButton": "ሰርዝ",
+      "successWithName": "ፕሮጀክት \"{{projectName}}\" በተሳካ ሁኔታ ተሰርዟል።",
+      "successWithoutName": "ፕሮጀክት በተሳካ ሁኔታ ተሰርዟል።",
+      "error": "ፕሮጀክት መሰረዝ አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+      "ariaLabel": "ሰርዝ {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "አዲስ ፕሮጀክት ይፍጠሩ",
+      "editTitle": "ፕሮጀክት አርትዕ",
+      "nameLabel": "የፕሮጀክት ስም",
+      "namePlaceholder": "የፕሮጀክት ስም አስገባ...",
+      "assistant": "ረዳት",
+      "selectAssistant": "ረዳት ይምረጡ (አማራጭ)",
+      "noAssistant": "ረዳት የለም።",
+      "addAssistant": "ረዳት አክል",
+      "createButton": "ፍጠር",
+      "updateButton": "አዘምን",
+      "alreadyExists": "ፕሮጀክት \"{{projectName}}\" አስቀድሞ አለ።",
+      "createSuccess": "ፕሮጀክት \"{{projectName}}\" በተሳካ ሁኔታ ተፈጥሯል።",
+      "updateSuccess": "ፕሮጀክት \"{{projectName}}\" በተሳካ ሁኔታ ዘምኗል"
+    },
+    "noConversationsIn": "በ {{projectName}} ውስጥ ምንም ንግግሮች የሉም",
+    "startNewConversation": "ከታች {{projectName}} ጋር አዲስ ውይይት ይጀምሩ",
+    "conversationsIn": "ውይይቶች በ {{projectName}}",
+    "conversationsDescription": "ማውራት ለመቀጠል ማንኛውንም ንግግር ጠቅ ያድርጉ ወይም ከዚህ በታች አዲስ ይጀምሩ።",
+    "conversation": "ውይይት",
+    "instructions": "መመሪያዎች",
+    "setup": "ማዋቀር",
+    "instructionsDescription": "ቃና እና የምላሽ ዘይቤ አብጅ",
+    "manageInstructions": "መመሪያዎችን ያስተዳድሩ",
+    "thread": "ክር",
+    "threads": "ክሮች",
+    "updated": "ተዘምኗል፡",
+    "collapseProject": "ፕሮጀክት ሰብስብ",
+    "expandProject": "ፕሮጀክት ዘርጋ",
+    "update": "አዘምን",
+    "searchProjects": "ፕሮጀክቶችን ፈልግ...",
+    "noProjectsFound": "ምንም ፕሮጀክቶች አልተገኙም።",
+    "tryDifferentSearch": "የተለየ የፍለጋ ቃል ይሞክሩ"
+  },
+  "attachmentsIngestion": {
+    "title": "አባሪዎችን እንዴት ማስገባት እንደሚችሉ ይምረጡ",
+    "description": "እነዚህን ፋይሎች በቀጥታ በቻት ውስጥ ማካተት ወይም አለመካተቱን ይምረጡ ወይም በምትኩ እንደ መክተት ይጠቁሙ።",
+    "inline": "ወደ ውይይት አስገባ",
+    "embeddings": "መክተቻዎችን ተጠቀም"
+  },
+  "attachmentInjectedIndicator": "በቻት ውስጥ ገብቷል።",
+  "attachmentEmbeddedIndicator": "ለRAG የተከተተ",
+  "viewInjectedContent": "የተወጋ ይዘትን ይመልከቱ",
+  "injectedContentTitle": "የተከተተ ፋይል ይዘት",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "ሁሉም ክሮች ያልተወደዱ",
+      "description": "ሁሉም ክሮች ከተወዳጆችዎ ተወግደዋል።"
+    },
+    "deleteAllThreads": {
+      "title": "ሁሉንም ክሮች ሰርዝ",
+      "description": "ሁሉም ክሮች እስከመጨረሻው ተሰርዘዋል።"
+    },
+    "renameThread": {
+      "title": "ክር እንደገና ይሰይሙ",
+      "description": "የክብር ርዕስ ወደ '{{title}}' ተቀይሯል"
+    },
+    "deleteThread": {
+      "title": "ክር ሰርዝ",
+      "description": "ይህ ክር እስከመጨረሻው ተሰርዟል።"
+    },
+    "errorCopied": {
+      "title": "መቅዳት ተሳክቷል።",
+      "description": "የስህተት መረጃ ወደ ቅንጥብ ሰሌዳ ተቀድቷል።"
+    },
+    "errorCopyFailed": {
+      "title": "መቅዳት አልተሳካም።",
+      "description": "የስህተት መረጃን ወደ ቅንጥብ ሰሌዳ መቅዳት አልተሳካም።"
+    },
+    "editMessage": {
+      "title": "መልእክት ያርትዑ",
+      "description": "መልእክት በተሳካ ሁኔታ ተስተካክሏል። እባክዎን ሞዴሉ ምላሽ እስኪሰጥ ይጠብቁ።"
+    },
+    "appUpdateDownloaded": {
+      "title": "የመተግበሪያ ዝማኔ ወርዷል",
+      "description": "የመተግበሪያው ዝመና በተሳካ ሁኔታ ወርዷል።"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "የመተግበሪያ ዝማኔ ማውረድ አልተሳካም።",
+      "description": "የመተግበሪያውን ዝመና ማውረድ አልተሳካም። እባክዎ እንደገና ይሞክሩ።"
+    },
+    "downloadComplete": {
+      "title": "ማውረድ ተጠናቋል",
+      "description": "{{item}} ወርዷል"
+    },
+    "downloadCancelled": {
+      "title": "ማውረድ ተሰርዟል።",
+      "description": "የማውረድ ሂደቱ ተሰርዟል።"
+    },
+    "downloadFailed": {
+      "title": "ማውረድ አልተሳካም።",
+      "description": "{{item}} ማውረድ አልተሳካም።",
+      "descriptionWithReason": "{{item}} ማውረድ አልተሳካም፡ {{reason}}",
+      "reason": {
+        "dns": "የአገልጋዩ ስም ሊፈታ አልቻለም",
+        "refused": "ግንኙነቱ ተቀባይነት አላገኘም።",
+        "timeout": "ግንኙነቱ ጊዜው አልፎበታል።",
+        "tls": "ደህንነቱ የተጠበቀ ግንኙነት መፍጠር አልተቻለም",
+        "proxy": "ፕሮክሲው ሊደረስበት አልቻለም",
+        "unreachable": "አገልጋዩ ሊደረስበት አልቻለም"
+      }
+    },
+    "openSettings": "ቅንብሮችን ይክፈቱ",
+    "openLogs": "መዝገቦችን ክፈት",
+    "downloadTokenRequired": {
+      "title": "Hugging Face ማስመሰያ ያስፈልጋል",
+      "description": "ይህ ሞዴል Hugging Face መዳረሻ ማስመሰያ ያስፈልገዋል። ማስመሰያዎን በቅንብሮች ውስጥ ያክሉ እና እንደገና ይሞክሩ።"
+    },
+    "downloadLicenseRequired": {
+      "title": "በ Hugging Face ላይ የሞዴል ፍቃድ ተቀበል",
+      "description": "ከማውረድዎ በፊት የሞዴሉን ፍቃድ በ Hugging Face ገጹ ላይ መቀበል አለብዎት።"
+    },
+    "downloadRateLimited": {
+      "title": "መጠን በHugging Face የተገደበ",
+      "description": "እርስዎ በደረጃ የተገደቡ ነበሩ። ማስመሰያ ማከል የዋጋ ገደቦችን ሊጨምር ይችላል። እባክዎ ቆይተው እንደገና ይሞክሩ።"
+    },
+    "modelValidationStarted": {
+      "title": "የማረጋገጫ ሞዴል",
+      "description": "የወረደ ሞዴል \"{{modelId}}\" በተሳካ ሁኔታ። ታማኝነትን በማረጋገጥ ላይ..."
+    },
+    "modelValidationFailed": {
+      "title": "የሞዴል ማረጋገጫ አልተሳካም።",
+      "description": "የወረደው ሞዴል \"{{modelId}}\" የታማኝነት ማረጋገጫ አልተሳካም እና ተወግዷል። ፋይሉ ሊበላሽ ወይም ሊነካ ይችላል።"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ማውረድ ተጠናቋል",
+      "description": "ሞዴል \"{{item}}\" ወርዶ በተሳካ ሁኔታ ተረጋግጧል"
+    },
+    "projectCreated": {
+      "title": "ፕሮጀክት ተፈጠረ",
+      "description": "ፕሮጀክት \"{{projectName}}\" በተሳካ ሁኔታ ተፈጥሯል።"
+    },
+    "projectRenamed": {
+      "title": "ፕሮጀክቱ እንደገና ተሰይሟል",
+      "description": "ፕሮጄክት ከ\"{{oldName}}\" ወደ \"{{newName}}\" ተቀይሯል"
+    },
+    "projectDeleted": {
+      "title": "ፕሮጀክት ተሰርዟል።",
+      "description": "ፕሮጀክት \"{{projectName}}\" በተሳካ ሁኔታ ተሰርዟል።"
+    },
+    "projectAlreadyExists": {
+      "title": "ፕሮጀክት አስቀድሞ አለ።",
+      "description": "ፕሮጀክት \"{{projectName}}\" አስቀድሞ አለ።"
+    },
+    "projectDeleteFailed": {
+      "title": "መሰረዝ አልተሳካም።",
+      "description": "ፕሮጀክት መሰረዝ አልተሳካም። እባክዎ እንደገና ይሞክሩ።"
+    },
+    "threadAssignedToProject": {
+      "title": "ክር ተመድቧል",
+      "description": "ክር በተሳካ ሁኔታ ለ\"{{projectName}}\" ተመድቧል"
+    },
+    "threadRemovedFromProject": {
+      "title": "ክር ተወግዷል",
+      "description": "ክር በተሳካ ሁኔታ ከ\"{{projectName}}\" ተወግዷል"
+    },
+    "fileUploaded": {
+      "title": "ፋይል ተሰራ",
+      "description": "ፋይሉ በተሳካ ሁኔታ ተሰርቷል እና መረጃ ጠቋሚ ተደርጓል"
+    },
+    "uploadFailed": {
+      "title": "ማቀናበር አልተሳካም።",
+      "description": "ፋይልን ማካሄድ አልተሳካም።",
+      "subjectThisFile": "ይህ ፋይል",
+      "pdfMalformedXref": "{{subject}} ጉድለት ያለበት PDF ማመሳከሪያ ጠረጴዛ አለው እና ሊተነተን አልቻለም። በPDF ተመልካች ውስጥ ለመክፈት ይሞክሩ እና እንደገና ያስቀምጡት (ፋይል → አትም → አስቀምጥ እንደ PDF)፣ ከዚያ እንደገና ይስቀሉ።",
+      "pdfScanned": "{{subject}} የተቃኘ ወይም ምስል ላይ የተመሰረተ PDF ይመስላል። OCR እስካሁን አልተደገፈም - እባክዎን በጽሁፍ ላይ የተመሰረተ PDF ይስቀሉ።",
+      "pdfEncrypted": "{{subject}} በይለፍ ቃል የተጠበቀ ነው። የይለፍ ቃሉን ያስወግዱ እና እንደገና ይሞክሩ።",
+      "pdfUnsupportedFeature": "{{subject}} PDF ባህሪን ይጠቀማል Jan እስካሁን ሊተነተን አይችልም (ለምሳሌ፡ የፖስትስክሪፕት ቀለም/የጥላ ስራ)። ጠፍጣፋ ለማድረግ እንደገና ለማስቀመጥ (ፋይል → አትም → አስቀምጥ እንደ PDF) ይሞክሩ እና እንደገና ይስቀሉ።",
+      "pdfGeneric": "{{subject}} እንደ PDF ሊተነተን አልቻለም። ፋይሉ ተበላሽቷል ወይም የማይደገፍ PDF ባህሪን ይጠቀማል።",
+      "fileTooLarge": "{{subject}} በጣም ትልቅ ነው። {{message}}.",
+      "unsupportedType": "የፋይል አይነት \"{{type}}\" አይደገፍም።",
+      "ioError": "ማንበብ አልተቻለም {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} ሊተነተን አልቻለም፡ {{message}}",
+      "fallback": "ማስኬድ አልተሳካም {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "ፋይል ተሰርዟል።",
+      "description": "ፋይል ከፕሮጀክቱ ተወግዷል"
+    },
+    "deleteFailed": {
+      "title": "መሰረዝ አልተሳካም።",
+      "description": "ፋይል መሰረዝ አልተሳካም።"
+    },
+    "fileAlreadyExists": {
+      "title": "ፋይል አስቀድሞ አለ።",
+      "description": "ፋይል አስቀድሞ ከዚህ ፕሮጀክት ጋር ተያይዟል።"
+    },
+    "unsupportedFileType": {
+      "title": "የማይደገፍ የፋይል አይነት",
+      "description": "የፋይል ቅጥያ \".{{extension}}\" ለፕሮጀክት ማጣቀሻ አይደገፍም።"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "አባሪዎች ተሰናክለዋል።",
+      "description": "ማያያዣዎች በቅንብሮች ውስጥ ተሰናክለዋል።"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "ፋይል በጣም ትልቅ",
+    "fileTooLargeDescription": "{{fileName}} ከ {{maxFileSizeMB}}MB ገደብ አልፏል"
+  },
+  "files": {
+    "chunksCount": "{{count}} ቁርጥራጭ",
+    "title": "ፋይሎች",
+    "empty": "የሚያያይዟቸው ፋይሎች እና ወኪሉ የሚፈጥራቸው ፋይሎች እዚህ ይታያሉ።",
+    "a11y": "ፋይሎች: {{count}}",
+    "attachments": "አባሪዎች",
+    "notImported": "በስራ ቦታ ላይ አይደለም"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp አሁንም ስራ ላይ ነው።",
+    "description": "አንድ ወይም ከዚያ በላይ ሞዴሎች በጊዜ አልራገፉም። በግዳጅ ማቆም llama.cpp ያቋርጣል እና ንቁ ምላሾችን ሊያቋርጥ ይችላል።",
+    "forceQuit": "ለመልቀቅ አስገድድ",
+    "forcing": "ማቆም አስገድድ…",
+    "shuttingDown": "በመዝጋት ላይ…"
+  },
+  "duration": {
+    "seconds": "{{count}} ሰከንድ",
+    "minutes": "{{count}} ደቂቃ",
+    "hours": "{{count}} ሰዓት"
+  },
+  "collapse": "ሰብስብ",
+  "expand": "ዘርጋ",
+  "todoPanelTitle": "እድገት",
+  "todoPanelEmpty": "እስካሁን ምንም ዝርዝር የለም።",
+  "backgroundTasks": "የበስተጀርባ ተግባራት",
+  "subagentsRunning_one": "በሥራ ላይ ያሉ ንዑስ ወኪሎች ብዛት፦ {{count}}",
+  "subagentsRunning_other": "በሥራ ላይ ያሉ ንዑስ ወኪሎች ብዛት፦ {{count}}",
+  "monitorsRunning_one": "{{count}} ሩጫን መከታተል",
+  "monitorsRunning_other": "{{count}} የመቆጣጠሪያዎች ሩጫ",
+  "backgroundRunning_one": "{{count}} የጀርባ ተግባር እያሄደ ነው።",
+  "backgroundRunning_other": "{{count}} የበስተጀርባ ስራዎች እየሰሩ ነው።",
+  "monitors": "ተቆጣጣሪዎች",
+  "monitorPolling": "ድምጽ መስጠት",
+  "monitorMatched": "ተዛመደ",
+  "monitorTimedOut": "ጊዜው አልፎበታል።",
+  "monitorStopped": "ቆሟል",
+  "monitorEnded": "አበቃ",
+  "coworkWatching_one": "በመመልከት ላይ {{count}} ሞኒተር…",
+  "coworkWatching_other": "{{count}} ማሳያዎችን በመመልከት ላይ…",
+  "coworkWaitingBackground": "የበስተጀርባ ስራዎችን በመጠበቅ ላይ…",
+  "noBackgroundTasks": "እስካሁን ምንም የበስተጀርባ ስራዎች የሉም።",
+  "running": "መሮጥ",
+  "queued": "ተሰልፏል",
+  "waiting": "በመጠበቅ ላይ",
+  "finished": "ጨርሷል",
+  "subagentPhase": "ደረጃ {{phase}}",
+  "subagentWaiting": "በመጠባበቅ ላይ",
+  "viewTranscript": "ግልባጭ ይመልከቱ",
+  "taskWorking": "በመስራት ላይ…",
+  "taskNoOutput": "የንዑስ ተዋናዩ ምንም የሚታይ ውጤት አላመጣም።",
+  "subagentToolUses_one": "{{count}} የመሳሪያ አጠቃቀም",
+  "subagentToolUses_other": "{{count}} መሳሪያ ይጠቀማል",
+  "artifactGroupCode": "ኮድ",
+  "artifactGroupImage": "ምስል",
+  "artifactGroupDocument": "ሰነድ",
+  "artifactGroupVideo": "ቪዲዮ",
+  "artifactGroupAudio": "ኦዲዮ",
+  "artifactOpenPreview": "ቅድመ እይታን ክፈት",
+  "artifactOpenExternal": "ክፈት",
+  "artifactMoreActions": "ተጨማሪ ድርጊቶች",
+  "artifactShowInFolder": "በአቃፊ ውስጥ አሳይ",
+  "skillsUsedLabel": "ጥቅም ላይ የዋሉ ክህሎቶች",
+  "skillsUsed": "ያገለገሉ ችሎታዎች: {{skills}}",
+  "artifactsAll": "ሁሉም",
+  "artifactsEmpty": "እስካሁን ምንም አልተሰራም። ከCowork ሩጫዎች የተገኙ ቅርሶች እዚህ ይታያሉ።",
+  "artifactsNoMatch": "ምንም ቅርሶች አልተዛመዱም።",
+  "artifactsSearch": "ቅርሶችን ይፈልጉ",
+  "artifactsShowMore": "{{count}} ተጨማሪ አሳይ",
+  "workspace": {
+    "readsFrom": "ውስጥ ይሰራል",
+    "writable": "ማንበብ እና መጻፍ",
+    "footnote": "ወኪሉ ይህን አቃፊ በቀጥታ ያነብባል እና ያስተካክላል። በዲፍ ፓነል ውስጥ ምን እንደተለወጠ ይገምግሙ።",
+    "footnoteEmpty": "ወኪሉ በፕሮጀክትዎ ላይ እንዲሰራ ለማድረግ ማህደር ያያይዙ። በውስጡ ፋይሎችን ማንበብ እና ማርትዕ ይችላል.",
+    "attach": "አቃፊ ያያይዙ",
+    "change": "አቃፊ ቀይር",
+    "detach": "አቃፊ ይንቀሉ",
+    "open": "ክፈት",
+    "reveal": "መግለጥ",
+    "unavailable": "የስራ ቦታ የለም።",
+    "missing": "የስራ ቦታ አቃፊ {{folder}} ከአሁን በኋላ አይገኝም። የተለየ አቃፊ ይምረጡ።",
+    "openFailed": "የስራ ቦታን መክፈት አልተቻለም",
+    "revealFailed": "የስራ ቦታን መግለጥ አልተቻለም",
+    "a11yWithFolder": "የፕሮጀክት ማህደር {{folder}}፣ ከማንበብ እና ከመፃፍ መዳረሻ ጋር ተያይዟል። ይቀይሩት ወይም ያላቅቁት።",
+    "a11yNoFolder": "ምንም የፕሮጀክት አቃፊ አልተያያዘም። አንዱን ያያይዙ።"
+  },
+  "coworkEmpty": {
+    "title": "ምን እየሰራን ነው?",
+    "subtitleSandbox": "ለJan ተግባር ይስጡ። ፋይሎችን ያነባል እና ይጽፋል, ትዕዛዞችን ያስኬዳል እና በራሱ ደረጃዎች ውስጥ ይሰራል.",
+    "subtitleFolder": "ለJan ተግባር ይስጡ። በቀጥታ በ{{folder}} ውስጥ ይሰራል፣ ፋይሎችን በራሱ በማንበብ እና በማስተካከል።",
+    "try": "ይሞክሩ",
+    "sandbox": {
+      "first": "ፋይሎችን በተወሰዱበት ቀን የሚሰይም የ Python ስክሪፕት ይጻፉ",
+      "second": "አንድ ገጽ ዳሽቦርድ ከ CSV እኔ ለጥፍ",
+      "third": "እኔ ለገለጽኩልህ ፕሮጀክት README አዘጋጅ"
+    },
+    "folder": {
+      "first": "{{folder}} እንዴት እንደሚሰበሰብ ያብራሩ",
+      "second": "እያንዳንዱን TODO በ{{folder}} ፈልጉ እና በየአካባቢው ያቧድኗቸው",
+      "third": "ለ {{folder}} ክፍል ፈተናዎችን ጻፍ እጠቁማለሁ።"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "ተርሚናል የለም",
+    "a11y": "አሂድ ትዕዛዞች ጠፍተዋል። ዝርዝሮች.",
+    "title": "አሂድ ትዕዛዞች ጠፍተዋል።",
+    "body": "Jan ወኪሉ የሼል ትዕዛዞችን እንዲሰራ የሚፈቅደው ስርዓትዎ ሊገድባቸው ሲችል ብቻ ነው። እዚህ ምንም ማጠሪያ የለም፣ ስለዚህ ወኪሉ በማጠሪያው ውስጥ ፋይሎችን ማንበብ፣ መፃፍ እና ማርትዕ ይችላል - ግን ምንም ነገር አይሰራም።",
+    "fixLinux": "Linux የአረፋ መጠቅለያ ይጠቀማል። ይጫኑት፣ ከዚያ እንደገና ያስጀምሩ Jan።",
+    "fixMac": "macOS አብሮ የተሰራውን ማጠሪያ በ /usr/bin/sandbox-exec ይጠቀማል። አንዴ ከተገኘ Jan እንደገና ያስጀምሩ።",
+    "fixWindows": "Windows AppContainer ይጠቀማል። እንደገና ለመሞከር Jan እንደገና ያስጀምሩ።",
+    "recheck": "እንደገና ያረጋግጡ"
+  },
+  "planMode": {
+    "label": "እቅድ",
+    "tooltipOff": "መጀመሪያ እቅድ ያውጡ - ወኪሉ ሳይፃፍ አንብቦ ሃሳብ ያቀርባል።",
+    "tooltipOn": "እቅድ ማውጣት. ተወካዩ ፋይሎችን እንዲጽፍ ለማድረግ ይህንን ያጥፉት።",
+    "onAnnounce": "የዕቅድ ሁነታ በርቷል።",
+    "placeholder": "እቅድ ይጠይቁ. ወኪሉ ምንም ፋይሎችን አይቀይርም።"
+  },
+  "budget": {
+    "stoppedSteps": "{{max}} ደረጃዎች ላይ ቆሟል። ወኪሉ አላለቀም።",
+    "keepGoing": "ቀጥልበት",
+    "stoppedTokens": "ቆሟል - ይህ ክፍለ ጊዜ የማስመሰያ በጀት ተመቷል።",
+    "compact": "የታመቀ",
+    "newSession": "አዲስ ክፍለ ጊዜ"
+  },
+  "run": {
+    "stopped": "ቆሟል።",
+    "failed": "ሩጫው ቀደም ብሎ ቆሟል።",
+    "tryAgain": "እንደገና ይሞክሩ"
+  },
+  "modelNoTools": "{{model}} መሳሪያዎች መደወል ስለማይችል እንደ ወኪል መስራት አይችልም። የመሳሪያ ጥሪ ሞዴል ይምረጡ።",
+  "askContinue": "ቀጥል",
+  "askNext": "ቀጣይ ጥያቄ",
+  "askPrev": "ያለፈው ጥያቄ",
+  "askRecommended": "የሚመከር",
+  "askSelectedCount": "{{count}} ተመርጧል",
+  "askSomethingElse": "ሌላ ነገር",
+  "askSomethingElsePlaceholder": "የራስህ መልስ ተይብ",
+  "submit": "አስገባ"
+}

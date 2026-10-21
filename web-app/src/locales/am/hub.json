@@ -1,0 +1,19 @@
+{
+  "sortNewest": "አዲሱ",
+  "sortMostDownloaded": "በብዛት የወረዱ",
+  "newChat": "አዲስ ውይይት",
+  "download": "አውርድ",
+  "downloadFailed": "ማውረድ መጀመር አልተሳካም።",
+  "downloaded": "ወርዷል",
+  "loadingModels": "ሞዴሎችን በመጫን ላይ...",
+  "noModels": "ምንም ሞዴሎች አልተገኙም።",
+  "by": "በ",
+  "downloads": "ውርዶች",
+  "variants": "ተለዋጮች",
+  "showVariants": "ተለዋጮችን አሳይ",
+  "useModel": "ይህን ሞዴል ተጠቀም",
+  "downloadModel": "ሞዴል አውርድ",
+  "tools": "መሣሪያዎች",
+  "searchPlaceholder": "ሞዴሎችን በHugging Face ይፈልጉ...",
+  "resumeUnavailable": "ይህን ማውረድ ከቆመበት መቀጠል አይቻልም። እባክህ እንደገና ጀምር።"
+}
