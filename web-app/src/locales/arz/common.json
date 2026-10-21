@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "الكود",
+    "preview": "معاينة",
+    "previewStreaming": "المعاينة هتكون متاحة لما التوليد يخلص",
+    "unresolvedAssets_one": "عدد مراجع الملفات اللي مش قادرة تتحمّل في المعاينة: 1. مفيش URL أساسي نقدر نحلّ بيه المسارات النسبية.",
+    "unresolvedAssets_other": "عدد مراجع الملفات اللي مش قادرة تتحمّل في المعاينة: {{count}}. مفيش URL أساسي نقدر نحلّ بيه المسارات النسبية."
+  },
+  "assistants": "المساعدون",
+  "hardware": "الأجهزة",
+  "mcp-servers": "خوادم MCP",
+  "local_api_server": "خادم API محلي",
+  "remote_access": "الوصول عن بعد",
+  "integrations": "التكامل",
+  "experimental": "تجريبي",
+  "claude_code": "كلود كود",
+  "https_proxy": "وكيل HTTPS",
+  "web_search": "بحث الويب",
+  "shell": "سطر الأوامر",
+  "browse": "تصفّح",
+  "moreControls": "المزيد من الضوابط",
+  "starting": "بيبدأ...",
+  "activeSuffix": " (شغّال)",
+  "extensions": "ملحقات",
+  "attachments": "المرفقات",
+  "general": "عام",
+  "settings": "الإعدادات",
+  "modelProviders": "مقدمو النماذج",
+  "localProviders": "محلي",
+  "remoteProviders": "بعيد",
+  "manageProviders": "إدارة المزوّدين",
+  "hiddenProviders": "{{count}} مش مفعّل",
+  "hideProvider": "إخفاء المزوّد",
+  "showProvider": "إظهار المزوّد",
+  "interface": "الواجهة",
+  "appearance": "المظهر",
+  "privacy": "الخصوصية",
+  "keyboardShortcuts": "اختصارات الكيبورد",
+  "home": "الرئيسية",
+  "cowork": "Cowork",
+  "newSession": "جلسة جديدة",
+  "artifacts": "المخرجات",
+  "customize": "تخصيص",
+  "local": "محلي",
+  "selectFolder": "اختار مجلد",
+  "selectModel": "اختار نموذج الأول",
+  "commands": "الأوامر",
+  "cmdHelp": "اعرض الأوامر المتاحة",
+  "cmdClear": "امسح الجلسة دي",
+  "cmdModels": "غيّر النموذج الشغّال",
+  "cmdModelsHint": "اكتب /models وبعد كده اختار نموذج من القائمة",
+  "cmdModelSwitched": "اتغيّر لـ {{name}}",
+  "cmdUnknown": "أمر مش معروف: {{name}}. جرّب /help",
+  "cmdBusy": "مش هينفع تعمل كده والوكيل شغّال",
+  "cmdCompact": "لخّص سياق الجلسة عشان تقلّل حجمه",
+  "cmdCompacted": "عدد الرسائل اتقلّل من {{before}} -> {{after}}",
+  "cmdNothingToCompact": "لسه مفيش حاجة تتلخّص",
+  "cmdCompactFailed": "التلخيص ما نجحش: {{error}}",
+  "cmdPlan": "شغّل أو اقفل وضع التخطيط (قراءة بس: الوكيل بيقترح من غير ما يكتب)",
+  "cmdPlanOn": "وضع التخطيط شغّال: الوكيل بيقرأ وبيقترح من غير ما يكتب",
+  "cmdPlanOff": "وضع التخطيط مقفول: التنفيذ العادي",
+  "cmdTodo": "افتح لوحة التقدّم",
+  "cmdTasks": "افتح لوحة المهام اللي في الخلفية",
+  "cmdInit": "ادرس المشروع واكتب المهارات والذاكرة",
+  "cmdInitRunning": "بنجهّز المشروع ده",
+  "skills": "مهارات",
+  "skillsInContext": "المهارات المتاحة للوكيل في التشغيل ده",
+  "skillsTitle": "إدارة المهارات",
+  "skillsScopeProject": "مهارات {{folder}}",
+  "skillsScopeGlobal": "مهارات عامة متاحة لكل الجلسات",
+  "skillsScopeMerged": "مهارات {{folder}}، ومعاها المهارات العامة اللي كل الجلسات بتشاركها",
+  "skillOriginFolder": "المجلد",
+  "skillOriginGlobal": "عام",
+  "skillsEmpty": "لسه مفيش مهارات",
+  "skillsPickOrNew": "اختار مهارة تعدّلها، أو اعمل واحدة جديدة.",
+  "skillNew": "مهارة جديدة",
+  "skillDelete": "حذف المهارة",
+  "skillSave": "حفظ",
+  "skillSaved": "المهارة اتحفظت",
+  "skillNameRequired": "لازم تكتب اسم المهارة",
+  "skillNamePlaceholder": "اسم المهارة",
+  "skillContentPlaceholder": "اكتب الخطوات اللي ممكن تتستخدم تاني بصيغة Markdown…",
+  "skillHubImport": "استيراد من المحور",
+  "skillHubTitle": "مركز مهارات Anthropic",
+  "skillHubEmpty": "ملقيناش مهارات في المركز",
+  "skillImport": "استيراد",
+  "skillReimport": "إعادة الاستيراد",
+  "skillImported": "استوردنا {{name}}",
+  "sessions": "الجلسات",
+  "deleteSession": "حذف الجلسة",
+  "deleteSessionTitle": "عايز تمسح الجلسة؟",
+  "deleteSessionBody": "هنمسح \"{{title}}\" وسجل المحادثة نهائيًا. مش هتقدر ترجع في الخطوة دي.",
+  "newChat": "محادثة جديدة",
+  "newAgentChat": "محادثة جديدة مع الوكيل",
+  "chats": "الدردشات",
+  "favorites": "المفضلة",
+  "recents": "الأخيرة",
+  "hub": "المركز",
+  "helpSupport": "المساعدة والدعم",
+  "helpUsImproveJan": "ساعدنا نحسّن Jan",
+  "analyticsConsentDetail": "بنجمع بيانات من غير ما نعرف هويتك عشان نفهم استخدام المزايا. مش بنتتبّع محادثاتك أو معلوماتك الشخصية أبدًا. تقدر تغيّر ده في أي وقت من الإعدادات > الخصوصية.",
+  "analyticsConsentQuestion": "تحب تساعدنا نحسّن Jan؟",
+  "unstarAll": "إلغاء تمييز الكل",
+  "unstar": "إلغاء النجمة",
+  "deleteAll": "حذف الكل",
+  "star": "نجمة",
+  "rename": "إعادة تسمية",
+  "delete": "حذف",
+  "copied": "اتنسخ!",
+  "dataFolder": "مجلد البيانات",
+  "others": "أخرى",
+  "language": "اللغة",
+  "login": "تسجيل الدخول",
+  "loginWith": "تسجيل الدخول باستخدام {{provider}}",
+  "loginFailed": "تسجيل الدخول ما نجحش",
+  "logout": "تسجيل الخروج",
+  "loggingOut": "بنسجّل الخروج...",
+  "loggedOut": "تم تسجيل الخروج",
+  "logoutFailed": "تسجيل الخروج ما نجحش",
+  "profile": "الملف الشخصي",
+  "reset": "إعادة الضبط",
+  "search": "بحث",
+  "searchThreads": "دوّر في المحادثات...",
+  "toNavigate": "للتنقّل",
+  "toSelect": "للاختيار",
+  "toClose": "للقفل",
+  "clearRecent": "مسح",
+  "name": "الاسم",
+  "cancel": "إلغاء",
+  "dismiss": "استبعاد",
+  "create": "إنشاء",
+  "save": "حفظ",
+  "edit": "تعديل",
+  "copy": "نسخ",
+  "back": "رجوع",
+  "close": "قفل",
+  "done": "خلص",
+  "next": "التالي",
+  "finish": "إنهاء",
+  "skip": "تخطي",
+  "allow": "سماح",
+  "deny": "رفض",
+  "start": "بدء",
+  "stop": "إيقاف",
+  "preview": {
+    "loading": "بيفتح…",
+    "unsupported": "Jan مش قادر يعرض النوع ده من الملفات. افتحه عشان تشوفه في تطبيق تاني.",
+    "outside": "الملف ده مبقاش موجود في مساحة عمل الجلسة.",
+    "tooLarge": "الملف كبير على المعاينة. افتحه عشان تشوفه في تطبيق تاني.",
+    "reload": "تحميل من جديد",
+    "allowNetwork": "السماح بالشبكة",
+    "unsandboxed": "تشغيل من غير عزل: البيانات المحفوظة والملفات المحلية هتشتغل",
+    "unresolvedRefs_one": "فيه ملف واحد الصفحة دي بتشير له مش قادر يتحمّل في المعاينة. افتح الصفحة عشان تشوفه في المتصفح.",
+    "unresolvedRefs_other": "فيه {{count}} من الملفات الصفحة دي بتشير لهم مش قادرين يتحمّلوا في المعاينة. افتح الصفحة عشان تشوفهم في المتصفح.",
+    "externalRefs_one": "تحميل مورد واحد من الويب اتمنع. شغّل \"السماح بالشبكة\" عشان يتحمّل.",
+    "externalRefs_other": "تحميل {{count}} من الموارد من الويب اتمنع. شغّل \"السماح بالشبكة\" عشان يتحمّلوا.",
+    "scriptErrors_one": "الصفحة بلّغت عن خطأ: {{message}}",
+    "scriptErrors_other": "الصفحة بلّغت عن {{count}} من الأخطاء. أول خطأ: {{message}}"
+  },
+  "changes": {
+    "title": "تغييرات الوكيل",
+    "empty": "الملفات اللي الوكيل بيكتبها أو بيعدّلها هتظهر هنا.",
+    "a11y": "تغييرات الوكيل: {{files}} من الملفات، {{additions}} إضافة، {{deletions}} حذف"
+  },
+  "modelPanel": {
+    "title": "إعدادات النموذج",
+    "a11y": "افتح إعدادات النموذج",
+    "contextTooltip": "نافذة السياق: {{value}} من {{max}} توكن"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "المهارة '{{name}}' مش متاحة",
+    "kind": {
+      "skill": "مهارة",
+      "command": "الأمر",
+      "model": "نموذج"
+    }
+  },
+  "compactWidth": "عرض مدمج",
+  "fullWidth": "العرض الكامل",
+  "dark": "الظلام",
+  "light": "ضوء",
+  "system": "النظام",
+  "auto": "تلقائي",
+  "english": "الإنجليزية",
+  "medium": "متوسط",
+  "newThread": "محادثة جديدة",
+  "noResultsFound": "ملقيناش نتائج",
+  "noThreadsYet": "لسه مفيش محادثات",
+  "noThreadsYetDesc": "ابدأ محادثة جديدة عشان تشوف سجل محادثاتك هنا.",
+  "downloads": "التنزيلات",
+  "downloading": "بيتحمّل",
+  "uploadingAttachments": "بنرفع المرفقات…",
+  "cancelDownload": "إلغاء التنزيل",
+  "downloadCancelled": "التحميل اتلغى",
+  "downloadComplete": "التحميل خلص",
+  "thinking": "بيفكّر...",
+  "thought": "الفكر",
+  "callingTool": "بيستدعي أداة",
+  "completed": "خلص",
+  "image": "صورة",
+  "vision": "الرؤية",
+  "multimodal": "متعدد الوسائط",
+  "embeddings": "التضمين",
+  "tools": "الأدوات",
+  "webSearch": "بحث الويب",
+  "reasoning": "المنطق",
+  "proactive": "مبادر",
+  "selectAModel": "اختار نموذج",
+  "noToolsAvailable": "مفيش أدوات متاحة",
+  "noModelsFoundFor": "ملقيناش نماذج لـ \"{{searchValue}}\"",
+  "failedToLoadModels": "مقدرناش نحمّل النماذج",
+  "noModels": "ملقيناش نماذج",
+  "noAssistant": "من غير مساعد",
+  "customAvatar": "صورة شخصية مخصّصة",
+  "editAssistant": "مساعد التحرير",
+  "jan": "Jan",
+  "metadata": "البيانات الوصفية",
+  "regenerate": "توليد من جديد",
+  "threadImage": "صورة الموضوع",
+  "editMessage": "تحرير الرسالة",
+  "deleteMessage": "حذف الرسالة",
+  "deleteThread": "حذف الموضوع",
+  "renameThread": "إعادة تسمية الموضوع",
+  "threadTitle": "عنوان الموضوع",
+  "deleteAllThreads": "حذف كافة المواضيع",
+  "allThreadsUnfavorited": "شلنا كل المحادثات من المفضلة",
+  "deleteAllThreadsConfirm": "متأكد إنك عايز تمسح كل المحادثات؟ مش هتقدر ترجع في الخطوة دي.",
+  "addProvider": "إضافة موفر",
+  "addOpenAIProvider": "إضافة OpenAI مقدم",
+  "enterNameForProvider": "اكتب اسم المزوّد",
+  "providerAlreadyExists": "فيه مزوّد باسم \"{{name}}\" موجود فعلًا. اختار اسم تاني.",
+  "adjustFontSize": "ضبط حجم الخط",
+  "changeLanguage": "تغيير اللغة",
+  "editTheme": "تحرير الموضوع",
+  "editCodeBlockStyle": "تحرير نمط كتلة التعليمات البرمجية",
+  "editServerHost": "تحرير مضيف الخادم",
+  "pickColorWindowBackground": "اختار لون خلفية النافذة",
+  "pickColorAppMainView": "اختار لون العرض الرئيسي للتطبيق",
+  "pickColorAppPrimary": "اختار اللون الأساسي للتطبيق",
+  "pickColorAppAccent": "اختار لون التمييز للتطبيق",
+  "pickColorAppDestructive": "اختار لون الإجراءات اللي بتحذف البيانات",
+  "apiKeyRequired": "لازم تكتب مفتاح API",
+  "enterTrustedHosts": "اكتب المضيفين اللي بتثق فيهم",
+  "placeholder": {
+    "chatInput": "اسألني عن أي حاجة..."
+  },
+  "confirm": "تأكيد",
+  "continue": "متابعة",
+  "loading": "بيتحمّل...",
+  "settingUpJan": "بنشغّل Jan…",
+  "registeringExtensions": "بنسجّل الإضافات…",
+  "loadingExtensions": "بنحمّل الإضافات… ({{done}}/{{total}})",
+  "error": "خطأ",
+  "success": "النجاح",
+  "warning": "تحذير",
+  "conversationNotAvailable": "المحادثة مش متاحة",
+  "conversationNotAvailableDescription": "المحادثة اللي بتحاول تفتحها مش متاحة أو اتمسحت.",
+  "temporaryChat": "الدردشة المؤقتة",
+  "temporaryChatTooltip": "المحادثة المؤقتة مش هتظهر في سجلك",
+  "noResultsFoundDesc": "ملقيناش محادثات مطابقة للبحث. جرّب كلمة تانية.",
+  "searchModels": "دوّر على نماذج...",
+  "searchStyles": "دوّر على أنماط...",
+  "createAssistant": "إنشاء مساعد",
+  "enterApiKey": "اكتب مفتاح API",
+  "scrollToBottom": "انزل لآخر الصفحة",
+  "generateAiResponse": "توليد استجابة الذكاء الاصطناعي",
+  "continueAiResponse": "تابع مع استجابة الذكاء الاصطناعي",
+  "addModel": {
+    "title": "إضافة نموذج",
+    "modelId": "معرف النموذج",
+    "enterModelId": "اكتب معرّف النموذج",
+    "addModel": "إضافة نموذج",
+    "description": "ضيف نموذج جديد للمزوّد",
+    "exploreModels": "شوف قائمة نماذج المزوّد"
+  },
+  "mcpServers": {
+    "editServer": "تحرير الخادم",
+    "addServer": "أضف الخادم",
+    "serverName": "اسم الخادم",
+    "enterServerName": "اكتب اسم السيرفر",
+    "command": "الأمر",
+    "enterCommand": "اكتب الأمر",
+    "arguments": "الحجج",
+    "argument": "الحجة {{index}}",
+    "envVars": "متغيرات البيئة",
+    "key": "المفتاح",
+    "value": "قيمة",
+    "save": "حفظ"
+  },
+  "deleteServer": {
+    "title": "حذف الخادم",
+    "delete": "حذف"
+  },
+  "editJson": {
+    "errorParse": "مقدرناش نحلّل JSON",
+    "errorPaste": "مقدرناش نلصق JSON",
+    "errorFormat": "صيغة JSON مش صحيحة",
+    "titleAll": "تحرير تكوين كافة الخوادم",
+    "placeholder": "اكتب إعدادات JSON...",
+    "save": "حفظ"
+  },
+  "editModel": {
+    "title": "تعديل الموديل : {{modelId}}",
+    "description": "شغّل أو اقفل الخيارات اللي تحت عشان تحدّد قدرات النموذج.",
+    "capabilities": "القدرات",
+    "tools": "الأدوات",
+    "vision": "الرؤية",
+    "embeddings": "التضمين",
+    "notAvailable": "لسه مش متاح"
+  },
+  "outOfContextError": {
+    "truncateInput": "تقصير المدخلات",
+    "title": "مساحة السياق خلصت",
+    "description": "المحادثة دي بتقرب من حد ذاكرة الذكاء الاصطناعي، زي سبورة بتتملي. نقدر نكبّر نافذة الذاكرة (حجم السياق) عشان يفتكر أكتر، بس ده ممكن يستخدم ذاكرة أكتر من جهازك. ونقدر نقصّر المدخلات، وده معناه إنه هينسى جزء من سجل المحادثة عشان يوفّر مساحة للرسائل الجديدة.",
+    "increaseContextSizeDescription": "عايز تكبّر حجم السياق؟",
+    "increaseContextSize": "زيادة حجم السياق"
+  },
+  "toolApproval": {
+    "title": "طلب إذن الأداة",
+    "description": "المساعد عايز يستخدم <strong>{{toolName}}</strong>",
+    "securityNotice": "اسمح بس بالأدوات اللي بتثق فيها. الأدوات ممكن توصل لنظامك وبياناتك.",
+    "deny": "رفض",
+    "allowOnce": "سماح مرة واحدة",
+    "alwaysAllow": "سماح دايمًا"
+  },
+  "deleteModel": {
+    "title": "حذف الموديل: {{modelId}}",
+    "description": "متأكد إنك عايز تمسح النموذج ده؟ مش هتقدر ترجع في الخطوة دي.",
+    "success": "النموذج {{modelId}} اتمسح نهائيًا.",
+    "cancel": "إلغاء",
+    "delete": "حذف"
+  },
+  "deleteProvider": {
+    "title": "حذف الموفر",
+    "description": "امسح المزوّد ده وكل نماذجه. مش هتقدر ترجع في الخطوة دي.",
+    "success": "المزوّد {{provider}} اتمسح نهائيًا.",
+    "confirmTitle": "حذف المزود: {{provider}}",
+    "confirmDescription": "متأكد إنك عايز تمسح المزوّد ده؟ مش هتقدر ترجع في الخطوة دي.",
+    "cancel": "إلغاء",
+    "delete": "حذف"
+  },
+  "modelSettings": {
+    "title": "إعدادات النموذج - {{modelId}}",
+    "description": "ظبّط إعدادات النموذج عشان تحسّن أداءه وطريقة شغله.",
+    "nglDisabledByFit": "Auto-fit بيختار طبقات GPU. اقفل Auto-fit عشان تحدّدها بنفسك.",
+    "samplingDefaults": {
+      "title": "معلمات أخذ العينات الافتراضية",
+      "description": "إعدادات أخذ العينات الافتراضية للنموذج ده. بتتستخدم إلا لو إعدادات المساعد أو الطلب غيّرتها."
+    },
+    "specDraft": {
+      "section": "فك التشفير التخميني",
+      "enable": "تمكين فك التشفير المضاربة",
+      "enableDescription": "بيجهّز كذا توكن في كل خطوة ويتحقّق منهم مع بعض عشان يسرّع التوليد. بيستخدم رؤوس MTP المدمجة في النموذج، أو نموذج المسودة اللي اتحمّل معاه (MTP أو Eagle3 أو DFlash أو DSpark).",
+      "nMax": "ماكس مشروع الرموز",
+      "nMaxDescription": "أكبر عدد توكنات للمسودة في كل خطوة. الافتراضي 16.",
+      "nMin": "الحد الأدنى من الرموز المميزة",
+      "nMinDescription": "أقل عدد توكنات للمسودة في كل خطوة. الافتراضي 0.",
+      "pMin": "الحد الأدنى لاحتمال المسودة",
+      "pMinDescription": "أقل احتمال لتوليد المسودة بالطريقة الجشعة (0–1). الافتراضي 0.75."
+    },
+    "templateKwargs": {
+      "section": "خيارات قالب الدردشة",
+      "description": "خيارات إضافية قالب المحادثة بتاع النموذج بيقبلها. بتتبعت كـ chat_template_kwargs مع كل طلب؛ سيب القيمة على الافتراضي عشان القالب يقرّر.",
+      "addCustom": "إضافة خيار مخصص",
+      "keyPlaceholder": "اسم",
+      "valuePlaceholder": "قيمة",
+      "add": "إضافة",
+      "cancel": "إلغاء",
+      "remove": "إزالة"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "مقدرناش نحدّث إعدادات النموذج"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "تغيير موقع مجلد البيانات",
+      "description": "متأكد إنك عايز تغيّر مكان مجلد البيانات؟ ده هينقل كل بياناتك للمكان الجديد ويعيد تشغيل التطبيق.",
+      "currentLocation": "الموقع الحالي:",
+      "newLocation": "الموقع الجديد:",
+      "cancel": "إلغاء",
+      "changeLocation": "تغيير الموقع"
+    },
+    "deleteAllThreads": {
+      "title": "حذف كافة المواضيع",
+      "description": "كل المحادثات هتتمسح. مش هتقدر ترجع في الخطوة دي."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "حذف كافة المحادثات",
+      "description": "هنمسح {{count}} من المحادثات في \"{{projectName}}\". مش هتقدر ترجع في الخطوة دي."
+    },
+    "deleteThread": {
+      "description": "متأكد إنك عايز تمسح المحادثة دي؟ مش هتقدر ترجع في الخطوة دي."
+    },
+    "editMessage": {
+      "title": "تحرير الرسالة"
+    },
+    "messageMetadata": {
+      "title": "بيانات تعريف الرسالة"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "حصلت مشكلة",
+    "details": "التفاصيل"
+  },
+  "missingDependenciesDialog": {
+    "title": "مكتبات النظام مفقودة",
+    "description": "{{backend}} اتثبّت، بس ملقيناش بعض مكتبات النظام المطلوبة. ممكن يشتغل على CPU بدل GPU أو ميشتغلش صح.",
+    "installLabel": "عشان تصلّح ده، ثبّت المكتبات دي:",
+    "download": "تنزيل",
+    "additionalLibraries": "مكتبات ناقصة كمان:",
+    "missingLibraries": "المكتبات الناقصة:",
+    "showRawLibraries": "اعرض أسماء {{count}} من المكتبات الناقصة"
+  },
+  "projects": {
+    "title": "المشاريع",
+    "new": "مشاريع جديدة",
+    "addProject": "أضف المشروع",
+    "addToProject": "أضف إلى المشروع",
+    "removeFromProject": "إزالة من المشروع",
+    "createNewProject": "إنشاء مشروع جديد",
+    "editProject": "تحرير المشروع",
+    "deleteProject": "حذف المشروع",
+    "projectName": "اسم المشروع",
+    "enterProjectName": "اكتب اسم المشروع...",
+    "noProjectsAvailable": "مفيش مشاريع متاحة",
+    "noProjectsYet": "لسه مفيش مشاريع",
+    "noProjectsYetDesc": "اضغط على زر إضافة مشروع عشان تبدأ مشروع جديد.",
+    "projectNotFound": "ملقيناش المشروع",
+    "projectNotFoundDesc": "المشروع اللي بتدوّر عليه مش موجود أو اتمسح.",
+    "selectAssistant": "اختار مساعد",
+    "noAssistantAssigned": "مفيش مساعد متعيّن للمشروع ده",
+    "files": "ملفات",
+    "filesDescription": "ضيف ملفات PDF أو مستندات أو نصوص تانية عشان تستخدمها كمراجع للمشروع ده.",
+    "uploadingFiles": "بنعالج الملفات…",
+    "processButton": "إضافة",
+    "deleteProjectDialog": {
+      "title": "حذف المشروع",
+      "permanentDelete": "ده هيمسح كل المحادثات نهائيًا.",
+      "permanentDeleteWarning": "الخطوة دي هتمسح كل المحادثات اللي جوه المشروع نهائيًا!",
+      "deleteEmptyProject": "الخطوة دي هتمسح المشروع \"{{projectName}}\".",
+      "saveThreadsAdvice": "عشان تحتفظ بالمحادثات، انقلها لقائمة محادثاتك أو لمشروع تاني قبل الحذف.",
+      "starredWarning": "لسه فيه محادثات عليها نجمة جوه المشروع.",
+      "deleteButton": "حذف",
+      "successWithName": "المشروع \"{{projectName}}\" اتمسح",
+      "successWithoutName": "المشروع اتمسح",
+      "error": "مقدرناش نمسح المشروع. جرّب تاني.",
+      "ariaLabel": "حذف {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "إنشاء مشروع جديد",
+      "editTitle": "تحرير المشروع",
+      "nameLabel": "اسم المشروع",
+      "namePlaceholder": "اكتب اسم المشروع...",
+      "assistant": "المساعد",
+      "selectAssistant": "اختار مساعد (اختياري)",
+      "noAssistant": "من غير مساعد",
+      "addAssistant": "إضافة مساعد",
+      "createButton": "إنشاء",
+      "updateButton": "تحديث",
+      "alreadyExists": "المشروع \"{{projectName}}\" موجود فعلًا",
+      "createSuccess": "المشروع \"{{projectName}}\" اتعمل",
+      "updateSuccess": "المشروع \"{{projectName}}\" اتحدّث"
+    },
+    "noConversationsIn": "مفيش محادثات في {{projectName}}",
+    "startNewConversation": "ابدأ محادثة جديدة مع {{projectName}} تحت",
+    "conversationsIn": "المحادثات في {{projectName}}",
+    "conversationsDescription": "اضغط على أي محادثة عشان تكمّل، أو ابدأ واحدة جديدة تحت.",
+    "conversation": "محادثة",
+    "instructions": "التعليمات",
+    "setup": "الإعداد",
+    "instructionsDescription": "ظبّط نبرة الرد وأسلوبه",
+    "manageInstructions": "إدارة التعليمات",
+    "thread": "موضوع",
+    "threads": "المواضيع",
+    "updated": "تم التحديث:",
+    "collapseProject": "طي المشروع",
+    "expandProject": "قم بتوسيع المشروع",
+    "update": "تحديث",
+    "searchProjects": "دوّر على مشاريع...",
+    "noProjectsFound": "ملقيناش مشاريع",
+    "tryDifferentSearch": "جرّب كلمة بحث تانية"
+  },
+  "attachmentsIngestion": {
+    "title": "اختار إزاي نضيف المرفقات",
+    "description": "اختار نضيف الملفات دي مباشرة للمحادثة ولا نفهرسها كتضمينات.",
+    "inline": "أدخل في الدردشة",
+    "embeddings": "استخدم التضمينات"
+  },
+  "attachmentInjectedIndicator": "اتضاف للمحادثة",
+  "attachmentEmbeddedIndicator": "اتعمل له تضمين لـ RAG",
+  "viewInjectedContent": "عرض المحتوى المحقون",
+  "injectedContentTitle": "محتوى الملف الذي تم حقنه",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "شلنا كل المحادثات من المفضلة",
+      "description": "شلنا كل المحادثات من المفضلة عندك."
+    },
+    "deleteAllThreads": {
+      "title": "حذف كافة المواضيع",
+      "description": "كل المحادثات اتمسحت نهائيًا."
+    },
+    "renameThread": {
+      "title": "إعادة تسمية الموضوع",
+      "description": "عنوان المحادثة اتغيّر لـ '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "حذف الموضوع",
+      "description": "المحادثة دي اتمسحت نهائيًا."
+    },
+    "errorCopied": {
+      "title": "اتنسخ",
+      "description": "معلومات الخطأ اتنسخت للحافظة"
+    },
+    "errorCopyFailed": {
+      "title": "مقدرناش ننسخ",
+      "description": "مقدرناش ننسخ معلومات الخطأ للحافظة"
+    },
+    "editMessage": {
+      "title": "تحرير الرسالة",
+      "description": "الرسالة اتعدّلت. استنّى النموذج يرد."
+    },
+    "appUpdateDownloaded": {
+      "title": "تحديث التطبيق اتحمّل",
+      "description": "تحديث التطبيق اتحمّل بنجاح."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "تحديث التطبيق متحمّلش",
+      "description": "مقدرناش نحمّل تحديث التطبيق. جرّب تاني."
+    },
+    "downloadComplete": {
+      "title": "التحميل خلص",
+      "description": "{{item}} اتحمّل"
+    },
+    "downloadCancelled": {
+      "title": "التحميل اتلغى",
+      "description": "عملية التحميل اتلغت"
+    },
+    "downloadFailed": {
+      "title": "التحميل ما نجحش",
+      "description": "تحميل {{item}} ما نجحش",
+      "descriptionWithReason": "تحميل {{item}} ما نجحش: {{reason}}",
+      "reason": {
+        "dns": "مقدرناش نحدّد عنوان السيرفر من اسمه",
+        "refused": "الاتصال اترفض",
+        "timeout": "مهلة الاتصال خلصت",
+        "tls": "مقدرناش نعمل اتصال آمن",
+        "proxy": "مقدرناش نوصل للبروكسي",
+        "unreachable": "مقدرناش نوصل للسيرفر"
+      }
+    },
+    "openSettings": "افتح الإعدادات",
+    "openLogs": "افتح السجلات",
+    "downloadTokenRequired": {
+      "title": "محتاج توكن Hugging Face",
+      "description": "النموذج ده محتاج توكن وصول من Hugging Face. ضيف التوكن في الإعدادات وجرّب تاني."
+    },
+    "downloadLicenseRequired": {
+      "title": "وافق على ترخيص النموذج على Hugging Face",
+      "description": "لازم توافق على ترخيص النموذج من صفحته على Hugging Face قبل التحميل."
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Face حدّد عدد طلباتك",
+      "description": "وصلت للحد الأقصى للطلبات. إضافة توكن ممكن تزوّد الحد. جرّب تاني بعدين."
+    },
+    "modelValidationStarted": {
+      "title": "بنتحقّق من النموذج",
+      "description": "النموذج \"{{modelId}}\" اتحمّل. بنتحقّق من سلامة الملف..."
+    },
+    "modelValidationFailed": {
+      "title": "التحقّق من النموذج ما نجحش",
+      "description": "النموذج \"{{modelId}}\" اللي اتحمّل مجتازش فحص سلامة الملف واتشال. ممكن الملف يكون تالف أو حد غيّره."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "التحميل خلص",
+      "description": "النموذج \"{{item}}\" اتحمّل واتحقّقنا منه"
+    },
+    "projectCreated": {
+      "title": "المشروع اتعمل",
+      "description": "المشروع \"{{projectName}}\" اتعمل"
+    },
+    "projectRenamed": {
+      "title": "اسم المشروع اتغيّر",
+      "description": "اسم المشروع اتغيّر من \"{{oldName}}\" لـ \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "المشروع اتمسح",
+      "description": "المشروع \"{{projectName}}\" اتمسح"
+    },
+    "projectAlreadyExists": {
+      "title": "المشروع موجود فعلًا",
+      "description": "المشروع \"{{projectName}}\" موجود فعلًا"
+    },
+    "projectDeleteFailed": {
+      "title": "مقدرناش نمسح",
+      "description": "مقدرناش نمسح المشروع. جرّب تاني."
+    },
+    "threadAssignedToProject": {
+      "title": "المحادثة اتنقلت للمشروع",
+      "description": "المحادثة اتضافت لـ \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "المحادثة اتشالت",
+      "description": "المحادثة اتشالت من \"{{projectName}}\""
+    },
+    "fileUploaded": {
+      "title": "الملف اتعالج",
+      "description": "الملف اتعالج واتعمل له فهرسة"
+    },
+    "uploadFailed": {
+      "title": "معالجة الملف ما نجحتش",
+      "description": "مقدرناش نعالج الملف",
+      "subjectThisFile": "الملف ده",
+      "pdfMalformedXref": "{{subject}} فيه جدول مراجع PDF مش سليم ومقدرناش نحلّله. جرّب تفتحه في عارض PDF وتحفظه تاني (File → Print → Save as PDF)، وبعد كده ارفعه تاني.",
+      "pdfScanned": "واضح إن {{subject}} عبارة عن PDF ممسوح ضوئيًا أو صور. OCR لسه مش مدعوم — ارفع PDF فيه نص.",
+      "pdfEncrypted": "{{subject}} محمي بكلمة سر. شيل كلمة السر وجرّب تاني.",
+      "pdfUnsupportedFeature": "{{subject}} بيستخدم ميزة PDF لسه Jan مش قادر يحلّلها (زي دوال ألوان أو تظليل PostScript). جرّب تحفظه تاني (File → Print → Save as PDF) عشان تسطّحه، وبعد كده ارفعه تاني.",
+      "pdfGeneric": "مقدرناش نحلّل {{subject}} كملف PDF. ممكن الملف يكون تالف أو بيستخدم ميزة PDF مش مدعومة.",
+      "fileTooLarge": "{{subject}} كبير زيادة. {{message}}.",
+      "unsupportedType": "نوع الملف \"{{type}}\" مش مدعوم.",
+      "ioError": "مقدرناش نقرأ {{subject}}: {{message}}",
+      "parseGeneric": "مقدرناش نحلّل {{subject}}: {{message}}",
+      "fallback": "مقدرناش نعالج {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "الملف اتمسح",
+      "description": "الملف اتشال من المشروع"
+    },
+    "deleteFailed": {
+      "title": "مقدرناش نمسح",
+      "description": "مقدرناش نمسح الملف"
+    },
+    "fileAlreadyExists": {
+      "title": "الملف موجود فعلًا",
+      "description": "الملف مرفق بالمشروع ده فعلًا"
+    },
+    "unsupportedFileType": {
+      "title": "نوع الملف مش مدعوم",
+      "description": "امتداد الملف \".{{extension}}\" مش مدعوم كمرجع للمشروع."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "المرفقات مقفولة",
+      "description": "المرفقات مقفولة في الإعدادات"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "الملف كبير زيادة",
+    "fileTooLargeDescription": "{{fileName}} أكبر من الحد المسموح {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} قطع",
+    "title": "ملفات",
+    "empty": "الملفات اللي بترفقها واللي الوكيل بيعملها هتظهر هنا.",
+    "a11y": "الملفات: {{count}}",
+    "attachments": "المرفقات",
+    "notImported": "مش في مساحة العمل"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp لسه مشغول",
+    "description": "فيه نموذج أو أكتر متفرّغش من الذاكرة في الوقت المحدّد. القفل الإجباري هيوقف llama.cpp وممكن يقطع الردود الشغّالة.",
+    "forceQuit": "فرض الإقلاع عن التدخين",
+    "forcing": "بنقفل إجباريًا…",
+    "shuttingDown": "بنقفل…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}م",
+    "hours": "{{count}}ح"
+  },
+  "collapse": "طي",
+  "expand": "توسيع",
+  "todoPanelTitle": "التقدم",
+  "todoPanelEmpty": "لسه مفيش قائمة مهام.",
+  "backgroundTasks": "مهام الخلفية",
+  "subagentsRunning_one": "الوكلاء الفرعيون النشطون: {{count}}",
+  "subagentsRunning_other": "الوكلاء الفرعيون النشطون: {{count}}",
+  "monitorsRunning_one": "أدوات المراقبة النشطة: {{count}}",
+  "monitorsRunning_other": "أدوات المراقبة النشطة: {{count}}",
+  "backgroundRunning_one": "المهام في الخلفية: {{count}}",
+  "backgroundRunning_other": "المهام في الخلفية: {{count}}",
+  "monitors": "الشاشات",
+  "monitorPolling": "بيتحقّق",
+  "monitorMatched": "لقى تطابق",
+  "monitorTimedOut": "المهلة خلصت",
+  "monitorStopped": "اتوقف",
+  "monitorEnded": "انتهى",
+  "coworkWatching_one": "عدد المراقبات اللي بنتابعها: {{count}}…",
+  "coworkWatching_other": "عدد المراقبات اللي بنتابعها: {{count}}…",
+  "coworkWaitingBackground": "مستنّيين المهام اللي في الخلفية…",
+  "noBackgroundTasks": "لسه مفيش مهام في الخلفية.",
+  "running": "شغّال",
+  "queued": "في الطابور",
+  "waiting": "مستنّي",
+  "finished": "خلص",
+  "subagentPhase": "المرحلة {{phase}}",
+  "subagentWaiting": "مستنّي",
+  "viewTranscript": "عرض النص",
+  "taskWorking": "شغّال…",
+  "taskNoOutput": "المساعد الفرعي مطلّعش أي نتيجة ظاهرة.",
+  "subagentToolUses_one": "مرات استخدام الأدوات: {{count}}",
+  "subagentToolUses_other": "مرات استخدام الأدوات: {{count}}",
+  "artifactGroupCode": "الكود",
+  "artifactGroupImage": "صورة",
+  "artifactGroupDocument": "وثيقة",
+  "artifactGroupVideo": "فيديو",
+  "artifactGroupAudio": "الصوت",
+  "artifactOpenPreview": "فتح المعاينة",
+  "artifactOpenExternal": "مفتوح",
+  "artifactMoreActions": "المزيد من الإجراءات",
+  "artifactShowInFolder": "عرض في المجلد",
+  "skillsUsedLabel": "المهارات اللي اتستخدمت",
+  "skillsUsed": "المهارات اللي اتستخدمت: {{skills}}",
+  "artifactsAll": "الكل",
+  "artifactsEmpty": "لسه مفيش مخرجات. نتايج تشغيل Cowork هتظهر هنا.",
+  "artifactsNoMatch": "مفيش مخرجات مطابقة.",
+  "artifactsSearch": "دوّر في المخرجات",
+  "artifactsShowMore": "اعرض {{count}} كمان",
+  "workspace": {
+    "readsFrom": "بيشتغل في",
+    "writable": "القراءة والكتابة",
+    "footnote": "الوكيل بيقرأ وبيعدّل المجلد ده مباشرة. راجع التغييرات في لوحة الفروقات.",
+    "footnoteEmpty": "اربط مجلد عشان الوكيل يشتغل على مشروعك. هيقدر يقرأ ويعدّل الملفات اللي جواه.",
+    "attach": "إرفاق مجلد",
+    "change": "تغيير المجلد",
+    "detach": "فصل المجلد",
+    "open": "مفتوح",
+    "reveal": "كشف",
+    "unavailable": "مساحة العمل مش متاحة",
+    "missing": "مجلد مساحة العمل {{folder}} مبقاش متاح. اختار مجلد تاني.",
+    "openFailed": "مقدرناش نفتح مساحة العمل",
+    "revealFailed": "مقدرناش نظهر مكان مساحة العمل",
+    "a11yWithFolder": "مجلد المشروع {{folder}} مربوط بصلاحية القراءة والكتابة. غيّره أو افصل الربط.",
+    "a11yNoFolder": "مفيش مجلد مشروع مربوط. اربط واحد."
+  },
+  "coworkEmpty": {
+    "title": "هنشتغل على إيه؟",
+    "subtitleSandbox": "ادّي Jan مهمة. بيقرأ وبيكتب ملفات وبيشغّل أوامر وبيكمّل الخطوات لوحده.",
+    "subtitleFolder": "ادّي Jan مهمة. بيشتغل مباشرة في {{folder}} وبيقرأ وبيعدّل الملفات لوحده.",
+    "try": "جرّب",
+    "sandbox": {
+      "first": "اكتب سكريبت Python يغيّر أسماء الملفات حسب تاريخ التقاطها",
+      "second": "اعمل لوحة معلومات من صفحة واحدة باستخدام CSV هبعتهولك",
+      "third": "اكتب مسودة README لمشروع هوصفهولك"
+    },
+    "folder": {
+      "first": "اشرح إزاي {{folder}} مترتّب",
+      "second": "لاقي كل TODO في {{folder}} وقسّمهم حسب الجزء",
+      "third": "اكتب اختبارات للجزء اللي هحدّدهولك من {{folder}}"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "مفيش طرفية",
+    "a11y": "تشغيل الأوامر مقفول. شوف التفاصيل.",
+    "title": "تشغيل الأوامر مقفول",
+    "body": "Jan بيسمح للوكيل يشغّل أوامر بس لما نظامك يقدر يعزلها. مفيش عزل متاح هنا، فالوكيل يقدر يقرأ ويكتب ويعدّل الملفات في مساحة العزل — بس مش يقدر يشغّل أي حاجة.",
+    "fixLinux": "Linux بيستخدم bubblewrap. ثبّته وبعد كده أعد تشغيل Jan.",
+    "fixMac": "macOS بيستخدم العزل المدمج في /usr/bin/sandbox-exec. أعد تشغيل Jan لما يبقى متاح.",
+    "fixWindows": "Windows بيستخدم AppContainer. أعد تشغيل Jan عشان تجرّب تاني.",
+    "recheck": "افحص تاني"
+  },
+  "planMode": {
+    "label": "خطة",
+    "tooltipOff": "خطّط الأول — الوكيل بيقرأ وبيقترح من غير ما يكتب.",
+    "tooltipOn": "بنخطّط. اقفل الوضع ده عشان تسمح للوكيل يكتب ملفات.",
+    "onAnnounce": "وضع التخطيط شغّال",
+    "placeholder": "اطلب خطة. الوكيل مش هيغيّر أي ملفات."
+  },
+  "budget": {
+    "stoppedSteps": "وقف بعد {{max}} خطوة. الوكيل لسه مخلصش.",
+    "keepGoing": "كمّل",
+    "stoppedTokens": "وقف — الجلسة دي وصلت لميزانية التوكنات.",
+    "compact": "مدمج",
+    "newSession": "جلسة جديدة"
+  },
+  "run": {
+    "stopped": "اتوقف.",
+    "failed": "التشغيل وقف قبل ما يخلص.",
+    "tryAgain": "جرّب تاني"
+  },
+  "modelNoTools": "{{model}} مش قادر يستدعي أدوات، فمش هينفع يشتغل كوكيل. اختار نموذج بيدعم الأدوات.",
+  "askContinue": "كمّل",
+  "askNext": "السؤال التالي",
+  "askPrev": "السؤال السابق",
+  "askRecommended": "موصى به",
+  "askSelectedCount": "{{count}} تم التحديد",
+  "askSomethingElse": "حاجة تانية",
+  "askSomethingElsePlaceholder": "اكتب إجابتك",
+  "submit": "إرسال"
+}

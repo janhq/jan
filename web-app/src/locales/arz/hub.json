@@ -1,0 +1,19 @@
+{
+  "sortNewest": "الأحدث",
+  "sortMostDownloaded": "الأكثر تحميلًا",
+  "newChat": "محادثة جديدة",
+  "download": "تنزيل",
+  "downloadFailed": "مقدرناش نبدأ التحميل",
+  "downloaded": "اتحمّل",
+  "loadingModels": "بنحمّل النماذج...",
+  "noModels": "ملقيناش نماذج",
+  "by": "بواسطة",
+  "downloads": "التنزيلات",
+  "variants": "المتغيرات",
+  "showVariants": "اعرض النسخ",
+  "useModel": "استخدم النموذج ده",
+  "downloadModel": "حمّل النموذج",
+  "tools": "الأدوات",
+  "searchPlaceholder": "دوّر على نماذج على Hugging Face...",
+  "resumeUnavailable": "مش قادرين نكمّل التحميل ده. ابدأه من جديد."
+}

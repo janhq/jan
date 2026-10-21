@@ -1,0 +1,10 @@
+{
+  "newVersion": "الإصدار الجديد {{version}}",
+  "updateAvailable": "فيه تحديث متاح",
+  "nightlyBuild": "بناء ليلا",
+  "showReleaseNotes": "عرض ملاحظات الإصدار",
+  "hideReleaseNotes": "إخفاء ملاحظات الإصدار",
+  "remindMeLater": "فكّرني بعدين",
+  "downloading": "بيتحمّل...",
+  "updateNow": "التحديث الآن"
+}

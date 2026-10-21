@@ -1,0 +1,18 @@
+{
+  "addProvider": "إضافة موفر",
+  "addOpenAIProvider": "إضافة مزوّد مخصّص",
+  "enterNameForProvider": "اسم المزوّد (زي my-llm-server)",
+  "apiTypeLabel": "تنسيق API",
+  "apiTypeOpenAI": "OpenAI-متوافق",
+  "apiTypeAnthropic": "Anthropic-متوافق",
+  "baseUrlLabel": "قاعدة URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API مفتاح",
+  "apiKeyPlaceholder": "الصق مفتاح API",
+  "invalidBaseUrl": "لازم العنوان الأساسي يكون URL صحيح ببروتوكول http(s)",
+  "globalSettings": "الإعدادات العالمية",
+  "stripReasoning": "تجريد المنطق من السياق",
+  "stripReasoningDesc": "شيل محتوى التفكير والاستدلال من الأدوار السابقة قبل ما تبعت السجل تاني، لكل المزوّدين. ده بيحسّن إعادة استخدام KV-cache للنماذج المحلية، بس بعض النماذج (زي إصدارات Qwen الجديدة) بتنصح تحتفظ بيه عشان استدلال أحسن على مدار كذا دور.",
+  "providerAlreadyExists": "فيه مزوّد باسم {{name}} موجود فعلًا."
+}

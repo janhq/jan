@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'arz'
   | 'es'
   | 'fr'
   | 'it'

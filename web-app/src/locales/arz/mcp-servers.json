@@ -1,0 +1,101 @@
+{
+  "editServer": "تعديل MCP الخادم",
+  "addServer": "إضافة MCP خادم",
+  "browserExtension": {
+    "connecting": {
+      "checking": "بنفحص حالة الإضافة..."
+    },
+    "notInstalled": {
+      "title": "Jan بيكمّل المهام في متصفحك",
+      "description": "ثبّت الإضافة عشان تسمح لـ Jan يوصل للمتصفح",
+      "getExtension": "احصل على الامتداد"
+    }
+  },
+  "serverName": "اسم الخادم",
+  "enterServerName": "اكتب اسم السيرفر",
+  "command": "الأمر",
+  "enterCommand": "اكتب الأمر (uvx أو npx)",
+  "arguments": "الحجج",
+  "argument": "الحجة {{index}}",
+  "envVars": "متغيرات البيئة",
+  "key": "المفتاح",
+  "value": "قيمة",
+  "save": "حفظ",
+  "status": "الحالة",
+  "connected": "متصل",
+  "disconnected": "مش متصل",
+  "deleteServer": {
+    "title": "حذف MCP الخادم",
+    "description": "متأكد إنك عايز تمسح سيرفر MCP {{serverName}}؟ مش هتقدر ترجع في الخطوة دي.",
+    "delete": "حذف",
+    "success": "سيرفر MCP {{serverName}} اتمسح"
+  },
+  "editJson": {
+    "title": "تعديل JSON لـ MCP الخادم: {{serverName}}",
+    "titleAll": "تعديل جميع MCP السيرفرات JSON",
+    "placeholder": "اكتب إعدادات JSON",
+    "errorParse": "مقدرناش نحلّل البيانات الأولية",
+    "errorPaste": "صيغة JSON في المحتوى اللي اتلصق مش صحيحة",
+    "errorFormat": "صيغة JSON مش صحيحة",
+    "errorServerName": "لازم تكتب اسم السيرفر ومينفعش تسيبه فاضي",
+    "errorMissingServerNameKey": "لازم JSON يكون بالشكل ده {\"serverName\": {config}} - مفتاح اسم السيرفر مش موجود",
+    "errorInvalidType": "النوع '{{type}}' مش صحيح للسيرفر '{{serverName}}'. لازم يكون 'stdio' أو 'http' أو 'sse'",
+    "save": "حفظ"
+  },
+  "checkParams": "راجع المعاملات حسب الشرح.",
+  "title": "MCP الخوادم",
+  "experimental": "تجريبي",
+  "editAllJson": "تعديل كافة السيرفرات JSON",
+  "findMore": "لاقي سيرفرات MCP أكتر على",
+  "allowPermissions": "السماح لجميع أذونات الأداة MCP",
+  "allowPermissionsDesc": "لما الخيار ده يبقى شغّال، كل استدعاءات أدوات MCP هيتوافق عليها تلقائيًا من غير نوافذ طلب إذن. الإعداد ده بيشمل كل المحادثات، حتى الجديدة.",
+  "noServers": "ملقيناش سيرفرات MCP",
+  "args": "الحجج",
+  "env": "البيئة",
+  "serverStatusActive": "السيرفر {{serverKey}} اتفعّل",
+  "serverStatusInactive": "السيرفر {{serverKey}} اتقفل",
+  "runtimeSettings": {
+    "title": "إعدادات وقت التشغيل",
+    "description": "ظبّط إزاي Jan بيدير سيرفرات MCP وبيجرّبها تاني.",
+    "toolCallTimeout": "مهلة استدعاء الأداة (بالثواني)",
+    "toolCallTimeoutDesc": "أكبر وقت نستنى فيه رد أداة MCP قبل ما المهلة تخلص.",
+    "maxToolOutputChars": "الحد الأقصى لعدد أحرف إخراج الأداة",
+    "maxToolOutputCharsDesc": "أطول نتيجة أداة هنحتفظ بيها في المحادثة. أي حاجة بعد الحد ده بتتقصّر وبتتعلّم إنها مختصرة، عشان نتيجة كبيرة واحدة متستهلكش سياق النموذج كله. خلّي القيمة 0 عشان تحتفظ بالنتيجة كاملة.",
+    "smartToolRouting": "توجيه أداة MCP الذكية",
+    "smartToolRoutingDesc": "لما الخيار يبقى شغّال، Jan بيختار سيرفرات MCP المناسبة قبل تحميل الأدوات. اقفله عشان تحمّل دايمًا قائمة أدوات MCP كاملة.",
+    "useLightweightRouterModel": "استخدم نموذج منفصل للتوجيه",
+    "useLightweightRouterModelDesc": "لما التوجيه الذكي يبقى شغّال، شغّل خطوة التوجيه بنموذج منفصل (غالبًا أصغر) بدل نموذج المحادثة. اقفل الخيار عشان تستخدم دايمًا نموذج المحادثة الحالي للتوجيه.",
+    "routerModel": "نموذج التوجيه",
+    "routerModelDesc": "اختار المزوّد والنموذج من مكان واحد. بنعرض النماذج الخفيفة بس عشان التوجيه يفضل سريع وقليل التكلفة.",
+    "selectRouterModelPlaceholder": "اختار نموذج التوجيه…",
+    "routerModelSearchPlaceholder": "دوّر على نماذج…",
+    "routerModelEmptyList": "مفيش نماذج خفيفة متاحة. ضيف نموذج أصغر أو ظبّط مفاتيح API في النماذج.",
+    "routerModelEmptySearch": "مفيش نتائج لـ “{{query}}”."
+  },
+  "auth": {
+    "label": "المصادقة:",
+    "state": {
+      "notApplicable": "مش مطلوب",
+      "staticHeader": "رأس التفويض",
+      "authenticated": "تم التحقّق",
+      "expired": "انتهت صلاحيته",
+      "staleResource": "صادر لعنوان URL تاني",
+      "unauthenticated": "لسه متحقّقناش"
+    },
+    "expiresIn": "صلاحيته هتنتهي بعد {{duration}}",
+    "authenticate": "تسجيل الدخول",
+    "reauthenticate": "إعادة المصادقة",
+    "clear": "مصادقة واضحة",
+    "waiting": "مستنّيين المتصفح...",
+    "openSignInPage": "افتح صفحة تسجيل الدخول",
+    "needsAuth": "{{serverName}} محتاج تسجيل دخول",
+    "needsAuthHint": "سجّل دخولك للسيرفر ده عشان تتصل.",
+    "authorized": "سجّلنا الدخول لـ {{serverName}}",
+    "authorizeFailed": "تسجيل الدخول لـ {{serverName}} ما نجحش",
+    "cleared": "مسحنا بيانات الدخول المحفوظة لـ {{serverName}}",
+    "nothingToClear": "مكنش فيه بيانات دخول محفوظة لـ {{serverName}}",
+    "clearFailed": "مقدرناش نمسح بيانات الدخول لـ {{serverName}}",
+    "renew": "تجديد الجلسة",
+    "expiredAgo": "صلاحيته انتهت من {{duration}}"
+  }
+}

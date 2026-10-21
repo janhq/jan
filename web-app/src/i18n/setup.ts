@@ -125,10 +125,18 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
   return String(translation)
 }
 
+// Keep the DOM language and base direction in sync, including initial load.
+function syncDocumentLanguage(language: string): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = language === 'vn' ? 'vi' : language
+  document.documentElement.dir = ['ar', 'ur', 'arz'].includes(language) ? 'rtl' : 'ltr'
+}
+
 // Change language function
 const changeLanguage = (lng: string): void => {
   if (i18nInstance && resources[lng]) {
     i18nInstance.language = lng
+    syncDocumentLanguage(lng)
     
     // Update localStorage
     try {
@@ -156,6 +164,7 @@ const initI18n = (): I18nInstance => {
     t: translate,
   }
   
+  syncDocumentLanguage(currentLanguage)
   return i18nInstance
 }
 
