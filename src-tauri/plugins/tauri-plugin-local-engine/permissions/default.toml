@@ -1,0 +1,14 @@
+[default]
+description = "Default permissions for the local engine plugin"
+permissions = [
+    "allow-cleanup-local-engine-processes",
+    "allow-load-local-model",
+    "allow-unload-local-model",
+    "allow-is-local-engine-process-running",
+    "allow-get-local-engine-random-port",
+    "allow-find-local-session-by-model",
+    "allow-get-local-loaded-models",
+    "allow-get-local-all-sessions",
+    "allow-check-local-engine",
+    "allow-install-local-engine-runtime",
+]

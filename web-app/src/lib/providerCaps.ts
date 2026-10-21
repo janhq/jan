@@ -3,6 +3,7 @@ import {
   type ParamDef,
   type SamplerCap,
 } from '@/lib/predefinedParams'
+import { LOCAL_ENGINE_IDS } from '@/lib/localProviders'
 
 /**
  * Per-provider sampler capabilities. Built-in providers ship with locked
@@ -197,8 +198,6 @@ export function buildsOwnToolImageRequest(
   )
 }
 
-const LOCAL_PROVIDER_IDS = new Set<string>(['llamacpp', 'mlx'])
-
 /**
  * Predefined remote providers ship locked base_urls and expose only a fixed
  * sampling surface — exposing the in-app sampler UI for them invites silent
@@ -210,7 +209,7 @@ export function isPredefinedRemoteProvider(
 ): boolean {
   if (!provider) return false
   const id = typeof provider === 'string' ? provider : provider.provider
-  return id in BUILTIN_CAPS && !LOCAL_PROVIDER_IDS.has(id)
+  return id in BUILTIN_CAPS && !LOCAL_ENGINE_IDS.has(id)
 }
 
 /**

@@ -10,10 +10,13 @@ export default defineConfig({
       './web-app',
 
       // Extensions - each ships its own vitest config
+      './packages/local-engine',
       './extensions/assistant-extension',
       './extensions/conversational-extension',
       './extensions/download-extension',
       './extensions/llamacpp-extension',
+      './extensions/litert-lm-extension',
+      './extensions/openvino-extension',
       // mlx depends on @janhq/tauri-plugin-mlx-api, which only resolves on
       // macOS; skip its project elsewhere to avoid a resolve failure.
       ...(process.platform === 'darwin' ? ['./extensions/mlx-extension'] : []),

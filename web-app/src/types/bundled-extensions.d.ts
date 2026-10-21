@@ -19,6 +19,14 @@ declare module '@janhq/llamacpp-extension' {
   const ext: BundledExtensionCtor
   export default ext
 }
+declare module '@janhq/litert-lm-extension' {
+  const ext: BundledExtensionCtor
+  export default ext
+}
+declare module '@janhq/openvino-extension' {
+  const ext: BundledExtensionCtor
+  export default ext
+}
 declare module '@janhq/mlx-extension' {
   const ext: BundledExtensionCtor
   export default ext

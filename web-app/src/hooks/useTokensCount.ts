@@ -6,6 +6,7 @@ import {
   type LlamacppModelProps,
 } from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
+import { isLocalEngineId } from '@/lib/localProviders'
 import { useAppState } from './useAppState'
 
 export type ModelProps = LlamacppModelProps
@@ -99,9 +100,7 @@ export const useTokensCount = (
   const [loading, setLoading] = useState(false)
   const reqId = useRef(0)
 
-  const isLocalProvider =
-    selectedProvider === 'llamacpp' || selectedProvider === 'mlx'
-  const modelId = isLocalProvider ? selectedModel?.id : undefined
+  const modelId = isLocalEngineId(selectedProvider) ? selectedModel?.id : undefined
 
   const threadId = source?.threadId ?? messages[0]?.thread_id
   // Populated per-chunk while a llama.cpp turn is streaming (timings_per_token);
@@ -168,7 +167,7 @@ export const useTokensCount = (
   ])
 
   const tokenData: TokenCountData = useMemo(() => {
-    if (!isLocalProvider) {
+    if (!isLocalEngineId(selectedProvider)) {
       if (!selectedModel) {
         return {
           tokenCount: 0,
@@ -241,7 +240,6 @@ export const useTokensCount = (
     source,
     modelId,
     selectedProvider,
-    isLocalProvider,
     modelProps,
     loading,
     liveStats,

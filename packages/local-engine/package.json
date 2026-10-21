@@ -1,0 +1,42 @@
+{
+  "name": "@janhq/local-engine",
+  "version": "0.1.0",
+  "description": "Shared base for Jan's local CPU inference engine extensions (LiteRT-LM, OpenVINO)",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    "types": "./dist/types/index.d.ts",
+    "import": "./dist/index.js",
+    "default": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "author": "Jan <service@jan.ai>",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsc -p . && rolldown -c rolldown.config.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@janhq/core": "workspace:*",
+    "@janhq/tauri-plugin-local-engine-api": "link:../../src-tauri/plugins/tauri-plugin-local-engine",
+    "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-http": "2.5.9"
+  },
+  "devDependencies": {
+    "rolldown": "1.0.0-beta.1",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
+}

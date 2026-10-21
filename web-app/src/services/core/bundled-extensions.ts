@@ -55,6 +55,20 @@ const ENTRIES: BundledEntry[] = [
     description: 'This extension enables llama.cpp chat completion API calls',
   },
   {
+    load: () => import('@janhq/litert-lm-extension'),
+    name: '@janhq/litert-lm-extension',
+    productName: 'LiteRT-LM Inference Engine',
+    version: '1.0.0',
+    description: 'This extension enables Google LiteRT-LM inference on CPU (and accelerators) locally',
+  },
+  {
+    load: () => import('@janhq/openvino-extension'),
+    name: '@janhq/openvino-extension',
+    productName: 'OpenVINO Inference Engine',
+    version: '1.0.0',
+    description: 'This extension enables Intel OpenVINO inference on CPU (and accelerators) locally',
+  },
+  {
     load: () => import('@janhq/rag-extension'),
     name: '@janhq/rag-extension',
     productName: 'RAG Tools',

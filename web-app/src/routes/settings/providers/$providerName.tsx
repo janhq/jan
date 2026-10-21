@@ -12,6 +12,12 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { ImportLlamacppModelDialog } from '@/containers/dialogs/ImportLlamacppModelDialog'
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
+import { ImportLocalEngineModelDialog } from '@/containers/dialogs/ImportLocalEngineModelDialog'
+import { LocalEngineRuntimeBanner } from '@/containers/LocalEngineRuntimeBanner'
+import {
+  isManagedCpuEngine,
+  MANAGED_CPU_ENGINES,
+} from '@/lib/localProviders'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { LlamacppEngineInfo } from '@/containers/LlamacppEngineInfo'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
@@ -247,7 +253,7 @@ function ProviderDetail() {
 
   useEffect(() => {
     if (!provider) return
-    if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
+    if (isLocalProvider(provider.provider)) return
     setApiKeysDraft(providerRemoteApiKeyChain(provider).join('\n'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
@@ -660,6 +666,16 @@ function ProviderDetail() {
 
             {isLlamacpp && <LlamacppEngineInfo />}
 
+            {provider && isManagedCpuEngine(provider.provider) && (
+              <LocalEngineRuntimeBanner
+                engine={provider.provider}
+                name={
+                  MANAGED_CPU_ENGINES[provider.provider]?.name ?? provider.provider
+                }
+                packageName={MANAGED_CPU_ENGINES[provider.provider]?.package}
+              />
+            )}
+
             {provider?.provider === 'mlx' && (
               <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
                 <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
@@ -676,8 +692,7 @@ function ProviderDetail() {
               className={cn(
                 'flex flex-col gap-3',
                 provider &&
-                  (provider.provider === 'llamacpp' ||
-                    provider.provider === 'mlx') &&
+                  isLocalProvider(provider.provider) &&
                   'flex-col-reverse'
               )}
             >
@@ -685,15 +700,13 @@ function ProviderDetail() {
                   api-key + base-url are both surfaced elsewhere / hidden. */}
               {!(
                 isPredefinedProvider &&
-                provider?.provider !== 'llamacpp' &&
-                provider?.provider !== 'mlx'
+                !isLocalProvider(provider?.provider)
               ) && (
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
                   if (
                     setting.key === 'api-key' &&
-                    provider?.provider !== 'llamacpp' &&
-                    provider?.provider !== 'mlx'
+                    !isLocalProvider(provider?.provider)
                   ) {
                     return null
                   }
@@ -1012,34 +1025,35 @@ function ProviderDetail() {
                       {t('providers:models')}
                     </h1>
                     <div className="flex items-center gap-2">
-                      {provider && provider.provider !== 'llamacpp' && provider.provider !== 'mlx' && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            size="icon-xs"
-                            onClick={handleRefreshModels}
-                            disabled={refreshingModels}
-                          >
-                            {refreshingModels ? (
-                              <IconLoader
-                                size={18}
-                                className="text-muted-foreground animate-spin"
-                              />
-                            ) : (
-                              <IconRefresh
-                                size={18}
-                                className="text-muted-foreground"
-                              />
-                            )}
-                          </Button>
-                          <DialogAddModel provider={provider} />
-                        </>
-                      )}
                       {provider &&
-                        (provider.provider === 'llamacpp' ||
-                          provider.provider === 'mlx') && (
-                          <DialogDeleteAllModels provider={provider} />
+                        provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'mlx' &&
+                        !isManagedCpuEngine(provider.provider) && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="icon-xs"
+                              onClick={handleRefreshModels}
+                              disabled={refreshingModels}
+                            >
+                              {refreshingModels ? (
+                                <IconLoader
+                                  size={18}
+                                  className="text-muted-foreground animate-spin"
+                                />
+                              ) : (
+                                <IconRefresh
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                              )}
+                            </Button>
+                            <DialogAddModel provider={provider} />
+                          </>
                         )}
+                      {provider && isLocalProvider(provider.provider) && (
+                        <DialogDeleteAllModels provider={provider} />
+                      )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportLlamacppModelDialog
                           provider={provider}
@@ -1075,6 +1089,21 @@ function ProviderDetail() {
                             }
                           />
                         )}
+                      {provider && isManagedCpuEngine(provider.provider) && (
+                        <ImportLocalEngineModelDialog
+                          provider={provider}
+                          onSuccess={handleModelImportSuccess}
+                          trigger={
+                            <Button variant="secondary" size="sm">
+                              <IconFolderPlus
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                              <span>{t('providers:import')}</span>
+                            </Button>
+                          }
+                        />
+                      )}
                     </div>
                   </div>
                 }
@@ -1142,9 +1171,7 @@ function ProviderDetail() {
                               provider={provider}
                               modelId={model.id}
                             />
-                            {provider &&
-                              (provider.provider === 'llamacpp' ||
-                                provider.provider === 'mlx') && (
+                            {provider && isLocalProvider(provider.provider) && (
                                 <div className="ml-2">
                                   {activeModels.some(
                                     (activeModel) => activeModel === model.id

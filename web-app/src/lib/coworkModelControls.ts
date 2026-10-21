@@ -2,16 +2,13 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import type { ModelsService } from '@/services/models/types'
+import { isLocalEngineId } from '@/lib/localProviders'
 
 export function coworkLocalModel(
   provider: ModelProvider | undefined,
   modelId: string | undefined
 ): Model | undefined {
-  if (
-    !provider ||
-    provider.active === false ||
-    (provider.provider !== 'llamacpp' && provider.provider !== 'mlx')
-  )
+  if (!provider || provider.active === false || !isLocalEngineId(provider))
     return undefined
   return provider.models.find((model) => model.id === modelId)
 }

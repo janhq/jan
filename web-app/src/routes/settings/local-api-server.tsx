@@ -17,6 +17,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { LOCAL_API_SERVER_ENGINES } from '@/lib/localProviders'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -82,7 +83,10 @@ function LocalAPIServerContent() {
   const localModels = useMemo(
     () =>
       providers
-        .filter((p) => p.provider === 'llamacpp' || p.provider === 'mlx')
+        // The server proxy only knows how to reach the engines it has a
+        // session map for: llama.cpp and MLX. The other local engines are
+        // not listed here until the proxy learns about them.
+        .filter((p) => LOCAL_API_SERVER_ENGINES.includes(p.provider))
         .flatMap((p) => p.models.map((m) => ({ id: m.id, provider: p.provider }))),
     [providers]
   )

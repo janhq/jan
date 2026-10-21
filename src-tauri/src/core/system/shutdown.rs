@@ -56,6 +56,12 @@ pub async fn shutdown_cleanup<R: Runtime>(app: &AppHandle<R>) {
         }
     }
 
+    if let Err(e) = tauri_plugin_local_engine::cleanup_local_engine_processes(app.clone()).await {
+        log::warn!("Failed to cleanup local engine processes: {}", e);
+    } else {
+        log::info!("Local engine processes cleaned up successfully");
+    }
+
     log::info!("App cleanup completed");
 }
 

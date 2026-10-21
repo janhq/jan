@@ -993,6 +993,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
         this.buildWebSearchSystemInstruction(),
+        this.buildBrowserSystemInstruction(),
         this.buildAgentToolsSystemInstruction(),
       ]
         .filter((s) => typeof s === 'string' && s.trim().length > 0)
@@ -1811,6 +1812,32 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       'Cite each distinct source you rely on; do not add a separate references',
       'or sources section.',
     ].join(' ')
+  }
+
+  /**
+   * Static instruction for the native browser.
+   *
+   * Separate from the web instruction: the browser is a different tool with a
+   * different cost, and a model that reaches for it when a fetch would do
+   * starts a browser for nothing.
+   */
+  buildBrowserSystemInstruction(): string {
+    if (!this.browserToolsAdvertised()) return ''
+    return [
+      '# Browser',
+      'You have a real browser: browser_open opens a URL, browser_read returns',
+      "the page's text, browser_eval runs script in the page, browser_click and",
+      'browser_type act on it, and browser_screenshot returns what it looks like.',
+      'Use it for a page that needs JavaScript, a click, or a login; use',
+      'web_fetch for a plain page, which is far cheaper.',
+    ].join(' ')
+  }
+
+  /**
+   * Whether the browser tools are part of this run's tool set.
+   */
+  private browserToolsAdvertised(): boolean {
+    return Object.keys(this.getTools()).some((name) => name.startsWith('browser_'))
   }
 
   /**

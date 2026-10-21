@@ -4,6 +4,7 @@ import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
+import { LOCAL_ENGINE_IDS } from './localProviders'
 import path from 'path'
 import type { VFile } from 'vfile'
 
@@ -229,9 +230,13 @@ export function getReadableLanguageName(language: string): string {
   )
 }
 
-export const isLocalProvider = (provider: string) => {
+export const isLocalProvider = (provider: string | undefined) => {
+  if (!provider) return false
+  // A known on-device engine counts as local even before its extension has
+  // loaded, so the UI does not flip to a "remote provider" shape mid-boot.
+  if (LOCAL_ENGINE_IDS.has(provider)) return true
   const extension = ExtensionManager.getInstance().getEngine(provider)
-  return extension && 'load' in extension
+  return !!(extension && 'load' in extension)
 }
 
 export const toGigabytes = (

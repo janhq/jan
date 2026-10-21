@@ -31,6 +31,8 @@ export default defineConfig({
       '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/dist/index.js'),
       '@janhq/download-extension': path.resolve(__dirname, '../extensions/download-extension/dist/index.js'),
       '@janhq/llamacpp-extension': path.resolve(__dirname, '../extensions/llamacpp-extension/dist/index.js'),
+      '@janhq/litert-lm-extension': path.resolve(__dirname, '../extensions/litert-lm-extension/dist/index.js'),
+      '@janhq/openvino-extension': path.resolve(__dirname, '../extensions/openvino-extension/dist/index.js'),
       '@janhq/mlx-extension': path.resolve(__dirname, '../extensions/mlx-extension/dist/index.js'),
       '@janhq/rag-extension': path.resolve(__dirname, '../extensions/rag-extension/dist/index.js'),
       '@janhq/vector-db-extension': path.resolve(__dirname, '../extensions/vector-db-extension/dist/index.js'),

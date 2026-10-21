@@ -165,6 +165,9 @@ tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp", optional = true }
+# Local CPU inference engines (LiteRT-LM, OpenVINO). The plugin drives a
+# python sidecar that serves the OpenAI chat-completions API.
+tauri-plugin-local-engine = { path = "./plugins/tauri-plugin-local-engine" }
 # The CLI consumes only these plugins' tauri-free cores (`db`, `provider`, the
 # agent toolset); the desktop feature turns their Tauri command surface back on.
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db", default-features = false }

@@ -2,6 +2,7 @@ import type { UIMessage } from 'ai'
 import { uiMessageHasMeaningfulContent } from '@/lib/messages'
 import { isContextOverflowMessage } from '@/utils/error'
 import { readCtxLen } from '@/lib/llamacppRouterProps'
+import { isLocalEngineId } from '@/lib/localProviders'
 
 // Used when a local model has neither a ctx_len value nor a known launched n_ctx.
 const DEFAULT_CTX_LEN = 32768
@@ -12,7 +13,7 @@ const DEFAULT_CTX_LEN = 32768
  * heuristic nor the "Increase Context Size" action means anything there.
  */
 export function providerHasContextSetting(provider: string | undefined): boolean {
-  return provider === 'llamacpp' || provider === 'mlx'
+  return isLocalEngineId(provider)
 }
 
 /**

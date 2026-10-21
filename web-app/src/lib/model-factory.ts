@@ -58,6 +58,7 @@ import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { invoke } from '@tauri-apps/api/core'
 import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
+import { findLocalSessionByModel } from '@janhq/tauri-plugin-local-engine-api'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
@@ -981,6 +982,10 @@ export class ModelFactory {
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
 
+      case 'litert-lm':
+      case 'openvino':
+        return this.createLocalEngineModel(modelId, provider, parameters)
+
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider, parameters)
 
@@ -1090,6 +1095,77 @@ export class ModelFactory {
       includeUsage: true,
       fetch: customFetch,
       metadataExtractor: providerMetadataExtractor,
+    })
+  }
+
+  /**
+   * Create a model for a local CPU engine (LiteRT-LM, OpenVINO).
+   *
+   * These engines run in a sidecar that serves the OpenAI chat-completions
+   * API, so the transport is the same shape as MLX: start the model, find
+   * its session, and talk to the port the session reports.
+   */
+  private static async createLocalEngineModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    parameters = filterParameters(parameters, false)
+
+    if (provider) {
+      try {
+        const { useServiceStore } = await import('@/hooks/useServiceHub')
+        const serviceHub = useServiceStore.getState().serviceHub
+
+        if (serviceHub) {
+          await serviceHub.models().startModel(provider, modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start local engine model:', error)
+        throw engineFailure('model-errors:startModelFailed', error)
+      }
+    }
+
+    const sessionInfo = await findLocalSessionByModel(modelId)
+
+    if (!sessionInfo) {
+      throw new Error(`No running local engine session found for model: ${modelId}`)
+    }
+
+    const baseUrl = `http://127.0.0.1:${sessionInfo.port}`
+    const authHeaders = {
+      Authorization: `Bearer ${sessionInfo.api_key}`,
+      Origin: 'tauri://localhost',
+    }
+
+    let customFetch = createCustomFetch(
+      loopbackFetch,
+      parameters,
+      false,
+      undefined,
+      true
+    )
+    if (shouldStripReasoningFromContext()) {
+      customFetch = withAssistantReasoningStripped(customFetch)
+    }
+
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: provider?.provider ?? 'local-engine',
+      headers: () => authHeaders,
+      url: ({ path }) => {
+        const url = new URL(`${baseUrl}/v1${path}`)
+        return url.toString()
+      },
+      fetch: customFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+
+    return wrapLanguageModel({
+      model: model,
+      middleware: extractReasoningMiddleware({
+        tagName: getReasoningTagName(modelId),
+        separator: '\n',
+      }),
     })
   }
 

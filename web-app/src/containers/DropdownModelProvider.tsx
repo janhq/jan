@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
+import { isLocalEngineId } from '@/lib/localProviders'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
 import { IconSettings, IconX } from '@tabler/icons-react'
@@ -348,8 +349,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       const activeProviders = providers
         .filter((p) => p.active)
         .sort((a, b) => {
-          const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
-          const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
+          const aIsLocal = isLocalEngineId(a.provider)
+          const bIsLocal = isLocalEngineId(b.provider)
           // Local (llamacpp) first
           if (aIsLocal && !bIsLocal) return -1
           if (!aIsLocal && bIsLocal) return 1

@@ -1,0 +1,23 @@
+[
+  {
+    "key": "auto_unload",
+    "title": "Auto unload model",
+    "description": "Automatically unload other models when loading a new one",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
+    "key": "ctx_size",
+    "title": "Context size",
+    "description": "The context window the model runs with, in tokens",
+    "controllerType": "number",
+    "controllerProps": { "value": 4096, "min": 512, "max": 32768, "step": 512 }
+  },
+  {
+    "key": "threads",
+    "title": "CPU threads",
+    "description": "Threads the runtime may use. 0 lets the runtime decide",
+    "controllerType": "number",
+    "controllerProps": { "value": 0, "min": 0, "max": 64, "step": 1 }
+  }
+]

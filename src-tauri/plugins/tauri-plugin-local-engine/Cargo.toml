@@ -1,0 +1,26 @@
+[package]
+name = "tauri-plugin-local-engine"
+version = "0.1.0"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin for running local CPU inference engines (LiteRT-LM, OpenVINO) as sidecar servers"
+license = "Apache-2.0"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-local-engine"
+
+[dependencies]
+log = "0.4"
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sysinfo = "0.34.2"
+tauri = { version = "2.5.0", default-features = false, features = [] }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+jan-utils = { path = "../../utils" }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

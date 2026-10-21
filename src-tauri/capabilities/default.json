@@ -34,6 +34,7 @@
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",
+    "local-engine:default",
     "updater:default",
     "updater:allow-check",
     {

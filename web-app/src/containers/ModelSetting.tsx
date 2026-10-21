@@ -19,6 +19,7 @@ import { ChatTemplateKwargs } from '@/containers/ChatTemplateKwargs'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
+import { isLocalEngineId } from '@/lib/localProviders'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { paramsSettings, samplerKeysForProvider } from '@/lib/predefinedParams'
@@ -282,7 +283,7 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
               onChange={handleTemplateKwargsChange}
             />
           )}
-          {(provider.provider === 'llamacpp' || provider.provider === 'mlx') &&
+          {isLocalEngineId(provider.provider) &&
             model.embedding !== true && (
               <SamplerDefaults
                 model={model}
