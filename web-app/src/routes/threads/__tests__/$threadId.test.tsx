@@ -699,6 +699,28 @@ describe('ThreadDetail route', () => {
     h.attachmentsState.getAttachments = vi.fn(() => [])
   })
 
+  it('gives back the draft and attachments when processing a document fails', async () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+    vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(
+      new Error("Couldn't read sheet.xlsx as text.")
+    )
+    renderComponent()
+    await act(async () => {
+      screen.getByTestId('chat-send').click()
+    })
+    await waitFor(() => {
+      expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+        'thread-1',
+        [sheet]
+      )
+    })
+    expect(usePrompt.getState().prompt).toBe('hello world')
+    expect(h.mockSendMessage).not.toHaveBeenCalled()
+    h.attachmentsState.getAttachments = vi.fn(() => [])
+    usePrompt.getState().resetPrompt()
+  })
+
   describe('when the auto-inline budget is gone at send time', () => {
     const sheet = {
       name: 'sheet.xlsx',

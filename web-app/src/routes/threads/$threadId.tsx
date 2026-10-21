@@ -1562,6 +1562,11 @@ function ThreadDetail() {
               prev.filter((m) => m.id !== messageId)
             )
           }
+          // ChatInput cleared the input on submit and nothing was sent, so
+          // hand the draft and attachments back as the cancelled-choice path
+          // does; the user fixes the cause and sends again.
+          setAttachmentsForThread(attachmentsKey, allAttachments)
+          usePrompt.getState().setPrompt(draft)
           return
         } finally {
           useAppState.getState().setThreadEmbedding(threadId, false)
