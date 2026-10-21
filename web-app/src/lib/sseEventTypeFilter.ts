@@ -12,8 +12,6 @@
  * whose event type is not the default before the SDK ever parses it.
  */
 
-const FRAME_SEPARATOR = /\r\n\r\n|\n\n|\r\r/
-
 /** Returns the frame's SSE event type, defaulting to "message". */
 function eventTypeOf(frame: string): string {
   let type = 'message'
@@ -37,17 +35,34 @@ const isDefaultEvent = (frame: string): boolean =>
  */
 export class SseEventTypeFilter {
   private buffer = ''
+  private position = 0
+  private lineStart = 0
 
   process(chunk: string): string {
     this.buffer += chunk
     let out = ''
-    for (;;) {
-      const match = FRAME_SEPARATOR.exec(this.buffer)
-      if (!match) break
-      const end = match.index + match[0].length
-      const frame = this.buffer.slice(0, end)
-      this.buffer = this.buffer.slice(end)
-      if (isDefaultEvent(frame)) out += frame
+    while (this.position < this.buffer.length) {
+      const char = this.buffer[this.position]
+      if (char !== '\r' && char !== '\n') {
+        this.position++
+        continue
+      }
+      // A trailing CR may be the first half of CRLF in the next chunk.
+      // Wait so retained frames preserve their original bytes.
+      if (char === '\r' && this.position + 1 === this.buffer.length) break
+      const end = this.position + (
+        char === '\r' && this.buffer[this.position + 1] === '\n' ? 2 : 1
+      )
+      const emptyLine = this.position === this.lineStart
+      this.position = end
+      this.lineStart = end
+      if (emptyLine) {
+        const frame = this.buffer.slice(0, end)
+        if (isDefaultEvent(frame)) out += frame
+        this.buffer = this.buffer.slice(end)
+        this.position = 0
+        this.lineStart = 0
+      }
     }
     return out
   }
@@ -56,6 +71,8 @@ export class SseEventTypeFilter {
     if (!this.buffer) return ''
     const frame = this.buffer
     this.buffer = ''
+    this.position = 0
+    this.lineStart = 0
     return isDefaultEvent(frame) ? frame : ''
   }
 }
