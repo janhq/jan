@@ -30,6 +30,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             engine::commands::engine_devices,
             engine::commands::force_stop_engine,
             engine::commands::engine_slots_idle,
+            engine::commands::begin_engine_restart,
+            engine::commands::end_engine_restart,
             engine::commands::erase_thread_slot_state,
             commands::generate_api_key,
             commands::ensure_session_ready,

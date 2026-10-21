@@ -38,6 +38,8 @@ const COMMANDS: &[&str] = &[
     "engine_devices",
     "force_stop_engine",
     "engine_slots_idle",
+    "begin_engine_restart",
+    "end_engine_restart",
     "erase_thread_slot_state",
     // GGUF commands
     "read_gguf_metadata",

@@ -718,6 +718,41 @@ char * jan_llama_devices_json(void) {
     return buf;
 }
 
+// jan_llama_devices_json without the memory query, which is the only part that
+// touches the GPU; the id and description are read from ggml's registry.
+char * jan_llama_device_identities_json(void) {
+    std::string out = "[";
+    try {
+        bool first = true;
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                continue;
+            }
+            if (!first) {
+                out += ',';
+            }
+            first = false;
+            out += "{\"id\":";
+            out += json_quote(ggml_backend_dev_name(dev));
+            out += ",\"name\":";
+            out += json_quote(ggml_backend_dev_description(dev));
+            out += '}';
+        }
+    } catch (...) {
+        // Same stance as jan_llama_devices_json: an empty list is recoverable.
+        out = "[";
+    }
+    out += ']';
+
+    char * buf = static_cast<char *>(std::malloc(out.size() + 1));
+    if (buf == nullptr) {
+        return nullptr;
+    }
+    std::memcpy(buf, out.c_str(), out.size() + 1);
+    return buf;
+}
+
 void jan_llama_string_free(char * s) {
     std::free(s);
 }

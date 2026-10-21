@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useHardware, type GPU } from '@/hooks/useHardware'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { IconDeviceDesktopAnalytics, IconRefresh } from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type {
@@ -441,7 +442,19 @@ function HardwareContent() {
       ])
       if (hardwareData) setHardwareData(hardwareData)
       if (systemUsage) updateSystemUsage(systemUsage)
-      if (!IS_MACOS) fetchDevices()
+      if (!IS_MACOS) {
+        // A GPU that appeared after launch (a laptop leaving eco mode) is listed
+        // by the fresh enumeration, but the running engine cannot use it until
+        // it restarts.
+        const outcome = await serviceHub.hardware().reconcileLlamacppDevices()
+        if (outcome === 'restarted') {
+          setActiveModels([])
+          toast.info(t('settings:hardware.engineRestartedForDevices'))
+        } else if (outcome === 'busy') {
+          toast.warning(t('settings:hardware.engineBusyDevicesChanged'))
+        }
+        fetchDevices()
+      }
     } catch (error) {
       console.error('Failed to refresh hardware:', error)
     } finally {

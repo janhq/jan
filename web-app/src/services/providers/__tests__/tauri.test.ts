@@ -83,6 +83,7 @@ import { EngineManager } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { TauriProvidersService } from '../tauri'
+import { ProviderUnreachableError } from '@/lib/provider-unreachable'
 
 describe('TauriProvidersService', () => {
   let svc: TauriProvidersService
@@ -271,6 +272,18 @@ describe('TauriProvidersService', () => {
       errSpy.mockRestore()
     })
 
+    it('does not tag an HTTP status error as unreachable', async () => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+      } as any)
+
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const err = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+      expect(err).not.toBeInstanceOf(ProviderUnreachableError)
+    })
+
     it('throws structured error on 403', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: false,
@@ -344,6 +357,7 @@ describe('TauriProvidersService', () => {
       it('explains the failure instead of saying "Unknown error"', async () => {
         reject('https://api.test.com/v1/models')
         const err = await svc.fetchModelsFromProvider(baseProvider).catch((e) => e)
+        expect(err).toBeInstanceOf(ProviderUnreachableError)
         expect(err.message).toMatch(/couldn't reach the provider/i)
         expect(err.message).toContain('https://api.test.com/v1/models')
         expect(err.message).not.toContain('Unknown error')

@@ -17,9 +17,7 @@ import {
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
-import { describeTransportError } from '@/lib/model-factory'
-import { localNetworkHint } from '@/lib/local-network'
-import { isMac } from '@/lib/shortcuts/platform'
+import { toProviderUnreachable } from '@/lib/provider-unreachable'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -273,13 +271,11 @@ export class TauriProvidersService extends DefaultProvidersService {
       // `@tauri-apps/plugin-http` rejects with a plain string, not an Error,
       // so `error instanceof Error` alone reported every connection failure
       // as "Unknown error".
-      const friendly = describeTransportError(error)
-      if (friendly) {
-        const hint = localNetworkHint(provider.base_url, isMac)
-        throw new Error(
-          `${friendly} (${provider.base_url}/models)${hint ? ` ${hint}` : ''}`
-        )
-      }
+      const unreachable = toProviderUnreachable(
+        error,
+        `${provider.base_url}/models`
+      )
+      if (unreachable) throw unreachable
 
       const message = error instanceof Error ? error.message : String(error)
 

@@ -9,14 +9,25 @@
 //! management, so a build that did not compile llama.cpp can still drive a
 //! worker shipped alongside it as a sidecar.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tauri_plugin_hardware::vendor::nvidia::CudaVersion;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+/// A device as the engine names it: the id a `device` setting uses and the
+/// human name. Deliberately without memory, which changes constantly and says
+/// nothing about whether the set of GPUs is the same.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceIdentity {
+    pub id: String,
+    pub name: String,
+}
 
 /// The worker prints this and nothing else on stdout, then serves. Reading a
 /// structured line beats the router path's stderr scraping: there is no
@@ -29,11 +40,20 @@ pub struct Handshake {
     /// The CUDA toolkit the engine was built with, which decides how new an
     /// NVIDIA driver it needs.
     pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, as it saw them at start.
+    /// `None` when it did not say (a worker that predates the field, or one
+    /// that could not list them), which is not the same as `Some(vec![])`: an
+    /// empty list is a real answer, "this machine has no GPU".
+    pub devices: Option<Vec<DeviceIdentity>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WorkerError {
     Spawn(String),
+    /// The OS refused to run the worker because it is built for another
+    /// processor than this computer's: the Apple Silicon engine on an Intel Mac
+    /// (#9270). Not a transient failure, so callers say so instead of retrying.
+    WrongArchitecture(String),
     /// The worker exited or said nothing intelligible before serving.
     Handshake(String),
     Timeout(Duration),
@@ -43,12 +63,30 @@ impl std::fmt::Display for WorkerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Spawn(m) => write!(f, "could not start jan-llama-worker: {m}"),
+            Self::WrongArchitecture(m) => write!(
+                f,
+                "jan-llama-worker is built for a different processor than this computer's: {m}"
+            ),
             Self::Handshake(m) => write!(f, "jan-llama-worker did not come up: {m}"),
             Self::Timeout(d) => {
                 write!(f, "jan-llama-worker did not report a port within {d:?}")
             }
         }
     }
+}
+
+/// `EBADARCH`, which macOS returns from `exec` for a Mach-O with no slice for
+/// this CPU ("Bad CPU type in executable"). It is only a macOS code: on Linux
+/// the same number is a different errno.
+#[cfg(target_os = "macos")]
+const EBADARCH: i32 = 86;
+
+fn spawn_error(e: std::io::Error) -> WorkerError {
+    #[cfg(target_os = "macos")]
+    if e.raw_os_error() == Some(EBADARCH) {
+        return WorkerError::WrongArchitecture(e.to_string());
+    }
+    WorkerError::Spawn(e.to_string())
 }
 
 /// A runtime failure worth telling the user about, classified from one worker
@@ -195,6 +233,88 @@ pub type FaultCallback = std::sync::Arc<dyn Fn(RuntimeFault, String) + Send + Sy
 /// first one, not all of them.
 const FAULT_DEBOUNCE: Duration = Duration::from_secs(3);
 
+/// How much of the worker's stderr is kept for an error message. A worker that
+/// dies on GPU init or under antivirus prints its reason last, and the user
+/// otherwise sees only a refused connection; a few lines are enough to name
+/// the cause, and the full stream is already in the app log.
+const STDERR_TAIL_LINES: usize = 4;
+
+/// Per line, so one runaway line cannot crowd out the rest of the tail.
+const STDERR_TAIL_LINE_CHARS: usize = 300;
+
+/// How long a dead worker's stderr drain is given to finish before its tail is
+/// read. A worker's last words are often its last write before it exits, so
+/// its exit can be collected while they still sit unread in the pipe. The pipe
+/// closes when the worker does, so this is normally a few milliseconds; the
+/// bound is for a grandchild that still holds the pipe open.
+const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
+
+/// The last few stderr lines, shared between the drain task and the handle.
+type StderrTail = Arc<Mutex<VecDeque<String>>>;
+
+/// Lines that are kept out of the tail, though still logged. ggml prints one
+/// `load_backend: loaded ... from <path>` per backend at start, which says
+/// nothing about a crash and would fill the error with local paths.
+fn is_tail_noise(line: &str) -> bool {
+    line.starts_with("load_backend:")
+}
+
+fn remember_stderr_line(tail: &StderrTail, line: &str) {
+    let line = line.trim();
+    if line.is_empty() || is_tail_noise(line) {
+        return;
+    }
+    let line: String = line.chars().take(STDERR_TAIL_LINE_CHARS).collect();
+    let Ok(mut tail) = tail.lock() else { return };
+    if tail.len() == STDERR_TAIL_LINES {
+        tail.pop_front();
+    }
+    tail.push_back(line);
+}
+
+fn stderr_lines(tail: &StderrTail) -> Vec<String> {
+    tail.lock().map(|t| t.iter().cloned().collect()).unwrap_or_default()
+}
+
+/// How a worker that is no longer running ended, for the error the user sees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExitReport {
+    /// From [`describe_exit`], e.g. `exit code 0xC0000005`.
+    pub status: String,
+    /// The worker's last stderr lines, oldest first. Empty if it said nothing.
+    pub last_lines: Vec<String>,
+}
+
+/// An exit status in the form a user, or a search engine, will recognise.
+///
+/// Windows reports a crash as an NTSTATUS such as `0xC0000005` (access
+/// violation) or `0xC0000409` (stack buffer overrun), which as the decimal
+/// `i32` `code()` returns is a meaningless negative number. Unix reports a
+/// crash as a signal and no code at all.
+pub fn describe_exit(status: &ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        let raw = code as u32;
+        return if raw >= 0xC000_0000 {
+            format!("exit code 0x{raw:08X}")
+        } else {
+            format!("exit code {code}")
+        };
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            // Signal numbers differ by platform (SIGBUS is 7 on Linux, 10 on
+            // macOS), so the name comes from the platform's own table.
+            return match nix::sys::signal::Signal::try_from(sig) {
+                Ok(signal) => format!("killed by {}", signal.as_str()),
+                Err(_) => format!("killed by signal {sig}"),
+            };
+        }
+    }
+    "no exit code".to_string()
+}
+
 /// Env var the worker reads its bearer token from. Never an argv flag: argv is
 /// world-readable via `ps` / `/proc/<pid>/cmdline`, and the supervisor logs it.
 pub const API_KEY_ENV: &str = "JAN_LLAMA_API_KEY";
@@ -223,8 +343,14 @@ pub fn loopback_client_builder() -> reqwest::ClientBuilder {
 }
 
 /// [`loopback_client_builder`] with reqwest's defaults otherwise.
+///
+/// No fallback to `reqwest::Client::default()`: that would turn proxy lookup
+/// back on, and it fails (by panicking) on the same TLS-backend error that
+/// would make this build fail, which is all that can -- proxies are off.
 pub fn loopback_client() -> reqwest::Client {
-    loopback_client_builder().build().unwrap_or_default()
+    loopback_client_builder()
+        .build()
+        .expect("a reqwest client without proxies builds")
 }
 
 /// How long to wait for the handshake. Generous because a cold page-cache read
@@ -282,11 +408,24 @@ pub fn parse_handshake(line: &str) -> Result<Handshake, WorkerError> {
         .get("cuda_toolkit")
         .and_then(serde_json::Value::as_str)
         .and_then(CudaVersion::parse);
+    // `null` or absent means "not reported", which must stay distinct from an
+    // empty list. One unreadable entry makes the whole list untrustworthy as a
+    // baseline, so it reads as not reported rather than as a shorter list that
+    // would later look like a change.
+    let devices = v
+        .get("devices")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|a| {
+            a.iter()
+                .map(|d| serde_json::from_value::<DeviceIdentity>(d.clone()).ok())
+                .collect::<Option<Vec<_>>>()
+        });
     Ok(Handshake {
         port,
         pid,
         models,
         cuda_toolkit,
+        devices,
     })
 }
 
@@ -374,7 +513,16 @@ pub struct WorkerHandle {
     pub models: Vec<String>,
     /// The CUDA toolkit the engine was built with, when it reported one.
     pub cuda_toolkit: Option<CudaVersion>,
+    /// The devices the worker itself initialised, from its handshake (`None`
+    /// when it did not say). It lists its GPUs once, at start, so this is the
+    /// baseline a later enumeration is compared against. Kept on the handle,
+    /// not in the webview, so it survives a page reload and always describes
+    /// the worker that is actually running.
+    pub devices: Option<Vec<DeviceIdentity>>,
     child: Child,
+    stderr_tail: StderrTail,
+    /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
+    stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
     /// get its turn before closing the job would kill the worker outright.
     #[cfg(windows)]
@@ -448,6 +596,27 @@ impl WorkerHandle {
     pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
     }
+
+    /// None while still running, otherwise how it ended and what it last said.
+    ///
+    /// Waits up to [`STDERR_DRAIN_WAIT`] for the rest of its stderr first, so
+    /// a crash reason written just before the exit is not missed.
+    pub async fn exit_report(&mut self) -> Option<ExitReport> {
+        let status = self.exited()?;
+        wait_for_drain(self.stderr_drain.take()).await;
+        Some(ExitReport {
+            status: describe_exit(&status),
+            last_lines: stderr_lines(&self.stderr_tail),
+        })
+    }
+}
+
+/// Gives a dead worker's stderr drain a bounded moment to read what is left.
+/// On timeout the task is detached, not cancelled, and keeps logging.
+async fn wait_for_drain(drain: Option<tokio::task::JoinHandle<()>>) {
+    if let Some(drain) = drain {
+        let _ = tokio::time::timeout(STDERR_DRAIN_WAIT, drain).await;
+    }
 }
 
 /// Spawns the worker and waits for its handshake line.
@@ -499,7 +668,7 @@ pub async fn spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(|e| WorkerError::Spawn(e.to_string()))?;
+    let mut child = cmd.spawn().map_err(spawn_error)?;
     // Before the handshake, so every error path below drops the job too and
     // cannot leak a worker that never reported for duty.
     #[cfg(windows)]
@@ -511,8 +680,11 @@ pub async fn spawn(
         .ok_or_else(|| WorkerError::Spawn("no stdout pipe".into()))?;
     // Drained on its own task: a full stderr pipe would otherwise block the
     // worker mid-generation, which is a hang with no error message.
+    let stderr_tail = StderrTail::default();
+    let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
+        let tail = stderr_tail.clone();
+        stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             let mut reader = FaultReader::default();
             let mut last_fault_at: Option<tokio::time::Instant> = None;
@@ -541,6 +713,7 @@ pub async fn spawn(
                 };
                 let Ok(Some(line)) = next else { break };
                 log::debug!("jan-llama-worker: {line}");
+                remember_stderr_line(&tail, &line);
                 for (fault, text) in reader.feed(&line) {
                     report(fault, text);
                 }
@@ -548,7 +721,7 @@ pub async fn spawn(
             if let Some((fault, line)) = reader.flush() {
                 report(fault, line);
             }
-        });
+        }));
     }
 
     let mut lines = BufReader::new(stdout).lines();
@@ -564,11 +737,22 @@ pub async fn spawn(
             return Err(WorkerError::Handshake(e.to_string()));
         }
         Ok(Ok(None)) => {
-            // Closed stdout without a line: it died. The exit status is the
-            // most useful thing we can report.
-            let status = child.wait().await.ok();
+            // Closed stdout without a line: it died. The exit status and its
+            // last words are the most useful things we can report.
+            let status = child
+                .wait()
+                .await
+                .map(|s| describe_exit(&s))
+                .unwrap_or_else(|e| format!("exit status unknown: {e}"));
+            wait_for_drain(stderr_drain).await;
+            let lines = stderr_lines(&stderr_tail);
+            let output = if lines.is_empty() {
+                String::new()
+            } else {
+                format!("; last output: {}", lines.join(" / "))
+            };
             return Err(WorkerError::Handshake(format!(
-                "exited before serving (status {status:?})"
+                "exited before serving ({status}){output}"
             )));
         }
         Ok(Ok(Some(line))) => line,
@@ -595,7 +779,10 @@ pub async fn spawn(
         api_key: api_key.to_string(),
         models: hs.models,
         cuda_toolkit: hs.cuda_toolkit,
+        devices: hs.devices,
         child,
+        stderr_tail,
+        stderr_drain,
         #[cfg(windows)]
         _job: job,
     })
@@ -630,7 +817,7 @@ pub fn sidecar_path() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // Restored with the marker lists intact: each entry came from a real crash
@@ -825,6 +1012,7 @@ mod tests {
                 pid: 1234,
                 models: vec!["a".into(), "b".into()],
                 cuda_toolkit: Some(CudaVersion { major: 13, minor: 2 }),
+                devices: None,
             }
         );
     }
@@ -851,6 +1039,52 @@ mod tests {
             assert_eq!(hs.port, 8080, "{line}");
             assert_eq!(hs.cuda_toolkit, None, "{line}");
         }
+    }
+
+    fn id_name(id: &str, name: &str) -> DeviceIdentity {
+        DeviceIdentity {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn parse_handshake_reads_the_devices_the_worker_initialised() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX 4060"},{"id":"Vulkan1","name":"UHD"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            hs.devices,
+            Some(vec![id_name("CUDA0", "RTX 4060"), id_name("Vulkan1", "UHD")])
+        );
+    }
+
+    // "No GPU" is a real baseline: a GPU appearing later must read as a change.
+    // Not reporting is not that, or a worker that predates the field would be
+    // restarted on every check.
+    #[test]
+    fn parse_handshake_tells_no_devices_from_devices_not_reported() {
+        let none = parse_handshake(r#"{"port":8080,"devices":[]}"#).unwrap();
+        assert_eq!(none.devices, Some(vec![]));
+        for line in [
+            r#"{"port":8080}"#,
+            r#"{"port":8080,"devices":null}"#,
+            r#"{"port":8080,"devices":"CUDA0"}"#,
+        ] {
+            assert_eq!(parse_handshake(line).unwrap().devices, None, "{line}");
+        }
+    }
+
+    // A truncated list as a baseline would look like a GPU appearing, and
+    // restart the engine for nothing.
+    #[test]
+    fn parse_handshake_does_not_trust_a_list_with_an_unreadable_entry() {
+        let hs = parse_handshake(
+            r#"{"port":8080,"devices":[{"id":"CUDA0","name":"RTX"},{"id":"Vulkan1"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(hs.devices, None);
     }
 
     #[test]
@@ -888,6 +1122,163 @@ mod tests {
         .await
         .expect_err("a missing exe must fail");
         assert!(matches!(err, WorkerError::Spawn(_)), "got {err:?}");
+    }
+
+    // #9270: a worker built for another processor (the Apple Silicon engine on
+    // an Intel Mac) is refused by the kernel with EBADARCH. A thin Mach-O for a
+    // CPU no Mac runs today gets the same refusal on any Mac, which is how this
+    // is exercised without an Intel machine.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_worker_built_for_another_processor_is_its_own_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("jan-llama-worker");
+        let mut header = Vec::new();
+        // mach_header_64: magic, cputype (PowerPC), cpusubtype, MH_EXECUTE, ncmds,
+        // sizeofcmds, flags, reserved.
+        for word in [0xfeed_facf_u32, 0x12, 0, 2, 0, 0, 0, 0] {
+            header.extend_from_slice(&word.to_le_bytes());
+        }
+        header.resize(64, 0);
+        std::fs::write(&exe, header).unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = spawn(
+            &exe,
+            Path::new("/tmp/x.ini"),
+            0,
+            "k",
+            1,
+            0,
+            HashMap::new(),
+            None,
+        )
+        .await
+        .expect_err("a worker for another CPU cannot start");
+        assert!(
+            matches!(err, WorkerError::WrongArchitecture(_)),
+            "got {err:?}"
+        );
+    }
+
+    // The tail is what turns "connection refused" into a cause, so it must
+    // keep the newest lines, and only a few of them.
+    #[test]
+    fn the_stderr_tail_keeps_the_last_few_nonblank_lines() {
+        let tail = StderrTail::default();
+        for i in 0..10 {
+            remember_stderr_line(&tail, &format!("line {i}"));
+            remember_stderr_line(&tail, "   ");
+        }
+        let kept = stderr_lines(&tail);
+        assert_eq!(kept.len(), STDERR_TAIL_LINES);
+        assert_eq!(kept.last().map(String::as_str), Some("line 9"));
+
+        remember_stderr_line(&tail, &"x".repeat(5000));
+        assert_eq!(
+            stderr_lines(&tail).last().map(|l| l.chars().count()),
+            Some(STDERR_TAIL_LINE_CHARS)
+        );
+    }
+
+    // Backend-load lines name no cause and carry local paths, so a crash
+    // right after start must show what came before them, not them.
+    #[test]
+    fn backend_load_lines_stay_out_of_the_tail() {
+        let tail = StderrTail::default();
+        remember_stderr_line(&tail, "ggml_metal_init: error: failed to allocate");
+        for b in ["MTL", "BLAS", "CPU"] {
+            remember_stderr_line(
+                &tail,
+                &format!("load_backend: loaded {b} backend from /opt/jan/libggml-{b}.so"),
+            );
+        }
+        assert_eq!(
+            stderr_lines(&tail),
+            vec!["ggml_metal_init: error: failed to allocate".to_string()]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_statuses_read_the_way_users_search_for_them() {
+        use std::os::unix::process::ExitStatusExt;
+        // Unix wait status: the code in the high byte, a signal in the low bits.
+        assert_eq!(describe_exit(&ExitStatus::from_raw(3 << 8)), "exit code 3");
+        // From the platform's constants: SIGBUS is 7 on Linux but 10 on macOS,
+        // where 7 is SIGEMT.
+        use nix::sys::signal::Signal;
+        for (sig, name) in [
+            (Signal::SIGABRT, "SIGABRT"),
+            (Signal::SIGBUS, "SIGBUS"),
+            (Signal::SIGKILL, "SIGKILL"),
+            (Signal::SIGSEGV, "SIGSEGV"),
+            (Signal::SIGTERM, "SIGTERM"),
+        ] {
+            assert_eq!(
+                describe_exit(&ExitStatus::from_raw(sig as i32)),
+                format!("killed by {name}")
+            );
+        }
+        assert_eq!(describe_exit(&ExitStatus::from_raw(100)), "killed by signal 100");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_crash_code_is_shown_as_its_ntstatus() {
+        use std::os::windows::process::ExitStatusExt;
+        assert_eq!(
+            describe_exit(&ExitStatus::from_raw(0xC000_0005)),
+            "exit code 0xC0000005"
+        );
+        assert_eq!(describe_exit(&ExitStatus::from_raw(1)), "exit code 1");
+    }
+
+    /// A stand-in worker: a shell script that ignores the worker flags.
+    #[cfg(unix)]
+    pub(crate) fn fake_worker(dir: &Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-worker.sh");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// `spawn`, retried while the script is "Text file busy". Another test
+    /// forking at the moment the script was written inherits the write fd until
+    /// its child execs, and executing a file open for writing is ETXTBSY.
+    #[cfg(unix)]
+    pub(crate) async fn spawn_script(exe: &Path) -> Result<WorkerHandle, WorkerError> {
+        for _ in 0..50 {
+            match spawn(exe, Path::new("/tmp/x.ini"), 0, "k", 1, 0, HashMap::new(), None).await {
+                Err(WorkerError::Spawn(m)) if m.contains("os error 26") => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                other => return other,
+            }
+        }
+        panic!("{} stayed busy", exe.display());
+    }
+
+    // A GPU init crash happens before the handshake, so this message is all
+    // the user gets; it has to carry the exit code and the reason, not a
+    // Debug-printed `Option<ExitStatus>`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_worker_that_dies_before_serving_reports_its_exit_and_last_words() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = fake_worker(
+            dir.path(),
+            "echo 'ggml_cuda_init: failed to initialize CUDA: unknown error' >&2\nexit 3",
+        );
+        let err = spawn_script(&exe)
+            .await
+            .expect_err("a worker that exits must fail the start");
+        let msg = err.to_string();
+        assert!(msg.contains("exit code 3"), "{msg}");
+        assert!(msg.contains("failed to initialize CUDA"), "{msg}");
     }
 
     #[tokio::test]

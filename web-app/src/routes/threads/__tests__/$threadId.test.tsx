@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -94,6 +94,19 @@ const h = vi.hoisted(() => {
   }
   const useChatSessionsMock: any = (selector: any) => selector(chatSessionsState)
   useChatSessionsMock.getState = () => chatSessionsState
+  // Listeners the route registers to learn a thread's session was removed (the
+  // thread was deleted); removeChatSession below notifies them.
+  const chatSessionListeners = new Set<(state: any) => void>()
+  useChatSessionsMock.subscribe = (listener: (state: any) => void) => {
+    chatSessionListeners.add(listener)
+    return () => chatSessionListeners.delete(listener)
+  }
+  const removeChatSession = (threadId: string) => {
+    const rest = { ...chatSessionsState.sessions }
+    delete rest[threadId]
+    chatSessionsState.sessions = rest
+    for (const listener of [...chatSessionListeners]) listener(chatSessionsState)
+  }
 
   const attachmentsState: any = {
     getAttachments: vi.fn(() => []),
@@ -158,6 +171,7 @@ const h = vi.hoisted(() => {
     useModelProviderMock,
     chatSessionsState,
     useChatSessionsMock,
+    removeChatSession,
     attachmentsState,
     useChatAttachmentsMock,
     useAttachmentsState,
@@ -498,6 +512,10 @@ const renderComponent = () => {
 
 describe('ThreadDetail route', () => {
   beforeEach(() => {
+    // Leaving a thread no longer ends its tool loop, so a loop an earlier test
+    // left waiting would keep its approvals. Deleting the threads ends them.
+    h.removeChatSession('thread-1')
+    h.removeChatSession('thread-2')
     vi.clearAllMocks()
     h.chatState.messages = []
     h.chatState.status = 'ready'
@@ -568,10 +586,12 @@ describe('ThreadDetail route', () => {
     expect(h.threadsState.setCurrentThreadId).toHaveBeenLastCalledWith(undefined)
   })
 
-  it('clears this thread pending tool approvals on unmount', () => {
+  // Leaving is not Stop: an approval the thread waits on stays up, and is still
+  // there to answer on return (#9311).
+  it('keeps this thread pending tool approvals on unmount', () => {
     const { unmount } = renderComponent()
     unmount()
-    expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith('thread-1')
+    expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
   })
 
   it('renders messages passed through useChat', () => {
@@ -677,6 +697,63 @@ describe('ThreadDetail route', () => {
     })
     expect(promptIngestionChoices).not.toHaveBeenCalled()
     h.attachmentsState.getAttachments = vi.fn(() => [])
+  })
+
+  describe('when processing a document fails', () => {
+    const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
+    const later = { name: 'later.png', type: 'image', path: '/later.png' }
+
+    // `openThreadId` is the thread the store reports as open when the failure
+    // lands: its own, or null after the user went Home. The attachments are
+    // keyed by thread, so they go back to it either way.
+    const sendAndFail = async (openThreadId: string | null = 'thread-1') => {
+      h.threadsState.currentThreadId = openThreadId ?? undefined
+      h.attachmentsState.getAttachments = vi.fn(() => [sheet])
+      vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(
+        new Error("Couldn't read sheet.xlsx as text.")
+      )
+      renderComponent()
+      await act(async () => {
+        screen.getByTestId('chat-send').click()
+      })
+      await waitFor(() => {
+        expect(h.attachmentsState.setAttachments).toHaveBeenCalledWith(
+          'thread-1',
+          expect.any(Function)
+        )
+      })
+    }
+
+    afterEach(() => {
+      h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
+      usePrompt.getState().resetPrompt()
+    })
+
+    it('gives back the draft and attachments, ahead of any added since', async () => {
+      await sendAndFail()
+
+      const updater = vi
+        .mocked(h.attachmentsState.setAttachments)
+        .mock.calls.map((c) => c[1])
+        .find((u) => typeof u === 'function')
+      expect(updater?.([later])).toEqual([sheet, later])
+      expect(usePrompt.getState().prompt).toBe('hello world')
+      expect(h.mockSendMessage).not.toHaveBeenCalled()
+    })
+
+    it('keeps what the user typed while the document was processing', async () => {
+      usePrompt.getState().setPrompt('typed meanwhile')
+      await sendAndFail()
+
+      expect(usePrompt.getState().prompt).toBe('typed meanwhile')
+    })
+
+    it('does not write the draft into another screen after the user left the thread', async () => {
+      await sendAndFail(null)
+
+      expect(usePrompt.getState().prompt).toBe('')
+    })
   })
 
   describe('when the auto-inline budget is gone at send time', () => {
@@ -992,6 +1069,167 @@ describe('ThreadDetail route', () => {
     })
   })
 
+  // #9311: a turn keeps running after the user opens another thread, and its
+  // onFinish is a closure of the render that created its chat. What the open
+  // thread set up for its own next reply, and its banners, must not be taken
+  // or shown by the background thread's turn.
+  describe('a turn finishing behind another thread', () => {
+    const Component = () => Route.component as React.ComponentType
+    const text = (value: string) => [
+      { type: 'text', text: { value, annotations: [] } },
+    ]
+    const threadB = [
+      { id: 'b-u1', role: 'user', created_at: 1, content: text('q'), metadata: { parentId: null } },
+      { id: 'b-a1', role: 'assistant', created_at: 2, content: text('r'), metadata: { parentId: 'b-u1' } },
+    ]
+    const openThreadB = (rerender: (ui: React.ReactElement) => void) => {
+      const C = Component()
+      h.routeParams.threadId = 'thread-2'
+      h.threadsState.threads['thread-2'] = {
+        id: 'thread-2',
+        title: 'Other',
+        metadata: {},
+        assistants: [],
+        model: { id: 'gpt-x', provider: 'openai' },
+      }
+      const threadA = h.messagesState.getMessages()
+      h.messagesState.getMessages = vi.fn((id?: string) =>
+        id === 'thread-2' ? threadB : threadA
+      )
+      h.chatState.messages = [
+        { id: 'b-u1', role: 'user', parts: [{ type: 'text', text: 'q' }] },
+        { id: 'b-a1', role: 'assistant', parts: [{ type: 'text', text: 'r' }] },
+      ]
+      rerender(<C />)
+    }
+    const persisted = (id: string) =>
+      h.messagesState.addMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.id === id)
+
+    afterEach(() => {
+      h.routeParams.threadId = 'thread-1'
+      delete h.threadsState.threads['thread-2']
+    })
+
+    it("leaves the open thread's pending reply parent for its own reply", () => {
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      openThreadB(rerender)
+      // The open thread starts a new version of its reply.
+      act(() => {
+        screen.getByTestId('regen-b-a1').click()
+      })
+
+      act(() => {
+        onFinishA({
+          message: { id: 'a-bg', role: 'assistant', parts: [{ type: 'text', text: 'A' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      expect(persisted('a-bg').thread_id).toBe('thread-1')
+      expect(persisted('a-bg').metadata.parentId).not.toBe('b-u1')
+
+      act(() => {
+        ;(h as any).capturedOnFinish({
+          message: { id: 'b-a2', role: 'assistant', parts: [{ type: 'text', text: 'B' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      expect(persisted('b-a2').metadata.parentId).toBe('b-u1')
+    })
+
+    // The partial shown while the model reloads after "Increase Context Size"
+    // belongs to its thread: never shown in another, and cleared by its own
+    // turn finishing even while another thread is open.
+    it("keeps the reload placeholder to its own thread", async () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      const C = Route.component as React.ComponentType
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      act(() => {
+        onFinishA({
+          message: {
+            id: 'a-len',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer' }],
+            metadata: {
+              finishReason: 'length',
+              usage: { inputTokens: 30000, outputTokens: 4000 },
+            },
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+      const realModels = hub.models as () => Record<string, unknown>
+      hub.models = () => ({
+        ...realModels(),
+        updateModelSettings: vi.fn().mockResolvedValue(undefined),
+      })
+      // The click regenerates after a delay; it must not fire in a later test.
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          screen.getByText('Increase Context Size').click()
+        })
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+        hub.models = realModels
+      }
+      // In front, its own thread shows the partial while the model reloads.
+      h.chatState.status = 'submitted'
+      rerender(<C />)
+      expect(screen.getByTestId('message-a-len')).toBeInTheDocument()
+
+      openThreadB(rerender)
+      expect(screen.queryByTestId('message-a-len')).toBeNull()
+
+      // A's resumed reply finishes behind B.
+      act(() => {
+        onFinishA({
+          message: { id: 'a-len', role: 'assistant', parts: [{ type: 'text', text: 'partial answer, done' }], metadata: {} },
+          isAbort: false,
+        })
+      })
+      h.routeParams.threadId = 'thread-1'
+      h.chatState.messages = []
+      rerender(<C />)
+      expect(screen.queryByTestId('message-a-len')).toBeNull()
+    })
+
+    it("does not show its context-limit banner on the open thread", () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      const { rerender } = renderComponent()
+      const onFinishA = (h as any).capturedOnFinish
+      openThreadB(rerender)
+
+      act(() => {
+        onFinishA({
+          message: {
+            id: 'a-len',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer' }],
+            metadata: {
+              finishReason: 'length',
+              usage: { inputTokens: 30000, outputTokens: 4000 },
+            },
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+
+      expect(screen.queryByText('Increase Context Size')).toBeNull()
+      // Stamped on its own thread instead, which shows it on return.
+      const stamped = h.messagesState.updateMessage.mock.calls
+        .map((c: any[]) => c[0])
+        .find((m: any) => m.metadata?.contextError)
+      expect(stamped?.id).toBe('u1')
+    })
+  })
+
   describe('empty replies (#9228)', () => {
     beforeEach(() => {
       useMessageErrors.getState().clearAll()
@@ -1280,11 +1518,11 @@ describe('ThreadDetail route', () => {
       renderComponent()
 
       await act(async () => {
-        await (h as any).capturedOnToolCall(toolCall('tc1'))
+        await (h as any).capturedOnToolCall(toolCall('tc-server'))
       })
 
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledWith(
-        'tc1',
+        'tc-server',
         'fetch',
         'thread-1',
         'fetch-server'
@@ -1631,6 +1869,61 @@ describe('ThreadDetail route', () => {
         expect(cancel).not.toHaveBeenCalled()
       })
 
+      // Deleting the thread is the one other way a running call ends: its result
+      // would have nowhere to go.
+      it('deleting the thread cancels its running MCP call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        const cancel = vi.fn().mockResolvedValue(undefined)
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise(() => {}),
+              cancel,
+              token: 't',
+            }),
+          }) as never
+
+        renderComponent()
+        await arrive('tcA')
+        await act(async () => {
+          await finishWithToolCalls()
+        })
+        expect(cancel).not.toHaveBeenCalled()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
+
+        expect(cancel).toHaveBeenCalledTimes(1)
+      })
+
+      // The left thread's finished cards unmount, so their runtime state goes;
+      // a call its loop is still running stays for its return, and another
+      // thread's state is not touched.
+      it("leaving a thread releases only its own settled runtime state", async () => {
+        const runtime = useToolCallRuntime.getState()
+        runtime.enqueue(['a-done', 'a-running'], 'thread-1')
+        runtime.markRunning('a-done')
+        runtime.markSettled('a-done')
+        runtime.markRunning('a-running')
+        runtime.enqueue(['b-done'], 'thread-3')
+        runtime.markRunning('b-done')
+        runtime.markSettled('b-done')
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
+
+        const { timings } = useToolCallRuntime.getState()
+        expect(timings['a-done']).toBeUndefined()
+        expect(timings['a-running']?.startedAt).toBeDefined()
+        expect(timings['b-done']).toBeDefined()
+      })
+
       // A turn of a thread that was left can finish in the background, after
       // another thread is shown. A Stop there is that thread's, and must not end
       // the background thread's loop: its queued calls still run.
@@ -1843,6 +2136,7 @@ describe('ThreadDetail route', () => {
         ])
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 {
@@ -1911,6 +2205,7 @@ describe('ThreadDetail route', () => {
         ])
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 {
@@ -1980,6 +2275,7 @@ describe('ThreadDetail route', () => {
         // Live: the result has just landed, and a second call is unfinished.
         h.chatSessionsState.sessions = {
           'thread-1': {
+            transport: { getTurnModelSelection: () => null },
             chat: {
               messages: [
                 { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
@@ -2033,9 +2329,9 @@ describe('ThreadDetail route', () => {
         }
       })
 
-      // Leaving the thread resolves a pending approval as denied. It must be
+      // Deleting the thread resolves a pending approval as denied. It must be
       // recorded, or the call stays "Running" with nothing running, but not as a
-      // refusal by the user: the model reads this on the next turn.
+      // refusal by the user.
       it('records a cut-short approval as the chat closing, not a user denial', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         let decide: (approved: boolean) => void = () => {}
@@ -2044,12 +2340,17 @@ describe('ThreadDetail route', () => {
         )
         h.mockAddToolOutput.mockClear()
 
-        const { unmount } = renderComponent()
+        renderComponent()
         await arrive('tcA')
         await act(async () => {
           await finishWithToolCalls()
         })
-        unmount()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
+        expect(h.toolApprovalState.clearPendingForThread).toHaveBeenCalledWith(
+          'thread-1'
+        )
         await act(async () => {
           decide(false)
         })
@@ -2063,67 +2364,100 @@ describe('ThreadDetail route', () => {
         )
       })
 
-      // No reply follows once the thread is left, and a reply is what rewrites a
-      // stored turn. Without a rewrite here the call reloads as "Running".
-      it('stores the outcome of a call cut short by leaving the thread', async () => {
+      // #9311: leaving a thread while its tool call runs must not end the turn.
+      // The call's result lands and the reply continues: the follow-up check,
+      // which the SDK runs as the result lands, still says to send.
+      it('leaving the thread lets the turn continue after its tool call', async () => {
+        h.appStateState.mcpToolNames = new Set(['fetch'])
+        let finish: (r: unknown) => void = () => {}
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: () => ({
+              promise: new Promise((resolve) => (finish = resolve)),
+              cancel: vi.fn().mockResolvedValue(undefined),
+              token: 't',
+            }),
+          }) as never
+        const Component = Route.component as React.ComponentType
+
+        try {
+          const { rerender } = renderComponent()
+          const followUpA = (h as any).capturedSendAutomaticallyWhen
+          const followUps: boolean[] = []
+          h.mockAddToolOutput.mockImplementation(() => {
+            followUps.push(followUpA({ messages: [] }))
+          })
+          await arrive('tcA')
+          await act(async () => {
+            await finishWithToolCalls()
+          })
+
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          await act(async () => {
+            finish({ error: '', content: [{ type: 'text', text: 'ok' }] })
+          })
+
+          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+            expect.objectContaining({ toolCallId: 'tcA', output: expect.anything() })
+          )
+          expect(followUps).toEqual([true])
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+          h.mockAddToolOutput.mockReset()
+        }
+      })
+
+      // An approval the left thread waits on stays pending, so the user can
+      // answer it on return; the call then runs and the reply continues.
+      it('leaving the thread keeps its pending approval answerable', async () => {
         h.appStateState.mcpToolNames = new Set(['fetch'])
         let decide: (approved: boolean) => void = () => {}
         h.toolApprovalState.requestApproval = vi.fn(
           () => new Promise<boolean>((resolve) => (decide = resolve))
         )
-        h.messagesState.getMessages = vi.fn(() => [
-          { id: 'a-tc', role: 'assistant', content: [], metadata: {} },
-        ])
-        h.chatSessionsState.sessions = {
-          'thread-1': {
-            chat: {
-              messages: [
-                {
-                  id: 'a-tc',
-                  role: 'assistant',
-                  parts: [
-                    {
-                      type: 'tool-fetch',
-                      toolCallId: 'tcA',
-                      input: {},
-                      state: 'output-error',
-                      errorText: 'Tool call cancelled: the chat was closed before it ran.',
-                    },
-                  ],
-                },
-                // The user came back and started another turn meanwhile.
-                {
-                  id: 'a-new',
-                  role: 'assistant',
-                  parts: [{ type: 'text', text: 'a newer turn' }],
-                },
-              ],
+        const started: string[] = []
+        hub.mcp = () =>
+          ({
+            callToolWithCancellation: (call: any) => {
+              started.push(call.toolName)
+              return {
+                promise: Promise.resolve({ error: '', content: [] }),
+                cancel: vi.fn().mockResolvedValue(undefined),
+                token: 't',
+              }
             },
-          },
-        }
-        h.messagesState.updateMessage.mockClear()
+          }) as never
+        h.mockAddToolOutput.mockClear()
+        const Component = Route.component as React.ComponentType
 
         try {
-          const { unmount } = renderComponent()
+          const { rerender } = renderComponent()
           await arrive('tcA')
           await act(async () => {
             await finishWithToolCalls()
           })
-          unmount()
-          await act(async () => {
-            decide(false)
-          })
-        } finally {
-          h.chatSessionsState.sessions = {}
-        }
 
-        const stored = h.messagesState.updateMessage.mock.calls
-          .map((c: any[]) => c[0])
-          .find((m: any) => m.id === 'a-tc')
-        expect(stored.metadata.toolErrors).toEqual({
-          tcA: expect.stringContaining('chat was closed'),
-        })
-        expect(stored.metadata.stopped).toBeUndefined()
+          h.routeParams.threadId = 'thread-2'
+          rerender(<Component />)
+          expect(h.toolApprovalState.clearPendingForThread).not.toHaveBeenCalled()
+
+          h.routeParams.threadId = 'thread-1'
+          rerender(<Component />)
+          await act(async () => {
+            decide(true)
+          })
+
+          expect(started).toEqual(['fetch'])
+          expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+            expect.objectContaining({ toolCallId: 'tcA' })
+          )
+          expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
+            expect.objectContaining({ state: 'output-error' })
+          )
+        } finally {
+          h.routeParams.threadId = 'thread-1'
+        }
       })
 
       // The approval promises are shared by every thread's loop. A thread whose
@@ -2177,12 +2511,14 @@ describe('ThreadDetail route', () => {
         )
         h.mockAddToolOutput.mockClear()
 
-        const { unmount } = renderComponent()
+        renderComponent()
         await arrive('tcA', 'tcB')
         await act(async () => {
           await finishWithToolCalls()
         })
-        unmount()
+        await act(async () => {
+          h.removeChatSession('thread-1')
+        })
         await act(async () => {
           decide.tcA(false)
         })
