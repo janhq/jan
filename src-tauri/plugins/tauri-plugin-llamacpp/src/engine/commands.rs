@@ -640,7 +640,7 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.5.0`.
+    /// llama.cpp's own version, e.g. `0.7.0`.
     pub version: String,
     /// The upstream build tag the source was taken from, e.g. `b11669`.
     pub tag: String,

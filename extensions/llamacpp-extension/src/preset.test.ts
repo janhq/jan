@@ -275,8 +275,6 @@ describe('generatePreset 0.4.0 keys', () => {
   })
 })
 
-// A slot of a hybrid model with speculative decoding holds (1 + n_max) rows
-// of recurrent state, so auto's 4 slots overflowed a 12 GB card in 0.8.5.
 describe('generatePreset 0.7.0 keys', () => {
   it('emits moe-cache-mib when set, and omits it at 0', async () => {
     setupModel('llama', {})
@@ -333,6 +331,8 @@ describe('generatePreset 0.7.0 keys', () => {
   })
 })
 
+// A slot of a hybrid model with speculative decoding holds (1 + n_max) rows
+// of recurrent state, so auto's 4 slots overflowed a 12 GB card in 0.8.5.
 describe('generatePreset parallel with speculative decoding', () => {
   const section = (ini: string, id: string) =>
     ini.split(`[${id}]`)[1].split('load-on-startup')[0]
