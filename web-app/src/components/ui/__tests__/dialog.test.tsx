@@ -173,7 +173,7 @@ describe('Dialog Components', () => {
     await user.click(screen.getByText('Open Dialog'))
 
     const dialogHeader = screen.getByText('Dialog Title').closest('div')
-    expect(dialogHeader).toHaveClass('flex', 'flex-col', 'gap-2', 'text-center', 'sm:text-left')
+    expect(dialogHeader).toHaveClass('flex', 'flex-col', 'gap-2', 'text-center', 'sm:text-start')
   })
 
   it('applies proper classes to dialog title', async () => {

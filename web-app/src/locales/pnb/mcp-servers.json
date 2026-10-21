@@ -1,0 +1,101 @@
+{
+  "editServer": "MCP سرور وچ ترمیم کرو",
+  "addServer": "MCP سرور شامل کرو",
+  "browserExtension": {
+    "connecting": {
+      "checking": "ایکسٹینشن دی حیثیت چیک کر ریا واں..."
+    },
+    "notInstalled": {
+      "title": "Jan تہاڈے براؤزر چ کماں نو پورا کردا اے",
+      "description": "Jan براؤزر تک رسائی دین لئی ایکسٹینشن انسٹال کرو",
+      "getExtension": "توسیع حاصل کرو"
+    }
+  },
+  "serverName": "سرور دا ناں",
+  "enterServerName": "سرور دا ناں درج کرو",
+  "command": "کمانڈ",
+  "enterCommand": "کمانڈ درج کرو (یو وی ایکس یا این پی ایکس)",
+  "arguments": "دلیلاں",
+  "argument": "دلیل {{index}}",
+  "envVars": "ماحولیاتی متغیر",
+  "key": "کلید",
+  "value": "قدر",
+  "save": "محفوظ کرو",
+  "status": "حیثیت",
+  "connected": "جڑیا ہویا",
+  "disconnected": "منقطع",
+  "deleteServer": {
+    "title": "MCP سرور نو مٹا دیو",
+    "description": "کی تہانوں پک اے کہ تسی MCP سرور {{serverName}} نوں مٹانا چاہندے او؟ ایہ کم واپس نئیں کیتا جا سکدا۔",
+    "delete": "مٹاؤ",
+    "success": "MCP سرور {{serverName}} کامیابی نال مٹا دتا گیا"
+  },
+  "editJson": {
+    "title": "MCP لئی JSON نوں ترمیم کرو سرور: {{serverName}}",
+    "titleAll": "تمام MCP سرورز وچ ترمیم کرو JSON",
+    "placeholder": "JSON ترتیب درج کرو",
+    "errorParse": "ابتدائی ڈیٹا دی تجزیہ کرن اچ ناکام رہیا",
+    "errorPaste": "چسپاں کیتے گئے مواد چ غلط JSON فارمیٹ",
+    "errorFormat": "غلط JSON فارمیٹ",
+    "errorServerName": "سرور دا ناں ضروری اے تے خالی نئیں ہو سکدا",
+    "errorMissingServerNameKey": "JSON نوں {\"سرور ناں\": {config}} دے طور تے ترتیب دتا جانا چاہیدا اے - سرور دا ناں دی کلید غائب اے",
+    "errorInvalidType": "سرور '{{serverName}}' لئی غلط قسم '{{type}}'۔ ٹائپ 'stdio'، 'http'، یا 'sse' ہونا چاہیدا اے۔",
+    "save": "محفوظ کرو"
+  },
+  "checkParams": "براہ کرم سبق دے مطابق پیرامیٹرز چیک کرو۔",
+  "title": "MCP سرورز",
+  "experimental": "تجرباتی",
+  "editAllJson": "سارے سرورز چ ترمیم کرو JSON",
+  "findMore": "ہور MCP سرورز لبھو",
+  "allowPermissions": "تمام MCP ٹول دی اجازتاں دی اجازت دیو",
+  "allowPermissionsDesc": "جدوں فعال ہووے گا، تے سارے MCP ٹول کالز اجازت ڈائیلاگ وکھائے بغیر خود بخود منظور ہو جان گے۔ ایہ ترتیب نویاں چیٹاں سمیت تمام گل باتاں تے عالمی سطح تے لاگو ہوندی اے۔",
+  "noServers": "کوئی MCP سرور نئیں لبھیا",
+  "args": "آرگس",
+  "env": "ماحول",
+  "serverStatusActive": "سرور {{serverKey}} کامیابی نال چالو ہو گیا",
+  "serverStatusInactive": "سرور {{serverKey}} کامیابی نال غیر فعال ہو گیا",
+  "runtimeSettings": {
+    "title": "رن ٹائم سیٹنگز",
+    "description": "ترتیب دیو کہ Jan کس طرح MCP سرورز دا انتظام تے دوبارہ کوشش کردا اے۔",
+    "toolCallTimeout": "ٹول کال ٹائم آؤٹ (سیکنڈ)",
+    "toolCallTimeoutDesc": "ٹائم آؤٹ توں پہلے MCP ٹول دے ردعمل دا انتظار کرن دا ودھ توں ودھ ویلہ۔",
+    "maxToolOutputChars": "زیادہ توں زیادہ ٹول آؤٹ پٹ اکھر",
+    "maxToolOutputCharsDesc": "گل بات چ رکھیا گیا سب توں لمبا ٹول دا نتیجہ۔ اس توں بعد دی کوئی وی چیز تراش دتی جاندی اے تے کٹے ہوئے دے طور تے نشان زد کیتی جاندی اے، اس لیی اک وڈا نتیجہ ماڈل دے تناظر نو ختم نئیں کر سکدا۔ نتائج نو مکمل رکھن دے لیی 0 تے سیٹ کرو۔",
+    "smartToolRouting": "سمارٹ MCP ٹول روٹنگ",
+    "smartToolRoutingDesc": "جدوں فعال ہوندا اے، Jan ٹولز لوڈ کرن توں پہلے متعلقہ MCP سرورز نو منتخب کردا اے۔ ہمیشہ مکمل MCP ٹول لسٹ لوڈ کرن لئی غیر فعال کرو۔",
+    "useLightweightRouterModel": "روٹنگ لئی اک سرشار ماڈل ورتو",
+    "useLightweightRouterModelDesc": "جدوں سمارٹ روٹنگ آن ہوندی اے، تے چیٹ ماڈل دی بجائے اک وکھرے (اکثر نکے) ماڈل دے نال روٹنگ مرحلہ چلاؤ۔ روٹنگ دے لیی ہمیشہ ایکٹو چیٹ ماڈل استعمال کرن دے لی بند کرو۔",
+    "routerModel": "روٹنگ ماڈل",
+    "routerModelDesc": "اک تھاں تے فراہم کرن آلے تے ماڈل دا انتخاب کرو۔ صرف ہلکے وزن آلے ماڈل درج کیتے گئے نیں اس لیی روٹنگ تیز تے سستی رہندی اے۔",
+    "selectRouterModelPlaceholder": "روٹنگ ماڈل چنو...",
+    "routerModelSearchPlaceholder": "ماڈل لبھو...",
+    "routerModelEmptyList": "کوئی ہلکے وزن آلے ماڈل دستیاب نئیں۔ اک نکا ماڈل شامل کرو یا ماڈلز چ API چابیاں تشکیل دیو۔",
+    "routerModelEmptySearch": "\"{{query}}\" لئی کوئی میچ نئیں اے۔"
+  },
+  "auth": {
+    "label": "مصنف:",
+    "state": {
+      "notApplicable": "لوڑ نئیں",
+      "staticHeader": "اتھارٹی ہیڈر",
+      "authenticated": "تصدیق شدہ",
+      "expired": "ختم ہو گیا",
+      "staleResource": "اک ہور URL لئی جاری کیتا گیا",
+      "unauthenticated": "تصدیق نئیں کیتی گئی"
+    },
+    "expiresIn": "{{duration}} چ ختم ہو جاندا اے۔",
+    "authenticate": "سائن ان کرو",
+    "reauthenticate": "دوبارہ تصدیق کرو",
+    "clear": "تصدیق صاف کرو",
+    "waiting": "براؤزر دا انتظار...",
+    "openSignInPage": "سائن ان دا صفحہ کھولو",
+    "needsAuth": "{{serverName}} نوں تصدیق دی لوڑ اے",
+    "needsAuthHint": "جڑن لئی ایس سرور تے سائن ان کرو۔",
+    "authorized": "{{serverName}} تے سائن ان کیتا گیا",
+    "authorizeFailed": "{{serverName}} لئی سائن ان ناکام ہو گیا",
+    "cleared": "{{serverName}} لئی ذخیرہ شدہ اسناد صاف کر دتیاں گئیاں",
+    "nothingToClear": "{{serverName}} کول کوئی ذخیرہ شدہ اسناد نئیں سی",
+    "clearFailed": "{{serverName}} لئی اسناد صاف نئیں کر سکے",
+    "renew": "سیشن دی تجدید کرو",
+    "expiredAgo": "ختم ہو گیا اے {{duration}} پہلے"
+  }
+}

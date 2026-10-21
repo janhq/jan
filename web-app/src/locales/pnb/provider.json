@@ -1,0 +1,18 @@
+{
+  "addProvider": "فراہم کرن آلا شامل کرو",
+  "addOpenAIProvider": "اپنی مرضی دے مطابق فراہم کرن آلا شامل کرو",
+  "enterNameForProvider": "فراہم کرن آلے دا ناں (جیویں مائی-ایل ایل ایم-سرور)",
+  "apiTypeLabel": "API فارمیٹ",
+  "apiTypeOpenAI": "OpenAI-مطابق",
+  "apiTypeAnthropic": "Anthropic-مطابق",
+  "baseUrlLabel": "بیس URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API کلید",
+  "apiKeyPlaceholder": "اپنی API کلید پیسٹ کرو",
+  "invalidBaseUrl": "بیس URL اک درست http(s) ہونا چاہیدا اے URL",
+  "globalSettings": "عالمی ترتیبات",
+  "stripReasoning": "استدلال نو سیاق و سباق توں ہٹا دیو",
+  "stripReasoningDesc": "سارے فراہم کرن آلیاں چ، ہسٹری نو دوبارہ بھیجن توں پہلے پہلے ٹرناں دے سوچن/استدلال دے مواد نو ہٹا دیو۔ مقامی ماڈلاں دے لی کے وی کیشے دے دوبارہ استعمال نو بہتر بناندا اے، لیکن کجھ ماڈل (مثال دے طور تے نویں کوین ریلیز) بہتر ملٹی ٹرن استدلال دے لی اس نو رکھن دی تجویز کردے ہن۔",
+  "providerAlreadyExists": "{{name}} ناں دا اک فراہم کرن آلا پہلے توں موجود اے۔"
+}

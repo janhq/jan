@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "کوڈ",
+    "preview": "پیش نظارہ",
+    "previewStreaming": "بنانا مکّن توں بعد دستیاب ہووے گا",
+    "unresolvedAssets_one": "پیش نظارے وچ 1 وسیلے دا حوالہ لوڈ نئیں ہو سکدا۔ نسبتی راہواں نوں حل کرن لئی کوئی بنیادی URL نئیں اے۔",
+    "unresolvedAssets_other": "پیش نظارے وچ {{count}} وسیلیاں دے حوالے لوڈ نئیں ہو سکدے۔ نسبتی راہواں نوں حل کرن لئی کوئی بنیادی URL نئیں اے۔"
+  },
+  "assistants": "مددگار",
+  "hardware": "ہارڈویئر",
+  "mcp-servers": "MCP سرورز",
+  "local_api_server": "لوکل API سرور",
+  "remote_access": "ریموٹ ایکسیس",
+  "integrations": "انضمام",
+  "experimental": "تجرباتی",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS پراکسی",
+  "web_search": "ویب سرچ",
+  "shell": "شیل",
+  "browse": "براؤز کرو",
+  "moreControls": "ہور کنٹرول",
+  "starting": "شروع...",
+  "activeSuffix": "(فعال)",
+  "extensions": "ایکسٹینشنز",
+  "attachments": "منسلکات",
+  "general": "عام",
+  "settings": "ترتیباں",
+  "modelProviders": "ماڈل فراہم کرن آلے",
+  "localProviders": "مقامی",
+  "remoteProviders": "ریموٹ",
+  "manageProviders": "فراہم کرن آلیاں دا انتظام کرو",
+  "hiddenProviders": "{{count}} غیر فعال",
+  "hideProvider": "فراہم کرن آلے نوں لُکا دیو",
+  "showProvider": "فراہم کرن آلا وکھاؤ",
+  "interface": "انٹرفیس",
+  "appearance": "ظاہری شکل",
+  "privacy": "رازداری",
+  "keyboardShortcuts": "شارٹ کٹ",
+  "home": "گھر",
+  "cowork": "Cowork",
+  "newSession": "نواں سیشن",
+  "artifacts": "نمونے",
+  "customize": "اپنی مرضی دے مطابق بناؤ",
+  "local": "مقامی",
+  "selectFolder": "فولڈر چنو",
+  "selectModel": "پہلے اک ماڈل چنو",
+  "commands": "کمانڈز",
+  "cmdHelp": "دستیاب کمانڈز دی فہرست بناؤ",
+  "cmdClear": "اس سیشن نو صاف کرو",
+  "cmdModels": "فعال ماڈل تبدیل کرو",
+  "cmdModelsHint": "/models لکھو، فیر فہرست وچوں ماڈل چنو",
+  "cmdModelSwitched": "{{name}} تے سوئچ کیتا گیا",
+  "cmdUnknown": "انجان کمانڈ: {{name}}۔ /help آزما کے ویکھو",
+  "cmdBusy": "جدوں ایجنٹ چل رہیا ہووے تے انج نئیں کیتا جا سکدا",
+  "cmdCompact": "سیشن دے سیاق و سباق نو اک خلاصے وچ کمپیوٹ کرو",
+  "cmdCompacted": "کمپیکٹڈ {{before}} -> {{after}} سنیہے",
+  "cmdNothingToCompact": "ہلے تیکر کمپیکٹ کرن لئی کجھ نئیں",
+  "cmdCompactFailed": "سنگھنن ناکام ہو گیا: {{error}}",
+  "cmdPlan": "پلان موڈ نوں ٹوگل کرو (صرف پڑھن لئی: ایجنٹ لکھے بغیر تجویز کردا اے)",
+  "cmdPlanOn": "پلان موڈ آن: ایجنٹ پڑھدا اے تے بغیر لکھے تجویز کردا اے",
+  "cmdPlanOff": "منصوبہ موڈ بند: عام عمل درآمد",
+  "cmdTodo": "پراگریس پینل کھولو",
+  "cmdTasks": "بیک گراؤنڈ ٹاسک پینل کھولو",
+  "cmdInit": "پروجیکٹ دا مطالعہ کرو تے لکھن دی مہارت تے یادداشت",
+  "cmdInitRunning": "اس منصوبے تے آن بورڈنگ",
+  "skills": "مہارتاں",
+  "skillsInContext": "ایس رن چ ایجنٹ نوں دستیاب مہارتاں",
+  "skillsTitle": "مہارتاں دا انتظام کرو",
+  "skillsScopeProject": "{{folder}} لئی مہارتاں",
+  "skillsScopeGlobal": "عالمی مہارتاں، ہر سیشن لئی دستیاب نیں",
+  "skillsScopeMerged": "{{folder}} لئی مہارتاں، نالے عالمی مہارتاں جہڑیاں ہر سیشن چ سانجھیاں ہوندیاں نیں",
+  "skillOriginFolder": "فولڈر",
+  "skillOriginGlobal": "عالمی",
+  "skillsEmpty": "ہلے تک کوئی مہارت نئیں",
+  "skillsPickOrNew": "ترمیم کرن لئی کوئی مہارت چنو، یا نواں بناؤ۔",
+  "skillNew": "نواں ہنر",
+  "skillDelete": "ہنر مٹاؤ",
+  "skillSave": "محفوظ کرو",
+  "skillSaved": "مہارت بچائی گئی",
+  "skillNameRequired": "مہارت دا ناں ضروری اے",
+  "skillNamePlaceholder": "مہارت دا ناں",
+  "skillContentPlaceholder": "Markdown وچ دوبارہ استعمال کرن دے قابل طریقہ کار بیان کرو...",
+  "skillHubImport": "ہب توں درآمد کرو",
+  "skillHubTitle": "Anthropic مہارت دا مرکز",
+  "skillHubEmpty": "ہب تے کوئی مہارت نئیں ملی",
+  "skillImport": "درآمد کرو",
+  "skillReimport": "دوبارہ درآمد کرو",
+  "skillImported": "درآمد کیتا گیا {{name}}",
+  "sessions": "سیشن",
+  "deleteSession": "سیشن مٹاؤ",
+  "deleteSessionTitle": "سیشن مٹاؤ؟",
+  "deleteSessionBody": "\"{{title}}\" تے ایہدی نقل مستقل طور تے مٹا دتی جائے گی۔ ایہہ واپس نئیں کیتا جا سکدا۔",
+  "newChat": "نویں گل بات",
+  "newAgentChat": "نیو ایجنٹ چیٹ",
+  "chats": "چیٹ",
+  "favorites": "پسندیدہ",
+  "recents": "حالیہ",
+  "hub": "ہب",
+  "helpSupport": "مدد تے سپورٹ",
+  "helpUsImproveJan": "ساڈی مدد کرو Jan",
+  "analyticsConsentDetail": "اسی خصوصیت دے استعمال نو سمجھن دے لیی گمنام ڈیٹا اکٹھا کرنے آں۔ تہاڈیاں چیٹاں تے ذاتی معلومات کدی وی ٹریک نئیں کیتیاں جاندیاں۔ تسی اینوں ترتیبات> رازداری چ کدی وی تبدیل کر سکدے او۔",
+  "analyticsConsentQuestion": "کی تسی Jan نوں بہتر بنان چ ساڈی مدد کرنا چاہندے او؟",
+  "unstarAll": "انسٹار آل",
+  "unstar": "انسٹار",
+  "deleteAll": "سب نوں مٹا دیو",
+  "star": "ستارہ",
+  "rename": "ناں بدلو",
+  "delete": "مٹاؤ",
+  "copied": "کاپی کیتا گیا!",
+  "dataFolder": "ڈیٹا فولڈر",
+  "others": "ہور",
+  "language": "بولی",
+  "login": "لاگ ان کرو",
+  "loginWith": "{{provider}} نال لاگ ان کرو",
+  "loginFailed": "لاگ ان کرن چ ناکامی",
+  "logout": "لاگ آؤٹ",
+  "loggingOut": "لاگ آؤٹ...",
+  "loggedOut": "کامیابی نال لاگ آؤٹ ہو گیا",
+  "logoutFailed": "لاگ آؤٹ کرن چ ناکام رہیا",
+  "profile": "پروفائل",
+  "reset": "مڑ سیٹ کرو",
+  "search": "لبھو",
+  "searchThreads": "سرچ تھریڈز...",
+  "toNavigate": "ٹرن لئی",
+  "toSelect": "چُنن لئی",
+  "toClose": "بند کرنا",
+  "clearRecent": "صاف کرو",
+  "name": "ناں",
+  "cancel": "منسوخ کرو",
+  "dismiss": "برخاست کرو",
+  "create": "بناؤ",
+  "save": "محفوظ کرو",
+  "edit": "سودھ کرو",
+  "copy": "نقل کرو",
+  "back": "پچھے",
+  "close": "بند کرو",
+  "done": "ہو گیا",
+  "next": "اگلا",
+  "finish": "ختم کرو",
+  "skip": "چھڈ دیو",
+  "allow": "اجازت دیو",
+  "deny": "اجازت نہ دیو",
+  "start": "شروع کرو",
+  "stop": "روکو",
+  "preview": {
+    "loading": "افتتاح...",
+    "unsupported": "Jan اس قسم دی فائل نئیں وکھا سکدا۔ کسے ہور ایپ وچ ویکھن لئی ایہنوں کھولو۔",
+    "outside": "\"اے فائل ہن سیشن ورک سپیس چ نئیں اے۔\"",
+    "tooLarge": "پیش نظارہ کرن لئی بہوں وڈا اے۔ کسے ہور ایپ وچ ویکھن لئی ایہنوں کھولو۔",
+    "reload": "دوبارہ لوڈ کرو",
+    "allowNetwork": "نیٹ ورک دی اجازت دیو",
+    "unsandboxed": "غیر سینڈ باکسڈ چلاؤ: محفوظ کردہ ڈیٹا تے مقامی فائلاں کم کردیاں نیں",
+    "unresolvedRefs_one": "1 فائل جہدے نال ایہ صفحہ لنک کردا اے اوہ پیش نظارے وچ لوڈ نئیں ہو سکدا۔ براؤزر چ ویکھن لئی ایہنوں کھولو۔",
+    "unresolvedRefs_other": "{{count}} فائلاں جہناں نال ایہ صفحہ لنک کردا اے پیش نظارے چ لوڈ نئیں ہو سکدا۔ براؤزر چ ویکھن لئی ایہنوں کھولو۔",
+    "externalRefs_one": "1 وسیلہ جہڑا ایہ صفحہ ویب توں لوڈ کردا اے بلاک اے۔ ایہنوں لوڈ کرن لئی \"نیٹ ورک دی اجازت دیو\" آن کرو۔",
+    "externalRefs_other": "{{count}} وسائل جہڑے اس صفحے تے ویب توں لوڈ کیتے جاندے نیں اوہ بلاک ہو چکے نیں۔ ایہناں نوں لوڈ کرن لئی \"نیٹ ورک دی اجازت دیو\" آن کرو۔",
+    "scriptErrors_one": "صفحے نے غلطی دی اطلاع دتی: {{message}}",
+    "scriptErrors_other": "صفحے نے {{count}} غلطیاں دی اطلاع دتی۔ پہلا: {{message}}"
+  },
+  "changes": {
+    "title": "ایجنٹ تبدیلیاں",
+    "empty": "ایجنٹ ولوں لکھیاں یا ترمیم کیتیاں فائلاں ایتھے دکھائی دین گیاں۔",
+    "a11y": "ایجنٹ تبدیلیاں: {{files}} فائلاں، {{additions}} شامل کیتیاں گئیاں، {{deletions}} ہٹا دتیاں گئیاں"
+  },
+  "modelPanel": {
+    "title": "ماڈل دی ترتیبات",
+    "a11y": "ماڈل دی ترتیبات کھولو",
+    "contextTooltip": "سیاق و سباق ونڈو: {{max}} ٹوکناں دا {{value}}"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "ہنر '{{name}}' دستیاب نئیں اے",
+    "kind": {
+      "skill": "مہارت",
+      "command": "کمانڈ",
+      "model": "ماڈل"
+    }
+  },
+  "compactWidth": "کمپیکٹ چوڑائی",
+  "fullWidth": "پوری چوڑائی",
+  "dark": "ہنیرا",
+  "light": "روشنی",
+  "system": "سسٹم",
+  "auto": "آٹو",
+  "english": "انگریزی",
+  "medium": "درمیانے",
+  "newThread": "نواں تھریڈ",
+  "noResultsFound": "کوئی نتیجہ نئیں ملیا",
+  "noThreadsYet": "اجے تک کوئی دھاگہ نئیں",
+  "noThreadsYetDesc": "ایتھے اپنی تھریڈ دی ہسٹری ویکھن لئی اک نویں گل بات شروع کرو۔",
+  "downloads": "ڈاؤن لوڈز",
+  "downloading": "ڈاؤن لوڈ کر رہیا اے",
+  "uploadingAttachments": "منسلکات اپ لوڈ کر رئے آں...",
+  "cancelDownload": "ڈاؤن لوڈ منسوخ کرو",
+  "downloadCancelled": "ڈاؤن لوڈ منسوخ کر دتا گیا",
+  "downloadComplete": "ڈاؤن لوڈ مکمل",
+  "thinking": "سوچ کے...",
+  "thought": "سوچ",
+  "callingTool": "کالنگ ٹول",
+  "completed": "مکمل ہو گیا",
+  "image": "تصویر",
+  "vision": "وژن",
+  "multimodal": "ملٹی موڈل",
+  "embeddings": "سرایتاں",
+  "tools": "اوزار",
+  "webSearch": "ویب سرچ",
+  "reasoning": "استدلال",
+  "proactive": "فعال",
+  "selectAModel": "اک ماڈل چنو",
+  "noToolsAvailable": "کوئی اوزار دستیاب نئیں",
+  "noModelsFoundFor": "\"{{searchValue}}\" لئی کوئی ماڈل نئیں لبیا۔",
+  "failedToLoadModels": "ماڈل لوڈ کرن چ ناکامی",
+  "noModels": "کوئی ماڈل نئیں لبیا",
+  "noAssistant": "کوئی اسسٹنٹ نئیں",
+  "customAvatar": "اپنی مرضی دا اوتار",
+  "editAssistant": "ایڈٹ اسسٹنٹ",
+  "jan": "Jan",
+  "metadata": "میٹا ڈیٹا",
+  "regenerate": "دوبارہ پیدا کرو",
+  "threadImage": "تھریڈ دی تصویر",
+  "editMessage": "سنیہا وچ ترمیم کرو",
+  "deleteMessage": "سنیہا مٹاؤ",
+  "deleteThread": "تھریڈ مٹا دیو",
+  "renameThread": "تھریڈ دا ناں بدلو",
+  "threadTitle": "تھریڈ دا سرناواں",
+  "deleteAllThreads": "سارے تھریڈز مٹا دیو",
+  "allThreadsUnfavorited": "سارے تھریڈز ناپسندیدہ",
+  "deleteAllThreadsConfirm": "کی تہانوں پک اے کہ تسی سارے تھریڈ ڈیلیٹ کرنا چاہندے او؟ ایہ کم واپس نئیں کیتا جا سکدا۔",
+  "addProvider": "فراہم کرن آلا شامل کرو",
+  "addOpenAIProvider": "OpenAI فراہم کرن آلا شامل کرو",
+  "enterNameForProvider": "اپنے فراہم کرن آلے لئی اک ناں درج کرو",
+  "providerAlreadyExists": "\"{{name}}\" دے ناں نال فراہم کرن آلا پہلے توں موجود اے۔ مہربانی کر کے اک وکھرا ناں چنو۔",
+  "adjustFontSize": "فونٹ دا سائز ایڈجسٹ کرو",
+  "changeLanguage": "بولی بدلو",
+  "editTheme": "تھیم وچ ترمیم کرو",
+  "editCodeBlockStyle": "کوڈ بلاک سٹائل چ ترمیم کرو",
+  "editServerHost": "سرور ہوسٹ وچ ترمیم کرو",
+  "pickColorWindowBackground": "رنگ ونڈو بیک گراؤنڈ چنو",
+  "pickColorAppMainView": "رنگین ایپ مین ویو چنو",
+  "pickColorAppPrimary": "رنگ ایپ پرائمری چنو",
+  "pickColorAppAccent": "رنگ ایپ لہجہ چنو",
+  "pickColorAppDestructive": "رنگ ایپ تباہ کن چنو",
+  "apiKeyRequired": "API کلید دی لوڑ اے",
+  "enterTrustedHosts": "قابل اعتماد میزبان درج کرو",
+  "placeholder": {
+    "chatInput": "مینوں کجھ وی پچھ..."
+  },
+  "confirm": "پکا کرو",
+  "continue": "جاری رکھو",
+  "loading": "لوڈ ہو رہیا اے...",
+  "settingUpJan": "بوٹ اپ Jan...",
+  "registeringExtensions": "ایکسٹینشنز رجسٹر کر رئے آں...",
+  "loadingExtensions": "لوڈ ایکسٹینشنز... ({{done}}/{{total}})",
+  "error": "غلطی",
+  "success": "کامیابی",
+  "warning": "چتاونی",
+  "conversationNotAvailable": "گل بات دستیاب نئیں",
+  "conversationNotAvailableDescription": "جس گل بات توں تسی رسائی حاصل کرن دی کوشش کر رئے اوہ دستیاب نئیں اے یا اینوں مٹا دتا گیا اے۔\"",
+  "temporaryChat": "عارضی گل بات",
+  "temporaryChatTooltip": "عارضی چیٹ تہاڈی ہسٹری چ نئیں آوے گی",
+  "noResultsFoundDesc": "سانوں تہاڈی کھوج نال میل کھان آلی کوئی چیٹ نئیں لبھی۔ اک وکھرا کلیدی لفظ آزماؤ۔",
+  "searchModels": "ماڈل لبھو...",
+  "searchStyles": "سٹائل لبھو...",
+  "createAssistant": "اسسٹنٹ بناؤ",
+  "enterApiKey": "API کلید درج کرو",
+  "scrollToBottom": "تھلے سکرال کرو",
+  "generateAiResponse": "اے آئی ردعمل پیدا کرو",
+  "continueAiResponse": "اے آئی رسپانس دے نال جاری رکھو",
+  "addModel": {
+    "title": "ماڈل شامل کرو",
+    "modelId": "ماڈل آئی ڈی",
+    "enterModelId": "ماڈل آئی ڈی درج کرو",
+    "addModel": "ماڈل شامل کرو",
+    "description": "فراہم کرن آلے چ اک نواں ماڈل شامل کرو",
+    "exploreModels": "فراہم کرن آلے توں ماڈل لسٹ ویکھو"
+  },
+  "mcpServers": {
+    "editServer": "سرور چ ترمیم کرو",
+    "addServer": "سرور شامل کرو",
+    "serverName": "سرور دا ناں",
+    "enterServerName": "سرور دا ناں درج کرو",
+    "command": "کمانڈ",
+    "enterCommand": "کمانڈ درج کرو",
+    "arguments": "دلیلاں",
+    "argument": "دلیل {{index}}",
+    "envVars": "ماحولیاتی متغیر",
+    "key": "کلید",
+    "value": "قدر",
+    "save": "محفوظ کرو"
+  },
+  "deleteServer": {
+    "title": "سرور نوں مٹا دیو",
+    "delete": "مٹاؤ"
+  },
+  "editJson": {
+    "errorParse": "JSON دی تجزیہ کرن چ ناکام رہیا",
+    "errorPaste": "JSON پیسٹ کرن چ ناکام رہیا",
+    "errorFormat": "غلط JSON فارمیٹ",
+    "titleAll": "سارے سرورز دی ترتیب وچ ترمیم کرو",
+    "placeholder": "JSON ترتیب درج کرو۔",
+    "save": "محفوظ کرو"
+  },
+  "editModel": {
+    "title": "ماڈل وچ ترمیم کرو: {{modelId}}",
+    "description": "تھلے دتے گئے اختیارات نو ٹوگل کرکے ماڈل دی صلاحیتاں نو تشکیل دیو۔",
+    "capabilities": "صلاحیتاں",
+    "tools": "اوزار",
+    "vision": "وژن",
+    "embeddings": "سرایتاں",
+    "notAvailable": "ہلے تک دستیاب نئیں"
+  },
+  "outOfContextError": {
+    "truncateInput": "ٹرنکیٹ ان پٹ",
+    "title": "سیاق و سباق توں باہر دی غلطی",
+    "description": "ایہ گل بات اے آئی دی میموری دی حد تک پہنچ رئی اے، جویں وائٹ بورڈ بھر رہیا اے۔ اسی میموری ونڈو (جہنوں سیاق و سباق دا سائز آکھیا جاندا اے) نو ودھا سکنے آں تاکہ ایہ زیادہ یاد رکھے، لیکن ایہ تہاڈے کمپیوٹر دی زیادہ میموری استعمال کر سکدا اے۔ اسی ان پٹ نو وی کٹ سکنے آں، جس دا مطلب اے کہ ایہ نویں پیغامات لئی تھاں بنان لئی کجھ چیٹ ہسٹری نو بھل جائے گا۔",
+    "increaseContextSizeDescription": "کی تسی سیاق و سباق دا سائز ودھانا چاہندے او؟",
+    "increaseContextSize": "سیاق و سباق دا سائز ودھاؤ"
+  },
+  "toolApproval": {
+    "title": "آلے دی اجازت دی درخواست",
+    "description": "اسسٹنٹ <strong>{{toolName}}</strong> استعمال کرنا چاہندا اے۔",
+    "securityNotice": "صرف اوہناں اوزاراں دی اجازت دیو جنہاں تے تسی اعتماد کردے او۔ ٹولز تہاڈے سسٹم تے ڈیٹا تک رسائی حاصل کر سکدے ہن۔",
+    "deny": "اجازت نہ دیو",
+    "allowOnce": "اک واری اجازت دیو",
+    "alwaysAllow": "ہمیشہ اجازت دیو"
+  },
+  "deleteModel": {
+    "title": "ماڈل مٹاؤ: {{modelId}}",
+    "description": "کی تہانوں پک اے کہ تسی ایس ماڈل نو مٹا دینا چاہندے او؟ ایہ کم واپس نئیں کیتا جا سکدا۔",
+    "success": "ماڈل {{modelId}} مستقل طور تے مٹا دتا گیا اے۔",
+    "cancel": "منسوخ کرو",
+    "delete": "مٹاؤ"
+  },
+  "deleteProvider": {
+    "title": "فراہم کرن آلے نو مٹا دیو",
+    "description": "اس فراہم کرن آلے تے ایہدے سارے ماڈلاں نو مٹا دیو۔ ایہ کم واپس نئیں کیتا جا سکدا۔",
+    "success": "فراہم کرن آلا {{provider}} مستقل طور تے مٹا دتا گیا اے۔",
+    "confirmTitle": "ڈیلیٹ فراہم کرن آلا: {{provider}}",
+    "confirmDescription": "کی تہانوں پک اے کہ تسی ایس فراہم کرن آلے نو مٹا دینا چاہندے او؟ ایہ کم واپس نئیں کیتا جا سکدا۔",
+    "cancel": "منسوخ کرو",
+    "delete": "مٹاؤ"
+  },
+  "modelSettings": {
+    "title": "ماڈل دی ترتیبات - {{modelId}}",
+    "description": "کارکردگی تے رویے نو بہتر بنان دے لیی ماڈل دی ترتیبات نو تشکیل دیو۔",
+    "nglDisabledByFit": "آٹو فٹ GPU پرتاں دا انتخاب کر رہیا اے۔ اس نو دستی طور تے سیٹ کرن دے لیی آٹو فٹ بند کرو۔",
+    "samplingDefaults": {
+      "title": "ڈیفالٹ سیمپلنگ پیرامیٹرز",
+      "description": "اس ماڈل لئی ڈیفالٹ سیمپلر دی ترتیبات۔ جدوں تک فی اسسٹنٹ یا فی درخواست اقدار دے ذریعہ اوور رائڈ نئیں کیتا جاندا، استعمال کیتا جاندا اے۔"
+    },
+    "specDraft": {
+      "section": "قیاس آرائی دی خفیہ کاری",
+      "enable": "قیاس آرائی دی خفیہ کاری نو فعال کرو",
+      "enableDescription": "ہر قدم چ کئی ٹوکن تیار کرو تے اک پاس چ اوہناں دی تصدیق کرو، جہڑی نسل نوں تیز کردی اے۔ ماڈل دے بلٹ ان ایم ٹی پی ہیڈز، یا اس دے نال ڈاؤن لوڈ کردہ ڈرافٹ ماڈل (ایم ٹی پی، ایگل 3، ڈی فلیش یا ڈی ایسپارک) استعمال کردا اے۔",
+      "nMax": "ودھ توں ودھ ڈرافٹ ٹوکن",
+      "nMaxDescription": "فی قدم ڈرافٹ کرن لئی ٹوکناں دی ودھ توں ودھ تعداد۔ ڈیفالٹ 16۔",
+      "nMin": "من ڈرافٹ ٹوکن",
+      "nMinDescription": "فی قدم ڈرافٹ کرن لئی ٹوکناں دی گھٹ توں گھٹ تعداد۔ ڈیفالٹ 0۔",
+      "pMin": "گھٹ توں گھٹ ڈرافٹ پروبیبلٹی",
+      "pMinDescription": "لالچی ڈرافٹنگ لئی گھٹ توں گھٹ امکان (0–1)۔ ڈیفالٹ 0.75۔"
+    },
+    "templateKwargs": {
+      "section": "چیٹ ٹیمپلیٹ دے اختیارات",
+      "description": "اضافی اختیارات اس ماڈل دے چیٹ ٹیمپلیٹ نوں قبول کردا اے۔ ہر درخواست تے chat_template_kwargs دے طور تے بھیجیا گیا; سانچے نو فیصلہ کرن دے لی اک قدر نو اس دی ڈیفالٹ تے چھڈ دیو۔",
+      "addCustom": "اپنی مرضی دا آپشن شامل کرو",
+      "keyPlaceholder": "ناں",
+      "valuePlaceholder": "قدر",
+      "add": "شامل کرو",
+      "cancel": "منسوخ کرو",
+      "remove": "ہٹاؤ"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "ماڈل دی ترتیبات نو اپ ڈیٹ نئیں کیتا جا سکدا"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "ڈیٹا فولڈر دا مقام تبدیل کرو",
+      "description": "کی تہانوں پک اے کہ تسی ڈیٹا فولڈر دی تھاں بدلنا چاہندے او؟ ایہ تہاڈا سارا ڈیٹا نویں تھاں تے لے جائے گا تے ایپلی کیشن نو دوبارہ شروع کرے گا۔",
+      "currentLocation": "موجودہ مقام:",
+      "newLocation": "نواں تھاں:",
+      "cancel": "منسوخ کرو",
+      "changeLocation": "مقام بدلو"
+    },
+    "deleteAllThreads": {
+      "title": "سارے تھریڈز مٹا دیو",
+      "description": "سارے تھریڈز مٹا دتے جان گے۔ ایہ کم واپس نئیں کیتا جا سکدا۔"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "ساریاں گلاں باتاں مٹا دیو",
+      "description": "{{count}} \"{{projectName}}\" چ گل باتاں مٹا دتیاں جان گیاں۔ ایہ کم واپس نئیں کیتا جا سکدا۔"
+    },
+    "deleteThread": {
+      "description": "کی تہانوں پک اے کہ تسی ایہ تھریڈ ڈیلیٹ کرنا چاہندے او؟ ایہ کم واپس نئیں کیتا جا سکدا۔"
+    },
+    "editMessage": {
+      "title": "سنیہا وچ ترمیم کرو"
+    },
+    "messageMetadata": {
+      "title": "سنیہا میٹا ڈیٹا"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "کجھ غلط ہو گیا",
+    "details": "تفصیلات"
+  },
+  "missingDependenciesDialog": {
+    "title": "سسٹم لائبریریاں غائب نیں",
+    "description": "{{backend}} انسٹال کیتا گیا سی لیکن کجھ مطلوبہ سسٹم لائبریریاں نئیں لبھ سکیاں۔ ایہ CPU تے واپس آ سکدا اے یا ٹھیک طریقے نال نئیں چل سکدا۔",
+    "installLabel": "اس نو ٹھیک کرن دے لی، درج ذیل انسٹال کرو:",
+    "download": "ڈاؤن لوڈ کرو",
+    "additionalLibraries": "ہور گمشدہ لائبریریاں:",
+    "missingLibraries": "گمشدہ لائبریریاں:",
+    "showRawLibraries": "{{count}} گمشدہ لائبریری دے ناں وکھاؤ"
+  },
+  "projects": {
+    "title": "منصوبے",
+    "new": "نویں منصوبے",
+    "addProject": "پروجیکٹ شامل کرو",
+    "addToProject": "پروجیکٹ چ شامل کرو",
+    "removeFromProject": "پروجیکٹ توں ہٹا دیو",
+    "createNewProject": "نواں پروجیکٹ بناؤ",
+    "editProject": "پروجیکٹ وچ ترمیم کرو",
+    "deleteProject": "پروجیکٹ نوں مٹا دیو",
+    "projectName": "پروجیکٹ دا ناں",
+    "enterProjectName": "منصوبے دا ناں درج کرو...",
+    "noProjectsAvailable": "کوئی پروجیکٹ دستیاب نئیں",
+    "noProjectsYet": "ہلے کوئی پروجیکٹ نئیں",
+    "noProjectsYetDesc": "پروجیکٹ شامل کرن دے بٹن تے کلک کرکے اک نواں پروجیکٹ شروع کرو۔",
+    "projectNotFound": "پروجیکٹ نئیں لبیا",
+    "projectNotFoundDesc": "جس پروجیکٹ دی تسی تلاش کر رئے اوہ موجود نئیں یا مٹا دتا گیا اے۔",
+    "selectAssistant": "اسسٹنٹ دا انتخاب کرو",
+    "noAssistantAssigned": "اس منصوبے لئی کوئی اسسٹنٹ تفویض نئیں کیتا گیا",
+    "files": "فائلاں",
+    "filesDescription": "اس منصوبے وچ حوالہ دین لئی پی ڈی ایف، دستاویزات، یا دوجی متن شامل کرو۔",
+    "uploadingFiles": "فائلاں دی پروسیسنگ...",
+    "processButton": "شامل کرو",
+    "deleteProjectDialog": {
+      "title": "پروجیکٹ نوں مٹا دیو",
+      "permanentDelete": "ایہ سارے تھریڈز نوں مستقل طور تے مٹا دیوے گا۔",
+      "permanentDeleteWarning": "ایہ عمل پروجیکٹ دے اندر سارے تھریڈز نو مستقل طور تے ختم کر دیوے گا!",
+      "deleteEmptyProject": "ایہ عمل پروجیکٹ \"{{projectName}}\" نو مٹا دیوے گا۔",
+      "saveThreadsAdvice": "تھریڈز نو محفوظ کرن دے لی، مٹان توں پہلے انہاں نو اپنڑی تھریڈ لسٹ یا کسی ہور پروجیکٹ تے منتقل کرو۔",
+      "starredWarning": "تہاڈے کول اجے وی پروجیکٹ دے اندر سٹارڈ تھریڈز ہن۔",
+      "deleteButton": "مٹاؤ",
+      "successWithName": "پروجیکٹ \"{{projectName}}\" کامیابی نال مٹا دتا گیا",
+      "successWithoutName": "پروجیکٹ کامیابی نال مٹا دتا گیا",
+      "error": "پروجیکٹ نو مٹان چ ناکام۔ مہربانی کر کے فیر کوشش کرو۔",
+      "ariaLabel": "{{projectName}} نوں مٹا دیو"
+    },
+    "addProjectDialog": {
+      "createTitle": "نواں پروجیکٹ بناؤ",
+      "editTitle": "پروجیکٹ وچ ترمیم کرو",
+      "nameLabel": "پروجیکٹ دا ناں",
+      "namePlaceholder": "منصوبے دا ناں درج کرو...",
+      "assistant": "مددگار",
+      "selectAssistant": "اک اسسٹنٹ دا انتخاب کرو (اختیاری)",
+      "noAssistant": "کوئی اسسٹنٹ نئیں",
+      "addAssistant": "اسسٹنٹ شامل کرو",
+      "createButton": "بناؤ",
+      "updateButton": "اپ ڈیٹ کرو",
+      "alreadyExists": "پروجیکٹ \"{{projectName}}\" پہلے توں موجود اے",
+      "createSuccess": "پروجیکٹ \"{{projectName}}\" کامیابی نال بنایا گیا",
+      "updateSuccess": "پروجیکٹ \"{{projectName}}\" کامیابی نال اپ ڈیٹ کیتا گیا"
+    },
+    "noConversationsIn": "{{projectName}} وچ کوئی گل بات نئیں",
+    "startNewConversation": "تھلے دتے گئے {{projectName}} نال نویں گل بات شروع کرو",
+    "conversationsIn": "{{projectName}} وچ گل باتاں",
+    "conversationsDescription": "گل بات جاری رکھن لئی کسی وی گل بات تے کلک کرو، یا تھلے دتی گئی نویں گل بات شروع کرو۔",
+    "conversation": "گل بات",
+    "instructions": "ہدایتاں",
+    "setup": "سیٹ اپ",
+    "instructionsDescription": "جواب دے لہجے تے انداز نو اپنی مرضی دے مطابق بناؤ",
+    "manageInstructions": "ہدایات دا انتظام کرو",
+    "thread": "دھاگہ",
+    "threads": "دھاگے",
+    "updated": "اپ ڈیٹ کیتا گیا:",
+    "collapseProject": "خاتمے دا منصوبہ",
+    "expandProject": "منصوبے نو ودھاؤ",
+    "update": "اپ ڈیٹ کرو",
+    "searchProjects": "منصوبیاں دی تلاش...",
+    "noProjectsFound": "کوئی منصوبہ نئیں لبیا",
+    "tryDifferentSearch": "کوئی ہور سرچ ٹرم آزماؤ"
+  },
+  "attachmentsIngestion": {
+    "title": "منسلکات نو نگلنے دا طریقہ چنو",
+    "description": "چنو کہ ایہ فائلاں براہ راست چیٹ وچ شامل کرنیاں نیں یا ایہناں نوں سرایت دے طور تے انڈیکس کرنا اے۔",
+    "inline": "چیٹ وچ انجیکشن کرو",
+    "embeddings": "سرایتاں دا استعمال کرو"
+  },
+  "attachmentInjectedIndicator": "چیٹ وچ انجیکشن لایا گیا",
+  "attachmentEmbeddedIndicator": "آر اے جی لئی سرایت کیتا گیا",
+  "viewInjectedContent": "انجیکٹ کیتا گیا مواد ویکھو",
+  "injectedContentTitle": "فائل دا مواد انجیکٹ کیتا گیا",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "سارے تھریڈز ناپسندیدہ",
+      "description": "تہاڈے پسندیدہ تھریڈز چوں سارے تھریڈ ہٹا دتے گئے ہن۔"
+    },
+    "deleteAllThreads": {
+      "title": "سارے تھریڈز مٹا دیو",
+      "description": "سارے دھاگے مستقل طور تے مٹا دتے گئے نیں۔"
+    },
+    "renameThread": {
+      "title": "تھریڈ دا ناں بدلو",
+      "description": "تھریڈ دا ناں بدل کے '{{title}}' رکھ دتا گیا اے۔"
+    },
+    "deleteThread": {
+      "title": "تھریڈ مٹا دیو",
+      "description": "اے تھریڈ مستقل طور تے مٹا دتا گیا اے۔"
+    },
+    "errorCopied": {
+      "title": "کاپی کامیاب ہو گئی",
+      "description": "غلطی دی معلومات کلپ بورڈ تے کاپی کر دتی گئی"
+    },
+    "errorCopyFailed": {
+      "title": "کاپی کرن چ ناکامی",
+      "description": "کلپ بورڈ تے غلطی دی معلومات کاپی کرن اچ ناکام رہیا"
+    },
+    "editMessage": {
+      "title": "سنیہا وچ ترمیم کرو",
+      "description": "سنیہا کامیابی نال ترمیم کیتا گیا۔ مہربانی کر کے ماڈل دے جواب دین دا انتظار کرو۔"
+    },
+    "appUpdateDownloaded": {
+      "title": "ایپ اپ ڈیٹ ڈاؤن لوڈ ہو گئی",
+      "description": "ایپ اپ ڈیٹ کامیابی نال ڈاؤن لوڈ ہو چکی اے۔"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "ایپ اپ ڈیٹ ڈاؤن لوڈ ناکام ہو گئی",
+      "description": "ایپ اپ ڈیٹ ڈاؤن لوڈ کرن چ ناکام رہیا۔ مہربانی کر کے فیر کوشش کرو۔"
+    },
+    "downloadComplete": {
+      "title": "ڈاؤن لوڈ مکمل",
+      "description": "{{item}} ڈاؤن لوڈ ہو گیا اے"
+    },
+    "downloadCancelled": {
+      "title": "ڈاؤن لوڈ منسوخ کر دتا گیا",
+      "description": "ڈاؤن لوڈ دا عمل منسوخ کر دتا گیا"
+    },
+    "downloadFailed": {
+      "title": "ڈاؤن لوڈ ناکام ہو گیا",
+      "description": "{{item}} ڈاؤن لوڈ ناکام ہو گیا",
+      "descriptionWithReason": "{{item}} ڈاؤن لوڈ ناکام ہو گیا: {{reason}}",
+      "reason": {
+        "dns": "سرور دا ناں حل نئیں کیتا جا سکیا",
+        "refused": "کنکشن توں انکار کر دتا گیا",
+        "timeout": "کنکشن ٹائم آؤٹ ہو گیا",
+        "tls": "اک محفوظ کنکشن قائم نئیں کیتا جا سکیا",
+        "proxy": "پراکسی تک اپڑیا نئیں جا سکیا",
+        "unreachable": "سرور تک اپڑیا نئیں جا سکیا"
+      }
+    },
+    "openSettings": "ترتیبات کھولو",
+    "openLogs": "لاگ کھولو",
+    "downloadTokenRequired": {
+      "title": "Hugging Face ٹوکن دی لوڑ اے",
+      "description": "اس ماڈل نو Hugging Face رسائی ٹوکن دی لوڑ اے۔ ترتیبات وچ اپنا ٹوکن شامل کرو تے دوبارہ کوشش کرو۔"
+    },
+    "downloadLicenseRequired": {
+      "title": "Hugging Face تے ماڈل لائسنس قبول کرو",
+      "description": "ڈاؤن لوڈ کرن توں پہلاں تہانوں ماڈل دا لائسنس اس دے Hugging Face صفحے تے قبول کرنا ہووے گا۔"
+    },
+    "downloadRateLimited": {
+      "title": "شرح Hugging Face تک محدود اے",
+      "description": "تہانوں ریٹ لمیٹڈ کیتا گیا اے۔ ٹوکن شامل کرن نال شرح دی حد ودھ سکدی اے۔ بعد چ دوبارہ کوشش کرو۔"
+    },
+    "modelValidationStarted": {
+      "title": "ماڈل دی توثیق کرنا",
+      "description": "ماڈل \"{{modelId}}\" کامیابی نال ڈاؤن لوڈ کیتا گیا۔ سالمیت دی تصدیق..."
+    },
+    "modelValidationFailed": {
+      "title": "ماڈل دی توثیق ناکام ہو گئی",
+      "description": "ڈاؤن لوڈ کیتا گیا ماڈل \"{{modelId}}\" سالمیت دی تصدیق چ ناکام رہیا تے اینوں ہٹا دتا گیا۔ فائل خراب ہو سکدی اے یا اس نال چھیڑ چھاڑ کیتی جا سکدی اے۔"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "ڈاؤن لوڈ مکمل",
+      "description": "ماڈل \"{{item}}\" ڈاؤن لوڈ کیتا گیا تے کامیابی نال تصدیق کیتی گئی"
+    },
+    "projectCreated": {
+      "title": "پروجیکٹ بنایا گیا",
+      "description": "پروجیکٹ \"{{projectName}}\" کامیابی نال بنایا گیا"
+    },
+    "projectRenamed": {
+      "title": "پروجیکٹ دا ناں بدل دتا گیا",
+      "description": "پروجیکٹ دا ناں \"{{oldName}}\" توں \"{{newName}}\" رکھ دتا گیا اے۔"
+    },
+    "projectDeleted": {
+      "title": "پروجیکٹ ڈیلیٹ ہو گیا",
+      "description": "پروجیکٹ \"{{projectName}}\" کامیابی نال مٹا دتا گیا"
+    },
+    "projectAlreadyExists": {
+      "title": "منصوبہ پہلے توں موجود اے",
+      "description": "پروجیکٹ \"{{projectName}}\" پہلے توں موجود اے"
+    },
+    "projectDeleteFailed": {
+      "title": "مٹانا ناکام ہو گیا",
+      "description": "پروجیکٹ نو مٹان چ ناکام۔ مہربانی کر کے فیر کوشش کرو۔"
+    },
+    "threadAssignedToProject": {
+      "title": "تھریڈ تفویض کیتا گیا",
+      "description": "تھریڈ \"{{projectName}}\" نوں کامیابی نال تفویض کیتا گیا"
+    },
+    "threadRemovedFromProject": {
+      "title": "تھریڈ ہٹا دتا گیا",
+      "description": "تھریڈ \"{{projectName}}\" توں کامیابی نال ہٹا دتا گیا"
+    },
+    "fileUploaded": {
+      "title": "فائل پروسیس ہو گئی",
+      "description": "فائل نوں کامیابی نال پروسیس تے انڈیکس کیتا گیا اے"
+    },
+    "uploadFailed": {
+      "title": "پروسیسنگ ناکام ہو گئی",
+      "description": "فائل تے کارروائی کرن چ ناکامی ہوئی",
+      "subjectThisFile": "ایہہ فائل",
+      "pdfMalformedXref": "{{subject}} چ اک غلط شکل آلی PDF کراس ریفرنس ٹیبل اے تے اینوں پارس نئیں کیتا جا سکیا۔ اس نو PDF ویور چ کھولن دی کوشش کرو تے اس نو دوبارہ محفوظ کرو (فائل → پرنٹ → PDF دے طور تے محفوظ کرو)، فیر دوبارہ اپ لوڈ کرو۔",
+      "pdfScanned": "{{subject}} اک سکین یا تصویر تے مبنی PDF لگدا اے۔ او سی آر ہلے تک تعاون یافتہ نئیں اے — مہربانی کر کے ٹیکسٹ بیسڈ PDF اپ لوڈ کرو۔",
+      "pdfEncrypted": "{{subject}} پاس ورڈ نال محفوظ اے۔ پاس ورڈ ہٹا دیو تے دوبارہ کوشش کرو۔",
+      "pdfUnsupportedFeature": "{{subject}} اک PDF خصوصیت استعمال کردا اے Jan ہلے تیکر پارس نئیں کر سکدا (مثال دے طور تے پوسٹ سکرپٹ رنگ / شیڈنگ افعال)۔ اس نوں پدھرا کرن لئی اس نوں دوبارہ محفوظ کرن دی کوشش کرو (فائل → پرنٹ → PDF دے طور تے محفوظ کرو)، فیر دوبارہ اپ لوڈ کرو۔",
+      "pdfGeneric": "{{subject}} نو PDF دے طور تے تجزیہ نئیں کیتا جا سکیا۔ فائل خراب ہو سکدی اے یا غیر معاون PDF خصوصیت استعمال کردی اے۔",
+      "fileTooLarge": "{{subject}} بہت وڈا اے۔ {{message}}۔",
+      "unsupportedType": "فائل دی قسم \"{{type}}\" سپورٹ نئیں کیتی جاندی۔",
+      "ioError": "{{subject}} نئیں پڑھیا جا سکیا: {{message}}",
+      "parseGeneric": "{{subject}} نوں پارس نئیں کیتا جا سکیا: {{message}}",
+      "fallback": "{{subject}} تے کارروائی کرن چ ناکام رہیا۔"
+    },
+    "fileDeleted": {
+      "title": "فائل مٹا دتی گئی",
+      "description": "فائل نوں پروجیکٹ توں ہٹا دتا گیا اے"
+    },
+    "deleteFailed": {
+      "title": "مٹانا ناکام ہو گیا",
+      "description": "فائل نوں مٹان چ ناکامی ہوئی"
+    },
+    "fileAlreadyExists": {
+      "title": "فائل پہلے توں موجود اے",
+      "description": "فائل پہلے ای اس منصوبے نال منسلک اے"
+    },
+    "unsupportedFileType": {
+      "title": "غیر تعاون یافتہ فائل دی قسم",
+      "description": "فائل ایکسٹینشن \".{{extension}}\" پروجیکٹ دے حوالے لئی تعاون یافتہ نئیں اے۔"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "منسلکات غیر فعال کر دتے گئے",
+      "description": "ترتیبات وچ منسلکات غیر فعال نیں"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "فائل بہت وڈی اے",
+    "fileTooLargeDescription": "{{fileName}} {{maxFileSizeMB}}MB حد توں ودھ جاندا اے"
+  },
+  "files": {
+    "chunksCount": "{{count}} ٹکڑے",
+    "title": "فائلاں",
+    "empty": "اوہ فائلاں جہڑیاں تسی منسلک کردے او تے اوہ فائلاں جہڑیاں ایجنٹ نے بنائیاں نیں ایتھے دکھائی دین گیاں۔",
+    "a11y": "فائلاں: {{count}}",
+    "attachments": "منسلکات",
+    "notImported": "کم دی تھاں تے نئیں"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp اجے وی مصروف اے",
+    "description": "اک یا اک توں ودھ ماڈل ویلے سر اتارے نئیں۔ فورس-کوٹنگ llama.cpp نو ختم کر دیوے گا تے فعال ردعمل نو روک سکدا اے۔",
+    "forceQuit": "زبردستی چھڈ دیو",
+    "forcing": "زبردستی چھڈنا...",
+    "shuttingDown": "بند ہو رہیا اے..."
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  },
+  "collapse": "ڈھیہہ جانا",
+  "expand": "ودھاؤ",
+  "todoPanelTitle": "ترقی",
+  "todoPanelEmpty": "ہلے تیکر کوئی کماں دی فہرست نئیں۔",
+  "backgroundTasks": "پچھوکڑ دے کم",
+  "subagentsRunning_one": "کم کردے چھوٹے مددگاراں دی گنتی: {{count}}",
+  "subagentsRunning_other": "کم کردے چھوٹے مددگاراں دی گنتی: {{count}}",
+  "monitorsRunning_one": "کم کردے نگرانواں دی گنتی: {{count}}",
+  "monitorsRunning_other": "کم کردے نگرانواں دی گنتی: {{count}}",
+  "backgroundRunning_one": "پچھوکڑ وچ چلدے کماں دی گنتی: {{count}}",
+  "backgroundRunning_other": "پچھوکڑ وچ چلدے کماں دی گنتی: {{count}}",
+  "monitors": "مانیٹر",
+  "monitorPolling": "پولنگ",
+  "monitorMatched": "ملایا گیا",
+  "monitorTimedOut": "ٹائم آؤٹ ہو گیا",
+  "monitorStopped": "بند کر دتا گیا",
+  "monitorEnded": "ختم ہو گیا",
+  "coworkWatching_one": "نگرانی ہوندے نگرانواں دی گنتی: {{count}}…",
+  "coworkWatching_other": "نگرانی ہوندے نگرانواں دی گنتی: {{count}}…",
+  "coworkWaitingBackground": "پچھوکڑ دے کماں دا انتظار کرنا...",
+  "noBackgroundTasks": "ہلے تیکر کوئی پچھوکڑ دا کم نئیں۔",
+  "running": "چل رہیا اے",
+  "queued": "قطار چ",
+  "waiting": "انتظار کرنا",
+  "finished": "ختم ہو گیا",
+  "subagentPhase": "مرحلہ {{phase}}",
+  "subagentWaiting": "انتظار کرنا",
+  "viewTranscript": "نقل ویکھو",
+  "taskWorking": "کم کر ریا واں...",
+  "taskNoOutput": "ذیلی ایجنٹ نے کوئی نظر آن آلا آؤٹ پٹ نئیں دتا۔",
+  "subagentToolUses_one": "اوزار ورتن دی گنتی: {{count}}",
+  "subagentToolUses_other": "اوزار ورتن دی گنتی: {{count}}",
+  "artifactGroupCode": "کوڈ",
+  "artifactGroupImage": "تصویر",
+  "artifactGroupDocument": "دستاویز",
+  "artifactGroupVideo": "ویڈیو",
+  "artifactGroupAudio": "آڈیو",
+  "artifactOpenPreview": "پیش نظارہ کھولو",
+  "artifactOpenExternal": "کھولو",
+  "artifactMoreActions": "ہور کم",
+  "artifactShowInFolder": "فولڈر چ وکھاؤ",
+  "skillsUsedLabel": "استعمال ہون آلیاں مہارتاں",
+  "skillsUsed": "ورتیاں گئیاں مہارتاں: {{skills}}",
+  "artifactsAll": "سب",
+  "artifactsEmpty": "ہلے تیکر کجھ نئیں بنایا گیا۔ Cowork رناں دے نمونے ایتھے دکھائی دیندے ہن۔",
+  "artifactsNoMatch": "کوئی وی نمونے میل نئیں کھاندے۔",
+  "artifactsSearch": "نمونے لبھو",
+  "artifactsShowMore": "ہور وکھاؤ {{count}}",
+  "workspace": {
+    "readsFrom": "وچ کم کردا اے",
+    "writable": "پڑھو تے لکھو",
+    "footnote": "ایجنٹ اس فولڈر نو براہ راست پڑھدا تے ترمیم کردا اے۔ ڈف پینل وچ کی تبدیلی آئی اے اس دا جائزہ لوو۔",
+    "footnoteEmpty": "ایجنٹ نو اپنے منصوبے تے کم کرن دینڑ دے لیی اک فولڈر منسلک کرو۔ ایہ اپنے اندر دیاں فائلاں نوں پڑھ تے ایڈٹ کر سکدا اے۔",
+    "attach": "اک فولڈر منسلک کرو",
+    "change": "فولڈر تبدیل کرو",
+    "detach": "فولڈر نوں وکھ کرو",
+    "open": "کھولو",
+    "reveal": "ظاہر کرو",
+    "unavailable": "ورک اسپیس دستیاب نئیں",
+    "missing": "ورک اسپیس فولڈر {{folder}} ہن دستیاب نئیں اے۔ اک وکھرا فولڈر چنو۔",
+    "openFailed": "ورک اسپیس نئیں کھولیا جا سکیا",
+    "revealFailed": "ورک اسپیس ظاہر نئیں کر سکیا",
+    "a11yWithFolder": "پروجیکٹ فولڈر {{folder}}، پڑھن تے لکھن دی رسائی دے نال منسلک اے۔ اس نوں بدلو یا الگ کرو۔",
+    "a11yNoFolder": "کوئی پروجیکٹ فولڈر منسلک نئیں اے۔ اک منسلک کرو۔"
+  },
+  "coworkEmpty": {
+    "title": "اسی کی کم کر رئے آں؟",
+    "subtitleSandbox": "Jan نوں اک کم دیو۔ ایہ فائلاں پڑھدا تے لکھدا اے، کمانڈز چلاندا اے، تے اپنے آپ ای اقدامات تے کم کردا اے۔",
+    "subtitleFolder": "Jan نوں اک کم دیو۔ ایہ براہ راست {{folder}} وچ کم کردا اے، فائلاں نو اپنے آپ پڑھدا تے ترمیم کردا اے۔",
+    "try": "کوشش کرو",
+    "sandbox": {
+      "first": "اک پائیتھن سکرپٹ لکھو جہڑی فائلاں دا ناں اوس تاریخ دے مطابق بدل دیوے جہدی اوہ لئی گئی سی",
+      "second": "اک CSV توں اک صفحے دا ڈیش بورڈ بناؤ میں چسپاں کراں گا",
+      "third": "اک پروجیکٹ لئی README دا مسودہ تیار کرو جہڑا میں تہانوں بیان کردا ہاں"
+    },
+    "folder": {
+      "first": "دسو کہ {{folder}} نوں کیویں اکٹھا کیتا جاندا اے",
+      "second": "{{folder}} وچ ہر TODO نوں لبھو تے اوہناں نوں علاقے دے لحاظ نال گروپ کرو",
+      "third": "{{folder}} دے حصے لئی ٹیسٹ لکھو میں تہانوں اشارہ کردا ہاں"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "کوئی ٹرمینل نئیں",
+    "a11y": "رننگ کمانڈز بند اے۔ تفصیلاں۔",
+    "title": "چلن آلے کمانڈز بند ہو گئے نیں",
+    "body": "Jan ایجنٹ نو شیل کمانڈز چلان دیندا اے صرف اودوں جدوں تہاڈا سسٹم انہاں نو محدود کر سکدا اے۔ ایتھے کوئی سینڈ باکس دستیاب نئیں اے، اس لیی ایجنٹ اپنے سینڈ باکس چ فائلاں نو پڑھ، لکھ تے ترمیم کر سکدا اے — لیکن کجھ وی نئیں چلا سکدا۔",
+    "fixLinux": "Linux بلبل ریپ استعمال کردا اے۔ اس نو انسٹال کرو، فیر Jan نو دوبارہ شروع کرو۔",
+    "fixMac": "macOS /usr/bin/sandbox-exec تے بلٹ ان سینڈ باکس استعمال کردا اے۔ جدوں ایہ دستیاب ہو جائے تے Jan نو دوبارہ شروع کرو۔",
+    "fixWindows": "Windows ایپ کنٹینر استعمال کردا اے۔ دوبارہ کوشش کرن لئی Jan نوں دوبارہ شروع کرو۔",
+    "recheck": "دوبارہ چیک کرو"
+  },
+  "planMode": {
+    "label": "منصوبہ",
+    "tooltipOff": "پہلے منصوبہ بناؤ — ایجنٹ پڑھدا اے تے تجویز کردا اے، بغیر لکھے۔",
+    "tooltipOn": "منصوبہ بندی۔ ایجنٹ نوں فائلاں لکھن دین لئی اس نوں بند کر دیو۔",
+    "onAnnounce": "پلان موڈ آن",
+    "placeholder": "اک منصوبہ منگو۔ ایجنٹ کوئی وی فائل نئیں بدلے گا۔"
+  },
+  "budget": {
+    "stoppedSteps": "{{max}} قدماں تے رک گیا۔ ایجنٹ نے گل ختم نئیں کیتی۔",
+    "keepGoing": "چلدے رہو",
+    "stoppedTokens": "بند کر دتا گیا - اس سیشن نے اپنے ٹوکن بجٹ نو ماریا۔",
+    "compact": "کمپیکٹ",
+    "newSession": "نواں سیشن"
+  },
+  "run": {
+    "stopped": "رک گیا۔",
+    "failed": "دوڑ سویرے ای رک گئی۔",
+    "tryAgain": "فیر کوشش کرو"
+  },
+  "modelNoTools": "{{model}} ٹولز نو کال نئیں کر سکدا، اس لی ایہ ایجنٹ دے طور تے کم نئیں کر سکدا۔ اک ٹول کالنگ ماڈل چنو۔",
+  "askContinue": "جاری رکھو",
+  "askNext": "اگلا سوال",
+  "askPrev": "پچھلا سوال",
+  "askRecommended": "سفارش کیتی گئی",
+  "askSelectedCount": "{{count}} منتخب کیتا گیا",
+  "askSomethingElse": "کجھ ہور",
+  "askSomethingElsePlaceholder": "اپنا جواب آپ ٹائپ کرو",
+  "submit": "جمع کراؤ"
+}

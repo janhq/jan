@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'pnb'
   | 'es'
   | 'fr'
   | 'it'

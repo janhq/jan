@@ -1,0 +1,19 @@
+{
+  "sortNewest": "سب توں نواں",
+  "sortMostDownloaded": "سب توں بوہتا ڈاؤن لوڈ کیتا گیا",
+  "newChat": "نویں گل بات",
+  "download": "ڈاؤن لوڈ کرو",
+  "downloadFailed": "ڈاؤن لوڈ شروع کرن چ ناکام رہیا",
+  "downloaded": "ڈاؤن لوڈ کیتا گیا",
+  "loadingModels": "ماڈل لوڈ ہو رئے نے...",
+  "noModels": "کوئی ماڈل نئیں لبیا",
+  "by": "ولوں",
+  "downloads": "ڈاؤن لوڈز",
+  "variants": "مختلف قسماں",
+  "showVariants": "مختلف قسماں وکھاؤ",
+  "useModel": "اس ماڈل نوں ورتو",
+  "downloadModel": "ماڈل ڈاؤن لوڈ کرو",
+  "tools": "اوزار",
+  "searchPlaceholder": "Hugging Face تے ماڈل لبھو...",
+  "resumeUnavailable": "اس ڈاؤن لوڈ نوں دوبارہ شروع نئیں کیتا جا سکدا۔ مہربانی کر کے اینوں دوبارہ شروع کرو۔"
+}
