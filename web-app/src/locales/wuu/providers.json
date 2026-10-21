@@ -1,0 +1,54 @@
+{
+  "models": "模型",
+  "embeddingModelDefault": "默认",
+  "refreshing": "刷新中...",
+  "refresh": "刷新",
+  "import": "导入",
+  "importModelError": "导入模型失败：",
+  "stop": "停止",
+  "start": "开始",
+  "noModelFound": "未找到模型",
+  "configuration": "配置",
+  "apiEndpoint": "API 端点",
+  "testConnection": "测试连接",
+  "addModel": {
+    "title": "添加新模型",
+    "modelId": "模型 ID",
+    "enterModelId": "输入模型 ID",
+    "addModel": "添加模型",
+    "modelExists": "模型已存在"
+  },
+  "deleteModel": {
+    "title": "删除模型：{{modelId}}",
+    "cancel": "取消",
+    "delete": "删除"
+  },
+  "deleteAllModels": {
+    "button": "全部删除"
+  },
+  "deleteProvider": {
+    "title": "删除提供商",
+    "confirmTitle": "删除提供商：{{provider}}",
+    "cancel": "取消",
+    "delete": "删除"
+  },
+  "editModel": {
+    "title": "编辑模型：{{modelId}}",
+    "capabilities": "能力",
+    "tools": "工具",
+    "vision": "视觉",
+    "proactive": "主动模式（实验性）",
+    "embeddings": "嵌入",
+    "notAvailable": "尚不可用",
+    "warning": {
+      "title": "谨慎操作"
+    }
+  },
+  "addProvider": "添加提供商",
+  "addOpenAIProvider": "添加 OpenAI 提供商",
+  "enterNameForProvider": "输入提供商名称",
+  "apiKeys": {
+    "primaryBadge": "主要",
+    "advanced": "高级"
+  }
+}

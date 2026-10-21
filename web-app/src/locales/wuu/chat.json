@@ -1,0 +1,38 @@
+{
+  "welcome": "侬好，近来哪能？",
+  "description": "今朝我哪能帮侬？",
+  "temporaryChat": "临时聊天",
+  "temporaryChatDescription": "开一段临时闲话，勿会保存勒侬个闲话记录里向。",
+  "status": {
+    "empty": "未找到聊天"
+  },
+  "sendMessage": "发送消息",
+  "newConversation": "新对话",
+  "clearHistory": "清除历史记录",
+  "embeddings": {
+    "title": "勒准备侬个文档",
+    "description": "勒给附加个文件建索引，方便寻内容搭引用。文档大个话，要等一歇。"
+  },
+  "actions": {
+    "regenerate": "重新生成回答",
+    "askAgain": "再问一趟",
+    "continue": "继续生成",
+    "remember": "记牢搿个",
+    "rememberSaved": "已经用“{{name}}”个名字保存勒记忆里向",
+    "rememberExists": "记忆里向已经有叫“{{name}}”个内容了",
+    "rememberFailed": "勿能保存到记忆里向"
+  },
+  "done": "完成",
+  "webSources": "来源数目：{{count}}",
+  "reasoning": {
+    "label": "勒推理...",
+    "thinking": "勒想",
+    "working": "勒做事体...",
+    "showFullTimeline": "显示全部时间线",
+    "showCurrentStep": "只显示现在搿一步",
+    "thoughtForAWhile": "想了几秒钟",
+    "thoughtFor": "想了 {{duration}}",
+    "workedForAWhile": "做了几秒钟",
+    "workedFor": "做了 {{duration}}"
+  }
+}
