@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'yue'
   | 'es'
   | 'fr'
   | 'it'

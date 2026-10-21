@@ -1,0 +1,101 @@
+{
+  "editServer": "編輯 MCP 伺服器",
+  "addServer": "加入 MCP 伺服器",
+  "browserExtension": {
+    "connecting": {
+      "checking": "檢查緊分機狀態 …"
+    },
+    "notInstalled": {
+      "title": "Jan 喺你嘅瀏覽器入面完成任務",
+      "description": "安裝個擴充程式嚟畀 Jan 瀏覽器存取權",
+      "getExtension": "攞個擴充程式"
+    }
+  },
+  "serverName": "伺服器名稱",
+  "enterServerName": "輸入伺服器名稱",
+  "command": "Command",
+  "enterCommand": "輸入指令（ uvx 或 npx ）",
+  "arguments": "論點",
+  "argument": "論點 {{index}}",
+  "envVars": "環境變數",
+  "key": "鎖匙",
+  "value": "價值",
+  "save": "儲存",
+  "status": "狀態",
+  "connected": "連接咗",
+  "disconnected": "斷咗連線",
+  "deleteServer": {
+    "title": "刪除 MCP 伺服器",
+    "description": "你確定要刪除 MCP 伺服器 {{serverName}} 嗎？呢個動作係復原唔到嘅。",
+    "delete": "刪除",
+    "success": "MCP 伺服器 {{serverName}} 已成功刪除"
+  },
+  "editJson": {
+    "title": "編輯 JSON 為 MCP 伺服器： {{serverName}}",
+    "titleAll": "編輯所有 MCP 伺服器 JSON",
+    "placeholder": "輸入 JSON 設定",
+    "errorParse": "解析唔到初始數據",
+    "errorPaste": "貼上嘅內容入面嘅 JSON 格式無效",
+    "errorFormat": "無效嘅 JSON 格式",
+    "errorServerName": "伺服器名稱係必須嘅，唔可以係空嘅",
+    "errorMissingServerNameKey": "JSON 必須以 {\" 伺服器名稱 \": {config}} 嘅結構形式 - 缺少伺服器名稱密鑰",
+    "errorInvalidType": "伺服器「 {{serverName}} 」嘅「 {{type}} 」類型無效。類型必須為「 stdio 」、「 http 」或「 sse 」",
+    "save": "儲存"
+  },
+  "checkParams": "請按照教學檢查參數。",
+  "title": "MCP 伺服器",
+  "experimental": "實驗性嘅",
+  "editAllJson": "編輯所有伺服器 JSON",
+  "findMore": "喺呢度搵多啲 MCP 嘅伺服器",
+  "allowPermissions": "允許所有 MCP 工具權限",
+  "allowPermissionsDesc": "啟用咗之後，所有 MCP 工具調用都會自動核准，而唔會顯示權限對話框。呢個設定會喺全域適用於所有對話，包括新即時通訊。",
+  "noServers": "搵唔到 MCP 伺服器",
+  "args": "論點",
+  "env": "環境",
+  "serverStatusActive": "伺服器 {{serverKey}} 成功啟動",
+  "serverStatusInactive": "伺服器 {{serverKey}} 成功停用",
+  "runtimeSettings": {
+    "title": "執行時間設定",
+    "description": "設定 Jan 點樣管理同重試 MCP 伺服器。",
+    "toolCallTimeout": "工具呼叫超時（秒）",
+    "toolCallTimeoutDesc": "喺超時之前等待 MCP 工具回應嘅最長時間。",
+    "maxToolOutputChars": "最大工具輸出字元",
+    "maxToolOutputCharsDesc": "喺對話入面保留咗最長嘅工具結果。任何過咗呢個嘅嘢都會被修剪同標記為截斷，所以一個大嘅結果唔可以用盡模型嘅上下文。設定為0嚟保持結果完整。",
+    "smartToolRouting": "智能 MCP 工具路由",
+    "smartToolRoutingDesc": "啟用咗之後， Jan 會喺載入工具之前選擇相關嘅 MCP 伺服器。停用嚟一直載入完整嘅 MCP 工具清單。",
+    "useLightweightRouterModel": "用專用嘅模型嚟路由",
+    "useLightweightRouterModelDesc": "當智能路由開咗嗰陣，用另一個（通常較小）嘅模型而唔係即時通訊模型執行路由步驟。閂咗就可以一直用有效嘅即時通訊模型嚟路由。",
+    "routerModel": "路由模式",
+    "routerModelDesc": "喺一個地方揀供應商同型號。只係列出輕量型號，所以路線保持快速同平。",
+    "selectRouterModelPlaceholder": "揀路由模型 …",
+    "routerModelSearchPlaceholder": "搜尋模型 …",
+    "routerModelEmptyList": "冇輕量型號。加入較細嘅型號，或者喺「型號」入面設定 API 鍵。",
+    "routerModelEmptySearch": "「 {{query}} 」冇匹配。"
+  },
+  "auth": {
+    "label": "作者：",
+    "state": {
+      "notApplicable": "唔需要",
+      "staticHeader": "授權標題",
+      "authenticated": "經過認證",
+      "expired": "過咗期",
+      "staleResource": "再發多 URL",
+      "unauthenticated": "未經過認證"
+    },
+    "expiresIn": "{{duration}} 到期",
+    "authenticate": "登入",
+    "reauthenticate": "重新驗證",
+    "clear": "清晰嘅認證",
+    "waiting": "等緊瀏覽器 ...",
+    "openSignInPage": "打開登入頁面",
+    "needsAuth": "{{serverName}} 需要認證",
+    "needsAuthHint": "登入呢個伺服器就可以連線。",
+    "authorized": "登入咗 {{serverName}}",
+    "authorizeFailed": "登入 {{serverName}} 失敗",
+    "cleared": "清除咗 {{serverName}} 嘅儲存憑證",
+    "nothingToClear": "{{serverName}} 冇儲存嘅憑證",
+    "clearFailed": "清除唔到 {{serverName}} 嘅憑證",
+    "renew": "續約工作階段",
+    "expiredAgo": "過期 {{duration}} 前"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "addProvider": "加入供應商",
+  "addOpenAIProvider": "加入自訂供應商",
+  "enterNameForProvider": "供應商名稱（例如 my-llm 伺服器）",
+  "apiTypeLabel": "API 格式",
+  "apiTypeOpenAI": "OpenAI 兼容",
+  "apiTypeAnthropic": "Anthropic 兼容",
+  "baseUrlLabel": "底座 URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API 密鑰",
+  "apiKeyPlaceholder": "貼上你個 API 密鑰",
+  "invalidBaseUrl": "基數 URL 必須係有效嘅 http(s) URL",
+  "globalSettings": "全域設定",
+  "stripReasoning": "將推理從上下文中移除",
+  "stripReasoningDesc": "喺所有供應商重新傳送記錄之前，請移除之前回合嘅思考/推理內容。改善咗本地模型嘅 KV-cache 重用，但係有啲模型（例如較新嘅 Qwen 版本）建議保留佢，以便更好噉進行多回合推理。",
+  "providerAlreadyExists": "一個名為 {{name}} 嘅供應商已經存在。"
+}

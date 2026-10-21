@@ -1,0 +1,10 @@
+{
+  "newVersion": "新版本 {{version}}",
+  "updateAvailable": "可以更新",
+  "nightlyBuild": "夜間建造",
+  "showReleaseNotes": "顯示發佈說明",
+  "hideReleaseNotes": "隱藏發佈說明",
+  "remindMeLater": "遲啲提醒我",
+  "downloading": "下載緊 ...",
+  "updateNow": "即刻更新"
+}

@@ -1,0 +1,38 @@
+{
+  "welcome": "你好，你好嗎？",
+  "description": "我今日可以點樣幫你？",
+  "temporaryChat": "臨時聊天",
+  "temporaryChatDescription": "開始一段唔會儲存喺對話記錄入面嘅暫時對話。",
+  "status": {
+    "empty": "搵唔到即時通訊"
+  },
+  "sendMessage": "發送訊息",
+  "newConversation": "新對話",
+  "clearHistory": "清除記錄",
+  "embeddings": {
+    "title": "準備緊你嘅文件",
+    "description": "為附件建立索引，方便搜尋同引用。文件較大嘅話，可能要等一陣。"
+  },
+  "actions": {
+    "regenerate": "再生反應",
+    "askAgain": "再問多次",
+    "continue": "繼續產生",
+    "remember": "記住呢樣嘢",
+    "rememberSaved": "已經以「{{name}}」儲存到記憶",
+    "rememberExists": "記憶入面已經有「{{name}}」",
+    "rememberFailed": "儲存唔到記憶"
+  },
+  "done": "完成",
+  "webSources": "來源數目：{{count}}",
+  "reasoning": {
+    "label": "推理 ...",
+    "thinking": "諗緊嘢",
+    "working": "做緊嘢 ...",
+    "showFullTimeline": "顯示完整時間軸",
+    "showCurrentStep": "只顯示目前嘅步驟",
+    "thoughtForAWhile": "諗咗幾秒",
+    "thoughtFor": "諗住用 {{duration}}",
+    "workedForAWhile": "做咗幾秒",
+    "workedFor": "做過 {{duration}}"
+  }
+}

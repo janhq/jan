@@ -1,0 +1,19 @@
+{
+  "sortNewest": "最新嘅",
+  "sortMostDownloaded": "最多人下載咗",
+  "newChat": "新嘅即時通訊",
+  "download": "下載",
+  "downloadFailed": "開始下載失敗",
+  "downloaded": "下載咗",
+  "loadingModels": "裝緊模型 ...",
+  "noModels": "搵唔到任何型號",
+  "by": "由",
+  "downloads": "下載次數",
+  "variants": "變種",
+  "showVariants": "顯示變種",
+  "useModel": "用呢個模型",
+  "downloadModel": "下載模型",
+  "tools": "工具",
+  "searchPlaceholder": "喺 Hugging Face 搵型號 …",
+  "resumeUnavailable": "恢復唔到呢個下載。請重新開始。"
+}
