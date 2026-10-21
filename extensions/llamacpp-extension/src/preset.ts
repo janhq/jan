@@ -258,20 +258,24 @@ export async function generatePreset(
   ) {
     lines.push(`flash-attn = ${config.flash_attn}`)
   }
-  // cache-type-k/v default = 'f16'
-  if (
-    typeof config.cache_type_k === 'string' &&
-    config.cache_type_k.length > 0 &&
-    config.cache_type_k !== 'f16'
-  ) {
-    lines.push(`cache-type-k = ${escapeIniValue(config.cache_type_k)}`)
+  // cache-type-k/v default = 'f16' in llama.cpp, which is the wrong default
+  // here: f16 K+V is ~144 KB per token on a 4B-class model, so a 131k context
+  // reserves ~19 GB of cache before weights. Jan's default is q8_0 keys and
+  // q4_0 values (~58 KB/token, ~7.7 GB at 131k). An explicit `f16` from the
+  // settings still emits nothing and so keeps llama.cpp's own default.
+  const cacheTypeK =
+    typeof config.cache_type_k === 'string' && config.cache_type_k.length > 0
+      ? config.cache_type_k
+      : 'q8_0'
+  const cacheTypeV =
+    typeof config.cache_type_v === 'string' && config.cache_type_v.length > 0
+      ? config.cache_type_v
+      : 'q4_0'
+  if (cacheTypeK !== 'f16') {
+    lines.push(`cache-type-k = ${escapeIniValue(cacheTypeK)}`)
   }
-  if (
-    typeof config.cache_type_v === 'string' &&
-    config.cache_type_v.length > 0 &&
-    config.cache_type_v !== 'f16'
-  ) {
-    lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
+  if (cacheTypeV !== 'f16') {
+    lines.push(`cache-type-v = ${escapeIniValue(cacheTypeV)}`)
   }
   // parallel default = 0 (llama.cpp's own auto resolution); a positive user
   // value is intent and is emitted verbatim. Jan adds no hidden slot of its

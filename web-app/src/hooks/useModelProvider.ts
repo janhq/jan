@@ -738,8 +738,9 @@ export const useModelProvider = create<ModelProviderState>()(
         }
 
         if (version <= 16 && state?.providers) {
-          // Auto-fit is now disabled by default, so seed empty/auto ctx_len
-          // with the new 8192 default. Preserve any user-customised value.
+          // Seed empty/auto ctx_len with the 8192 default that build used.
+          // Preserve any user-customised value. (Later builds default auto-fit
+          // on, but a persisted 8192 is a valid explicit window and is kept.)
           state.providers.forEach((provider) => {
             if (provider.provider !== 'llamacpp' || !provider.models) return
             provider.models.forEach((model) => {

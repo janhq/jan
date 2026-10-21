@@ -505,64 +505,106 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateFitOff', () => {
+  describe('migrateMemoryDefaults', () => {
     beforeEach(() => {
       vi.mocked(getBackendSetting).mockResolvedValue(null)
     })
 
     it('should skip migration if already migrated', async () => {
       vi.mocked(getBackendSetting).mockResolvedValue('1')
-      extension['config'] = { fit: true } as any
+      extension['config'] = {
+        fit: false,
+        cache_type_k: 'f16',
+        cache_type_v: 'f16',
+      } as any
       extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitOff']()
+      await extension['migrateMemoryDefaults']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
     })
 
-    it('should set migration key without calling updateSettings when fit is already false', async () => {
-      extension['config'] = { fit: false } as any
+    it('should only stamp the key when the settings are already safe', async () => {
+      extension['config'] = {
+        fit: true,
+        cache_type_k: 'q8_0',
+        cache_type_v: 'q4_0',
+      } as any
       extension['getSettings'] = vi.fn()
       extension['updateSettings'] = vi.fn()
 
-      await extension['migrateFitOff']()
+      await extension['migrateMemoryDefaults']()
 
       expect(extension['getSettings']).not.toHaveBeenCalled()
       expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
+      expect(setBackendSetting).toHaveBeenCalledWith(
+        'llamacpp_memory_defaults_v1',
+        '1'
+      )
     })
 
-    it('should disable fit when it is true', async () => {
-      extension['config'] = { fit: true } as any
+    it('should enable fit and quantise the default f16 cache', async () => {
+      extension['config'] = {
+        fit: false,
+        cache_type_k: 'f16',
+        cache_type_v: 'f16',
+      } as any
       extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
+        { key: 'fit', controllerProps: { value: false } },
+        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
+        { key: 'cache_type_v', controllerProps: { value: 'f16' } },
         { key: 'ctx_size', controllerProps: { value: 2048 } },
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitOff']()
+      await extension['migrateMemoryDefaults']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
-      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
-      expect(extension['config'].fit).toBe(false)
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock
+        .calls[0][0]
+      expect(
+        updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value
+      ).toBe(true)
+      expect(
+        updatedSettings.find((s: any) => s.key === 'cache_type_k')
+          .controllerProps.value
+      ).toBe('q8_0')
+      expect(
+        updatedSettings.find((s: any) => s.key === 'cache_type_v')
+          .controllerProps.value
+      ).toBe('q4_0')
+      // An unrelated setting is untouched.
+      expect(
+        updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps
+          .value
+      ).toBe(2048)
+      expect(extension['config'].fit).toBe(true)
+      expect(extension['config'].cache_type_k).toBe('q8_0')
+      expect(extension['config'].cache_type_v).toBe('q4_0')
+      expect(setBackendSetting).toHaveBeenCalledWith(
+        'llamacpp_memory_defaults_v1',
+        '1'
+      )
     })
 
-    it('should not modify other settings during fit migration', async () => {
-      extension['config'] = { fit: true } as any
+    it('should leave a deliberate cache choice alone', async () => {
+      extension['config'] = {
+        fit: true,
+        cache_type_k: 'q4_0',
+        cache_type_v: 'f32',
+      } as any
       extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'fit_target', controllerProps: { value: '1024' } },
-        { key: 'fit_ctx', controllerProps: { value: '' } },
+        { key: 'cache_type_k', controllerProps: { value: 'q4_0' } },
+        { key: 'cache_type_v', controllerProps: { value: 'f32' } },
       ])
       extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
 
-      await extension['migrateFitOff']()
+      await extension['migrateMemoryDefaults']()
 
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
-      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(setBackendSetting).toHaveBeenCalledWith(
+        'llamacpp_memory_defaults_v1',
+        '1'
+      )
     })
   })
 

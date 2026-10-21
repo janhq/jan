@@ -41,7 +41,7 @@
     "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": false
+      "value": true
     }
   },
   {
@@ -329,10 +329,10 @@
   {
     "key": "cache_type_k",
     "title": "KV Cache K Type",
-    "description": "KV cache data type for Keys (default: f16).",
+    "description": "KV cache data type for Keys. Jan defaults to q8_0: 8-bit keys halve this half of the cache with no measurable quality loss. f16 is llama.cpp's built-in default but costs about twice the memory at long contexts.",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q8_0",
       "options": [
         {
           "value": "f32",
@@ -376,10 +376,10 @@
   {
     "key": "cache_type_v",
     "title": "KV Cache V Type",
-    "description": "KV cache data type for Values (default: f16).",
+    "description": "KV cache data type for Values. Jan defaults to q4_0, which is the largest single memory win at long contexts (a 4B model at 131k drops from ~19 GB of f16 cache to ~7.7 GB). Requires flash attention, which llama.cpp enables automatically for a quantized V cache. f16 is llama.cpp's built-in default.",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q4_0",
       "options": [
         {
           "value": "f32",

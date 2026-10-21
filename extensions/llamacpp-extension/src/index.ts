@@ -478,9 +478,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     }
     this.config = loadedConfig as LlamacppConfig
 
-    // Auto-fit is disabled by default on all platforms; ctx-size owns context
-    // sizing. Force off for users a prior build left with fit enabled.
-    await this.migrateFitOff()
+    // The defaults in SETTINGS only apply to a fresh install: a persisted value
+    // wins in `registerSettings` above, so earlier builds keep their f16 cache
+    // and disabled auto-fit forever without this one-time rewrite.
+    await this.migrateMemoryDefaults()
 
     await this.migrateAutoUnloadToModelsMax()
 
@@ -1172,22 +1173,43 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     await setBackendSetting(MIGRATION_KEY, '1')
   }
 
-  private async migrateFitOff(): Promise<void> {
-    const MIGRATION_KEY = 'llamacpp_fit_off_v1'
+  /**
+   * Moves persisted settings from earlier builds onto the memory-safe defaults.
+   *
+   * `registerSettings` lets a persisted value win over the one in `settings.json`,
+   * so changing a default only helps fresh installs. This runs once and rewrites
+   * exactly the values that were the old defaults:
+   *
+   * - `fit` on: the previous build forced it off (it was off by default), which
+   *   is what let a large context reserve more KV cache than the machine holds.
+   * - `cache_type_k`/`cache_type_v` f16 → q8_0/q4_0: f16 was the old default,
+   *   ~144 KB/token on a 4B model. Any other value is a deliberate choice and
+   *   is left alone.
+   */
+  private async migrateMemoryDefaults(): Promise<void> {
+    // A new key, so an install that already ran `llamacpp_fit_off_v1` is
+    // migrated again rather than being seen as done.
+    const MIGRATION_KEY = 'llamacpp_memory_defaults_v1'
     if (await getBackendSetting(MIGRATION_KEY)) return
 
-    if (this.config.fit === true) {
+    const wanted: Partial<LlamacppConfig> = {}
+    if (this.config.fit !== true) wanted.fit = true
+    if (this.config.cache_type_k === 'f16') wanted.cache_type_k = 'q8_0'
+    if (this.config.cache_type_v === 'f16') wanted.cache_type_v = 'q4_0'
+    const keys = Object.keys(wanted)
+    if (keys.length > 0) {
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
-          if (item.key === 'fit') {
-            item.controllerProps.value = false
+          if (keys.includes(item.key)) {
+            ;(item.controllerProps as Record<string, unknown>).value =
+              wanted[item.key as keyof LlamacppConfig]
           }
           return item
         })
       )
-      this.config.fit = false
-      logger.info('Migrated fit setting: disabled')
+      Object.assign(this.config, wanted)
+      logger.info(`Migrated memory defaults: ${keys.join(', ')}`)
     }
 
     await setBackendSetting(MIGRATION_KEY, '1')
