@@ -1,0 +1,115 @@
+---
+title: "Jan v0.8.8: LiteRT-LM & OpenVINO Engines, a Native Browser Tool"
+version: 0.8.8
+description: "Jan v0.8.8 runs models locally on the CPU with the LiteRT-LM and OpenVINO engines, gives the agent a real browser it can drive, and fixes the console windows and process names those engines leave behind."
+date: 2026-10-21
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.8: LiteRT-LM & OpenVINO Engines, a Native Browser Tool"
+  date="2026-10-21"
+/>
+
+# Local engines and a native browser
+
+v0.8.8 adds two more ways to run a model on your own machine, gives the agent
+a browser it can drive, and cleans up how those engines appear on your desktop.
+Your data and settings carry over.
+
+---
+
+# New
+
+**Two more local engines, on the CPU.**
+
+Jan can now run models with **LiteRT-LM** (Google) and **OpenVINO** (Intel)
+besides llama.cpp and MLX. Both appear in **Settings → Providers** as
+*LiteRT-LM Inference Engine* and *OpenVINO Inference Engine*, and both run
+entirely on the CPU.
+
+Setting one up takes no terminal. The provider page says whether the runtime
+is installed, and if it is not, it says why and offers an **Install** button
+that puts the runtime in place. Models are then imported the same way as any
+other: a local file, a local folder, or a download URL. LiteRT-LM reads
+`.litertlm` bundles; OpenVINO reads the usual IR directory.
+
+**A browser the agent can drive.**
+
+Jan now has a **native browser** — a real Chrome, driven by the agent, with no
+MCP server and no extra runtime to install. It gets six tools: open a URL,
+read the page, run script in it, click an element, fill in a field, and take a
+screenshot the model can actually see.
+
+The browser is offered in chat and in Cowork. Because a browser can act as
+*you* on a site — it carries your session's cookies and can submit forms —
+every browser call asks first, and you can allow it once, for the thread, or
+for the session.
+
+It is also now possible to use the existing `screenshot` tool on a stock
+Windows install: Jan probes the usual Chrome, Chromium, Brave and Edge
+locations there, where before it only looked on macOS and Linux.
+
+---
+
+# Fixes
+
+**The OpenVINO engine answered with two words and stopped.**
+
+The model was never at fault. OpenVINO's streaming callback is not a
+continue/stop flag — returning "keep going" from it ends the generation right
+there, so every answer was cut after the first token or two. The callback now
+returns what OpenVINO expects, and answers arrive in full.
+
+**Two OpenVINO requests at once scrambled each other.**
+
+Jan sends a second request to the same provider while a turn is still
+streaming (the thread-title summarizer). OpenVINO's pipeline is a single
+compiled model, so the two generations interleaved their tokens and each
+answer came out as fragments of both. The engine now runs one generation at a
+time.
+
+**Opening an engine's settings opened a console window and left it there.**
+
+Jan starts a small python helper to check whether an engine's runtime is
+installed, and that helper was opening a console window on Windows, which
+stayed open for as long as the check ran. The engines now start their helpers
+without a window.
+
+**The runtime check loaded two gigabytes to answer a yes/no question.**
+
+Checking whether OpenVINO was installed meant importing it, which loads the
+whole runtime and takes over a second. Jan now looks for the runtime on disk
+instead, which takes about a tenth of a second and no memory at all. The
+answer is also kept for a minute, so moving between provider pages does not
+repeat the check.
+
+**An engine's process was called `python.exe`, like every other python.**
+
+An engine running in the background was impossible to tell apart from any
+other python on the machine — and easy to kill by accident, for example when
+stopping all python servers at once. Each engine now runs under its own name
+(`jan-openvino`, `jan-litert_lm`), so it can be found and stopped on its own.
+
+---
+
+# Also
+
+- The knowledge of which providers are local engines now lives in one place,
+  so a new engine is one line rather than a dozen scattered checks.
+- A model can be imported into the LiteRT-LM and OpenVINO engines from a
+  local file, a local folder, or a URL, with the file kept in Jan's own data
+  folder.
+
+---
+
+# Known issues
+
+- The LiteRT-LM engine reads the newer `.litertlm` bundles. The older `.task`
+  files load but fail to generate, so use `.litertlm`.
+- Neither new engine can call tools yet, so they cannot drive the shell or
+  web-search tools.
+- The local API server does not serve models from these two engines yet.
+- The model hub has no entries for these formats; import the model, or give
+  the import dialog a URL.
