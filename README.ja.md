@@ -102,7 +102,7 @@ Janはオープンソースの優れたAIを使いやすい製品として提供
 ### 前提条件
 
 - Node.js ≥ 20.0.0
-- Yarn ≥ 4.5.3
+- Yarn ≥ 4.10.0
 - Make ≥ 3.81
 - Rust（Tauri用）
 - （macOS Apple Siliconのみ）MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
