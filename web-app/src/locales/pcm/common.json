@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "Code",
+    "preview": "Preview",
+    "previewStreaming": "E go dey available when generation finish",
+    "unresolvedAssets_one": "1 asset reference no fit load for preview. Relative paths no get base URL to resolve against.",
+    "unresolvedAssets_other": "{{count}} asset references no fit load for preview. Relative paths no get base URL to resolve against."
+  },
+  "assistants": "Assistants",
+  "hardware": "Hardware",
+  "mcp-servers": "MCP Servers",
+  "local_api_server": "Local API Server",
+  "remote_access": "Remote Access",
+  "integrations": "Connections",
+  "experimental": "Features wey we still dey test",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS Proxy",
+  "web_search": "Web Search",
+  "shell": "Shell",
+  "browse": "Browse",
+  "moreControls": "More controls",
+  "starting": "E dey start...",
+  "activeSuffix": " (E dey active)",
+  "extensions": "Extensions",
+  "attachments": "Attachments",
+  "general": "General",
+  "settings": "Settings",
+  "modelProviders": "Model Providers",
+  "localProviders": "Local",
+  "remoteProviders": "Remote",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} no dey active",
+  "hideProvider": "Hide provider",
+  "showProvider": "Show provider",
+  "interface": "Interface",
+  "appearance": "How e look",
+  "privacy": "Privacy",
+  "keyboardShortcuts": "Shortcuts",
+  "home": "Home",
+  "cowork": "Cowork",
+  "newSession": "New session",
+  "artifacts": "Things wey you create",
+  "customize": "Set am as you like",
+  "local": "Local",
+  "selectFolder": "Choose folder",
+  "selectModel": "Choose model first",
+  "commands": "Commands",
+  "cmdHelp": "List commands wey dey available",
+  "cmdClear": "Clear this session",
+  "cmdModels": "Change the active model",
+  "cmdModelsHint": "Type /models, then choose model from the list",
+  "cmdModelSwitched": "We don change to {{name}}",
+  "cmdUnknown": "We no sabi this command: {{name}}. Try /help",
+  "cmdBusy": "You no fit do that while agent dey run",
+  "cmdCompact": "Summarise the session context to reduce the size",
+  "cmdCompacted": "We don reduce messages from {{before}} -> {{after}}",
+  "cmdNothingToCompact": "Nothing dey to summarise yet",
+  "cmdCompactFailed": "We no fit summarise am: {{error}}",
+  "cmdPlan": "Switch plan mode on or off (read-only: agent go suggest without writing)",
+  "cmdPlanOn": "Plan mode dey on: agent go read and suggest without writing",
+  "cmdPlanOff": "Plan mode dey off: normal execution",
+  "cmdTodo": "Open progress panel",
+  "cmdTasks": "Open panel for background tasks",
+  "cmdInit": "Study the project and write skills and memory",
+  "cmdInitRunning": "We dey set up this project",
+  "skills": "Skills",
+  "skillsInContext": "Skills wey agent fit use for this run",
+  "skillsTitle": "Manage skills",
+  "skillsScopeProject": "Skills for {{folder}}",
+  "skillsScopeGlobal": "Global skills wey every session fit use",
+  "skillsScopeMerged": "Skills for {{folder}}, plus global skills wey all sessions dey share",
+  "skillOriginFolder": "folder",
+  "skillOriginGlobal": "global",
+  "skillsEmpty": "No skills yet",
+  "skillsPickOrNew": "Choose skill to edit, or create new one.",
+  "skillNew": "New skill",
+  "skillDelete": "Delete skill",
+  "skillSave": "Save",
+  "skillSaved": "We don save the skill",
+  "skillNameRequired": "Skill must get name",
+  "skillNamePlaceholder": "skill-name",
+  "skillContentPlaceholder": "Describe the steps wey person fit use again for Markdown…",
+  "skillHubImport": "Import from hub",
+  "skillHubTitle": "Anthropic skill hub",
+  "skillHubEmpty": "We no find any skills for the hub",
+  "skillImport": "Import",
+  "skillReimport": "Import again",
+  "skillImported": "We don import {{name}}",
+  "sessions": "Sessions",
+  "deleteSession": "Delete session",
+  "deleteSessionTitle": "Make we delete this session?",
+  "deleteSessionBody": "We go delete \"{{title}}\" and the conversation record permanently. You no fit undo am.",
+  "newChat": "New Chat",
+  "newAgentChat": "New Agent Chat",
+  "chats": "Chats",
+  "favorites": "Favourites",
+  "recents": "Recent ones",
+  "hub": "Hub",
+  "helpSupport": "Help & Support",
+  "helpUsImproveJan": "Help Us Make Jan Better",
+  "analyticsConsentDetail": "We dey collect data wey no identify anybody to understand how people dey use features. We no dey track your chats or personal information at all. You fit change this anytime for Settings > Privacy.",
+  "analyticsConsentQuestion": "You go like help us make Jan better?",
+  "unstarAll": "Remove All Stars",
+  "unstar": "Remove Star",
+  "deleteAll": "Delete All",
+  "star": "Add Star",
+  "rename": "Change Name",
+  "delete": "Delete",
+  "copied": "We don copy am!",
+  "dataFolder": "Data Folder",
+  "others": "Other",
+  "language": "Language",
+  "login": "Log In",
+  "loginWith": "Log In With {{provider}}",
+  "loginFailed": "We No Fit Log In",
+  "logout": "Log Out",
+  "loggingOut": "We Dey Log Out...",
+  "loggedOut": "You Don Log Out",
+  "logoutFailed": "We No Fit Log Out",
+  "profile": "Profile",
+  "reset": "Reset",
+  "search": "Search",
+  "searchThreads": "Search conversations...",
+  "toNavigate": "to move around",
+  "toSelect": "to choose",
+  "toClose": "to close",
+  "clearRecent": "Clear",
+  "name": "Name",
+  "cancel": "Cancel",
+  "dismiss": "Dismiss",
+  "create": "Create",
+  "save": "Save",
+  "edit": "Edit",
+  "copy": "Copy",
+  "back": "Go Back",
+  "close": "Close",
+  "done": "Done",
+  "next": "Next",
+  "finish": "Finish",
+  "skip": "Skip",
+  "allow": "Allow",
+  "deny": "No Allow",
+  "start": "Start",
+  "stop": "Stop",
+  "preview": {
+    "loading": "E dey open…",
+    "unsupported": "Jan no fit show this kind file. Open am for another app to see am.",
+    "outside": "This file no dey inside the session workspace again.",
+    "tooLarge": "E too big for preview. Open am for another app to see am.",
+    "reload": "Load Again",
+    "allowNetwork": "Allow network",
+    "unsandboxed": "Run without sandbox: saved data and local files go work",
+    "unresolvedRefs_one": "1 file wey this page link to no fit load for preview. Open the page to see am for browser.",
+    "unresolvedRefs_other": "{{count}} files wey this page link to no fit load for preview. Open the page to see am for browser.",
+    "externalRefs_one": "We block 1 resource wey this page dey load from web. Turn on \"Allow network\" to load am.",
+    "externalRefs_other": "We block {{count}} resources wey this page dey load from web. Turn on \"Allow network\" to load them.",
+    "scriptErrors_one": "The page report error: {{message}}",
+    "scriptErrors_other": "The page report {{count}} errors. First one: {{message}}"
+  },
+  "changes": {
+    "title": "Changes wey agent make",
+    "empty": "Files wey agent write or edit go show here.",
+    "a11y": "Changes wey agent make: {{files}} files, {{additions}} added, {{deletions}} removed"
+  },
+  "modelPanel": {
+    "title": "Model settings",
+    "a11y": "Open model settings",
+    "contextTooltip": "Context window: {{value}} out of {{max}} tokens"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Skill '{{name}}' no dey available",
+    "kind": {
+      "skill": "Skill",
+      "command": "Command",
+      "model": "Model"
+    }
+  },
+  "compactWidth": "Narrow Width",
+  "fullWidth": "Full Width",
+  "dark": "Dark",
+  "light": "Light",
+  "system": "System",
+  "auto": "Auto",
+  "english": "English",
+  "medium": "Medium",
+  "newThread": "New Conversation",
+  "noResultsFound": "We no find any results",
+  "noThreadsYet": "No conversations yet",
+  "noThreadsYetDesc": "Start new conversation to see your conversation history here.",
+  "downloads": "Downloads",
+  "downloading": "E dey download",
+  "uploadingAttachments": "We dey upload attachments…",
+  "cancelDownload": "Cancel download",
+  "downloadCancelled": "We Don Cancel Download",
+  "downloadComplete": "Download Don Finish",
+  "thinking": "E dey think...",
+  "thought": "Thought",
+  "callingTool": "E dey call tool",
+  "completed": "E don finish",
+  "image": "Image",
+  "vision": "Vision",
+  "multimodal": "Multimodal",
+  "embeddings": "Embeddings",
+  "tools": "Tools",
+  "webSearch": "Web Search",
+  "reasoning": "Reasoning",
+  "proactive": "E fit act ahead",
+  "selectAModel": "Choose model",
+  "noToolsAvailable": "No tools dey available",
+  "noModelsFoundFor": "We no find models for \"{{searchValue}}\"",
+  "failedToLoadModels": "We no fit load models",
+  "noModels": "We no find any models",
+  "noAssistant": "No assistant",
+  "customAvatar": "Your own avatar",
+  "editAssistant": "Edit Assistant",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Generate Again",
+  "threadImage": "Conversation image",
+  "editMessage": "Edit Message",
+  "deleteMessage": "Delete Message",
+  "deleteThread": "Delete Conversation",
+  "renameThread": "Change Conversation Name",
+  "threadTitle": "Conversation Title",
+  "deleteAllThreads": "Delete All Conversations",
+  "allThreadsUnfavorited": "We Don Remove All Conversations From Favourites",
+  "deleteAllThreadsConfirm": "You sure say you wan delete all conversations? You no fit undo this action.",
+  "addProvider": "Add Provider",
+  "addOpenAIProvider": "Add OpenAI Provider",
+  "enterNameForProvider": "Enter name for your provider",
+  "providerAlreadyExists": "Provider wey get name \"{{name}}\" don already dey. Abeg choose another name.",
+  "adjustFontSize": "Adjust Font Size",
+  "changeLanguage": "Change Language",
+  "editTheme": "Edit Theme",
+  "editCodeBlockStyle": "Edit Code Block Style",
+  "editServerHost": "Edit Server Host",
+  "pickColorWindowBackground": "Choose Window Background Colour",
+  "pickColorAppMainView": "Choose App Main View Colour",
+  "pickColorAppPrimary": "Choose App Primary Colour",
+  "pickColorAppAccent": "Choose App Accent Colour",
+  "pickColorAppDestructive": "Choose App Destructive Action Colour",
+  "apiKeyRequired": "API Key must dey",
+  "enterTrustedHosts": "Enter hosts wey you trust",
+  "placeholder": {
+    "chatInput": "Ask me anything..."
+  },
+  "confirm": "Confirm",
+  "continue": "Continue",
+  "loading": "E dey load...",
+  "settingUpJan": "Jan dey start…",
+  "registeringExtensions": "We dey register extensions…",
+  "loadingExtensions": "We dey load extensions… ({{done}}/{{total}})",
+  "error": "Error",
+  "success": "E Work",
+  "warning": "Warning",
+  "conversationNotAvailable": "This conversation no dey available",
+  "conversationNotAvailableDescription": "The conversation wey you dey try open no dey available, or dem don delete am.",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatTooltip": "Temporary chat no go show for your history",
+  "noResultsFoundDesc": "We no find chats wey match your search. Try another word.",
+  "searchModels": "Search models...",
+  "searchStyles": "Search styles...",
+  "createAssistant": "Create Assistant",
+  "enterApiKey": "Enter API Key",
+  "scrollToBottom": "Scroll go bottom",
+  "generateAiResponse": "Generate AI Response",
+  "continueAiResponse": "Continue With AI Response",
+  "addModel": {
+    "title": "Add Model",
+    "modelId": "Model ID",
+    "enterModelId": "Enter Model ID",
+    "addModel": "Add Model",
+    "description": "Add new model to the provider",
+    "exploreModels": "See provider model list"
+  },
+  "mcpServers": {
+    "editServer": "Edit Server",
+    "addServer": "Add Server",
+    "serverName": "Server Name",
+    "enterServerName": "Enter server name",
+    "command": "Command",
+    "enterCommand": "Enter command",
+    "arguments": "Arguments",
+    "argument": "Argument {{index}}",
+    "envVars": "Environment Variables",
+    "key": "Key",
+    "value": "Value",
+    "save": "Save"
+  },
+  "deleteServer": {
+    "title": "Delete Server",
+    "delete": "Delete"
+  },
+  "editJson": {
+    "errorParse": "We no fit parse JSON",
+    "errorPaste": "We no fit paste JSON",
+    "errorFormat": "JSON format no correct",
+    "titleAll": "Edit Configuration for All Servers",
+    "placeholder": "Enter JSON configuration...",
+    "save": "Save"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Switch the options below on or off to set wetin the model fit do.",
+    "capabilities": "Things E Fit Do",
+    "tools": "Tools",
+    "vision": "Vision",
+    "embeddings": "Embeddings",
+    "notAvailable": "E never dey available"
+  },
+  "outOfContextError": {
+    "truncateInput": "Shorten Input",
+    "title": "Context space don finish",
+    "description": "This chat dey reach the AI memory limit, like whiteboard wey don nearly full. We fit increase the memory window (wey dem dey call context size) make e remember more, but e fit use more of your computer memory. We fit also shorten the input, wey mean say e go forget some chat history to make space for new messages.",
+    "increaseContextSizeDescription": "You wan increase the context size?",
+    "increaseContextSize": "Increase Context Size"
+  },
+  "toolApproval": {
+    "title": "Request to Use Tool",
+    "description": "The assistant wan use <strong>{{toolName}}</strong>",
+    "securityNotice": "Allow only tools wey you trust. Tools fit access your system and data.",
+    "deny": "No Allow",
+    "allowOnce": "Allow Once",
+    "alwaysAllow": "Always Allow"
+  },
+  "deleteModel": {
+    "title": "Delete Model: {{modelId}}",
+    "description": "You sure say you wan delete this model? You no fit undo this action.",
+    "success": "We don delete model {{modelId}} permanently.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "deleteProvider": {
+    "title": "Delete Provider",
+    "description": "Delete this provider and all the models wey e get. You no fit undo this action.",
+    "success": "We don delete provider {{provider}} permanently.",
+    "confirmTitle": "Delete Provider: {{provider}}",
+    "confirmDescription": "You sure say you wan delete this provider? You no fit undo this action.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "modelSettings": {
+    "title": "Model Settings - {{modelId}}",
+    "description": "Set the model settings to improve how e dey work and behave.",
+    "nglDisabledByFit": "Auto-fit dey choose GPU layers. Turn Auto-fit off to set am yourself.",
+    "samplingDefaults": {
+      "title": "Default sampling parameters",
+      "description": "Default sampler settings for this model. We go use them unless assistant or request settings override them."
+    },
+    "specDraft": {
+      "section": "Speculative decoding",
+      "enable": "Turn on speculative decoding",
+      "enableDescription": "Draft several tokens for each step and verify them together to make generation faster. E dey use the model built-in MTP heads, or the draft model wey download with am (MTP, Eagle3, DFlash or DSpark).",
+      "nMax": "Highest draft tokens",
+      "nMaxDescription": "Highest number of tokens to draft for each step. Default na 16.",
+      "nMin": "Lowest draft tokens",
+      "nMinDescription": "Lowest number of tokens to draft for each step. Default na 0.",
+      "pMin": "Lowest draft probability",
+      "pMinDescription": "Lowest probability for greedy drafting (0–1). Default na 0.75."
+    },
+    "templateKwargs": {
+      "section": "Chat template options",
+      "description": "Extra options wey this model chat template fit accept. We dey send them as chat_template_kwargs for every request; leave value for the default make the template decide.",
+      "addCustom": "Add your own option",
+      "keyPlaceholder": "name",
+      "valuePlaceholder": "value",
+      "add": "Add",
+      "cancel": "Cancel",
+      "remove": "Remove"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "We no fit update model settings"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Change Data Folder Location",
+      "description": "You sure say you wan change where the data folder dey? This go move all your data go the new location and restart the app.",
+      "currentLocation": "Where E Dey Now:",
+      "newLocation": "New Location:",
+      "cancel": "Cancel",
+      "changeLocation": "Change Location"
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Conversations",
+      "description": "We go delete all conversations. You no fit undo this action."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Delete All Conversations",
+      "description": "We go delete {{count}} conversations for \"{{projectName}}\". You no fit undo this action."
+    },
+    "deleteThread": {
+      "description": "You sure say you wan delete this conversation? You no fit undo this action."
+    },
+    "editMessage": {
+      "title": "Edit Message"
+    },
+    "messageMetadata": {
+      "title": "Message Metadata"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Something no work well",
+    "details": "Details"
+  },
+  "missingDependenciesDialog": {
+    "title": "Some System Libraries No Dey",
+    "description": "We don install {{backend}}, but we no find some system libraries wey e need. E fit use CPU instead or no work well.",
+    "installLabel": "To fix this, install these ones:",
+    "download": "Download",
+    "additionalLibraries": "Other libraries wey no dey:",
+    "missingLibraries": "Libraries wey no dey:",
+    "showRawLibraries": "Show names of {{count}} libraries wey no dey"
+  },
+  "projects": {
+    "title": "Projects",
+    "new": "New Projects",
+    "addProject": "Add Project",
+    "addToProject": "Add to project",
+    "removeFromProject": "Remove from project",
+    "createNewProject": "Create New Project",
+    "editProject": "Edit Project",
+    "deleteProject": "Delete Project",
+    "projectName": "Project Name",
+    "enterProjectName": "Enter project name...",
+    "noProjectsAvailable": "No projects dey available",
+    "noProjectsYet": "No Projects Yet",
+    "noProjectsYetDesc": "Click Add Project button to start new project.",
+    "projectNotFound": "We No Find This Project",
+    "projectNotFoundDesc": "The project wey you dey find no dey, or dem don delete am.",
+    "selectAssistant": "Choose assistant",
+    "noAssistantAssigned": "No assistant dey assigned to this project",
+    "files": "Files",
+    "filesDescription": "Add PDFs, documents or other text wey this project fit use as reference.",
+    "uploadingFiles": "We dey process files…",
+    "processButton": "Add",
+    "deleteProjectDialog": {
+      "title": "Delete Project",
+      "permanentDelete": "This go delete all conversations permanently.",
+      "permanentDeleteWarning": "This action go delete ALL conversations inside the project permanently!",
+      "deleteEmptyProject": "This action go delete project \"{{projectName}}\".",
+      "saveThreadsAdvice": "To keep conversations, move them go your conversation list or another project before you delete.",
+      "starredWarning": "Some conversations wey you star still dey inside the project.",
+      "deleteButton": "Delete",
+      "successWithName": "We don delete project \"{{projectName}}\"",
+      "successWithoutName": "We don delete the project",
+      "error": "We no fit delete the project. Abeg try again.",
+      "ariaLabel": "Delete {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Create New Project",
+      "editTitle": "Edit Project",
+      "nameLabel": "Project Name",
+      "namePlaceholder": "Enter project name...",
+      "assistant": "Assistant",
+      "selectAssistant": "Choose assistant (no be compulsory)",
+      "noAssistant": "No assistant",
+      "addAssistant": "Add Assistant",
+      "createButton": "Create",
+      "updateButton": "Update",
+      "alreadyExists": "Project \"{{projectName}}\" don already dey",
+      "createSuccess": "We don create project \"{{projectName}}\"",
+      "updateSuccess": "We don update project \"{{projectName}}\""
+    },
+    "noConversationsIn": "No Conversations for {{projectName}}",
+    "startNewConversation": "Start new conversation with {{projectName}} below",
+    "conversationsIn": "Conversations for {{projectName}}",
+    "conversationsDescription": "Click any conversation to continue chatting, or start new one below.",
+    "conversation": "Conversation",
+    "instructions": "Instructions",
+    "setup": "Setup",
+    "instructionsDescription": "Set how the response go sound and look",
+    "manageInstructions": "Manage Instructions",
+    "thread": "conversation",
+    "threads": "conversations",
+    "updated": "Last Update:",
+    "collapseProject": "Fold project",
+    "expandProject": "Expand project",
+    "update": "Update",
+    "searchProjects": "Search projects...",
+    "noProjectsFound": "We no find any projects",
+    "tryDifferentSearch": "Try another search word"
+  },
+  "attachmentsIngestion": {
+    "title": "Choose how to add attachments",
+    "description": "Choose whether to put these files directly inside the chat or index them as embeddings instead.",
+    "inline": "Put inside chat",
+    "embeddings": "Use embeddings"
+  },
+  "attachmentInjectedIndicator": "We don put am inside chat",
+  "attachmentEmbeddedIndicator": "We don embed am for RAG",
+  "viewInjectedContent": "View content wey enter chat",
+  "injectedContentTitle": "File content wey enter chat",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "We Don Remove All Conversations From Favourites",
+      "description": "We don remove all conversations from your favourites."
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Conversations",
+      "description": "We don delete all conversations permanently."
+    },
+    "renameThread": {
+      "title": "Change Conversation Name",
+      "description": "We don change conversation title to '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Delete Conversation",
+      "description": "We don delete this conversation permanently."
+    },
+    "errorCopied": {
+      "title": "We don copy am",
+      "description": "We don copy error information to clipboard"
+    },
+    "errorCopyFailed": {
+      "title": "We no fit copy am",
+      "description": "We no fit copy error information to clipboard"
+    },
+    "editMessage": {
+      "title": "Edit Message",
+      "description": "We don edit the message. Abeg wait make the model respond."
+    },
+    "appUpdateDownloaded": {
+      "title": "App Update Don Download",
+      "description": "We don download the app update."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "App Update No Fit Download",
+      "description": "We no fit download the app update. Abeg try again."
+    },
+    "downloadComplete": {
+      "title": "Download Don Finish",
+      "description": "{{item}} don download"
+    },
+    "downloadCancelled": {
+      "title": "We Don Cancel Download",
+      "description": "We don cancel the download"
+    },
+    "downloadFailed": {
+      "title": "Download No Work",
+      "description": "{{item}} no fit download",
+      "descriptionWithReason": "{{item}} no fit download: {{reason}}",
+      "reason": {
+        "dns": "we no fit resolve the server name",
+        "refused": "the server refuse the connection",
+        "timeout": "time don finish for the connection",
+        "tls": "we no fit set up secure connection",
+        "proxy": "we no fit reach the proxy",
+        "unreachable": "we no fit reach the server"
+      }
+    },
+    "openSettings": "Open Settings",
+    "openLogs": "Open logs",
+    "downloadTokenRequired": {
+      "title": "Hugging Face token must dey",
+      "description": "This model need Hugging Face access token. Add your token for Settings and try again."
+    },
+    "downloadLicenseRequired": {
+      "title": "Accept model licence for Hugging Face",
+      "description": "You must accept the model licence for the model Hugging Face page before you download."
+    },
+    "downloadRateLimited": {
+      "title": "Hugging Face don limit your requests",
+      "description": "Your requests don reach the limit. If you add token, the limit fit increase. Abeg try again later."
+    },
+    "modelValidationStarted": {
+      "title": "We Dey Validate Model",
+      "description": "We don download model \"{{modelId}}\". We dey check say the file complete and nobody change am..."
+    },
+    "modelValidationFailed": {
+      "title": "Model Validation No Work",
+      "description": "Model \"{{modelId}}\" wey download no pass integrity check, so we remove am. The file fit don spoil or somebody fit don change am."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download Don Finish",
+      "description": "Model \"{{item}}\" don download and pass verification"
+    },
+    "projectCreated": {
+      "title": "We Don Create Project",
+      "description": "We don create project \"{{projectName}}\""
+    },
+    "projectRenamed": {
+      "title": "We Don Change Project Name",
+      "description": "We don change project name from \"{{oldName}}\" to \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "We Don Delete Project",
+      "description": "We don delete project \"{{projectName}}\""
+    },
+    "projectAlreadyExists": {
+      "title": "Project Don Already Dey",
+      "description": "Project \"{{projectName}}\" don already dey"
+    },
+    "projectDeleteFailed": {
+      "title": "We No Fit Delete Am",
+      "description": "We no fit delete the project. Abeg try again."
+    },
+    "threadAssignedToProject": {
+      "title": "We Don Assign Conversation",
+      "description": "We don assign conversation to \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "We Don Remove Conversation",
+      "description": "We don remove conversation from \"{{projectName}}\""
+    },
+    "fileUploaded": {
+      "title": "We Don Process File",
+      "description": "We don process and index the file"
+    },
+    "uploadFailed": {
+      "title": "Processing No Work",
+      "description": "We no fit process file",
+      "subjectThisFile": "This file",
+      "pdfMalformedXref": "Cross-reference table for {{subject}} PDF no correct, so we no fit parse am. Try open am for PDF viewer and save am again (File → Print → Save as PDF), then upload am again.",
+      "pdfScanned": "E look like {{subject}} na scanned PDF or PDF wey contain images. We never support OCR — abeg upload PDF wey contain text.",
+      "pdfEncrypted": "Password dey protect {{subject}}. Remove the password and try again.",
+      "pdfUnsupportedFeature": "{{subject}} dey use PDF feature wey Jan never fit parse (like PostScript colour/shading functions). Try save am again (File → Print → Save as PDF) to flatten am, then upload am again.",
+      "pdfGeneric": "We no fit parse {{subject}} as PDF. The file fit don spoil or use PDF feature wey we no support.",
+      "fileTooLarge": "{{subject}} too big. {{message}}.",
+      "unsupportedType": "We no support file type \"{{type}}\".",
+      "ioError": "We no fit read {{subject}}: {{message}}",
+      "parseGeneric": "We no fit parse {{subject}}: {{message}}",
+      "fallback": "We no fit process {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "We Don Delete File",
+      "description": "We don remove the file from the project"
+    },
+    "deleteFailed": {
+      "title": "We No Fit Delete Am",
+      "description": "We no fit delete file"
+    },
+    "fileAlreadyExists": {
+      "title": "File Don Already Dey",
+      "description": "This file don already dey attached to this project"
+    },
+    "unsupportedFileType": {
+      "title": "We No Support This File Type",
+      "description": "We no support file extension \".{{extension}}\" as Project reference."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Attachments No Dey Active",
+      "description": "Attachments dey turned off for Settings"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "File too big",
+    "fileTooLargeDescription": "{{fileName}} pass the {{maxFileSizeMB}}MB limit"
+  },
+  "files": {
+    "chunksCount": "{{count}} chunks",
+    "title": "Files",
+    "empty": "Files wey you attach and files wey agent create go show here.",
+    "a11y": "Files: {{count}}",
+    "attachments": "Attachments",
+    "notImported": "e no dey workspace"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp still dey busy",
+    "description": "One or more models no unload on time. If you force quit, e go stop llama.cpp and fit interrupt responses wey still dey run.",
+    "forceQuit": "Force quit",
+    "forcing": "We dey force quit…",
+    "shuttingDown": "We dey shut down…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  },
+  "collapse": "Fold",
+  "expand": "Expand",
+  "todoPanelTitle": "Progress",
+  "todoPanelEmpty": "No task list yet.",
+  "backgroundTasks": "Background tasks",
+  "subagentsRunning_one": "{{count}} subagent dey run",
+  "subagentsRunning_other": "{{count}} subagents dey run",
+  "monitorsRunning_one": "{{count}} monitor dey run",
+  "monitorsRunning_other": "{{count}} monitors dey run",
+  "backgroundRunning_one": "{{count}} background task dey run",
+  "backgroundRunning_other": "{{count}} background tasks dey run",
+  "monitors": "Monitors",
+  "monitorPolling": "E dey check",
+  "monitorMatched": "E match",
+  "monitorTimedOut": "Time don finish",
+  "monitorStopped": "E don stop",
+  "monitorEnded": "E don end",
+  "coworkWatching_one": "We dey watch {{count}} monitor…",
+  "coworkWatching_other": "We dey watch {{count}} monitors…",
+  "coworkWaitingBackground": "We dey wait for background tasks…",
+  "noBackgroundTasks": "No background tasks yet.",
+  "running": "E dey run",
+  "queued": "E dey queue",
+  "waiting": "E dey wait",
+  "finished": "E don finish",
+  "subagentPhase": "phase {{phase}}",
+  "subagentWaiting": "e dey wait",
+  "viewTranscript": "View conversation record",
+  "taskWorking": "Work dey go on…",
+  "taskNoOutput": "The subagent no produce any output wey person fit see.",
+  "subagentToolUses_one": "{{count}} tool use",
+  "subagentToolUses_other": "{{count}} tool uses",
+  "artifactGroupCode": "Code",
+  "artifactGroupImage": "Image",
+  "artifactGroupDocument": "Document",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Open preview",
+  "artifactOpenExternal": "Open",
+  "artifactMoreActions": "More actions",
+  "artifactShowInFolder": "Show for Folder",
+  "skillsUsedLabel": "Skills wey e use",
+  "skillsUsed": "Skills wey e use: {{skills}}",
+  "artifactsAll": "All",
+  "artifactsEmpty": "Nothing don come out yet. Things wey Cowork create go show here.",
+  "artifactsNoMatch": "No created items match.",
+  "artifactsSearch": "Search things wey we create",
+  "artifactsShowMore": "Show {{count}} more",
+  "workspace": {
+    "readsFrom": "E dey work for",
+    "writable": "read & write",
+    "footnote": "The agent dey read and edit this folder directly. Check wetin change for the diff panel.",
+    "footnoteEmpty": "Attach folder make the agent fit work on your project. E fit read and edit files inside am.",
+    "attach": "Attach folder",
+    "change": "Change folder",
+    "detach": "Detach folder",
+    "open": "Open",
+    "reveal": "Show Location",
+    "unavailable": "Workspace no dey available",
+    "missing": "Workspace folder {{folder}} no dey available again. Choose another folder.",
+    "openFailed": "We no fit open workspace",
+    "revealFailed": "We no fit show workspace location",
+    "a11yWithFolder": "Project folder {{folder}} dey attached with read and write access. Change or detach am.",
+    "a11yNoFolder": "No project folder dey attached. Attach one."
+  },
+  "coworkEmpty": {
+    "title": "Wetin we dey work on?",
+    "subtitleSandbox": "Give Jan task. E dey read and write files, run commands, and work through the steps by itself.",
+    "subtitleFolder": "Give Jan task. E dey work directly for {{folder}}, and e fit read and edit files by itself.",
+    "try": "Try",
+    "sandbox": {
+      "first": "Write Python script wey go rename files with the date wey dem take them",
+      "second": "Build one-page dashboard from CSV wey I go paste",
+      "third": "Draft README for project wey I go describe to you"
+    },
+    "folder": {
+      "first": "Explain how {{folder}} dey arranged",
+      "second": "Find every TODO for {{folder}} and group them by area",
+      "third": "Write tests for the part of {{folder}} wey I point out"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "No terminal",
+    "a11y": "Running commands dey turned off. See details.",
+    "title": "Running commands dey turned off",
+    "body": "Jan dey allow agent run shell commands only when your system fit restrict them. No sandbox dey available here, so the agent fit read, write and edit files for the sandbox — but e no fit run anything.",
+    "fixLinux": "Linux dey use bubblewrap. Install am, then restart Jan.",
+    "fixMac": "macOS dey use the built-in sandbox for /usr/bin/sandbox-exec. Restart Jan when e dey available.",
+    "fixWindows": "Windows dey use AppContainer. Restart Jan to try again.",
+    "recheck": "Check again"
+  },
+  "planMode": {
+    "label": "Plan",
+    "tooltipOff": "Plan first — agent go read and suggest without writing.",
+    "tooltipOn": "E dey plan. Turn this off make the agent fit write files.",
+    "onAnnounce": "Plan mode dey on",
+    "placeholder": "Ask for plan. The agent no go change any files."
+  },
+  "budget": {
+    "stoppedSteps": "E stop after {{max}} steps. The agent never finish.",
+    "keepGoing": "Continue",
+    "stoppedTokens": "E don stop — this session don reach the token budget.",
+    "compact": "Summarise",
+    "newSession": "New session"
+  },
+  "run": {
+    "stopped": "E don stop.",
+    "failed": "The run stop before e finish.",
+    "tryAgain": "Try again"
+  },
+  "modelNoTools": "{{model}} no fit call tools, so e no fit work as agent. Choose model wey fit call tools.",
+  "askContinue": "Continue",
+  "askNext": "Next question",
+  "askPrev": "Previous question",
+  "askRecommended": "The one we recommend",
+  "askSelectedCount": "You don choose {{count}}",
+  "askSomethingElse": "Another thing",
+  "askSomethingElsePlaceholder": "Type your own answer",
+  "submit": "Submit"
+}

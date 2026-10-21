@@ -1,0 +1,18 @@
+{
+  "addProvider": "Add Provider",
+  "addOpenAIProvider": "Add Your Own Provider",
+  "enterNameForProvider": "Provider name (for example my-llm-server)",
+  "apiTypeLabel": "API format",
+  "apiTypeOpenAI": "OpenAI-compatible",
+  "apiTypeAnthropic": "Anthropic-compatible",
+  "baseUrlLabel": "Base URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API key",
+  "apiKeyPlaceholder": "Paste your API key",
+  "invalidBaseUrl": "Base URL must be valid http(s) URL",
+  "globalSettings": "Global settings",
+  "stripReasoning": "Remove reasoning from context",
+  "stripReasoningDesc": "Remove thinking/reasoning content from earlier turns before sending history again, for all providers. This dey improve KV-cache reuse for local models, but some models (like newer Qwen releases) recommend keeping am for better reasoning across many turns.",
+  "providerAlreadyExists": "Provider wey get name {{name}} don already dey."
+}

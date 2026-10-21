@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Newest",
+  "sortMostDownloaded": "The one wey people download most",
+  "newChat": "New chat",
+  "download": "Download",
+  "downloadFailed": "We no fit start download",
+  "downloaded": "E don download",
+  "loadingModels": "We dey load models...",
+  "noModels": "We no find any models",
+  "by": "By",
+  "downloads": "Downloads",
+  "variants": "Variants",
+  "showVariants": "Show variants",
+  "useModel": "Use this model",
+  "downloadModel": "Download model",
+  "tools": "Tools",
+  "searchPlaceholder": "Search for models on Hugging Face...",
+  "resumeUnavailable": "We no fit continue this download. Abeg start am again."
+}

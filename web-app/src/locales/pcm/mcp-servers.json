@@ -1,0 +1,101 @@
+{
+  "editServer": "Edit MCP Server",
+  "addServer": "Add MCP Server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "We dey check extension status..."
+    },
+    "notInstalled": {
+      "title": "Jan dey complete tasks for your browser",
+      "description": "Install extension to give Jan access to browser",
+      "getExtension": "Get Extension"
+    }
+  },
+  "serverName": "Server Name",
+  "enterServerName": "Enter server name",
+  "command": "Command",
+  "enterCommand": "Enter command (uvx or npx)",
+  "arguments": "Arguments",
+  "argument": "Argument {{index}}",
+  "envVars": "Environment Variables",
+  "key": "Key",
+  "value": "Value",
+  "save": "Save",
+  "status": "Status",
+  "connected": "E don connect",
+  "disconnected": "E no dey connected",
+  "deleteServer": {
+    "title": "Delete MCP Server",
+    "description": "You sure say you wan delete MCP server {{serverName}}? You no fit undo this action.",
+    "delete": "Delete",
+    "success": "We don delete MCP server {{serverName}}"
+  },
+  "editJson": {
+    "title": "Edit JSON for MCP Server: {{serverName}}",
+    "titleAll": "Edit JSON for All MCP Servers",
+    "placeholder": "Enter JSON configuration",
+    "errorParse": "We no fit parse initial data",
+    "errorPaste": "JSON format for content wey you paste no correct",
+    "errorFormat": "JSON format no correct",
+    "errorServerName": "Server name must dey; e no fit empty",
+    "errorMissingServerNameKey": "JSON must get this structure: {\"serverName\": {config}} - server name key no dey",
+    "errorInvalidType": "Type '{{type}}' no correct for server '{{serverName}}'. Type must be 'stdio', 'http' or 'sse'",
+    "save": "Save"
+  },
+  "checkParams": "Abeg check the parameters as the tutorial show.",
+  "title": "MCP Servers",
+  "experimental": "Features Wey We Still Dey Test",
+  "editAllJson": "Edit JSON for All Servers",
+  "findMore": "Find more MCP servers for",
+  "allowPermissions": "Allow All MCP Tool Permissions",
+  "allowPermissionsDesc": "When this dey on, we go approve all MCP tool calls automatically without showing permission dialogs. This setting affect all conversations, including new chats.",
+  "noServers": "We no find any MCP servers",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Server {{serverKey}} don turn on",
+  "serverStatusInactive": "Server {{serverKey}} don turn off",
+  "runtimeSettings": {
+    "title": "Runtime Settings",
+    "description": "Set how Jan go manage MCP servers and try them again.",
+    "toolCallTimeout": "Tool call timeout (seconds)",
+    "toolCallTimeoutDesc": "Highest time to wait for MCP tool response before time finish.",
+    "maxToolOutputChars": "Highest tool output characters",
+    "maxToolOutputCharsDesc": "Longest tool result wey we go keep for conversation. We go cut anything wey pass this limit and mark am as shortened, so one big result no go finish model context. Set am to 0 to keep full results.",
+    "smartToolRouting": "Smart MCP tool routing",
+    "smartToolRoutingDesc": "When this dey on, Jan go choose relevant MCP servers before e load tools. Turn am off to always load the full MCP tool list.",
+    "useLightweightRouterModel": "Use separate model for routing",
+    "useLightweightRouterModelDesc": "When smart routing dey on, use another model (often smaller one) for routing instead of chat model. Turn am off to always use active chat model for routing.",
+    "routerModel": "Routing model",
+    "routerModelDesc": "Choose provider and model for one place. Na only lightweight models we list so routing go remain fast and cheap.",
+    "selectRouterModelPlaceholder": "Choose routing model…",
+    "routerModelSearchPlaceholder": "Search models…",
+    "routerModelEmptyList": "No lightweight models dey available. Add smaller model or set API keys for Models.",
+    "routerModelEmptySearch": "Nothing match “{{query}}”."
+  },
+  "auth": {
+    "label": "Auth:",
+    "state": {
+      "notApplicable": "e no compulsory",
+      "staticHeader": "Authorization header",
+      "authenticated": "we don authenticate am",
+      "expired": "e don expire",
+      "staleResource": "dem issue am for another URL",
+      "unauthenticated": "we never authenticate am"
+    },
+    "expiresIn": "e go expire in {{duration}}",
+    "authenticate": "Sign in",
+    "reauthenticate": "Authenticate again",
+    "clear": "Clear authentication",
+    "waiting": "We dey wait for browser...",
+    "openSignInPage": "Open sign-in page",
+    "needsAuth": "{{serverName}} need authentication",
+    "needsAuthHint": "Sign in to this server to connect.",
+    "authorized": "You don sign in to {{serverName}}",
+    "authorizeFailed": "Sign-in for {{serverName}} no work",
+    "cleared": "We don clear saved login details for {{serverName}}",
+    "nothingToClear": "{{serverName}} no get saved login details",
+    "clearFailed": "We no fit clear login details for {{serverName}}",
+    "renew": "Renew session",
+    "expiredAgo": "e expire {{duration}} ago"
+  }
+}

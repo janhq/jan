@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'pcm'
   | 'es'
   | 'fr'
   | 'it'

@@ -1,0 +1,38 @@
+{
+  "welcome": "How you dey?",
+  "description": "How I fit help you today?",
+  "temporaryChat": "Temporary Chat",
+  "temporaryChatDescription": "Start temporary conversation wey no go save for your chat history.",
+  "status": {
+    "empty": "We No Find Any Chats"
+  },
+  "sendMessage": "Send Message",
+  "newConversation": "New Conversation",
+  "clearHistory": "Clear History",
+  "embeddings": {
+    "title": "We dey prepare your documents",
+    "description": "We dey index the attached files so person fit search and cite them. Big documents fit take small time."
+  },
+  "actions": {
+    "regenerate": "Generate response again",
+    "askAgain": "Ask again",
+    "continue": "Continue to generate",
+    "remember": "Remember this",
+    "rememberSaved": "We don save am for memory as \"{{name}}\"",
+    "rememberExists": "E don already dey memory as \"{{name}}\"",
+    "rememberFailed": "We no fit save am for memory"
+  },
+  "done": "Done",
+  "webSources": "{{count}} source(s)",
+  "reasoning": {
+    "label": "E dey reason...",
+    "thinking": "E dey think",
+    "working": "Work dey go on...",
+    "showFullTimeline": "Show full timeline",
+    "showCurrentStep": "Show only the current step",
+    "thoughtForAWhile": "E think for some seconds",
+    "thoughtFor": "E think for {{duration}}",
+    "workedForAWhile": "E work for some seconds",
+    "workedFor": "E work for {{duration}}"
+  }
+}
