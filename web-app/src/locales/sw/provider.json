@@ -1,0 +1,18 @@
+{
+  "addProvider": "Ongeza Mtoa Huduma",
+  "addOpenAIProvider": "Ongeza Mtoa Huduma Maalum",
+  "enterNameForProvider": "Jina la mtoa huduma (k.m. my-llm-server)",
+  "apiTypeLabel": "API umbizo",
+  "apiTypeOpenAI": "OpenAI-pambamba",
+  "apiTypeAnthropic": "Anthropic-pambamba",
+  "baseUrlLabel": "Msingi URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API ufunguo",
+  "apiKeyPlaceholder": "Bandika ufunguo wako API",
+  "invalidBaseUrl": "Msingi URL lazima iwe http(s) halali URL",
+  "globalSettings": "Mipangilio ya kimataifa",
+  "stripReasoning": "Ondoa hoja kutoka kwa muktadha",
+  "stripReasoningDesc": "Ondoa maudhui ya zamu ya awali kabla ya kutuma historia, kwa watoa huduma wote. Huboresha utumiaji wa akiba ya KV kwa miundo ya ndani, lakini baadhi ya miundo (k.m. matoleo mapya zaidi ya Qwen) inapendekeza ihifadhiwe kwa hoja bora za pande nyingi.",
+  "providerAlreadyExists": "Mtoa huduma anayeitwa {{name}} tayari yupo."
+}

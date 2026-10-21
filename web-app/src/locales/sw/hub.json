@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Mpya zaidi",
+  "sortMostDownloaded": "Zilizopakuliwa zaidi",
+  "newChat": "Gumzo jipya",
+  "download": "Pakua",
+  "downloadFailed": "Imeshindwa kuanza kupakua",
+  "downloaded": "Imepakuliwa",
+  "loadingModels": "Inapakia modeli...",
+  "noModels": "Hakuna modeli zilizopatikana",
+  "by": "Na",
+  "downloads": "Vipakuliwa",
+  "variants": "Matoleo",
+  "showVariants": "Onyesha matoleo",
+  "useModel": "Tumia modeli hii",
+  "downloadModel": "Pakua modeli",
+  "tools": "Zana",
+  "searchPlaceholder": "Tafuta modeli kwenye Hugging Face...",
+  "resumeUnavailable": "Haiwezi kuendelea kupakua. Tafadhali anza upya."
+}

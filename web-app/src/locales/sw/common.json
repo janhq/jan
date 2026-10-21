@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "Msimbo",
+    "preview": "Hakiki",
+    "previewStreaming": "Itapatikana baada ya kutengeneza kukamilika",
+    "unresolvedAssets_one": "Rejeleo 1 la rasilimali haliwezi kupakiwa katika hakikisho. Njia husika hazina URL ya msingi ya kuanzia.",
+    "unresolvedAssets_other": "Marejeleo {{count}} ya rasilimali hayawezi kupakiwa katika hakikisho. Njia husika hazina URL ya msingi ya kuanzia."
+  },
+  "assistants": "Wasaidizi",
+  "hardware": "Vifaa",
+  "mcp-servers": "Seva za MCP",
+  "local_api_server": "Seva ya API ya ndani",
+  "remote_access": "Ufikiaji wa mbali",
+  "integrations": "Miunganisho",
+  "experimental": "Majaribio",
+  "claude_code": "Claude Code",
+  "https_proxy": "Wakala wa HTTPS",
+  "web_search": "Utafutaji wa Wavuti",
+  "shell": "Shell",
+  "browse": "Vinjari",
+  "moreControls": "Vidhibiti zaidi",
+  "starting": "Inaanza...",
+  "activeSuffix": "(Inayotumika)",
+  "extensions": "Viendelezi",
+  "attachments": "Viambatisho",
+  "general": "Jumla",
+  "settings": "Mipangilio",
+  "modelProviders": "Watoa huduma za modeli",
+  "localProviders": "Za ndani",
+  "remoteProviders": "Za mbali",
+  "manageProviders": "Dhibiti watoa huduma",
+  "hiddenProviders": "Watoa huduma waliozimwa: {{count}}",
+  "hideProvider": "Ficha mtoa huduma",
+  "showProvider": "Onyesha mtoa huduma",
+  "interface": "Kiolesura",
+  "appearance": "Muonekano",
+  "privacy": "Faragha",
+  "keyboardShortcuts": "Njia za mkato",
+  "home": "Nyumbani",
+  "cowork": "Cowork",
+  "newSession": "Kipindi kipya",
+  "artifacts": "Viunzi",
+  "customize": "Geuza kukufaa",
+  "local": "Ya ndani",
+  "selectFolder": "Chagua folda",
+  "selectModel": "Chagua modeli kwanza",
+  "commands": "Amri",
+  "cmdHelp": "Orodhesha amri zinazopatikana",
+  "cmdClear": "Futa kipindi hiki",
+  "cmdModels": "Badilisha modeli inayotumika",
+  "cmdModelsHint": "Andika /models kisha uchague modeli kutoka kwenye orodha",
+  "cmdModelSwitched": "Imebadilisha hadi {{name}}",
+  "cmdUnknown": "Amri isiyojulikana: {{name}}. Jaribu /help",
+  "cmdBusy": "Haiwezi kufanya hivyo wakati wakala anafanya kazi",
+  "cmdCompact": "Unganisha muktadha wa kipindi kuwa muhtasari",
+  "cmdCompacted": "Idadi ya ujumbe imepunguzwa kutoka {{before}} hadi {{after}}",
+  "cmdNothingToCompact": "Hakuna cha kujumuisha bado",
+  "cmdCompactFailed": "Ukazaji haukufaulu: {{error}}",
+  "cmdPlan": "Geuza hali ya mpango (kusoma-tu: wakala anapendekeza bila kuandika)",
+  "cmdPlanOn": "Hali ya kupanga: wakala anasoma na kupendekeza bila kuandika",
+  "cmdPlanOff": "Hali ya mpango imezimwa: utekelezaji wa kawaida",
+  "cmdTodo": "Fungua kidirisha cha maendeleo",
+  "cmdTasks": "Fungua kidirisha cha kazi za usuli",
+  "cmdInit": "Soma mradi na uandike ujuzi na kumbukumbu",
+  "cmdInitRunning": "Kuingia kwenye mradi huu",
+  "skills": "Ujuzi",
+  "skillsInContext": "Ujuzi unaopatikana kwa wakala wakati huu",
+  "skillsTitle": "Dhibiti ujuzi",
+  "skillsScopeProject": "Ujuzi wa {{folder}}",
+  "skillsScopeGlobal": "Ujuzi wa kimataifa, unaopatikana kwa kila kipindi",
+  "skillsScopeMerged": "Ujuzi wa {{folder}}, pamoja na ujuzi wa kimataifa kila kipindi hushiriki",
+  "skillOriginFolder": "folda",
+  "skillOriginGlobal": "kimataifa",
+  "skillsEmpty": "Hakuna ujuzi bado",
+  "skillsPickOrNew": "Chagua ujuzi wa kuhariri, au uunde mpya.",
+  "skillNew": "Ujuzi mpya",
+  "skillDelete": "Futa ujuzi",
+  "skillSave": "Hifadhi",
+  "skillSaved": "Ustadi umehifadhiwa",
+  "skillNameRequired": "Jina la ujuzi linahitajika",
+  "skillNamePlaceholder": "ujuzi - jina",
+  "skillContentPlaceholder": "Eleza utaratibu unaoweza kutumika tena katika Markdown…",
+  "skillHubImport": "Ingiza kutoka kwa kitovu",
+  "skillHubTitle": "Anthropic kitovu cha ujuzi",
+  "skillHubEmpty": "Hakuna ujuzi uliopatikana kwenye kitovu",
+  "skillImport": "Ingiza",
+  "skillReimport": "Ingiza tena",
+  "skillImported": "Imeingizwa {{name}}",
+  "sessions": "Vikao",
+  "deleteSession": "Futa kipindi",
+  "deleteSessionTitle": "Ungependa kufuta kipindi?",
+  "deleteSessionBody": "\"{{title}}\" na manukuu yake yatafutwa kabisa. Hili haliwezi kutenduliwa.",
+  "newChat": "Gumzo jipya",
+  "newAgentChat": "Gumzo la Wakala Mpya",
+  "chats": "Soga",
+  "favorites": "Vipendwa",
+  "recents": "Hivi karibuni",
+  "hub": "Kitovu",
+  "helpSupport": "Usaidizi na Usaidizi",
+  "helpUsImproveJan": "Tusaidie Kuboresha Jan",
+  "analyticsConsentDetail": "Tunakusanya data isiyojulikana ili kuelewa matumizi ya vipengele. Gumzo na taarifa zako za kibinafsi hazifuatiliwi kamwe. Unaweza kubadilisha hii wakati wowote katika Mipangilio > Faragha.",
+  "analyticsConsentQuestion": "Je, ungependa kutusaidia kuboresha Jan?",
+  "unstarAll": "Ondoa Nyota Yote",
+  "unstar": "Ondoa nyota",
+  "deleteAll": "Futa Zote",
+  "star": "Nyota",
+  "rename": "Badilisha jina",
+  "delete": "Futa",
+  "copied": "Imenakiliwa!",
+  "dataFolder": "Folda ya Data",
+  "others": "Nyingine",
+  "language": "Lugha",
+  "login": "Ingia",
+  "loginWith": "Ingia Kwa {{provider}}",
+  "loginFailed": "Imeshindwa Kuingia",
+  "logout": "Toka nje",
+  "loggingOut": "Inatoka...",
+  "loggedOut": "Umefanikiwa Kutoka",
+  "logoutFailed": "Imeshindwa Kutoka",
+  "profile": "Wasifu",
+  "reset": "Weka upya",
+  "search": "Tafuta",
+  "searchThreads": "Tafuta nyuzi...",
+  "toNavigate": "kuabiri",
+  "toSelect": "kuchagua",
+  "toClose": "kufunga",
+  "clearRecent": "Wazi",
+  "name": "Jina",
+  "cancel": "Ghairi",
+  "dismiss": "Ondoa",
+  "create": "Unda",
+  "save": "Hifadhi",
+  "edit": "Hariri",
+  "copy": "Nakili",
+  "back": "Rudi",
+  "close": "Funga",
+  "done": "Imekamilika",
+  "next": "Inayofuata",
+  "finish": "Maliza",
+  "skip": "Ruka",
+  "allow": "Ruhusu",
+  "deny": "Kataa",
+  "start": "Anza",
+  "stop": "Simamisha",
+  "preview": {
+    "loading": "Inafungua...",
+    "unsupported": "Jan haiwezi kuonyesha aina hii ya faili. Ifungue ili kuiona katika programu nyingine.",
+    "outside": "Faili hii haiko tena katika nafasi ya kazi ya kipindi.",
+    "tooLarge": "Ni kubwa mno kuchungulia. Ifungue ili kuiona katika programu nyingine.",
+    "reload": "Pakia upya",
+    "allowNetwork": "Ruhusu mtandao",
+    "unsandboxed": "Endesha unsandboxed: data iliyohifadhiwa na faili za ndani hufanya kazi",
+    "unresolvedRefs_one": "Faili 1 iliyounganishwa na ukurasa huu haiwezi kupakiwa katika onyesho la kukagua. Ifungue ili kuiona kwenye kivinjari.",
+    "unresolvedRefs_other": "{{count}} faili ambazo ukurasa huu unaunganisha haziwezi kupakia katika onyesho la kukagua. Ifungue ili kuiona kwenye kivinjari.",
+    "externalRefs_one": "Nyenzo 1 ambayo ukurasa huu unapakia kutoka kwa wavuti imezuiwa. Washa \"Ruhusu mtandao\" ili kuipakia.",
+    "externalRefs_other": "{{count}} nyenzo ambazo ukurasa huu unapakia kutoka kwa wavuti zimezuiwa. Washa \"Ruhusu mtandao\" ili kuzipakia.",
+    "scriptErrors_one": "Ukurasa uliripoti hitilafu: {{message}}",
+    "scriptErrors_other": "Ukurasa uliripoti hitilafu {{count}}. Kwanza: {{message}}"
+  },
+  "changes": {
+    "title": "Mabadiliko ya wakala",
+    "empty": "Faili ambazo wakala anaandika au kuhariri zitaonekana hapa.",
+    "a11y": "Mabadiliko ya wakala: {{files}} faili, {{additions}} zimeongezwa, {{deletions}} zimeondolewa"
+  },
+  "modelPanel": {
+    "title": "Mipangilio ya mfano",
+    "a11y": "Fungua mipangilio ya mfano",
+    "contextTooltip": "Dirisha la muktadha: {{value}} ya {{max}} tokeni"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Ujuzi '{{name}}' haupatikani",
+    "kind": {
+      "skill": "Ujuzi",
+      "command": "Amri",
+      "model": "Modeli"
+    }
+  },
+  "compactWidth": "Upana wa Kompakt",
+  "fullWidth": "Upana Kamili",
+  "dark": "Giza",
+  "light": "Mwanga",
+  "system": "Mfumo",
+  "auto": "Otomatiki",
+  "english": "Kiingereza",
+  "medium": "Kati",
+  "newThread": "Uzi Mpya",
+  "noResultsFound": "Hakuna matokeo yaliyopatikana",
+  "noThreadsYet": "Bado hakuna nyuzi",
+  "noThreadsYetDesc": "Anzisha mazungumzo mapya ili kuona historia ya mazungumzo yako hapa.",
+  "downloads": "Vipakuliwa",
+  "downloading": "Inapakua",
+  "uploadingAttachments": "Inapakia viambatisho...",
+  "cancelDownload": "Ghairi upakuaji",
+  "downloadCancelled": "Upakuaji Umeghairiwa",
+  "downloadComplete": "Upakuaji umekamilika",
+  "thinking": "Kufikiri...",
+  "thought": "Mawazo",
+  "callingTool": "Chombo cha kupiga simu",
+  "completed": "Imekamilika",
+  "image": "Picha",
+  "vision": "Maono",
+  "multimodal": "Multimodal",
+  "embeddings": "Upachikaji",
+  "tools": "Zana",
+  "webSearch": "Utafutaji wa Wavuti",
+  "reasoning": "Kutoa hoja",
+  "proactive": "Inayotumika",
+  "selectAModel": "Chagua modeli",
+  "noToolsAvailable": "Hakuna zana zinazopatikana",
+  "noModelsFoundFor": "Hakuna modeli zilizopatikana kwa \"{{searchValue}}\"",
+  "failedToLoadModels": "Imeshindwa kupakia modeli",
+  "noModels": "Hakuna modeli zilizopatikana",
+  "noAssistant": "Hakuna msaidizi",
+  "customAvatar": "avatar maalum",
+  "editAssistant": "Badilisha Mratibu",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Tengeneza upya",
+  "threadImage": "Picha ya uzi",
+  "editMessage": "Hariri Ujumbe",
+  "deleteMessage": "Futa Ujumbe",
+  "deleteThread": "Futa Uzi",
+  "renameThread": "Badilisha jina la Uzi",
+  "threadTitle": "Kichwa cha Uzi",
+  "deleteAllThreads": "Futa Mizizi Zote",
+  "allThreadsUnfavorited": "Nyuzi Zote Hazijapendezwa",
+  "deleteAllThreadsConfirm": "Je, una uhakika unataka kufuta minyororo yote? Kitendo hiki hakiwezi kutenduliwa.",
+  "addProvider": "Ongeza Mtoa Huduma",
+  "addOpenAIProvider": "Ongeza Mtoa huduma OpenAI",
+  "enterNameForProvider": "Weka jina la mtoa huduma wako",
+  "providerAlreadyExists": "Mtoa huduma aliye na jina \"{{name}}\" tayari yupo. Tafadhali chagua jina tofauti.",
+  "adjustFontSize": "Rekebisha Ukubwa wa herufi",
+  "changeLanguage": "Badilisha Lugha",
+  "editTheme": "Hariri Mandhari",
+  "editCodeBlockStyle": "Hariri Mtindo wa Kuzuia Msimbo",
+  "editServerHost": "Hariri Seva Seva",
+  "pickColorWindowBackground": "Chagua Mandharinyuma ya Dirisha la Rangi",
+  "pickColorAppMainView": "Chagua Mwonekano Mkuu wa Programu ya Rangi",
+  "pickColorAppPrimary": "Chagua Programu ya Rangi ya Msingi",
+  "pickColorAppAccent": "Chagua Lafudhi ya Programu ya Rangi",
+  "pickColorAppDestructive": "Chagua Programu ya Rangi Inaharibu",
+  "apiKeyRequired": "API Ufunguo unahitajika",
+  "enterTrustedHosts": "Ingiza wapangishi wanaoaminika",
+  "placeholder": {
+    "chatInput": "Niulize chochote..."
+  },
+  "confirm": "Thibitisha",
+  "continue": "Endelea",
+  "loading": "Inapakia...",
+  "settingUpJan": "Inawasha Jan…",
+  "registeringExtensions": "Inasajili viendelezi...",
+  "loadingExtensions": "Inapakia viendelezi... ({{done}}/{{total}})",
+  "error": "Hitilafu",
+  "success": "Mafanikio",
+  "warning": "Onyo",
+  "conversationNotAvailable": "Mazungumzo hayapatikani",
+  "conversationNotAvailableDescription": "Mazungumzo unayojaribu kufikia hayapatikani au yamefutwa.",
+  "temporaryChat": "Gumzo la Muda",
+  "temporaryChatTooltip": "Gumzo la muda halitaonekana kwenye historia yako",
+  "noResultsFoundDesc": "Hatukuweza kupata soga zozote zinazolingana na utafutaji wako. Jaribu nenomsingi tofauti.",
+  "searchModels": "Tafuta modeli...",
+  "searchStyles": "Tafuta mitindo...",
+  "createAssistant": "Unda Mratibu",
+  "enterApiKey": "Weka API Ufunguo",
+  "scrollToBottom": "Tembeza hadi chini",
+  "generateAiResponse": "Tengeneza Majibu ya AI",
+  "continueAiResponse": "Endelea na Majibu ya AI",
+  "addModel": {
+    "title": "Ongeza Mfano",
+    "modelId": "Kitambulisho cha mfano",
+    "enterModelId": "Weka Kitambulisho cha Mfano",
+    "addModel": "Ongeza Mfano",
+    "description": "Ongeza muundo mpya kwa mtoaji",
+    "exploreModels": "Tazama orodha ya mifano kutoka kwa mtoaji"
+  },
+  "mcpServers": {
+    "editServer": "Hariri Seva",
+    "addServer": "Ongeza Seva",
+    "serverName": "Jina la Seva",
+    "enterServerName": "Ingiza jina la seva",
+    "command": "Amri",
+    "enterCommand": "Ingiza amri",
+    "arguments": "Hoja",
+    "argument": "Hoja {{index}}",
+    "envVars": "Vigezo vya Mazingira",
+    "key": "Ufunguo",
+    "value": "Thamani",
+    "save": "Hifadhi"
+  },
+  "deleteServer": {
+    "title": "Futa Seva",
+    "delete": "Futa"
+  },
+  "editJson": {
+    "errorParse": "Imeshindwa kuchanganua JSON",
+    "errorPaste": "Imeshindwa kubandika JSON",
+    "errorFormat": "Umbizo la JSON si sahihi",
+    "titleAll": "Hariri Usanidi wa Seva Zote",
+    "placeholder": "Weka JSON usanidi...",
+    "save": "Hifadhi"
+  },
+  "editModel": {
+    "title": "Hariri Muundo: {{modelId}}",
+    "description": "Sanidi uwezo wa modeli kwa kugeuza chaguo zilizo hapa chini.",
+    "capabilities": "Uwezo",
+    "tools": "Zana",
+    "vision": "Maono",
+    "embeddings": "Upachikaji",
+    "notAvailable": "Haipatikani bado"
+  },
+  "outOfContextError": {
+    "truncateInput": "Punguza Ingizo",
+    "title": "Hitilafu nje ya muktadha",
+    "description": "Gumzo hili linafikia kikomo cha kumbukumbu cha AI, kama vile ubao mweupe unavyojaza. Tunaweza kupanua kidirisha cha kumbukumbu (kinachoitwa saizi ya muktadha) ili ikumbuke zaidi, lakini inaweza kutumia kumbukumbu zaidi ya kompyuta yako. Tunaweza pia kupunguza ingizo, kumaanisha kwamba itasahau baadhi ya historia ya gumzo ili kutoa nafasi kwa jumbe mpya.",
+    "increaseContextSizeDescription": "Je, ungependa kuongeza ukubwa wa muktadha?",
+    "increaseContextSize": "Ongeza Ukubwa wa Muktadha"
+  },
+  "toolApproval": {
+    "title": "Ombi la Ruhusa la Zana",
+    "description": "Mratibu anataka kutumia <strong>{{toolName}}</strong>",
+    "securityNotice": "Ruhusu zana unazoamini pekee. Zana zinaweza kufikia mfumo na data yako.",
+    "deny": "Kataa",
+    "allowOnce": "Ruhusu mara hii",
+    "alwaysAllow": "Ruhusu Daima"
+  },
+  "deleteModel": {
+    "title": "Futa Muundo: {{modelId}}",
+    "description": "Je, una uhakika unataka kufuta muundo huu? Kitendo hiki hakiwezi kutenduliwa.",
+    "success": "Model {{modelId}} imefutwa kabisa.",
+    "cancel": "Ghairi",
+    "delete": "Futa"
+  },
+  "deleteProvider": {
+    "title": "Futa Mtoa Huduma",
+    "description": "Futa mtoa huduma huyu na miundo yake yote. Kitendo hiki hakiwezi kutenduliwa.",
+    "success": "Mtoa huduma {{provider}} amefutwa kabisa.",
+    "confirmTitle": "Futa Mtoa Huduma: {{provider}}",
+    "confirmDescription": "Je, una uhakika unataka kufuta mtoa huduma huyu? Kitendo hiki hakiwezi kutenduliwa.",
+    "cancel": "Ghairi",
+    "delete": "Futa"
+  },
+  "modelSettings": {
+    "title": "Mipangilio ya Muundo - {{modelId}}",
+    "description": "Sanidi mipangilio ya modeli ili kuboresha utendaji na tabia.",
+    "nglDisabledByFit": "Kutoshea kiotomatiki ni kuchagua tabaka GPU. Zima kipengele cha Kutoshea Kiotomatiki ili kuweka hii mwenyewe.",
+    "samplingDefaults": {
+      "title": "Vigezo chaguomsingi vya sampuli",
+      "description": "Mipangilio chaguomsingi ya sampuli ya muundo huu. Inatumika isipokuwa ikiwa imebatilishwa na thamani za kila mratibu au kwa kila ombi."
+    },
+    "specDraft": {
+      "section": "Usimbuaji wa kubahatisha",
+      "enable": "Washa usimbaji wa kubahatisha",
+      "enableDescription": "Rasimu tokeni kadhaa kwa kila hatua na uzihakikishe kwa njia moja, ambayo huharakisha kizazi. Hutumia vichwa vya MTP vilivyojengewa ndani vya modeli, au muundo wa rasimu uliopakuliwa nao (MTP, Eagle3, DFlash au DSpark).",
+      "nMax": "Tokeni za rasimu za juu zaidi",
+      "nMaxDescription": "Idadi ya juu zaidi ya tokeni za kutayarisha kwa kila hatua. Chaguomsingi 16.",
+      "nMin": "Rasimu ndogo ya tokeni",
+      "nMinDescription": "Idadi ya chini ya tokeni za kuandaa kwa kila hatua. Chaguomsingi 0.",
+      "pMin": "Uwezekano mdogo wa rasimu",
+      "pMinDescription": "Uwezekano mdogo wa uandishi wa uchoyo (0-1). Chaguomsingi 0.75."
+    },
+    "templateKwargs": {
+      "section": "Chaguo za violezo vya gumzo",
+      "description": "Chaguo za ziada kiolezo cha gumzo cha mtindo huu kinakubali. Imetumwa kama chat_template_kwargs kwa kila ombi; acha thamani kwa chaguomsingi ili kuruhusu kiolezo kuamua.",
+      "addCustom": "Ongeza chaguo maalum",
+      "keyPlaceholder": "jina",
+      "valuePlaceholder": "thamani",
+      "add": "Ongeza",
+      "cancel": "Ghairi",
+      "remove": "Ondoa"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "Haikuweza kusasisha mipangilio ya muundo"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Badilisha Mahali pa Folda ya Data",
+      "description": "Je, una uhakika unataka kubadilisha eneo la folda ya data? Hii itahamisha data yako yote hadi eneo jipya na kuanzisha upya programu.",
+      "currentLocation": "Eneo la Sasa:",
+      "newLocation": "Mahali Mapya:",
+      "cancel": "Ghairi",
+      "changeLocation": "Badilisha Mahali"
+    },
+    "deleteAllThreads": {
+      "title": "Futa Mizizi Zote",
+      "description": "Minyororo yote itafutwa. Kitendo hiki hakiwezi kutenduliwa."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Futa Mazungumzo Yote",
+      "description": "Mazungumzo {{count}} katika \"{{projectName}}\" yatafutwa. Kitendo hiki hakiwezi kutenduliwa."
+    },
+    "deleteThread": {
+      "description": "Je, una uhakika unataka kufuta mazungumzo haya? Kitendo hiki hakiwezi kutenduliwa."
+    },
+    "editMessage": {
+      "title": "Hariri Ujumbe"
+    },
+    "messageMetadata": {
+      "title": "Metadata ya ujumbe"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Hitilafu fulani imetokea",
+    "details": "Maelezo"
+  },
+  "missingDependenciesDialog": {
+    "title": "Maktaba za Mfumo hazipo",
+    "description": "{{backend}} ilisakinishwa lakini baadhi ya maktaba za mfumo zinazohitajika hazikuweza kupatikana. Inaweza kurudi hadi CPU au isiendeshwe ipasavyo.",
+    "installLabel": "Ili kurekebisha hii, sakinisha zifuatazo:",
+    "download": "Pakua",
+    "additionalLibraries": "Maktaba za ziada zinazokosekana:",
+    "missingLibraries": "Maktaba zinazokosekana:",
+    "showRawLibraries": "Onyesha {{count}} majina ya maktaba yanayokosekana"
+  },
+  "projects": {
+    "title": "Miradi",
+    "new": "Miradi Mipya",
+    "addProject": "Ongeza Mradi",
+    "addToProject": "Ongeza kwa mradi",
+    "removeFromProject": "Ondoa kutoka kwa mradi",
+    "createNewProject": "Unda Mradi Mpya",
+    "editProject": "Badilisha Mradi",
+    "deleteProject": "Futa Mradi",
+    "projectName": "Jina la Mradi",
+    "enterProjectName": "Weka jina la mradi...",
+    "noProjectsAvailable": "Hakuna miradi inayopatikana",
+    "noProjectsYet": "Bado Hakuna Miradi",
+    "noProjectsYetDesc": "Anzisha mradi mpya kwa kubofya kitufe cha Ongeza Mradi.",
+    "projectNotFound": "Mradi Haujapatikana",
+    "projectNotFoundDesc": "Mradi unaotafuta haupo au umefutwa.",
+    "selectAssistant": "Chagua msaidizi",
+    "noAssistantAssigned": "Hakuna msaidizi aliyekabidhiwa mradi huu",
+    "files": "Faili",
+    "filesDescription": "Ongeza PDF, hati, au maandishi mengine ya kurejelea katika mradi huu.",
+    "uploadingFiles": "Inachakata faili...",
+    "processButton": "Ongeza",
+    "deleteProjectDialog": {
+      "title": "Futa Mradi",
+      "permanentDelete": "Hii itafuta minyororo yote kabisa.",
+      "permanentDeleteWarning": "Hatua hii itafuta kabisa nyuzi ZOTE ndani ya mradi!",
+      "deleteEmptyProject": "Kitendo hiki kitafuta mradi \"{{projectName}}\".",
+      "saveThreadsAdvice": "Ili kuhifadhi nyuzi, zihamishe kwenye orodha yako ya mazungumzo au mradi mwingine kabla ya kufuta.",
+      "starredWarning": "Bado una nyuzi zenye nyota ndani ya mradi.",
+      "deleteButton": "Futa",
+      "successWithName": "Mradi \"{{projectName}}\" umefutwa",
+      "successWithoutName": "Mradi umefutwa",
+      "error": "Imeshindwa kufuta mradi. Tafadhali jaribu tena.",
+      "ariaLabel": "Futa {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Unda Mradi Mpya",
+      "editTitle": "Badilisha Mradi",
+      "nameLabel": "Jina la Mradi",
+      "namePlaceholder": "Weka jina la mradi...",
+      "assistant": "Msaidizi",
+      "selectAssistant": "Chagua msaidizi (si lazima)",
+      "noAssistant": "Hakuna msaidizi",
+      "addAssistant": "Ongeza Mratibu",
+      "createButton": "Unda",
+      "updateButton": "Sasisha",
+      "alreadyExists": "Mradi \"{{projectName}}\" tayari upo",
+      "createSuccess": "Mradi \"{{projectName}}\" umeundwa kwa ufanisi",
+      "updateSuccess": "Mradi \"{{projectName}}\" umesasishwa"
+    },
+    "noConversationsIn": "Hakuna Mazungumzo katika {{projectName}}",
+    "startNewConversation": "Anzisha mazungumzo mapya na {{projectName}} hapa chini",
+    "conversationsIn": "Mazungumzo katika {{projectName}}",
+    "conversationsDescription": "Bofya mazungumzo yoyote ili kuendelea kupiga gumzo, au anzishe jipya hapa chini.",
+    "conversation": "Mazungumzo",
+    "instructions": "Maelekezo",
+    "setup": "Sanidi",
+    "instructionsDescription": "Customize toni na mtindo wa majibu",
+    "manageInstructions": "Dhibiti Maagizo",
+    "thread": "uzi",
+    "threads": "nyuzi",
+    "updated": "Imesasishwa:",
+    "collapseProject": "Kunja mradi",
+    "expandProject": "Panua mradi",
+    "update": "Sasisha",
+    "searchProjects": "Tafuta miradi...",
+    "noProjectsFound": "Hakuna miradi iliyopatikana",
+    "tryDifferentSearch": "Jaribu neno tofauti la utafutaji"
+  },
+  "attachmentsIngestion": {
+    "title": "Chagua jinsi ya kumeza viambatisho",
+    "description": "Chagua ikiwa utajumuisha faili hizi moja kwa moja kwenye gumzo au zifahamishe kama upachikaji badala yake.",
+    "inline": "Ingiza kwenye gumzo",
+    "embeddings": "Tumia upachikaji"
+  },
+  "attachmentInjectedIndicator": "Imeingizwa kwenye gumzo",
+  "attachmentEmbeddedIndicator": "Imepachikwa kwa RAG",
+  "viewInjectedContent": "Tazama maudhui yaliyoingizwa",
+  "injectedContentTitle": "Maudhui ya faili iliyoingizwa",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Nyuzi Zote Hazijapendezwa",
+      "description": "Mazungumzo yote yameondolewa kutoka kwa vipendwa vyako."
+    },
+    "deleteAllThreads": {
+      "title": "Futa Mizizi Zote",
+      "description": "Mazungumzo yote yamefutwa kabisa."
+    },
+    "renameThread": {
+      "title": "Badilisha jina la Uzi",
+      "description": "Kichwa cha thread kimebadilishwa jina na kuwa '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Futa Uzi",
+      "description": "Mazungumzo haya yamefutwa kabisa."
+    },
+    "errorCopied": {
+      "title": "Kunakili imefaulu",
+      "description": "Maelezo ya hitilafu yamenakiliwa kwenye ubao wa kunakili"
+    },
+    "errorCopyFailed": {
+      "title": "Imeshindwa kunakili",
+      "description": "Imeshindwa kunakili maelezo ya hitilafu kwenye ubao wa kunakili"
+    },
+    "editMessage": {
+      "title": "Hariri Ujumbe",
+      "description": "Ujumbe umehaririwa. Tafadhali subiri mfano ujibu."
+    },
+    "appUpdateDownloaded": {
+      "title": "Sasisho la Programu Limepakuliwa",
+      "description": "Sasisho la programu limepakuliwa kwa mafanikio."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Imeshindwa Kupakua Usasishaji wa Programu",
+      "description": "Imeshindwa kupakua sasisho la programu. Tafadhali jaribu tena."
+    },
+    "downloadComplete": {
+      "title": "Upakuaji umekamilika",
+      "description": "{{item}} imepakuliwa"
+    },
+    "downloadCancelled": {
+      "title": "Upakuaji Umeghairiwa",
+      "description": "Mchakato wa upakuaji umeghairiwa"
+    },
+    "downloadFailed": {
+      "title": "Imeshindwa Kupakua",
+      "description": "{{item}} kupakua kumeshindwa",
+      "descriptionWithReason": "{{item}} kupakua kumeshindwa: {{reason}}",
+      "reason": {
+        "dns": "jina la seva halikuweza kutatuliwa",
+        "refused": "muunganisho ulikataliwa",
+        "timeout": "muunganisho umeisha",
+        "tls": "muunganisho salama haukuweza kuanzishwa",
+        "proxy": "wakala hakuweza kufikiwa",
+        "unreachable": "seva haikuweza kufikiwa"
+      }
+    },
+    "openSettings": "Fungua Mipangilio",
+    "openLogs": "Fungua kumbukumbu",
+    "downloadTokenRequired": {
+      "title": "Hugging Face tokeni inahitajika",
+      "description": "Muundo huu unahitaji tokeni ya ufikiaji Hugging Face. Ongeza tokeni yako katika Mipangilio na ujaribu tena."
+    },
+    "downloadLicenseRequired": {
+      "title": "Kubali leseni ya muundo mnamo Hugging Face",
+      "description": "Lazima ukubali leseni ya modeli kwenye ukurasa wake wa Hugging Face kabla ya kupakua."
+    },
+    "downloadRateLimited": {
+      "title": "Kiwango kimepunguzwa kwa Hugging Face",
+      "description": "Umewekewa kikomo cha viwango. Kuongeza tokeni kunaweza kuongeza viwango vya viwango. Tafadhali jaribu tena baadaye."
+    },
+    "modelValidationStarted": {
+      "title": "Mfano wa Kuthibitisha",
+      "description": "Muundo \"{{modelId}}\" umepakuliwa. Inathibitisha uadilifu..."
+    },
+    "modelValidationFailed": {
+      "title": "Uthibitishaji wa Muundo Umeshindwa",
+      "description": "Muundo uliopakuliwa \"{{modelId}}\" umeshindwa kuthibitisha uadilifu na ukaondolewa. Faili inaweza kuharibiwa au kuchezewa."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Upakuaji umekamilika",
+      "description": "Muundo \"{{item}}\" umepakuliwa na kuthibitishwa kwa ufanisi"
+    },
+    "projectCreated": {
+      "title": "Mradi Umeundwa",
+      "description": "Mradi \"{{projectName}}\" umeundwa kwa ufanisi"
+    },
+    "projectRenamed": {
+      "title": "Mradi Umebadilishwa Jina",
+      "description": "Mradi umebadilishwa jina kutoka \"{{oldName}}\" hadi \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Mradi Umefutwa",
+      "description": "Mradi \"{{projectName}}\" umefutwa"
+    },
+    "projectAlreadyExists": {
+      "title": "Mradi Tayari Upo",
+      "description": "Mradi \"{{projectName}}\" tayari upo"
+    },
+    "projectDeleteFailed": {
+      "title": "Imeshindwa Kufuta",
+      "description": "Imeshindwa kufuta mradi. Tafadhali jaribu tena."
+    },
+    "threadAssignedToProject": {
+      "title": "Uzi Umekabidhiwa",
+      "description": "Mazungumzo yamekabidhiwa \"{{projectName}}\" kwa ufanisi"
+    },
+    "threadRemovedFromProject": {
+      "title": "Uzi Umeondolewa",
+      "description": "Mazungumzo yameondolewa kwenye \"{{projectName}}\" kwa mafanikio"
+    },
+    "fileUploaded": {
+      "title": "Faili Imechakatwa",
+      "description": "Faili imechakatwa na kuorodheshwa kwa mafanikio"
+    },
+    "uploadFailed": {
+      "title": "Uchakataji Umeshindwa",
+      "description": "Imeshindwa kuchakata faili",
+      "subjectThisFile": "Faili hii",
+      "pdfMalformedXref": "{{subject}} ina jedwali PDF lenye hitilafu ya marejeleo na haikuweza kuchanganuliwa. Jaribu kuifungua katika kitazamaji PDF na uihifadhi tena (Faili → Chapisha → Hifadhi kama PDF), kisha upakie tena.",
+      "pdfScanned": "{{subject}} inaonekana kuwa imechanganuliwa au kulingana na picha PDF. OCR bado haitumiki — tafadhali pakia maandishi PDF.",
+      "pdfEncrypted": "{{subject}} inalindwa kwa nenosiri. Ondoa nenosiri na ujaribu tena.",
+      "pdfUnsupportedFeature": "{{subject}} hutumia kipengele cha PDF Jan bado haiwezi kuchanganua (k.m. PostScript rangi/utendakazi wa kivuli). Jaribu kuihifadhi tena (Faili → Chapisha → Hifadhi kama PDF) ili kuisawazisha, kisha upakie tena.",
+      "pdfGeneric": "{{subject}} haikuweza kuchanganuliwa kama PDF. Faili inaweza kuharibika au kutumia kipengele kisichotumika PDF.",
+      "fileTooLarge": "{{subject}} ni kubwa mno. {{message}}.",
+      "unsupportedType": "Aina ya faili \"{{type}}\" haitumiki.",
+      "ioError": "Haikuweza kusoma {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} haikuweza kuchanganuliwa: {{message}}",
+      "fallback": "Imeshindwa kuchakata {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "Faili Imefutwa",
+      "description": "Faili imeondolewa kwenye mradi"
+    },
+    "deleteFailed": {
+      "title": "Imeshindwa Kufuta",
+      "description": "Imeshindwa kufuta faili"
+    },
+    "fileAlreadyExists": {
+      "title": "Faili Tayari Ipo",
+      "description": "Faili tayari imeambatishwa kwenye mradi huu"
+    },
+    "unsupportedFileType": {
+      "title": "Aina ya Faili Isiyotumika",
+      "description": "Kiendelezi cha faili \".{{extension}}\" hakitumiki kwa marejeleo ya Mradi."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Viambatisho Vimezimwa",
+      "description": "Viambatisho vimezimwa katika Mipangilio"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "Faili ni kubwa mno",
+    "fileTooLargeDescription": "{{fileName}} inazidi kikomo cha {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "{{count}} vipande",
+    "title": "Faili",
+    "empty": "Faili unazoambatisha na faili ambazo wakala ataunda zitaonekana hapa.",
+    "a11y": "Faili: {{count}}",
+    "attachments": "Viambatisho",
+    "notImported": "si katika nafasi ya kazi"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp bado ina shughuli",
+    "description": "Muundo mmoja au zaidi haukupakua kwa wakati. Kulazimisha kuacha kutamaliza llama.cpp na kunaweza kukatiza majibu amilifu.",
+    "forceQuit": "Lazimisha kuacha",
+    "forcing": "Lazimisha kuacha…",
+    "shuttingDown": "Inazima..."
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  },
+  "collapse": "Kunja",
+  "expand": "Panua",
+  "todoPanelTitle": "Maendeleo",
+  "todoPanelEmpty": "Bado hakuna orodha ya mambo ya kufanya.",
+  "backgroundTasks": "Kazi za usuli",
+  "subagentsRunning_one": "Wasaidizi wadogo wanaoendesha kazi: {{count}}",
+  "subagentsRunning_other": "Wasaidizi wadogo wanaoendesha kazi: {{count}}",
+  "monitorsRunning_one": "Vifuatiliaji vinavyofanya kazi: {{count}}",
+  "monitorsRunning_other": "Vifuatiliaji vinavyofanya kazi: {{count}}",
+  "backgroundRunning_one": "Kazi za chinichini zinazoendeshwa: {{count}}",
+  "backgroundRunning_other": "Kazi za chinichini zinazoendeshwa: {{count}}",
+  "monitors": "Wachunguzi",
+  "monitorPolling": "Upigaji kura",
+  "monitorMatched": "Inalingana",
+  "monitorTimedOut": "Muda umekwisha",
+  "monitorStopped": "Imesimamishwa",
+  "monitorEnded": "Imeisha",
+  "coworkWatching_one": "Inafuatilia vifuatiliaji: {{count}}…",
+  "coworkWatching_other": "Inafuatilia vifuatiliaji: {{count}}…",
+  "coworkWaitingBackground": "Inasubiri majukumu ya chinichini...",
+  "noBackgroundTasks": "Bado hakuna kazi za usuli.",
+  "running": "Kukimbia",
+  "queued": "Imewekwa kwenye foleni",
+  "waiting": "Kusubiri",
+  "finished": "Imekamilika",
+  "subagentPhase": "awamu {{phase}}",
+  "subagentWaiting": "kusubiri",
+  "viewTranscript": "Tazama nakala",
+  "taskWorking": "Inafanya kazi...",
+  "taskNoOutput": "Dawa ndogo haikutoa pato linaloonekana.",
+  "subagentToolUses_one": "Idadi ya matumizi ya zana: {{count}}",
+  "subagentToolUses_other": "Idadi ya matumizi ya zana: {{count}}",
+  "artifactGroupCode": "Kanuni",
+  "artifactGroupImage": "Picha",
+  "artifactGroupDocument": "Hati",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Sauti",
+  "artifactOpenPreview": "Fungua onyesho la kukagua",
+  "artifactOpenExternal": "Fungua",
+  "artifactMoreActions": "Vitendo zaidi",
+  "artifactShowInFolder": "Onyesha kwenye Folda",
+  "skillsUsedLabel": "Ujuzi uliotumika",
+  "skillsUsed": "Ujuzi uliotumika: {{skills}}",
+  "artifactsAll": "Wote",
+  "artifactsEmpty": "Hakuna kilichozalishwa bado. Vipengee vya programu Cowork vitaonekana hapa.",
+  "artifactsNoMatch": "Hakuna vizalia vya programu vinavyolingana.",
+  "artifactsSearch": "Tafuta mabaki",
+  "artifactsShowMore": "Onyesha {{count}} zaidi",
+  "workspace": {
+    "readsFrom": "Inafanya kazi katika",
+    "writable": "kusoma na kuandika",
+    "footnote": "Wakala husoma na kuhariri folda hii moja kwa moja. Kagua kilichobadilika kwenye kidirisha cha tofauti.",
+    "footnoteEmpty": "Ambatisha folda ili kuruhusu wakala afanye kazi kwenye mradi wako. Inaweza kusoma na kuhariri faili ndani yake.",
+    "attach": "Ambatisha folda",
+    "change": "Badilisha folda",
+    "detach": "Ondoa folda",
+    "open": "Fungua",
+    "reveal": "Fichua",
+    "unavailable": "Nafasi ya kazi haipatikani",
+    "missing": "Folda ya nafasi ya kazi {{folder}} haipatikani tena. Chagua folda tofauti.",
+    "openFailed": "Haikuweza kufungua nafasi ya kazi",
+    "revealFailed": "Haikuweza kufichua nafasi ya kazi",
+    "a11yWithFolder": "Folda ya mradi {{folder}}, iliyoambatishwa na ufikiaji wa kusoma na kuandika. Badilisha au uiondoe.",
+    "a11yNoFolder": "Hakuna folda ya mradi iliyoambatishwa. Ambatanisha moja."
+  },
+  "coworkEmpty": {
+    "title": "Je, tunafanyia kazi nini?",
+    "subtitleSandbox": "Wape Jan kazi. Inasoma na kuandika faili, inaendesha amri, na inafanya kazi kupitia hatua yenyewe.",
+    "subtitleFolder": "Wape Jan kazi. Inafanya kazi moja kwa moja katika {{folder}}, kusoma na kuhariri faili peke yake.",
+    "try": "Jaribu",
+    "sandbox": {
+      "first": "Andika hati ya Python inayobadilisha jina faili kwa tarehe ambayo zilichukuliwa",
+      "second": "Unda dashibodi ya ukurasa mmoja kutoka kwa CSV nitabandika",
+      "third": "Rasimu ya README kwa mradi ninaokuelezea"
+    },
+    "folder": {
+      "first": "Eleza jinsi {{folder}} inavyowekwa pamoja",
+      "second": "Pata kila TODO katika {{folder}} na uzipange kulingana na eneo",
+      "third": "Andika majaribio kwa sehemu ya {{folder}} ninayokuelekeza"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "Hakuna terminal",
+    "a11y": "Amri zinazoendesha zimezimwa. Maelezo.",
+    "title": "Amri zinazoendesha zimezimwa",
+    "body": "Jan huruhusu wakala kutekeleza amri za ganda tu wakati mfumo wako unaweza kuzifunga. Hakuna sandbox inayopatikana hapa, kwa hivyo wakala anaweza kusoma, kuandika na kuhariri faili kwenye kisanduku chake cha mchanga - lakini asiendeshe chochote.",
+    "fixLinux": "Linux hutumia kiputo. Isakinishe, kisha uwashe upya Jan.",
+    "fixMac": "macOS hutumia sandbox iliyojengewa ndani kwenye /usr/bin/sandbox-exec. Anzisha upya Jan ikishapatikana.",
+    "fixWindows": "Windows hutumia AppContainer. Washa upya Jan ili ujaribu tena.",
+    "recheck": "Angalia tena"
+  },
+  "planMode": {
+    "label": "Mpango",
+    "tooltipOff": "Panga kwanza - wakala anasoma na kupendekeza, bila kuandika.",
+    "tooltipOn": "Kupanga. Zima hii ili kuruhusu wakala kuandika faili.",
+    "onAnnounce": "Hali ya kupanga imewashwa",
+    "placeholder": "Uliza mpango. Wakala hatabadilisha faili zozote."
+  },
+  "budget": {
+    "stoppedSteps": "Ilisimama kwa hatua {{max}}. Wakala hajamaliza.",
+    "keepGoing": "Endelea",
+    "stoppedTokens": "Ilisimamishwa - kikao hiki kilifikia bajeti yake ya ishara.",
+    "compact": "Compact",
+    "newSession": "Kipindi kipya"
+  },
+  "run": {
+    "stopped": "Imesimamishwa.",
+    "failed": "Kukimbia kusimamishwa mapema.",
+    "tryAgain": "Jaribu tena"
+  },
+  "modelNoTools": "{{model}} haiwezi kuita zana, kwa hivyo haiwezi kufanya kazi kama wakala. Chagua modeli ya kupiga simu.",
+  "askContinue": "Endelea",
+  "askNext": "Swali linalofuata",
+  "askPrev": "Swali lililotangulia",
+  "askRecommended": "Imependekezwa",
+  "askSelectedCount": "{{count}} imechaguliwa",
+  "askSomethingElse": "Kitu kingine",
+  "askSomethingElsePlaceholder": "Andika jibu lako mwenyewe",
+  "submit": "Wasilisha"
+}

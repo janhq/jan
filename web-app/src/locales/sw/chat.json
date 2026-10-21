@@ -1,0 +1,38 @@
+{
+  "welcome": "Habari, unaendeleaje?",
+  "description": "Ninaweza kukusaidiaje leo?",
+  "temporaryChat": "Gumzo la muda",
+  "temporaryChatDescription": "Anza mazungumzo ya muda ambayo hayatahifadhiwa kwenye historia yako ya gumzo.",
+  "status": {
+    "empty": "Hakuna gumzo lililopatikana"
+  },
+  "sendMessage": "Tuma ujumbe",
+  "newConversation": "Mazungumzo mapya",
+  "clearHistory": "Futa historia",
+  "embeddings": {
+    "title": "Inaandaa nyaraka zako",
+    "description": "Inaweka faharasa ya faili zilizoambatishwa ili ziweze kutafutwa na kutajwa kama vyanzo. Hii inaweza kuchukua muda kwa nyaraka kubwa."
+  },
+  "actions": {
+    "regenerate": "Tengeneza jibu upya",
+    "askAgain": "Uliza tena",
+    "continue": "Endelea kutengeneza",
+    "remember": "Kumbuka hili",
+    "rememberSaved": "Imehifadhiwa kwenye kumbukumbu kwa jina \"{{name}}\"",
+    "rememberExists": "Tayari ipo kwenye kumbukumbu kwa jina \"{{name}}\"",
+    "rememberFailed": "Imeshindwa kuhifadhi kwenye kumbukumbu"
+  },
+  "done": "Imekamilika",
+  "webSources": "Idadi ya vyanzo: {{count}}",
+  "reasoning": {
+    "label": "Inafikiri...",
+    "thinking": "Inafikiri",
+    "working": "Inafanya kazi...",
+    "showFullTimeline": "Onyesha mfuatano wote wa matukio",
+    "showCurrentStep": "Onyesha hatua ya sasa pekee",
+    "thoughtForAWhile": "Imefikiri kwa sekunde chache",
+    "thoughtFor": "Imefikiri kwa {{duration}}",
+    "workedForAWhile": "Imefanya kazi kwa sekunde chache",
+    "workedFor": "Imefanya kazi kwa {{duration}}"
+  }
+}

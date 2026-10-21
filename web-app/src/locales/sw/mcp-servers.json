@@ -1,0 +1,101 @@
+{
+  "editServer": "Hariri MCP Seva",
+  "addServer": "Ongeza Seva MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Inakagua hali ya kiendelezi..."
+    },
+    "notInstalled": {
+      "title": "Jan hukamilisha kazi katika kivinjari chako",
+      "description": "Sakinisha kiendelezi ili kutoa ufikiaji wa kivinjari Jan",
+      "getExtension": "Pata Kiendelezi"
+    }
+  },
+  "serverName": "Jina la Seva",
+  "enterServerName": "Ingiza jina la seva",
+  "command": "Amri",
+  "enterCommand": "Ingiza amri (uvx au npx)",
+  "arguments": "Hoja",
+  "argument": "Hoja {{index}}",
+  "envVars": "Vigezo vya Mazingira",
+  "key": "Ufunguo",
+  "value": "Thamani",
+  "save": "Hifadhi",
+  "status": "Hali",
+  "connected": "Imeunganishwa",
+  "disconnected": "Imetenganishwa",
+  "deleteServer": {
+    "title": "Futa MCP Seva",
+    "description": "Je, una uhakika unataka kufuta seva ya MCP {{serverName}}? Kitendo hiki hakiwezi kutenduliwa.",
+    "delete": "Futa",
+    "success": "MCP seva {{serverName}} imefutwa"
+  },
+  "editJson": {
+    "title": "Hariri JSON kwa MCP Seva: {{serverName}}",
+    "titleAll": "Hariri Seva Zote MCP JSON",
+    "placeholder": "Weka JSON usanidi",
+    "errorParse": "Imeshindwa kuchanganua data ya awali",
+    "errorPaste": "Umbizo la JSON si sahihi katika maudhui yaliyobandikwa",
+    "errorFormat": "Umbizo la JSON si sahihi",
+    "errorServerName": "Jina la seva linahitajika na haliwezi kuwa tupu",
+    "errorMissingServerNameKey": "JSON lazima iwe na muundo kama {\"serverName\": {config}} - kukosa ufunguo wa jina la seva",
+    "errorInvalidType": "Aina batili '{{type}}' kwa seva '{{serverName}}'. Aina lazima iwe 'stdio', 'http', au 'sse'",
+    "save": "Hifadhi"
+  },
+  "checkParams": "Tafadhali angalia vigezo kulingana na mafunzo.",
+  "title": "MCP Seva",
+  "experimental": "Majaribio",
+  "editAllJson": "Hariri Seva Zote JSON",
+  "findMore": "Pata seva zaidi MCP kwa",
+  "allowPermissions": "Ruhusu Ruhusa Zote MCP Zana",
+  "allowPermissionsDesc": "Ikiwashwa, simu zote MCP za zana zitaidhinishwa kiotomatiki bila kuonyesha vidadisi vya ruhusa. Mipangilio hii inatumika duniani kote kwa mazungumzo yote, ikiwa ni pamoja na mazungumzo mapya.",
+  "noServers": "Hakuna seva MCP zilizopatikana",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Seva {{serverKey}} imewezeshwa",
+  "serverStatusInactive": "Seva {{serverKey}} imezimwa",
+  "runtimeSettings": {
+    "title": "Mipangilio ya Muda wa Kuendesha",
+    "description": "Sanidi jinsi Jan inadhibiti na kujaribu tena seva MCP.",
+    "toolCallTimeout": "Muda wa kupiga simu kwa zana (sekunde)",
+    "toolCallTimeoutDesc": "Muda wa juu zaidi wa kusubiri jibu la zana MCP kabla ya kuisha.",
+    "maxToolOutputChars": "Vibambo vya juu vya kutoa zana",
+    "maxToolOutputCharsDesc": "Tokeo refu zaidi la zana lililowekwa kwenye mazungumzo. Kitu chochote kilichopita hiki hupunguzwa na kuwekewa alama kama kupunguzwa, kwa hivyo matokeo moja kubwa hayawezi kumaliza muktadha wa mfano. Weka hadi 0 ili kudumisha matokeo.",
+    "smartToolRouting": "Uelekezaji wa zana mahiri MCP",
+    "smartToolRoutingDesc": "Inapowashwa, Jan huchagua seva MCP muhimu kabla ya kupakia zana. Zima ili kupakia kila wakati orodha kamili ya zana MCP.",
+    "useLightweightRouterModel": "Tumia muundo maalum kwa uelekezaji",
+    "useLightweightRouterModelDesc": "Wakati uelekezaji mahiri umewashwa, endesha hatua ya uelekezaji kwa modeli tofauti (mara nyingi ndogo) badala ya muundo wa gumzo. Zima ili utumie muundo wa gumzo unaotumika kila wakati kuelekeza.",
+    "routerModel": "Mfano wa uelekezaji",
+    "routerModelDesc": "Chagua mtoaji na modeli katika sehemu moja. Miundo nyepesi pekee ndiyo iliyoorodheshwa ili uelekezaji ubaki haraka na kwa bei nafuu.",
+    "selectRouterModelPlaceholder": "Chagua muundo wa uelekezaji...",
+    "routerModelSearchPlaceholder": "Tafuta miundo...",
+    "routerModelEmptyList": "Hakuna miundo nyepesi inayopatikana. Ongeza muundo mdogo au usanidi vitufe API katika Miundo.",
+    "routerModelEmptySearch": "Hakuna zinazolingana na \"{{query}}\"."
+  },
+  "auth": {
+    "label": "Uthibitishaji:",
+    "state": {
+      "notApplicable": "haihitajiki",
+      "staticHeader": "Kichwa cha uidhinishaji",
+      "authenticated": "kuthibitishwa",
+      "expired": "muda wake umeisha",
+      "staleResource": "imetolewa kwa URL",
+      "unauthenticated": "haijathibitishwa"
+    },
+    "expiresIn": "inaisha muda baada ya {{duration}}",
+    "authenticate": "Ingia",
+    "reauthenticate": "Thibitisha upya",
+    "clear": "Futa uthibitishaji",
+    "waiting": "Inasubiri kivinjari...",
+    "openSignInPage": "Fungua ukurasa wa kuingia",
+    "needsAuth": "{{serverName}} inahitaji uthibitishaji",
+    "needsAuthHint": "Ingia kwenye seva hii ili kuunganisha.",
+    "authorized": "Umeingia kwenye {{serverName}}",
+    "authorizeFailed": "Kuingia kwa {{serverName}} kumeshindwa",
+    "cleared": "Imefuta kitambulisho kilichohifadhiwa cha {{serverName}}",
+    "nothingToClear": "{{serverName}} haikuwa na kitambulisho kilichohifadhiwa",
+    "clearFailed": "Haikuweza kufuta kitambulisho cha {{serverName}}",
+    "renew": "Rudisha kipindi",
+    "expiredAgo": "muda wake uliisha {{duration}} iliyopita"
+  }
+}
