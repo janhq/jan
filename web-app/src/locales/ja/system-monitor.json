@@ -16,6 +16,8 @@
   "actions": "アクション",
   "stop": "停止",
   "activeGpus": "アクティブなGPU",
+  "gpus": "GPU",
+  "vram": "VRAM",
   "noGpus": "GPUが検出されませんでした",
   "noActiveGpus": "アクティブなGPUはありません。すべてのGPUは現在無効になっています。",
   "vramUsage": "VRAM使用率",
