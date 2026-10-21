@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'fa-IR'
   | 'es'
   | 'fr'
   | 'it'

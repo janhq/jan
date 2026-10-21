@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "کد",
+    "preview": "پیش نمایش",
+    "previewStreaming": "پس از پایان تولید در دسترس است",
+    "unresolvedAssets_one": "1 مرجع دارایی نمی تواند در پیش نمایش بارگیری شود. مسیرهای نسبی پایه URL برای حل کردن ندارند.",
+    "unresolvedAssets_other": "{{count}} مرجع دارایی نمی‌تواند در پیش‌نمایش بارگیری شود. مسیرهای نسبی پایه URL برای حل کردن ندارند."
+  },
+  "assistants": "دستیارها",
+  "hardware": "سخت افزار",
+  "mcp-servers": "MCP سرور",
+  "local_api_server": "سرور محلی API",
+  "remote_access": "دسترسی از راه دور",
+  "integrations": "ادغام ها",
+  "experimental": "تجربی",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS پروکسی",
+  "web_search": "جستجوی وب",
+  "shell": "پوسته",
+  "browse": "مرور کنید",
+  "moreControls": "کنترل های بیشتر",
+  "starting": "شروع...",
+  "activeSuffix": "(فعال)",
+  "extensions": "برنامه های افزودنی",
+  "attachments": "پیوست ها",
+  "general": "عمومی",
+  "settings": "تنظیمات",
+  "modelProviders": "ارائه دهندگان مدل",
+  "localProviders": "محلی",
+  "remoteProviders": "از راه دور",
+  "manageProviders": "ارائه دهندگان را مدیریت کنید",
+  "hiddenProviders": "{{count}} غیرفعال است",
+  "hideProvider": "مخفی کردن ارائه دهنده",
+  "showProvider": "نمایش ارائه دهنده",
+  "interface": "رابط",
+  "appearance": "ظاهر",
+  "privacy": "حریم خصوصی",
+  "keyboardShortcuts": "میانبرها",
+  "home": "صفحه اصلی",
+  "cowork": "Cowork",
+  "newSession": "جلسه جدید",
+  "artifacts": "مصنوعات",
+  "customize": "سفارشی کنید",
+  "local": "محلی",
+  "selectFolder": "پوشه را انتخاب کنید",
+  "selectModel": "ابتدا یک مدل را انتخاب کنید",
+  "commands": "دستورات",
+  "cmdHelp": "دستورات موجود را فهرست کنید",
+  "cmdClear": "این جلسه را پاک کنید",
+  "cmdModels": "مدل فعال را تغییر دهید",
+  "cmdModelsHint": "دستور /models را بنویسید و سپس یک مدل را از فهرست انتخاب کنید",
+  "cmdModelSwitched": "تغییر به {{name}}",
+  "cmdUnknown": "دستور ناشناخته: {{name}}. دستور /help را امتحان کنید",
+  "cmdBusy": "در حالی که عامل در حال اجرا است، نمی توان این کار را انجام داد",
+  "cmdCompact": "متن جلسه را به صورت خلاصه جمع کنید",
+  "cmdCompacted": "پیام های فشرده {{before}} -> {{after}}",
+  "cmdNothingToCompact": "هنوز چیزی برای فشرده سازی وجود ندارد",
+  "cmdCompactFailed": "تراکم ناموفق: {{error}}",
+  "cmdPlan": "تغییر حالت طرح (فقط خواندنی: نماینده بدون نوشتن پیشنهاد می دهد)",
+  "cmdPlanOn": "حالت پلان روشن: نماینده بدون نوشتن می خواند و پیشنهاد می دهد",
+  "cmdPlanOff": "حالت پلان خاموش: اجرای عادی",
+  "cmdTodo": "پانل پیشرفت را باز کنید",
+  "cmdTasks": "پانل وظایف پس زمینه را باز کنید",
+  "cmdInit": "پروژه را مطالعه کنید و مهارت ها و حافظه را بنویسید",
+  "cmdInitRunning": "در حال اجرا در این پروژه",
+  "skills": "مهارت ها",
+  "skillsInContext": "مهارت هایی که در این اجرا در اختیار عامل قرار می گیرد",
+  "skillsTitle": "مهارت ها را مدیریت کنید",
+  "skillsScopeProject": "مهارت برای {{folder}}",
+  "skillsScopeGlobal": "مهارت های جهانی، در دسترس برای هر جلسه",
+  "skillsScopeMerged": "مهارت‌هایی برای {{folder}}، به‌علاوه مهارت‌های جهانی به اشتراک گذاشته شده در هر جلسه",
+  "skillOriginFolder": "پوشه",
+  "skillOriginGlobal": "جهانی است",
+  "skillsEmpty": "هنوز هیچ مهارتی وجود ندارد",
+  "skillsPickOrNew": "یک مهارت را برای ویرایش انتخاب کنید یا مهارت جدیدی ایجاد کنید.",
+  "skillNew": "مهارت جدید",
+  "skillDelete": "مهارت را حذف کنید",
+  "skillSave": "ذخیره",
+  "skillSaved": "مهارت ذخیره شد",
+  "skillNameRequired": "نام مهارت الزامی است",
+  "skillNamePlaceholder": "نام مهارت",
+  "skillContentPlaceholder": "روش قابل استفاده مجدد را در Markdown شرح دهید…",
+  "skillHubImport": "واردات از هاب",
+  "skillHubTitle": "Anthropic مرکز مهارت",
+  "skillHubEmpty": "هیچ مهارتی در هاب یافت نشد",
+  "skillImport": "واردات",
+  "skillReimport": "واردات مجدد",
+  "skillImported": "وارداتی {{name}}",
+  "sessions": "جلسات",
+  "deleteSession": "حذف جلسه",
+  "deleteSessionTitle": "جلسه حذف شود؟",
+  "deleteSessionBody": "\"{{title}}\" و رونوشت آن برای همیشه حذف خواهد شد. این قابل واگرد نیست.",
+  "newChat": "چت جدید",
+  "newAgentChat": "گپ عامل جدید",
+  "chats": "چت ها",
+  "favorites": "موارد دلخواه",
+  "recents": "اخیرا",
+  "hub": "هاب",
+  "helpSupport": "راهنما و پشتیبانی",
+  "helpUsImproveJan": "به ما در بهبود Jan کمک کنید",
+  "analyticsConsentDetail": "ما داده های ناشناس را برای درک استفاده از ویژگی جمع آوری می کنیم. چت ها و اطلاعات شخصی شما هرگز ردیابی نمی شوند. هر زمان خواستید می‌توانید این مورد را در تنظیمات > حریم خصوصی تغییر دهید.",
+  "analyticsConsentQuestion": "آیا می خواهید به ما در بهبود Jan کمک کنید؟",
+  "unstarAll": "حذف ستاره همه",
+  "unstar": "لغو ستاره",
+  "deleteAll": "حذف همه",
+  "star": "ستاره",
+  "rename": "تغییر نام دهید",
+  "delete": "حذف",
+  "copied": "کپی شده!",
+  "dataFolder": "پوشه داده",
+  "others": "دیگر",
+  "language": "زبان",
+  "login": "وارد شوید",
+  "loginWith": "با {{provider}} وارد شوید",
+  "loginFailed": "ورود ناموفق بود",
+  "logout": "از سیستم خارج شوید",
+  "loggingOut": "خروج از سیستم...",
+  "loggedOut": "با موفقیت از سیستم خارج شد",
+  "logoutFailed": "خروج ناموفق بود",
+  "profile": "نمایه",
+  "reset": "بازنشانی کنید",
+  "search": "جستجو",
+  "searchThreads": "جستجوی موضوعات...",
+  "toNavigate": "برای پیمایش",
+  "toSelect": "را انتخاب کنید",
+  "toClose": "برای بستن",
+  "clearRecent": "پاک کردن",
+  "name": "نام",
+  "cancel": "لغو",
+  "dismiss": "رد کردن",
+  "create": "ایجاد کنید",
+  "save": "ذخیره",
+  "edit": "ویرایش",
+  "copy": "کپی",
+  "back": "بازگشت",
+  "close": "بستن",
+  "done": "انجام شد",
+  "next": "بعدی",
+  "finish": "پایان",
+  "skip": "پرش کنید",
+  "allow": "اجازه دهید",
+  "deny": "تکذیب کنید",
+  "start": "شروع",
+  "stop": "توقف",
+  "preview": {
+    "loading": "باز کردن…",
+    "unsupported": "Jan نمی‌تواند این نوع فایل را نشان دهد. آن را باز کنید تا در برنامه دیگری ببینید.",
+    "outside": "این فایل دیگر در فضای کاری جلسه نیست.",
+    "tooLarge": "برای پیش نمایش خیلی بزرگ است. آن را باز کنید تا در برنامه دیگری ببینید.",
+    "reload": "بارگذاری مجدد",
+    "allowNetwork": "شبکه مجاز است",
+    "unsandboxed": "اجرای بدون جعبه ایمنی: داده های ذخیره شده و فایل های محلی کار می کنند",
+    "unresolvedRefs_one": "1 فایل پیوندهای این صفحه برای بارگیری در پیش نمایش امکان پذیر نیست. آن را باز کنید تا در مرورگر ببینید.",
+    "unresolvedRefs_other": "فایل های {{count}} پیوندهای این صفحه که نمی توانند در پیش نمایش بارگیری شوند. آن را باز کنید تا در مرورگر ببینید.",
+    "externalRefs_one": "1 منبعی که این صفحه از وب بارگیری می کند مسدود شده است. برای بارگیری «Allow network» را روشن کنید.",
+    "externalRefs_other": "{{count}} منبعی که این صفحه از وب بارگیری می‌کند مسدود شده‌اند. برای بارگیری آنها، \"Allow network\" را روشن کنید.",
+    "scriptErrors_one": "صفحه یک خطا گزارش کرد: {{message}}",
+    "scriptErrors_other": "صفحه {{count}} خطا گزارش کرد. اول: {{message}}"
+  },
+  "changes": {
+    "title": "تغییر نماینده",
+    "empty": "فایل هایی که نماینده می نویسد یا ویرایش می کند در اینجا نمایش داده می شوند.",
+    "a11y": "تغییرات عامل: {{files}} فایل، {{additions}} اضافه شد، {{deletions}} حذف شد"
+  },
+  "modelPanel": {
+    "title": "تنظیمات مدل",
+    "a11y": "تنظیمات مدل را باز کنید",
+    "contextTooltip": "پنجره زمینه: {{value}} از {{max}} توکن"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "مهارت \"{{name}}\" در دسترس نیست",
+    "kind": {
+      "skill": "مهارت",
+      "command": "Command",
+      "model": "مدل"
+    }
+  },
+  "compactWidth": "پهنای فشرده",
+  "fullWidth": "عرض کامل",
+  "dark": "تاریک",
+  "light": "نور",
+  "system": "سیستم",
+  "auto": "خودکار",
+  "english": "انگلیسی",
+  "medium": "متوسط",
+  "newThread": "موضوع جدید",
+  "noResultsFound": "هیچ نتیجه ای یافت نشد",
+  "noThreadsYet": "هنوز هیچ موضوعی وجود ندارد",
+  "noThreadsYetDesc": "یک مکالمه جدید را شروع کنید تا تاریخچه رشته خود را اینجا ببینید.",
+  "downloads": "دانلودها",
+  "downloading": "در حال دانلود",
+  "uploadingAttachments": "در حال بارگذاری پیوست‌ها…",
+  "cancelDownload": "لغو دانلود",
+  "downloadCancelled": "دانلود لغو شد",
+  "downloadComplete": "دانلود کامل شد",
+  "thinking": "فکر کردن...",
+  "thought": "فکر کرد",
+  "callingTool": "ابزار تماس",
+  "completed": "تکمیل شد",
+  "image": "تصویر",
+  "vision": "چشم انداز",
+  "multimodal": "چند وجهی",
+  "embeddings": "جاسازی ها",
+  "tools": "ابزارها",
+  "webSearch": "جستجوی وب",
+  "reasoning": "استدلال",
+  "proactive": "فعال",
+  "selectAModel": "یک مدل انتخاب کنید",
+  "noToolsAvailable": "هیچ ابزاری در دسترس نیست",
+  "noModelsFoundFor": "هیچ مدلی برای \"{{searchValue}}\" یافت نشد",
+  "failedToLoadModels": "مدل ها بارگیری نشد",
+  "noModels": "هیچ مدلی پیدا نشد",
+  "noAssistant": "بدون دستیار",
+  "customAvatar": "آواتار سفارشی",
+  "editAssistant": "دستیار ویرایش",
+  "jan": "Jan",
+  "metadata": "فراداده",
+  "regenerate": "بازسازی کنید",
+  "threadImage": "تصویر موضوع",
+  "editMessage": "ویرایش پیام",
+  "deleteMessage": "حذف پیام",
+  "deleteThread": "موضوع را حذف کنید",
+  "renameThread": "تغییر نام موضوع",
+  "threadTitle": "عنوان موضوع",
+  "deleteAllThreads": "تمام موضوعات را حذف کنید",
+  "allThreadsUnfavorited": "همه موضوعات مورد علاقه نیست",
+  "deleteAllThreadsConfirm": "آیا مطمئن هستید که می خواهید همه رشته ها را حذف کنید؟ این عمل قابل بازگشت نیست.",
+  "addProvider": "ارائه دهنده را اضافه کنید",
+  "addOpenAIProvider": "ارائه دهنده OpenAI را اضافه کنید",
+  "enterNameForProvider": "یک نام برای ارائه دهنده خود وارد کنید",
+  "providerAlreadyExists": "ارائه دهنده با نام \"{{name}}\" از قبل وجود دارد. لطفا نام دیگری انتخاب کنید",
+  "adjustFontSize": "اندازه قلم را تنظیم کنید",
+  "changeLanguage": "تغییر زبان",
+  "editTheme": "ویرایش تم",
+  "editCodeBlockStyle": "ویرایش کد بلوک سبک",
+  "editServerHost": "ویرایش میزبان سرور",
+  "pickColorWindowBackground": "پس زمینه پنجره رنگی را انتخاب کنید",
+  "pickColorAppMainView": "نمای اصلی برنامه رنگی را انتخاب کنید",
+  "pickColorAppPrimary": "برنامه رنگی اصلی را انتخاب کنید",
+  "pickColorAppAccent": "لهجه برنامه رنگی را انتخاب کنید",
+  "pickColorAppDestructive": "برنامه رنگ مخرب را انتخاب کنید",
+  "apiKeyRequired": "کلید API مورد نیاز است",
+  "enterTrustedHosts": "میزبان های مورد اعتماد را وارد کنید",
+  "placeholder": {
+    "chatInput": "هرچی از من بپرس..."
+  },
+  "confirm": "تأیید",
+  "continue": "ادامه",
+  "loading": "در حال بارگیری...",
+  "settingUpJan": "در حال راه اندازی Jan…",
+  "registeringExtensions": "ثبت برنامه های افزودنی…",
+  "loadingExtensions": "در حال بارگیری برنامه های افزودنی… ({{done}}/{{total}})",
+  "error": "خطا",
+  "success": "موفقیت",
+  "warning": "هشدار",
+  "conversationNotAvailable": "مکالمه در دسترس نیست",
+  "conversationNotAvailableDescription": "مکالمه ای که می خواهید به آن دسترسی پیدا کنید در دسترس نیست یا حذف شده است.",
+  "temporaryChat": "چت موقت",
+  "temporaryChatTooltip": "گپ موقت در سابقه شما ظاهر نمی شود",
+  "noResultsFoundDesc": "ما نتوانستیم هیچ گپی مطابق با جستجوی شما پیدا کنیم. کلمه کلیدی دیگری را امتحان کنید.",
+  "searchModels": "جستجوی مدل های ...",
+  "searchStyles": "سبک های جستجو...",
+  "createAssistant": "ایجاد دستیار",
+  "enterApiKey": "کلید API را وارد کنید",
+  "scrollToBottom": "به پایین اسکرول کنید",
+  "generateAiResponse": "ایجاد پاسخ هوش مصنوعی",
+  "continueAiResponse": "با AI Response ادامه دهید",
+  "addModel": {
+    "title": "اضافه کردن مدل",
+    "modelId": "شناسه مدل",
+    "enterModelId": "شناسه مدل را وارد کنید",
+    "addModel": "اضافه کردن مدل",
+    "description": "یک مدل جدید به ارائه دهنده اضافه کنید",
+    "exploreModels": "لیست مدل را از ارائه دهنده ببینید"
+  },
+  "mcpServers": {
+    "editServer": "ویرایش سرور",
+    "addServer": "افزودن سرور",
+    "serverName": "نام سرور",
+    "enterServerName": "نام سرور را وارد کنید",
+    "command": "Command",
+    "enterCommand": "دستور را وارد کنید",
+    "arguments": "استدلال ها",
+    "argument": "استدلال {{index}}",
+    "envVars": "متغیرهای محیطی",
+    "key": "کلید",
+    "value": "ارزش",
+    "save": "ذخیره"
+  },
+  "deleteServer": {
+    "title": "سرور را حذف کنید",
+    "delete": "حذف"
+  },
+  "editJson": {
+    "errorParse": "تجزیه نشد JSON",
+    "errorPaste": "JSON جایگذاری نشد",
+    "errorFormat": "قالب JSON نامعتبر است",
+    "titleAll": "ویرایش پیکربندی همه سرورها",
+    "placeholder": "پیکربندی JSON را وارد کنید...",
+    "save": "ذخیره"
+  },
+  "editModel": {
+    "title": "ویرایش مدل: {{modelId}}",
+    "description": "با جابجایی گزینه های زیر، قابلیت های مدل را پیکربندی کنید.",
+    "capabilities": "قابلیت ها",
+    "tools": "ابزارها",
+    "vision": "چشم انداز",
+    "embeddings": "جاسازی ها",
+    "notAvailable": "هنوز در دسترس نیست"
+  },
+  "outOfContextError": {
+    "truncateInput": "ورودی را کوتاه کنید",
+    "title": "خطای خارج از زمینه",
+    "description": "این گپ به محدودیت حافظه هوش مصنوعی می رسد، مانند تخته سفیدی که پر می شود. ما می توانیم پنجره حافظه (به نام اندازه زمینه) را گسترش دهیم تا موارد بیشتری را به خاطر بسپارد، اما ممکن است از حافظه رایانه شما بیشتر استفاده کند. همچنین می‌توانیم ورودی را کوتاه کنیم، به این معنی که بخشی از تاریخچه چت را فراموش می‌کند تا فضا برای پیام‌های جدید باز شود.",
+    "increaseContextSizeDescription": "آیا می خواهید اندازه زمینه را افزایش دهید؟",
+    "increaseContextSize": "اندازه زمینه را افزایش دهید"
+  },
+  "toolApproval": {
+    "title": "درخواست مجوز ابزار",
+    "description": "دستیار می خواهد از <strong>{{toolName}}</strong> استفاده کند",
+    "securityNotice": "فقط به ابزارهایی که به آنها اعتماد دارید اجازه دهید. ابزارها می توانند به سیستم و داده های شما دسترسی داشته باشند.",
+    "deny": "تکذیب کنید",
+    "allowOnce": "یک بار اجازه دهید",
+    "alwaysAllow": "همیشه اجازه دهید"
+  },
+  "deleteModel": {
+    "title": "حذف مدل: {{modelId}}",
+    "description": "آیا مطمئنید که می خواهید این مدل را حذف کنید؟ این عمل قابل بازگشت نیست.",
+    "success": "مدل {{modelId}} برای همیشه حذف شده است.",
+    "cancel": "لغو",
+    "delete": "حذف"
+  },
+  "deleteProvider": {
+    "title": "حذف ارائه دهنده",
+    "description": "این ارائه دهنده و همه مدل های آن را حذف کنید. این عمل قابل بازگشت نیست.",
+    "success": "ارائه دهنده {{provider}} برای همیشه حذف شده است.",
+    "confirmTitle": "حذف ارائه دهنده: {{provider}}",
+    "confirmDescription": "آیا مطمئنید که می خواهید این ارائه دهنده را حذف کنید؟ این عمل قابل بازگشت نیست.",
+    "cancel": "لغو",
+    "delete": "حذف"
+  },
+  "modelSettings": {
+    "title": "تنظیمات مدل - {{modelId}}",
+    "description": "تنظیمات مدل را برای بهینه سازی عملکرد و رفتار پیکربندی کنید.",
+    "nglDisabledByFit": "تناسب خودکار انتخاب GPU لایه است. برای تنظیم دستی، Auto-fit را خاموش کنید.",
+    "samplingDefaults": {
+      "title": "پارامترهای نمونه گیری پیش فرض",
+      "description": "تنظیمات نمونه‌گیر پیش‌فرض برای این مدل. استفاده می شود مگر اینکه توسط مقادیر هر دستیار یا هر درخواست لغو شود."
+    },
+    "specDraft": {
+      "section": "رمزگشایی گمانه زنی",
+      "enable": "رمزگشایی حدسی را فعال کنید",
+      "enableDescription": "چندین توکن در هر مرحله پیش نویس کنید و آنها را در یک پاس تأیید کنید، که سرعت تولید را افزایش می دهد. از هدهای MTP داخلی مدل یا مدل پیش‌نویس دانلود شده با آن (MTP، Eagle3، DFlash یا DSpark) استفاده می‌کند.",
+      "nMax": "حداکثر توکن های پیش نویس",
+      "nMaxDescription": "حداکثر تعداد نشانه‌ها برای پیش‌نویس در هر مرحله. پیش فرض 16.",
+      "nMin": "حداقل نشانه های پیش نویس",
+      "nMinDescription": "حداقل تعداد توکن برای پیش نویس در هر مرحله. پیش فرض 0.",
+      "pMin": "حداقل احتمال پیش نویس",
+      "pMinDescription": "حداقل احتمال برای پیش نویس حریصانه (0-1). پیش فرض 0.75."
+    },
+    "templateKwargs": {
+      "section": "گزینه های قالب چت",
+      "description": "گزینه های اضافی الگوی چت این مدل را می پذیرد. برای هر درخواست به عنوان chat_template_kwargs ارسال می شود. یک مقدار را در پیش فرض خود بگذارید تا به الگو اجازه دهید تصمیم بگیرد.",
+      "addCustom": "افزودن گزینه سفارشی",
+      "keyPlaceholder": "نام",
+      "valuePlaceholder": "ارزش",
+      "add": "افزودن",
+      "cancel": "لغو",
+      "remove": "برداشتن"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "تنظیمات مدل به‌روزرسانی نشد"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "تغییر مکان پوشه داده",
+      "description": "آیا مطمئن هستید که می خواهید مکان پوشه داده را تغییر دهید؟ با این کار تمام داده های شما به مکان جدید منتقل می شود و برنامه مجددا راه اندازی می شود.",
+      "currentLocation": "مکان فعلی:",
+      "newLocation": "مکان جدید:",
+      "cancel": "لغو",
+      "changeLocation": "تغییر مکان"
+    },
+    "deleteAllThreads": {
+      "title": "تمام موضوعات را حذف کنید",
+      "description": "همه تاپیک ها حذف خواهند شد. این عمل قابل بازگشت نیست."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "حذف همه مکالمات",
+      "description": "{{count}} مکالمه در \"{{projectName}}\" حذف خواهد شد. این عمل قابل بازگشت نیست."
+    },
+    "deleteThread": {
+      "description": "آیا مطمئن هستید که می خواهید این موضوع را حذف کنید؟ این عمل قابل بازگشت نیست."
+    },
+    "editMessage": {
+      "title": "ویرایش پیام"
+    },
+    "messageMetadata": {
+      "title": "فراداده پیام"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "مشکلی پیش آمد",
+    "details": "جزئیات"
+  },
+  "missingDependenciesDialog": {
+    "title": "کتابخانه های سیستم از دست رفته است",
+    "description": "{{backend}} نصب شد اما برخی از کتابخانه های سیستم مورد نیاز یافت نشد. ممکن است به CPU برگردد یا به درستی اجرا نشود.",
+    "installLabel": "برای رفع این مشکل، موارد زیر را نصب کنید:",
+    "download": "بارگیری",
+    "additionalLibraries": "کتابخانه‌های گمشده اضافی:",
+    "missingLibraries": "کتابخانه های مفقود:",
+    "showRawLibraries": "نمایش {{count}} نام کتابخانه گمشده"
+  },
+  "projects": {
+    "title": "پروژه ها",
+    "new": "پروژه های جدید",
+    "addProject": "اضافه کردن پروژه",
+    "addToProject": "به پروژه اضافه کنید",
+    "removeFromProject": "حذف از پروژه",
+    "createNewProject": "ایجاد پروژه جدید",
+    "editProject": "ویرایش پروژه",
+    "deleteProject": "حذف پروژه",
+    "projectName": "نام پروژه",
+    "enterProjectName": "نام پروژه را وارد کنید...",
+    "noProjectsAvailable": "هیچ پروژه ای در دسترس نیست",
+    "noProjectsYet": "هنوز پروژه ای وجود ندارد",
+    "noProjectsYetDesc": "با کلیک بر روی دکمه افزودن پروژه، پروژه جدیدی را شروع کنید.",
+    "projectNotFound": "پروژه یافت نشد",
+    "projectNotFoundDesc": "پروژه ای که به دنبال آن هستید وجود ندارد یا حذف شده است.",
+    "selectAssistant": "دستیار را انتخاب کنید",
+    "noAssistantAssigned": "هیچ دستیار برای این پروژه تعیین نشده است",
+    "files": "فایل ها",
+    "filesDescription": "فایل‌های PDF، اسناد یا متن دیگر را به مرجع در این پروژه اضافه کنید.",
+    "uploadingFiles": "در حال پردازش فایل ها…",
+    "processButton": "افزودن",
+    "deleteProjectDialog": {
+      "title": "حذف پروژه",
+      "permanentDelete": "با این کار همه رشته ها برای همیشه حذف می شوند.",
+      "permanentDeleteWarning": "این عمل به طور دائم همه رشته های پروژه را حذف می کند!",
+      "deleteEmptyProject": "این اقدام پروژه \"{{projectName}}\" را حذف می کند.",
+      "saveThreadsAdvice": "برای ذخیره رشته‌ها، قبل از حذف آن‌ها را به فهرست رشته‌ها یا پروژه دیگری منتقل کنید.",
+      "starredWarning": "شما هنوز رشته های ستاره دار در پروژه دارید.",
+      "deleteButton": "حذف",
+      "successWithName": "پروژه \"{{projectName}}\" با موفقیت حذف شد",
+      "successWithoutName": "پروژه با موفقیت حذف شد",
+      "error": "پروژه حذف نشد. لطفا دوباره امتحان کنید.",
+      "ariaLabel": "حذف {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "ایجاد پروژه جدید",
+      "editTitle": "ویرایش پروژه",
+      "nameLabel": "نام پروژه",
+      "namePlaceholder": "نام پروژه را وارد کنید...",
+      "assistant": "دستیار",
+      "selectAssistant": "انتخاب دستیار (اختیاری)",
+      "noAssistant": "بدون دستیار",
+      "addAssistant": "دستیار اضافه کنید",
+      "createButton": "ایجاد کنید",
+      "updateButton": "به‌روزرسانی",
+      "alreadyExists": "پروژه \"{{projectName}}\" از قبل وجود دارد",
+      "createSuccess": "پروژه \"{{projectName}}\" با موفقیت ایجاد شد",
+      "updateSuccess": "پروژه \"{{projectName}}\" با موفقیت به روز شد"
+    },
+    "noConversationsIn": "بدون مکالمه در {{projectName}}",
+    "startNewConversation": "مکالمه جدیدی را با {{projectName}} زیر شروع کنید",
+    "conversationsIn": "مکالمات در {{projectName}}",
+    "conversationsDescription": "برای ادامه چت، روی هر مکالمه ای کلیک کنید، یا یک مکالمه جدید را در زیر شروع کنید.",
+    "conversation": "گفتگو",
+    "instructions": "دستورالعمل ها",
+    "setup": "راه اندازی",
+    "instructionsDescription": "لحن و سبک پاسخ را سفارشی کنید",
+    "manageInstructions": "مدیریت دستورالعمل ها",
+    "thread": "نخ",
+    "threads": "رشته ها",
+    "updated": "به روز شده:",
+    "collapseProject": "پروژه فروپاشی",
+    "expandProject": "پروژه را گسترش دهید",
+    "update": "به‌روزرسانی",
+    "searchProjects": "جستجوی پروژه ها...",
+    "noProjectsFound": "هیچ پروژه ای یافت نشد",
+    "tryDifferentSearch": "عبارت جستجوی دیگری را امتحان کنید"
+  },
+  "attachmentsIngestion": {
+    "title": "نحوه جذب پیوست‌ها را انتخاب کنید",
+    "description": "انتخاب کنید که آیا این فایل‌ها مستقیماً در چت گنجانده شوند یا به جای آن، آنها را به‌عنوان جاسازی فهرست‌بندی کنید.",
+    "inline": "تزریق به چت",
+    "embeddings": "از جاسازی ها استفاده کنید"
+  },
+  "attachmentInjectedIndicator": "به چت تزریق شد",
+  "attachmentEmbeddedIndicator": "برای RAG تعبیه شده است",
+  "viewInjectedContent": "مشاهده محتوای تزریقی",
+  "injectedContentTitle": "محتوای فایل تزریقی",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "همه موضوعات مورد علاقه نیست",
+      "description": "همه موضوعات از موارد دلخواه شما حذف شده است."
+    },
+    "deleteAllThreads": {
+      "title": "تمام موضوعات را حذف کنید",
+      "description": "همه رشته ها برای همیشه حذف شده اند."
+    },
+    "renameThread": {
+      "title": "تغییر نام موضوع",
+      "description": "عنوان موضوع به \"{{title}}\" تغییر نام داده شد"
+    },
+    "deleteThread": {
+      "title": "موضوع را حذف کنید",
+      "description": "این تاپیک برای همیشه حذف شده است."
+    },
+    "errorCopied": {
+      "title": "کپی با موفقیت انجام شد",
+      "description": "اطلاعات خطا در کلیپ بورد کپی شد"
+    },
+    "errorCopyFailed": {
+      "title": "کپی نشد",
+      "description": "اطلاعات خطا در کلیپ بورد کپی نشد"
+    },
+    "editMessage": {
+      "title": "ویرایش پیام",
+      "description": "پیام با موفقیت ویرایش شد. لطفا صبر کنید تا مدل پاسخ دهد."
+    },
+    "appUpdateDownloaded": {
+      "title": "به‌روزرسانی برنامه دانلود شد",
+      "description": "به روز رسانی برنامه با موفقیت دانلود شد."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "دانلود آپدیت برنامه انجام نشد",
+      "description": "به‌روزرسانی برنامه دانلود نشد. لطفا دوباره امتحان کنید."
+    },
+    "downloadComplete": {
+      "title": "دانلود کامل شد",
+      "description": "{{item}} دانلود شده است"
+    },
+    "downloadCancelled": {
+      "title": "دانلود لغو شد",
+      "description": "روند دانلود لغو شد"
+    },
+    "downloadFailed": {
+      "title": "دانلود انجام نشد",
+      "description": "دانلود {{item}} ناموفق بود",
+      "descriptionWithReason": "{{item}} دانلود نشد: {{reason}}",
+      "reason": {
+        "dns": "نام سرور قابل حل نیست",
+        "refused": "ارتباط رد شد",
+        "timeout": "زمان اتصال تمام شد",
+        "tls": "اتصال ایمن برقرار نشد",
+        "proxy": "دسترسی به پروکسی امکان پذیر نیست",
+        "unreachable": "دسترسی به سرور امکان پذیر نیست"
+      }
+    },
+    "openSettings": "تنظیمات را باز کنید",
+    "openLogs": "گزارش‌ها را باز کنید",
+    "downloadTokenRequired": {
+      "title": "توکن Hugging Face مورد نیاز است",
+      "description": "این مدل به یک نشانه دسترسی Hugging Face نیاز دارد. رمز خود را در تنظیمات اضافه کنید و دوباره امتحان کنید."
+    },
+    "downloadLicenseRequired": {
+      "title": "مجوز مدل را در Hugging Face قبول کنید",
+      "description": "قبل از دانلود باید مجوز مدل را در صفحه Hugging Face آن بپذیرید."
+    },
+    "downloadRateLimited": {
+      "title": "نرخ محدود شده توسط Hugging Face",
+      "description": "شما دارای نرخ محدود بوده اید. افزودن توکن می‌تواند محدودیت‌های نرخ را افزایش دهد. لطفاً بعداً دوباره امتحان کنید."
+    },
+    "modelValidationStarted": {
+      "title": "اعتبارسنجی مدل",
+      "description": "مدل \"{{modelId}}\" با موفقیت بارگیری شد. در حال تایید یکپارچگی..."
+    },
+    "modelValidationFailed": {
+      "title": "اعتبارسنجی مدل ناموفق بود",
+      "description": "مدل بارگیری‌شده «{{modelId}}» تأیید یکپارچگی ناموفق بود و حذف شد. ممکن است فایل خراب یا دستکاری شده باشد."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "دانلود کامل شد",
+      "description": "مدل \"{{item}}\" با موفقیت دانلود و تأیید شد"
+    },
+    "projectCreated": {
+      "title": "پروژه ایجاد شد",
+      "description": "پروژه \"{{projectName}}\" با موفقیت ایجاد شد"
+    },
+    "projectRenamed": {
+      "title": "پروژه تغییر نام داد",
+      "description": "نام پروژه از \"{{oldName}}\" به \"{{newName}}\" تغییر یافت"
+    },
+    "projectDeleted": {
+      "title": "پروژه حذف شد",
+      "description": "پروژه \"{{projectName}}\" با موفقیت حذف شد"
+    },
+    "projectAlreadyExists": {
+      "title": "پروژه از قبل وجود دارد",
+      "description": "پروژه \"{{projectName}}\" از قبل وجود دارد"
+    },
+    "projectDeleteFailed": {
+      "title": "حذف نشد",
+      "description": "پروژه حذف نشد. لطفا دوباره امتحان کنید."
+    },
+    "threadAssignedToProject": {
+      "title": "موضوع اختصاص داده شد",
+      "description": "موضوع به \"{{projectName}}\" با موفقیت اختصاص داده شد"
+    },
+    "threadRemovedFromProject": {
+      "title": "موضوع حذف شد",
+      "description": "موضوع از \"{{projectName}}\" با موفقیت حذف شد"
+    },
+    "fileUploaded": {
+      "title": "فایل پردازش شد",
+      "description": "فایل با موفقیت پردازش و نمایه شد"
+    },
+    "uploadFailed": {
+      "title": "پردازش انجام نشد",
+      "description": "فایل پردازش نشد",
+      "subjectThisFile": "این فایل",
+      "pdfMalformedXref": "{{subject}} دارای جدول مرجع متقابل PDF نادرست است و قابل تجزیه نیست. سعی کنید آن را در یک نمایشگر PDF باز کنید و دوباره آن را ذخیره کنید (فایل → چاپ → ذخیره به عنوان PDF)، سپس دوباره آپلود کنید.",
+      "pdfScanned": "به نظر می رسد {{subject}} یک PDF اسکن شده یا مبتنی بر تصویر باشد. OCR هنوز پشتیبانی نمی‌شود — لطفاً یک PDF مبتنی بر متن آپلود کنید.",
+      "pdfEncrypted": "{{subject}} دارای رمز عبور محافظت شده است. رمز عبور را بردارید و دوباره امتحان کنید.",
+      "pdfUnsupportedFeature": "{{subject}} از ویژگی PDF استفاده می کند Jan هنوز نمی تواند تجزیه شود (به عنوان مثال توابع رنگ/سایه دهی PostScript). سعی کنید دوباره آن را ذخیره کنید (File → Print → Save as PDF) تا صاف شود، سپس دوباره آپلود کنید.",
+      "pdfGeneric": "{{subject}} به عنوان PDF قابل تجزیه نیست. ممکن است فایل خراب باشد یا از ویژگی PDF پشتیبانی نشده استفاده کند.",
+      "fileTooLarge": "{{subject}} خیلی بزرگ است. {{message}}.",
+      "unsupportedType": "نوع فایل \"{{type}}\" پشتیبانی نمی شود.",
+      "ioError": "نمی توانم بخوانم {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} قابل تجزیه نیست: {{message}}",
+      "fallback": "{{subject}} پردازش نشد."
+    },
+    "fileDeleted": {
+      "title": "فایل حذف شد",
+      "description": "فایل از پروژه حذف شده است"
+    },
+    "deleteFailed": {
+      "title": "حذف نشد",
+      "description": "فایل حذف نشد"
+    },
+    "fileAlreadyExists": {
+      "title": "فایل از قبل وجود دارد",
+      "description": "فایل قبلاً به این پروژه پیوست شده است"
+    },
+    "unsupportedFileType": {
+      "title": "نوع فایل پشتیبانی نشده",
+      "description": "پسوند فایل \".{{extension}}\" برای مرجع پروژه پشتیبانی نمی شود."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "پیوست‌ها غیرفعال شدند",
+      "description": "پیوست‌ها در تنظیمات غیرفعال هستند"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "فایل خیلی بزرگ است",
+    "fileTooLargeDescription": "{{fileName}} از حد {{maxFileSizeMB}}MB بیشتر است"
+  },
+  "files": {
+    "chunksCount": "{{count}} تکه",
+    "title": "فایل ها",
+    "empty": "فایل‌هایی که پیوست می‌کنید و فایل‌هایی که نماینده ایجاد می‌کند در اینجا نشان داده می‌شوند.",
+    "a11y": "فایل ها: {{count}}",
+    "attachments": "پیوست ها",
+    "notImported": "در فضای کار نیست"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp هنوز مشغول است",
+    "description": "یک یا چند مدل به موقع تخلیه نشدند. ترک اجباری llama.cpp پایان می‌یابد و ممکن است پاسخ‌های فعال را قطع کند.",
+    "forceQuit": "اجبارا ترک کن",
+    "forcing": "ترک اجباری…",
+    "shuttingDown": "خاموش شدن…"
+  },
+  "duration": {
+    "seconds": "{{count}} ثانیه",
+    "minutes": "{{count}} متر",
+    "hours": "{{count}} ساعت"
+  },
+  "collapse": "فرو ریختن",
+  "expand": "گسترش دهید",
+  "todoPanelTitle": "پیشرفت",
+  "todoPanelEmpty": "هنوز لیست کارهایی وجود ندارد.",
+  "backgroundTasks": "وظایف پس زمینه",
+  "subagentsRunning_one": "تعداد عامل‌های فرعی در حال اجرا: {{count}}",
+  "subagentsRunning_other": "تعداد عامل‌های فرعی در حال اجرا: {{count}}",
+  "monitorsRunning_one": "{{count}} مانیتور در حال اجرا",
+  "monitorsRunning_other": "{{count}} مانیتور در حال اجرا",
+  "backgroundRunning_one": "{{count}} کار پس‌زمینه در حال اجرا است",
+  "backgroundRunning_other": "{{count}} وظایف پس زمینه در حال اجرا",
+  "monitors": "مانیتورها",
+  "monitorPolling": "نظرسنجی",
+  "monitorMatched": "مطابقت دارد",
+  "monitorTimedOut": "زمان تمام شد",
+  "monitorStopped": "متوقف شد",
+  "monitorEnded": "پایان یافت",
+  "coworkWatching_one": "در حال تماشای مانیتور {{count}}…",
+  "coworkWatching_other": "در حال تماشای مانیتورهای {{count}}…",
+  "coworkWaitingBackground": "در انتظار وظایف پس‌زمینه…",
+  "noBackgroundTasks": "هنوز هیچ کار پس زمینه ای وجود ندارد.",
+  "running": "در حال دویدن",
+  "queued": "در صف",
+  "waiting": "در انتظار",
+  "finished": "تمام شد",
+  "subagentPhase": "فاز {{phase}}",
+  "subagentWaiting": "در انتظار",
+  "viewTranscript": "مشاهده متن",
+  "taskWorking": "در حال کار…",
+  "taskNoOutput": "عامل فرعی هیچ خروجی قابل مشاهده ای تولید نمی کند.",
+  "subagentToolUses_one": "{{count}} استفاده از ابزار",
+  "subagentToolUses_other": "{{count}} استفاده از ابزار",
+  "artifactGroupCode": "کد",
+  "artifactGroupImage": "تصویر",
+  "artifactGroupDocument": "سند",
+  "artifactGroupVideo": "ویدئو",
+  "artifactGroupAudio": "صوتی",
+  "artifactOpenPreview": "پیش نمایش را باز کنید",
+  "artifactOpenExternal": "باز کنید",
+  "artifactMoreActions": "اقدامات بیشتر",
+  "artifactShowInFolder": "نمایش در پوشه",
+  "skillsUsedLabel": "مهارت های مورد استفاده",
+  "skillsUsed": "مهارت های مورد استفاده: {{skills}}",
+  "artifactsAll": "همه",
+  "artifactsEmpty": "هنوز چیزی تولید نشده است. مصنوعات از Cowork اجرا در اینجا نمایش داده می‌شوند.",
+  "artifactsNoMatch": "هیچ اثری مطابقت ندارد.",
+  "artifactsSearch": "جستجوی مصنوعات",
+  "artifactsShowMore": "نمایش {{count}} بیشتر",
+  "workspace": {
+    "readsFrom": "کار می کند",
+    "writable": "خواندن و نوشتن",
+    "footnote": "عامل مستقیماً این پوشه را می خواند و ویرایش می کند. آنچه را که در پانل تفاوت تغییر کرده است مرور کنید.",
+    "footnoteEmpty": "پوشه ای را ضمیمه کنید تا عامل روی پروژه شما کار کند. می تواند فایل های داخل آن را بخواند و ویرایش کند.",
+    "attach": "یک پوشه ضمیمه کنید",
+    "change": "پوشه را تغییر دهید",
+    "detach": "پوشه را جدا کنید",
+    "open": "باز کنید",
+    "reveal": "آشکار کند",
+    "unavailable": "فضای کاری در دسترس نیست",
+    "missing": "پوشه فضای کاری {{folder}} دیگر در دسترس نیست. پوشه دیگری را انتخاب کنید.",
+    "openFailed": "فضای کاری باز نشد",
+    "revealFailed": "فضای کاری آشکار نشد",
+    "a11yWithFolder": "پوشه پروژه {{folder}}، با دسترسی خواندن و نوشتن پیوست شده است. آن را تغییر دهید یا جدا کنید.",
+    "a11yNoFolder": "هیچ پوشه پروژه ای پیوست نشده است. یکی را ضمیمه کنید."
+  },
+  "coworkEmpty": {
+    "title": "ما روی چه چیزی کار می کنیم؟",
+    "subtitleSandbox": "به Jan یک وظیفه بدهید. این فایل ها را می خواند و می نویسد، دستورات را اجرا می کند و مراحل را به تنهایی انجام می دهد.",
+    "subtitleFolder": "به Jan یک وظیفه بدهید. مستقیماً در {{folder}} کار می‌کند و به تنهایی فایل‌ها را می‌خواند و ویرایش می‌کند.",
+    "try": "امتحان کنید",
+    "sandbox": {
+      "first": "یک اسکریپت پایتون بنویسید که نام فایل‌ها را بر اساس تاریخ ثبت تغییر می‌دهد",
+      "second": "یک داشبورد تک صفحه ای از یک CSV که در آن جایگذاری خواهم کرد بسازید",
+      "third": "برای پروژه ای که برای شما توضیح می دهم یک README پیش نویس کنید"
+    },
+    "folder": {
+      "first": "نحوه کنار هم قرار دادن {{folder}} را توضیح دهید",
+      "second": "هر TODO را در {{folder}} پیدا کنید و آنها را بر اساس منطقه گروه بندی کنید",
+      "third": "برای قسمت {{folder}} که به شما اشاره می کنم، تست بنویسید"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "ترمینال وجود ندارد",
+    "a11y": "اجرای دستورات خاموش است. جزئیات.",
+    "title": "اجرای دستورات خاموش است",
+    "body": "Jan به عامل اجازه می‌دهد دستورات پوسته را فقط زمانی اجرا کند که سیستم شما بتواند آنها را محدود کند. هیچ سندباکسی در اینجا موجود نیست، بنابراین عامل می‌تواند فایل‌ها را در جعبه ایمنی خود بخواند، بنویسد و ویرایش کند - اما هیچ چیزی را اجرا نکند.",
+    "fixLinux": "Linux از حباب بند استفاده می کند. آن را نصب کنید، سپس Jan را مجددا راه اندازی کنید.",
+    "fixMac": "macOS از جعبه ایمنی داخلی در /usr/bin/sandbox-exec استفاده می‌کند. پس از در دسترس قرار گرفتن Jan راه اندازی مجدد کنید.",
+    "fixWindows": "Windows از AppContainer استفاده می کند. برای امتحان دوباره Jan را راه اندازی مجدد کنید.",
+    "recheck": "دوباره چک کنید"
+  },
+  "planMode": {
+    "label": "برنامه ریزی کنید",
+    "tooltipOff": "ابتدا برنامه ریزی کنید - نماینده بدون نوشتن می خواند و پیشنهاد می دهد.",
+    "tooltipOn": "برنامه ریزی. این را خاموش کنید تا عامل اجازه فایل‌ها را بنویسد.",
+    "onAnnounce": "حالت برنامه ریزی روشن است",
+    "placeholder": "برنامه بخواهید عامل هیچ فایلی را تغییر نمی دهد."
+  },
+  "budget": {
+    "stoppedSteps": "در {{max}} قدم متوقف شد. نماینده تمام نشده است",
+    "keepGoing": "ادامه بده",
+    "stoppedTokens": "متوقف شد - این جلسه به بودجه نمادین خود رسید.",
+    "compact": "فشرده",
+    "newSession": "جلسه جدید"
+  },
+  "run": {
+    "stopped": "متوقف شد.",
+    "failed": "دویدن زود متوقف شد.",
+    "tryAgain": "دوباره امتحان کنید"
+  },
+  "modelNoTools": "{{model}} نمی‌تواند ابزارها را فراخوانی کند، بنابراین نمی‌تواند به عنوان یک عامل عمل کند. یک مدل فراخوانی ابزار انتخاب کنید.",
+  "askContinue": "ادامه",
+  "askNext": "سوال بعدی",
+  "askPrev": "سوال قبلی",
+  "askRecommended": "توصیه می شود",
+  "askSelectedCount": "{{count}} انتخاب شد",
+  "askSomethingElse": "یه چیز دیگه",
+  "askSomethingElsePlaceholder": "پاسخ خود را تایپ کنید",
+  "submit": "ارسال کنید"
+}

@@ -1,0 +1,101 @@
+{
+  "editServer": "ویرایش MCP سرور",
+  "addServer": "سرور MCP را اضافه کنید",
+  "browserExtension": {
+    "connecting": {
+      "checking": "در حال بررسی وضعیت برنامه افزودنی..."
+    },
+    "notInstalled": {
+      "title": "Jan وظایف را در مرورگر شما تکمیل می کند",
+      "description": "افزونه را نصب کنید تا به مرورگر Jan دسترسی داشته باشید",
+      "getExtension": "برنامه افزودنی را دریافت کنید"
+    }
+  },
+  "serverName": "نام سرور",
+  "enterServerName": "نام سرور را وارد کنید",
+  "command": "Command",
+  "enterCommand": "دستور را وارد کنید (uvx یا npx)",
+  "arguments": "استدلال ها",
+  "argument": "استدلال {{index}}",
+  "envVars": "متغیرهای محیطی",
+  "key": "کلید",
+  "value": "ارزش",
+  "save": "ذخیره",
+  "status": "وضعیت",
+  "connected": "متصل شد",
+  "disconnected": "قطع شده است",
+  "deleteServer": {
+    "title": "سرور MCP را حذف کنید",
+    "description": "آیا مطمئن هستید که می خواهید سرور MCP {{serverName}} را حذف کنید؟ این عمل قابل بازگشت نیست.",
+    "delete": "حذف",
+    "success": "سرور MCP {{serverName}} با موفقیت حذف شد"
+  },
+  "editJson": {
+    "title": "ویرایش JSON برای سرور MCP: {{serverName}}",
+    "titleAll": "ویرایش همه سرورهای MCP JSON",
+    "placeholder": "پیکربندی JSON را وارد کنید",
+    "errorParse": "داده های اولیه تجزیه نشد",
+    "errorPaste": "قالب JSON در محتوای چسبانده شده نامعتبر است",
+    "errorFormat": "قالب JSON نامعتبر است",
+    "errorServerName": "نام سرور مورد نیاز است و نمی تواند خالی باشد",
+    "errorMissingServerNameKey": "JSON باید به صورت {\"serverName\" ساختاردهی شود: {config}} - کلید نام سرور وجود ندارد",
+    "errorInvalidType": "نوع \"{{type}}\" برای سرور \"{{serverName}}\" نامعتبر است. نوع باید 'stdio'، 'http' یا 'sse' باشد",
+    "save": "ذخیره"
+  },
+  "checkParams": "لطفا پارامترها را طبق آموزش بررسی کنید.",
+  "title": "MCP سرور",
+  "experimental": "تجربی",
+  "editAllJson": "ویرایش همه سرورها JSON",
+  "findMore": "MCP سرور بیشتر را در",
+  "allowPermissions": "اجازه همه MCP مجوزهای ابزار",
+  "allowPermissionsDesc": "وقتی فعال باشد، همه تماس‌های MCP ابزار به‌طور خودکار بدون نمایش کادر گفتگو تأیید می‌شوند. این تنظیم به صورت جهانی برای همه مکالمات، از جمله چت‌های جدید اعمال می‌شود.",
+  "noServers": "هیچ MCP سروری یافت نشد",
+  "args": "ارگ",
+  "env": "Env",
+  "serverStatusActive": "سرور {{serverKey}} با موفقیت فعال شد",
+  "serverStatusInactive": "سرور {{serverKey}} با موفقیت غیرفعال شد",
+  "runtimeSettings": {
+    "title": "تنظیمات زمان اجرا",
+    "description": "نحوه مدیریت و تلاش مجدد سرورهای MCP Jan را پیکربندی کنید.",
+    "toolCallTimeout": "پایان زمان تماس ابزار (ثانیه)",
+    "toolCallTimeoutDesc": "حداکثر زمان برای انتظار برای پاسخ MCP ابزار قبل از اتمام زمان.",
+    "maxToolOutputChars": "حداکثر کاراکترهای خروجی ابزار",
+    "maxToolOutputCharsDesc": "طولانی ترین نتیجه ابزار حفظ شده در مکالمه. هر چیزی که از این گذشته باشد بریده شده و به‌عنوان کوتاه شده علامت‌گذاری می‌شود، بنابراین یک نتیجه بزرگ نمی‌تواند زمینه مدل را خسته کند. برای حفظ کامل نتایج، روی 0 تنظیم کنید.",
+    "smartToolRouting": "مسیریابی ابزار هوشمند MCP",
+    "smartToolRoutingDesc": "وقتی فعال است، Jan سرورهای MCP مربوطه را قبل از بارگیری ابزار انتخاب می‌کند. غیرفعال کنید تا همیشه فهرست کامل ابزار MCP بارگیری شود.",
+    "useLightweightRouterModel": "از یک مدل اختصاصی برای مسیریابی استفاده کنید",
+    "useLightweightRouterModelDesc": "وقتی مسیریابی هوشمند روشن است، به جای مدل چت، مرحله مسیریابی را با یک مدل جداگانه (اغلب کوچکتر) اجرا کنید. خاموش کنید تا همیشه از مدل چت فعال برای مسیریابی استفاده کنید.",
+    "routerModel": "مدل مسیریابی",
+    "routerModelDesc": "ارائه دهنده و مدل را در یک مکان انتخاب کنید. فقط مدل‌های سبک وزن فهرست شده‌اند تا مسیریابی سریع و ارزان باقی بماند.",
+    "selectRouterModelPlaceholder": "انتخاب مدل مسیریابی…",
+    "routerModelSearchPlaceholder": "جستجوی مدل…",
+    "routerModelEmptyList": "هیچ مدل سبک وزن موجود نیست. یک مدل کوچکتر اضافه کنید یا کلیدهای API را در Models پیکربندی کنید.",
+    "routerModelEmptySearch": "هیچ منطبقی برای \"{{query}}\"."
+  },
+  "auth": {
+    "label": "احراز هویت:",
+    "state": {
+      "notApplicable": "مورد نیاز نیست",
+      "staticHeader": "سرصفحه مجوز",
+      "authenticated": "احراز هویت",
+      "expired": "منقضی شده است",
+      "staleResource": "صادر شده برای URL دیگر",
+      "unauthenticated": "احراز هویت نشده است"
+    },
+    "expiresIn": "در {{duration}} منقضی می شود",
+    "authenticate": "وارد شوید",
+    "reauthenticate": "احراز هویت مجدد",
+    "clear": "احراز هویت را پاک کنید",
+    "waiting": "در انتظار مرورگر...",
+    "openSignInPage": "صفحه ورود به سیستم را باز کنید",
+    "needsAuth": "{{serverName}} نیاز به احراز هویت دارد",
+    "needsAuthHint": "برای اتصال به این سرور وارد شوید.",
+    "authorized": "وارد شده به {{serverName}}",
+    "authorizeFailed": "ورود به سیستم برای {{serverName}} انجام نشد",
+    "cleared": "اطلاعات کاربری ذخیره شده برای {{serverName}} پاک شد",
+    "nothingToClear": "{{serverName}} هیچ اعتبار ذخیره شده ای نداشت",
+    "clearFailed": "اعتبارنامه برای {{serverName}} پاک نشد",
+    "renew": "تجدید جلسه",
+    "expiredAgo": "منقضی شده {{duration}} پیش"
+  }
+}
