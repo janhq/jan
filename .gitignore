@@ -23,6 +23,8 @@ docs/yarn.lock
 src-tauri/resources/lib
 src-tauri/icons
 !src-tauri/icons/icon.png
+src-tauri/icons-macos/*
+!src-tauri/icons-macos/icon.png
 src-tauri/gen/apple
 src-tauri/gen/android
 src-tauri/resources/bin

@@ -41,6 +41,7 @@ for (const dir of [
   'src-tauri/resources/bin',
   'src-tauri/resources/pre-install',
   'src-tauri/icons',
+  'src-tauri/icons-macos',
   'web-app/dist',
 ]) {
   mkdirSync(path(dir), { recursive: true })
@@ -94,12 +95,12 @@ if (!haveRuntime) touch(path('src-tauri/resources/bin', lib))
 
 // Icons are gitignored; generate_context!() requires them at compile time
 for (const icon of [
-  '32x32.png',
-  '128x128.png',
-  '128x128@2x.png',
-  'icon.icns',
-  'icon.ico',
+  'icons/32x32.png',
+  'icons/128x128.png',
+  'icons/128x128@2x.png',
+  'icons-macos/icon.icns',
+  'icons/icon.ico',
 ]) {
-  const target = path('src-tauri/icons', icon)
+  const target = path('src-tauri', icon)
   if (!existsSync(target)) copyFileSync(path('src-tauri/icons/icon.png'), target)
 }
