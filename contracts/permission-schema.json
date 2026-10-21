@@ -1,0 +1,14 @@
+{
+  "protocol": "taiji-permission-v1",
+  "gate": {
+    "deny_risk_above": 3,
+    "default_commit": true
+  },
+  "tools": {
+    "read":   { "risk": 0, "capability": "read",     "owner": "jan",  "requires_commit": false, "sandbox": false },
+    "search": { "risk": 0, "capability": "read",     "owner": "jan",  "requires_commit": false, "sandbox": false },
+    "write":  { "risk": 2, "capability": "actuator", "owner": "jan",  "requires_commit": true,  "sandbox": false },
+    "edit":   { "risk": 2, "capability": "actuator", "owner": "jan",  "requires_commit": true,  "sandbox": false },
+    "bash":   { "risk": 4, "capability": "actuator", "owner": "host", "requires_commit": true,  "sandbox": true  }
+  }
+}
