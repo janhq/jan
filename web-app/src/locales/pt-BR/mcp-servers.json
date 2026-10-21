@@ -59,6 +59,8 @@
     "description": "Configure como o Jan gerencia e tenta novamente os servidores MCP.",
     "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
     "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite.",
+    "maxToolOutputChars": "Máximo de caracteres na saída da ferramenta",
+    "maxToolOutputCharsDesc": "Tamanho máximo de um resultado de ferramenta mantido na conversa. O que passar disso é cortado e marcado como truncado, para que um resultado grande não esgote o contexto do modelo. Use 0 para manter os resultados inteiros.",
     "smartToolRouting": "Roteamento inteligente de ferramentas MCP",
     "smartToolRoutingDesc": "Quando ativado, o Jan seleciona servidores MCP relevantes antes de carregar as ferramentas. Desative para sempre carregar a lista completa de ferramentas MCP.",
     "useLightweightRouterModel": "Usar um modelo dedicado para roteamento",
@@ -69,5 +71,31 @@
     "routerModelSearchPlaceholder": "Pesquisar modelos…",
     "routerModelEmptyList": "Nenhum modelo leve disponível. Adicione um modelo menor ou configure chaves de API em Modelos.",
     "routerModelEmptySearch": "Nenhum resultado para “{{query}}”."
+  },
+  "auth": {
+    "label": "Autenticação:",
+    "state": {
+      "notApplicable": "não necessária",
+      "staticHeader": "cabeçalho Authorization",
+      "authenticated": "autenticada",
+      "expired": "expirada",
+      "staleResource": "emitida para outra URL",
+      "unauthenticated": "não autenticada"
+    },
+    "expiresIn": "expira em {{duration}}",
+    "authenticate": "Entrar",
+    "reauthenticate": "Autenticar novamente",
+    "clear": "Limpar autenticação",
+    "waiting": "Aguardando o navegador...",
+    "openSignInPage": "Abrir a página de login",
+    "needsAuth": "{{serverName}} precisa de autenticação",
+    "needsAuthHint": "Faça login neste servidor para conectar.",
+    "authorized": "Login feito em {{serverName}}",
+    "authorizeFailed": "Falha no login em {{serverName}}",
+    "cleared": "Credenciais salvas de {{serverName}} foram removidas",
+    "nothingToClear": "{{serverName}} não tinha credenciais salvas",
+    "clearFailed": "Não foi possível remover as credenciais de {{serverName}}",
+    "renew": "Renovar sessão",
+    "expiredAgo": "expirou há {{duration}}"
   }
 }
