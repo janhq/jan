@@ -50,6 +50,10 @@ pub struct Handshake {
 #[derive(Debug, PartialEq, Eq)]
 pub enum WorkerError {
     Spawn(String),
+    /// The OS refused to run the worker because it is built for another
+    /// processor than this computer's: the Apple Silicon engine on an Intel Mac
+    /// (#9270). Not a transient failure, so callers say so instead of retrying.
+    WrongArchitecture(String),
     /// The worker exited or said nothing intelligible before serving.
     Handshake(String),
     Timeout(Duration),
@@ -59,12 +63,30 @@ impl std::fmt::Display for WorkerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Spawn(m) => write!(f, "could not start jan-llama-worker: {m}"),
+            Self::WrongArchitecture(m) => write!(
+                f,
+                "jan-llama-worker is built for a different processor than this computer's: {m}"
+            ),
             Self::Handshake(m) => write!(f, "jan-llama-worker did not come up: {m}"),
             Self::Timeout(d) => {
                 write!(f, "jan-llama-worker did not report a port within {d:?}")
             }
         }
     }
+}
+
+/// `EBADARCH`, which macOS returns from `exec` for a Mach-O with no slice for
+/// this CPU ("Bad CPU type in executable"). It is only a macOS code: on Linux
+/// the same number is a different errno.
+#[cfg(target_os = "macos")]
+const EBADARCH: i32 = 86;
+
+fn spawn_error(e: std::io::Error) -> WorkerError {
+    #[cfg(target_os = "macos")]
+    if e.raw_os_error() == Some(EBADARCH) {
+        return WorkerError::WrongArchitecture(e.to_string());
+    }
+    WorkerError::Spawn(e.to_string())
 }
 
 /// A runtime failure worth telling the user about, classified from one worker
@@ -646,7 +668,7 @@ pub async fn spawn(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let mut child = cmd.spawn().map_err(|e| WorkerError::Spawn(e.to_string()))?;
+    let mut child = cmd.spawn().map_err(spawn_error)?;
     // Before the handshake, so every error path below drops the job too and
     // cannot leak a worker that never reported for duty.
     #[cfg(windows)]
@@ -1100,6 +1122,45 @@ pub(crate) mod tests {
         .await
         .expect_err("a missing exe must fail");
         assert!(matches!(err, WorkerError::Spawn(_)), "got {err:?}");
+    }
+
+    // #9270: a worker built for another processor (the Apple Silicon engine on
+    // an Intel Mac) is refused by the kernel with EBADARCH. A thin Mach-O for a
+    // CPU no Mac runs today gets the same refusal on any Mac, which is how this
+    // is exercised without an Intel machine.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_worker_built_for_another_processor_is_its_own_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("jan-llama-worker");
+        let mut header = Vec::new();
+        // mach_header_64: magic, cputype (PowerPC), cpusubtype, MH_EXECUTE, ncmds,
+        // sizeofcmds, flags, reserved.
+        for word in [0xfeed_facf_u32, 0x12, 0, 2, 0, 0, 0, 0] {
+            header.extend_from_slice(&word.to_le_bytes());
+        }
+        header.resize(64, 0);
+        std::fs::write(&exe, header).unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = spawn(
+            &exe,
+            Path::new("/tmp/x.ini"),
+            0,
+            "k",
+            1,
+            0,
+            HashMap::new(),
+            None,
+        )
+        .await
+        .expect_err("a worker for another CPU cannot start");
+        assert!(
+            matches!(err, WorkerError::WrongArchitecture(_)),
+            "got {err:?}"
+        );
     }
 
     // The tail is what turns "connection refused" into a cause, so it must
