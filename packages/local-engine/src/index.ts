@@ -61,6 +61,8 @@ interface EngineSession {
   port: number
   apiKey: string
   pid: number
+  /** The window this session was launched with. */
+  ctxSize: number
 }
 
 /**
@@ -226,14 +228,25 @@ export abstract class LocalEngineExtension extends AIEngine {
       return []
     }
 
+    // A model lives at `<models>/<id>/model.yml`; one level of nesting is
+    // allowed for namespaced ids (`huggingface/foo`). The scan is bounded so a
+    // symlink loop, or a model imported from a folder that contains a large
+    // tree, cannot walk the disk every time the provider page opens.
+    const MAX_SCAN_DEPTH = 3
     const modelIds: string[] = []
-    const stack = [modelsDir]
+    const stack: Array<{ dir: string; depth: number }> = [
+      { dir: modelsDir, depth: 0 },
+    ]
     while (stack.length > 0) {
-      const currentDir = stack.pop() as string
+      const { dir: currentDir, depth } = stack.pop() as {
+        dir: string
+        depth: number
+      }
       if (await fs.existsSync(await joinPath([currentDir, 'model.yml']))) {
         modelIds.push(currentDir.slice(modelsDir.length + 1))
         continue
       }
+      if (depth >= MAX_SCAN_DEPTH) continue
       let children: string[] = []
       try {
         children = await fs.readdirSync(currentDir)
@@ -241,10 +254,16 @@ export abstract class LocalEngineExtension extends AIEngine {
         continue
       }
       for (const child of children) {
+        // Hidden directories are never model ids, and following one is how a
+        // scan gets somewhere it did not mean to go.
+        const name = child.split(/[\\/]/).pop() ?? ''
+        if (!name || name.startsWith('.')) continue
         // readdirSync hands back full paths.
         try {
           const info = await fs.fileStat(child)
-          if (info?.isDirectory) stack.push(child)
+          if (info?.isDirectory) {
+            stack.push({ dir: child, depth: depth + 1 })
+          }
         } catch {
           // A file we cannot stat is not a model directory; skip it.
         }
@@ -278,13 +297,14 @@ export abstract class LocalEngineExtension extends AIEngine {
       throw new Error(`No model file configured for '${modelId}'`)
     }
 
+    // The models service renames the per-model `ctx_len` setting to
+    // `ctx_size` before handing it over; the extension's own setting uses the
+    // same name.
+    const ctxSize =
+      Number(settings?.ctx_size ?? settings?.ctx_len ?? this.ctxSize) ||
+      this.ctxSize
     const config: LocalEngineConfig = {
-      // The models service renames the per-model `ctx_len` setting to
-      // `ctx_size` before handing it over; the extension's own setting uses
-      // the same name.
-      ctx_size:
-        Number(settings?.ctx_size ?? settings?.ctx_len ?? this.ctxSize) ||
-        this.ctxSize,
+      ctx_size: ctxSize,
       threads: this.threads,
     }
 
@@ -303,6 +323,7 @@ export abstract class LocalEngineExtension extends AIEngine {
       port: session.port,
       apiKey: session.api_key,
       pid: session.pid,
+      ctxSize,
     })
 
     return {
@@ -349,6 +370,23 @@ export abstract class LocalEngineExtension extends AIEngine {
   override async getLoadedModels(): Promise<string[]> {
     const fromPlugin = await getLocalLoadedModels().catch(() => [] as string[])
     return fromPlugin.length > 0 ? fromPlugin : [...this.sessions.keys()]
+  }
+
+  /**
+   * The window a model was launched with, for the token meter.
+   *
+   * The meter divides by the window the engine actually has. Only llama.cpp
+   * and MLX exposed one before, so these engines showed an empty meter and no
+   * near-limit warning; this answers with the configured `ctx_size` (or the
+   * value the model was loaded with) in the same shape.
+   */
+  async getModelProps(
+    modelId: string
+  ): Promise<{ nCtx: number; isSleeping: boolean }> {
+    return {
+      nCtx: this.sessions.get(modelId)?.ctxSize ?? this.ctxSize,
+      isSleeping: false,
+    }
   }
 
   override async isToolSupported(_modelId: string): Promise<boolean> {

@@ -42,12 +42,17 @@ describe('DefaultModelsService', () => {
     updateMtpSettings: vi.fn(),
   }
 
-  const mockEngineManager = { get: vi.fn().mockReturnValue(mockEngine) }
+  const mockEngineManager = {
+    get: vi.fn().mockReturnValue(mockEngine),
+    engines: new Map<string, any>(),
+  }
 
   beforeEach(() => {
     modelsService = new DefaultModelsService()
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
+    mockEngineManager.get.mockReturnValue(mockEngine)
+    mockEngineManager.engines = new Map()
     mockEvents.emit.mockClear()
   })
 
@@ -132,15 +137,38 @@ describe('DefaultModelsService', () => {
     })
 
     it('should stop all active models from all providers', async () => {
-      mockEngine.getLoadedModels.mockResolvedValue(['model1', 'model2'])
+      const llamacpp = {
+        getLoadedModels: vi.fn().mockResolvedValue(['model1', 'model2']),
+        unload: vi.fn(),
+      }
+      const openvino = {
+        getLoadedModels: vi.fn().mockResolvedValue(['model3']),
+        unload: vi.fn(),
+      }
+      mockEngineManager.engines = new Map([
+        ['llamacpp', llamacpp],
+        ['openvino', openvino],
+      ])
+      mockEngineManager.get.mockImplementation((provider: string) =>
+        provider === 'llamacpp' ? llamacpp : openvino
+      )
+
       await modelsService.stopAllModels()
-      expect(mockEngine.unload).toHaveBeenCalledTimes(4)
+
+      expect(llamacpp.unload).toHaveBeenCalledTimes(2)
+      expect(openvino.unload).toHaveBeenCalledWith('model3')
     })
 
     it('should handle empty active models', async () => {
-      mockEngine.getLoadedModels.mockResolvedValue(null)
+      const engine = {
+        getLoadedModels: vi.fn().mockResolvedValue([]),
+        unload: vi.fn(),
+      }
+      mockEngineManager.engines = new Map([['llamacpp', engine]])
+      mockEngineManager.get.mockReturnValue(engine)
+
       await modelsService.stopAllModels()
-      expect(mockEngine.unload).not.toHaveBeenCalled()
+      expect(engine.unload).not.toHaveBeenCalled()
     })
   })
 
@@ -173,6 +201,61 @@ describe('DefaultModelsService', () => {
       mockEngine.getLoadedModels.mockResolvedValue({ includes: () => true })
       await expect(modelsService.startModel(makeProvider(mockSettings), 'model1')).resolves.toBe(undefined)
       expect(mockEngine.load).not.toHaveBeenCalled()
+    })
+
+    it('should unload models on the other local engines before loading', async () => {
+      const llamacpp = {
+        getLoadedModels: vi.fn().mockResolvedValue(['qwen.gguf']),
+        unload: vi.fn().mockResolvedValue(undefined),
+      }
+      const openvino = {
+        getLoadedModels: vi.fn().mockResolvedValue([]),
+        unload: vi.fn(),
+        load: vi.fn().mockResolvedValue({ id: 'session1' }),
+      }
+      mockEngineManager.engines = new Map([
+        ['llamacpp', llamacpp],
+        ['openvino', openvino],
+      ])
+      mockEngineManager.get.mockImplementation((provider: string) =>
+        provider === 'llamacpp' ? llamacpp : openvino
+      )
+
+      const provider = { provider: 'openvino', models: [{ id: 'model1' }] } as any
+      await modelsService.startModel(provider, 'model1')
+
+      // The llama.cpp weights and KV cache are released before the second
+      // runtime allocates its own, which is the 16 GB OOM shape this guards.
+      expect(llamacpp.unload).toHaveBeenCalledWith('qwen.gguf')
+      expect(llamacpp.unload.mock.invocationCallOrder[0]).toBeLessThan(
+        openvino.load.mock.invocationCallOrder[0]
+      )
+      expect(openvino.unload).not.toHaveBeenCalled()
+    })
+
+    it('should keep other engines when auto unload is bypassed', async () => {
+      const llamacpp = {
+        getLoadedModels: vi.fn().mockResolvedValue(['qwen.gguf']),
+        unload: vi.fn(),
+      }
+      const openvino = {
+        getLoadedModels: vi.fn().mockResolvedValue([]),
+        unload: vi.fn(),
+        load: vi.fn().mockResolvedValue({ id: 'session1' }),
+      }
+      mockEngineManager.engines = new Map([
+        ['llamacpp', llamacpp],
+        ['openvino', openvino],
+      ])
+      mockEngineManager.get.mockImplementation((provider: string) =>
+        provider === 'llamacpp' ? llamacpp : openvino
+      )
+
+      const provider = { provider: 'openvino', models: [{ id: 'model1' }] } as any
+      await modelsService.startModel(provider, 'model1', true)
+
+      expect(llamacpp.unload).not.toHaveBeenCalled()
+      expect(openvino.load).toHaveBeenCalled()
     })
   })
 

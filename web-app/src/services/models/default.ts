@@ -391,15 +391,36 @@ export class DefaultModelsService implements ModelsService {
     return this.getEngine(provider)?.unload(model)
   }
 
+  /** Every registered engine, with its provider id. */
+  private engines(): Array<[string, AIEngine]> {
+    return [...EngineManager.instance().engines.entries()]
+  }
+
+  /**
+   * Stop every loaded model on every engine except `keep`.
+   *
+   * Each engine's own `autoUnload` only covers the sessions it owns, so without
+   * this a llama.cpp model at a large context stays resident while an OpenVINO
+   * or LiteRT-LM model loads beside it. On a CPU-only machine that is two sets
+   * of weights and two KV caches at once — the documented OOM shape on 16 GB.
+   */
+  private async stopOtherEngines(keep: string): Promise<void> {
+    await Promise.all(
+      this.engines()
+        .filter(([provider]) => provider !== keep)
+        .map(async ([provider, engine]) => {
+          const models = await engine.getLoadedModels().catch(() => [])
+          await Promise.all(
+            models.map((model) =>
+              this.stopModel(model, provider).catch(() => undefined)
+            )
+          )
+        })
+    )
+  }
+
   async stopAllModels(): Promise<void> {
-    const llamaCppModels = await this.getActiveModels('llamacpp')
-    if (llamaCppModels)
-      await Promise.all(
-        llamaCppModels.map((model) => this.stopModel(model, 'llamacpp'))
-      )
-    const mlxModels = await this.getActiveModels('mlx')
-    if (mlxModels)
-      await Promise.all(mlxModels.map((model) => this.stopModel(model, 'mlx')))
+    await this.stopOtherEngines('')
   }
 
   async startModel(
@@ -412,6 +433,13 @@ export class DefaultModelsService implements ModelsService {
 
     const loadedModels = await engine.getLoadedModels()
     if (loadedModels.includes(model)) return undefined
+
+    // Only the target engine's own autoUnload covers its sessions, so a model
+    // on another engine would keep its weights and KV cache resident. Callers
+    // that deliberately bypass auto unload are left alone.
+    if (!bypassAutoUnload) {
+      await this.stopOtherEngines(provider.provider)
+    }
 
     // Find the model configuration to get settings
     const modelConfig = provider.models.find((m) => m.id === model)

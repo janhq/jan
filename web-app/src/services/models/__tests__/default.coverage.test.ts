@@ -60,6 +60,7 @@ describe('DefaultModelsService - coverage supplement', () => {
 
   const mockEngineManager = {
     get: vi.fn().mockReturnValue(mockEngine),
+    engines: new Map<string, any>(),
   }
 
   beforeEach(() => {

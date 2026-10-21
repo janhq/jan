@@ -171,6 +171,8 @@ describe('Cowork context recovery settings', () => {
       },
     } as unknown as AIEngine
     const llama = {
+      // startModel asks every other engine what it has loaded before loading.
+      getLoadedModels: async () => [],
       unload: async () => ({ success: true }),
     } as unknown as AIEngine
     const manager = new EngineManager()

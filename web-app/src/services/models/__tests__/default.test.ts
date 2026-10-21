@@ -39,7 +39,12 @@ describe('DefaultModelsService - additional coverage', () => {
     checkMmprojExists: vi.fn(), validateGgufFile: vi.fn(), getTokensCount: vi.fn(),
   }
 
-  const mockEngineManager = { get: vi.fn().mockReturnValue(mockEngine) }
+  const mockEngineManager = {
+    get: vi.fn().mockReturnValue(mockEngine),
+    // startModel stops models on every other engine before loading, so the
+    // manager has to expose the registry even when it is empty.
+    engines: new Map<string, any>(),
+  }
 
   beforeEach(() => {
     svc = new DefaultModelsService()
