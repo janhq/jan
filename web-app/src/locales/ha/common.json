@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "Lambar shiri",
+    "preview": "Dubawa",
+    "previewStreaming": "Za a samu idan an gama samarwa",
+    "unresolvedAssets_one": "Ba za a iya loda madogarar albarkatu 1 a dubawa ba. Hanyoyin dangantaka ba su da URL na tushe don gano wurin albarkatun.",
+    "unresolvedAssets_other": "Ba za a iya loda madogarar albarkatu {{count}} a dubawa ba. Hanyoyin dangantaka ba su da URL na tushe don gano wurin albarkatun."
+  },
+  "assistants": "Mataimaka",
+  "hardware": "Kayan kwamfuta",
+  "mcp-servers": "Sabobin MCP",
+  "local_api_server": "Sabar API ta cikin kwamfuta",
+  "remote_access": "Samun dama daga nesa",
+  "integrations": "Haɗin kai",
+  "experimental": "Gwaji",
+  "claude_code": "Claude Code",
+  "https_proxy": "Wakilin HTTPS",
+  "web_search": "Binciken Yanar Gizo",
+  "shell": "Shell",
+  "browse": "Bincika",
+  "moreControls": "Ƙarin sarrafawa",
+  "starting": "Ana farawa...",
+  "activeSuffix": "(Mai aiki)",
+  "extensions": "Ƙari",
+  "attachments": "Abubuwan da aka makala",
+  "general": "Gaba ɗaya",
+  "settings": "Saituna",
+  "modelProviders": "Masu ba da samfura",
+  "localProviders": "Na cikin kwamfuta",
+  "remoteProviders": "Na nesa",
+  "manageProviders": "Sarrafa masu ba da sabis",
+  "hiddenProviders": "Masu ba da sabis da aka kashe: {{count}}",
+  "hideProvider": "Ɓoye mai ba da sabis",
+  "showProvider": "Nuna mai ba da sabis",
+  "interface": "Fuskar amfani",
+  "appearance": "Bayyanar",
+  "privacy": "Keɓantawa",
+  "keyboardShortcuts": "Gajerun hanyoyi",
+  "home": "Gida",
+  "cowork": "Cowork",
+  "newSession": "Sabon zama",
+  "artifacts": "Abubuwan da aka samar",
+  "customize": "Keɓance",
+  "local": "Na gida",
+  "selectFolder": "Zaɓi babban fayil",
+  "selectModel": "Zaɓi samfuri da farko",
+  "commands": "Umarni",
+  "cmdHelp": "Jera umarnin da ake da su",
+  "cmdClear": "Share wannan zaman",
+  "cmdModels": "Canja samfurin aiki",
+  "cmdModelsHint": "Rubuta /models sannan zaɓi samfuri daga jerin",
+  "cmdModelSwitched": "An sauya zuwa {{name}}",
+  "cmdUnknown": "Umarni da ba a sani ba: {{name}}. Gwada /help",
+  "cmdBusy": "Ba za a iya yin hakan yayin da wakili ke gudana ba",
+  "cmdCompact": "Ƙirƙirar mahallin zaman cikin taƙaice",
+  "cmdCompacted": "Ƙwaƙwalwar {{before}} -> saƙonnin {{after}}",
+  "cmdNothingToCompact": "Babu wani abu da zai daidaita tukuna",
+  "cmdCompactFailed": "Ƙunƙasa ya kasa: {{error}}",
+  "cmdPlan": "Juya yanayin shirin (karanta-kawai: wakili ya ba da shawara ba tare da rubutu ba)",
+  "cmdPlanOn": "Tsarin tsari a kunne: wakilin yana karantawa kuma yana ba da shawara ba tare da rubutu ba",
+  "cmdPlanOff": "Yanayin tsari a kashe: kisa na al'ada",
+  "cmdTodo": "Bude ci gaba panel",
+  "cmdTasks": "Bude sashin ayyukan baya",
+  "cmdInit": "Yi nazarin aikin kuma rubuta basira da ƙwaƙwalwar ajiya",
+  "cmdInitRunning": "Shiga wannan aikin",
+  "skills": "Ƙwarewa",
+  "skillsInContext": "Dabarun da ke akwai ga wakilin wannan gudu",
+  "skillsTitle": "Sarrafa basira",
+  "skillsScopeProject": "Abubuwan da suka dace don {{folder}}",
+  "skillsScopeGlobal": "Ƙwarewar duniya, samuwa ga kowane zama",
+  "skillsScopeMerged": "Ƙwarewa don {{folder}}, da ƙwarewar duniya kowane zama yana raba hannun jari",
+  "skillOriginFolder": "babban fayil",
+  "skillOriginGlobal": "duniya",
+  "skillsEmpty": "Babu fasaha tukuna",
+  "skillsPickOrNew": "Zaɓi fasaha don gyarawa, ko ƙirƙirar sabuwa.",
+  "skillNew": "Sabuwar fasaha",
+  "skillDelete": "Share gwaninta",
+  "skillSave": "Ajiye",
+  "skillSaved": "Ajiye gwaninta",
+  "skillNameRequired": "Ana buƙatar sunan gwaninta",
+  "skillNamePlaceholder": "fasaha-suna",
+  "skillContentPlaceholder": "Bayyana hanyar da za a sake amfani da ita a cikin Markdown…",
+  "skillHubImport": "Shigo daga cibiya",
+  "skillHubTitle": "Cibiyar fasaha ta Anthropic",
+  "skillHubEmpty": "Babu fasaha da aka samu akan cibiya",
+  "skillImport": "Shigo da",
+  "skillReimport": "Sake shigo da kaya",
+  "skillImported": "An shigo da {{name}}",
+  "sessions": "Zama",
+  "deleteSession": "Share zaman",
+  "deleteSessionTitle": "Share zaman?",
+  "deleteSessionBody": "\"{{title}}\" da kwafinsa za a share su har abada. Ba za a iya soke wannan ba.",
+  "newChat": "Sabuwar hira",
+  "newAgentChat": "Sabuwar Wakilin Taɗi",
+  "chats": "Taɗi",
+  "favorites": "Abubuwan da aka fi so",
+  "recents": "Kwanan nan",
+  "hub": "Hub",
+  "helpSupport": "Taimako & Taimako",
+  "helpUsImproveJan": "Taimaka mana Inganta Jan",
+  "analyticsConsentDetail": "Muna tattara bayanan sirri don fahimtar amfani da fasalin. Ba a taɓa bin diddigin maganganunku da bayanan sirri ba. Kuna iya canza wannan kowane lokaci a cikin Saituna> Keɓewa.",
+  "analyticsConsentQuestion": "Kuna so ku taimaka mana don inganta Jan?",
+  "unstarAll": "Cire Tauraro Duk",
+  "unstar": "Cire tauraro",
+  "deleteAll": "Share Duk",
+  "star": "Tauraro",
+  "rename": "Sake suna",
+  "delete": "Goge",
+  "copied": "Kwafi!",
+  "dataFolder": "Jaka Data",
+  "others": "Sauran",
+  "language": "Harshe",
+  "login": "Shiga",
+  "loginWith": "Shiga Tare da {{provider}}",
+  "loginFailed": "An kasa Shiga",
+  "logout": "Fita",
+  "loggingOut": "Fita...",
+  "loggedOut": "An Shiga Cikin Nasara",
+  "logoutFailed": "An kasa Ficewa",
+  "profile": "Bayanan martaba",
+  "reset": "Sake saitawa",
+  "search": "Nema",
+  "searchThreads": "Bincika zaren...",
+  "toNavigate": "don kewaya",
+  "toSelect": "don zaɓar",
+  "toClose": "don rufewa",
+  "clearRecent": "Share",
+  "name": "Suna",
+  "cancel": "Soke",
+  "dismiss": "Korar",
+  "create": "Ƙirƙira",
+  "save": "Ajiye",
+  "edit": "Gyara",
+  "copy": "Kwafa",
+  "back": "Baya",
+  "close": "Rufe",
+  "done": "Anyi",
+  "next": "Na gaba",
+  "finish": "Gama",
+  "skip": "Tsallake",
+  "allow": "Izinin",
+  "deny": "Ƙi",
+  "start": "Fara",
+  "stop": "Tsayar",
+  "preview": {
+    "loading": "Ana buɗewa…",
+    "unsupported": "Jan ba zai iya nuna irin wannan fayil ɗin ba. Bude shi don ganin shi a cikin wani app.",
+    "outside": "Wannan fayil baya cikin filin aiki na zaman.",
+    "tooLarge": "Yayi girma sosai don samfoti. Bude shi don ganin shi a cikin wani app.",
+    "reload": "Sake kaya",
+    "allowNetwork": "Izinin hanyar sadarwa",
+    "unsandboxed": "Gudun unsandbox: adana bayanai da fayilolin gida suna aiki",
+    "unresolvedRefs_one": "1 fayil ɗin wannan haɗin yanar gizon don ba za a iya lodawa a cikin samfoti ba. Bude shi don ganin shi a cikin mai bincike.",
+    "unresolvedRefs_other": "{{count}} ya yi fayilolin wannan haɗin yanar gizon don ba za a iya lodawa a cikin samfoti ba. Bude shi don ganin shi a cikin mai bincike.",
+    "externalRefs_one": "An katange 1 albarkatun wannan shafin da aka ɗora daga gidan yanar gizon. Kunna \"Bada hanyar sadarwa\" don loda shi.",
+    "externalRefs_other": "An toshe albarkatun {{count}} wannan shafin da yake lodi daga gidan yanar gizo. Kunna \"Bada hanyar sadarwa\" don loda su.",
+    "scriptErrors_one": "Shafin ya ruwaito kuskure: {{message}}",
+    "scriptErrors_other": "Shafin ya ruwaito kurakuran {{count}}. Na farko: {{message}}"
+  },
+  "changes": {
+    "title": "Agent canje-canje",
+    "empty": "Fayilolin da wakili ya rubuta ko gyara zasu bayyana a nan.",
+    "a11y": "Canje-canjen wakili: fayilolin {{files}}, ƙara {{additions}}, cire {{deletions}}"
+  },
+  "modelPanel": {
+    "title": "Saitunan samfuri",
+    "a11y": "Buɗe saitunan ƙira",
+    "contextTooltip": "Tagar yanayi: {{value}} na alamun {{max}}"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Skill '{{name}}' babu",
+    "kind": {
+      "skill": "Ƙwarewa",
+      "command": "Umarni",
+      "model": "Samfuri"
+    }
+  },
+  "compactWidth": "Karamin Nisa",
+  "fullWidth": "Cikakken Nisa",
+  "dark": "Duhu",
+  "light": "Haske",
+  "system": "Tsari",
+  "auto": "Mota",
+  "english": "Turanci",
+  "medium": "Matsakaici",
+  "newThread": "Sabon Zaren",
+  "noResultsFound": "Ba a sami sakamako ba",
+  "noThreadsYet": "Babu zaren tukuna",
+  "noThreadsYetDesc": "Fara sabon tattaunawa don ganin tarihin zaren ku anan.",
+  "downloads": "Zazzagewa",
+  "downloading": "Ana saukewa",
+  "uploadingAttachments": "Ana loda abubuwan da aka makala…",
+  "cancelDownload": "Soke zazzagewa",
+  "downloadCancelled": "An soke saukewa",
+  "downloadComplete": "Sauke Kammala",
+  "thinking": "Tunani...",
+  "thought": "Tunani",
+  "callingTool": "Kayan aikin kira",
+  "completed": "An kammala",
+  "image": "Hoto",
+  "vision": "hangen nesa",
+  "multimodal": "Multimodal",
+  "embeddings": "Abun ciki",
+  "tools": "Kayan aiki",
+  "webSearch": "Binciken Yanar Gizo",
+  "reasoning": "Hankali",
+  "proactive": "Mai aiwatarwa",
+  "selectAModel": "Zaɓi samfuri",
+  "noToolsAvailable": "Babu kayan aikin da akwai",
+  "noModelsFoundFor": "Babu samfurin da aka samo don \"{{searchValue}}\"",
+  "failedToLoadModels": "An kasa loda samfura",
+  "noModels": "Ba a sami samfura ba",
+  "noAssistant": "Babu mataimaki",
+  "customAvatar": "Avatar na al'ada",
+  "editAssistant": "Gyara Mataimakin",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Sake haɓakawa",
+  "threadImage": "Hoton zaren",
+  "editMessage": "Gyara Saƙo",
+  "deleteMessage": "Share Saƙo",
+  "deleteThread": "Share Zaren",
+  "renameThread": "Sake suna Zaren",
+  "threadTitle": "Taken Zaren",
+  "deleteAllThreads": "Share Duk Zaren",
+  "allThreadsUnfavorited": "Duk Zaren Ba'a so",
+  "deleteAllThreadsConfirm": "Shin kun tabbata kuna son share duk zaren? Ba za a iya soke wannan aikin ba.",
+  "addProvider": "Ƙara Mai bayarwa",
+  "addOpenAIProvider": "Ƙara Mai Bayar da OpenAI",
+  "enterNameForProvider": "Shigar da suna don mai baka",
+  "providerAlreadyExists": "Mai ba da suna \"{{name}}\" ya riga ya wanzu. Da fatan za a zaɓi suna daban.",
+  "adjustFontSize": "Daidaita Girman Font",
+  "changeLanguage": "Canja Harshe",
+  "editTheme": "Gyara Jigo",
+  "editCodeBlockStyle": "Shirya Salon Block Code",
+  "editServerHost": "Shirya Mai watsa shiri na uwar garken",
+  "pickColorWindowBackground": "Zaɓi Bayanan Tagar Launi",
+  "pickColorAppMainView": "Zaɓi Babban Duban App Launi",
+  "pickColorAppPrimary": "Zaba Launi App Primary",
+  "pickColorAppAccent": "Zaɓa Launuka App Accent",
+  "pickColorAppDestructive": "Zaɓi App Mai Lalacewa",
+  "apiKeyRequired": "Ana buƙatar maɓallin API",
+  "enterTrustedHosts": "Shiga amintattun runduna",
+  "placeholder": {
+    "chatInput": "Tambayeni wani abu..."
+  },
+  "confirm": "Tabbatar",
+  "continue": "Ci gaba",
+  "loading": "Ana lodawa...",
+  "settingUpJan": "Ana haɓaka Jan…",
+  "registeringExtensions": "Ana yin rijistar kari…",
+  "loadingExtensions": "Ana ɗaukaka kari… ({{done}}/{{total}})",
+  "error": "Kuskure",
+  "success": "Nasara",
+  "warning": "Gargaɗi",
+  "conversationNotAvailable": "Babu tattaunawa",
+  "conversationNotAvailableDescription": "Maganar da kuke ƙoƙarin shiga ba ta samuwa ko kuma an share ta.",
+  "temporaryChat": "Hira ta wucin gadi",
+  "temporaryChatTooltip": "Taɗi na ɗan lokaci ba zai bayyana a tarihin ku ba",
+  "noResultsFoundDesc": "Ba mu sami wata tattaunawa da ta dace da bincikenku ba. Gwada wata maɓalli daban.",
+  "searchModels": "Samfuran bincike...",
+  "searchStyles": "Salon bincike...",
+  "createAssistant": "Ƙirƙiri Mataimakin",
+  "enterApiKey": "Shigar da Maɓallin API",
+  "scrollToBottom": "Gungura zuwa ƙasa",
+  "generateAiResponse": "Ƙirƙirar amsawar AI",
+  "continueAiResponse": "Ci gaba da AI Response",
+  "addModel": {
+    "title": "Ƙara Model",
+    "modelId": "Lambar samfuri",
+    "enterModelId": "Shigar da samfurin ID",
+    "addModel": "Ƙara Model",
+    "description": "Ƙara sabon samfuri ga mai bayarwa",
+    "exploreModels": "Duba lissafin samfurin daga mai badawa"
+  },
+  "mcpServers": {
+    "editServer": "Shirya uwar garken",
+    "addServer": "Ƙara Sabar",
+    "serverName": "Sunan uwar garken",
+    "enterServerName": "Shigar da sunan uwar garke",
+    "command": "Umarni",
+    "enterCommand": "Shigar da umarni",
+    "arguments": "Hujja",
+    "argument": "Bayani na {{index}}",
+    "envVars": "Canje-canjen Muhalli",
+    "key": "Maɓalli",
+    "value": "Daraja",
+    "save": "Ajiye"
+  },
+  "deleteServer": {
+    "title": "Share uwar garken",
+    "delete": "Goge"
+  },
+  "editJson": {
+    "errorParse": "An kasa yin nazarin JSON",
+    "errorPaste": "An kasa liƙa JSON",
+    "errorFormat": "Tsarin JSON mara inganci",
+    "titleAll": "Shirya Duk Kanfigareshan Sabar",
+    "placeholder": "Shigar da daidaitawar JSON...",
+    "save": "Ajiye"
+  },
+  "editModel": {
+    "title": "Saukewa: {{modelId}}",
+    "description": "Tsaya iyawar ƙira ta hanyar jujjuya zaɓuɓɓukan da ke ƙasa.",
+    "capabilities": "Abubuwan iyawa",
+    "tools": "Kayan aiki",
+    "vision": "hangen nesa",
+    "embeddings": "Abun ciki",
+    "notAvailable": "Ba a samuwa tukuna"
+  },
+  "outOfContextError": {
+    "truncateInput": "Rage abin da ake shigarwa",
+    "title": "An kai iyakar mahalli",
+    "description": "Wannan hira tana kaiwa iyakar ƙwaƙwalwar AI, kamar allo da yake cikewa. Za mu iya ƙara sararin ƙwaƙwalwar (wanda ake kira girman mahalli) don ya tuna ƙarin bayani, amma hakan na iya amfani da ƙarin ƙwaƙwalwar kwamfutarku. Haka kuma za mu iya rage abin da ake shigarwa, wato cire wani ɓangare na tarihin hirar don samar da wuri ga sabbin saƙonni.",
+    "increaseContextSizeDescription": "Kuna son ƙara girman mahalli?",
+    "increaseContextSize": "Ƙara girman mahalli"
+  },
+  "toolApproval": {
+    "title": "Neman Izinin Kayan aiki",
+    "description": "Mataimakin yana so ya yi amfani da <strong>{{toolName}}</strong>",
+    "securityNotice": "Kawai ba da izinin kayan aikin da kuka dogara. Kayan aiki na iya samun dama ga tsarin ku da bayananku.",
+    "deny": "Ƙi",
+    "allowOnce": "Ba da izini sau ɗaya",
+    "alwaysAllow": "Izinin Koyaushe"
+  },
+  "deleteModel": {
+    "title": "Goge Model: {{modelId}}",
+    "description": "Shin kun tabbata kuna son share wannan ƙirar? Ba za a iya soke wannan aikin ba.",
+    "success": "Model {{modelId}} an goge shi har abada.",
+    "cancel": "Soke",
+    "delete": "Goge"
+  },
+  "deleteProvider": {
+    "title": "Share Mai bayarwa",
+    "description": "Share wannan mai badawa da duk samfuran sa. Ba za a iya soke wannan aikin ba.",
+    "success": "An share mai bada {{provider}} har abada.",
+    "confirmTitle": "Share Mai Bayarwa: {{provider}}",
+    "confirmDescription": "Shin kun tabbata kuna son share wannan mai bada? Ba za a iya soke wannan aikin ba.",
+    "cancel": "Soke",
+    "delete": "Goge"
+  },
+  "modelSettings": {
+    "title": "Saitunan Samfura - {{modelId}}",
+    "description": "Sanya saitunan ƙira don haɓaka aiki da ɗabi'a.",
+    "nglDisabledByFit": "Auto-fit yana zabar yadudduka na GPU. Kashe Auto-fit don saita wannan da hannu.",
+    "samplingDefaults": {
+      "title": "Matsalolin samfur na asali",
+      "description": "Saitunan samfur na ainihi don wannan ƙirar. Ana amfani da shi sai dai idan an soke ta ta kowane mataimaki ko ƙimar buƙatu."
+    },
+    "specDraft": {
+      "section": "Ƙididdigar ƙira",
+      "enable": "Kunna ƙididdige ƙididdiga",
+      "enableDescription": "Zana alamu da yawa a kowane mataki kuma tabbatar da su a cikin wucewa ɗaya, wanda ke haɓaka tsarawa. Yana amfani da ginanniyar kawuna na MTP na ƙirar, ko daftarin ƙirar da aka zazzage dashi (MTP, Eagle3, DFlash ko DSpark).",
+      "nMax": "Matsakaicin daftarin alamun",
+      "nMaxDescription": "Matsakaicin adadin alamomi don tsara kowane mataki. Default 16.",
+      "nMin": "Min daftarin alamu",
+      "nMinDescription": "Mafi ƙarancin adadin alamu don tsara kowane mataki. Tsohuwar 0.",
+      "pMin": "Min daftarin yuwuwar",
+      "pMinDescription": "Mafi qarancin yuwuwar yin zari (0-1). Tsohuwar 0.75."
+    },
+    "templateKwargs": {
+      "section": "Zaɓuɓɓukan samfurin taɗi",
+      "description": "Ƙarin zaɓuɓɓukan samfurin taɗi na wannan ƙirar yana karɓa. An aika azaman chat_template_kwargs akan kowace buƙata; bar ƙima a tsoho don barin samfurin ya yanke shawara.",
+      "addCustom": "Ƙara zaɓi na al'ada",
+      "keyPlaceholder": "suna",
+      "valuePlaceholder": "daraja",
+      "add": "Ƙara",
+      "cancel": "Soke",
+      "remove": "Cire"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "An kasa sabunta saitunan ƙira"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Canja Wurin Jakar Bayanai",
+      "description": "Shin kun tabbata kuna son canza wurin babban fayil ɗin bayanai? Wannan zai motsa duk bayananku zuwa sabon wurin kuma zai sake kunna aikace-aikacen.",
+      "currentLocation": "Wuri na Yanzu:",
+      "newLocation": "Sabon Wuri:",
+      "cancel": "Soke",
+      "changeLocation": "Canja Wuri"
+    },
+    "deleteAllThreads": {
+      "title": "Share Duk Zaren",
+      "description": "Za a share duk zaren. Ba za a iya soke wannan aikin ba."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Share Duk Tattaunawa",
+      "description": "Za a share tattaunawar {{count}} a cikin \"{{projectName}}\". Ba za a iya soke wannan aikin ba."
+    },
+    "deleteThread": {
+      "description": "Kun tabbata kuna son share wannan zaren? Ba za a iya soke wannan aikin ba."
+    },
+    "editMessage": {
+      "title": "Gyara Saƙo"
+    },
+    "messageMetadata": {
+      "title": "Metadata saƙo"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Wani abu ya faru",
+    "details": "Cikakkun bayanai"
+  },
+  "missingDependenciesDialog": {
+    "title": "Bace Dakunan karatu na Tsarin",
+    "description": "An shigar da {{backend}} amma an kasa samun wasu ɗakunan karatu na tsarin da ake buƙata. Yana iya faɗuwa zuwa CPU ko ba ya gudana daidai.",
+    "installLabel": "Don gyara wannan, shigar da waɗannan abubuwa:",
+    "download": "Sauke",
+    "additionalLibraries": "Ƙarin ɗakunan karatu da suka ɓace:",
+    "missingLibraries": "Rasa ɗakunan karatu:",
+    "showRawLibraries": "Nuna sunayen ɗakin karatu da suka ɓace {{count}}"
+  },
+  "projects": {
+    "title": "Ayyuka",
+    "new": "Sabbin Ayyuka",
+    "addProject": "Ƙara Project",
+    "addToProject": "Ƙara zuwa aikin",
+    "removeFromProject": "Cire daga aikin",
+    "createNewProject": "Ƙirƙiri Sabon Aiki",
+    "editProject": "Gyara Ayyukan",
+    "deleteProject": "Share Project",
+    "projectName": "Sunan aikin",
+    "enterProjectName": "Shigar da sunan aikin...",
+    "noProjectsAvailable": "Babu ayyukan da ake samu",
+    "noProjectsYet": "Babu Ayyuka Har yanzu",
+    "noProjectsYetDesc": "Fara sabon aiki ta danna maɓallin Ƙara Project.",
+    "projectNotFound": "Ba'a Samu Aikin ba",
+    "projectNotFoundDesc": "Aikin da kuke nema babu shi ko kuma an goge shi.",
+    "selectAssistant": "Zaɓi mataimaki",
+    "noAssistantAssigned": "Babu mataimaki da aka ba wa wannan aikin",
+    "files": "Fayiloli",
+    "filesDescription": "Ƙara PDFs, takardu, ko wani rubutu don tunani a cikin wannan aikin.",
+    "uploadingFiles": "Ana aiwatar da fayiloli…",
+    "processButton": "Ƙara",
+    "deleteProjectDialog": {
+      "title": "Share Project",
+      "permanentDelete": "Wannan zai share duk zaren har abada.",
+      "permanentDeleteWarning": "Wannan aikin zai share DUK zaren da ke cikin aikin har abada!",
+      "deleteEmptyProject": "Wannan aikin zai share aikin \"{{projectName}}\".",
+      "saveThreadsAdvice": "Don ajiye zaren, matsar da su zuwa jerin zaren ku ko wani aikin kafin sharewa.",
+      "starredWarning": "Har yanzu kuna da alamar tauraro a cikin aikin.",
+      "deleteButton": "Goge",
+      "successWithName": "An goge aikin \"{{projectName}}\" cikin nasara",
+      "successWithoutName": "An goge aikin cikin nasara",
+      "error": "An kasa share aikin. Da fatan za a sake gwadawa.",
+      "ariaLabel": "Share {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Ƙirƙiri Sabon Aiki",
+      "editTitle": "Gyara Ayyukan",
+      "nameLabel": "Sunan aikin",
+      "namePlaceholder": "Shigar da sunan aikin...",
+      "assistant": "Mataimaki",
+      "selectAssistant": "Zaɓi mataimaki (na zaɓi)",
+      "noAssistant": "Babu mataimaki",
+      "addAssistant": "Ƙara Mataimakin",
+      "createButton": "Ƙirƙira",
+      "updateButton": "Sabunta",
+      "alreadyExists": "Aikin \"{{projectName}}\" ya riga ya wanzu",
+      "createSuccess": "An ƙirƙira aikin \"{{projectName}}\" cikin nasara",
+      "updateSuccess": "An sabunta aikin \"{{projectName}}\" cikin nasara"
+    },
+    "noConversationsIn": "Babu Taɗi a cikin {{projectName}}",
+    "startNewConversation": "Fara sabon tattaunawa tare da {{projectName}} a ƙasa",
+    "conversationsIn": "Tattaunawa a cikin {{projectName}}",
+    "conversationsDescription": "Danna kowace tattaunawa don ci gaba da hira, ko fara sabo a ƙasa.",
+    "conversation": "Tattaunawa",
+    "instructions": "Umarni",
+    "setup": "Saita",
+    "instructionsDescription": "Keɓance sauti da salon amsawa",
+    "manageInstructions": "Sarrafa Umarni",
+    "thread": "zaren",
+    "threads": "zaren",
+    "updated": "An sabunta:",
+    "collapseProject": "Rushe aikin",
+    "expandProject": "Fadada aikin",
+    "update": "Sabunta",
+    "searchProjects": "Bincika ayyukan...",
+    "noProjectsFound": "Babu ayyukan da aka samu",
+    "tryDifferentSearch": "Gwada wani kalmar nema daban"
+  },
+  "attachmentsIngestion": {
+    "title": "Zaɓi yadda ake shigar da haɗe-haɗe",
+    "description": "Zaɓi ko don haɗa waɗannan fayilolin kai tsaye a cikin taɗi ko fidda su azaman abin sakawa maimakon.",
+    "inline": "Allurar cikin hira",
+    "embeddings": "Yi amfani da abubuwan sakawa"
+  },
+  "attachmentInjectedIndicator": "Allura cikin hira",
+  "attachmentEmbeddedIndicator": "An haɗa don RAG",
+  "viewInjectedContent": "Duba abun ciki na allura",
+  "injectedContentTitle": "Abun cikin fayil ɗin allura",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Duk Zaren Ba'a so",
+      "description": "An cire duk zaren daga abubuwan da kuka fi so."
+    },
+    "deleteAllThreads": {
+      "title": "Share Duk Zaren",
+      "description": "An share duk zaren har abada."
+    },
+    "renameThread": {
+      "title": "Sake suna Zaren",
+      "description": "An canza sunan zaren suna zuwa '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Share Zaren",
+      "description": "An share wannan zaren har abada."
+    },
+    "errorCopied": {
+      "title": "Kwafi yayi nasara",
+      "description": "An kwafe bayanin kuskure zuwa allo"
+    },
+    "errorCopyFailed": {
+      "title": "An kasa yin kwafi",
+      "description": "An kasa kwafe bayanan kuskure zuwa allo"
+    },
+    "editMessage": {
+      "title": "Gyara Saƙo",
+      "description": "An gyara saƙo cikin nasara. Da fatan za a jira samfurin ya amsa."
+    },
+    "appUpdateDownloaded": {
+      "title": "An Sauke Sabunta App",
+      "description": "An sauke sabuntawar app cikin nasara."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "An kasa Sabunta App ɗin",
+      "description": "An kasa sauke sabuntawar app. Da fatan za a sake gwadawa."
+    },
+    "downloadComplete": {
+      "title": "Sauke Kammala",
+      "description": "An sauke {{item}}"
+    },
+    "downloadCancelled": {
+      "title": "An soke saukewa",
+      "description": "An soke tsarin saukewa"
+    },
+    "downloadFailed": {
+      "title": "An kasa saukewa",
+      "description": "An kasa sauke {{item}}",
+      "descriptionWithReason": "An kasa sauke {{item}}: {{reason}}",
+      "reason": {
+        "dns": "An kasa warware sunan uwar garken",
+        "refused": "an ƙi haɗin",
+        "timeout": "haɗin ya ƙare",
+        "tls": "an kasa kafa amintaccen haɗi",
+        "proxy": "Ba a iya isa ga wakili ba",
+        "unreachable": "An kasa isa ga uwar garken"
+      }
+    },
+    "openSettings": "Bude Saituna",
+    "openLogs": "Buɗe rajistan ayyukan",
+    "downloadTokenRequired": {
+      "title": "Ana buƙatar alamar Hugging Face",
+      "description": "Wannan ƙirar tana buƙatar alamar isa ga Hugging Face. Ƙara alamar ku a cikin Saituna kuma sake gwadawa."
+    },
+    "downloadLicenseRequired": {
+      "title": "Karɓi lasisin ƙira akan Hugging Face",
+      "description": "Dole ne ku karɓi lasisin samfurin akan shafin Hugging Face kafin saukewa."
+    },
+    "downloadRateLimited": {
+      "title": "Ƙimar da aka iyakance ta Hugging Face",
+      "description": "An iyakance ku. Ƙara alama na iya ƙara iyakoki. Da fatan za a sake gwadawa daga baya."
+    },
+    "modelValidationStarted": {
+      "title": "Samfurin Tabbatarwa",
+      "description": "Zazzage samfurin \"{{modelId}}\" cikin nasara. Tabbatar da mutunci..."
+    },
+    "modelValidationFailed": {
+      "title": "Tabbatar da Samfurin ya gaza",
+      "description": "Samfurin da aka zazzage \"{{modelId}}\" ya gaza tabbatar da gaskiya kuma an cire shi. Fayil ɗin na iya lalacewa ko tabarbare da shi."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Sauke Kammala",
+      "description": "Model \"{{item}}\" an sauke kuma an tabbatar da nasara"
+    },
+    "projectCreated": {
+      "title": "An Ƙirƙiri Aikin",
+      "description": "An ƙirƙira aikin \"{{projectName}}\" cikin nasara"
+    },
+    "projectRenamed": {
+      "title": "An Sake Sunan Aikin",
+      "description": "Aikin da aka sake masa suna daga \"{{oldName}}\" zuwa \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "An goge aikin",
+      "description": "An goge aikin \"{{projectName}}\" cikin nasara"
+    },
+    "projectAlreadyExists": {
+      "title": "Aikin Riga Yake",
+      "description": "Aikin \"{{projectName}}\" ya riga ya wanzu"
+    },
+    "projectDeleteFailed": {
+      "title": "An kasa gogewa",
+      "description": "An kasa share aikin. Da fatan za a sake gwadawa."
+    },
+    "threadAssignedToProject": {
+      "title": "Zaren Sanya",
+      "description": "Zaren da aka sanya wa \"{{projectName}}\" cikin nasara"
+    },
+    "threadRemovedFromProject": {
+      "title": "An Cire Zaren",
+      "description": "An cire zaren daga \"{{projectName}}\" cikin nasara"
+    },
+    "fileUploaded": {
+      "title": "An sarrafa fayil",
+      "description": "An sarrafa fayil kuma an yi lissafin cikin nasara"
+    },
+    "uploadFailed": {
+      "title": "An kasa aiwatarwa",
+      "description": "An kasa aiwatar da fayil",
+      "subjectThisFile": "Wannan fayil",
+      "pdfMalformedXref": "{{subject}} yana da madaidaicin tebur na nunin giciye na PDF kuma ba za'a iya misalta shi ba. Gwada buɗe shi a cikin mai duba PDF kuma sake adana shi (Fayil → Buga → Ajiye azaman PDF), sannan sake loda.",
+      "pdfScanned": "{{subject}} ya bayyana a matsayin abin dubawa ko tushen hoto PDF. Ba a tallafawa OCR tukuna - da fatan za a loda PDF na tushen rubutu.",
+      "pdfEncrypted": "{{subject}} yana da kariya ta kalmar sirri. Cire kalmar sirri kuma a sake gwadawa.",
+      "pdfUnsupportedFeature": "{{subject}} yana amfani da fasalin PDF Jan ba zai iya tantancewa ba tukuna (misali PostScript launi/ayyukan shading). Gwada sake adana shi (Fayil → Buga → Ajiye azaman PDF) don daidaita shi, sannan sake lodawa.",
+      "pdfGeneric": "{{subject}} ba za a iya misa shi azaman PDF ba. Fayil ɗin na iya lalacewa ko yana amfani da fasalin PDF mara tallafi.",
+      "fileTooLarge": "{{subject}} yayi girma da yawa. Saukewa: {{message}}.",
+      "unsupportedType": "Nau'in fayil \"{{type}}\" ba shi da tallafi.",
+      "ioError": "An kasa karanta {{subject}}: {{message}}",
+      "parseGeneric": "{{subject}} ba za a iya tantancewa ba: {{message}}",
+      "fallback": "An kasa aiwatar da {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "An Share fayil",
+      "description": "An cire fayil ɗin daga aikin"
+    },
+    "deleteFailed": {
+      "title": "An kasa gogewa",
+      "description": "An kasa share fayil"
+    },
+    "fileAlreadyExists": {
+      "title": "Fayil ya riga ya wanzu",
+      "description": "An riga an haɗa fayil zuwa wannan aikin"
+    },
+    "unsupportedFileType": {
+      "title": "Nau'in fayil mara tallafi",
+      "description": "Ba a tallafawa tsawo na fayil \".{{extension}}\" don bayanin aikin."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "An kashe haɗe-haɗe",
+      "description": "An kashe haɗe-haɗe a cikin Saituna"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "Fayil yayi girma sosai",
+    "fileTooLargeDescription": "{{fileName}} ya wuce iyakar {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "Saukewa: {{count}}",
+    "title": "Fayiloli",
+    "empty": "Fayilolin da kuka haɗa da fayilolin da wakilin ya ƙirƙira zasu bayyana a nan.",
+    "a11y": "Saukewa: {{count}}",
+    "attachments": "Abubuwan da aka makala",
+    "notImported": "ba a wurin aiki ba"
+  },
+  "llamacppBusyOnExit": {
+    "title": "llama.cpp har yanzu yana kan aiki",
+    "description": "Samfura ɗaya ko fiye ba su sauke kaya cikin lokaci ba. Barin tilastawa zai ƙare llama.cpp kuma yana iya katse martani mai aiki.",
+    "forceQuit": "Tilastawa barin",
+    "forcing": "Tilastawa barin…",
+    "shuttingDown": "Ana rufewa…"
+  },
+  "duration": {
+    "seconds": "Saukewa: {{count}}",
+    "minutes": "{{count}}m",
+    "hours": "Saukewa: {{count}}"
+  },
+  "collapse": "Rushewa",
+  "expand": "Fadada",
+  "todoPanelTitle": "Ci gaba",
+  "todoPanelEmpty": "Babu lissafin abin yi tukuna.",
+  "backgroundTasks": "Ayyukan bango",
+  "subagentsRunning_one": "Ƙananan mataimaka masu aiki: {{count}}",
+  "subagentsRunning_other": "Ƙananan mataimaka masu aiki: {{count}}",
+  "monitorsRunning_one": "Masu sa ido masu aiki: {{count}}",
+  "monitorsRunning_other": "Masu sa ido masu aiki: {{count}}",
+  "backgroundRunning_one": "Ayyukan bayan fage masu gudana: {{count}}",
+  "backgroundRunning_other": "Ayyukan bayan fage masu gudana: {{count}}",
+  "monitors": "Masu saka idanu",
+  "monitorPolling": "Zabe",
+  "monitorMatched": "Daidaita",
+  "monitorTimedOut": "Lokaci ya ƙare",
+  "monitorStopped": "Tsaya",
+  "monitorEnded": "Ya ƙare",
+  "coworkWatching_one": "Ana sa ido kan masu sa ido: {{count}}…",
+  "coworkWatching_other": "Ana sa ido kan masu sa ido: {{count}}…",
+  "coworkWaitingBackground": "Ana jiran ayyukan bango…",
+  "noBackgroundTasks": "Babu ayyukan baya tukuna.",
+  "running": "Gudu",
+  "queued": "An yi layi",
+  "waiting": "Jira",
+  "finished": "An gama",
+  "subagentPhase": "Farashin {{phase}}",
+  "subagentWaiting": "jira",
+  "viewTranscript": "Duba kwafin",
+  "taskWorking": "Yana aiki…",
+  "taskNoOutput": "Subgent ɗin ba ya samar da fitowar ganuwa.",
+  "subagentToolUses_one": "Adadin amfani da kayan aiki: {{count}}",
+  "subagentToolUses_other": "Adadin amfani da kayan aiki: {{count}}",
+  "artifactGroupCode": "Lambar shiri",
+  "artifactGroupImage": "Hoto",
+  "artifactGroupDocument": "Takardu",
+  "artifactGroupVideo": "Bidiyo",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Buɗe samfoti",
+  "artifactOpenExternal": "Bude",
+  "artifactMoreActions": "Ƙarin ayyuka",
+  "artifactShowInFolder": "Nuna a cikin Jaka",
+  "skillsUsedLabel": "Abubuwan da aka yi amfani da su",
+  "skillsUsed": "Kwarewar da aka yi amfani da su: {{skills}}",
+  "artifactsAll": "Duka",
+  "artifactsEmpty": "Ba a samar da wani abu ba tukuna. Abubuwan kayan tarihi daga Cowork yana gudana suna nunawa anan.",
+  "artifactsNoMatch": "Babu kayan tarihi da suka dace.",
+  "artifactsSearch": "Bincika kayan tarihi",
+  "artifactsShowMore": "Nuna {{count}} ƙari",
+  "workspace": {
+    "readsFrom": "Yana aiki a",
+    "writable": "karanta & rubuta",
+    "footnote": "Wakilin yana karanta kuma yana gyara wannan babban fayil kai tsaye. Bincika abin da ya canza a cikin rukunin diff.",
+    "footnoteEmpty": "Haɗa babban fayil don barin wakili yayi aiki akan aikin ku. Yana iya karantawa da shirya fayiloli a cikinsa.",
+    "attach": "Haɗa babban fayil",
+    "change": "Canja babban fayil",
+    "detach": "Cire babban fayil",
+    "open": "Bude",
+    "reveal": "Bayyana",
+    "unavailable": "Babu filin aiki",
+    "missing": "Babu sauran babban fayil ɗin sararin aiki {{folder}}. Zaɓi babban fayil daban.",
+    "openFailed": "An kasa buɗe filin aiki",
+    "revealFailed": "An kasa bayyana filin aiki",
+    "a11yWithFolder": "Babban fayil ɗin aikin {{folder}}, haɗe tare da damar karantawa da rubutawa. Canza ko raba shi.",
+    "a11yNoFolder": "Babu babban fayil ɗin aikin da aka haɗe. Haɗa ɗaya."
+  },
+  "coworkEmpty": {
+    "title": "Me muke aiki akai?",
+    "subtitleSandbox": "Ba Jan aiki. Yana karantawa kuma yana rubuta fayiloli, yana gudanar da umarni, kuma yana aiki ta matakan da kansa.",
+    "subtitleFolder": "Ba Jan aiki. Yana aiki kai tsaye a cikin {{folder}}, karantawa da gyara fayiloli da kansa.",
+    "try": "Gwada",
+    "sandbox": {
+      "first": "Rubuta rubutun Python wanda ke sake suna fayiloli ta ranar da aka ɗauke su",
+      "second": "Gina dashboard mai shafi ɗaya daga CSV Zan liƙa a ciki",
+      "third": "Zana README don aikin da na kwatanta muku"
+    },
+    "folder": {
+      "first": "Bayyana yadda aka haɗa {{folder}} tare",
+      "second": "Nemo kowane TODO a cikin {{folder}} kuma a haɗa su ta yanki",
+      "third": "Rubuta gwaje-gwaje don ɓangaren {{folder}} na nuna muku a"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "Babu tasha",
+    "a11y": "Ana kashe umarni masu gudana. Cikakkun bayanai.",
+    "title": "Ana kashe umarni masu gudana",
+    "body": "Jan yana barin wakili ya gudanar da umarnin harsashi kawai lokacin da tsarin ku zai iya iyakance su. Babu akwatin yashi a nan, don haka wakilin zai iya karantawa, rubutawa da shirya fayiloli a cikin akwatin yashi - amma ba ya gudanar da komai.",
+    "fixLinux": "Linux yana amfani da kumfa. Shigar da shi, sannan sake kunna Jan.",
+    "fixMac": "macOS yana amfani da akwatin yashi da aka gina a /usr/bin/sandbox-exec. Sake kunna Jan da zarar ya samu.",
+    "fixWindows": "Windows yana amfani da AppContainer. Sake kunna Jan don sake gwadawa.",
+    "recheck": "Duba kuma"
+  },
+  "planMode": {
+    "label": "Tsari",
+    "tooltipOff": "Shirin farko - wakilin ya karanta kuma ya ba da shawara, ba tare da rubutawa ba.",
+    "tooltipOn": "Tsare-tsare. Kashe wannan don barin wakili ya rubuta fayiloli.",
+    "onAnnounce": "Tsarin tsari yana kunne",
+    "placeholder": "Nemi tsari. Wakilin ba zai canza kowane fayiloli ba."
+  },
+  "budget": {
+    "stoppedSteps": "Tsaya a matakan {{max}}. Wakilin bai gama ba.",
+    "keepGoing": "Ci gaba",
+    "stoppedTokens": "Tsayawa - wannan zaman ya buga kasafin kudin sa.",
+    "compact": "Karamin",
+    "newSession": "Sabon zama"
+  },
+  "run": {
+    "stopped": "Tsaya",
+    "failed": "Gudu ya tsaya da wuri.",
+    "tryAgain": "Sake gwadawa"
+  },
+  "modelNoTools": "{{model}} ba zai iya kiran kayan aiki ba, don haka ba zai iya aiki azaman wakili ba. Zaɓi samfurin kiran kayan aiki.",
+  "askContinue": "Ci gaba",
+  "askNext": "Tambaya ta gaba",
+  "askPrev": "Tambayar da ta gabata",
+  "askRecommended": "Nasiha",
+  "askSelectedCount": "{{count}} zaba",
+  "askSomethingElse": "Wani abu kuma",
+  "askSomethingElsePlaceholder": "Rubuta amsar ku",
+  "submit": "Sallama"
+}

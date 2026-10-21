@@ -1,0 +1,101 @@
+{
+  "editServer": "Gyara uwar garken MCP",
+  "addServer": "Ƙara uwar garken MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Ana duba matsayin tsawaita..."
+    },
+    "notInstalled": {
+      "title": "Jan yana kammala ayyuka a cikin burauzar ku",
+      "description": "Shigar da tsawo don ba da damar mai binciken Jan",
+      "getExtension": "Samun Extension"
+    }
+  },
+  "serverName": "Sunan uwar garken",
+  "enterServerName": "Shigar da sunan uwar garke",
+  "command": "Umarni",
+  "enterCommand": "Shigar da umarni (uvx ko npx)",
+  "arguments": "Hujja",
+  "argument": "Bayani na {{index}}",
+  "envVars": "Canje-canjen Muhalli",
+  "key": "Maɓalli",
+  "value": "Daraja",
+  "save": "Ajiye",
+  "status": "Matsayi",
+  "connected": "An haɗa",
+  "disconnected": "An cire haɗin",
+  "deleteServer": {
+    "title": "Goge uwar garken MCP",
+    "description": "Shin kun tabbata kuna son share uwar garken MCP {{serverName}}? Ba za a iya soke wannan aikin ba.",
+    "delete": "Goge",
+    "success": "MCP uwar garken {{serverName}} an goge shi cikin nasara"
+  },
+  "editJson": {
+    "title": "Gyara JSON don uwar garken MCP: {{serverName}}",
+    "titleAll": "Shirya Duk Sabbin MCP JSON",
+    "placeholder": "Shigar da saitin JSON",
+    "errorParse": "An kasa tantance bayanan farko",
+    "errorPaste": "Tsarin JSON mara inganci a cikin abubuwan da aka liƙa",
+    "errorFormat": "Tsarin JSON mara inganci",
+    "errorServerName": "Ana buƙatar sunan uwar garke kuma ba zai iya zama fanko ba",
+    "errorMissingServerNameKey": "JSON dole ne a tsara shi azaman {\"ServerName\": {config}} - maɓallin sunan uwar garke ya ɓace",
+    "errorInvalidType": "Nau'in '{{type}}' mara inganci don uwar garken '{{serverName}}'. Nau'in dole ne ya zama 'stdio', 'http', ko 'sse'",
+    "save": "Ajiye"
+  },
+  "checkParams": "Da fatan za a duba sigogi bisa ga koyawa.",
+  "title": "MCP Sabar",
+  "experimental": "Gwaji",
+  "editAllJson": "Shirya Duk Sabar JSON",
+  "findMore": "Nemo ƙarin sabobin MCP a",
+  "allowPermissions": "Bada Duk Izinin Kayan Aikin MCP",
+  "allowPermissionsDesc": "Lokacin da aka kunna, duk kiran kayan aikin MCP za a amince dasu ta atomatik ba tare da nuna maganganun izini ba. Wannan saitin ya shafi duniya ga duk tattaunawa, gami da sabbin taɗi.",
+  "noServers": "Ba a sami sabar MCP ba",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "An kunna uwar garken {{serverKey}} cikin nasara",
+  "serverStatusInactive": "An kashe uwar garken {{serverKey}} cikin nasara",
+  "runtimeSettings": {
+    "title": "Saitunan Runtime",
+    "description": "Sanya yadda Jan ke sarrafawa da sake gwada sabar MCP.",
+    "toolCallTimeout": "Lokacin kiran kayan aiki (daƙiƙa)",
+    "toolCallTimeoutDesc": "Matsakaicin lokacin jira don amsawar kayan aikin MCP kafin lokacin ƙarewa.",
+    "maxToolOutputChars": "Haruffa mafi girman kayan aiki",
+    "maxToolOutputCharsDesc": "Sakamakon kayan aiki mafi tsayi a cikin tattaunawar. Duk wani abu da ya wuce wannan an gyara shi kuma an yi masa alama a matsayin yanke, don haka babban sakamako ɗaya ba zai iya ƙare mahallin samfurin ba. Saita zuwa 0 don kiyaye sakamako gabaɗaya.",
+    "smartToolRouting": "Mai sarrafa kayan aikin Smart MCP",
+    "smartToolRoutingDesc": "Lokacin da aka kunna, Jan yana zaɓar sabar MCP masu dacewa kafin loda kayan aikin. Kashe don ɗaukar cikakken jerin kayan aikin MCP koyaushe.",
+    "useLightweightRouterModel": "Yi amfani da ƙididdiga na ƙididdiga don kewayawa",
+    "useLightweightRouterModelDesc": "Lokacin da ke kunnen hanya mai wayo, gudanar da matakin da za a bi tare da keɓantaccen tsari (sau da yawa ƙarami) maimakon ƙirar taɗi. Kashe don yin amfani da samfurin taɗi mai aiki koyaushe don kewayawa.",
+    "routerModel": "Tsarin hanya",
+    "routerModelDesc": "Zaɓi mai bayarwa da samfuri a wuri ɗaya. Motoci masu nauyi ne kawai aka jera don haka tuƙi ya kasance cikin sauri da arha.",
+    "selectRouterModelPlaceholder": "Zaɓi samfurin tuƙi…",
+    "routerModelSearchPlaceholder": "Samfuran bincike…",
+    "routerModelEmptyList": "Babu samfura masu nauyi da ake samu. Ƙara ƙaramin ƙira ko saita maɓallan API a cikin Samfura.",
+    "routerModelEmptySearch": "Babu matches na \"{{query}}\"."
+  },
+  "auth": {
+    "label": "Gaskiya:",
+    "state": {
+      "notApplicable": "ba a bukata",
+      "staticHeader": "Taken izini",
+      "authenticated": "ingantacce",
+      "expired": "ya ƙare",
+      "staleResource": "wanda aka bayar don wani URL",
+      "unauthenticated": "ba a inganta ba"
+    },
+    "expiresIn": "ya ƙare a {{duration}}",
+    "authenticate": "Shiga",
+    "reauthenticate": "Sake tabbatarwa",
+    "clear": "Share tantancewa",
+    "waiting": "Ana jira mai bincike...",
+    "openSignInPage": "Bude shafin shiga",
+    "needsAuth": "{{serverName}} yana buƙatar tabbaci",
+    "needsAuthHint": "Shiga wannan uwar garken don haɗawa.",
+    "authorized": "Shiga zuwa {{serverName}}",
+    "authorizeFailed": "Shiga don {{serverName}} ya kasa",
+    "cleared": "An share bayanan da aka adana don {{serverName}}",
+    "nothingToClear": "{{serverName}} ba shi da bayanan da aka adana",
+    "clearFailed": "An kasa share takaddun shaida don {{serverName}}",
+    "renew": "Sabunta zama",
+    "expiredAgo": "ƙare {{duration}} da suka wuce"
+  }
+}

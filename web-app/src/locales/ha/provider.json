@@ -1,0 +1,18 @@
+{
+  "addProvider": "Ƙara Mai bayarwa",
+  "addOpenAIProvider": "Ƙara Mai Bayar da Kyauta",
+  "enterNameForProvider": "Sunan mai bayarwa (misali my-llm-server)",
+  "apiTypeLabel": "Tsarin API",
+  "apiTypeOpenAI": "Mai jituwa OpenAI",
+  "apiTypeAnthropic": "Mai jituwa Anthropic",
+  "baseUrlLabel": "Bayanan Bayani na URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "Saukewa: API",
+  "apiKeyPlaceholder": "Manna maɓallin API naku",
+  "invalidBaseUrl": "Tushen URL dole ne ya zama mai aiki http(s) URL",
+  "globalSettings": "Saitunan duniya",
+  "stripReasoning": "Tsage tunani daga mahallin",
+  "stripReasoningDesc": "Cire abubuwan tunani/tunanin abubuwan da suka gabata kafin sake aiko da tarihi, a cikin duk masu samarwa. Yana inganta sake amfani da cache-KV don ƙirar gida, amma wasu ƙira (misali sabbin fitowar Qwen) suna ba da shawarar kiyaye shi don ingantaccen tunani mai jujjuyawa.",
+  "providerAlreadyExists": "Akwai mai bada mai suna {{name}}."
+}

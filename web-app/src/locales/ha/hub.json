@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Sabuwa",
+  "sortMostDownloaded": "Mafi yawan saukewa",
+  "newChat": "Sabuwar hira",
+  "download": "Sauke",
+  "downloadFailed": "An kasa fara saukewa",
+  "downloaded": "An sauke",
+  "loadingModels": "Ana loda samfura...",
+  "noModels": "Ba a sami samfura ba",
+  "by": "By",
+  "downloads": "Zazzagewa",
+  "variants": "Bambance-bambance",
+  "showVariants": "Nuna bambance-bambance",
+  "useModel": "Yi amfani da wannan samfurin",
+  "downloadModel": "Zazzage samfurin",
+  "tools": "Kayan aiki",
+  "searchPlaceholder": "Nemo samfura akan Hugging Face...",
+  "resumeUnavailable": "Ba za a iya ci gaba da wannan zazzagewar ba. Da fatan za a sake farawa."
+}

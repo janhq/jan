@@ -1,0 +1,38 @@
+{
+  "welcome": "Sannu, ya kuke?",
+  "description": "Ta yaya zan iya taimaka muku yau?",
+  "temporaryChat": "Hira ta ɗan lokaci",
+  "temporaryChatDescription": "Fara tattaunawa ta ɗan lokaci wadda ba za a ajiye ta a tarihin hirarku ba.",
+  "status": {
+    "empty": "Ba a sami hira ba"
+  },
+  "sendMessage": "Aika saƙo",
+  "newConversation": "Sabuwar tattaunawa",
+  "clearHistory": "Goge tarihi",
+  "embeddings": {
+    "title": "Ana shirya takardunku",
+    "description": "Ana tsara fihirisar fayilolin da aka haɗa don a iya bincika su da ambaton su a matsayin madogara. Wannan na iya ɗaukar ɗan lokaci ga manyan takardu."
+  },
+  "actions": {
+    "regenerate": "Sake samar da amsa",
+    "askAgain": "Sake tambaya",
+    "continue": "Ci gaba da samarwa",
+    "remember": "Tuna wannan",
+    "rememberSaved": "An ajiye a ƙwaƙwalwa da sunan \"{{name}}\"",
+    "rememberExists": "Yana cikin ƙwaƙwalwa da sunan \"{{name}}\" tuni",
+    "rememberFailed": "An kasa ajiye a ƙwaƙwalwa"
+  },
+  "done": "An gama",
+  "webSources": "Adadin madogara: {{count}}",
+  "reasoning": {
+    "label": "Ana tunani...",
+    "thinking": "Ana tunani",
+    "working": "Ana aiki...",
+    "showFullTimeline": "Nuna duk jerin abubuwan da suka faru",
+    "showCurrentStep": "Nuna matakin yanzu kawai",
+    "thoughtForAWhile": "An yi tunani na wasu daƙiƙu",
+    "thoughtFor": "An yi tunani na {{duration}}",
+    "workedForAWhile": "An yi aiki na wasu daƙiƙu",
+    "workedFor": "An yi aiki na {{duration}}"
+  }
+}
