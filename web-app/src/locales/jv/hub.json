@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Paling anyar",
+  "sortMostDownloaded": "Paling diundhuh",
+  "newChat": "Obrolan anyar",
+  "download": "Undhuh",
+  "downloadFailed": "Gagal miwiti ngundhuh",
+  "downloaded": "Diundhuh",
+  "loadingModels": "Loading model...",
+  "noModels": "Ora ana model sing ditemokake",
+  "by": "Miturut",
+  "downloads": "Ngundhuh",
+  "variants": "Varian",
+  "showVariants": "Tampilake varian",
+  "useModel": "Gunakake model iki",
+  "downloadModel": "Download model",
+  "tools": "Piranti",
+  "searchPlaceholder": "Telusuri model ing Hugging Face...",
+  "resumeUnavailable": "Ora bisa nerusake download iki. Mangga miwiti maneh."
+}

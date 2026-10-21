@@ -1,0 +1,18 @@
+{
+  "addProvider": "Tambah Provider",
+  "addOpenAIProvider": "Tambah Panyedhiya Custom",
+  "enterNameForProvider": "Jeneng panyedhiya (contone my-llm-server)",
+  "apiTypeLabel": "API format",
+  "apiTypeOpenAI": "OpenAI-kompatibel",
+  "apiTypeAnthropic": "Anthropic-kompatibel",
+  "baseUrlLabel": "Dasar URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API kunci",
+  "apiKeyPlaceholder": "Tempel tombol API sampeyan",
+  "invalidBaseUrl": "Basis URL kudu dadi http(s) sing valid URL",
+  "globalSettings": "Setelan global",
+  "stripReasoning": "Copot nalar saka konteks",
+  "stripReasoningDesc": "Mbusak isi pikiran / alasan sadurunge sadurunge ngirim maneh riwayat, ing kabeh panyedhiya. Mbenakake KV-cache nggunakake maneh kanggo model lokal, nanging sawetara model (f.eks. Rilis Qwen anyar) Rekomendasi tetep kanggo alesan multi-giliran luwih.",
+  "providerAlreadyExists": "Panyedhiya jenenge {{name}} wis ana."
+}

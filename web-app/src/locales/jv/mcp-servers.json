@@ -1,0 +1,101 @@
+{
+  "editServer": "Sunting MCP Server",
+  "addServer": "Tambah MCP Server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Priksa status ekstensi..."
+    },
+    "notInstalled": {
+      "title": "Jan ngrampungake tugas ing browser sampeyan",
+      "description": "Instal ekstensi kanggo menehi akses browser Jan",
+      "getExtension": "Njaluk Extension"
+    }
+  },
+  "serverName": "Jeneng Server",
+  "enterServerName": "Ketik jeneng server",
+  "command": "Command",
+  "enterCommand": "Ketik printah (uvx utawa npx)",
+  "arguments": "Argumentasi",
+  "argument": "Argumentasi {{index}}",
+  "envVars": "Variabel Lingkungan",
+  "key": "kunci",
+  "value": "Nilai",
+  "save": "Simpen",
+  "status": "Status",
+  "connected": "Nyambung",
+  "disconnected": "Pedhot",
+  "deleteServer": {
+    "title": "Mbusak MCP Server",
+    "description": "Apa sampeyan yakin pengin mbusak server MCP {{serverName}}? Tumindak iki ora bisa dibatalake.",
+    "delete": "Busak",
+    "success": "MCP server {{serverName}} kasil dibusak"
+  },
+  "editJson": {
+    "title": "Sunting JSON kanggo MCP Server: {{serverName}}",
+    "titleAll": "Sunting Kabeh MCP Server JSON",
+    "placeholder": "Ketik konfigurasi JSON",
+    "errorParse": "Gagal ngurai data wiwitan",
+    "errorPaste": "Format JSON ora sah ing isi sing ditempelake",
+    "errorFormat": "Format JSON ora valid",
+    "errorServerName": "Jeneng server dibutuhake lan ora bisa kosong",
+    "errorMissingServerNameKey": "JSON kudu ditata minangka {\"serverName\": {config}} - ora ana tombol jeneng server",
+    "errorInvalidType": "Jinis '{{type}}' kanggo server '{{serverName}}' ora sah. Jinis kudu 'stdio', 'http', utawa 'sse'",
+    "save": "Simpen"
+  },
+  "checkParams": "Mangga dipriksa paramèter miturut tutorial.",
+  "title": "MCP Server",
+  "experimental": "Eksperimental",
+  "editAllJson": "Sunting Kabeh Server JSON",
+  "findMore": "Temokake server MCP liyane ing",
+  "allowPermissions": "Ngidini Kabeh MCP Idin Alat",
+  "allowPermissionsDesc": "Yen diaktifake, kabeh MCP panggilan alat bakal disetujoni kanthi otomatis tanpa nuduhake dialog ijin. Setelan iki ditrapake sacara global kanggo kabeh obrolan, kalebu obrolan anyar.",
+  "noServers": "Ora ana MCP server sing ditemokake",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Server {{serverKey}} diaktifake kanthi sukses",
+  "serverStatusInactive": "Server {{serverKey}} kasil dipateni",
+  "runtimeSettings": {
+    "title": "Setelan Runtime",
+    "description": "Ngatur carane Jan ngatur lan nyoba maneh MCP server.",
+    "toolCallTimeout": "Wektu panggilan alat (detik)",
+    "toolCallTimeoutDesc": "Wektu maksimal kanggo ngenteni respon alat MCP sadurunge wektu entek.",
+    "maxToolOutputChars": "Karakter output alat maksimal",
+    "maxToolOutputCharsDesc": "Asil alat paling dawa disimpen ing obrolan. Apa wae sing kepungkur iki dipotong lan ditandhani minangka dipotong, dadi siji asil gedhe ora bisa ngilangi konteks model kasebut. Setel menyang 0 supaya asil tetep wutuh.",
+    "smartToolRouting": "Pintar MCP nuntun alat",
+    "smartToolRoutingDesc": "Yen diaktifake, Jan milih server MCP sing relevan sadurunge mbukak alat. Pateni kanggo tansah mbukak dhaptar alat MCP lengkap.",
+    "useLightweightRouterModel": "Gunakake model khusus kanggo nuntun",
+    "useLightweightRouterModelDesc": "Nalika nuntun pinter urip, mbukak langkah nuntun karo model kapisah (asring cilik) tinimbang model chatting. Pateni kanggo tansah nggunakake model chatting aktif kanggo nuntun.",
+    "routerModel": "Model routing",
+    "routerModelDesc": "Pilih panyedhiya lan model ing sak panggonan. Mung model entheng sing didaftar supaya rute tetep cepet lan murah.",
+    "selectRouterModelPlaceholder": "Pilih model routing…",
+    "routerModelSearchPlaceholder": "Telusuri model…",
+    "routerModelEmptyList": "Ora ana model entheng sing kasedhiya. Tambah model sing luwih cilik utawa konfigurasi tombol API ing Models.",
+    "routerModelEmptySearch": "Ora ana sing cocog kanggo \"{{query}}\"."
+  },
+  "auth": {
+    "label": "Auth:",
+    "state": {
+      "notApplicable": "ora dibutuhake",
+      "staticHeader": "Header wewenang",
+      "authenticated": "diotentikasi",
+      "expired": "kadaluwarsa",
+      "staleResource": "diterbitake kanggo liyane URL",
+      "unauthenticated": "ora keasliane"
+    },
+    "expiresIn": "kadaluwarsa ing {{duration}}",
+    "authenticate": "mlebu",
+    "reauthenticate": "Otentikasi maneh",
+    "clear": "Otentikasi sing cetha",
+    "waiting": "Nunggu browser...",
+    "openSignInPage": "Bukak kaca mlebu",
+    "needsAuth": "{{serverName}} mbutuhake otentikasi",
+    "needsAuthHint": "Mlebu menyang server iki kanggo nyambung.",
+    "authorized": "Mlebu menyang {{serverName}}",
+    "authorizeFailed": "Mlebet {{serverName}} gagal",
+    "cleared": "Mbusak kredensial sing disimpen kanggo {{serverName}}",
+    "nothingToClear": "{{serverName}} ora duwe kredensial sing disimpen",
+    "clearFailed": "Ora bisa mbusak kredensial kanggo {{serverName}}",
+    "renew": "Sesi nganyari maneh",
+    "expiredAgo": "kadaluwarsa {{duration}} kepungkur"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "welcome": "Halo, piye kabarmu?",
+  "description": "Apa sing bisa daktulungi dina iki?",
+  "temporaryChat": "Chat sementara",
+  "temporaryChatDescription": "Miwiti pacelathon sauntara sing ora bakal disimpen ing riwayat pacelathonmu.",
+  "status": {
+    "empty": "Ora ana obrolan sing ditemokake"
+  },
+  "sendMessage": "Kirimi Pesen",
+  "newConversation": "Obrolan Anyar",
+  "clearHistory": "Clear History",
+  "embeddings": {
+    "title": "Lagi nyiapake dokumenmu",
+    "description": "Lagi nggawe indeks berkas lampiran supaya bisa digoleki lan dikutip. Dokumen gedhe bisa mbutuhake wektu luwih suwe."
+  },
+  "actions": {
+    "regenerate": "Regenerate respon",
+    "askAgain": "Takon maneh",
+    "continue": "Terus ngasilake",
+    "remember": "Elingi iki",
+    "rememberSaved": "Disimpen ing memori kanthi jeneng \"{{name}}\"",
+    "rememberExists": "Wis ana ing memori kanthi jeneng \"{{name}}\"",
+    "rememberFailed": "Ora bisa nyimpen ing memori"
+  },
+  "done": "rampung",
+  "webSources": "Cacah sumber: {{count}}",
+  "reasoning": {
+    "label": "nalar...",
+    "thinking": "mikir",
+    "working": "Kerja...",
+    "showFullTimeline": "Tampilake timeline lengkap",
+    "showCurrentStep": "Tampilake langkah saiki mung",
+    "thoughtForAWhile": "Pikirane sawetara detik",
+    "thoughtFor": "Dipikir {{duration}}",
+    "workedForAWhile": "Makarya sawetara detik",
+    "workedFor": "Kerja {{duration}}"
+  }
+}
