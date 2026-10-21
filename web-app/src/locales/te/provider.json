@@ -1,0 +1,18 @@
+{
+  "addProvider": "ప్రదాతని జోడించండి",
+  "addOpenAIProvider": "కస్టమ్ ప్రొవైడర్‌ని జోడించండి",
+  "enterNameForProvider": "ప్రొవైడర్ పేరు (ఉదా. my-llm-server)",
+  "apiTypeLabel": "API ఫార్మాట్",
+  "apiTypeOpenAI": "OpenAI-అనుకూలమైనది",
+  "apiTypeAnthropic": "Anthropic-అనుకూలమైనది",
+  "baseUrlLabel": "బేస్ URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API కీ",
+  "apiKeyPlaceholder": "మీ API కీని అతికించండి",
+  "invalidBaseUrl": "బేస్ URL తప్పనిసరిగా చెల్లుబాటు అయ్యే http(లు) URL అయి ఉండాలి",
+  "globalSettings": "గ్లోబల్ సెట్టింగ్‌లు",
+  "stripReasoning": "సందర్భం నుండి తర్కించండి",
+  "stripReasoningDesc": "ప్రొవైడర్లందరిలో చరిత్రను మళ్లీ పంపే ముందు ముందస్తు మలుపుల ఆలోచన/తార్కిక కంటెంట్‌ను తీసివేయండి. స్థానిక మోడల్‌ల కోసం KV-కాష్ పునర్వినియోగాన్ని మెరుగుపరుస్తుంది, అయితే కొన్ని మోడల్‌లు (ఉదా. కొత్త Qwen విడుదలలు) మెరుగైన మల్టీ-టర్న్ రీజనింగ్ కోసం దీన్ని ఉంచాలని సిఫార్సు చేస్తున్నాయి.",
+  "providerAlreadyExists": "{{name}} పేరుతో ప్రొవైడర్ ఇప్పటికే ఉన్నారు."
+}
