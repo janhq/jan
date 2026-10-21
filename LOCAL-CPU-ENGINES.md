@@ -271,8 +271,11 @@ matches its one-shot output exactly.
 ## 5. Building and running it
 
 ```bash
-# the web app first: the executable embeds it
-yarn build:web
+# The web app first: the executable embeds it. TAURI_ENV_PLATFORM is required.
+# Vite compiles IS_WINDOWS/IS_LINUX from it; without it the borderless window
+# ships with no minimize/maximize/close buttons (and other platform-only UI is
+# dropped). Use darwin or linux on those platforms.
+TAURI_ENV_PLATFORM=windows TAURI_ENV_ARCH=x86_64 IS_TAURI=true yarn build:web
 
 # then the app
 cd src-tauri && cargo build --release --bin Jan-Desktop
