@@ -1,0 +1,789 @@
+{
+  "htmlArtifact": {
+    "code": "Code",
+    "preview": "Preview",
+    "previewStreaming": "Magagamit kapag tapos na ang pagbuo",
+    "unresolvedAssets_one": "Hindi ma-load sa preview ang 1 sanggunian ng asset. Walang batayang URL para malutas ang mga relative path.",
+    "unresolvedAssets_other": "Hindi ma-load sa preview ang {{count}} sanggunian ng asset. Walang batayang URL para malutas ang mga relative path."
+  },
+  "assistants": "Mga katulong",
+  "hardware": "Hardware",
+  "mcp-servers": "Mga MCP server",
+  "local_api_server": "Lokal na API server",
+  "remote_access": "Malayuang access",
+  "integrations": "Mga integrasyon",
+  "experimental": "Eksperimental",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS proxy",
+  "web_search": "Paghahanap sa web",
+  "shell": "Shell",
+  "browse": "Mag-browse",
+  "moreControls": "Higit pang mga kontrol",
+  "starting": "Nagsisimula...",
+  "activeSuffix": " (Aktibo)",
+  "extensions": "Mga extension",
+  "attachments": "Mga kalakip",
+  "general": "Pangkalahatan",
+  "settings": "Mga setting",
+  "modelProviders": "Mga tagapagbigay ng modelo",
+  "localProviders": "Lokal",
+  "remoteProviders": "Malayo",
+  "manageProviders": "Pamahalaan ang mga tagapagbigay",
+  "hiddenProviders": "Bilang ng naka-disable: {{count}}",
+  "hideProvider": "Itago ang tagapagbigay",
+  "showProvider": "Ipakita ang tagapagbigay",
+  "interface": "Interface",
+  "appearance": "Hitsura",
+  "privacy": "Pagkapribado",
+  "keyboardShortcuts": "Mga shortcut",
+  "home": "Home",
+  "cowork": "Cowork",
+  "newSession": "Bagong session",
+  "artifacts": "Mga nabuong output",
+  "customize": "I-customize",
+  "local": "Lokal",
+  "selectFolder": "Pumili ng folder",
+  "selectModel": "Pumili muna ng modelo",
+  "commands": "Mga command",
+  "cmdHelp": "Ilista ang mga magagamit na command",
+  "cmdClear": "I-clear ang session na ito",
+  "cmdModels": "Palitan ang aktibong modelo",
+  "cmdModelsHint": "I-type ang /models at pumili ng modelo sa listahan",
+  "cmdModelSwitched": "Lumipat sa {{name}}",
+  "cmdUnknown": "Hindi kilalang command: {{name}}. Subukan ang /help",
+  "cmdBusy": "Hindi ito magagawa habang tumatakbo ang agent",
+  "cmdCompact": "Ibuod ang konteksto ng session",
+  "cmdCompacted": "Pinaikli mula {{before}} tungo sa {{after}} mensahe",
+  "cmdNothingToCompact": "Wala pang maibubuod",
+  "cmdCompactFailed": "Hindi naibuod: {{error}}",
+  "cmdPlan": "I-on o i-off ang pagpaplano (basa lamang: nagmumungkahi ang agent nang walang isinusulat)",
+  "cmdPlanOn": "Naka-on ang pagpaplano: nagbabasa at nagmumungkahi ang agent nang walang isinusulat",
+  "cmdPlanOff": "Naka-off ang pagpaplano: karaniwang pagpapatakbo",
+  "cmdTodo": "Buksan ang panel ng progreso",
+  "cmdTasks": "Buksan ang panel ng mga gawain sa background",
+  "cmdInit": "Pag-aralan ang proyekto at isulat ang mga kasanayan at memorya",
+  "cmdInitRunning": "Sinisimulang aralin ang proyektong ito",
+  "skills": "Mga kasanayan",
+  "skillsInContext": "Mga kasanayang magagamit ng agent sa pagpapatakbong ito",
+  "skillsTitle": "Pamahalaan ang mga kasanayan",
+  "skillsScopeProject": "Mga kasanayan para sa {{folder}}",
+  "skillsScopeGlobal": "Mga pangkalahatang kasanayan na magagamit ng bawat session",
+  "skillsScopeMerged": "Mga kasanayan para sa {{folder}}, kasama ang mga pangkalahatang kasanayang pinagsasaluhan ng lahat ng session",
+  "skillOriginFolder": "folder",
+  "skillOriginGlobal": "pangkalahatan",
+  "skillsEmpty": "Wala pang kasanayan",
+  "skillsPickOrNew": "Pumili ng kasanayang ie-edit o gumawa ng bago.",
+  "skillNew": "Bagong kasanayan",
+  "skillDelete": "Burahin ang kasanayan",
+  "skillSave": "I-save",
+  "skillSaved": "Na-save ang kasanayan",
+  "skillNameRequired": "Kinakailangan ang pangalan ng kasanayan",
+  "skillNamePlaceholder": "pangalan-ng-kasanayan",
+  "skillContentPlaceholder": "Ilarawan sa Markdown ang pamamaraang magagamit muli…",
+  "skillHubImport": "Mag-import mula sa hub",
+  "skillHubTitle": "Hub ng kasanayan ng Anthropic",
+  "skillHubEmpty": "Walang nahanap na kasanayan sa hub",
+  "skillImport": "Mag-import",
+  "skillReimport": "I-import muli",
+  "skillImported": "Na-import ang {{name}}",
+  "sessions": "Mga session",
+  "deleteSession": "Burahin ang session",
+  "deleteSessionTitle": "Burahin ang session?",
+  "deleteSessionBody": "Permanenteng buburahin ang \"{{title}}\" at ang transcript nito. Hindi na ito mababawi.",
+  "newChat": "Bagong usapan",
+  "newAgentChat": "Bagong usapan sa agent",
+  "chats": "Mga usapan",
+  "favorites": "Mga paborito",
+  "recents": "Mga kamakailan",
+  "hub": "Hub",
+  "helpSupport": "Tulong at suporta",
+  "helpUsImproveJan": "Tumulong sa pagpapahusay ng Jan",
+  "analyticsConsentDetail": "Nangongolekta kami ng hindi nagpapakilalang datos para maunawaan ang paggamit ng mga tampok. Hindi kailanman sinusubaybayan ang iyong mga usapan at personal na impormasyon. Maaari mo itong baguhin anumang oras sa Mga setting > Pagkapribado.",
+  "analyticsConsentQuestion": "Gusto mo bang tumulong sa pagpapahusay ng Jan?",
+  "unstarAll": "Alisin ang lahat ng bituin",
+  "unstar": "Alisin ang bituin",
+  "deleteAll": "Burahin lahat",
+  "star": "Lagyan ng bituin",
+  "rename": "Palitan ang pangalan",
+  "delete": "Burahin",
+  "copied": "Nakopya na!",
+  "dataFolder": "Folder ng datos",
+  "others": "Iba pa",
+  "language": "Wika",
+  "login": "Mag-log in",
+  "loginWith": "Mag-log in gamit ang {{provider}}",
+  "loginFailed": "Hindi naka-log in",
+  "logout": "Mag-log out",
+  "loggingOut": "Naglo-log out...",
+  "loggedOut": "Naka-log out na",
+  "logoutFailed": "Hindi naka-log out",
+  "profile": "Profile",
+  "reset": "I-reset",
+  "search": "Maghanap",
+  "searchThreads": "Maghanap ng mga usapan...",
+  "toNavigate": "para mag-navigate",
+  "toSelect": "para pumili",
+  "toClose": "para isara",
+  "clearRecent": "I-clear",
+  "name": "Pangalan",
+  "cancel": "Kanselahin",
+  "dismiss": "Alisin",
+  "create": "Gumawa",
+  "save": "I-save",
+  "edit": "I-edit",
+  "copy": "Kopyahin",
+  "back": "Bumalik",
+  "close": "Isara",
+  "done": "Tapos na",
+  "next": "Susunod",
+  "finish": "Tapusin",
+  "skip": "Laktawan",
+  "allow": "Payagan",
+  "deny": "Tanggihan",
+  "start": "Simulan",
+  "stop": "Ihinto",
+  "preview": {
+    "loading": "Binubuksan…",
+    "unsupported": "Hindi maipakita ng Jan ang ganitong uri ng file. Buksan ito para makita sa ibang app.",
+    "outside": "Wala na ang file na ito sa workspace ng session.",
+    "tooLarge": "Masyadong malaki para sa preview. Buksan ito para makita sa ibang app.",
+    "reload": "I-load muli",
+    "allowNetwork": "Payagan ang network",
+    "unsandboxed": "Patakbuhin nang walang sandbox: magagamit ang naka-save na datos at mga lokal na file",
+    "unresolvedRefs_one": "Hindi ma-load sa preview ang 1 file na naka-link sa pahinang ito. Buksan ito para makita sa browser.",
+    "unresolvedRefs_other": "Hindi ma-load sa preview ang {{count}} file na naka-link sa pahinang ito. Buksan ito para makita sa browser.",
+    "externalRefs_one": "Naka-block ang 1 resource na nilo-load ng pahinang ito mula sa web. I-on ang \"Payagan ang network\" para i-load ito.",
+    "externalRefs_other": "Naka-block ang {{count}} resource na nilo-load ng pahinang ito mula sa web. I-on ang \"Payagan ang network\" para i-load ang mga ito.",
+    "scriptErrors_one": "Nag-ulat ang pahina ng error: {{message}}",
+    "scriptErrors_other": "Nag-ulat ang pahina ng {{count}} error. Una: {{message}}"
+  },
+  "changes": {
+    "title": "Mga pagbabago ng agent",
+    "empty": "Lalabas dito ang mga file na isinulat o inedit ng agent.",
+    "a11y": "Mga pagbabago ng agent: {{files}} file, {{additions}} idinagdag, {{deletions}} inalis"
+  },
+  "modelPanel": {
+    "title": "Mga setting ng modelo",
+    "a11y": "Buksan ang mga setting ng modelo",
+    "contextTooltip": "Saklaw ng konteksto: {{value}} sa {{max}} token"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Hindi magagamit ang kasanayang '{{name}}'",
+    "kind": {
+      "skill": "Kasanayan",
+      "command": "Command",
+      "model": "Modelo"
+    }
+  },
+  "compactWidth": "Makitid na lapad",
+  "fullWidth": "Buong lapad",
+  "dark": "Madilim",
+  "light": "Maliwanag",
+  "system": "System",
+  "auto": "Awtomatiko",
+  "english": "Ingles",
+  "medium": "Katamtaman",
+  "newThread": "Bagong usapan",
+  "noResultsFound": "Walang nahanap na resulta",
+  "noThreadsYet": "Wala pang usapan",
+  "noThreadsYetDesc": "Magsimula ng bagong usapan para makita rito ang kasaysayan ng iyong mga usapan.",
+  "downloads": "Mga download",
+  "downloading": "Dina-download",
+  "uploadingAttachments": "Ina-upload ang mga kalakip…",
+  "cancelDownload": "Kanselahin ang download",
+  "downloadCancelled": "Nakansela ang download",
+  "downloadComplete": "Tapos na ang download",
+  "thinking": "Nag-iisip...",
+  "thought": "Naisip",
+  "callingTool": "Tumatawag ng tool",
+  "completed": "Tapos na",
+  "image": "Larawan",
+  "vision": "Paningin",
+  "multimodal": "Multimodal",
+  "embeddings": "Mga embedding",
+  "tools": "Mga tool",
+  "webSearch": "Paghahanap sa web",
+  "reasoning": "Pangangatwiran",
+  "proactive": "Proaktibo",
+  "selectAModel": "Pumili ng modelo",
+  "noToolsAvailable": "Walang magagamit na tool",
+  "noModelsFoundFor": "Walang nahanap na modelo para sa \"{{searchValue}}\"",
+  "failedToLoadModels": "Hindi na-load ang mga modelo",
+  "noModels": "Walang nahanap na modelo",
+  "noAssistant": "Walang katulong",
+  "customAvatar": "Custom na avatar",
+  "editAssistant": "I-edit ang katulong",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Buuin muli",
+  "threadImage": "Larawan ng usapan",
+  "editMessage": "I-edit ang mensahe",
+  "deleteMessage": "Burahin ang mensahe",
+  "deleteThread": "Burahin ang usapan",
+  "renameThread": "Palitan ang pangalan ng usapan",
+  "threadTitle": "Pamagat ng usapan",
+  "deleteAllThreads": "Burahin ang lahat ng usapan",
+  "allThreadsUnfavorited": "Inalis sa mga paborito ang lahat ng usapan",
+  "deleteAllThreadsConfirm": "Sigurado ka bang gusto mong burahin ang lahat ng usapan? Hindi na mababawi ang pagkilos na ito.",
+  "addProvider": "Magdagdag ng tagapagbigay",
+  "addOpenAIProvider": "Magdagdag ng tagapagbigay ng OpenAI",
+  "enterNameForProvider": "Maglagay ng pangalan para sa iyong tagapagbigay",
+  "providerAlreadyExists": "May tagapagbigay nang pinangalanang \"{{name}}\". Pumili ng ibang pangalan.",
+  "adjustFontSize": "Ayusin ang laki ng font",
+  "changeLanguage": "Palitan ang wika",
+  "editTheme": "I-edit ang tema",
+  "editCodeBlockStyle": "I-edit ang estilo ng bloke ng code",
+  "editServerHost": "I-edit ang host ng server",
+  "pickColorWindowBackground": "Pumili ng kulay ng background ng window",
+  "pickColorAppMainView": "Pumili ng kulay ng pangunahing view ng app",
+  "pickColorAppPrimary": "Pumili ng pangunahing kulay ng app",
+  "pickColorAppAccent": "Pumili ng accent na kulay ng app",
+  "pickColorAppDestructive": "Pumili ng kulay ng mapanirang pagkilos sa app",
+  "apiKeyRequired": "Kinakailangan ang API key",
+  "enterTrustedHosts": "Ilagay ang mga pinagkakatiwalaang host",
+  "placeholder": {
+    "chatInput": "Magtanong ng kahit ano..."
+  },
+  "confirm": "Kumpirmahin",
+  "continue": "Magpatuloy",
+  "loading": "Naglo-load...",
+  "settingUpJan": "Sinisimulan ang Jan…",
+  "registeringExtensions": "Nirerehistro ang mga extension…",
+  "loadingExtensions": "Naglo-load ng mga extension… ({{done}}/{{total}})",
+  "error": "Error",
+  "success": "Tagumpay",
+  "warning": "Babala",
+  "conversationNotAvailable": "Hindi magagamit ang usapan",
+  "conversationNotAvailableDescription": "Hindi magagamit o nabura na ang usapang sinusubukan mong buksan.",
+  "temporaryChat": "Pansamantalang usapan",
+  "temporaryChatTooltip": "Hindi lalabas sa iyong kasaysayan ang pansamantalang usapan",
+  "noResultsFoundDesc": "Walang nahanap na usapang tugma sa iyong paghahanap. Subukan ang ibang keyword.",
+  "searchModels": "Maghanap ng mga modelo...",
+  "searchStyles": "Maghanap ng mga estilo...",
+  "createAssistant": "Gumawa ng katulong",
+  "enterApiKey": "Ilagay ang API key",
+  "scrollToBottom": "Mag-scroll sa ibaba",
+  "generateAiResponse": "Bumuo ng sagot ng AI",
+  "continueAiResponse": "Ipagpatuloy ang sagot ng AI",
+  "addModel": {
+    "title": "Magdagdag ng modelo",
+    "modelId": "ID ng modelo",
+    "enterModelId": "Ilagay ang ID ng modelo",
+    "addModel": "Magdagdag ng modelo",
+    "description": "Magdagdag ng bagong modelo sa tagapagbigay",
+    "exploreModels": "Tingnan ang listahan ng modelo mula sa tagapagbigay"
+  },
+  "mcpServers": {
+    "editServer": "I-edit ang server",
+    "addServer": "Magdagdag ng server",
+    "serverName": "Pangalan ng server",
+    "enterServerName": "Ilagay ang pangalan ng server",
+    "command": "Command",
+    "enterCommand": "Ilagay ang command",
+    "arguments": "Mga argument",
+    "argument": "Argument {{index}}",
+    "envVars": "Mga environment variable",
+    "key": "Key",
+    "value": "Halaga",
+    "save": "I-save"
+  },
+  "deleteServer": {
+    "title": "Burahin ang server",
+    "delete": "Burahin"
+  },
+  "editJson": {
+    "errorParse": "Hindi na-parse ang JSON",
+    "errorPaste": "Hindi na-paste ang JSON",
+    "errorFormat": "Hindi wastong format na JSON",
+    "titleAll": "I-edit ang configuration ng lahat ng server",
+    "placeholder": "Ilagay ang configuration na JSON...",
+    "save": "I-save"
+  },
+  "editModel": {
+    "title": "I-edit ang modelo: {{modelId}}",
+    "description": "Itakda ang mga kakayahan ng modelo sa pamamagitan ng mga opsyon sa ibaba.",
+    "capabilities": "Mga kakayahan",
+    "tools": "Mga tool",
+    "vision": "Paningin",
+    "embeddings": "Mga embedding",
+    "notAvailable": "Hindi pa magagamit"
+  },
+  "outOfContextError": {
+    "truncateInput": "Paikliin ang input",
+    "title": "Lumampas sa hangganan ng konteksto",
+    "description": "Malapit nang maabot ng usapang ito ang hangganan ng memorya ng AI, tulad ng pisarang napupuno. Maaari nating palakihin ang saklaw ng memorya (tinatawag na laki ng konteksto) para mas marami itong matandaan, ngunit maaari itong gumamit ng mas maraming memorya ng iyong computer. Maaari rin nating paikliin ang input, na mag-aalis ng ilang bahagi ng kasaysayan ng usapan para magbigay ng puwang sa mga bagong mensahe.",
+    "increaseContextSizeDescription": "Gusto mo bang palakihin ang konteksto?",
+    "increaseContextSize": "Palakihin ang konteksto"
+  },
+  "toolApproval": {
+    "title": "Kahilingan ng pahintulot para sa tool",
+    "description": "Gustong gamitin ng katulong ang <strong>{{toolName}}</strong>",
+    "securityNotice": "Payagan lamang ang mga tool na pinagkakatiwalaan mo. Maa-access ng mga tool ang iyong system at datos.",
+    "deny": "Tanggihan",
+    "allowOnce": "Payagan nang isang beses",
+    "alwaysAllow": "Palaging payagan"
+  },
+  "deleteModel": {
+    "title": "Burahin ang modelo: {{modelId}}",
+    "description": "Sigurado ka bang gusto mong burahin ang modelong ito? Hindi na mababawi ang pagkilos na ito.",
+    "success": "Permanenteng nabura ang modelong {{modelId}}.",
+    "cancel": "Kanselahin",
+    "delete": "Burahin"
+  },
+  "deleteProvider": {
+    "title": "Burahin ang tagapagbigay",
+    "description": "Burahin ang tagapagbigay na ito at lahat ng modelo nito. Hindi na mababawi ang pagkilos na ito.",
+    "success": "Permanenteng nabura ang tagapagbigay na {{provider}}.",
+    "confirmTitle": "Burahin ang tagapagbigay: {{provider}}",
+    "confirmDescription": "Sigurado ka bang gusto mong burahin ang tagapagbigay na ito? Hindi na mababawi ang pagkilos na ito.",
+    "cancel": "Kanselahin",
+    "delete": "Burahin"
+  },
+  "modelSettings": {
+    "title": "Mga setting ng modelo - {{modelId}}",
+    "description": "Itakda ang mga setting ng modelo para mapahusay ang pagganap at asal nito.",
+    "nglDisabledByFit": "Ang Auto-fit ang pumipili ng mga GPU layer. I-off ang Auto-fit para maitakda ito nang manu-mano.",
+    "samplingDefaults": {
+      "title": "Mga default na parameter ng sampling",
+      "description": "Mga default na setting ng sampler para sa modelong ito. Ginagamit maliban kung pinalitan ng mga halaga para sa katulong o kahilingan."
+    },
+    "specDraft": {
+      "section": "Speculative decoding",
+      "enable": "I-enable ang speculative decoding",
+      "enableDescription": "Gumawa ng draft ng ilang token sa bawat hakbang at suriin ang mga ito sa isang pasada para pabilisin ang pagbuo. Ginagamit nito ang mga built-in na MTP head ng modelo o ang draft na modelong na-download kasama nito (MTP, Eagle3, DFlash o DSpark).",
+      "nMax": "Pinakamaraming draft na token",
+      "nMaxDescription": "Pinakamaraming token na ida-draft sa bawat hakbang. Default: 16.",
+      "nMin": "Pinakakaunting draft na token",
+      "nMinDescription": "Pinakakaunting token na ida-draft sa bawat hakbang. Default: 0.",
+      "pMin": "Pinakamababang probabilidad ng draft",
+      "pMinDescription": "Pinakamababang probabilidad para sa greedy drafting (0–1). Default: 0.75."
+    },
+    "templateKwargs": {
+      "section": "Mga opsyon ng template ng usapan",
+      "description": "Mga dagdag na opsyong tinatanggap ng template ng usapan ng modelong ito. Ipinapadala bilang chat_template_kwargs sa bawat kahilingan; iwan ang default na halaga para ang template ang magpasya.",
+      "addCustom": "Magdagdag ng custom na opsyon",
+      "keyPlaceholder": "pangalan",
+      "valuePlaceholder": "halaga",
+      "add": "Idagdag",
+      "cancel": "Kanselahin",
+      "remove": "Alisin"
+    }
+  },
+  "modelControls": {
+    "updateFailed": "Hindi na-update ang mga setting ng modelo"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Palitan ang lokasyon ng folder ng datos",
+      "description": "Sigurado ka bang gusto mong palitan ang lokasyon ng folder ng datos? Ililipat nito ang lahat ng iyong datos sa bagong lokasyon at ire-restart ang app.",
+      "currentLocation": "Kasalukuyang lokasyon:",
+      "newLocation": "Bagong lokasyon:",
+      "cancel": "Kanselahin",
+      "changeLocation": "Palitan ang lokasyon"
+    },
+    "deleteAllThreads": {
+      "title": "Burahin ang lahat ng usapan",
+      "description": "Buburahin ang lahat ng usapan. Hindi na mababawi ang pagkilos na ito."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Burahin ang lahat ng usapan",
+      "description": "Buburahin ang {{count}} usapan sa \"{{projectName}}\". Hindi na mababawi ang pagkilos na ito."
+    },
+    "deleteThread": {
+      "description": "Sigurado ka bang gusto mong burahin ang usapang ito? Hindi na mababawi ang pagkilos na ito."
+    },
+    "editMessage": {
+      "title": "I-edit ang mensahe"
+    },
+    "messageMetadata": {
+      "title": "Metadata ng mensahe"
+    }
+  },
+  "errorDialog": {
+    "titleFallback": "Nagkaroon ng error",
+    "details": "Mga detalye"
+  },
+  "missingDependenciesDialog": {
+    "title": "Mga nawawalang library ng system",
+    "description": "Na-install ang {{backend}} ngunit may ilang kinakailangang library ng system na hindi nahanap. Maaaring bumalik ito sa CPU o hindi gumana nang tama.",
+    "installLabel": "Para ayusin ito, i-install ang sumusunod:",
+    "download": "I-download",
+    "additionalLibraries": "Iba pang nawawalang library:",
+    "missingLibraries": "Mga nawawalang library:",
+    "showRawLibraries": "Ipakita ang {{count}} pangalan ng nawawalang library"
+  },
+  "projects": {
+    "title": "Mga proyekto",
+    "new": "Mga bagong proyekto",
+    "addProject": "Magdagdag ng proyekto",
+    "addToProject": "Idagdag sa proyekto",
+    "removeFromProject": "Alisin sa proyekto",
+    "createNewProject": "Gumawa ng bagong proyekto",
+    "editProject": "I-edit ang proyekto",
+    "deleteProject": "Burahin ang proyekto",
+    "projectName": "Pangalan ng proyekto",
+    "enterProjectName": "Ilagay ang pangalan ng proyekto...",
+    "noProjectsAvailable": "Walang magagamit na proyekto",
+    "noProjectsYet": "Wala pang proyekto",
+    "noProjectsYetDesc": "Magsimula ng bagong proyekto sa pamamagitan ng pag-click sa Magdagdag ng proyekto.",
+    "projectNotFound": "Hindi nahanap ang proyekto",
+    "projectNotFoundDesc": "Wala o nabura na ang proyektong hinahanap mo.",
+    "selectAssistant": "Pumili ng katulong",
+    "noAssistantAssigned": "Walang nakatalagang katulong sa proyektong ito",
+    "files": "Mga file",
+    "filesDescription": "Magdagdag ng mga PDF, dokumento o ibang teksto bilang sanggunian sa proyektong ito.",
+    "uploadingFiles": "Pinoproseso ang mga file…",
+    "processButton": "Idagdag",
+    "deleteProjectDialog": {
+      "title": "Burahin ang proyekto",
+      "permanentDelete": "Permanente nitong buburahin ang lahat ng usapan.",
+      "permanentDeleteWarning": "Permanenteng buburahin ng pagkilos na ito ang LAHAT ng usapan sa proyekto!",
+      "deleteEmptyProject": "Buburahin ng pagkilos na ito ang proyektong \"{{projectName}}\".",
+      "saveThreadsAdvice": "Para mapanatili ang mga usapan, ilipat muna sa iyong listahan ng usapan o sa ibang proyekto bago burahin.",
+      "starredWarning": "May mga usapan ka pang may bituin sa proyekto.",
+      "deleteButton": "Burahin",
+      "successWithName": "Nabura ang proyektong \"{{projectName}}\"",
+      "successWithoutName": "Nabura ang proyekto",
+      "error": "Hindi nabura ang proyekto. Subukang muli.",
+      "ariaLabel": "Burahin ang {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Gumawa ng bagong proyekto",
+      "editTitle": "I-edit ang proyekto",
+      "nameLabel": "Pangalan ng proyekto",
+      "namePlaceholder": "Ilagay ang pangalan ng proyekto...",
+      "assistant": "Katulong",
+      "selectAssistant": "Pumili ng katulong (opsyonal)",
+      "noAssistant": "Walang katulong",
+      "addAssistant": "Magdagdag ng katulong",
+      "createButton": "Gumawa",
+      "updateButton": "I-update",
+      "alreadyExists": "May proyekto nang pinangalanang \"{{projectName}}\"",
+      "createSuccess": "Nagawa ang proyektong \"{{projectName}}\"",
+      "updateSuccess": "Na-update ang proyektong \"{{projectName}}\""
+    },
+    "noConversationsIn": "Walang usapan sa {{projectName}}",
+    "startNewConversation": "Magsimula ng bagong usapan sa {{projectName}} sa ibaba",
+    "conversationsIn": "Mga usapan sa {{projectName}}",
+    "conversationsDescription": "Mag-click sa alinmang usapan para magpatuloy, o magsimula ng bago sa ibaba.",
+    "conversation": "Usapan",
+    "instructions": "Mga tagubilin",
+    "setup": "Pag-set up",
+    "instructionsDescription": "I-customize ang tono at estilo ng sagot",
+    "manageInstructions": "Pamahalaan ang mga tagubilin",
+    "thread": "usapan",
+    "threads": "mga usapan",
+    "updated": "Na-update:",
+    "collapseProject": "Tiklupin ang proyekto",
+    "expandProject": "Palawakin ang proyekto",
+    "update": "I-update",
+    "searchProjects": "Maghanap ng mga proyekto...",
+    "noProjectsFound": "Walang nahanap na proyekto",
+    "tryDifferentSearch": "Subukan ang ibang salita sa paghahanap"
+  },
+  "attachmentsIngestion": {
+    "title": "Piliin kung paano ipoproseso ang mga kalakip",
+    "description": "Piliin kung direktang isasama ang mga file na ito sa usapan o gagawan ng index bilang mga embedding.",
+    "inline": "Isama sa usapan",
+    "embeddings": "Gumamit ng mga embedding"
+  },
+  "attachmentInjectedIndicator": "Isinama sa usapan",
+  "attachmentEmbeddedIndicator": "Ginawang embedding para sa RAG",
+  "viewInjectedContent": "Tingnan ang isinamang nilalaman",
+  "injectedContentTitle": "Nilalaman ng isinamang file",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Inalis sa mga paborito ang lahat ng usapan",
+      "description": "Inalis sa iyong mga paborito ang lahat ng usapan."
+    },
+    "deleteAllThreads": {
+      "title": "Burahin ang lahat ng usapan",
+      "description": "Permanenteng nabura ang lahat ng usapan."
+    },
+    "renameThread": {
+      "title": "Palitan ang pangalan ng usapan",
+      "description": "Pinalitan ang pamagat ng usapan ng '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Burahin ang usapan",
+      "description": "Permanenteng nabura ang usapang ito."
+    },
+    "errorCopied": {
+      "title": "Nakopya na",
+      "description": "Nakopya sa clipboard ang impormasyon ng error"
+    },
+    "errorCopyFailed": {
+      "title": "Hindi nakopya",
+      "description": "Hindi nakopya sa clipboard ang impormasyon ng error"
+    },
+    "editMessage": {
+      "title": "I-edit ang mensahe",
+      "description": "Na-edit ang mensahe. Mangyaring hintayin ang sagot ng modelo."
+    },
+    "appUpdateDownloaded": {
+      "title": "Na-download ang update ng app",
+      "description": "Na-download ang update ng app."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Hindi na-download ang update ng app",
+      "description": "Hindi na-download ang update ng app. Subukang muli."
+    },
+    "downloadComplete": {
+      "title": "Tapos na ang download",
+      "description": "Na-download ang {{item}}"
+    },
+    "downloadCancelled": {
+      "title": "Nakansela ang download",
+      "description": "Nakansela ang pag-download"
+    },
+    "downloadFailed": {
+      "title": "Nabigo ang pag-download",
+      "description": "Hindi na-download ang {{item}}",
+      "descriptionWithReason": "Hindi na-download ang {{item}}: {{reason}}",
+      "reason": {
+        "dns": "hindi matukoy ang pangalan ng server",
+        "refused": "tinanggihan ang koneksyon",
+        "timeout": "nag-timeout ang koneksyon",
+        "tls": "hindi maitatag ang ligtas na koneksyon",
+        "proxy": "hindi maabot ang proxy",
+        "unreachable": "hindi maabot ang server"
+      }
+    },
+    "openSettings": "Buksan ang Mga setting",
+    "openLogs": "Buksan ang mga log",
+    "downloadTokenRequired": {
+      "title": "Kinakailangan ang Hugging Face token",
+      "description": "Nangangailangan ang modelong ito ng Hugging Face access token. Idagdag ang iyong token sa Mga setting at subukang muli."
+    },
+    "downloadLicenseRequired": {
+      "title": "Tanggapin ang lisensya ng modelo sa Hugging Face",
+      "description": "Dapat mong tanggapin ang lisensya ng modelo sa pahina nito sa Hugging Face bago mag-download."
+    },
+    "downloadRateLimited": {
+      "title": "Nilimitahan ng Hugging Face ang dalas ng kahilingan",
+      "description": "Naabot mo ang limitasyon sa dalas ng kahilingan. Maaaring mapataas ito sa pagdagdag ng token. Subukang muli mamaya."
+    },
+    "modelValidationStarted": {
+      "title": "Sinusuri ang modelo",
+      "description": "Na-download ang modelong \"{{modelId}}\". Sinusuri ang integridad..."
+    },
+    "modelValidationFailed": {
+      "title": "Nabigo ang pagsusuri sa modelo",
+      "description": "Hindi pumasa sa pagsusuri ng integridad ang na-download na modelong \"{{modelId}}\" kaya inalis ito. Maaaring sira o nabago ang file."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Tapos na ang download",
+      "description": "Na-download at nasuri ang modelong \"{{item}}\""
+    },
+    "projectCreated": {
+      "title": "Nagawa ang proyekto",
+      "description": "Nagawa ang proyektong \"{{projectName}}\""
+    },
+    "projectRenamed": {
+      "title": "Napalitan ang pangalan ng proyekto",
+      "description": "Pinalitan ang pangalan ng proyekto mula \"{{oldName}}\" tungo sa \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Nabura ang proyekto",
+      "description": "Nabura ang proyektong \"{{projectName}}\""
+    },
+    "projectAlreadyExists": {
+      "title": "May ganoong proyekto na",
+      "description": "May proyekto nang pinangalanang \"{{projectName}}\""
+    },
+    "projectDeleteFailed": {
+      "title": "Nabigong burahin",
+      "description": "Hindi nabura ang proyekto. Subukang muli."
+    },
+    "threadAssignedToProject": {
+      "title": "Naitalaga ang usapan",
+      "description": "Naitalaga ang usapan sa \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Naalis ang usapan",
+      "description": "Naalis ang usapan sa \"{{projectName}}\""
+    },
+    "fileUploaded": {
+      "title": "Naproseso ang file",
+      "description": "Naproseso at nagawan ng index ang file"
+    },
+    "uploadFailed": {
+      "title": "Nabigo ang pagproseso",
+      "description": "Hindi naproseso ang file",
+      "subjectThisFile": "Ang file na ito",
+      "pdfMalformedXref": "May maling PDF cross-reference table ang {{subject}} kaya hindi ito ma-parse. Subukang buksan ito sa PDF viewer at i-save muli (File → Print → Save as PDF), saka i-upload muli.",
+      "pdfScanned": "Mukhang na-scan o larawang PDF ang {{subject}}. Hindi pa sinusuportahan ang OCR — mag-upload ng PDF na nakabatay sa teksto.",
+      "pdfEncrypted": "May password ang {{subject}}. Alisin ang password at subukang muli.",
+      "pdfUnsupportedFeature": "Gumagamit ang {{subject}} ng tampok ng PDF na hindi pa ma-parse ng Jan (hal. PostScript color/shading functions). Subukang i-save muli (File → Print → Save as PDF) para gawing mas simple, saka i-upload muli.",
+      "pdfGeneric": "Hindi ma-parse bilang PDF ang {{subject}}. Maaaring sira ang file o gumagamit ng hindi suportadong tampok ng PDF.",
+      "fileTooLarge": "Masyadong malaki ang {{subject}}. {{message}}.",
+      "unsupportedType": "Hindi sinusuportahan ang uri ng file na \"{{type}}\".",
+      "ioError": "Hindi mabasa ang {{subject}}: {{message}}",
+      "parseGeneric": "Hindi ma-parse ang {{subject}}: {{message}}",
+      "fallback": "Hindi naproseso ang {{subject}}."
+    },
+    "fileDeleted": {
+      "title": "Nabura ang file",
+      "description": "Inalis ang file sa proyekto"
+    },
+    "deleteFailed": {
+      "title": "Nabigong burahin",
+      "description": "Hindi nabura ang file"
+    },
+    "fileAlreadyExists": {
+      "title": "May ganoong file na",
+      "description": "Nakalakip na ang file sa proyektong ito"
+    },
+    "unsupportedFileType": {
+      "title": "Hindi suportadong uri ng file",
+      "description": "Hindi sinusuportahan ang extension na \".{{extension}}\" bilang sanggunian ng proyekto."
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Naka-disable ang mga kalakip",
+      "description": "Naka-disable ang mga kalakip sa Mga setting"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "Masyadong malaki ang file",
+    "fileTooLargeDescription": "Lumampas ang {{fileName}} sa limitasyong {{maxFileSizeMB}}MB"
+  },
+  "files": {
+    "chunksCount": "Bilang ng chunk: {{count}}",
+    "title": "Mga file",
+    "empty": "Lalabas dito ang mga file na ikinakabit mo at ginagawa ng agent.",
+    "a11y": "Mga file: {{count}}",
+    "attachments": "Mga kalakip",
+    "notImported": "wala sa workspace"
+  },
+  "llamacppBusyOnExit": {
+    "title": "Abala pa ang llama.cpp",
+    "description": "Hindi na-unload sa oras ang isa o higit pang modelo. Tatapusin ng sapilitang pag-quit ang llama.cpp at maaaring maputol ang mga aktibong sagot.",
+    "forceQuit": "Sapilitang mag-quit",
+    "forcing": "Sapilitang nagku-quit…",
+    "shuttingDown": "Nagsasara…"
+  },
+  "duration": {
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h"
+  },
+  "collapse": "Tiklupin",
+  "expand": "Palawakin",
+  "todoPanelTitle": "Progreso",
+  "todoPanelEmpty": "Wala pang listahan ng gagawin.",
+  "backgroundTasks": "Mga gawain sa background",
+  "subagentsRunning_one": "Mga tumatakbong subagent: {{count}}",
+  "subagentsRunning_other": "Mga tumatakbong subagent: {{count}}",
+  "monitorsRunning_one": "Mga tumatakbong monitor: {{count}}",
+  "monitorsRunning_other": "Mga tumatakbong monitor: {{count}}",
+  "backgroundRunning_one": "Mga tumatakbong gawain sa background: {{count}}",
+  "backgroundRunning_other": "Mga tumatakbong gawain sa background: {{count}}",
+  "monitors": "Mga monitor",
+  "monitorPolling": "Sinusuri nang paulit-ulit",
+  "monitorMatched": "May tumugma",
+  "monitorTimedOut": "Nag-timeout",
+  "monitorStopped": "Itinigil",
+  "monitorEnded": "Natapos",
+  "coworkWatching_one": "Bilang ng sinusubaybayang monitor: {{count}}…",
+  "coworkWatching_other": "Bilang ng sinusubaybayang monitor: {{count}}…",
+  "coworkWaitingBackground": "Naghihintay sa mga gawain sa background…",
+  "noBackgroundTasks": "Wala pang gawain sa background.",
+  "running": "Tumatakbo",
+  "queued": "Nakapila",
+  "waiting": "Naghihintay",
+  "finished": "Natapos",
+  "subagentPhase": "yugto {{phase}}",
+  "subagentWaiting": "naghihintay",
+  "viewTranscript": "Tingnan ang transcript",
+  "taskWorking": "Gumagawa…",
+  "taskNoOutput": "Walang nakikitang output na ginawa ang subagent.",
+  "subagentToolUses_one": "Bilang ng paggamit ng tool: {{count}}",
+  "subagentToolUses_other": "Bilang ng paggamit ng tool: {{count}}",
+  "artifactGroupCode": "Code",
+  "artifactGroupImage": "Larawan",
+  "artifactGroupDocument": "Dokumento",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Audio",
+  "artifactOpenPreview": "Buksan ang preview",
+  "artifactOpenExternal": "Buksan",
+  "artifactMoreActions": "Higit pang pagkilos",
+  "artifactShowInFolder": "Ipakita sa folder",
+  "skillsUsedLabel": "Mga ginamit na kasanayan",
+  "skillsUsed": "Mga ginamit na kasanayan: {{skills}}",
+  "artifactsAll": "Lahat",
+  "artifactsEmpty": "Wala pang nabuong output. Lalabas dito ang mga output mula sa Cowork.",
+  "artifactsNoMatch": "Walang tumutugmang output.",
+  "artifactsSearch": "Maghanap ng mga output",
+  "artifactsShowMore": "Magpakita ng {{count}} pa",
+  "workspace": {
+    "readsFrom": "Gumagawa sa",
+    "writable": "pagbasa at pagsulat",
+    "footnote": "Direktang binabasa at ini-edit ng agent ang folder na ito. Suriin ang mga pagbabago sa panel ng diff.",
+    "footnoteEmpty": "Maglakip ng folder para makagawa ang agent sa iyong proyekto. Maaari nitong basahin at i-edit ang mga file sa loob nito.",
+    "attach": "Maglakip ng folder",
+    "change": "Palitan ang folder",
+    "detach": "Alisin ang folder",
+    "open": "Buksan",
+    "reveal": "Ipakita",
+    "unavailable": "Hindi magagamit ang workspace",
+    "missing": "Hindi na magagamit ang folder ng workspace na {{folder}}. Pumili ng ibang folder.",
+    "openFailed": "Hindi nabuksan ang workspace",
+    "revealFailed": "Hindi naipakita ang workspace",
+    "a11yWithFolder": "Folder ng proyektong {{folder}}, nakalakip na may access sa pagbasa at pagsulat. Palitan o alisin ito.",
+    "a11yNoFolder": "Walang nakalakip na folder ng proyekto. Maglakip ng isa."
+  },
+  "coworkEmpty": {
+    "title": "Ano ang gagawin natin?",
+    "subtitleSandbox": "Bigyan ang Jan ng gawain. Nagbabasa at sumusulat ito ng mga file, nagpapatakbo ng mga command, at kusang gumagawa ng mga hakbang.",
+    "subtitleFolder": "Bigyan ang Jan ng gawain. Direktang gumagawa ito sa {{folder}}, kusang nagbabasa at nag-e-edit ng mga file.",
+    "try": "Subukan",
+    "sandbox": {
+      "first": "Sumulat ng Python script na nagpapalit ng pangalan ng mga file ayon sa petsa kung kailan kinunan ang mga ito",
+      "second": "Gumawa ng dashboard na iisang pahina mula sa CSV na ipa-paste ko",
+      "third": "Gumawa ng draft na README para sa proyektong ilalarawan ko sa iyo"
+    },
+    "folder": {
+      "first": "Ipaliwanag kung paano binuo ang {{folder}}",
+      "second": "Hanapin ang lahat ng TODO sa {{folder}} at ipangkat ayon sa bahagi",
+      "third": "Sumulat ng mga test para sa bahaging ituturo ko sa {{folder}}"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "Walang terminal",
+    "a11y": "Naka-off ang pagpapatakbo ng mga command. Mga detalye.",
+    "title": "Naka-off ang pagpapatakbo ng mga command",
+    "body": "Pinapayagan lang ng Jan ang agent na magpatakbo ng mga shell command kapag kayang limitahan ng iyong system ang mga ito. Walang magagamit na sandbox dito, kaya maaaring magbasa, magsulat at mag-edit ng mga file ang agent sa sandbox nito — ngunit hindi magpatakbo ng anuman.",
+    "fixLinux": "Gumagamit ang Linux ng bubblewrap. I-install ito at i-restart ang Jan.",
+    "fixMac": "Ginagamit ng macOS ang built-in na sandbox sa /usr/bin/sandbox-exec. I-restart ang Jan kapag magagamit na ito.",
+    "fixWindows": "Gumagamit ang Windows ng AppContainer. I-restart ang Jan para subukang muli.",
+    "recheck": "Suriin muli"
+  },
+  "planMode": {
+    "label": "Plano",
+    "tooltipOff": "Magplano muna — nagbabasa at nagmumungkahi ang agent nang walang isinusulat.",
+    "tooltipOn": "Nagpaplano. I-off ito para payagang magsulat ng mga file ang agent.",
+    "onAnnounce": "Naka-on ang pagpaplano",
+    "placeholder": "Humingi ng plano. Hindi babaguhin ng agent ang anumang file."
+  },
+  "budget": {
+    "stoppedSteps": "Huminto sa {{max}} hakbang. Hindi pa tapos ang agent.",
+    "keepGoing": "Magpatuloy pa",
+    "stoppedTokens": "Huminto — naabot ng session na ito ang limitasyon ng token.",
+    "compact": "Ibuod",
+    "newSession": "Bagong session"
+  },
+  "run": {
+    "stopped": "Huminto.",
+    "failed": "Maagang huminto ang pagpapatakbo.",
+    "tryAgain": "Subukang muli"
+  },
+  "modelNoTools": "Hindi makatawag ng mga tool ang {{model}}, kaya hindi ito maaaring gumana bilang agent. Pumili ng modelong nakakatawag ng tool.",
+  "askContinue": "Magpatuloy",
+  "askNext": "Susunod na tanong",
+  "askPrev": "Nakaraang tanong",
+  "askRecommended": "Inirerekomenda",
+  "askSelectedCount": "Bilang ng napili: {{count}}",
+  "askSomethingElse": "Iba pa",
+  "askSomethingElsePlaceholder": "I-type ang sarili mong sagot",
+  "submit": "Isumite"
+}

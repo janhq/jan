@@ -1,0 +1,101 @@
+{
+  "editServer": "I-edit ang MCP server",
+  "addServer": "Magdagdag ng MCP server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Sinusuri ang katayuan ng extension..."
+    },
+    "notInstalled": {
+      "title": "Tinatapos ng Jan ang mga gawain sa iyong browser",
+      "description": "I-install ang extension para bigyan ang Jan ng access sa browser",
+      "getExtension": "Kunin ang extension"
+    }
+  },
+  "serverName": "Pangalan ng server",
+  "enterServerName": "Ilagay ang pangalan ng server",
+  "command": "Command",
+  "enterCommand": "Ilagay ang command (uvx o npx)",
+  "arguments": "Mga argument",
+  "argument": "Argument {{index}}",
+  "envVars": "Mga environment variable",
+  "key": "Key",
+  "value": "Halaga",
+  "save": "I-save",
+  "status": "Katayuan",
+  "connected": "Nakakonekta",
+  "disconnected": "Hindi nakakonekta",
+  "deleteServer": {
+    "title": "Burahin ang MCP server",
+    "description": "Sigurado ka bang gusto mong burahin ang MCP server na {{serverName}}? Hindi na mababawi ang pagkilos na ito.",
+    "delete": "Burahin",
+    "success": "Nabura ang MCP server na {{serverName}}"
+  },
+  "editJson": {
+    "title": "I-edit ang JSON para sa MCP server: {{serverName}}",
+    "titleAll": "I-edit ang JSON ng lahat ng MCP server",
+    "placeholder": "Ilagay ang configuration na JSON",
+    "errorParse": "Hindi na-parse ang paunang datos",
+    "errorPaste": "Hindi wastong format na JSON ang na-paste na nilalaman",
+    "errorFormat": "Hindi wastong format na JSON",
+    "errorServerName": "Kinakailangan ang pangalan ng server at hindi ito maaaring walang laman",
+    "errorMissingServerNameKey": "Dapat ganito ang istruktura ng JSON: {\"serverName\": {config}} - nawawala ang key ng pangalan ng server",
+    "errorInvalidType": "Hindi wastong uri na '{{type}}' para sa server na '{{serverName}}'. Dapat 'stdio', 'http', o 'sse' ang uri",
+    "save": "I-save"
+  },
+  "checkParams": "Pakisuri ang mga parameter ayon sa tutorial.",
+  "title": "Mga MCP server",
+  "experimental": "Eksperimental",
+  "editAllJson": "I-edit ang JSON ng lahat ng server",
+  "findMore": "Maghanap ng iba pang MCP server sa",
+  "allowPermissions": "Payagan ang lahat ng pahintulot ng MCP tool",
+  "allowPermissionsDesc": "Kapag naka-enable, awtomatikong papayagan ang lahat ng pagtawag sa MCP tool nang hindi nagpapakita ng dialog ng pahintulot. Nalalapat ang setting na ito sa lahat ng usapan, pati sa mga bago.",
+  "noServers": "Walang nahanap na MCP server",
+  "args": "Mga argument",
+  "env": "Environment",
+  "serverStatusActive": "Na-activate ang server na {{serverKey}}",
+  "serverStatusInactive": "Na-deactivate ang server na {{serverKey}}",
+  "runtimeSettings": {
+    "title": "Mga setting ng pagpapatakbo",
+    "description": "Itakda kung paano pinamamahalaan at muling sinusubukan ng Jan ang mga MCP server.",
+    "toolCallTimeout": "Timeout ng pagtawag sa tool (segundo)",
+    "toolCallTimeoutDesc": "Pinakamatagal na paghihintay ng sagot mula sa MCP tool bago mag-timeout.",
+    "maxToolOutputChars": "Pinakamaraming character ng output ng tool",
+    "maxToolOutputCharsDesc": "Pinakamahabang resulta ng tool na itatago sa usapan. Pinuputol at minamarkahang pinaikli ang lampas dito para hindi maubos ng isang malaking resulta ang konteksto ng modelo. Itakda sa 0 para panatilihing buo ang mga resulta.",
+    "smartToolRouting": "Matalinong pagruruta ng MCP tool",
+    "smartToolRoutingDesc": "Kapag naka-enable, pinipili muna ng Jan ang mga kaugnay na MCP server bago mag-load ng mga tool. I-disable para palaging i-load ang buong listahan ng MCP tool.",
+    "useLightweightRouterModel": "Gumamit ng hiwalay na modelo para sa pagruruta",
+    "useLightweightRouterModelDesc": "Kapag naka-on ang matalinong pagruruta, gamitin ang hiwalay na modelo, na kadalasa'y mas maliit, sa hakbang ng pagruruta sa halip na ang modelo ng usapan. I-off para palaging gamitin ang kasalukuyang modelo ng usapan.",
+    "routerModel": "Modelo sa pagruruta",
+    "routerModelDesc": "Piliin ang tagapagbigay at modelo sa iisang lugar. Mga magagaang modelo lang ang nakalista para mabilis at mura ang pagruruta.",
+    "selectRouterModelPlaceholder": "Pumili ng modelo sa pagruruta…",
+    "routerModelSearchPlaceholder": "Maghanap ng mga modelo…",
+    "routerModelEmptyList": "Walang magagamit na magaan na modelo. Magdagdag ng mas maliit na modelo o magtakda ng mga API key sa Mga modelo.",
+    "routerModelEmptySearch": "Walang tugma para sa “{{query}}”."
+  },
+  "auth": {
+    "label": "Pagpapatunay:",
+    "state": {
+      "notApplicable": "hindi kinakailangan",
+      "staticHeader": "Header ng awtorisasyon",
+      "authenticated": "napatunayan",
+      "expired": "nag-expire",
+      "staleResource": "ibinigay para sa ibang URL",
+      "unauthenticated": "hindi napatunayan"
+    },
+    "expiresIn": "mag-e-expire sa loob ng {{duration}}",
+    "authenticate": "Mag-sign in",
+    "reauthenticate": "Magpatunay muli",
+    "clear": "Alisin ang pagpapatunay",
+    "waiting": "Naghihintay sa browser...",
+    "openSignInPage": "Buksan ang pahina sa pag-sign in",
+    "needsAuth": "Kailangan ng {{serverName}} ng pagpapatunay",
+    "needsAuthHint": "Mag-sign in sa server na ito para kumonekta.",
+    "authorized": "Naka-sign in sa {{serverName}}",
+    "authorizeFailed": "Hindi naka-sign in sa {{serverName}}",
+    "cleared": "Inalis ang nakaimbak na mga kredensyal para sa {{serverName}}",
+    "nothingToClear": "Walang nakaimbak na mga kredensyal ang {{serverName}}",
+    "clearFailed": "Hindi naalis ang mga kredensyal para sa {{serverName}}",
+    "renew": "I-renew ang session",
+    "expiredAgo": "nag-expire {{duration}} na ang nakalipas"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "sortNewest": "Pinakabago",
+  "sortMostDownloaded": "Pinakamaraming download",
+  "newChat": "Bagong usapan",
+  "download": "I-download",
+  "downloadFailed": "Hindi nasimulan ang pag-download",
+  "downloaded": "Na-download na",
+  "loadingModels": "Naglo-load ng mga modelo...",
+  "noModels": "Walang nahanap na modelo",
+  "by": "Ni",
+  "downloads": "Mga download",
+  "variants": "Mga variant",
+  "showVariants": "Ipakita ang mga variant",
+  "useModel": "Gamitin ang modelong ito",
+  "downloadModel": "I-download ang modelo",
+  "tools": "Mga tool",
+  "searchPlaceholder": "Maghanap ng mga modelo sa Hugging Face...",
+  "resumeUnavailable": "Hindi maipagpatuloy ang download na ito. Simulan itong muli."
+}

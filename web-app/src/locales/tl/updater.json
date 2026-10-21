@@ -1,0 +1,10 @@
+{
+  "newVersion": "Bagong bersyon {{version}}",
+  "updateAvailable": "May magagamit na update",
+  "nightlyBuild": "Nightly build",
+  "showReleaseNotes": "Ipakita ang mga tala ng release",
+  "hideReleaseNotes": "Itago ang mga tala ng release",
+  "remindMeLater": "Paalalahanan ako mamaya",
+  "downloading": "Dina-download...",
+  "updateNow": "I-update ngayon"
+}

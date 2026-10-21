@@ -1,0 +1,18 @@
+{
+  "addProvider": "Magdagdag ng tagapagbigay",
+  "addOpenAIProvider": "Magdagdag ng custom na tagapagbigay",
+  "enterNameForProvider": "Pangalan ng tagapagbigay (hal. my-llm-server)",
+  "apiTypeLabel": "Format ng API",
+  "apiTypeOpenAI": "Katugma ng OpenAI",
+  "apiTypeAnthropic": "Katugma ng Anthropic",
+  "baseUrlLabel": "Batayang URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API key",
+  "apiKeyPlaceholder": "I-paste ang iyong API key",
+  "invalidBaseUrl": "Dapat wastong http(s) URL ang batayang URL",
+  "globalSettings": "Mga pangkalahatang setting",
+  "stripReasoning": "Alisin ang pangangatwiran sa konteksto",
+  "stripReasoningDesc": "Alisin ang pag-iisip o pangangatwiran sa mga naunang palitan bago muling ipadala ang kasaysayan, para sa lahat ng tagapagbigay. Pinapahusay nito ang muling paggamit ng KV-cache sa mga lokal na modelo, ngunit inirerekomenda ng ilang modelo (hal. mas bagong mga Qwen) na panatilihin ito para mas mahusay na mangatwiran sa maraming palitan.",
+  "providerAlreadyExists": "May tagapagbigay nang pinangalanang {{name}}."
+}

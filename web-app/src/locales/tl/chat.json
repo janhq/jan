@@ -1,0 +1,38 @@
+{
+  "welcome": "Kumusta ka?",
+  "description": "Paano kita matutulungan ngayon?",
+  "temporaryChat": "Pansamantalang usapan",
+  "temporaryChatDescription": "Magsimula ng pansamantalang usapan na hindi ise-save sa kasaysayan ng iyong mga usapan.",
+  "status": {
+    "empty": "Walang nahanap na usapan"
+  },
+  "sendMessage": "Ipadala ang mensahe",
+  "newConversation": "Bagong usapan",
+  "clearHistory": "Burahin ang kasaysayan",
+  "embeddings": {
+    "title": "Inihahanda ang iyong mga dokumento",
+    "description": "Ginagawan ng index ang mga kalakip na file para mahanap at magamit bilang sanggunian. Maaaring tumagal ito para sa malalaking dokumento."
+  },
+  "actions": {
+    "regenerate": "Muling buuin ang sagot",
+    "askAgain": "Magtanong muli",
+    "continue": "Ipagpatuloy ang pagbuo",
+    "remember": "Tandaan ito",
+    "rememberSaved": "Na-save sa memorya bilang \"{{name}}\"",
+    "rememberExists": "Nasa memorya na bilang \"{{name}}\"",
+    "rememberFailed": "Hindi na-save sa memorya"
+  },
+  "done": "Tapos na",
+  "webSources": "Bilang ng sanggunian: {{count}}",
+  "reasoning": {
+    "label": "Nangangatuwiran...",
+    "thinking": "Nag-iisip",
+    "working": "Gumagawa...",
+    "showFullTimeline": "Ipakita ang buong timeline",
+    "showCurrentStep": "Ipakita lamang ang kasalukuyang hakbang",
+    "thoughtForAWhile": "Nag-isip nang ilang segundo",
+    "thoughtFor": "Nag-isip nang {{duration}}",
+    "workedForAWhile": "Gumawa nang ilang segundo",
+    "workedFor": "Gumawa nang {{duration}}"
+  }
+}
