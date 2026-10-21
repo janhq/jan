@@ -66,6 +66,12 @@ fn body_channel() -> (BodySender, ResBody) {
     (BodySender(tx), body)
 }
 
+/// Keeps `lease` alive until `body` has been read to its end or dropped, which
+/// is when the client has everything it asked the engine for or has gone away.
+fn hold_lease(body: ResBody, lease: tauri_plugin_llamacpp::state::EngineLease) -> ResBody {
+    BodyExt::boxed(lease.guard(body))
+}
+
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
 pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
     let model = body.get("model")?.as_str()?;
@@ -2515,18 +2521,37 @@ async fn start_server_internal(
             let jan_data_folder = jan_data_folder.clone();
 
             let svc = service_fn(move |req| {
-                proxy_request(
-                    req,
-                    client.clone(),
-                    config.clone(),
-                    llama_state.clone(),
-                    mlx_sessions.clone(),
-                    provider_configs.clone(),
-                    model_param_defaults.clone(),
-                    mcp_servers.clone(),
-                    mcp_settings.clone(),
-                    jan_data_folder.clone(),
-                )
+                let client = client.clone();
+                let config = config.clone();
+                let llama_state = llama_state.clone();
+                let mlx_sessions = mlx_sessions.clone();
+                let provider_configs = provider_configs.clone();
+                let model_param_defaults = model_param_defaults.clone();
+                let mcp_servers = mcp_servers.clone();
+                let mcp_settings = mcp_settings.clone();
+                let jan_data_folder = jan_data_folder.clone();
+                async move {
+                    // Taken before the request resolves the engine's address and
+                    // kept until its response body is finished, so a device-change
+                    // restart cannot stop the worker between the two. A request
+                    // arriving mid-restart waits here and is then served by the
+                    // new worker instead of failing with "no models are running".
+                    let lease = llama_state.lease().await;
+                    let response = proxy_request(
+                        req,
+                        client,
+                        config,
+                        llama_state,
+                        mlx_sessions,
+                        provider_configs,
+                        model_param_defaults,
+                        mcp_servers,
+                        mcp_settings,
+                        jan_data_folder,
+                    )
+                    .await?;
+                    Ok::<_, hyper::Error>(response.map(|body| hold_lease(body, lease)))
+                }
             });
 
             tokio::spawn(async move {

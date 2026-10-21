@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { ModelSelection } from './custom-chat-transport'
 import { BACKGROUND_THREAD_ID, CHAT_SLOT_ID } from '@/constants/models'
 
 const MAX_TITLE_WORDS = 10
@@ -56,16 +57,20 @@ export function cleanTitle(raw: string): string | null {
 
 /**
  * Generate a summarized thread title from the user's first message.
- * Uses the currently selected model via a non-streaming generateText call.
+ * Uses the given model (the thread's own, which a turn finishing in the
+ * background no longer shares with the open thread), else the currently
+ * selected one, via a non-streaming generateText call.
  * Returns null on failure or if the signal is aborted.
  */
 export async function generateThreadTitle(
   transcript: string,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  modelSelection?: ModelSelection
 ): Promise<string | null> {
   try {
-    const { selectedModel, selectedProvider, getProviderByName } =
-      useModelProvider.getState()
+    const { getProviderByName } = useModelProvider.getState()
+    const { selectedModel, selectedProvider } =
+      modelSelection ?? useModelProvider.getState()
     if (!selectedModel || !selectedProvider) {
       console.warn('[ThreadTitle] No model/provider selected')
       return null

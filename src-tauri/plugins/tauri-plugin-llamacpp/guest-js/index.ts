@@ -1,19 +1,19 @@
 import { invoke } from '@tauri-apps/api/core'
 import {
-  SessionInfo,
-  DeviceList,
-  UnloadResult,
-  ReloadReport,
-  EngineInfo,
-  EngineVersion,
-  GgufMetadata,
+ SessionInfo,
+ DeviceList,
+ UnloadResult,
+ ReloadReport,
+ EngineInfo,
+ EngineVersion,
+ GgufMetadata,
 } from './types'
 
 // Helpers
 function asNumber(v: any, defaultValue = 0): number {
-  if (v === '' || v === null || v === undefined) return defaultValue
-  const n = Number(v)
-  return isFinite(n) ? n : defaultValue
+ if (v === '' || v === null || v === undefined) return defaultValue
+ const n = Number(v)
+ return isFinite(n) ? n : defaultValue
 }
 
 const I32_MAX = 2147483647
@@ -25,64 +25,64 @@ const I32_MIN = -2147483648
  * `timeout`, and a second hand-rolled one would drift.
  */
 export function asI32(v: any, defaultValue = 0): number {
-  const n = Math.trunc(asNumber(v, defaultValue))
-  if (n > I32_MAX) return I32_MAX
-  if (n < I32_MIN) return I32_MIN
-  return n
+ const n = Math.trunc(asNumber(v, defaultValue))
+ if (n > I32_MAX) return I32_MAX
+ if (n < I32_MIN) return I32_MIN
+ return n
 }
 
 export async function loadLlamaModel(
-  modelId: string,
-  isEmbedding: boolean = false
+ modelId: string,
+ isEmbedding: boolean = false
 ): Promise<SessionInfo> {
-  return await invoke('plugin:llamacpp|load_llama_model', {
-    modelId,
-    isEmbedding,
-  })
+ return await invoke('plugin:llamacpp|load_llama_model', {
+  modelId,
+  isEmbedding,
+ })
 }
 
 export async function unloadLlamaModel(modelId: string): Promise<UnloadResult> {
-  return await invoke('plugin:llamacpp|unload_llama_model', { modelId })
+ return await invoke('plugin:llamacpp|unload_llama_model', { modelId })
 }
 
 export async function ensureSessionReady(
-  modelId: string,
-  isEmbedding: boolean = false
+ modelId: string,
+ isEmbedding: boolean = false
 ): Promise<SessionInfo> {
-  return await invoke('plugin:llamacpp|ensure_session_ready', {
-    modelId,
-    isEmbedding,
-  })
+ return await invoke('plugin:llamacpp|ensure_session_ready', {
+  modelId,
+  isEmbedding,
+ })
 }
 
 export async function getDevices(
-  backendPath: string,
-  envs: Record<string, string> = {}
+ backendPath: string,
+ envs: Record<string, string> = {}
 ): Promise<DeviceList[]> {
-  return await invoke('plugin:llamacpp|get_devices', {
-    backendPath,
-    envs,
-  })
+ return await invoke('plugin:llamacpp|get_devices', {
+  backendPath,
+  envs,
+ })
 }
 
 export async function generateApiKey(
-  modelId: string,
-  apiSecret: string
+ modelId: string,
+ apiSecret: string
 ): Promise<string> {
-  return await invoke('plugin:llamacpp|generate_api_key', {
-    modelId,
-    apiSecret,
-  })
+ return await invoke('plugin:llamacpp|generate_api_key', {
+  modelId,
+  apiSecret,
+ })
 }
 
 export async function findSessionByModel(
-  modelId: string
+ modelId: string
 ): Promise<SessionInfo | null> {
-  return await invoke('plugin:llamacpp|find_session_by_model', { modelId })
+ return await invoke('plugin:llamacpp|find_session_by_model', { modelId })
 }
 
 export async function getLoadedModels(): Promise<string[]> {
-  return await invoke('plugin:llamacpp|get_loaded_models')
+ return await invoke('plugin:llamacpp|get_loaded_models')
 }
 
 /**
@@ -97,26 +97,26 @@ export async function getLoadedModels(): Promise<string[]> {
  * than a boolean.
  */
 export async function startEngine(
-  presetPath: string,
-  modelsMax: number,
-  slotCacheMib: number = 0,
-  envs: Record<string, string> = {}
+ presetPath: string,
+ modelsMax: number,
+ slotCacheMib: number = 0,
+ envs: Record<string, string> = {}
 ): Promise<EngineInfo> {
-  return await invoke('plugin:llamacpp|start_engine', {
-    presetPath,
-    modelsMax,
-    slotCacheMib: asI32(slotCacheMib),
-    envs,
-  })
+ return await invoke('plugin:llamacpp|start_engine', {
+  presetPath,
+  modelsMax,
+  slotCacheMib: asI32(slotCacheMib),
+  envs,
+ })
 }
 
 export async function stopEngine(): Promise<void> {
-  return await invoke('plugin:llamacpp|stop_engine')
+ return await invoke('plugin:llamacpp|stop_engine')
 }
 
 /** Null when no worker is running, including after one died. */
 export async function getEngineInfo(): Promise<EngineInfo | null> {
-  return await invoke('plugin:llamacpp|get_engine_info')
+ return await invoke('plugin:llamacpp|get_engine_info')
 }
 
 /**
@@ -127,7 +127,7 @@ export async function getEngineInfo(): Promise<EngineInfo | null> {
  * rather than of any process.
  */
 export async function getEngineVersion(): Promise<EngineVersion> {
-  return await invoke('plugin:llamacpp|get_engine_version')
+ return await invoke('plugin:llamacpp|get_engine_version')
 }
 
 /**
@@ -138,9 +138,9 @@ export async function getEngineVersion(): Promise<EngineVersion> {
  * the engine is statically linked into the worker.
  */
 export async function engineDevices(
-  envs: Record<string, string> = {}
+ envs: Record<string, string> = {}
 ): Promise<DeviceList[]> {
-  return await invoke('plugin:llamacpp|engine_devices', { envs })
+ return await invoke('plugin:llamacpp|engine_devices', { envs })
 }
 
 /**
@@ -155,7 +155,7 @@ export async function engineDevices(
  * busy-on-exit dialog offers; use `stopEngine` everywhere else.
  */
 export async function forceStopEngine(): Promise<void> {
-  return await invoke('plugin:llamacpp|force_stop_engine')
+ return await invoke('plugin:llamacpp|force_stop_engine')
 }
 
 /**
@@ -163,7 +163,24 @@ export async function forceStopEngine(): Promise<void> {
  * unloaded. Omit `modelId` to ask about the whole worker.
  */
 export async function engineSlotsIdle(modelId?: string): Promise<boolean> {
-  return await invoke('plugin:llamacpp|engine_slots_idle', { modelId })
+ return await invoke('plugin:llamacpp|engine_slots_idle', { modelId })
+}
+
+/**
+ * Claims the worker for a restart. `false` means a request holds it or a
+ * generation is running, so nothing was claimed and the worker must be left
+ * alone. On `true`, native requests (the local API server, the agent loop and
+ * the model-lifecycle commands) wait until `endEngineRestart`, so none can
+ * resolve the old worker's address after this answer. Always pair a `true`
+ * with `endEngineRestart`.
+ */
+export async function beginEngineRestart(): Promise<boolean> {
+ return await invoke('plugin:llamacpp|begin_engine_restart')
+}
+
+/** Lets native requests through again. Harmless without a restart in progress. */
+export async function endEngineRestart(): Promise<void> {
+ return await invoke('plugin:llamacpp|end_engine_restart')
 }
 
 /**
@@ -176,33 +193,33 @@ export async function engineSlotsIdle(modelId?: string): Promise<boolean> {
  * look and the answer is 0.
  */
 export async function eraseThreadSlotState(args: {
-  threadId?: string
-  modelId?: string
-  cacheDir?: string
+ threadId?: string
+ modelId?: string
+ cacheDir?: string
 }): Promise<number> {
-  return await invoke('plugin:llamacpp|erase_thread_slot_state', {
-    threadId: args.threadId,
-    modelId: args.modelId,
-    cacheDir: args.cacheDir,
-  })
+ return await invoke('plugin:llamacpp|erase_thread_slot_state', {
+  threadId: args.threadId,
+  modelId: args.modelId,
+  cacheDir: args.cacheDir,
+ })
 }
 
 export async function reloadEngineModels(
-  presetPath: string,
-  modelsMax?: number,
-  slotCacheMib?: number
+ presetPath: string,
+ modelsMax?: number,
+ slotCacheMib?: number
 ): Promise<ReloadReport> {
-  return await invoke('plugin:llamacpp|reload_engine_models', {
-    presetPath,
-    modelsMax,
-    slotCacheMib:
-      slotCacheMib === undefined ? undefined : asI32(slotCacheMib),
-  })
+ return await invoke('plugin:llamacpp|reload_engine_models', {
+  presetPath,
+  modelsMax,
+  slotCacheMib:
+   slotCacheMib === undefined ? undefined : asI32(slotCacheMib),
+ })
 }
 
 // GGUF commands
 export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
-  return await invoke('plugin:llamacpp|read_gguf_metadata', { path })
+ return await invoke('plugin:llamacpp|read_gguf_metadata', { path })
 }
 
 /**
@@ -212,25 +229,25 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
  * large model to answer one would be far more data than the answer.
  */
 export async function findGgufTensors(
-  path: string,
-  names: string[]
+ path: string,
+ names: string[]
 ): Promise<string[]> {
-  return await invoke('plugin:llamacpp|find_gguf_tensors', { path, names })
+ return await invoke('plugin:llamacpp|find_gguf_tensors', { path, names })
 }
 
 export async function isModelSupported(
-  path: string,
-  ctxSize?: number
+ path: string,
+ ctxSize?: number
 ): Promise<'RED' | 'YELLOW' | 'GREEN'> {
-  return await invoke('plugin:llamacpp|is_model_supported', {
-    path,
-    ctxSize,
-  })
+ return await invoke('plugin:llamacpp|is_model_supported', {
+  path,
+  ctxSize,
+ })
 }
 
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
-  return await invoke('plugin:llamacpp|cleanup_llama_processes')
+ return await invoke('plugin:llamacpp|cleanup_llama_processes')
 }
 
 export * from './types'
