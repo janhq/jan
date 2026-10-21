@@ -48,9 +48,9 @@ function AssistantContent() {
     setDeleteConfirmOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deletingId) {
-      deleteAssistant(deletingId)
+      await deleteAssistant(deletingId)
       setDeleteConfirmOpen(false)
       setDeletingId(null)
     }

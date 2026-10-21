@@ -101,7 +101,7 @@ describe('useAssistant - coverage', () => {
     expect(result.current.currentAssistant).toBeUndefined()
   })
 
-  it('should delete current assistant and fallback to default', () => {
+  it('should delete current assistant and fallback to default', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const a2 = { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} }
@@ -110,22 +110,22 @@ describe('useAssistant - coverage', () => {
       result.current.setCurrentAssistant(a2 as any)
     })
 
-    act(() => {
-      result.current.deleteAssistant('a2')
+    await act(async () => {
+      await       result.current.deleteAssistant('a2')
     })
 
     expect(result.current.currentAssistant?.id).toBe('jan')
   })
 
-  it('should delete the default assistant and reset', () => {
+  it('should delete the default assistant and reset', async () => {
     const { result } = renderHook(() => useAssistant())
 
     act(() => {
       result.current.setDefaultAssistant('jan')
     })
 
-    act(() => {
-      result.current.deleteAssistant('jan')
+    await act(async () => {
+      await       result.current.deleteAssistant('jan')
     })
 
     // defaultAssistantId should reset

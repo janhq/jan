@@ -10,7 +10,7 @@ interface AssistantState {
   defaultAssistantId: string
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
-  deleteAssistant: (id: string) => void
+  deleteAssistant: (id: string) => Promise<void>
   setCurrentAssistant: (
     assistant: Assistant | undefined,
     saveToStorage?: boolean
@@ -141,33 +141,25 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         console.error('Failed to update assistant:', error)
       })
   },
-  deleteAssistant: (id) => {
-    const state = get()
-    getServiceHub()
-      .assistants()
-      .deleteAssistant(
-        state.assistants.find((e) => e.id === id) as unknown as CoreAssistant
-      )
-      .catch((error) => {
-        console.error('Failed to delete assistant:', error)
-      })
+  deleteAssistant: async (id) => {
+    const assistant = get().assistants.find((entry) => entry.id === id)
+    if (!assistant) return
+    await getServiceHub().assistants().deleteAssistant(assistant as unknown as CoreAssistant)
 
-    // Check if we're deleting the current or default assistant
+    // Read the current state after persistence: selection may have changed
+    // while the filesystem operation was pending.
+    const state = get()
     const wasCurrentAssistant = state.currentAssistant?.id === id
     const wasDefaultAssistant = state.defaultAssistantId === id
-
-    set({ assistants: state.assistants.filter((a) => a.id !== id) })
-
-    // If the deleted assistant was current, fallback to default and update localStorage
-    if (wasCurrentAssistant) {
-      set({ currentAssistant: state.assistants.find(a => a.id === defaultAssistant.id) })
-      setLastUsedAssistantId(defaultAssistant.id)
-    }
-
-    // If the deleted assistant was the default, reset to the built-in default
-    if (wasDefaultAssistant) {
-      setDefaultAssistantId(defaultAssistant.id)
-    }
+    set({
+      assistants: state.assistants.filter((entry) => entry.id !== id),
+      ...(wasCurrentAssistant
+        ? { currentAssistant: state.assistants.find((entry) => entry.id === defaultAssistant.id && entry.id !== id) }
+        : {}),
+      ...(wasDefaultAssistant ? { defaultAssistantId: defaultAssistant.id } : {}),
+    })
+    if (wasCurrentAssistant) setLastUsedAssistantId(defaultAssistant.id)
+    if (wasDefaultAssistant) setDefaultAssistantId(defaultAssistant.id)
   },
   setDefaultAssistant: (id) => {
     const newAssistant = get().assistants?.find(a => a.id === id)

@@ -1,4 +1,5 @@
 {
+  "deleteFailed": "Could not delete the assistant. Please try again.",
   "title": "Assistants",
   "editAssistant": "Edit Assistant",
   "deleteAssistant": "Delete Assistant",

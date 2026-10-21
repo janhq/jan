@@ -27,8 +27,10 @@ export class DefaultAssistantsService implements AssistantsService {
   }
 
   async deleteAssistant(assistant: Assistant): Promise<void> {
-    await ExtensionManager.getInstance()
-      .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
-      ?.deleteAssistant(assistant)
+    const extension = ExtensionManager.getInstance().get<AssistantExtension>(
+      ExtensionTypeEnum.Assistant
+    )
+    if (!extension) throw new Error('AssistantExtension not available')
+    await extension.deleteAssistant(assistant)
   }
 }

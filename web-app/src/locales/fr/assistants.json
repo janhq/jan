@@ -1,4 +1,5 @@
 {
+  "deleteFailed": "Impossible de supprimer l’assistant. Veuillez réessayer.",
   "title": "Assistants",
   "editAssistant": "Modifier l'assistant",
   "deleteAssistant": "Supprimer l'assistant",
