@@ -703,7 +703,11 @@ describe('ThreadDetail route', () => {
     const sheet = { name: 'sheet.xlsx', type: 'document', path: '/sheet.xlsx' }
     const later = { name: 'later.png', type: 'image', path: '/later.png' }
 
-    const sendAndFail = async () => {
+    // `openThreadId` is the thread the store reports as open when the failure
+    // lands: its own, or null after the user went Home. The attachments are
+    // keyed by thread, so they go back to it either way.
+    const sendAndFail = async (openThreadId: string | null = 'thread-1') => {
+      h.threadsState.currentThreadId = openThreadId ?? undefined
       h.attachmentsState.getAttachments = vi.fn(() => [sheet])
       vi.mocked(processAttachmentsForSend).mockRejectedValueOnce(
         new Error("Couldn't read sheet.xlsx as text.")
@@ -722,6 +726,7 @@ describe('ThreadDetail route', () => {
 
     afterEach(() => {
       h.attachmentsState.getAttachments = vi.fn(() => [])
+      delete h.threadsState.currentThreadId
       usePrompt.getState().resetPrompt()
     })
 
@@ -742,6 +747,12 @@ describe('ThreadDetail route', () => {
       await sendAndFail()
 
       expect(usePrompt.getState().prompt).toBe('typed meanwhile')
+    })
+
+    it('does not write the draft into another screen after the user left the thread', async () => {
+      await sendAndFail(null)
+
+      expect(usePrompt.getState().prompt).toBe('')
     })
   })
 
