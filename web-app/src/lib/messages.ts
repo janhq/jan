@@ -6,6 +6,7 @@ import {
   ChatCompletionRole,
 } from '@janhq/core'
 import type { UIMessage } from '@ai-sdk/react'
+import { stripToolImageSentinels } from '@/lib/tool-image-sentinel'
 // Attachments are now handled upstream in newUserThreadContent
 
 type ThreadContent = NonNullable<ThreadMessage['content']>[number]
@@ -562,7 +563,17 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
         tool_call_id: toolCallId,
         tool_name: toolName,
         input: input,
-        output: output,
+        // A tool image is a base64 data URL that must reach the model on the
+        // next step, not the thread store: the stored copy would be re-sent on
+        // every later turn and persisted at full size. The note keeps the
+        // transcript honest about why the image is gone after a reload.
+        output:
+          typeof output === 'string'
+            ? stripToolImageSentinels(
+                output,
+                '\n[image not saved to the transcript; it was shown to the model only]'
+              )
+            : output,
       }
       content.push(toolCallContent)
     }

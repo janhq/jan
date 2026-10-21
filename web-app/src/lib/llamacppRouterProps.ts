@@ -35,13 +35,26 @@ export const getLlamacppExtension = (): LlamacppExtensionLike | undefined =>
 export const getMlxExtension = (): LlamacppExtensionLike | undefined =>
   resolveExtensionWithProps(['@janhq/mlx-extension', 'mlx-extension'])
 
+/** The Python sidecar engines report their configured `ctx_size` the same way
+ *  llama.cpp reports a launched `n_ctx`, which is what the token meter reads. */
+export const getLocalEngineExtension = (
+  provider: string
+): LlamacppExtensionLike | undefined =>
+  resolveExtensionWithProps([
+    `@janhq/${provider}-extension`,
+    `${provider}-extension`,
+  ])
+
 /** Local providers expose a launched context window via `getModelProps`; remote
- *  providers have none. Returns undefined for anything but llamacpp/mlx. */
+ *  providers have none. */
 export const getLocalPropsExtension = (
   provider?: string
 ): LlamacppExtensionLike | undefined => {
+  if (!provider) return undefined
   if (provider === 'llamacpp') return getLlamacppExtension()
   if (provider === 'mlx') return getMlxExtension()
+  if (provider === 'litert-lm' || provider === 'openvino')
+    return getLocalEngineExtension(provider)
   return undefined
 }
 

@@ -5,6 +5,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { backendStorage } from '@/lib/backendStorage'
 import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { isPingOnly } from '@/lib/coworkPing'
+import { withoutToolImageSentinels } from '@/lib/tool-image-sentinel'
 import type {
   CoworkTurn,
   SubagentRun,
@@ -193,7 +194,13 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
       setMessages: (id, messages) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, messages, updated: now() } : x
+            x.id === id
+              ? {
+                  ...x,
+                  messages: withoutToolImageSentinels(messages),
+                  updated: now(),
+                }
+              : x
           ),
         })),
 
@@ -241,7 +248,9 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             return {
               ...x,
               turns: [...x.turns, ...turns],
-              messages,
+              // The live run keeps its sentinels so the model can see the
+              // images; the persisted copy must not carry megabytes of base64.
+              messages: withoutToolImageSentinels(messages),
               subagents: [
                 ...(x.subagents ?? []).filter((r) => !incoming.has(r.runId)),
                 ...subagents,
@@ -327,27 +336,35 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
       // hydrateBackendStores() once the ServiceHub is ready.
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
-      version: 1,
+      // v2 strips tool-image sentinels from every stored message. v1 stored
+      // them, so a session with a few screenshots had megabytes of base64 in
+      // settings.json; the bump rewrites those sessions once on load.
+      version: 2,
       // v0 persisted an OpenAI-shaped `history` that could not represent tool
       // calls, so replaying it dropped every tool turn. Rebuild the message
       // list from `turns`, which did record them, and leave `history` in place
       // untouched rather than mutating a blob a rollback would still read.
       migrate: (persisted, version) => {
         const state = persisted as { sessions?: CoworkSession[] } | undefined
-        if (version >= 1 || !state?.sessions) return persisted
+        if (!state?.sessions) return persisted
         return {
           ...state,
-          sessions: state.sessions.map((session) =>
-            session.messages
-              ? session
-              : {
-                  ...session,
-                  messages: coworkTurnsToUIMessages(
-                    session.turns ?? [],
-                    session.id
-                  ),
-                }
-          ),
+          sessions: state.sessions.map((session) => {
+            const withMessages =
+              version >= 1 || session.messages
+                ? session
+                : {
+                    ...session,
+                    messages: coworkTurnsToUIMessages(
+                      session.turns ?? [],
+                      session.id
+                    ),
+                  }
+            return {
+              ...withMessages,
+              messages: withoutToolImageSentinels(withMessages.messages ?? []),
+            }
+          }),
         }
       },
     }

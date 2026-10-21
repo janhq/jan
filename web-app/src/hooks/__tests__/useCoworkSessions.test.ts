@@ -396,3 +396,79 @@ describe('useCoworkSessions persist migration', () => {
     expect(out.sessions[0].messages[0].id).toBe('keep')
   })
 })
+
+describe('tool images in the persisted transcript', () => {
+  beforeEach(reset)
+
+  it('commits messages without the base64 payload', async () => {
+    const { encodeToolImageSentinel } = await import(
+      '@/lib/tool-image-sentinel'
+    )
+    const id = useCoworkSessions.getState().createSession()
+    const messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-browser_screenshot',
+            toolCallId: 'c1',
+            state: 'output-available',
+            output: `Screenshot${encodeToolImageSentinel(
+              'data:image/png;base64,iVBORw0KGgo='
+            )}`,
+          },
+        ],
+      },
+    ] as never
+    useCoworkSessions
+      .getState()
+      .commitTurns(id, [{ role: 'user', content: 'show it' }], messages, [])
+
+    const stored = useCoworkSessions
+      .getState()
+      .sessions.find((s) => s.id === id)!
+    const output = (
+      stored.messages[0].parts[0] as unknown as { output: string }
+    ).output
+    expect(output).not.toContain('base64')
+    expect(output).toContain('image not saved')
+  })
+
+  it('strips sentinels when a v1 transcript is migrated', async () => {
+    const { encodeToolImageSentinel } = await import(
+      '@/lib/tool-image-sentinel'
+    )
+    const migrate = useCoworkSessions.persist.getOptions().migrate!
+    const out = migrate(
+      {
+        sessions: [
+          {
+            id: 's1',
+            turns: [],
+            messages: [
+              {
+                id: 'a1',
+                role: 'assistant',
+                parts: [
+                  {
+                    type: 'tool-browser_screenshot',
+                    toolCallId: 'c1',
+                    state: 'output-available',
+                    output: `x${encodeToolImageSentinel(
+                      'data:image/png;base64,iVBORw0KGgo='
+                    )}`,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      1
+    ) as { sessions: Array<{ messages: any[] }> }
+    expect(out.sessions[0].messages[0].parts[0].output).not.toContain(
+      'base64'
+    )
+  })
+})

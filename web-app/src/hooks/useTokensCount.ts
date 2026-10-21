@@ -6,7 +6,7 @@ import {
   type LlamacppModelProps,
 } from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
-import { isLocalEngineId } from '@/lib/localProviders'
+import { isLocalEngineId, isManagedCpuEngine } from '@/lib/localProviders'
 import { useAppState } from './useAppState'
 
 export type ModelProps = LlamacppModelProps
@@ -130,6 +130,20 @@ export const useTokensCount = (
   const configuredCtxLen = readSettingNumber(
     selectedModel?.settings?.ctx_len?.controller_props?.value
   )
+  // The sidecar engines keep the window on the provider, not the model, and
+  // `getModelProps` reads it from the extension. Depend on it so the meter
+  // refetches when the setting changes, before the next message bumps
+  // `messages.length`.
+  const providerCtxSize = useModelProvider((s) =>
+    isManagedCpuEngine(s.selectedProvider)
+      ? readSettingNumber(
+          s.providers
+            .find((p) => p.provider === s.selectedProvider)
+            ?.settings?.find((setting) => setting.key === 'ctx_size')
+            ?.controller_props?.value
+        )
+      : undefined
+  )
 
   useEffect(() => {
     if (!modelId) {
@@ -164,6 +178,7 @@ export const useTokensCount = (
     messages.length,
     loadingModel,
     configuredCtxLen,
+    providerCtxSize,
   ])
 
   const tokenData: TokenCountData = useMemo(() => {

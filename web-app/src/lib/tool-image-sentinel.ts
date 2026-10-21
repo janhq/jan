@@ -73,6 +73,53 @@ export function stripToolImageSentinels(
   return text.replace(SENTINEL_REGEX, replacement)
 }
 
+/** What a persisted tool result says in place of an image. */
+const IMAGE_NOT_SAVED =
+  '\n[image not saved to the transcript; it was shown to the model only]'
+
+/**
+ * A copy of `messages` with every tool-image sentinel replaced by a note.
+ *
+ * Sentinels carry a base64 data URL, and the Cowork session store is
+ * `<jan_data>/settings.json`, which is read into memory at startup and rewritten
+ * on every session update. Persisting a few screenshots there cost tens of MB
+ * for images the model had already seen. Live messages keep their sentinels for
+ * the run in progress; only the committed copy is stripped.
+ */
+export function withoutToolImageSentinels(messages: UIMessage[]): UIMessage[] {
+  let changed = false
+  const next = messages.map((message) => {
+    // Tool images only ever land on an assistant message's tool parts.
+    if (message.role !== 'assistant' || !Array.isArray(message.parts)) {
+      return message
+    }
+    let messageChanged = false
+    const parts = message.parts.map((part) => {
+      const type = (part as { type?: string }).type
+      if (type !== 'dynamic-tool' && !type?.startsWith('tool-')) return part
+      const candidate = part as { output?: unknown; result?: unknown }
+      const field =
+        typeof candidate.output === 'string'
+          ? 'output'
+          : typeof candidate.result === 'string'
+            ? 'result'
+            : null
+      if (!field) return part
+      const value = candidate[field] as string
+      if (!hasToolImageSentinel(value)) return part
+      messageChanged = true
+      return {
+        ...part,
+        [field]: stripToolImageSentinels(value, IMAGE_NOT_SAVED),
+      } as typeof part
+    })
+    if (!messageChanged) return message
+    changed = true
+    return { ...message, parts }
+  })
+  return changed ? next : messages
+}
+
 type McpContentItem = {
   type?: string
   text?: string

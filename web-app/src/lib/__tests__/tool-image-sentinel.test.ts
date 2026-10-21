@@ -8,6 +8,7 @@ import {
   splitToolImageSentinels,
   stripToolImageSentinels,
   toContentToolOutputs,
+  withoutToolImageSentinels,
 } from '../tool-image-sentinel'
 import { decodeToolImageSentinelsInBody } from '../model-factory'
 import { stripUnsupportedImageParts } from '../custom-chat-transport'
@@ -42,6 +43,42 @@ describe('tool-image-sentinel', () => {
       'Screenshot of a.html (image omitted)'
     )
     expect(stripToolImageSentinels('plain', 'x')).toBe('plain')
+  })
+
+  // The committed Cowork transcript goes to settings.json, which is read into
+  // memory at startup; a few screenshots there are megabytes of base64 the
+  // model has already seen.
+  it('strips sentinels from a committed message copy', () => {
+    const messages = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-browser_screenshot',
+            toolCallId: 'c1',
+            state: 'output-available',
+            output: `Screenshot${encodeToolImageSentinel(png)}`,
+          },
+        ],
+      },
+    ] as unknown as UIMessage[]
+    const stripped = withoutToolImageSentinels(messages)
+    const output = (stripped[0].parts[0] as { output: string }).output
+    expect(output).toContain('Screenshot')
+    expect(output).not.toContain('base64')
+    expect(output).toContain('image not saved')
+    // The input is untouched: the live run still has the image for the model.
+    expect(
+      (messages[0].parts[0] as { output: string }).output
+    ).toContain('base64')
+  })
+
+  it('returns the same array when there is nothing to strip', () => {
+    const messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hi' }] },
+    ] as unknown as UIMessage[]
+    expect(withoutToolImageSentinels(messages)).toBe(messages)
   })
 })
 

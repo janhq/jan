@@ -102,6 +102,7 @@ import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import { encodeToolImageSentinel } from '@/lib/tool-image-sentinel'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -828,10 +829,25 @@ function ThreadDetail() {
                 errorText: `Error: ${result.error}`,
               })
             } else {
+              // Chat used to drop `result.images`, so a screenshot or an image
+              // `read` reached the model as a bare text line. Append them the
+              // same way Cowork does; the store strips the base64 before it is
+              // persisted (extractContentPartsFromUIMessage), so only the live
+              // turn pays for it.
+              const images =
+                (
+                  result as {
+                    images?: Array<{ dataUrl: string }>
+                  }
+                ).images ?? []
               record({
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                output: result.content,
+                output:
+                  String(result.content ?? '') +
+                  images
+                    .map((image) => encodeToolImageSentinel(image.dataUrl))
+                    .join(''),
               })
             }
           } catch (error) {
