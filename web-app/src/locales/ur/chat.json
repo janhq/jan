@@ -1,0 +1,38 @@
+{
+  "welcome": "سلام، آپ کیسے ہیں؟",
+  "description": "آج میں آپ کی کیا مدد کر سکتا ہوں؟",
+  "temporaryChat": "عارضی گفتگو",
+  "temporaryChatDescription": "ایسی عارضی گفتگو شروع کریں جو آپ کی گفتگو کی سرگزشت میں محفوظ نہیں ہوگی۔",
+  "status": {
+    "empty": "کوئی گفتگو نہیں ملی"
+  },
+  "sendMessage": "پیغام بھیجیں",
+  "newConversation": "نئی گفتگو",
+  "clearHistory": "سرگزشت صاف کریں",
+  "embeddings": {
+    "title": "آپ کی دستاویزات تیار کی جا رہی ہیں",
+    "description": "منسلک فائلوں کا اشاریہ بنایا جا رہا ہے تاکہ انہیں تلاش اور بطور حوالہ استعمال کیا جا سکے۔ بڑی دستاویزات کے لیے کچھ وقت لگ سکتا ہے۔"
+  },
+  "actions": {
+    "regenerate": "جواب دوبارہ بنائیں",
+    "askAgain": "دوبارہ پوچھیں",
+    "continue": "جواب بنانا جاری رکھیں",
+    "remember": "یہ یاد رکھیں",
+    "rememberSaved": "میموری میں \"{{name}}\" کے نام سے محفوظ کر دیا گیا",
+    "rememberExists": "میموری میں پہلے سے \"{{name}}\" کے نام سے موجود ہے",
+    "rememberFailed": "میموری میں محفوظ نہیں کیا جا سکا"
+  },
+  "done": "مکمل",
+  "webSources": "ذرائع کی تعداد: {{count}}",
+  "reasoning": {
+    "label": "غور و فکر جاری ہے...",
+    "thinking": "سوچ رہا ہے",
+    "working": "کام جاری ہے...",
+    "showFullTimeline": "مکمل زمانی ترتیب دکھائیں",
+    "showCurrentStep": "صرف موجودہ مرحلہ دکھائیں",
+    "thoughtForAWhile": "چند سیکنڈ سوچا",
+    "thoughtFor": "{{duration}} تک سوچا",
+    "workedForAWhile": "چند سیکنڈ کام کیا",
+    "workedFor": "{{duration}} تک کام کیا"
+  }
+}

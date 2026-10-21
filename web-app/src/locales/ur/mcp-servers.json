@@ -1,0 +1,101 @@
+{
+  "editServer": "MCP سرور میں ترمیم کریں۔",
+  "addServer": "MCP سرور شامل کریں۔",
+  "browserExtension": {
+    "connecting": {
+      "checking": "ایکسٹینشن کی حیثیت چیک کی جا رہی ہے..."
+    },
+    "notInstalled": {
+      "title": "Jan آپ کے براؤزر میں کام مکمل کرتا ہے۔",
+      "description": "Jan براؤزر تک رسائی دینے کے لیے ایکسٹینشن انسٹال کریں۔",
+      "getExtension": "ایکسٹینشن حاصل کریں۔"
+    }
+  },
+  "serverName": "سرور کا نام",
+  "enterServerName": "سرور کا نام درج کریں۔",
+  "command": "کمانڈ",
+  "enterCommand": "کمانڈ درج کریں (uvx یا npx)",
+  "arguments": "دلائل",
+  "argument": "دلیل {{index}}",
+  "envVars": "ماحولیاتی متغیرات",
+  "key": "کلید",
+  "value": "قدر",
+  "save": "محفوظ کریں",
+  "status": "حیثیت",
+  "connected": "جڑا ہوا",
+  "disconnected": "منقطع",
+  "deleteServer": {
+    "title": "MCP سرور کو حذف کریں۔",
+    "description": "کیا آپ واقعی MCP سرور {{serverName}} کو حذف کرنا چاہتے ہیں؟ اس کارروائی کو کالعدم نہیں کیا جا سکتا۔",
+    "delete": "حذف کریں",
+    "success": "MCP سرور {{serverName}} کامیابی کے ساتھ حذف ہو گیا۔"
+  },
+  "editJson": {
+    "title": "JSON MCP سرور کے لیے ترمیم کریں: {{serverName}}",
+    "titleAll": "تمام MCP سرورز میں ترمیم کریں JSON",
+    "placeholder": "JSON کنفیگریشن درج کریں۔",
+    "errorParse": "ابتدائی ڈیٹا کو پارس کرنے میں ناکام",
+    "errorPaste": "پیسٹ کردہ مواد میں غلط JSON فارمیٹ",
+    "errorFormat": "غلط JSON فارمیٹ",
+    "errorServerName": "سرور کا نام درکار ہے اور خالی نہیں ہو سکتا",
+    "errorMissingServerNameKey": "JSON کا ڈھانچہ {\"serverName\": {config}} کے طور پر ہونا چاہیے - سرور نام کی کلید غائب ہے",
+    "errorInvalidType": "سرور '{{serverName}}' کے لیے غلط قسم '{{type}}'۔ قسم 'stdio'، 'http'، یا 'sse' ہونی چاہیے",
+    "save": "محفوظ کریں"
+  },
+  "checkParams": "براہ کرم ٹیوٹوریل کے مطابق پیرامیٹرز کو چیک کریں۔",
+  "title": "MCP سرورز",
+  "experimental": "تجرباتی",
+  "editAllJson": "تمام سرورز میں ترمیم کریں JSON",
+  "findMore": "پر مزید MCP سرورز تلاش کریں۔",
+  "allowPermissions": "تمام MCP ٹول پرمیشنز کی اجازت دیں۔",
+  "allowPermissionsDesc": "فعال ہونے پر، تمام MCP ٹول کالز بغیر اجازت کے ڈائیلاگ دکھائے خود بخود منظور ہو جائیں گی۔ یہ ترتیب نئی چیٹس سمیت تمام بات چیت پر عالمی سطح پر لاگو ہوتی ہے۔",
+  "noServers": "کوئی MCP سرور نہیں ملے",
+  "args": "آرگس",
+  "env": "Env",
+  "serverStatusActive": "سرور {{serverKey}} کامیابی سے چالو ہو گیا۔",
+  "serverStatusInactive": "سرور {{serverKey}} کامیابی کے ساتھ غیر فعال ہو گیا۔",
+  "runtimeSettings": {
+    "title": "رن ٹائم کی ترتیبات",
+    "description": "کنفیگر کریں کہ Jan کس طرح MCP سرورز کا انتظام اور دوبارہ کوشش کرتا ہے۔",
+    "toolCallTimeout": "ٹول کال ٹائم آؤٹ (سیکنڈ)",
+    "toolCallTimeoutDesc": "وقت ختم ہونے سے پہلے MCP ٹول کے جواب کا انتظار کرنے کے لیے زیادہ سے زیادہ وقت۔",
+    "maxToolOutputChars": "زیادہ سے زیادہ ٹول آؤٹ پٹ کریکٹرز",
+    "maxToolOutputCharsDesc": "طویل ترین ٹول کا نتیجہ بات چیت میں رکھا گیا۔ اس سے پہلے کی کوئی بھی چیز تراشی ہوئی ہے اور اسے تراشے ہوئے کے بطور نشان زد کیا گیا ہے، لہذا ایک بڑا نتیجہ ماڈل کے سیاق و سباق کو ختم نہیں کر سکتا۔ نتائج کو مکمل رکھنے کے لیے 0 پر سیٹ کریں۔",
+    "smartToolRouting": "اسمارٹ MCP ٹول روٹنگ",
+    "smartToolRoutingDesc": "فعال ہونے پر، ٹولز لوڈ کرنے سے پہلے Jan متعلقہ MCP سرورز کا انتخاب کرتا ہے۔ ہمیشہ مکمل MCP ٹول لسٹ لوڈ کرنے کے لیے غیر فعال کریں۔",
+    "useLightweightRouterModel": "روٹنگ کے لیے ایک سرشار ماڈل استعمال کریں۔",
+    "useLightweightRouterModelDesc": "جب سمارٹ روٹنگ آن ہو تو، روٹنگ سٹیپ کو چیٹ ماڈل کی بجائے الگ (اکثر چھوٹے) ماڈل کے ساتھ چلائیں۔ روٹنگ کے لیے ہمیشہ فعال چیٹ ماڈل استعمال کرنے کے لیے آف کریں۔",
+    "routerModel": "روٹنگ ماڈل",
+    "routerModelDesc": "ایک جگہ پر فراہم کنندہ اور ماڈل کا انتخاب کریں۔ صرف ہلکے وزن والے ماڈلز درج ہیں لہذا روٹنگ تیز اور سستی رہتی ہے۔",
+    "selectRouterModelPlaceholder": "روٹنگ ماڈل منتخب کریں…",
+    "routerModelSearchPlaceholder": "ماڈلز تلاش کریں…",
+    "routerModelEmptyList": "کوئی ہلکا پھلکا ماڈل دستیاب نہیں ہے۔ ایک چھوٹا ماڈل شامل کریں یا ماڈلز میں API کیز کو ترتیب دیں۔",
+    "routerModelEmptySearch": "\"{{query}}\" کے لیے کوئی مماثلت نہیں ہے۔"
+  },
+  "auth": {
+    "label": "تصدیق:",
+    "state": {
+      "notApplicable": "ضرورت نہیں ہے",
+      "staticHeader": "اجازت کا ہیڈر",
+      "authenticated": "تصدیق شدہ",
+      "expired": "میعاد ختم",
+      "staleResource": "ایک اور URL کے لیے جاری کیا گیا",
+      "unauthenticated": "تصدیق شدہ نہیں"
+    },
+    "expiresIn": "{{duration}} میں ختم ہو جائے گا",
+    "authenticate": "سائن ان کریں۔",
+    "reauthenticate": "دوبارہ تصدیق کریں۔",
+    "clear": "تصدیق صاف کریں۔",
+    "waiting": "براؤزر کا انتظار کر رہا ہے...",
+    "openSignInPage": "سائن ان صفحہ کھولیں۔",
+    "needsAuth": "{{serverName}} کو تصدیق کی ضرورت ہے۔",
+    "needsAuthHint": "جڑنے کے لیے اس سرور میں سائن ان کریں۔",
+    "authorized": "{{serverName}} میں سائن ان",
+    "authorizeFailed": "{{serverName}} کے لیے سائن ان ناکام ہو گیا۔",
+    "cleared": "{{serverName}} کے لیے ذخیرہ شدہ اسناد کو صاف کر دیا گیا",
+    "nothingToClear": "{{serverName}} میں کوئی ذخیرہ شدہ اسناد نہیں تھیں۔",
+    "clearFailed": "{{serverName}} کے لیے اسناد کو صاف نہیں کیا جا سکا",
+    "renew": "سیشن کی تجدید کریں۔",
+    "expiredAgo": "میعاد ختم ہو گئی {{duration}} پہلے"
+  }
+}

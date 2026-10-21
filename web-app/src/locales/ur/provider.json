@@ -1,0 +1,18 @@
+{
+  "addProvider": "فراہم کنندہ شامل کریں۔",
+  "addOpenAIProvider": "حسب ضرورت فراہم کنندہ شامل کریں۔",
+  "enterNameForProvider": "فراہم کنندہ کا نام (جیسے my-llm-server)",
+  "apiTypeLabel": "API فارمیٹ",
+  "apiTypeOpenAI": "OpenAI موافق",
+  "apiTypeAnthropic": "Anthropic موافق",
+  "baseUrlLabel": "بیس URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API کلید",
+  "apiKeyPlaceholder": "اپنی API کلید چسپاں کریں۔",
+  "invalidBaseUrl": "بیس URL ایک درست http(s) URL ہونا چاہیے",
+  "globalSettings": "عالمی ترتیبات",
+  "stripReasoning": "سیاق و سباق سے استدلال کی پٹی",
+  "stripReasoningDesc": "تمام فراہم کنندگان میں تاریخ کو دوبارہ بھیجنے سے پہلے پیشگی موڑ کی سوچ/استدلال کے مواد کو ہٹا دیں۔ مقامی ماڈلز کے لیے KV-cache کے دوبارہ استعمال کو بہتر بناتا ہے، لیکن کچھ ماڈلز (مثلاً Qwen کی نئی ریلیز) بہتر ملٹی ٹرن استدلال کے لیے اسے رکھنے کی تجویز کرتے ہیں۔",
+  "providerAlreadyExists": "{{name}} نام کا ایک فراہم کنندہ پہلے سے موجود ہے۔"
+}

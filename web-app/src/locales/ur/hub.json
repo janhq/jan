@@ -1,0 +1,19 @@
+{
+  "sortNewest": "تازہ ترین",
+  "sortMostDownloaded": "سب سے زیادہ ڈاؤن لوڈ",
+  "newChat": "نئی گفتگو",
+  "download": "ڈاؤن لوڈ کریں",
+  "downloadFailed": "ڈاؤن لوڈ شروع کرنے میں ناکام",
+  "downloaded": "ڈاؤن لوڈ کیا گیا۔",
+  "loadingModels": "ماڈلز لوڈ ہو رہے ہیں...",
+  "noModels": "کوئی ماڈل نہیں ملا",
+  "by": "کی طرف سے",
+  "downloads": "ڈاؤن لوڈز",
+  "variants": "متغیرات",
+  "showVariants": "متغیرات دکھائیں۔",
+  "useModel": "اس ماڈل کو استعمال کریں۔",
+  "downloadModel": "ماڈل ڈاؤن لوڈ کریں۔",
+  "tools": "ٹولز",
+  "searchPlaceholder": "Hugging Face پر ماڈلز تلاش کریں...",
+  "resumeUnavailable": "اس ڈاؤن لوڈ کو دوبارہ شروع نہیں کیا جا سکتا۔ براہ کرم اسے دوبارہ شروع کریں۔"
+}
