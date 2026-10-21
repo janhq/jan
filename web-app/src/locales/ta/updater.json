@@ -1,0 +1,10 @@
+{
+  "newVersion": "புதிய பதிப்பு {{version}}",
+  "updateAvailable": "புதுப்பிப்பு கிடைக்கிறது",
+  "nightlyBuild": "நைட்லி பில்ட்",
+  "showReleaseNotes": "வெளியீட்டு குறிப்புகளைக் காட்டு",
+  "hideReleaseNotes": "வெளியீட்டு குறிப்புகளை மறை",
+  "remindMeLater": "எனக்கு பிறகு நினைவூட்டு",
+  "downloading": "பதிவிறக்குகிறது...",
+  "updateNow": "இப்போது புதுப்பிக்கவும்"
+}

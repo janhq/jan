@@ -1,0 +1,18 @@
+{
+  "addProvider": "வழங்குநரைச் சேர்",
+  "addOpenAIProvider": "தனிப்பயன் வழங்குநரைச் சேர்க்கவும்",
+  "enterNameForProvider": "வழங்குநரின் பெயர் (எ.கா. my-llm-server)",
+  "apiTypeLabel": "API வடிவம்",
+  "apiTypeOpenAI": "OpenAI-இணக்கமானது",
+  "apiTypeAnthropic": "Anthropic-இணக்கமானது",
+  "baseUrlLabel": "அடிப்படை URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API விசை",
+  "apiKeyPlaceholder": "உங்கள் API விசையை ஒட்டவும்",
+  "invalidBaseUrl": "அடிப்படை URL சரியான http(கள்) URL ஆக இருக்க வேண்டும்",
+  "globalSettings": "உலகளாவிய அமைப்புகள்",
+  "stripReasoning": "சூழலில் இருந்து பகுத்தறிவை அகற்றவும்",
+  "stripReasoningDesc": "அனைத்து வழங்குநர்களிலும் வரலாற்றை மீண்டும் அனுப்பும் முன் முந்தைய திருப்பங்களின் சிந்தனை/பகுத்தறிவு உள்ளடக்கத்தை அகற்றவும். உள்ளூர் மாடல்களுக்கான கேவி-கேச் மறுபயன்பாட்டை மேம்படுத்துகிறது, ஆனால் சில மாடல்கள் (எ.கா. புதிய க்வென் வெளியீடுகள்) சிறந்த மல்டி-டர்ன் தர்க்கத்திற்காக அதை வைத்திருக்க பரிந்துரைக்கின்றன.",
+  "providerAlreadyExists": "{{name}} என்ற பெயரில் ஒரு வழங்குநர் ஏற்கனவே இருக்கிறார்."
+}

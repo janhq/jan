@@ -1,5 +1,6 @@
 type Language =
   | 'en'
+  | 'ta'
   | 'es'
   | 'fr'
   | 'it'
