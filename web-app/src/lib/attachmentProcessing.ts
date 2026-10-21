@@ -129,6 +129,17 @@ export const needsIngestionChoice = (
   return preference === 'prompt' || (preference === 'auto' && !hasInlineBudget)
 }
 
+/**
+ * How a new document is parsed for the selected model. An embedded document is
+ * read back through the retrieval tool, which a model without tool support can
+ * never call, so such a model gets the document in the prompt whatever the
+ * preference says (#9363).
+ */
+export const parseModeForModel = (
+  parsePreference: ParsePreference,
+  modelSupportsTools: boolean
+): ParsePreference => (modelSupportsTools ? parsePreference : 'inline')
+
 export type IngestionChoice = 'inline' | 'embeddings'
 
 /**

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   applyIngestionChoices,
   needsIngestionChoice,
+  parseModeForModel,
   processAttachmentsForSend,
   promptIngestionChoices,
   resolveAutoInlineBudget,
@@ -259,6 +260,22 @@ describe('processAttachmentsForSend', () => {
       expect(result.processedAttachments[0].type).toBe('image')
       expect(result.processedAttachments[1].type).toBe('document')
       expect(result.hasEmbeddedDocuments).toBe(true)
+    })
+  })
+
+  // #9363: a document is read back through the retrieval tool when it is
+  // embedded, so a model that cannot call tools gets it in the prompt instead.
+  describe('parseModeForModel', () => {
+    it('keeps the preference for a model that can call tools', () => {
+      for (const pref of ['auto', 'inline', 'embeddings', 'prompt'] as const) {
+        expect(parseModeForModel(pref, true)).toBe(pref)
+      }
+    })
+
+    it('puts the document in the prompt for a model that cannot, whatever the preference', () => {
+      for (const pref of ['auto', 'inline', 'embeddings', 'prompt'] as const) {
+        expect(parseModeForModel(pref, false)).toBe('inline')
+      }
     })
   })
 
