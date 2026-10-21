@@ -9,6 +9,7 @@ import {
   type AttachmentProcessingResult,
 } from '../attachmentProcessing'
 import type { Attachment } from '@/types/attachment'
+import type { ServiceHub } from '@/services'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
 
 // Minimal mock for ServiceHub methods used by processAttachmentsForSend
@@ -194,6 +195,27 @@ describe('processAttachmentsForSend', () => {
 
       expect(result.processedAttachments[0].injectionMode).toBe('embeddings')
       expect(result.processedAttachments[0].id).toBe('proj-doc-1')
+    })
+
+    it('inlines project documents for a model without tool support', async () => {
+      const hub = createMockServiceHub()
+      const doc = docAttachment({ parseMode: 'inline' })
+
+      const result = await processAttachmentsForSend({
+        attachments: [doc],
+        threadId,
+        projectId: 'proj-1',
+        // The mock implements only the slice of ServiceHub this path touches.
+        serviceHub: hub as unknown as ServiceHub,
+        parsePreference: 'auto',
+        modelSupportsTools: false,
+      })
+
+      expect(result.processedAttachments[0].injectionMode).toBe('inline')
+      expect(result.processedAttachments[0].inlineContent).toBe(
+        'parsed document text'
+      )
+      expect(result.hasEmbeddedDocuments).toBe(false)
     })
   })
 

@@ -21,6 +21,11 @@ type AttachmentProcessingOptions = {
   projectId?: string
   serviceHub: ServiceHub
   selectedProvider?: string
+  /**
+   * Whether the selected model can call tools. Project documents are embedded
+   * unless this is false, since only a tool-capable model can retrieve them.
+   */
+  modelSupportsTools?: boolean
   /** Token budget under which an 'auto' document is inlined; see resolveAutoInlineBudget. */
   contextThreshold?: number
   parsePreference: 'auto' | 'inline' | 'embeddings' | 'prompt'
@@ -185,6 +190,7 @@ export const processAttachmentsForSend = async (
     updateAttachmentProcessing,
     onIngestProgress,
   } = options
+  const inlineAllowed = !projectId || options.modelSupportsTools === false
 
   const processedAttachments: Attachment[] = []
   let hasEmbeddedDocuments = false
@@ -291,15 +297,17 @@ export const processAttachmentsForSend = async (
       notifyUpdate(doc.name, 'processing')
 
       const targetPreference = doc.parseMode ?? parsePreference
-      // Project files always use embeddings, never inline. 'prompt' documents
+      // Project files use embeddings, never inline, unless the model cannot
+      // call the retrieval tool: an embedded document would then be
+      // unreachable, so it goes in the prompt (#9363). 'prompt' documents
       // carry the user's pick in parseMode, so reaching here means no pick
       // was recorded and the safe default applies.
       const decideBySize =
-        !projectId &&
+        inlineAllowed &&
         targetPreference === 'auto' &&
         effectiveContextThreshold !== undefined
       const wantsInline =
-        !projectId && (targetPreference === 'inline' || decideBySize)
+        inlineAllowed && (targetPreference === 'inline' || decideBySize)
       let targetMode: 'inline' | 'embeddings' = 'embeddings'
       let parsedContent: string | undefined
 

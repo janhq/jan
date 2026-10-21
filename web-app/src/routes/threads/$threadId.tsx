@@ -1527,6 +1527,10 @@ function ThreadDetail() {
             projectId,
             serviceHub,
             selectedProvider,
+            modelSupportsTools:
+              useModelProvider
+                .getState()
+                .selectedModel?.capabilities?.includes('tools') ?? false,
             parsePreference,
             contextThreshold,
           })
