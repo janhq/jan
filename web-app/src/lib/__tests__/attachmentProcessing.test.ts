@@ -162,6 +162,42 @@ describe('processAttachmentsForSend', () => {
       expect(result.hasEmbeddedDocuments).toBe(true)
     })
 
+    it('rejects a document that cannot be read as text for a model without tool support', async () => {
+      const failingParse = vi.fn().mockRejectedValue(new Error('parse failed'))
+      const hub = {
+        ...createMockServiceHub(),
+        rag: () => ({ parseDocument: failingParse }),
+      }
+      const doc = docAttachment({ parseMode: 'inline' })
+
+      await expect(
+        processAttachmentsForSend({
+          attachments: [doc],
+          threadId,
+          serviceHub: hub as unknown as ServiceHub,
+          parsePreference: 'auto',
+          modelSupportsTools: false,
+        })
+      ).rejects.toThrow(/can't search files/)
+    })
+
+    it('inlines a large document for a model without tool support whatever the budget', async () => {
+      const hub = createMockServiceHub()
+      const doc = docAttachment({ parseMode: 'auto' })
+
+      const result = await processAttachmentsForSend({
+        attachments: [doc],
+        threadId,
+        serviceHub: hub as unknown as ServiceHub,
+        parsePreference: 'auto',
+        contextThreshold: 1,
+        modelSupportsTools: false,
+      })
+
+      expect(result.processedAttachments[0].injectionMode).toBe('inline')
+      expect(result.hasEmbeddedDocuments).toBe(false)
+    })
+
     it('skips already-processed documents', async () => {
       const hub = createMockServiceHub()
       const doc = docAttachment({

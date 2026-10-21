@@ -191,6 +191,9 @@ export const processAttachmentsForSend = async (
     onIngestProgress,
   } = options
   const inlineAllowed = !projectId || options.modelSupportsTools === false
+  // A model that cannot call the retrieval tool can only use a document that
+  // is in its prompt, whatever the preference or the document's size.
+  const needsInline = options.modelSupportsTools === false
 
   const processedAttachments: Attachment[] = []
   let hasEmbeddedDocuments = false
@@ -304,10 +307,12 @@ export const processAttachmentsForSend = async (
       // was recorded and the safe default applies.
       const decideBySize =
         inlineAllowed &&
+        !needsInline &&
         targetPreference === 'auto' &&
         effectiveContextThreshold !== undefined
       const wantsInline =
-        inlineAllowed && (targetPreference === 'inline' || decideBySize)
+        inlineAllowed &&
+        (needsInline || targetPreference === 'inline' || decideBySize)
       let targetMode: 'inline' | 'embeddings' = 'embeddings'
       let parsedContent: string | undefined
 
@@ -319,6 +324,15 @@ export const processAttachmentsForSend = async (
         } catch (err) {
           console.warn(`Failed to parse ${doc.name} for inline use`, err)
         }
+      }
+
+      // An embedded copy is unreachable for this model, so a document that
+      // could not be read as text must fail the send, not go through
+      // without its content.
+      if (needsInline && !parsedContent) {
+        throw new Error(
+          `Couldn't read ${doc.name} as text. This model can't search files, so the document can't be added.`
+        )
       }
 
       if (parsedContent) {
