@@ -132,6 +132,10 @@ pub async fn thread_workspace_delete(
     data_folder: String,
     thread_id: String,
 ) -> Result<(), AgentToolsError> {
+    // The thread's browser goes with its sandbox: a browser left running
+    // would keep a page (and its cookies) alive for a conversation that is
+    // over.
+    crate::tools::browser::close_session(Some(&thread_id)).await;
     workspace::remove_thread_workspace(Path::new(&data_folder), &thread_id)
         .await
         .map_err(Into::into)

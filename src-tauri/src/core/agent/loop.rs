@@ -2651,6 +2651,9 @@ impl ToolInvoker for CompositeToolInvoker {
                         // Net tools resolve to Allow in the gate and never reach
                         // this prompt arm; label defensively for completeness.
                         Capability::Net => "net",
+                        // The browser drives a live page, so it asks like a
+                        // write does.
+                        Capability::Browser => "browser",
                     };
                     let prompt_kind = match kind {
                         PromptKind::ReadEscape => "read_escape",
@@ -2659,6 +2662,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         PromptKind::Exec => "exec",
                         // Settled by `escalate` above; labelled for completeness.
                         PromptKind::Escalate => "escalate",
+                        PromptKind::Browser => "browser",
                     };
                     let path = tool
                         .path_args

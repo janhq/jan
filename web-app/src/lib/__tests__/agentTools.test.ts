@@ -50,12 +50,27 @@ describe('agentTools', () => {
     getJanDataFolder.mockReset().mockResolvedValue('/data')
   })
 
-  // The chat surface offers the sandboxed shell alone; everything else is
-  // Cowork's. A chat set that grew a write tool would hand the main interface
-  // an agent toolset it no longer advertises a workspace for.
-  it('restricts the chat subset to shell', async () => {
+  // The chat surface offers the sandboxed shell and the browser; everything
+  // else is Cowork's. A chat set that grew a write tool would hand the main
+  // interface an agent toolset it no longer advertises a workspace for. The
+  // browser is the exception: reading a page that needs JavaScript is
+  // something a person asks a chat for, and every browser call asks the user
+  // first.
+  it('restricts the chat subset to shell and the browser', async () => {
     const { CHAT_AGENT_TOOL_NAMES } = await import('../agentTools')
-    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['shell'])
+    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual([
+      'shell',
+      'browser_open',
+      'browser_read',
+      'browser_eval',
+      'browser_click',
+      'browser_type',
+      'browser_screenshot',
+    ])
+    // No write tool: chat does not advertise a workspace.
+    for (const name of ['write', 'edit', 'read', 'grep']) {
+      expect(CHAT_AGENT_TOOL_NAMES.has(name)).toBe(false)
+    }
   })
 
   // `bash` is recognised only when reading saved history; nothing dispatches

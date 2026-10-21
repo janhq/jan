@@ -20,6 +20,11 @@ pub enum PromptKind {
     /// exists.
     WriteEscape,
     Exec,
+    /// Driving the browser: navigating, clicking, typing, or running script
+    /// against a live page. The page carries the session's cookies and can
+    /// submit forms, so a call can act as the user on a site -- which is why
+    /// it asks rather than being auto-allowed the way `web_fetch` is.
+    Browser,
     /// A shell command asking to run outside the OS sandbox (`escalate: true`).
     /// Never covered by a grant, an allow rule or auto-approval: it is the one
     /// prompt that widens the sandbox itself, so it always needs a fresh
@@ -61,6 +66,8 @@ pub struct SessionGrants {
     read_escape: bool,
     write: bool,
     write_escape: bool,
+    /// The browser tools, once the user has said yes for the session.
+    browser: bool,
     exec_commands: std::collections::BTreeSet<String>,
     exec_opaque: std::collections::BTreeSet<String>,
     /// MCP tools granted "allow always" this thread, by tool name.
@@ -73,6 +80,7 @@ impl SessionGrants {
             PromptKind::ReadEscape => self.read_escape,
             PromptKind::Write => self.write,
             PromptKind::WriteEscape => self.write_escape,
+            PromptKind::Browser => self.browser,
             // Exec coverage is command-specific; use `covers_command`.
             PromptKind::Exec => false,
             PromptKind::Escalate => false,
@@ -96,6 +104,7 @@ impl SessionGrants {
             PromptKind::ReadEscape => self.read_escape = true,
             PromptKind::Write => self.write = true,
             PromptKind::WriteEscape => self.write_escape = true,
+            PromptKind::Browser => self.browser = true,
             // No-op: exec is granted per command via `grant_command`.
             PromptKind::Exec => {}
             // No-op: an escalation is answered once, never remembered.
@@ -238,6 +247,15 @@ pub fn resolve_decision(
         // adapter. Treat them like read-only reads inside the project: allowed
         // without a prompt (an explicit agent.toml deny above still wins).
         Capability::Net => Decision::Allow,
+        // The browser drives a live page: it can act as the user on a site,
+        // so it asks first. A grant covers the rest of the session.
+        Capability::Browser => {
+            if grants.covers(PromptKind::Browser) {
+                Decision::Allow
+            } else {
+                Decision::Prompt(PromptKind::Browser)
+            }
+        }
         // A write inside the project may prompt (the CLI approves it); one that
         // escapes the project -- absolute or `..` -- can reach host files no
         // sandbox confines, so mirror the Read branch and gate it separately. It

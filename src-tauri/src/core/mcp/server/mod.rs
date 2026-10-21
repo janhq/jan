@@ -76,6 +76,9 @@ impl ServedTools {
             // store by sanitized name and can never reach a project file, so it
             // belongs to the memory/skill set rather than the mutating one.
             Capability::Write => self.allow_write || tool.path_args.is_empty(),
+            // The browser drives a live page as the user, so it is not served
+            // unless the server was started with the mutating opt-in.
+            Capability::Browser => self.allow_write,
             Capability::Read | Capability::Net => true,
         }
     }
@@ -290,6 +293,17 @@ impl JanToolServer {
                     format!(
                         "ERROR: tool '{name}' was refused: running outside the sandbox needs \
                          the user's approval, which an external caller cannot give."
+                    ),
+                    Vec::new(),
+                );
+            }
+            // The browser drives a live page as the user, so it needs the same
+            // approval an external caller cannot give.
+            Decision::Prompt(PromptKind::Browser) => {
+                return (
+                    format!(
+                        "ERROR: tool '{name}' was refused: driving a browser needs the user's \
+                         approval, which an external caller cannot give."
                     ),
                     Vec::new(),
                 );

@@ -255,6 +255,90 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_open",
+                "description": "Open a URL in a real browser and return the page's title and readable text. The browser is a native capability, not an MCP server: it keeps one page per session, so later browser_read, browser_click and browser_type act on the page you opened. Use it for sites that need JavaScript, a login, or a click to see anything; use web_fetch for a plain page.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "The http(s) URL to open." }
+                    },
+                    "required": ["url"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_read",
+                "description": "Return the readable text of the page the browser is on, with its URL and title. Use after browser_open, or after a click that changed the page.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_eval",
+                "description": "Run JavaScript in the page the browser is on and return the result. Use for what the tools do not cover: reading a value out of the DOM, checking a condition, or extracting a table. The script runs in the page, so it can only reach what the page itself can reach.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "expression": { "type": "string", "description": "The JavaScript expression to evaluate." }
+                    },
+                    "required": ["expression"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_click",
+                "description": "Click the first element matching a CSS selector in the page the browser is on. Returns the page's new URL and title when the click changed the page.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": { "type": "string", "description": "The CSS selector of the element to click." }
+                    },
+                    "required": ["selector"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_type",
+                "description": "Type text into the first element matching a CSS selector in the page the browser is on, and fire the input and change events a form listens for.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "selector": { "type": "string", "description": "The CSS selector of the input to fill." },
+                        "text": { "type": "string", "description": "The text to type." }
+                    },
+                    "required": ["selector", "text"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "browser_screenshot",
+                "description": "Capture a PNG of the page the browser is on and return it as an image, so you can see what the page actually looks like. Use it when the text is not enough: a layout, a chart, or anything rendered.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "width": { "type": "integer", "description": "Viewport width in pixels (default 1280)." },
+                        "height": { "type": "integer", "description": "Viewport height in pixels (default 800)." }
+                    },
+                    "required": []
+                }
+            }
+        }),
     ]
     .to_vec()
 }

@@ -53,6 +53,14 @@ export const AGENT_TOOL_NAMES = new Set([
   // Renders a local .html/.svg with headless Chrome so the agent can see what
   // it built. Read capability: it writes nothing back.
   'screenshot',
+  // The native headless browser. It drives a live page, so the gate asks for
+  // each call rather than auto-allowing it the way `web_fetch` is allowed.
+  'browser_open',
+  'browser_read',
+  'browser_eval',
+  'browser_click',
+  'browser_type',
+  'browser_screenshot',
 ])
 
 /**
@@ -66,10 +74,23 @@ export const isRecordedShellCall = (toolName: string): boolean =>
 
 /**
  * The subset the main chat surface advertises and dispatches: the sandboxed
- * shell alone, with no network. The full toolset above is Cowork's — chat is a
- * conversation that occasionally runs a command, not an agent surface.
+ * shell alone, with no network, plus the browser. The full toolset above is
+ * Cowork's -- chat is a conversation that occasionally runs a command, not an
+ * agent surface.
+ *
+ * The browser is the exception: reading a page that needs JavaScript is
+ * something a person asks a chat for all the time, and every browser call
+ * asks the user first, so it cannot act on its own.
  */
-export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
+export const CHAT_AGENT_TOOL_NAMES = new Set([
+  'shell',
+  'browser_open',
+  'browser_read',
+  'browser_eval',
+  'browser_click',
+  'browser_type',
+  'browser_screenshot',
+])
 
 /**
  * Tools that only run under an enforcing OS sandbox. They stay in

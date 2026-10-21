@@ -50,6 +50,15 @@ glob = "0.3"
 percent-encoding = "2"
 ignore = "0.4"
 regex = "1"
+# The browser tool speaks the DevTools protocol over a WebSocket.
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
+  "connect",
+  "handshake",
+] }
+futures-util = { version = "0.3", default-features = false, features = [
+  "std",
+  "sink",
+] }
 # `MonitorSnapshot` travels inside a `StreamEvent`, so the protocol schema
 # reaches it: the type derives its own schema rather than being mirrored.
 schemars = "1"

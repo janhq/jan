@@ -246,6 +246,23 @@ async fn execute_text(
         // Native web tools: compiled into the agent core, not an MCP server.
         "web_search" => crate::tools::web::web_search(args).await,
         "web_fetch" => crate::tools::web::web_fetch(args).await,
+        // The native browser. Every one of them drives a live page, so the
+        // gate asks for them first.
+        "browser_open" => {
+            crate::tools::browser::browser_open(args, ctx.thread_id).await
+        }
+        "browser_read" => {
+            crate::tools::browser::browser_read(args, ctx.thread_id).await
+        }
+        "browser_eval" => {
+            crate::tools::browser::browser_eval(args, ctx.thread_id).await
+        }
+        "browser_click" => {
+            crate::tools::browser::browser_click(args, ctx.thread_id).await
+        }
+        "browser_type" => {
+            crate::tools::browser::browser_type(args, ctx.thread_id).await
+        }
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
@@ -1431,29 +1448,6 @@ fn remove_spill_file(path: &Path) {
 
 const SCREENSHOT_MAX_PNG_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 
-fn chrome_binary() -> Option<PathBuf> {
-    if let Ok(env) = std::env::var("CHROME_PATH") {
-        if !env.is_empty() {
-            return Some(PathBuf::from(env));
-        }
-    }
-    const CANDIDATES: &[&str] = &[
-        // macOS (bundled browsers)
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        // Linux
-        "/usr/bin/google-chrome",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-    ];
-    CANDIDATES
-        .iter()
-        .find(|p| Path::new(p).exists())
-        .map(PathBuf::from)
-}
-
 /// Render a local HTML/SVG file to PNG bytes.
 ///
 /// `backend`, when present, renders through the desktop's own webview (no Chrome
@@ -1503,7 +1497,7 @@ pub async fn render_html_png(
         }
     }
 
-    let Some(chrome) = chrome_binary() else {
+    let Some(chrome) = crate::tools::browser::chrome_binary() else {
         return Err(
             "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
         );
@@ -4127,7 +4121,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn screenshot_returns_an_image_part_when_chrome_is_present() {
-        if chrome_binary().is_none() {
+        if crate::tools::browser::chrome_binary().is_none() {
             return;
         }
         let _guard = CHROME_TEST_LOCK.lock().await;

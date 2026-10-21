@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub mod appcontainer;
 /// User attachments copied into a session workspace for the agent to read.
 pub mod attachments;
+pub mod browser;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
@@ -590,6 +591,14 @@ pub enum Capability {
     /// gate can treat outbound web access as its own auto-allowed class rather
     /// than a filesystem or shell operation.
     Net,
+    /// Driving a real browser: navigating, clicking, typing, running script
+    /// against a live page.
+    ///
+    /// Its own class because it is more than a fetch. A browser carries the
+    /// session's cookies and can submit forms, so a call can act as the user
+    /// on a site -- which is why it prompts instead of being auto-allowed the
+    /// way `web_fetch` is.
+    Browser,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -692,6 +701,38 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         capability: Capability::Net,
         path_args: &[],
     },
+    // The native headless browser. It drives a real page, so it prompts (see
+    // `Capability::Browser`) rather than being auto-allowed like `web_fetch`.
+    BuiltinTool {
+        name: "browser_open",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "browser_read",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "browser_eval",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "browser_click",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "browser_type",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
+    BuiltinTool {
+        name: "browser_screenshot",
+        capability: Capability::Browser,
+        path_args: &[],
+    },
 ];
 
 /// Tools that act only on the agent's own store `{skills,memory}/`
@@ -779,11 +820,28 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        // `screenshot` (one of the coding tools) is desktop-only, so the headless
-        // CLI build (`feature = "tauri"` off) has one fewer.
-        let expected = if cfg!(feature = "tauri") { 16 } else { 15 };
+        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools
+        // + 6 browser tools. `screenshot` (one of the coding tools) is
+        // desktop-only, so the headless CLI build (`feature = "tauri"` off)
+        // has one fewer.
+        let expected = if cfg!(feature = "tauri") { 22 } else { 21 };
         assert_eq!(BUILTIN_TOOLS.len(), expected);
+    }
+
+    #[test]
+    fn browser_tools_are_browser_capability() {
+        for name in [
+            "browser_open",
+            "browser_read",
+            "browser_eval",
+            "browser_click",
+            "browser_type",
+            "browser_screenshot",
+        ] {
+            let tool = lookup(name).unwrap_or_else(|| panic!("{name} is builtin"));
+            assert_eq!(tool.capability, Capability::Browser, "{name}");
+            assert!(tool.path_args.is_empty(), "{name}");
+        }
     }
 
     #[test]
