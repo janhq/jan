@@ -39,6 +39,19 @@ use crate::tools::ImageContentPart;
 /// bounds its output.
 pub const BROWSER_MAX_CHARS: usize = 40_000;
 
+/// Upper bound on a screenshot, matching the old `screenshot` tool. A PNG is
+/// returned as a base64 data URL and (in Cowork) used to be persisted, so an
+/// uncapped capture was a multi-megabyte entry in `settings.json`.
+const SCREENSHOT_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// How long a browser may sit unused before the reaper closes it. A headless
+/// Chrome is 200-400 MB; without this, every session that ever browsed kept one
+/// until the app exited.
+const BROWSER_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// How often the reaper looks for idle browsers.
+const BROWSER_REAP_INTERVAL: Duration = Duration::from_secs(60);
+
 /// How long to wait for Chrome to come up and publish its debugging port.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -53,6 +66,8 @@ struct BrowserSession {
     cdp: Cdp,
     /// The DevTools session id of the page target.
     page_session: String,
+    /// When the session last ran a command, for the idle reaper.
+    last_used: Instant,
 }
 
 /// A DevTools protocol client.
@@ -304,6 +319,7 @@ async fn launch(chrome: &Path) -> Result<(BrowserSession, u16), String> {
             child,
             cdp,
             page_session,
+            last_used: Instant::now(),
         },
         port,
     ))
@@ -376,6 +392,42 @@ fn find_header_end(raw: &[u8]) -> Option<usize> {
     raw.windows(4).position(|window| window == b"\r\n\r\n")
 }
 
+/// Starts the idle reaper once, on the first browser of the process.
+///
+/// A browser is only reaped while no call is in flight for it: the reaper takes
+/// the same lock a command does, so a long navigation cannot have its process
+/// pulled out from under it.
+fn ensure_reaper() {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    STARTED.get_or_init(|| {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(BROWSER_REAP_INTERVAL).await;
+                reap_idle().await;
+            }
+        });
+    });
+}
+
+/// Closes every browser that has been unused for longer than the idle timeout.
+async fn reap_idle() {
+    let mut map = sessions().lock().await;
+    let now = Instant::now();
+    let idle: Vec<String> = map
+        .iter()
+        .filter(|(_, session)| {
+            now.saturating_duration_since(session.last_used) >= BROWSER_IDLE_TIMEOUT
+        })
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in idle {
+        if let Some(mut session) = map.remove(&key) {
+            eprintln!("[browser] closing idle browser for session {key}");
+            let _ = session.child.kill().await;
+        }
+    }
+}
+
 /// Returns the session's browser, starting one if there is none.
 async fn ensure_session(thread_id: Option<&str>) -> Result<String, String> {
     let key = session_key(thread_id);
@@ -383,6 +435,7 @@ async fn ensure_session(thread_id: Option<&str>) -> Result<String, String> {
         let mut map = sessions().lock().await;
         if let Some(session) = map.get_mut(&key) {
             if session.child.try_wait().ok().flatten().is_none() {
+                session.last_used = Instant::now();
                 return Ok(session.page_session.clone());
             }
         }
@@ -394,6 +447,7 @@ async fn ensure_session(thread_id: Option<&str>) -> Result<String, String> {
     let (session, _port) = launch(&chrome).await?;
     let page_session = session.page_session.clone();
     sessions().lock().await.insert(key, session);
+    ensure_reaper();
     Ok(page_session)
 }
 
@@ -408,6 +462,7 @@ async fn call_page(
     let session = map.get_mut(&key).ok_or_else(|| {
         "the browser is not running; open a page first with browser_open".to_string()
     })?;
+    session.last_used = Instant::now();
     session.cdp.call(method, params).await
 }
 
@@ -440,13 +495,28 @@ fn bound_text(text: &str) -> String {
     )
 }
 
-/// The readable text of the current page.
+/// The readable text of the current page, sliced *inside the page*.
+///
+/// Returning `document.body.innerText` whole sends the entire page across the
+/// DevTools WebSocket before `bound_text` trims it, which costs tens of MB on a
+/// text-heavy page (and can exceed the frame limit outright). Only the excerpt
+/// leaves the renderer; `bound_text` still runs for callers that pass their own
+/// text.
 async fn page_text(thread_id: Option<&str>) -> Result<String, String> {
+    let limit = BROWSER_MAX_CHARS;
+    let keep = limit.saturating_sub(200);
+    let expression = format!(
+        r#"(() => {{
+            const full = document.body ? document.body.innerText : '';
+            if (full.length <= {limit}) return full;
+            return full.slice(0, {keep}) + '\n\n[truncated: the page had ' + full.length + ' characters, {keep} shown]';
+        }})()"#
+    );
     let result = call_page(
         thread_id,
         "Runtime.evaluate",
         json!({
-            "expression": "document.body ? document.body.innerText : ''",
+            "expression": expression,
             "returnByValue": true,
         }),
     )
@@ -586,10 +656,29 @@ pub async fn browser_eval(args: &Value, thread_id: Option<&str>) -> String {
     if let Err(e) = ensure_session(thread_id).await {
         return format!("ERROR: {e}");
     }
+    // Bound the result inside the page. A script that returns
+    // `document.body.innerHTML` on a large page would otherwise transfer the
+    // whole document before `bound_text` trims it.
+    let limit = BROWSER_MAX_CHARS;
+    let keep = limit.saturating_sub(200);
+    let bounded = format!(
+        r#"(async () => {{
+            const value = await ({expression});
+            let rendered;
+            try {{
+                rendered = typeof value === 'string' ? value : JSON.stringify(value);
+            }} catch (e) {{
+                rendered = String(value);
+            }}
+            if (typeof rendered !== 'string') rendered = String(value);
+            if (rendered.length <= {limit}) return rendered;
+            return rendered.slice(0, {keep}) + '\n\n[truncated: the result had ' + rendered.length + ' characters, {keep} shown]';
+        }})()"#
+    );
     let result = match call_page(
         thread_id,
         "Runtime.evaluate",
-        json!({ "expression": expression, "returnByValue": true, "awaitPromise": true }),
+        json!({ "expression": bounded, "returnByValue": true, "awaitPromise": true }),
     )
     .await
     {
@@ -610,6 +699,8 @@ pub async fn browser_eval(args: &Value, thread_id: Option<&str>) -> String {
         .and_then(|v| v.get("value"))
         .cloned()
         .unwrap_or(Value::Null);
+    // The page already bounded a string result; `bound_text` covers objects
+    // and the rare script that returns something unserialisable.
     let rendered = match &value {
         Value::String(text) => text.clone(),
         other => other.to_string(),
@@ -726,10 +817,25 @@ pub async fn browser_type(args: &Value, thread_id: Option<&str>) -> String {
     }
 }
 
-/// Executes the `browser_screenshot` tool: a PNG of the page.
+/// The decoded byte count of a base64 string, without decoding it.
+fn base64_decoded_len(encoded: &str) -> usize {
+    let padding = encoded
+        .bytes()
+        .rev()
+        .take_while(|byte| *byte == b'=')
+        .count();
+    (encoded.len() / 4).saturating_mul(3).saturating_sub(padding)
+}
+
+/// Executes the `browser_screenshot` tool: an image of the page.
 ///
 /// The image comes back as an image content part, so a vision model sees the
 /// rendered page rather than a description of it.
+///
+/// Captures are capped at 4 MiB, the same budget as the old `screenshot` tool.
+/// A PNG that large is retried as JPEG and then at half size twice before the
+/// call fails: a retina-sized viewport of a photo-heavy page easily exceeds the
+/// cap, and failing outright would make the tool useless there.
 pub async fn browser_screenshot(
     args: &Value,
     thread_id: Option<&str>,
@@ -737,48 +843,107 @@ pub async fn browser_screenshot(
     if let Err(e) = ensure_session(thread_id).await {
         return (format!("ERROR: {e}"), None);
     }
-    let width = args
+    let mut width = args
         .get("width")
         .and_then(Value::as_u64)
         .unwrap_or(1280)
         .clamp(320, 4096);
-    let height = args
+    let mut height = args
         .get("height")
         .and_then(Value::as_u64)
         .unwrap_or(800)
         .clamp(240, 4096);
 
-    let result = match call_page(
-        thread_id,
-        "Page.captureScreenshot",
-        json!({ "format": "png", "captureBeyondViewport": false }),
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(e) => return (format!("ERROR: {e}"), None),
-    };
-    let Some(data) = result.get("data").and_then(Value::as_str) else {
-        return ("ERROR: the browser returned no image.".to_string(), None);
-    };
+    // (format, quality). The first is the lossless one the tool advertises;
+    // the rest trade quality for a capture that fits the budget.
+    let attempts: [(&str, Option<u8>); 4] = [
+        ("png", None),
+        ("jpeg", Some(80)),
+        ("jpeg", Some(55)),
+        ("jpeg", Some(35)),
+    ];
 
-    let url = current_url(thread_id).await.unwrap_or_default();
+    for (index, (format, quality)) in attempts.iter().enumerate() {
+        // Attempts 2 and 3 shrink the viewport as well as the encoding.
+        if index >= 2 {
+            width = (width / 2).max(320);
+            height = (height / 2).max(240);
+        }
+
+        // Make the requested size real. The old code clamped width/height and
+        // printed them, but captured Chrome's default 800x600 viewport, so the
+        // label lied and the caller had no way to shrink the image.
+        let _ = call_page(
+            thread_id,
+            "Emulation.setDeviceMetricsOverride",
+            json!({
+                "width": width,
+                "height": height,
+                "deviceScaleFactor": 1,
+                "mobile": false,
+            }),
+        )
+        .await;
+
+        let mut params = json!({
+            "format": format,
+            "captureBeyondViewport": false,
+        });
+        if let Some(quality) = quality {
+            params["quality"] = json!(quality);
+        }
+        let result = match call_page(thread_id, "Page.captureScreenshot", params).await {
+            Ok(value) => value,
+            Err(e) => return (format!("ERROR: {e}"), None),
+        };
+        let Some(data) = result.get("data").and_then(Value::as_str) else {
+            return ("ERROR: the browser returned no image.".to_string(), None);
+        };
+
+        if base64_decoded_len(data) <= SCREENSHOT_MAX_BYTES {
+            let url = current_url(thread_id).await.unwrap_or_default();
+            let mime = if *format == "png" { "png" } else { "jpeg" };
+            return (
+                format!("Screenshot of {url} ({width}x{height}, {format})"),
+                Some(vec![ImageContentPart {
+                    data_url: format!("data:image/{mime};base64,{data}"),
+                    name: format!("browser-screenshot.{mime}"),
+                }]),
+            );
+        }
+    }
+
     (
-        format!("Screenshot of {url} ({width}x{height})"),
-        Some(vec![ImageContentPart {
-            data_url: format!("data:image/png;base64,{data}"),
-            name: "browser-screenshot.png".to_string(),
-        }]),
+        format!(
+            "ERROR: the screenshot exceeded the {} MiB budget even at {}x{} JPEG; \
+             open a smaller viewport and try again.",
+            SCREENSHOT_MAX_BYTES / (1024 * 1024),
+            width,
+            height
+        ),
+        None,
     )
 }
 
-/// Closes the browser of a thread. Wired to the desktop's thread teardown.
+/// Closes the browser of a thread from a synchronous caller.
+///
+/// `try_lock` alone silently did nothing when a command held the map (a 60 s
+/// navigation, say), leaving that browser running for the rest of the process.
+/// When the lock is busy, hand the close to a task that waits for it.
 pub fn close_thread(thread_id: &str) {
     let key = thread_id.to_string();
     if let Ok(mut map) = sessions().try_lock() {
         if let Some(mut session) = map.remove(&key) {
             let _ = session.child.start_kill();
         }
+        return;
+    }
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            if let Some(mut session) = sessions().lock().await.remove(&key) {
+                let _ = session.child.kill().await;
+            }
+        });
     }
 }
 
@@ -830,6 +995,13 @@ mod tests {
     fn session_key_is_the_thread_id() {
         assert_eq!(session_key(Some("t1")), "t1");
         assert_eq!(session_key(None), "");
+    }
+
+    #[test]
+    fn base64_size_is_estimated_without_decoding() {
+        assert_eq!(base64_decoded_len("AAAA"), 3);
+        assert_eq!(base64_decoded_len("iVBORw0KGgo="), 8);
+        assert_eq!(base64_decoded_len(""), 0);
     }
 
     /// A tiny HTTP server, so the browser test has something to open.

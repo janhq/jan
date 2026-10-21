@@ -697,7 +697,11 @@ pub async fn stop_session_monitors(thread_id: String) -> Result<(), AgentToolsEr
 /// untouched.
 #[tauri::command]
 pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError> {
+    // Stop means everything this thread started: its shells, and its browser.
+    // The browser is otherwise only closed on delete or by the idle reaper, so
+    // a stopped conversation would keep a headless Chrome resident.
     crate::tools::proc::kill_thread(&thread_id);
+    crate::tools::browser::close_session(Some(&thread_id)).await;
     Ok(())
 }
 
