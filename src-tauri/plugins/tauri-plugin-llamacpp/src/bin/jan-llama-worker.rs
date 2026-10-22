@@ -24,7 +24,9 @@ use tauri_plugin_llamacpp::engine::http::EngineServer;
 use tauri_plugin_llamacpp::engine::preset;
 use tauri_plugin_llamacpp::engine::registry::Registry;
 use tauri_plugin_llamacpp::engine::slots::StateStore;
-use tauri_plugin_llamacpp::engine::{assert_pinned_version, PINNED_TAG};
+use tauri_plugin_llamacpp::engine::{
+    assert_pinned_version, PINNED_BUILD_NUMBER, PINNED_COMMIT, PINNED_TAG, PINNED_VERSION,
+};
 use tokio::sync::Mutex;
 
 struct Args {
@@ -57,15 +59,10 @@ fn parse_args() -> Result<Args, String> {
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
-        let mut value = || {
-            it.next()
-                .ok_or_else(|| format!("{flag} needs a value"))
-        };
+        let mut value = || it.next().ok_or_else(|| format!("{flag} needs a value"));
         match flag.as_str() {
             "--preset" => out.preset = Some(value()?),
-            "--port" => {
-                out.port = value()?.parse().map_err(|e| format!("bad --port: {e}"))?
-            }
+            "--port" => out.port = value()?.parse().map_err(|e| format!("bad --port: {e}"))?,
             "--models-max" => {
                 out.models_max = value()?
                     .parse()
@@ -77,6 +74,21 @@ fn parse_args() -> Result<Args, String> {
                     .map_err(|e| format!("bad --slot-cache-mib: {e}"))?
             }
             "--list-devices" => out.list_devices = true,
+            "--version-json" => {
+                // Validate the linked library before claiming its identity.
+                // This path does not start a server or load a model.
+                assert_pinned_version().map_err(|e| e.to_string())?;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "version": PINNED_VERSION,
+                        "tag": PINNED_TAG,
+                        "build_number": PINNED_BUILD_NUMBER,
+                        "commit": PINNED_COMMIT,
+                    })
+                );
+                std::process::exit(0);
+            }
             "--version" => {
                 println!("jan-llama-worker (llama.cpp {PINNED_TAG})");
                 std::process::exit(0);
@@ -178,14 +190,13 @@ async fn main() {
     std::env::remove_var(API_KEY_ENV);
 
     let registry_for_teardown = Arc::clone(&registry);
-    let (server, listener) =
-        match EngineServer::bind(registry, args.port, api_key).await {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("jan-llama-worker: could not bind: {e}");
-                std::process::exit(5);
-            }
-        };
+    let (server, listener) = match EngineServer::bind(registry, args.port, api_key).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("jan-llama-worker: could not bind: {e}");
+            std::process::exit(5);
+        }
+    };
     let server = match slot_store {
         Some(store) => {
             if store.saves_enabled() {

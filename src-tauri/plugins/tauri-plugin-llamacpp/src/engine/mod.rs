@@ -77,6 +77,8 @@ pub enum Route {
     Completions,
     CompletionsOai,
     ChatCompletions,
+    /// Single-pass typed decisions; no generated tokens or conversation cache.
+    SystemOne,
     Embeddings,
     EmbeddingsOai,
     Rerank,
@@ -96,6 +98,7 @@ impl Route {
             Self::Completions => "post_completions",
             Self::CompletionsOai => "post_completions_oai",
             Self::ChatCompletions => "post_chat_completions",
+            Self::SystemOne => "post_systemone",
             Self::Embeddings => "post_embeddings",
             Self::EmbeddingsOai => "post_embeddings_oai",
             Self::Rerank => "post_rerank",
@@ -125,6 +128,7 @@ impl Route {
             "/completion" | "/completions" => Some(Self::Completions),
             "/v1/completions" => Some(Self::CompletionsOai),
             "/v1/chat/completions" | "/chat/completions" => Some(Self::ChatCompletions),
+            "/v1/systemone" => Some(Self::SystemOne),
             "/embedding" | "/embeddings" => Some(Self::Embeddings),
             "/v1/embeddings" => Some(Self::EmbeddingsOai),
             "/rerank" | "/v1/rerank" => Some(Self::Rerank),
@@ -213,9 +217,9 @@ mod tests {
 
     #[test]
     fn pin_constants_are_populated_from_build_rs() {
-        assert_eq!(PINNED_TAG, "b11146");
-        assert_eq!(PINNED_BUILD_NUMBER, "11146");
-        assert_eq!(PINNED_VERSION, "0.5.0");
+        assert_eq!(PINNED_TAG, "b11721");
+        assert_eq!(PINNED_BUILD_NUMBER, "11721");
+        assert_eq!(PINNED_VERSION, "0.7.0");
         assert_eq!(PINNED_COMMIT.len(), 40, "commit should be a full sha");
     }
 
@@ -288,6 +292,7 @@ mod tests {
             Route::Completions,
             Route::CompletionsOai,
             Route::ChatCompletions,
+            Route::SystemOne,
             Route::Embeddings,
             Route::EmbeddingsOai,
             Route::Rerank,
@@ -306,6 +311,10 @@ mod tests {
             Some(Route::ChatCompletions)
         );
         assert_eq!(Route::from_http_path("/v1/models/"), Some(Route::Models));
+        assert_eq!(Route::from_http_path("/v1/systemone"), Some(Route::SystemOne));
+        assert_eq!(Route::from_http_path("/v1/systemone/"), Some(Route::SystemOne));
+        assert_eq!(Route::SystemOne.as_shim_name(), "post_systemone");
+        assert!(!Route::SystemOne.caches_prompt());
         assert_eq!(Route::from_http_path("/nope"), None);
     }
 

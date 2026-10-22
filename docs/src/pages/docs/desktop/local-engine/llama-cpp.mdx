@@ -46,6 +46,17 @@ Originally created by Georgi Gerganov and now maintained by the [ggml-org/llama.
 
 The llama.cpp engine is built into Jan and updates together with the app, so there is no separate backend to download or pick. **Settings** > **Llama.cpp** shows the version, build and commit; quote them when you report a model that fails to load. To run a model on a different llama.cpp version, run your own `llama-server` and connect it as a [custom endpoint](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
 
+The bundled engine is pinned to [llama.cpp b11721](https://github.com/ggml-org/llama.cpp/releases/tag/b11721)
+(version `0.7.0`, commit `ff5a23376725e5a889fa0bfb987b7541dc304da0`). The settings panel
+reads this information from the installed worker, even when no model is loaded, rather than
+reusing the desktop application's compile-time pin. This keeps the displayed build and release
+notes aligned with the worker actually installed.
+
+![Installed llama.cpp worker version](../_assets/llamacpp-installed-version.jpg)
+
+If the worker cannot report valid version metadata, Jan does not substitute its compiled-in
+version. The query times out after five seconds and does not start an inference server or load a model.
+
 ## Accessing Engine Settings
 
 Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Llama.cpp** under Model Providers:

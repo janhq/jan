@@ -105,3 +105,36 @@ Ensure **Verbose Server Logs** are enabled to get detailed error messages in the
     - The `model` ID in your request body does not match an available model in Jan.
     - Your request URL is incorrect (check the API Prefix).
 - **CORS Error (in a web browser):** Ensure the CORS toggle is enabled in Jan's settings.
+
+## Decision models (d1-3B)
+
+LiquidAI d1-3B answers typed questions about text, JSON or images. It does not
+generate chat text: use `POST /v1/systemone` rather than `/v1/chat/completions`.
+This requires the llama.cpp engine with decision support (0.7.0 or newer).
+
+Import a [d1-3B GGUF](https://huggingface.co/LiquidAI/d1-3B-GGUF) into Jan and
+start the Local API Server. Get the exact imported model ID from `GET /v1/models`.
+The request uses the usual local API key and model routing:
+
+```bash
+curl http://127.0.0.1:1337/v1/systemone \
+  -H "Authorization: Bearer YOUR_LOCAL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "d1-3B-Q4_K_M.gguf",
+    "state": "I was charged twice. Please refund the duplicate charge.",
+    "questions": {
+      "refund": {"type": "noul", "instructions": "Is a refund requested?"},
+      "team": {"type": "choice", "instructions": "Which team should handle this?",
+        "criteria": {"billing": "Charges and refunds", "technical": "App faults"}},
+      "urgency": {"type": "score", "instructions": "How urgent is this?",
+        "criteria": ["Can wait", "Today", "Blocking the customer"]}
+    }
+  }'
+```
+
+The response contains `answers` and `usage`; output token usage is zero.
+Use your configured port/prefix if different from the defaults above. A model
+without decision support returns an upstream error. Image decisions additionally
+require the model's compatible `mmproj` configured in Jan; text decisions do not.
+See the [model card](https://huggingface.co/LiquidAI/d1-3B) for question and answer semantics.

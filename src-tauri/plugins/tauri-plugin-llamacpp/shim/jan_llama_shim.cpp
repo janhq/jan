@@ -256,6 +256,7 @@ struct jan_llama_engine {
             {"post_detokenize",            &r.post_detokenize},
             {"post_embeddings",            &r.post_embeddings},
             {"post_embeddings_oai",        &r.post_embeddings_oai},
+            {"post_systemone",             &r.post_systemone},
             {"post_rerank",                &r.post_rerank},
             {"get_lora_adapters",          &r.get_lora_adapters},
             {"post_lora_adapters",         &r.post_lora_adapters},
@@ -595,6 +596,10 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
         // it must not look retryable. server-common.cpp throws this from 16
         // sites (missing `messages`, bad `content` type, `top_logprobs` without
         // `logprobs`, ...), all of which reached Jan's API as 500 before.
+        out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
+        return out;
+    } catch (const common_json_error & e) {
+        // Match upstream ex_wrapper: malformed JSON is a client error.
         out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
         return out;
     } catch (const std::exception & e) {

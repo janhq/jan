@@ -37,3 +37,6 @@ mod mlx_stub {
 
 #[cfg(all(not(target_os = "macos"), not(feature = "cli")))]
 pub use mlx_stub::{MlxBackendSession, SessionInfo};
+
+#[cfg(all(test, not(feature = "cli")))]
+mod systemone_tests;

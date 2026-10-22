@@ -953,7 +953,9 @@ async fn proxy_request(
                     // Drop Claude Code's billing-header attribution before it is
                     // forwarded (passthrough) or transformed, so it can't bust
                     // upstream prompt caching or reach the model.
-                    strip_billing_header_in_body(&mut json_body);
+                    if destination_path != "/systemone" {
+                        strip_billing_header_in_body(&mut json_body);
+                    }
                     if let Ok(cleaned) = serde_json::to_vec(&json_body) {
                         buffered_body = Some(cleaned.into());
                     }
@@ -1473,6 +1475,7 @@ async fn proxy_request(
         }
         (hyper::Method::POST, "/chat/completions")
         | (hyper::Method::POST, "/completions")
+        | (hyper::Method::POST, "/systemone")
         | (hyper::Method::POST, "/embeddings")
         | (hyper::Method::POST, "/messages/count_tokens") => {
             log::info!(
@@ -1506,7 +1509,9 @@ async fn proxy_request(
                     }
                     // Strip Claude Code's billing header from chat/token-count
                     // bodies too (it lands in the first message content here).
-                    strip_billing_header_in_body(&mut json_body);
+                    if destination_path != "/systemone" {
+                        strip_billing_header_in_body(&mut json_body);
+                    }
                     if let Ok(cleaned) = serde_json::to_vec(&json_body) {
                         buffered_body = Some(cleaned.into());
                     }

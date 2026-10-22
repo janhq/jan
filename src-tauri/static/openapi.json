@@ -22,6 +22,112 @@
     }
   ],
   "paths": {
+    "/systemone": {
+      "post": {
+        "tags": [
+          "Inference"
+        ],
+        "summary": "Evaluate typed questions with a decision model",
+        "description": "Single-pass decisions (for example LiquidAI/d1-3B), not chat generation. Requires a llama.cpp engine with decision support. Import the GGUF in Jan and send its exact model ID from GET /models. Images require a compatible mmproj configured on the model. Uses the same API authentication as other inference routes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "state",
+                  "questions"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "nullable": true,
+                    "description": "Text or arbitrary JSON; null when images are the entire state."
+                  },
+                  "questions": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "instructions"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "noul",
+                            "choice",
+                            "score"
+                          ]
+                        },
+                        "instructions": {
+                          "type": "string"
+                        },
+                        "criteria": {
+                          "description": "choice: named option descriptions; score: ordered descriptions; noul: optional true/false descriptions."
+                        }
+                      }
+                    }
+                  },
+                  "images": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Base64 data URLs; requires a compatible projector."
+                  }
+                }
+              },
+              "example": {
+                "model": "d1-3B-Q4_K_M.gguf",
+                "state": "The customer was charged twice and asks for a refund.",
+                "questions": {
+                  "refund": {
+                    "type": "noul",
+                    "instructions": "Is the customer asking for a refund?"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Typed answers, probabilities and usage with zero output tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answers": {
+                      "type": "object"
+                    },
+                    "usage": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, unknown model or unsupported decision/image operation."
+          },
+          "401": {
+            "description": "Invalid or missing API key."
+          },
+          "503": {
+            "description": "No engine available or all model slots are busy."
+          }
+        }
+      }
+    },
     "/models": {
       "get": {
         "summary": "List loaded models",
