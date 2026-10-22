@@ -1070,6 +1070,10 @@ async fn vet_direct_target(url: &reqwest::Url) -> Result<std::net::SocketAddr, S
 /// GET a URL straight from this machine. Each hop (the URL and every
 /// redirect) is vetted by [`vet_direct_target`], and the connection is pinned
 /// to the vetted address so a second DNS answer cannot swap in a private one.
+///
+/// Proxies from the environment are ignored on purpose: a proxy resolves the
+/// name itself, so the pin would no longer decide what is fetched, and a name
+/// that is only private inside the proxy's network would pass the vetting.
 async fn fetch_url_direct(url: &str, provider: &str) -> Result<FetchedPage, String> {
     let mut current =
         reqwest::Url::parse(url).map_err(|e| format!("{provider} fetch: invalid URL {url}: {e}"))?;
@@ -1078,7 +1082,8 @@ async fn fetch_url_direct(url: &str, provider: &str) -> Result<FetchedPage, Stri
         let addr = vet_direct_target(&current).await?;
         let mut builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .redirect(reqwest::redirect::Policy::none());
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy();
         if let Some(domain) = current.domain() {
             builder = builder.resolve(domain, addr);
         }
