@@ -32920,6 +32920,19 @@ mod tests {
             let section = crate::core::agent::global_config::web_search_setting();
             assert_eq!(section.provider.as_deref(), Some("searxng"));
             assert_eq!(section.endpoint.as_deref(), Some("https://searx.example"));
+
+            // Switching to a backend with no instance URL drops the old one,
+            // and offering it one is refused.
+            super::super::cli_web_search_set("you", None, None).expect("switch");
+            let section = crate::core::agent::global_config::web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("you"));
+            assert_eq!(section.endpoint, None);
+            assert!(super::super::cli_web_search_set(
+                "you",
+                None,
+                Some("https://searx.example".into())
+            )
+            .is_err());
         });
     }
 

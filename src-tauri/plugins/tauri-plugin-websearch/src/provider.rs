@@ -1007,13 +1007,26 @@ fn is_public_ip(ip: std::net::IpAddr) -> bool {
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return is_public_ip(IpAddr::V4(v4));
             }
-            let first = v6.segments()[0];
+            let s = v6.segments();
+            let embedded = |hi: u16, lo: u16| {
+                std::net::Ipv4Addr::new((hi >> 8) as u8, hi as u8, (lo >> 8) as u8, lo as u8)
+            };
+            // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address
+            // a translating network delivers to; judge them by it.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(IpAddr::V4(embedded(s[6], s[7])));
+            }
+            if s[0] == 0x2002 {
+                return is_public_ip(IpAddr::V4(embedded(s[1], s[2])));
+            }
             !(v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
-                // fc00::/7 unique local, fe80::/10 link-local.
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80)
+                // fc00::/7 unique local, fe80::/10 link-local, fec0::/10
+                // deprecated site-local.
+                || (s[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfec0)
         }
     }
 }
@@ -1199,10 +1212,21 @@ mod tests {
             "fd00::1",
             "fe80::1",
             "::ffff:127.0.0.1",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:1",
+            "2002:c0a8:101::1",
+            "2002:7f00:1::1",
+            "fec0::1",
         ] {
             assert!(!is_public_ip(ip.parse().unwrap()), "{ip} must be refused");
         }
-        for ip in ["1.1.1.1", "93.184.216.34", "2606:4700:4700::1111"] {
+        for ip in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+            "64:ff9b::101:101",
+            "2002:101:101::1",
+        ] {
             assert!(is_public_ip(ip.parse().unwrap()), "{ip} must be allowed");
         }
     }

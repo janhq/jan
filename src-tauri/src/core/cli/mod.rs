@@ -1237,10 +1237,19 @@ pub fn cli_web_search_set(
     if meta.secret_key.is_none() && api_key.as_deref().is_some_and(|k| !k.is_empty()) {
         return Err(format!("{} does not use an API key", meta.label));
     }
-    let endpoint = match endpoint.map(|e| e.trim().trim_end_matches('/').to_string()) {
-        Some(e) if e.is_empty() => None,
-        Some(e) => Some(e),
-        None => web_search_setting().endpoint,
+    let endpoint = endpoint.map(|e| e.trim().trim_end_matches('/').to_string());
+    // Only a self-hosted backend keeps an instance URL; switching away from one
+    // drops it, so the status never shows a URL the chosen backend ignores.
+    let endpoint = if meta.requires_endpoint {
+        match endpoint {
+            Some(e) if e.is_empty() => None,
+            Some(e) => Some(e),
+            None => web_search_setting().endpoint,
+        }
+    } else if endpoint.as_deref().is_some_and(|e| !e.is_empty()) {
+        return Err(format!("{} does not use an instance URL", meta.label));
+    } else {
+        None
     };
     let effective_key = match (&api_key, meta.secret_key) {
         (Some(k), _) => Some(k.clone()).filter(|k| !k.is_empty()),
