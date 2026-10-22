@@ -52,6 +52,7 @@ type ModelYaml = ModelConfig & {
   cpu_moe?: boolean
   n_cpu_moe?: number
   n_cpu_ffn?: number
+  moe_cache_mib?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
@@ -359,15 +360,6 @@ export async function generatePreset(
   ) {
     lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
   }
-  // moe-cache-mib default = 0 (off). A GPU cache for the MoE experts that
-  // n-cpu-moe keeps in host memory, added in 0.7.0; inert without them.
-  if (
-    typeof config.moe_cache_mib === 'number' &&
-    Number.isFinite(config.moe_cache_mib) &&
-    config.moe_cache_mib > 0
-  ) {
-    lines.push(`moe-cache-mib = ${Math.floor(config.moe_cache_mib)}`)
-  }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
   // to match llama.cpp's own flag and the existing no_mmap setting.
   // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
@@ -537,6 +529,12 @@ export async function generatePreset(
   lines.push('')
 
   // ---------- per-model sections ----------
+  const moeCacheAllowed =
+    config.split_mode !== 'tensor' &&
+    !(
+      typeof config.device === 'string' &&
+      config.device.trim().toLowerCase() === 'none'
+    )
   let embeddingCount = 0
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
@@ -698,6 +696,22 @@ export async function generatePreset(
     }
     if (typeof mc.n_cpu_ffn === 'number' && mc.n_cpu_ffn > 0) {
       lines.push(`n-cpu-ffn = ${Math.floor(mc.n_cpu_ffn)}`)
+    }
+    // moe-cache-mib default = 0 (off): a GPU cache for the experts that
+    // cpu-moe / n-cpu-moe keep in host memory, added in 0.7.0. Per-model only,
+    // never in [*]: llama.cpp refuses to load a model without experts when it
+    // is set ("MoE cache requires a MoE model", llama-moe-cache.cpp), so an
+    // engine-wide value would break every dense and embedding model. The same
+    // file also throws under tensor split mode and with no GPU backend, so the
+    // key is dropped where the preset can see either: it would only turn a
+    // working CPU-offloaded load into a failed one.
+    if (
+      moeCacheAllowed &&
+      typeof mc.moe_cache_mib === 'number' &&
+      Number.isFinite(mc.moe_cache_mib) &&
+      mc.moe_cache_mib > 0
+    ) {
+      lines.push(`moe-cache-mib = ${Math.floor(mc.moe_cache_mib)}`)
     }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.

@@ -175,7 +175,8 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
         key === 'batch_size' ||
         key === 'cpu_moe' ||
         key === 'n_cpu_moe' ||
-        key === 'n_cpu_ffn'
+        key === 'n_cpu_ffn' ||
+        key === 'moe_cache_mib'
       ) {
         // Check if model is running before stopping it
         serviceHub

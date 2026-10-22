@@ -127,7 +127,6 @@ const PRESET_AFFECTING_KEYS = new Set<string>([
  'ubatch_size',
  'n_cpu_moe',
  'n_cpu_ffn',
- 'moe_cache_mib',
  'no_kv_offload',
  'device',
  'split_mode',
@@ -324,6 +323,14 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
  },
  n_cpu_ffn: {
   yamlKey: 'n_cpu_ffn',
+  coerce: (v) => {
+   if (v === '' || v == null) return null
+   const n = typeof v === 'number' ? v : Number(v)
+   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+  },
+ },
+ moe_cache_mib: {
+  yamlKey: 'moe_cache_mib',
   coerce: (v) => {
    if (v === '' || v == null) return null
    const n = typeof v === 'number' ? v : Number(v)

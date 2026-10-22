@@ -162,18 +162,6 @@
     }
   },
   {
-    "key": "moe_cache_mib",
-    "title": "MoE Expert GPU Cache (MiB)",
-    "description": "Experimental. GPU memory in MiB for caching the MoE experts kept in CPU memory by the setting above, which speeds those models up. Split across GPUs like the layers. 0 disables it.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0,
-      "placeholder": "0",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
     "key": "no_kv_offload",
     "title": "Disable KV Cache Offload",
     "description": "Keep the KV cache in system RAM instead of GPU memory. Useful when VRAM is scarce, at the cost of speed.",

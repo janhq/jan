@@ -96,8 +96,6 @@ export type LlamacppConfig = {
   ubatch_size: number
   n_cpu_moe: number
   n_cpu_ffn: number
-  /** GPU cache in MiB for the MoE experts kept on the CPU. 0 = off. */
-  moe_cache_mib: number
   no_kv_offload: boolean
   device: string
   split_mode: string

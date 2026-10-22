@@ -276,12 +276,44 @@ describe('generatePreset 0.4.0 keys', () => {
 })
 
 describe('generatePreset 0.7.0 keys', () => {
-  it('emits moe-cache-mib when set, and omits it at 0', async () => {
+  // b11669 throws "MoE cache requires a MoE model" for any model without
+  // experts, so an engine-wide key would break every dense and embedding model
+  // the moment it was set. It is per-model only.
+  it('never emits moe-cache-mib engine-wide', async () => {
     setupModel('llama', {})
     await generatePreset('/p', '/jan', { moe_cache_mib: 4096 } as any)
-    expect(writtenFiles['/p/router.preset.ini']).toContain('moe-cache-mib = 4096')
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
 
-    await generatePreset('/p', '/jan', { moe_cache_mib: 0 } as any)
+  it('emits moe-cache-mib only in the section of the model that set it', async () => {
+    setupModel('dense', {})
+    setupModel('moe', { moe_cache_mib: 4096 })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    const section = (id: string) =>
+      ini.split(`[${id}]`)[1].split('load-on-startup')[0]
+    expect(section('moe')).toContain('moe-cache-mib = 4096')
+    expect(section('dense')).not.toContain('moe-cache-mib')
+  })
+
+  // The other two load-time throws in llama-moe-cache.cpp depend on engine-wide
+  // settings the preset can see: tensor split mode, and no GPU at all.
+  it('drops moe-cache-mib under configurations llama.cpp refuses it in', async () => {
+    setupModel('moe', { moe_cache_mib: 4096 })
+    await generatePreset('/p', '/jan', { split_mode: 'tensor' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+
+    await generatePreset('/p', '/jan', { device: 'none' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+
+    await generatePreset('/p', '/jan', { split_mode: 'row', device: 'CUDA0' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('moe-cache-mib = 4096')
+  })
+
+  it('omits a per-model moe-cache-mib of 0 or below', async () => {
+    setupModel('moe', { moe_cache_mib: 0 })
+    setupModel('moe2', { moe_cache_mib: -5 })
+    await generatePreset('/p', '/jan', CONFIG)
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
   })
 
