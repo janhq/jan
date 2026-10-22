@@ -17314,6 +17314,10 @@ struct WebSearchPrompt {
     /// must not be echoable), so an untouched field means "keep it".
     api_key: String,
     key_touched: bool,
+    /// Whether the selected backend has a key in the secret store. Looked up
+    /// when the backend is chosen, not per frame: the check reads (and may
+    /// decrypt) files, which has no place on the render loop.
+    key_stored: bool,
     endpoint: String,
     error: Option<String>,
 }
@@ -17333,14 +17337,24 @@ impl WebSearchPrompt {
         let provider = provider_meta(section.provider.as_deref())
             .and_then(|m| PROVIDERS.iter().position(|p| p.id == m.id))
             .unwrap_or(0);
-        Self {
+        let mut prompt = Self {
             provider,
             field: WebSearchField::Provider,
             api_key: String::new(),
             key_touched: false,
+            key_stored: false,
             endpoint: section.endpoint.unwrap_or_default(),
             error: None,
-        }
+        };
+        prompt.refresh_key_stored();
+        prompt
+    }
+
+    fn refresh_key_stored(&mut self) {
+        self.key_stored = self
+            .meta()
+            .secret_key
+            .is_some_and(crate::core::server::provider_secrets::has_stored_key);
     }
 
     fn meta(&self) -> &'static tauri_plugin_websearch::provider::ProviderMeta {
@@ -17359,6 +17373,7 @@ impl WebSearchPrompt {
         self.api_key.clear();
         self.key_touched = false;
         self.error = None;
+        self.refresh_key_stored();
     }
 
     fn toggle_field(&mut self) {
@@ -17404,12 +17419,9 @@ impl WebSearchPrompt {
             return ("instance url", self.endpoint.clone());
         }
         if !self.key_touched {
-            let stored = meta
-                .secret_key
-                .is_some_and(crate::core::server::provider_secrets::has_stored_key);
             return (
                 "api key",
-                if stored { "(stored)" } else { "(none)" }.to_string(),
+                if self.key_stored { "(stored)" } else { "(none)" }.to_string(),
             );
         }
         ("api key", super::secret_input::mask(self.api_key.chars().count()))
@@ -32830,6 +32842,49 @@ mod tests {
             assert_eq!(
                 crate::core::agent::global_config::web_search_setting(),
                 Default::default()
+            );
+        });
+    }
+
+    /// With no provider chosen, a key the desktop stored for Exa is not picked
+    /// up: the default stays keyless Exa plus `EXA_API_KEY`. Choosing Exa
+    /// explicitly is what opts the stored key in.
+    #[test]
+    fn unconfigured_web_search_ignores_a_stored_exa_key() {
+        with_isolated_login_state(|| {
+            crate::core::server::provider_secrets::store_provider_keys(
+                "exa-api-key",
+                &["desktop-key".to_string()],
+            )
+            .unwrap();
+            assert_eq!(
+                crate::core::agent::global_config::resolve_web_search(),
+                Default::default()
+            );
+            super::super::cli_web_search_set("exa", None, None).expect("choose exa");
+            let resolved = crate::core::agent::global_config::resolve_web_search();
+            assert_eq!(resolved.api_key.as_deref(), Some("desktop-key"));
+        });
+    }
+
+    /// A config that cannot be written must leave the shared key record alone:
+    /// the desktop reads it too.
+    #[test]
+    fn web_search_set_keeps_the_key_when_the_config_write_fails() {
+        with_isolated_login_state(|| {
+            crate::core::server::provider_secrets::store_provider_keys(
+                "tavily-api-key",
+                &["old".to_string()],
+            )
+            .unwrap();
+            let path = crate::core::agent::global_config::ensure_global_config().unwrap();
+            std::fs::write(&path, "not = [valid toml\n").unwrap();
+            assert!(
+                super::super::cli_web_search_set("tavily", Some("new".into()), None).is_err()
+            );
+            assert_eq!(
+                crate::core::server::provider_secrets::load_provider_keys("tavily-api-key"),
+                vec!["old".to_string()]
             );
         });
     }

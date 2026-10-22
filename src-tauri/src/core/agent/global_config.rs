@@ -553,12 +553,20 @@ pub(crate) fn web_search_setting() -> WebSearchSection {
 /// The web tools' backend for a CLI run: `[web_search]` plus the provider's API
 /// key from the secret store. The key is read only when the index says one is
 /// stored, so a run never opens a keychain prompt for a key that is not there.
+///
+/// With no provider chosen the secret store is not touched at all: the default
+/// stays keyless Exa upgraded by `EXA_API_KEY`, exactly as before this setting
+/// existed, rather than silently picking up a key the desktop stored. Once a
+/// provider is chosen its stored key wins over the env var.
 /// An unknown provider id is passed through as-is: building it then fails with
 /// a clear tool error instead of silently searching with a different backend.
 #[cfg(feature = "cli")]
 pub(crate) fn resolve_web_search() -> tauri_plugin_websearch::provider::WebSearchConfig {
     use crate::core::server::provider_secrets::{has_stored_key, load_provider_keys};
     let section = web_search_setting();
+    if section.provider.as_deref().is_none_or(|p| p.trim().is_empty()) {
+        return tauri_plugin_websearch::provider::WebSearchConfig::default();
+    }
     let api_key = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref())
         .and_then(|meta| meta.secret_key)
         .filter(|record| has_stored_key(record))
@@ -1357,8 +1365,6 @@ mod tests {
         });
     }
 
-    /// A first toggle on a machine with no config must land in a real file
-    /// rather than error, and that file should be the documented template.
     /// `[web_search]` round-trips format-preserving, never lands inside a
     /// provider table, and an emptied section removes its header.
     #[test]
@@ -1387,6 +1393,8 @@ mod tests {
         });
     }
 
+    /// A first toggle on a machine with no config must land in a real file
+    /// rather than error, and that file should be the documented template.
     #[test]
     fn set_global_key_scaffolds_a_missing_config() {
         with_temp_home(|home| {

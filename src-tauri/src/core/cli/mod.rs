@@ -1256,17 +1256,27 @@ pub fn cli_web_search_set(
     }
     .create()?;
 
-    if let (Some(key), Some(record)) = (api_key, meta.secret_key) {
-        if key.is_empty() {
-            provider_secrets::delete_provider_keys(record)?;
-        } else {
-            provider_secrets::store_provider_keys(record, &[key])?;
-        }
-    }
-    crate::core::agent::global_config::set_web_search(&WebSearchSection {
+    // The config goes first: it is the write that can fail on user input (an
+    // unparseable file), and the key record is shared with the desktop, so it
+    // must not be replaced or deleted for a selection that was never saved. A
+    // failed key write then puts the previous selection back.
+    let previous = web_search_setting();
+    let path = crate::core::agent::global_config::set_web_search(&WebSearchSection {
         provider: Some(meta.id.to_string()),
         endpoint,
-    })
+    })?;
+    if let (Some(key), Some(record)) = (api_key, meta.secret_key) {
+        let stored = if key.is_empty() {
+            provider_secrets::delete_provider_keys(record)
+        } else {
+            provider_secrets::store_provider_keys(record, &[key])
+        };
+        if let Err(e) = stored {
+            let _ = crate::core::agent::global_config::set_web_search(&previous);
+            return Err(format!("failed to store the {} API key: {e}", meta.label));
+        }
+    }
+    Ok(path)
 }
 
 /// Drop `[web_search]` so the keyless default applies again. Stored API keys
