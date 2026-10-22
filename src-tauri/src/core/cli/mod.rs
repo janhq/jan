@@ -1286,13 +1286,17 @@ pub fn cli_web_search_reset() -> Result<PathBuf, String> {
 }
 
 /// The current web search selection as JSON, API key reported as present or
-/// absent only.
+/// absent only. `has_api_key` answers "will a run use a stored key", so with
+/// no provider chosen it is false even if the desktop stored an Exa key: the
+/// unconfigured default ignores it (see `global_config::resolve_web_search`).
 pub fn cli_web_search_status() -> serde_json::Value {
     let section = crate::core::agent::global_config::web_search_setting();
     let meta = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref());
-    let has_api_key = meta
-        .and_then(|m| m.secret_key)
-        .is_some_and(crate::core::server::provider_secrets::has_stored_key);
+    let chosen = section.provider.as_deref().is_some_and(|p| !p.trim().is_empty());
+    let has_api_key = chosen
+        && meta
+            .and_then(|m| m.secret_key)
+            .is_some_and(crate::core::server::provider_secrets::has_stored_key);
     serde_json::json!({
         "provider": meta.map(|m| m.id).or(section.provider.as_deref()),
         "label": meta.map(|m| m.label),

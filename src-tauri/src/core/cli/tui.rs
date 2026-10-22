@@ -32861,9 +32861,15 @@ mod tests {
                 crate::core::agent::global_config::resolve_web_search(),
                 Default::default()
             );
+            // Status and the /settings hint agree with what a run uses.
+            assert_eq!(super::super::cli_web_search_status()["has_api_key"], false);
+            assert_eq!(super::web_search_settings_hint(), "= Exa (no key)");
+
             super::super::cli_web_search_set("exa", None, None).expect("choose exa");
             let resolved = crate::core::agent::global_config::resolve_web_search();
             assert_eq!(resolved.api_key.as_deref(), Some("desktop-key"));
+            assert_eq!(super::super::cli_web_search_status()["has_api_key"], true);
+            assert_eq!(super::web_search_settings_hint(), "= Exa (key set)");
         });
     }
 
