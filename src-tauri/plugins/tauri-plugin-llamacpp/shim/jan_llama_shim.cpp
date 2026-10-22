@@ -74,11 +74,19 @@ struct cwd_guard {
 /// `\\?\` prefix is dropped first because the working directory cannot be a
 /// verbatim path. The lock keeps two engine starts from interleaving their
 /// directory changes.
+///
+/// This only covers the ini. jan-llama-worker embeds a UTF-8 active-code-page
+/// manifest (build.rs), which makes every narrow path upstream opens -- model,
+/// `slot-save-path`, templates -- resolve too, so the working-directory switch
+/// is skipped when it is in effect and remains for Windows before 1903, which
+/// ignores the manifest.
 common_presets load_ini_presets(const common_preset_context & pctx, const char * ini_path, common_preset & global) {
 #ifdef _WIN32
     static std::mutex cwd_mutex;
 
-    int wide_len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ini_path, -1, nullptr, 0);
+    int wide_len = GetACP() == CP_UTF8
+                       ? 0
+                       : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ini_path, -1, nullptr, 0);
     if (wide_len > 1) {
         std::wstring wide(static_cast<size_t>(wide_len), L'\0');
         MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, ini_path, -1, wide.data(), wide_len);
