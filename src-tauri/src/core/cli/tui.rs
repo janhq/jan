@@ -4300,6 +4300,8 @@ struct App {
     mcp_auth_cancel: bool,
     /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
     provider_prompt: Option<ProviderPrompt>,
+    /// Active `/settings > web search` form (docked); owns the keyboard.
+    web_search_prompt: Option<WebSearchPrompt>,
     /// Providers already probed for a missing model list this session
     /// (success or failure). A dead/unreachable upstream must not be re-contacted
     /// on every bare `/model` -- that would freeze the render loop for the whole
@@ -5080,6 +5082,7 @@ impl App {
             mcp_auth: None,
             mcp_auth_cancel: false,
             provider_prompt: None,
+            web_search_prompt: None,
             probed_models: std::collections::HashSet::new(),
             model_pinned: false,
             login_submit: None,
@@ -5791,7 +5794,10 @@ impl App {
             Some("finish the message to the subagent above")
         } else if self.vibe_confirm.is_some() {
             Some("answer the proposal above")
-        } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
+        } else if self.mcp_prompt.is_some()
+            || self.provider_prompt.is_some()
+            || self.web_search_prompt.is_some()
+        {
             Some("finish the wizard above")
         } else if self.readout.is_some() {
             // A readout takes the keyboard while it is docked -- `q`, `m` and
@@ -13676,6 +13682,8 @@ fn route_paste_event(app: &mut App, event: Event) {
         prompt.paste(&text);
     } else if let Some(prompt) = app.provider_prompt.as_mut() {
         prompt.paste(&text);
+    } else if let Some(prompt) = app.web_search_prompt.as_mut() {
+        prompt.paste(&text);
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
     } else {
@@ -14451,6 +14459,12 @@ async fn handle_key(
         return;
     }
 
+    // The web search form owns the keyboard while open.
+    if app.web_search_prompt.is_some() {
+        handle_web_search_prompt_key(app, key, ctrl);
+        return;
+    }
+
     // A pending permission prompt captures y/a/n; Ctrl-C or Ctrl-D cancels the
     // run and denies everything queued, so it can't be wedged waiting on an
     // unanswered prompt. Several subagents can have requests queued at once
@@ -14774,6 +14788,16 @@ async fn handle_key(
                 let key = picker.items[picker.selected].value.clone();
                 // (picker borrow ends here; nothing below reads it before rebuild)
                 let toml_path = app.agent_dir.join("agent.toml");
+                if key == WEB_SEARCH_SETTINGS_ROW {
+                    match super::cli_web_search_reset() {
+                        Ok(_) => {
+                            app.note("web search reset to the default (Exa); takes effect on the next run");
+                            reopen_settings_on(app, WEB_SEARCH_SETTINGS_ROW);
+                        }
+                        Err(e) => app.note(&format!("failed to reset web search: {e}")),
+                    }
+                    return;
+                }
                 let Some(def) = AGENT_SETTINGS.iter().find(|d| d.key == key) else {
                     // The leading "providers" row has no key to unset.
                     return;
@@ -14923,6 +14947,9 @@ async fn handle_key(
                             open_provider_settings(app);
                         } else if value == SUBAGENTS_SETTINGS_ROW {
                             open_subagent_settings(app, None);
+                        } else if value == WEB_SEARCH_SETTINGS_ROW {
+                            app.picker = None;
+                            app.web_search_prompt = Some(WebSearchPrompt::load());
                         } else if value == SMOL_MODEL_KEY {
                             let current =
                                 crate::core::agent::global_config::global_value(SMOL_MODEL_KEY);
@@ -16568,6 +16595,10 @@ const PROVIDERS_SETTINGS_ROW: &str = "__providers__";
 /// model screen (`open_subagent_settings`).
 const SUBAGENTS_SETTINGS_ROW: &str = "__subagents__";
 
+/// Sentinel row value in the `/settings` picker that docks the web search
+/// backend form (`WebSearchPrompt`).
+const WEB_SEARCH_SETTINGS_ROW: &str = "__web_search__";
+
 /// The `/settings` row whose Enter opens the model picker instead of a text
 /// dock. Still an [`AGENT_SETTINGS`] def, so `x` and `/vibe-setting` reach it.
 const SMOL_MODEL_KEY: &str = "smol_model";
@@ -17271,6 +17302,264 @@ impl ProviderPrompt {
     }
 }
 
+/// Docked form for `/settings > web search`, the TUI twin of the desktop's Web
+/// Search page: pick the backend, then give it what it needs -- an API key
+/// (optional for keyless backends) or an instance URL (SearXNG). Saved through
+/// `cli_web_search_set`, the same path as `jan config web-search`.
+struct WebSearchPrompt {
+    /// Index into `tauri_plugin_websearch::provider::PROVIDERS`.
+    provider: usize,
+    field: WebSearchField,
+    /// What was typed for the key. The stored key is never loaded here (it
+    /// must not be echoable), so an untouched field means "keep it".
+    api_key: String,
+    key_touched: bool,
+    endpoint: String,
+    error: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WebSearchField {
+    Provider,
+    /// The API key or the instance URL, whichever the backend asks for.
+    Value,
+}
+
+impl WebSearchPrompt {
+    /// Prefilled from `[web_search]`; an unknown stored id opens on the default.
+    fn load() -> Self {
+        use tauri_plugin_websearch::provider::{provider_meta, PROVIDERS};
+        let section = crate::core::agent::global_config::web_search_setting();
+        let provider = provider_meta(section.provider.as_deref())
+            .and_then(|m| PROVIDERS.iter().position(|p| p.id == m.id))
+            .unwrap_or(0);
+        Self {
+            provider,
+            field: WebSearchField::Provider,
+            api_key: String::new(),
+            key_touched: false,
+            endpoint: section.endpoint.unwrap_or_default(),
+            error: None,
+        }
+    }
+
+    fn meta(&self) -> &'static tauri_plugin_websearch::provider::ProviderMeta {
+        &tauri_plugin_websearch::provider::PROVIDERS[self.provider]
+    }
+
+    /// Step the backend selection. A key typed for one backend is never saved
+    /// under another, so switching discards it.
+    fn cycle_provider(&mut self, forward: bool) {
+        let n = tauri_plugin_websearch::provider::PROVIDERS.len();
+        self.provider = if forward {
+            (self.provider + 1) % n
+        } else {
+            (self.provider + n - 1) % n
+        };
+        self.api_key.clear();
+        self.key_touched = false;
+        self.error = None;
+    }
+
+    fn toggle_field(&mut self) {
+        self.field = match self.field {
+            WebSearchField::Provider => WebSearchField::Value,
+            WebSearchField::Value => WebSearchField::Provider,
+        };
+    }
+
+    fn push(&mut self, text: &str) {
+        if self.field != WebSearchField::Value {
+            return;
+        }
+        if self.meta().requires_endpoint {
+            self.endpoint.push_str(text);
+        } else {
+            self.api_key.push_str(text);
+            self.key_touched = true;
+        }
+    }
+
+    fn pop(&mut self) {
+        if self.field != WebSearchField::Value {
+            return;
+        }
+        if self.meta().requires_endpoint {
+            self.endpoint.pop();
+        } else {
+            self.api_key.pop();
+            self.key_touched = true;
+        }
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.push(super::secret_input::pasted(text));
+    }
+
+    /// Value-row label and contents. The key renders masked, or says whether
+    /// one is stored when nothing was typed.
+    fn value_row(&self) -> (&'static str, String) {
+        let meta = self.meta();
+        if meta.requires_endpoint {
+            return ("instance url", self.endpoint.clone());
+        }
+        if !self.key_touched {
+            let stored = meta
+                .secret_key
+                .is_some_and(crate::core::server::provider_secrets::has_stored_key);
+            return (
+                "api key",
+                if stored { "(stored)" } else { "(none)" }.to_string(),
+            );
+        }
+        ("api key", super::secret_input::mask(self.api_key.chars().count()))
+    }
+
+    /// What the backend needs, worded like the desktop page.
+    fn help(&self) -> String {
+        let meta = self.meta();
+        if meta.requires_endpoint {
+            format!("Required. The base URL of your {} instance, with the JSON API enabled.", meta.label)
+        } else if meta.keyless {
+            format!(
+                "Optional. A {} API key gives higher rate limits and structured results; \
+                 leave empty for the free keyless endpoint.",
+                meta.label
+            )
+        } else {
+            format!("Required. {} needs an API key to return results.", meta.label)
+        }
+    }
+
+    fn save(&self) -> Result<(), String> {
+        let meta = self.meta();
+        let (api_key, endpoint) = if meta.requires_endpoint {
+            (None, Some(self.endpoint.clone()))
+        } else {
+            (self.key_touched.then(|| self.api_key.clone()), None)
+        };
+        super::cli_web_search_set(meta.id, api_key, endpoint).map(|_| ())
+    }
+}
+
+/// Keyboard for the web search dock: Up/Down/Tab move, Left/Right change the
+/// backend on its row, chars/backspace edit the value row, Enter saves and
+/// returns to `/settings`, Esc cancels back to it.
+fn handle_web_search_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')) {
+        app.web_search_prompt = None;
+        return reopen_settings_on(app, WEB_SEARCH_SETTINGS_ROW);
+    }
+    let Some(prompt) = app.web_search_prompt.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::BackTab => prompt.toggle_field(),
+        KeyCode::Left if prompt.field == WebSearchField::Provider => prompt.cycle_provider(false),
+        KeyCode::Right if prompt.field == WebSearchField::Provider => prompt.cycle_provider(true),
+        KeyCode::Enter => match prompt.save() {
+            Ok(()) => {
+                let label = prompt.meta().label;
+                app.web_search_prompt = None;
+                app.note(&format!("web search now uses {label}; takes effect on the next run"));
+                reopen_settings_on(app, WEB_SEARCH_SETTINGS_ROW);
+            }
+            Err(e) => prompt.error = Some(e),
+        },
+        KeyCode::Backspace => prompt.pop(),
+        KeyCode::Char(ch) if !ctrl => prompt.push(ch.encode_utf8(&mut [0; 4])),
+        _ => {}
+    }
+}
+
+/// Rebuild `/settings` (so the row's hint reflects a write) with the cursor on
+/// `row`.
+fn reopen_settings_on(app: &mut App, row: &str) {
+    open_settings_screen(app);
+    select_settings_row(app, row);
+}
+
+/// The web search dock's contents at `width`.
+fn web_search_prompt_lines(prompt: &WebSearchPrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().fg(theme::muted());
+    let max = width.max(1) as usize;
+    let row = |selected: bool, label: &str, value: String, cursor: bool| {
+        let style = if selected { Style::new().bold() } else { dim };
+        let marker = if selected { "\u{203a} " } else { "  " };
+        let mut spans = vec![
+            Span::styled(format!("{marker}{label}: "), style),
+            Span::styled(value, style),
+        ];
+        if selected && cursor {
+            spans.push(Span::styled("\u{2588}", Style::new().fg(theme::accent())));
+        }
+        Line::from(spans)
+    };
+    let on_provider = prompt.field == WebSearchField::Provider;
+    let mut lines = vec![row(
+        on_provider,
+        "provider",
+        format!("\u{2039} {} \u{203a}", prompt.meta().label),
+        false,
+    )];
+    let (label, value) = prompt.value_row();
+    lines.push(row(!on_provider, label, value, true));
+    lines.extend(wrap_text(&prompt.help(), dim, max).into_iter().map(Line::from));
+    if let Some(error) = &prompt.error {
+        lines.extend(wrap_text(error, Style::new().red(), max).into_iter().map(Line::from));
+    }
+    let hint = if on_provider {
+        "\u{2190}/\u{2192} change provider \u{b7} \u{2191}/\u{2193} move \u{b7} Enter save \u{b7} Esc cancel"
+    } else if prompt.meta().requires_endpoint {
+        "\u{2191}/\u{2193} move \u{b7} Enter save \u{b7} Esc cancel"
+    } else {
+        "\u{2191}/\u{2193} move \u{b7} Enter save \u{b7} Esc cancel (type to replace the key, blank out to clear)"
+    };
+    lines.extend(wrap_text(hint, dim, max).into_iter().map(Line::from));
+    lines
+}
+
+fn web_search_prompt_rect(
+    prompt: &WebSearchPrompt,
+    body: ratatui::layout::Rect,
+    input: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let height = (web_search_prompt_lines(prompt, panel_inner_width(input.width)).len() as u16 + 2)
+        .min(body.height);
+    ratatui::layout::Rect {
+        x: input.x,
+        y: input.y.saturating_sub(height).max(body.y),
+        width: input.width,
+        height,
+    }
+}
+
+fn draw_web_search_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &WebSearchPrompt) {
+    use ratatui::widgets::Clear;
+    let block = panel_block(theme::border_active())
+        .title(Span::styled(" web search ", title_style(theme::border_active())));
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(web_search_prompt_lines(prompt, inner.width)), inner);
+}
+
+/// `/settings` hint for the web search row: the backend, and what it is
+/// running on (a stored key, the keyless tier, an instance URL).
+fn web_search_settings_hint() -> String {
+    let status = super::cli_web_search_status();
+    let label = status["label"]
+        .as_str()
+        .or(status["provider"].as_str())
+        .unwrap_or("Exa");
+    let detail = match (status["endpoint"].as_str(), status["has_api_key"].as_bool()) {
+        (Some(url), _) if status["provider"] == "searxng" => url.to_string(),
+        (_, Some(true)) => "key set".to_string(),
+        _ => "no key".to_string(),
+    };
+    format!("= {label} ({detail})")
+}
+
 /// Value of an `[agent]` key in `agent.toml` as a display string, `None` when
 /// unset or the file is unreadable. Reads the inner value directly so the
 /// display is not padded by the document's alignment.
@@ -17387,6 +17676,13 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
         value: SUBAGENTS_SETTINGS_ROW.to_string(),
         label: "subagents".to_string(),
         hint: Some("choose the model each saved subagent runs on".to_string()),
+        checkbox: None,
+        spans: None,
+    });
+    items.push(PickerItem {
+        value: WEB_SEARCH_SETTINGS_ROW.to_string(),
+        label: "web search".to_string(),
+        hint: Some(web_search_settings_hint()),
         checkbox: None,
         spans: None,
     });
@@ -21979,6 +22275,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_provider_prompt(f, rect, prompt);
+    } else if let Some(prompt) = &app.web_search_prompt {
+        draw_web_search_prompt(f, web_search_prompt_rect(prompt, chunks[1], chunks[2]), prompt);
     } else if !app.ask_queue.is_empty() {
         let queue_len = app.ask_queue.len();
         let ask = app.ask_queue.front_mut().expect("checked non-empty above");
@@ -31520,8 +31818,9 @@ mod tests {
         super::settings_command(&mut app, "");
         let picker = app.picker.as_ref().expect("bare /settings opens picker");
         assert_eq!(picker.kind, PickerKind::AgentSettings);
-        // The leading "providers" and "subagents" rows plus a row per def.
-        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 2);
+        // The leading "providers", "subagents" and "web search" rows plus a
+        // row per def.
+        assert_eq!(picker.items.len(), AGENT_SETTINGS.len() + 3);
         assert_eq!(picker.items[0].value, PROVIDERS_SETTINGS_ROW);
         let row = picker
             .items
@@ -32470,6 +32769,96 @@ mod tests {
             assert!(p.save().is_err(), "scheme required");
             p.base_url = "https://my-provider.example/v1".to_string();
             assert!(p.save().is_ok(), "valid https provider saved");
+        });
+    }
+
+    /// `/settings` lists a web search row; Enter docks the form, Right picks
+    /// the next backend (Tavily), a typed key is masked on screen, and Enter
+    /// writes `[web_search]` plus the key under the desktop's secret record,
+    /// then returns to the menu with the new backend in the hint.
+    #[test]
+    fn settings_web_search_row_saves_provider_and_key() {
+        with_isolated_login_state(|| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut app = test_app();
+            super::open_settings_screen(&mut app);
+            let picker = app.picker.as_mut().expect("settings open");
+            let idx = picker
+                .items
+                .iter()
+                .position(|i| i.value == super::WEB_SEARCH_SETTINGS_ROW)
+                .expect("web search row listed");
+            assert_eq!(picker.items[idx].hint.as_deref(), Some("= Exa (no key)"));
+            picker.selected = idx;
+            rt.block_on(async {
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+                assert!(app.web_search_prompt.is_some(), "form docked");
+                press(&mut app, KeyCode::Right, KeyModifiers::NONE).await;
+                assert_eq!(app.web_search_prompt.as_ref().unwrap().meta().id, "tavily");
+
+                // Tavily needs a key: saving without one is refused in place.
+                press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+                let prompt = app.web_search_prompt.as_ref().expect("still open");
+                assert!(prompt.error.as_deref().unwrap_or("").contains("Tavily"));
+
+                press(&mut app, KeyCode::Down, KeyModifiers::NONE).await;
+                for ch in "tvly-secret".chars() {
+                    press(&mut app, KeyCode::Char(ch), KeyModifiers::NONE).await;
+                }
+            });
+            let screen = render_rows(&mut app, 100, 30).join("\n");
+            assert!(!screen.contains("tvly-secret"), "key must be masked: {screen}");
+            rt.block_on(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+            assert!(app.web_search_prompt.is_none(), "saved and closed");
+
+            let section = crate::core::agent::global_config::web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("tavily"));
+            assert_eq!(
+                crate::core::server::provider_secrets::load_provider_keys("tavily-api-key"),
+                vec!["tvly-secret".to_string()]
+            );
+            let resolved = crate::core::agent::global_config::resolve_web_search();
+            assert_eq!(resolved.api_key.as_deref(), Some("tvly-secret"));
+
+            let picker = app.picker.as_ref().expect("back on /settings");
+            let row = &picker.items[picker.selected];
+            assert_eq!(row.value, super::WEB_SEARCH_SETTINGS_ROW);
+            assert_eq!(row.hint.as_deref(), Some("= Tavily (key set)"));
+
+            // `x` on the row resets to the default backend.
+            rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+            assert_eq!(
+                crate::core::agent::global_config::web_search_setting(),
+                Default::default()
+            );
+        });
+    }
+
+    /// SearXNG asks for an instance URL instead of a key, and a pasted URL
+    /// lands in that field.
+    #[test]
+    fn web_search_prompt_searxng_takes_an_instance_url() {
+        with_isolated_login_state(|| {
+            let mut app = test_app();
+            let mut prompt = super::WebSearchPrompt::load();
+            while prompt.meta().id != "searxng" {
+                prompt.cycle_provider(true);
+            }
+            prompt.toggle_field();
+            assert_eq!(prompt.value_row().0, "instance url");
+            assert!(prompt.save().is_err(), "no instance URL must not save");
+            assert!(super::super::cli_web_search_set("brave", None, None).is_err());
+            app.web_search_prompt = Some(prompt);
+            super::route_paste_event(
+                &mut app,
+                Event::Paste(" https://searx.example/ ".into()),
+            );
+            let prompt = app.web_search_prompt.as_ref().unwrap();
+            assert_eq!(prompt.endpoint, "https://searx.example/");
+            prompt.save().expect("saved");
+            let section = crate::core::agent::global_config::web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("searxng"));
+            assert_eq!(section.endpoint.as_deref(), Some("https://searx.example"));
         });
     }
 

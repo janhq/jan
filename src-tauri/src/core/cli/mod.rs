@@ -1211,6 +1211,86 @@ pub fn cli_agent_config_list() -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Choose the backend for the native `web_search`/`web_fetch` tools: the
+/// `[web_search]` table in `~/.jan/config.toml` plus the provider's API key in
+/// the secret store, under the same record the desktop's Web Search settings
+/// write, so a key entered on either surface serves both.
+///
+/// `api_key` and `endpoint` merge like [`cli_agent_config_set`]: `None` keeps
+/// what is stored, `Some("")` clears it. The resulting selection is validated
+/// before anything is written, so a keyed backend with no key or a SearXNG with
+/// no instance URL is refused rather than saved and failing on every search.
+pub fn cli_web_search_set(
+    provider: &str,
+    api_key: Option<String>,
+    endpoint: Option<String>,
+) -> Result<PathBuf, String> {
+    use crate::core::agent::global_config::{web_search_setting, WebSearchSection};
+    use crate::core::server::provider_secrets;
+    use tauri_plugin_websearch::provider::{provider_meta, PROVIDERS};
+
+    let meta = provider_meta(Some(provider)).ok_or_else(|| {
+        let ids: Vec<&str> = PROVIDERS.iter().map(|p| p.id).collect();
+        format!("unknown web search provider '{provider}' (one of: {})", ids.join(", "))
+    })?;
+    let api_key = api_key.map(|k| k.trim().to_string());
+    if meta.secret_key.is_none() && api_key.as_deref().is_some_and(|k| !k.is_empty()) {
+        return Err(format!("{} does not use an API key", meta.label));
+    }
+    let endpoint = match endpoint.map(|e| e.trim().trim_end_matches('/').to_string()) {
+        Some(e) if e.is_empty() => None,
+        Some(e) => Some(e),
+        None => web_search_setting().endpoint,
+    };
+    let effective_key = match (&api_key, meta.secret_key) {
+        (Some(k), _) => Some(k.clone()).filter(|k| !k.is_empty()),
+        (None, Some(record)) if provider_secrets::has_stored_key(record) => {
+            provider_secrets::load_provider_keys(record).into_iter().next()
+        }
+        (None, _) => None,
+    };
+    tauri_plugin_websearch::provider::WebSearchConfig {
+        provider: Some(meta.id.to_string()),
+        api_key: effective_key,
+        endpoint: endpoint.clone(),
+    }
+    .create()?;
+
+    if let (Some(key), Some(record)) = (api_key, meta.secret_key) {
+        if key.is_empty() {
+            provider_secrets::delete_provider_keys(record)?;
+        } else {
+            provider_secrets::store_provider_keys(record, &[key])?;
+        }
+    }
+    crate::core::agent::global_config::set_web_search(&WebSearchSection {
+        provider: Some(meta.id.to_string()),
+        endpoint,
+    })
+}
+
+/// Drop `[web_search]` so the keyless default applies again. Stored API keys
+/// are left alone: the desktop reads the same records.
+pub fn cli_web_search_reset() -> Result<PathBuf, String> {
+    crate::core::agent::global_config::set_web_search(&Default::default())
+}
+
+/// The current web search selection as JSON, API key reported as present or
+/// absent only.
+pub fn cli_web_search_status() -> serde_json::Value {
+    let section = crate::core::agent::global_config::web_search_setting();
+    let meta = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref());
+    let has_api_key = meta
+        .and_then(|m| m.secret_key)
+        .is_some_and(crate::core::server::provider_secrets::has_stored_key);
+    serde_json::json!({
+        "provider": meta.map(|m| m.id).or(section.provider.as_deref()),
+        "label": meta.map(|m| m.label),
+        "has_api_key": has_api_key,
+        "endpoint": section.endpoint,
+    })
+}
+
 /// List plugins installed for a project.
 pub fn cli_plugin_list(project: &str) -> Vec<crate::core::agent::plugins::InstalledPlugin> {
     crate::core::agent::plugins::installed(&resolve_project_root(project))

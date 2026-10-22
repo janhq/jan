@@ -244,8 +244,8 @@ async fn execute_text(
         "skill_read" => skill_read(args, ctx),
         "skill_write" => skill_write(args, ctx),
         // Native web tools: compiled into the agent core, not an MCP server.
-        "web_search" => crate::tools::web::web_search(args).await,
-        "web_fetch" => crate::tools::web::web_fetch(args).await,
+        "web_search" => crate::tools::web::web_search(args, ctx.web_search).await,
+        "web_fetch" => crate::tools::web::web_fetch(args, ctx.web_search).await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }

@@ -739,6 +739,9 @@ struct CompositeToolInvoker {
     /// `~/.jan/config.toml` with the project's `[tools]` section.
     env_passthrough: Vec<String>,
     env_set: Vec<(String, String)>,
+    /// Backend for `web_search`/`web_fetch`, resolved once per run from
+    /// `[web_search]` (see [`resolve_web_search`]). `None` keeps the default.
+    web_search: Option<tauri_plugin_websearch::provider::WebSearchConfig>,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -1001,6 +1004,15 @@ fn resolve_env_set(project: Vec<(String, String)>) -> Vec<(String, String)> {
     merge_env_set(global, project)
 }
 
+/// The web tools' backend for this run. `[web_search]` lives in the CLI's
+/// `~/.jan/config.toml`; the desktop has no such file and keeps the default.
+fn resolve_web_search() -> Option<tauri_plugin_websearch::provider::WebSearchConfig> {
+    #[cfg(feature = "cli")]
+    return Some(crate::core::agent::global_config::resolve_web_search());
+    #[cfg(not(feature = "cli"))]
+    None
+}
+
 fn merge_env_passthrough(mut global: Vec<String>, project: Vec<String>) -> Vec<String> {
     global.extend(project);
     global
@@ -1187,6 +1199,7 @@ impl CompositeToolInvoker {
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
+        .with_web_search(self.web_search.as_ref())
         .with_hooks(
             &self.hooks,
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
@@ -2598,6 +2611,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let sandbox = self.sandbox;
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
+                let web_search = self.web_search.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
                 // to be batched concurrently would be no policy at all.
@@ -2620,6 +2634,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
@@ -3883,6 +3898,7 @@ async fn orchestrate_inner(
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
+            web_search: resolve_web_search(),
             project_root: root.clone(),
             allowed_names: allowed_names.clone(),
             permissions: permissions.clone(),
@@ -8735,6 +8751,7 @@ mod tests {
             scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
             env_passthrough: Vec::new(),
             env_set: Vec::new(),
+            web_search: None,
             project_root: root,
             allowed_names: None,
             // Read-only default => write PROMPTS.

@@ -206,6 +206,10 @@ pub struct ToolContext<'a> {
     /// `None` keeps the pull-only behaviour, which is right for a surface with
     /// no conversation to deliver into.
     pub shell_done_sink: Option<ShellDoneSink>,
+    /// The backend `web_search`/`web_fetch` use, as the host's settings chose
+    /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
+    /// in the environment.
+    pub web_search: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -241,6 +245,11 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("plan_mode", &self.plan_mode)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
+            // The config can hold an API key, so only the backend id is shown.
+            .field(
+                "web_search",
+                &self.web_search.map(|c| c.provider.as_deref().unwrap_or("default")),
+            )
             .finish()
     }
 }
@@ -390,7 +399,18 @@ impl<'a> ToolContext<'a> {
             plan_mode: false,
             hook_sink: None,
             shell_done_sink: None,
+            web_search: None,
         }
+    }
+
+    /// Route the web tools to the host's chosen backend. See
+    /// [`Self::web_search`].
+    pub fn with_web_search(
+        mut self,
+        config: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
+    ) -> Self {
+        self.web_search = config;
+        self
     }
 
     /// Report finished background shells to `sink`. See

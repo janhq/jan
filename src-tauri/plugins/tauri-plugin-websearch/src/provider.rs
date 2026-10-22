@@ -75,6 +75,83 @@ pub trait SearchProvider: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String>;
 }
 
+/// Static description of one selectable backend: what settings surfaces need to
+/// render its form (does it need a key, an instance URL) and where its API key
+/// lives in the secret store. The desktop's `WEB_SEARCH_PROVIDERS` uses the
+/// same ids and secret keys, so a key saved on one surface is found by the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderMeta {
+    /// Id accepted by [`create_provider`].
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Works with no API key (a key only upgrades it).
+    pub keyless: bool,
+    /// Secret-store record holding the API key; `None` for key-less backends.
+    pub secret_key: Option<&'static str>,
+    /// Needs a user-supplied instance URL (`endpoint`).
+    pub requires_endpoint: bool,
+}
+
+/// Every backend [`create_provider`] accepts, default first.
+pub const PROVIDERS: &[ProviderMeta] = &[
+    ProviderMeta {
+        id: "exa",
+        label: "Exa",
+        keyless: true,
+        secret_key: Some("exa-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "tavily",
+        label: "Tavily",
+        keyless: false,
+        secret_key: Some("tavily-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "searxng",
+        label: "SearXNG",
+        keyless: true,
+        secret_key: None,
+        requires_endpoint: true,
+    },
+    ProviderMeta {
+        id: "you",
+        label: "You.com",
+        keyless: true,
+        secret_key: Some("you-api-key"),
+        requires_endpoint: false,
+    },
+];
+
+/// Look up a backend by id (case-insensitive; empty/absent is the default).
+pub fn provider_meta(provider: Option<&str>) -> Option<&'static ProviderMeta> {
+    match provider.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        None | Some("") => PROVIDERS.first(),
+        Some(id) => PROVIDERS.iter().find(|p| p.id == id),
+    }
+}
+
+/// A resolved backend selection: what [`create_provider`] is called with. Built
+/// by the host from its own settings store; `Default` is the keyless default.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WebSearchConfig {
+    pub provider: Option<String>,
+    pub api_key: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+impl WebSearchConfig {
+    /// Build the backend this selection names.
+    pub fn create(&self) -> Result<Box<dyn SearchProvider>, String> {
+        create_provider(
+            self.provider.as_deref(),
+            self.api_key.clone(),
+            self.endpoint.clone(),
+        )
+    }
+}
+
 /// Build the backend for `provider` (case-insensitive; empty/absent selects the
 /// default). `api_key` is used by keyed backends; `endpoint` by self-hosted ones
 /// (e.g. a SearXNG instance URL).
@@ -990,6 +1067,22 @@ mod tests {
         assert!(create_provider(None, None, None).is_ok());
         assert!(create_provider(Some(""), None, None).is_ok());
         assert!(create_provider(Some("Exa"), None, None).is_ok());
+    }
+
+    #[test]
+    fn every_listed_provider_is_constructible() {
+        for meta in PROVIDERS {
+            let key = (!meta.keyless).then(|| "k".to_string());
+            let endpoint = meta.requires_endpoint.then(|| "https://x.example".to_string());
+            assert!(
+                create_provider(Some(meta.id), key, endpoint).is_ok(),
+                "{} must be accepted by create_provider",
+                meta.id
+            );
+        }
+        assert_eq!(provider_meta(None).map(|m| m.id), Some("exa"));
+        assert_eq!(provider_meta(Some("Tavily")).map(|m| m.id), Some("tavily"));
+        assert!(provider_meta(Some("brave")).is_none());
     }
 
     #[test]
