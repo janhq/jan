@@ -42,6 +42,7 @@ for (const dir of [
   'src-tauri/resources/pre-install',
   'src-tauri/icons',
   'src-tauri/icons-macos',
+  'src-tauri/icons-windows',
   'web-app/dist',
 ]) {
   mkdirSync(path(dir), { recursive: true })
@@ -99,7 +100,7 @@ for (const icon of [
   'icons/128x128.png',
   'icons/128x128@2x.png',
   'icons-macos/icon.icns',
-  'icons/icon.ico',
+  'icons-windows/icon.ico',
 ]) {
   const target = path('src-tauri', icon)
   if (!existsSync(target)) copyFileSync(path('src-tauri/icons/icon.png'), target)

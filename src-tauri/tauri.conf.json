@@ -70,7 +70,7 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons-macos/icon.icns",
-      "icons/icon.ico"
+      "icons-windows/icon.ico"
     ],
     "resources": ["resources/LICENSE"]
   }

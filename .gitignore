@@ -25,6 +25,8 @@ src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/icons-macos/*
 !src-tauri/icons-macos/icon.png
+src-tauri/icons-windows/*
+!src-tauri/icons-windows/icon.png
 src-tauri/gen/apple
 src-tauri/gen/android
 src-tauri/resources/bin
