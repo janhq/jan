@@ -53,6 +53,7 @@ type ModelYaml = ModelConfig & {
   n_cpu_moe?: number
   n_cpu_ffn?: number
   moe_cache_mib?: number
+  expert_count?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
@@ -701,12 +702,17 @@ export async function generatePreset(
     // cpu-moe / n-cpu-moe keep in host memory, added in 0.7.0. Per-model only,
     // never in [*]: llama.cpp refuses to load a model without experts when it
     // is set ("MoE cache requires a MoE model", llama-moe-cache.cpp), so an
-    // engine-wide value would break every dense and embedding model. The same
+    // engine-wide value would break every dense and embedding model. For the
+    // same reason it is emitted only when the GGUF declares experts
+    // (`expert_count`, recorded at import); a model whose count is not yet
+    // known is treated as dense, since that only skips the cache. The same
     // file also throws under tensor split mode and with no GPU backend, so the
     // key is dropped where the preset can see either: it would only turn a
     // working CPU-offloaded load into a failed one.
     if (
       moeCacheAllowed &&
+      typeof mc.expert_count === 'number' &&
+      mc.expert_count > 0 &&
       typeof mc.moe_cache_mib === 'number' &&
       Number.isFinite(mc.moe_cache_mib) &&
       mc.moe_cache_mib > 0

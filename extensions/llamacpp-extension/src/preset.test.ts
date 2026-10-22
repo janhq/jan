@@ -287,7 +287,7 @@ describe('generatePreset 0.7.0 keys', () => {
 
   it('emits moe-cache-mib only in the section of the model that set it', async () => {
     setupModel('dense', {})
-    setupModel('moe', { moe_cache_mib: 4096 })
+    setupModel('moe', { moe_cache_mib: 4096, expert_count: 128 })
     await generatePreset('/p', '/jan', CONFIG)
     const ini = writtenFiles['/p/router.preset.ini']
     const section = (id: string) =>
@@ -299,7 +299,7 @@ describe('generatePreset 0.7.0 keys', () => {
   // The other two load-time throws in llama-moe-cache.cpp depend on engine-wide
   // settings the preset can see: tensor split mode, and no GPU at all.
   it('drops moe-cache-mib under configurations llama.cpp refuses it in', async () => {
-    setupModel('moe', { moe_cache_mib: 4096 })
+    setupModel('moe', { moe_cache_mib: 4096, expert_count: 128 })
     await generatePreset('/p', '/jan', { split_mode: 'tensor' } as any)
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
 
@@ -310,9 +310,20 @@ describe('generatePreset 0.7.0 keys', () => {
     expect(writtenFiles['/p/router.preset.ini']).toContain('moe-cache-mib = 4096')
   })
 
+  // A per-model value can still be set on a dense model by mistake, and
+  // llama.cpp then refuses to load it. Only a model whose GGUF declares
+  // experts gets the key; an unknown count (not yet detected) is treated as
+  // dense, since a false negative only loses the cache.
+  it('omits moe-cache-mib for a model without experts, or with an unknown count', async () => {
+    setupModel('dense', { moe_cache_mib: 4096, expert_count: 0 })
+    setupModel('unknown', { moe_cache_mib: 4096 })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
+
   it('omits a per-model moe-cache-mib of 0 or below', async () => {
-    setupModel('moe', { moe_cache_mib: 0 })
-    setupModel('moe2', { moe_cache_mib: -5 })
+    setupModel('moe', { moe_cache_mib: 0, expert_count: 128 })
+    setupModel('moe2', { moe_cache_mib: -5, expert_count: 128 })
     await generatePreset('/p', '/jan', CONFIG)
     expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
   })

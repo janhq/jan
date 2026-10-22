@@ -42,6 +42,7 @@ import {
  mergeEmbedResponses,
  detectEmbeddingFromGgufMeta,
  detectMtpLayersFromGgufMeta,
+ detectExpertCountFromGgufMeta,
  resolveSpecDraftKind,
  detectTemplateKwargsFromChatTemplate,
  getDefaultEmbeddingModelId,
@@ -101,6 +102,7 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+const EXPERT_CHECK_VERSION = 1
 
 // The tensor that marks a DSpark draft: it is a DFlash one plus this Markov
 // head (common/speculative.cpp, llama-arch.cpp LLM_TENSOR_DSPARK_MARKOV_W1).
@@ -1409,6 +1411,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
   await this.resolveMtpLayersConfig(modelId, modelConfig)
+  await this.resolveExpertCountConfig(modelId, modelConfig)
   const templateKwargs = await this.resolveTemplateKwargsConfig(
    modelId,
    modelConfig
@@ -1503,6 +1506,63 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   return isEmbedding
+ }
+
+ /**
+  * Record the GGUF's MoE expert count in model.yml, which the preset reads to
+  * decide whether `moe-cache-mib` may be emitted: llama.cpp refuses to load a
+  * model without experts when it is set. Backfilled lazily, like mtp_layers,
+  * for models imported before the count was recorded.
+  */
+ private async resolveExpertCountConfig(
+  modelId: string,
+  modelConfig: ModelConfig
+ ): Promise<number> {
+  const cfg = modelConfig as ModelConfig & {
+   expert_count?: number
+   expert_check_v?: number
+  }
+  if (
+   typeof cfg.expert_count === 'number' &&
+   cfg.expert_check_v === EXPERT_CHECK_VERSION
+  ) {
+   return cfg.expert_count
+  }
+
+  let expertCount = 0
+  try {
+   const janDataFolderPath = await getJanDataFolderPath()
+   const fullModelPath = await joinPath([
+    janDataFolderPath,
+    modelConfig.model_path,
+   ])
+   if (await fs.existsSync(fullModelPath)) {
+    const metadata = await readGgufMetadata(fullModelPath)
+    expertCount = detectExpertCountFromGgufMeta(metadata.metadata)
+   }
+  } catch (e) {
+   logger.warn(`Failed to check expert count for ${modelId}`, e)
+   return cfg.expert_count ?? 0
+  }
+
+  try {
+   const configPath = await joinPath([
+    await this.getProviderPath(),
+    'models',
+    modelId,
+    'model.yml',
+   ])
+   cfg.expert_count = expertCount
+   cfg.expert_check_v = EXPERT_CHECK_VERSION
+   await invoke<void>('write_yaml', {
+    data: cfg,
+    savePath: configPath,
+   })
+  } catch (e) {
+   logger.warn(`Failed to persist expert count for ${modelId}`, e)
+  }
+
+  return expertCount
  }
 
  private async resolveMtpLayersConfig(
@@ -2054,6 +2114,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const fullModelPath = await joinPath([janDataFolderPath, modelPath])
   let isEmbedding = false
   let mtpLayers = 0
+  let expertCount = 0
   let specKind: SpecDraftKind = 'mtp'
   let templateKwargs: TemplateKwarg[] = []
   let resolvedName: string | undefined
@@ -2069,6 +2130,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     isEmbedding = true
    }
    mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+   expertCount = detectExpertCountFromGgufMeta(modelMetadata.metadata)
    templateKwargs = detectTemplateKwargsFromChatTemplate(
     modelMetadata.metadata?.['tokenizer.chat_template']
    )
@@ -2150,6 +2212,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    embedding_check_v: EMBEDDING_CHECK_VERSION,
    mtp_layers: mtpLayers,
    mtp_check_v: MTP_CHECK_VERSION,
+   expert_count: expertCount,
+   expert_check_v: EXPERT_CHECK_VERSION,
    template_kwargs: templateKwargs,
    template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
    // A separate draft gguf is downloaded only to be used, so enable it by

@@ -189,7 +189,7 @@ export const modelSettings = {
     key: 'moe_cache_mib',
     title: 'MoE expert GPU cache (MiB)',
     description:
-      'Experimental. GPU memory for caching the MoE experts kept in the CPU by the settings above, which speeds those models up. MoE models only: a model without experts will not load with this set. Needs a single GPU. Leave empty to disable.',
+      'Experimental. GPU memory for caching the MoE experts kept in the CPU by the settings above, which speeds those models up. Applies to MoE models only and is ignored for any other model. Needs a single GPU. Leave empty to disable.',
     controller_type: 'input',
     controller_props: {
       value: '',
