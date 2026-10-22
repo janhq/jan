@@ -48,6 +48,7 @@ fn options_for(project: &str, flags: &ServeFlags) -> Result<ServeOptions, String
     opts.enabled_skills = settings.enabled_skills;
     opts.allow_network = settings.allow_network.unwrap_or(false);
     opts.sandbox = settings.sandbox.unwrap_or(true);
+    opts.web_search = Some(crate::core::agent::global_config::resolve_web_search());
     opts.served = ServedTools {
         allow_write: flags.allow_write,
         allow_exec: flags.allow_exec,

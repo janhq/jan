@@ -86,6 +86,15 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # to opt in; [] reads JAN.md only. A
 #                                     # project's agent.toml [context] wins
 #
+# [web_search]                        # backend for the web_search/web_fetch
+# provider = "tavily"                 # tools: "exa" (default, keyless),
+#                                     # "tavily" (needs a key), "searxng"
+#                                     # (needs endpoint) or "you". Keys are
+#                                     # kept in the secret store: set them
+#                                     # with /settings or `jan config
+#                                     # web-search --api-key`, not here
+# endpoint = "https://searx.example.com"
+#
 # [experimental]                      # features that may change or go away
 # acp = true                          # allow `jan acp`, the Agent Client
 #                                     # Protocol server editors such as Zed
@@ -208,8 +217,30 @@ struct GlobalConfigToml {
     /// graduating a feature is deleting its key rather than migrating it.
     #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
     experimental: ExperimentalSection,
+    /// `[web_search]` -- which backend answers the native `web_search` and
+    /// `web_fetch` tools. The API key is not here: it lives in the secret
+    /// store, under the record the desktop's Web Search settings use.
+    #[serde(default, skip_serializing_if = "WebSearchSection::is_empty")]
+    web_search: WebSearchSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[web_search]` in `~/.jan/config.toml`. Each key is `None` when unset.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct WebSearchSection {
+    /// Backend id (`exa`, `tavily`, `searxng`, `you`). `None` = Exa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Instance URL for a self-hosted backend (SearXNG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+impl WebSearchSection {
+    fn is_empty(&self) -> bool {
+        self.provider.is_none() && self.endpoint.is_none()
+    }
 }
 
 /// `[tui]` in `~/.jan/config.toml`. Each key is `None` when unset.
@@ -510,6 +541,76 @@ pub(crate) fn prune_threads_enabled() -> bool {
         .ok()
         .and_then(|config| config.prune_threads)
         .unwrap_or(false)
+}
+
+/// `[web_search]` in `~/.jan/config.toml`. Unset on an unreadable or malformed
+/// config: the default backend still works, and a preference file must never
+/// stop a session from starting.
+pub(crate) fn web_search_setting() -> WebSearchSection {
+    load_raw().map(|config| config.web_search).unwrap_or_default()
+}
+
+/// The web tools' backend for a CLI run: `[web_search]` plus the provider's API
+/// key from the secret store. The key is read only when the index says one is
+/// stored, so a run never opens a keychain prompt for a key that is not there.
+///
+/// With no provider chosen the secret store is not touched at all: the default
+/// stays keyless Exa upgraded by `EXA_API_KEY`, exactly as before this setting
+/// existed, rather than silently picking up a key the desktop stored. Once a
+/// provider is chosen its stored key wins over the env var.
+/// An unknown provider id is passed through as-is: building it then fails with
+/// a clear tool error instead of silently searching with a different backend.
+#[cfg(feature = "cli")]
+pub(crate) fn resolve_web_search() -> tauri_plugin_websearch::provider::WebSearchConfig {
+    use crate::core::server::provider_secrets::{has_stored_key, load_provider_keys};
+    let section = web_search_setting();
+    if section.provider.as_deref().is_none_or(|p| p.trim().is_empty()) {
+        return tauri_plugin_websearch::provider::WebSearchConfig::default();
+    }
+    let api_key = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref())
+        .and_then(|meta| meta.secret_key)
+        .filter(|record| has_stored_key(record))
+        .and_then(|record| load_provider_keys(record).into_iter().next());
+    tauri_plugin_websearch::provider::WebSearchConfig {
+        provider: section.provider,
+        api_key,
+        endpoint: section.endpoint,
+    }
+}
+
+/// Persist `[web_search]` into `~/.jan/config.toml`, format-preserving like
+/// [`set_global_key`]. A `None` field removes that key; the table goes too once
+/// it is empty, so resetting leaves no stray header behind.
+#[cfg(feature = "cli")]
+pub(crate) fn set_web_search(section: &WebSearchSection) -> Result<PathBuf, String> {
+    let path = ensure_global_config()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
+
+    let table = doc["web_search"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    if let Some(table) = table.as_table_like_mut() {
+        for (key, value) in [("provider", &section.provider), ("endpoint", &section.endpoint)] {
+            match value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                Some(v) => {
+                    table.insert(key, toml_edit::value(v));
+                }
+                None => {
+                    table.remove(key);
+                }
+            }
+        }
+    }
+    if doc["web_search"].as_table_like().is_some_and(|t| t.is_empty()) {
+        doc.remove("web_search");
+    }
+
+    std::fs::write(&path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
 }
 
 /// Host env-var names the sandboxed `bash` may inherit beyond the base
@@ -1261,6 +1362,34 @@ mod tests {
             );
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
+        });
+    }
+
+    /// `[web_search]` round-trips format-preserving, never lands inside a
+    /// provider table, and an emptied section removes its header.
+    #[test]
+    fn set_web_search_round_trips_and_clears_the_table() {
+        with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "# keep me\n[providers.p]\nbase_url = \"https://x\"\n")
+                .unwrap();
+            set_web_search(&WebSearchSection {
+                provider: Some("searxng".into()),
+                endpoint: Some("https://searx.example".into()),
+            })
+            .expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("# keep me"), "{raw}");
+            let section = web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("searxng"));
+            assert_eq!(section.endpoint.as_deref(), Some("https://searx.example"));
+            assert!(load_global_config().unwrap().contains_key("p"));
+
+            set_web_search(&WebSearchSection::default()).expect("reset");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(!raw.contains("[web_search]"), "{raw}");
+            assert_eq!(web_search_setting(), WebSearchSection::default());
         });
     }
 
