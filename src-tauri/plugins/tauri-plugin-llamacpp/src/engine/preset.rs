@@ -46,7 +46,7 @@ fn section_bodies(ini: &str) -> HashMap<String, Vec<String>> {
 /// Read on the Rust side as well as by the C++ loader because the worker has to
 /// act on two of them before any model is loaded: `slot-save-path` names a
 /// directory llama.cpp *throws* on if it does not exist
-/// (`common/arg.cpp:3580`), and the KV state store has to agree with llama.cpp
+/// (`common/arg.cpp:3635`), and the KV state store has to agree with llama.cpp
 /// on where files land.
 pub fn shared_value(ini: &str, key: &str) -> Option<String> {
     let mut in_shared = false;

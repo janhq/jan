@@ -245,7 +245,11 @@
       "nMin": "Numero minimo token bozza",
       "nMinDescription": "Numero minimo di token da abbozzare per passaggio. Predefinito: 0.",
       "pMin": "Probabilità minima bozza",
-      "pMinDescription": "Probabilità minima per l'elaborazione greedy (0–1). Predefinito: 0.75."
+      "pMinDescription": "Probabilità minima per l'elaborazione greedy (0–1). Predefinito: 0.75.",
+      "probabilistic": "Campionamento probabilistico della bozza",
+      "probabilisticDescription": "Campiona la bozza invece di prendere il token più probabile; il modello la verifica con il campionamento a rifiuto. Se disattivato usa la bozza greedy (predefinito).",
+      "nUbatch": "Dimensione batch della bozza",
+      "nUbatchDescription": "Dimensione fisica del batch del contesto della bozza. Riducila per risparmiare VRAM. 0 usa la dimensione batch del modello (predefinito)."
     }
   },
   "dialogs": {

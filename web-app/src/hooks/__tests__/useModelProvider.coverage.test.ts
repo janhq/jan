@@ -372,6 +372,12 @@ describe('useModelProvider - coverage', () => {
       }, (migrated: any) => {
         expect(migrated.providers[0].models[0].settings.batch_size).toBeDefined()
       }],
+      [19, 'adding the per-model moe_cache_mib control (llama.cpp 0.7.0)', {
+        providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {} }], settings: [] }],
+        deletedModels: [],
+      }, (migrated: any) => {
+        expect(migrated.providers[0].models[0].settings.moe_cache_mib).toBeDefined()
+      }],
       [4, 'adding cpu_moe and n_cpu_moe', {
         providers: [{ provider: 'llamacpp', models: [{ id: 'm1', settings: {} }], settings: [] }],
         deletedModels: [],

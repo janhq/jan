@@ -175,7 +175,8 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
         key === 'batch_size' ||
         key === 'cpu_moe' ||
         key === 'n_cpu_moe' ||
-        key === 'n_cpu_ffn'
+        key === 'n_cpu_ffn' ||
+        key === 'moe_cache_mib'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -412,6 +413,8 @@ type SpecDraftInfo = {
   spec_draft_n_max?: number
   spec_draft_n_min?: number
   spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
 }
 
 export function SpecDraftPanel({ modelId }: { modelId: string }) {
@@ -441,6 +444,8 @@ export function SpecDraftPanel({ modelId }: { modelId: string }) {
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+      spec_draft_sampling?: string | null
+      spec_draft_n_ubatch?: number | null
     }) => {
       try {
         await serviceHub.models().updateMtpSettings(modelId, patch)
@@ -456,7 +461,11 @@ export function SpecDraftPanel({ modelId }: { modelId: string }) {
   const enabled = info.mtp === true
 
   const updateNumber = (
-    key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+    key:
+      | 'spec_draft_n_max'
+      | 'spec_draft_n_min'
+      | 'spec_draft_p_min'
+      | 'spec_draft_n_ubatch',
     raw: string
   ) => {
     const trimmed = raw.trim()
@@ -485,6 +494,7 @@ export function SpecDraftPanel({ modelId }: { modelId: string }) {
             </span>
           </div>
           <Switch
+            aria-label={t('common:modelSettings.specDraft.enable')}
             checked={enabled}
             onCheckedChange={(v) => {
               setInfo({ ...info, mtp: v })
@@ -526,6 +536,44 @@ export function SpecDraftPanel({ modelId }: { modelId: string }) {
             max={1}
             step={0.05}
             onChange={(raw) => updateNumber('spec_draft_p_min', raw)}
+          />
+          <div className="space-y-2">
+            <div className="flex items-start justify-between gap-8">
+              <div className="mb-1 truncate">
+                <span className="font-medium">
+                  {t('common:modelSettings.specDraft.probabilistic')}
+                </span>
+              </div>
+              <Switch
+                aria-label={t('common:modelSettings.specDraft.probabilistic')}
+                checked={info.spec_draft_sampling === 'probabilistic'}
+                onCheckedChange={(v) => {
+                  // Off clears the key so the model tracks upstream's greedy
+                  // default rather than pinning it.
+                  setInfo({
+                    ...info,
+                    spec_draft_sampling: v ? 'probabilistic' : undefined,
+                  })
+                  void persist({
+                    spec_draft_sampling: v ? 'probabilistic' : null,
+                  })
+                }}
+              />
+            </div>
+            <p className="text-muted-foreground leading-normal text-xs">
+              {t('common:modelSettings.specDraft.probabilisticDescription')}
+            </p>
+          </div>
+          <NumberRow
+            label={t('common:modelSettings.specDraft.nUbatch')}
+            description={t(
+              'common:modelSettings.specDraft.nUbatchDescription'
+            )}
+            placeholder="0"
+            value={info.spec_draft_n_ubatch}
+            min={0}
+            step={1}
+            onChange={(raw) => updateNumber('spec_draft_n_ubatch', raw)}
           />
         </>
       )}

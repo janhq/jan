@@ -602,6 +602,8 @@ export class DefaultModelsService implements ModelsService {
     spec_draft_n_max?: number
     spec_draft_n_min?: number
     spec_draft_p_min?: number
+    spec_draft_sampling?: string
+    spec_draft_n_ubatch?: number
   }> {
     try {
       const engine = this.getEngine('llamacpp') as AIEngine & {
@@ -611,6 +613,8 @@ export class DefaultModelsService implements ModelsService {
           spec_draft_n_max?: number
           spec_draft_n_min?: number
           spec_draft_p_min?: number
+          spec_draft_sampling?: string
+          spec_draft_n_ubatch?: number
         }>
       }
       if (engine && typeof engine.getMtpInfo === 'function') {
@@ -629,6 +633,8 @@ export class DefaultModelsService implements ModelsService {
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+      spec_draft_sampling?: string | null
+      spec_draft_n_ubatch?: number | null
     }
   ): Promise<void> {
     const engine = this.getEngine('llamacpp') as AIEngine & {
@@ -639,6 +645,8 @@ export class DefaultModelsService implements ModelsService {
           spec_draft_n_max?: number | null
           spec_draft_n_min?: number | null
           spec_draft_p_min?: number | null
+          spec_draft_sampling?: string | null
+          spec_draft_n_ubatch?: number | null
         }
       ) => Promise<void>
     }
