@@ -1,0 +1,73 @@
+# Hello Provider (sample Jan extension)
+
+A minimal third-party extension that uses every contribution point a worker
+extension has. Start from it when writing your own.
+
+Licensed under Apache-2.0.
+
+| Contribution | What it does |
+|---|---|
+| command `hello.greet` | Shows a toast (`ui.notify`) with the `greeting` setting and bumps the status item |
+| command `hello.ping` | `ctx.http.fetch` of `http://127.0.0.1:11999/v1/models`, or of the URL passed as its argument (anything outside the grants fails with `E_PERMISSION`) |
+| setting `greeting` | Text input, default `Hello`; the status item follows changes |
+| status item `hello.status` | `<greeting> (<count>)`; clicking runs `hello.greet` |
+| tool `echo_upper` | Returns `text` upper-cased; with `delayMs` it waits first and stops at once when the call is cancelled |
+| provider `hello-local` | OpenAI-compatible at `http://127.0.0.1:11999/v1`; `listModels` reports `hello-1` |
+
+Permissions: `ui:notify`, `tools`, `providers` and `network:127.0.0.1` (a
+provider needs network access to its `baseUrl` host).
+
+## How it runs
+
+Jan runs each third-party extension in its own Web Worker. The host builds
+one script from its runtime prelude followed by this bundle, so the bundle
+has to be:
+
+- a single file, `format: 'iife'` with `name: 'JanExtension'` (see
+  `rolldown.config.mjs`), exporting `activate(ctx)` and optionally
+  `deactivate()`;
+- free of runtime imports. Import only types from `@janhq/extension-api`;
+  everything else goes through `ctx`.
+
+Before the bundle runs, the prelude removes `fetch`, `XMLHttpRequest`,
+`WebSocket`, `importScripts`, IndexedDB, the Tauri globals and similar from
+the worker. `ctx.http.fetch` is the only way to reach the network, and the
+host checks every call (and every redirect) against the granted
+`network:<host>` permissions.
+
+The host runs inference for `hello-local` against its `baseUrl` itself;
+nothing streams through the worker. Start any OpenAI-compatible server on
+port 11999 to chat with it.
+
+## Build
+
+From the repository root (yarn v4):
+
+```bash
+yarn install
+yarn build:extension-api && yarn build:extension-runtime
+yarn workspace @janhq/sample-hello-provider build   # type-check + dist/index.js
+yarn vitest run --project @janhq/sample-hello-provider
+```
+
+`yarn build:samples` builds every sample. The tests rebuild `dist/index.js`
+themselves (`vitest.global-setup.mjs`).
+
+## Load it unpacked (development builds)
+
+Once the dev loader (P2-4) is in: in a development build of Jan
+(`yarn dev:tauri`), open Settings > Extensions, choose **Load unpacked** and
+pick this folder (the one holding `package.json`). Jan validates the `jan`
+manifest, lists the permissions it requests, and starts `dist/index.js` in a
+worker. A dev-loaded extension is labelled "Development" and is not kept
+across restarts.
+
+## Tests
+
+- `src/__tests__/index.test.ts`: `activate` against an in-memory context.
+- `src/__tests__/manifest.test.ts`: the manifest passes the host's validator.
+- `src/__tests__/bundle.test.ts`: the built bundle meets the bundle contract
+  and boots behind the real prelude in the worker sandbox.
+- `web-app/src/lib/extensions/__tests__/sample.integration.test.ts`: the
+  built bundle through the app's real `ExtensionHost` (dispatcher,
+  contribution store, settings store, tools, providers, network checks).

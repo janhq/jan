@@ -7,7 +7,8 @@
       "core",
       "web-app",
       "extensions/*",
-      "packages/*"
+      "packages/*",
+      "extensions-samples/*"
     ]
   },
   "scripts": {
@@ -20,7 +21,7 @@
     "test:core": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/core",
     "test:web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/web-app",
     "test:ext": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project '@janhq/*-extension' --project @janhq/extensions",
-    "test:packages": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/extension-api --project @janhq/extension-runtime",
+    "test:packages": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/extension-api --project @janhq/extension-runtime --project @janhq/sample-hello-provider",
     "test:all": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest",
     "test:ui": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --ui",
@@ -51,7 +52,8 @@
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extension-api": "yarn workspace @janhq/extension-api build",
     "build:extension-runtime": "yarn workspace @janhq/extension-runtime build",
-    "build:extensions": "yarn build:extension-api && yarn build:extension-runtime && yarn workspace @janhq/core build && yarn workspaces foreach -Apt --include '@janhq/*-extension' run build",
+    "build:samples": "yarn workspaces foreach -Apt --include '@janhq/sample-*' run build",
+    "build:extensions": "yarn build:extension-api && yarn build:extension-runtime && yarn workspace @janhq/core build && yarn workspaces foreach -Apt --include '@janhq/*-extension' run build && yarn build:samples",
     "prepare": "husky",
     "e2e": "yarn build:e2e:app && cd e2e && yarn install --immutable && yarn test",
     "build:e2e:app": "yarn build:icon && node ./scripts/stub-tauri-resources.mjs && yarn build:e2e:deps && cross-env IS_TAURI=true yarn build:web && cargo build --locked --manifest-path src-tauri/Cargo.toml --features e2e --bin Jan-Desktop",

@@ -2905,6 +2905,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@janhq/sample-hello-provider@workspace:extensions-samples/hello-provider":
+  version: 0.0.0-use.local
+  resolution: "@janhq/sample-hello-provider@workspace:extensions-samples/hello-provider"
+  dependencies:
+    "@janhq/extension-api": "workspace:*"
+    "@janhq/extension-runtime": "workspace:*"
+    "@types/node": "npm:^22.10.0"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/tauri-plugin-agent-tools-api@link:../src-tauri/plugins/tauri-plugin-agent-tools::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-agent-tools-api@link:../src-tauri/plugins/tauri-plugin-agent-tools::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
