@@ -5,6 +5,12 @@ declare module 'react-syntax-highlighter-virtualized-renderer'
 type AppCore = {
   api: APIs
   extensionManager: ExtensionManager | undefined
+  /**
+   * Only for the legacy llamacpp/mlx classes, which cannot import web-app
+   * modules, to reach host services until they migrate (P4). App code uses
+   * getExtensionHost().
+   */
+  extensionHost?: import('@/lib/extensions/host').ExtensionHost
 }
 
 declare global {
