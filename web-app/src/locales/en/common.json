@@ -259,6 +259,7 @@
   "temporaryChatTooltip": "Temporary chat won't appear in your history",
   "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
   "searchModels": "Search models...",
+  "sortModelsByName": "Sort models by name",
   "searchStyles": "Search styles...",
   "createAssistant": "Create Assistant",
   "enterApiKey": "Enter API Key",

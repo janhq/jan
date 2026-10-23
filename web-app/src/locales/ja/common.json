@@ -163,6 +163,7 @@
   "temporaryChatTooltip": "一時的なチャットは履歴に表示されません",
   "noResultsFoundDesc": "検索に一致するチャットが見つかりませんでした。別のキーワードをお試しください。",
   "searchModels": "モデルを検索...",
+  "sortModelsByName": "モデルを名前順に並べる",
   "searchStyles": "スタイルを検索...",
   "createAssistant": "アシスタントを作成",
   "enterApiKey": "APIキーを入力",
