@@ -160,7 +160,7 @@ const continueReplaceIds = new Map<string, string>()
 // "Increase Context Size" button to resume from.
 const pendingContinuations = new Map<
   string,
-  { message: UIMessage; text: string }
+  { message: UIMessage; content: { text: string; reasoning: string } }
 >()
 // The n_ctx the thread's local model launched with, read by isContextLimitStop.
 const launchedCtxLens = new Map<string, number | undefined>()
@@ -168,12 +168,16 @@ const launchedCtxLens = new Map<string, number | undefined>()
 // cancels it.
 const titleAborts = new Map<string, AbortController>()
 
-// The visible text a reply generated so far.
-const partialTextOf = (message: UIMessage) =>
-  message.parts
-    .filter((p) => p.type === 'text')
-    .map((p) => (p as { type: 'text'; text: string }).text)
-    .join('')
+// The text and reasoning a reply generated so far: what a resume replays as
+// the assistant prefill, so a thinking model keeps its reasoning.
+const partialOf = (message: UIMessage) => {
+  const collect = (type: 'text' | 'reasoning') =>
+    message.parts
+      .filter((p) => p.type === type)
+      .map((p) => (p as { text: string }).text)
+      .join('')
+  return { text: collect('text'), reasoning: collect('reasoning') }
+}
 
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
@@ -543,9 +547,9 @@ function ThreadDetail() {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
           // button - auto-increase was removed; the user explicitly opts in.
-          const partialText = partialTextOf(message)
-          if (partialText) {
-            pendingContinuations.set(threadId, { message, text: partialText })
+          const content = partialOf(message)
+          if (content.text || content.reasoning) {
+            pendingContinuations.set(threadId, { message, content })
           }
           // Stamped on the thread's own messages, so a thread that finished in
           // the background shows the banner when the user returns to it.
@@ -1913,13 +1917,7 @@ function ThreadDetail() {
     (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
-      const collect = (type: 'text' | 'reasoning') =>
-        msg.parts
-          .filter((p) => p.type === type)
-          .map((p) => (p as { text: string }).text)
-          .join('')
-      const text = collect('text')
-      const reasoning = collect('reasoning')
+      const { text, reasoning } = partialOf(msg)
       if (!text && !reasoning) return
       setContinueFromContent({ text, reasoning })
       continueReplaceIds.set(threadId, messageId)
@@ -1992,10 +1990,14 @@ function ThreadDetail() {
     // `stopped`, that hydration restored. Read before the awaits below, while
     // the open thread is still this one.
     const lastMessage = chatMessagesRef.current.at(-1)
-    const storedPartial =
+    const stoppedPartial =
       lastMessage?.role === 'assistant' &&
       (lastMessage.metadata as { stopped?: boolean } | undefined)?.stopped
-        ? { message: lastMessage, text: partialTextOf(lastMessage) }
+        ? { message: lastMessage, content: partialOf(lastMessage) }
+        : undefined
+    const storedPartial =
+      stoppedPartial?.content.text || stoppedPartial?.content.reasoning
+        ? stoppedPartial
         : undefined
 
     const updateProvider = useModelProvider.getState().updateProvider
@@ -2082,12 +2084,11 @@ function ThreadDetail() {
     // The prefill goes on this thread's own transport: the user may have
     // opened another thread while the model reloaded.
     const pending =
-      takeFrom(pendingContinuations, threadId) ??
-      (storedPartial?.text ? storedPartial : undefined)
+      takeFrom(pendingContinuations, threadId) ?? storedPartial
     if (pending) {
       useChatSessions
         .getState()
-        .sessions[threadId]?.transport.setContinueFromContent(pending.text)
+        .sessions[threadId]?.transport.setContinueFromContent(pending.content)
       setPendingContinue({ threadId, message: pending.message })
       // The partial is stored (see onFinish), so the resumed reply replaces it
       // in place rather than forking a second version of the same answer.
