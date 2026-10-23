@@ -82,8 +82,7 @@ describe('CoworkAskCard', () => {
   it('free text and options are mutually exclusive, per the QuestionResult contract', () => {
     render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     fireEvent.click(screen.getByText('Small'))
-    fireEvent.click(screen.getByText('common:askSomethingElse'))
-    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElsePlaceholder'), {
+    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
       target: { value: 'neither' },
     })
     fireEvent.click(submitButton())
@@ -95,11 +94,31 @@ describe('CoworkAskCard', () => {
 
   it('cannot submit on empty free text', () => {
     render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
-    fireEvent.click(screen.getByText('common:askSomethingElse'))
     expect(submitButton()).toBeDisabled()
-    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElsePlaceholder'), {
+    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
       target: { value: '   ' },
     })
+    expect(submitButton()).toBeDisabled()
+  })
+
+  it('shows the free-text input up front, without clicking anything', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    expect(screen.getByPlaceholderText('common:askSomethingElse')).toBeInTheDocument()
+  })
+
+  it('single-select shows numbers and the number keys pick an option', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument() // free-text row
+    fireEvent.keyDown(window, { key: '2' })
+    fireEvent.click(submitButton())
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Large'] }])
+  })
+
+  it('multi-select keeps checkboxes (no numbers) and ignores number keys', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    expect(screen.queryByText('1')).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: '1' })
     expect(submitButton()).toBeDisabled()
   })
 
@@ -117,6 +136,77 @@ describe('CoworkAskCard', () => {
       { id: 'a', selected: ['A1'] },
       { id: 'b', selected: ['B1'] },
     ])
+  })
+
+  it('blank text never wipes an option pick', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    fireEvent.click(screen.getByText('Small'))
+    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
+      target: { value: ' ' },
+    })
+    fireEvent.click(submitButton())
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Small'] }])
+  })
+
+  it('picking an option clears leftover free text', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    const input = screen.getByPlaceholderText('common:askSomethingElse') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'foo' } })
+    fireEvent.click(screen.getByText('Large'))
+    expect(input.value).toBe('')
+  })
+
+  it('the number after the last option focuses the free-text input', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    fireEvent.keyDown(window, { key: '3' })
+    expect(screen.getByPlaceholderText('common:askSomethingElse')).toHaveFocus()
+  })
+
+  it('ignores digits typed into other inputs, with modifiers, or out of range', () => {
+    render(
+      <>
+        <textarea data-testid="chat" />
+        <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
+      </>
+    )
+    fireEvent.keyDown(screen.getByTestId('chat'), { key: '1' })
+    fireEvent.keyDown(window, { key: '1', metaKey: true })
+    fireEvent.keyDown(window, { key: '9' })
+    expect(submitButton()).toBeDisabled()
+  })
+
+  it('Enter in the input does not submit while an earlier question is unanswered', () => {
+    render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+    fireEvent.click(screen.getByLabelText('common:askNext'))
+    const input = screen.getByPlaceholderText('common:askSomethingElse')
+    fireEvent.change(input, { target: { value: 'typed' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onRespond).not.toHaveBeenCalled()
+  })
+
+  it('Enter during IME composition does not advance', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    const input = screen.getByPlaceholderText('common:askSomethingElse')
+    fireEvent.change(input, { target: { value: 'x' } })
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+    expect(onRespond).not.toHaveBeenCalled()
+  })
+
+  it('Enter on the page continues after a number pick', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    fireEvent.keyDown(window, { key: '1' })
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Small'] }])
+  })
+
+  it('removes the key listener on unmount', () => {
+    const { unmount } = render(
+      <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
+    )
+    unmount()
+    fireEvent.keyDown(window, { key: '1' })
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    expect(onRespond).not.toHaveBeenCalled()
   })
 
   it('Skip declines the whole request (the core has no per-question skip)', () => {

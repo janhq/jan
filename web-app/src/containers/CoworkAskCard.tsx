@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,7 @@ import type { AskAnswer, AskRequestPayload } from '@/types/coworkSession'
 /** Sentinel for the free-text row; never a real option label. */
 const OTHER = '\u0000other'
 
-/** Square check used by the option rows. No checkbox primitive exists in `ui/`. */
+/** Square check for multi-select rows. No checkbox primitive exists in `ui/`. */
 function CheckSquare({ checked }: { checked: boolean }) {
   return (
     <span
@@ -21,6 +21,23 @@ function CheckSquare({ checked }: { checked: boolean }) {
       )}
     >
       {checked && <Check size={11} strokeWidth={3} />}
+    </span>
+  )
+}
+
+/** Numbered badge for single-select rows; fills when selected. Matches the 1–9 shortcuts. */
+function NumberBadge({ n, checked }: { n: number; checked: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-[11px] font-medium tabular-nums transition-colors',
+        checked
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-main-view-fg/10 text-main-view-fg/60'
+      )}
+    >
+      {n}
     </span>
   )
 }
@@ -45,6 +62,14 @@ export function CoworkAskCard({
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [custom, setCustom] = useState<Record<string, string>>({})
+  const otherInputRef = useRef<HTMLInputElement>(null)
+  const keyHandlerRef = useRef<((e: KeyboardEvent) => void) | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandlerRef.current?.(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // A new request is a clean slate; keeping prior picks would silently answer
   // the next question with the previous one's selections.
@@ -70,13 +95,22 @@ export function CoworkAskCard({
     [questions, selected, custom]
   )
 
-  if (!requestId || !question) return null
+  if (!requestId || !question) {
+    // Don't leave the previous render's closure answering digit presses.
+    keyHandlerRef.current = null
+    return null
+  }
 
   const picks = selected[question.id] ?? []
   const isLast = index === questions.length - 1
   const usingCustom = picks.includes(OTHER)
 
   const toggle = (label: string) => {
+    // Picking an option drops the free-text answer, so don't leave its text
+    // sitting in the input looking like the live answer.
+    if (label !== OTHER && picks.includes(OTHER)) {
+      setCustom((c) => ({ ...c, [question.id]: '' }))
+    }
     setSelected((prev) => {
       const current = prev[question.id] ?? []
       // Free text is exclusive with options: the contract allows one or the
@@ -110,6 +144,44 @@ export function CoworkAskCard({
   }
 
   const advance = () => (isLast ? submit() : setIndex((i) => i + 1))
+
+  // Single-select only: 1–9 pick the matching option; the number after the last
+  // option focuses the free-text row. Ignored while typing so digits still reach
+  // inputs.
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (question.multi) return
+    if (e.defaultPrevented || e.isComposing || e.repeat) return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    const el = e.target instanceof HTMLElement ? e.target : null
+    if (
+      el &&
+      (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) ||
+        el.isContentEditable ||
+        el.closest(
+          '[role=textbox],[role=combobox],[role=listbox],[role=menu],[role=dialog],[role=slider]'
+        ))
+    ) {
+      return
+    }
+    // Keyboard-only path: after a number pick, Enter continues. Only when focus
+    // is on the page itself, so it never double-fires a focused button.
+    if (e.key === 'Enter') {
+      if ((!el || el === document.body) && (isLast ? allAnswered : isAnswered(question.id))) {
+        e.preventDefault()
+        advance()
+      }
+      return
+    }
+    if (!/^[1-9]$/.test(e.key)) return
+    const n = Number(e.key)
+    if (n <= question.options.length) {
+      e.preventDefault()
+      toggle(question.options[n - 1].label)
+    } else if (n === question.options.length + 1) {
+      e.preventDefault()
+      otherInputRef.current?.focus()
+    }
+  }
   // Declining resolves the whole request as cancelled — the core has no
   // per-question skip, since every question must come back answered.
   const decline = () => onRespond(requestId, null)
@@ -162,11 +234,18 @@ export function CoworkAskCard({
             <button
               key={option.label}
               type="button"
+              role={question.multi ? 'checkbox' : 'radio'}
+              aria-checked={checked}
+              aria-keyshortcuts={question.multi || i > 8 ? undefined : String(i + 1)}
               onClick={() => toggle(option.label)}
               title={option.description}
               className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-main-view-fg/5"
             >
-              <CheckSquare checked={checked} />
+              {question.multi ? (
+                <CheckSquare checked={checked} />
+              ) : (
+                <NumberBadge n={i + 1} checked={checked} />
+              )}
               <span className="min-w-0 flex-1">
                 <span className="text-[13px] leading-5">{option.label}</span>
                 {question.recommended === i && (
@@ -183,40 +262,59 @@ export function CoworkAskCard({
             </button>
           )
         })}
-        <button
-          type="button"
-          onClick={() => toggle(OTHER)}
+        {/* Always-visible input so users can see they can type their own answer. */}
+        <div
+          onClick={() => otherInputRef.current?.focus()}
           className={cn(
-            'flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-main-view-fg/5',
+            'flex items-center gap-2 rounded-md px-2 py-1',
             usingCustom && 'bg-main-view-fg/5'
           )}
         >
-          <CheckSquare checked={usingCustom} />
-          <span className="text-[13px] leading-5">{t('common:askSomethingElse')}</span>
-        </button>
-        {usingCustom && (
+          {question.multi ? (
+            <CheckSquare checked={usingCustom} />
+          ) : (
+            <NumberBadge n={question.options.length + 1} checked={usingCustom} />
+          )}
           <Input
-            autoFocus
+            ref={otherInputRef}
             value={custom[question.id] ?? ''}
-            onChange={(e) =>
-              setCustom((prev) => ({ ...prev, [question.id]: e.target.value }))
-            }
+            onChange={(e) => {
+              const value = e.target.value
+              setCustom((prev) => ({ ...prev, [question.id]: value }))
+              // Real text selects the free-text answer (exclusive with options).
+              // Blank text never touches an option pick; it only releases the
+              // free-text selection when that was the active one.
+              setSelected((prev) => {
+                const current = prev[question.id] ?? []
+                if (value.trim()) return { ...prev, [question.id]: [OTHER] }
+                if (current.includes(OTHER)) return { ...prev, [question.id]: [] }
+                return prev
+              })
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && isAnswered(question.id)) {
+              if (e.key === 'Enter') {
+                // Confirming an IME composition must not advance or submit.
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return
                 e.preventDefault()
-                advance()
+                if (isLast ? allAnswered : isAnswered(question.id)) {
+                  e.currentTarget.blur()
+                  advance()
+                }
+              } else if (e.key === 'Escape') {
+                e.currentTarget.blur()
               }
             }}
-            placeholder={t('common:askSomethingElsePlaceholder')}
-            className="mx-1 mb-1 h-8"
+            placeholder={t('common:askSomethingElse')}
+            aria-label={t('common:askSomethingElse')}
+            className="h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px]"
           />
-        )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 border-t px-3 py-2">
         <span className="text-xs text-main-view-fg/50">
-          {question.multi || picks.length > 0
-            ? t('common:askSelectedCount', { count: picks.filter((p) => p !== OTHER).length })
+          {question.multi
+            ? t('common:askSelectedCount', { count: picks.length })
             : null}
         </span>
         <div className="ml-auto flex items-center gap-1.5">
