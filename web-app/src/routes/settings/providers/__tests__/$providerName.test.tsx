@@ -615,6 +615,59 @@ describe('ProviderDetail route', () => {
       expect(h.toastError).toHaveBeenCalled()
     })
 
+    it('refreshes a custom OpenAI-compatible provider with no API key', async () => {
+      h.providerMap['custom-llm'] = {
+        provider: 'custom-llm',
+        active: true,
+        api_key: '',
+        api_key_fallbacks: [],
+        base_url: 'http://127.0.0.1:8000/v1',
+        models: [],
+        settings: [],
+      }
+      h.params.providerName = 'custom-llm'
+      h.providersSvc.fetchModelsFromProvider = vi
+        .fn()
+        .mockResolvedValue(['local-model'])
+      renderComponent()
+      const addModel = screen.getByTestId('add-model')
+      const refreshBtn = addModel.parentElement?.querySelector(
+        'button'
+      ) as HTMLButtonElement
+      await act(async () => {
+        fireEvent.click(refreshBtn)
+      })
+      await waitFor(() => {
+        expect(h.providersSvc.fetchModelsFromProvider).toHaveBeenCalled()
+      })
+      expect(h.toastSuccess).toHaveBeenCalled()
+      expect(h.toastError).not.toHaveBeenCalled()
+    })
+
+    it('refresh still errors for a custom Anthropic provider with no API key', async () => {
+      h.providerMap['claude-proxy'] = {
+        provider: 'claude-proxy',
+        active: true,
+        api_type: 'anthropic',
+        api_key: '',
+        api_key_fallbacks: [],
+        base_url: 'https://api.anthropic.com/v1',
+        models: [],
+        settings: [],
+      }
+      h.params.providerName = 'claude-proxy'
+      renderComponent()
+      const addModel = screen.getByTestId('add-model')
+      const refreshBtn = addModel.parentElement?.querySelector(
+        'button'
+      ) as HTMLButtonElement
+      await act(async () => {
+        fireEvent.click(refreshBtn)
+      })
+      expect(h.toastError).toHaveBeenCalled()
+      expect(h.providersSvc.fetchModelsFromProvider).not.toHaveBeenCalled()
+    })
+
     it('refresh shows "no new models" toast when all models already exist', async () => {
       h.providersSvc.fetchModelsFromProvider = vi.fn().mockResolvedValue(['gpt-4'])
       renderComponent()

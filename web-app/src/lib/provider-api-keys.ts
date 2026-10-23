@@ -38,3 +38,14 @@ export function providerHasRemoteApiKeys(provider: {
 }): boolean {
   return providerRemoteApiKeyChain(provider).length > 0
 }
+
+/**
+ * Anthropic-compatible endpoints reject unauthenticated requests.
+ * OpenAI-compatible custom servers (LM Studio, mlx_lm.server, vLLM, …)
+ * often do not require a key.
+ */
+export function customProviderRequiresApiKey(
+  apiType: ProviderApiType | undefined
+): boolean {
+  return apiType === 'anthropic'
+}
