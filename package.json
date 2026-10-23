@@ -19,7 +19,7 @@
     "test": "yarn test:core && yarn test:web && yarn test:ext",
     "test:core": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/core",
     "test:web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/web-app",
-    "test:ext": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project '@janhq/*-extension'",
+    "test:ext": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project '@janhq/*-extension' --project @janhq/extensions",
     "test:all": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest",
     "test:ui": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --ui",

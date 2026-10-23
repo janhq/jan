@@ -19,6 +19,16 @@ export default defineConfig({
       ...(process.platform === 'darwin' ? ['./extensions/mlx-extension'] : []),
       './extensions/rag-extension',
       './extensions/vector-db-extension',
+      // Repo-wide guards over every extension. Inline rather than inside one
+      // extension so it runs on every OS, including where mlx is skipped.
+      {
+        test: {
+          name: '@janhq/extensions',
+          root: './extensions',
+          include: ['*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
     coverage: {
       provider: 'v8',
