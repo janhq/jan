@@ -31,7 +31,3 @@ declare module '@janhq/vector-db-extension' {
   const ext: BundledExtensionCtor
   export default ext
 }
-declare module '@janhq/conversational-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
-}

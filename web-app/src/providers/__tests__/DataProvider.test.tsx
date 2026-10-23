@@ -18,7 +18,6 @@ const h = vi.hoisted(() => {
     setThreads: vi.fn(),
     setThreadsLoading: vi.fn(),
     threadsInStore: {} as Record<string, unknown>,
-    registrationListeners: new Set<() => void>(),
     setLastServerModels: vi.fn(),
     setServerPort: vi.fn(),
     setServerStatus: vi.fn(),
@@ -72,17 +71,6 @@ vi.mock('@/hooks/useMCPServers', () => ({
 
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({ setAssistants: h.setAssistants }),
-}))
-
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      onRegistrationChange: (cb: () => void) => {
-        h.registrationListeners.add(cb)
-        return () => h.registrationListeners.delete(cb)
-      },
-    }),
-  },
 }))
 
 vi.mock('@/hooks/useThreads', () => {
@@ -221,7 +209,6 @@ describe('DataProvider', () => {
     resetHubState()
     h.providers = []
     h.threadsInStore = {}
-    h.registrationListeners.clear()
     h.isDev.mockReturnValue(false)
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.providerRemoteApiKeyChain.mockReturnValue(['key-1'])
@@ -270,9 +257,9 @@ describe('DataProvider', () => {
     })
   })
 
-  it('retries fetchThreads when it throws (extension not ready) and never wipes the list on failure', async () => {
+  it('retries fetchThreads when it throws (backend not ready) and never wipes the list on failure', async () => {
     hubState.fetchThreads
-      .mockRejectedValueOnce(new Error('Conversational extension not available yet'))
+      .mockRejectedValueOnce(new Error('backend not ready'))
       .mockResolvedValueOnce([{ id: 't1' }])
 
     render(<DataProvider />)
@@ -309,12 +296,12 @@ describe('DataProvider', () => {
     })
   })
 
-  it('refetches threads when an extension registers after retries are exhausted', async () => {
+  it('gives up after the bounded retries and stops the loading state', async () => {
     vi.useFakeTimers()
     try {
       hubState.fetchThreads.mockRejectedValue(new Error('not ready'))
 
-      const { unmount } = render(<DataProvider />)
+      render(<DataProvider />)
 
       // 1 initial attempt + 20 bounded retries (backoff capped at 1s).
       await act(async () => {
@@ -322,17 +309,12 @@ describe('DataProvider', () => {
       })
       expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
       expect(h.setThreads).not.toHaveBeenCalled()
+      expect(h.setThreadsLoading).toHaveBeenCalledWith(false)
 
-      // A late extension registration re-arms the fetch.
-      hubState.fetchThreads.mockResolvedValue([{ id: 't1' }])
       await act(async () => {
-        h.registrationListeners.forEach((cb) => cb())
+        await vi.advanceTimersByTimeAsync(30000)
       })
-      expect(hubState.fetchThreads).toHaveBeenCalledTimes(22)
-      expect(h.setThreads).toHaveBeenCalledWith([{ id: 't1' }])
-
-      unmount()
-      expect(h.registrationListeners.size).toBe(0)
+      expect(hubState.fetchThreads).toHaveBeenCalledTimes(21)
     } finally {
       vi.useRealTimers()
     }

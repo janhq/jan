@@ -36,7 +36,6 @@ export interface ContextDeps {
   settings: ExtensionSettingsStore
   storage: AppSettingsBackend
   notify: Notify
-  /** Absent until the conversations service exists (P1-4). */
   conversations?: ConversationsApi
   /** Absent until the network path exists (P2). */
   http?: HttpApi

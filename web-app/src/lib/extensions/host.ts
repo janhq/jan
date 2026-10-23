@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import type { BuiltinExtension } from './builtins'
 import { createContext, type Notify } from './context'
+import { createConversationsApi } from './conversations'
 import { ContributionStore, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
 import {
@@ -285,6 +286,9 @@ export function getExtensionHost(): ExtensionHost {
     secrets,
     notify,
     contributions: new ContributionStore(useContributions),
+    // Resolved per call: the hub is ready before any extension activates,
+    // but the host may be constructed earlier.
+    conversations: createConversationsApi(getServiceHub),
   })
   return host
 }

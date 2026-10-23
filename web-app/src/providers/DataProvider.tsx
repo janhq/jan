@@ -12,7 +12,6 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
-import { ExtensionManager } from '@/lib/extension'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
@@ -187,8 +186,8 @@ export function DataProvider() {
   const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
   const setThreadsLoading = useThreads((s) => s.setThreadsLoading)
-  // The thread fetch re-runs on extension re-registration; the sandbox sweep
-  // should not.
+  // The thread fetch re-runs whenever its effect does (StrictMode remount,
+  // a new service hub); the sandbox sweep should run once per session.
   const sweptWorkspaces = useRef(false)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -285,9 +284,9 @@ export function DataProvider() {
   }, [serviceHub])
 
   useEffect(() => {
-    // fetchThreads throws while the Conversational extension is still loading
-    // (startup race, e.g. reload mid-stream). Retry with backoff instead of
-    // letting a single failed fetch leave the thread list permanently empty.
+    // fetchThreads throws while the backend is not ready yet (startup race,
+    // e.g. reload mid-stream). Retry with backoff instead of letting a single
+    // failed fetch leave the thread list permanently empty.
     let cancelled = false
     let attempt = 0
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -328,22 +327,10 @@ export function DataProvider() {
           timer = setTimeout(load, Math.min(1000, 150 * attempt))
         })
     }
-    // A late (or re-)registration re-arms the fetch even after the bounded
-    // retries above are exhausted, e.g. when extension setup itself failed
-    // and only recovers later.
-    const unsubscribe = ExtensionManager.getInstance().onRegistrationChange(
-      () => {
-        if (cancelled) return
-        attempt = 0
-        clearTimeout(timer)
-        load()
-      }
-    )
     load()
     return () => {
       cancelled = true
       clearTimeout(timer)
-      unsubscribe()
     }
   }, [serviceHub, setThreads, setThreadsLoading])
 
