@@ -201,7 +201,13 @@ export class ExtensionHost {
           conversations: this.options.conversations,
           http: this.options.http,
         },
-        { services: this.services, fs, appSettings, downloads }
+        {
+          services: this.services,
+          fs,
+          appSettings,
+          downloads,
+          secrets: { get: (key) => this.options.secrets.get(key) },
+        }
       )
       await entry.module.activate(entry.ctx)
       entry.hosted.state = 'active'

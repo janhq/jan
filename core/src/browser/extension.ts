@@ -3,7 +3,6 @@ import { ModelManager } from './models'
 import { logger } from './logger'
 
 export enum ExtensionTypeEnum {
-  Assistant = 'assistant',
   Inference = 'inference',
   MCP = 'mcp',
   RAG = 'rag',

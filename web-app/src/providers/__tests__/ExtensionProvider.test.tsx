@@ -47,6 +47,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ emit: h.emit }))
 
 import { ExtensionProvider } from '../ExtensionProvider'
+import { getHostBuiltins } from '@/lib/extensions/builtins'
 
 const renderProvider = () =>
   render(
@@ -106,8 +107,7 @@ describe('ExtensionProvider', () => {
     renderProvider()
     await screen.findByTestId('child')
     expect(window.core?.extensionHost).toBe(h.host)
-    // No built-in has migrated to the host yet, so the list is empty.
-    expect(h.host.activateBuiltins).toHaveBeenCalledWith([])
+    expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
     expect(h.calls).toEqual(['host', 'legacy'])
   })
 

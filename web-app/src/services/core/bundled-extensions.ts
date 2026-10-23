@@ -1,7 +1,5 @@
 import type { BaseExtension } from '@janhq/core'
 import type { ExtensionManifest } from '@/lib/extension'
-import * as assistant from '../../../../extensions/assistant-extension/package.json'
-import * as download from '../../../../extensions/download-extension/package.json'
 import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
 import * as rag from '../../../../extensions/rag-extension/package.json'
 import * as vectorDb from '../../../../extensions/vector-db-extension/package.json'
@@ -26,6 +24,9 @@ type BundledEntry = {
   mobile?: boolean
 }
 
+// Legacy BaseExtension built-ins; the ones migrated to activate(ctx) are
+// HOST_BUILTINS in lib/extensions/builtins.ts.
+//
 // Manifest fields come from each package.json so they cannot drift. Each field
 // is read off a namespace import (never the whole object) so the bundler keeps
 // only these named exports and drops scripts, dependencies and the rest.
@@ -34,20 +35,6 @@ type BundledEntry = {
 // bootstrap graph; they load only when extensions are enumerated (after the
 // hub is ready), matching the pre-bundling load order.
 const ENTRIES: BundledEntry[] = [
-  {
-    load: () => import('@janhq/assistant-extension'),
-    name: assistant.name,
-    productName: assistant.productName,
-    version: assistant.version,
-    description: assistant.description,
-  },
-  {
-    load: () => import('@janhq/download-extension'),
-    name: download.name,
-    productName: download.productName,
-    version: download.version,
-    description: download.description,
-  },
   {
     load: () => import('@janhq/llamacpp-extension'),
     name: llamacpp.name,

@@ -67,6 +67,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
+  ServiceKeys: { Downloads: { id: 'downloads' } },
   DownloadEvent: {
     onFileDownloadUpdate: 'fdu',
     onFileDownloadError: 'fde',
@@ -112,12 +113,17 @@ vi.mock('@/constants/routes', () => ({
   route: { settings: { general: '/settings/general' } },
 }))
 
-// @ts-expect-error — test shim for window.core used by cancel branch
-window.core = {
-  extensionManager: {
-    getByName: () => ({ cancelDownload: hoisted.cancelDownloadMock }),
-  },
-}
+// The cancel branch for llamacpp/mlx tasks goes to the host Downloads service.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({
+    services: {
+      get: (key: { id: string }) =>
+        key.id === 'downloads'
+          ? { cancelDownload: hoisted.cancelDownloadMock }
+          : undefined,
+    },
+  }),
+}))
 
 import { DownloadManagement } from '../DownloadManegement'
 
@@ -182,7 +188,7 @@ describe('DownloadManagement', () => {
     expect(screen.getByText('50%')).toBeInTheDocument()
   })
 
-  it('cancels llamacpp download via extension manager', () => {
+  it('cancels llamacpp download via the Downloads service', () => {
     hoisted.downloadStore.downloads = {
       'llamacpp/foo': {
         name: 'llamacpp/foo',

@@ -23,6 +23,8 @@ import {
  events,
  AppEvent,
  DownloadEvent,
+ ServiceKeys,
+ type DownloadService,
  chatCompletionRequestMessage,
  SettingComponentProps,
  DropdownComponentProps,
@@ -2020,10 +2022,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       downloadType: 'Model',
      })
     }
-    const downloadManager = window.core.extensionManager.getByName(
-     '@janhq/download-extension'
-    )
-    await downloadManager.downloadFiles(
+    await this.downloads().downloadFiles(
      downloadItems,
      this.createDownloadTaskId(modelId),
      onProgress
@@ -2259,12 +2258,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   // Cancel any active download task
   // prepend provider name to avoid name collision
   const taskId = this.createDownloadTaskId(modelId)
-  const downloadManager = window.core.extensionManager.getByName(
-   '@janhq/download-extension'
-  )
-
   try {
-   await downloadManager.cancelDownload(taskId)
+   await this.downloads().cancelDownload(taskId)
   } catch (cancelError) {
    logger.warn('Failed to cancel download task:', cancelError)
   }
@@ -2275,11 +2270,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
  override async pauseImport(modelId: string): Promise<void> {
   const taskId = this.createDownloadTaskId(modelId)
-  const downloadManager = window.core.extensionManager.getByName(
-   '@janhq/download-extension'
-  )
   // Pause keeps the partial .tmp for resume; the model folder is preserved.
-  await downloadManager.pauseDownload(taskId)
+  await this.downloads().pauseDownload(taskId)
  }
 
  private async getRandomPort(): Promise<number> {
@@ -2440,6 +2432,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     error: `Failed to unload model: ${error}`,
    }
   }
+ }
+
+ // The download built-in runs on the extension host now; this legacy
+ // class reaches it through the window global until it migrates (P4).
+ private downloads(): DownloadService {
+  const service = window.core?.extensionHost?.services.get(
+   ServiceKeys.Downloads
+  )
+  if (!service) throw new Error('Downloads service is not available')
+  return service
  }
 
  /**
