@@ -2,15 +2,19 @@ import {
   API_VERSION,
   DisposableStore,
   Emitter,
+  ExtensionError,
   isApiCompatible,
   toDisposable,
   type ConversationsApi,
   type Event,
   type ExtensionContext,
   type ExtensionModule,
-  type HttpApi,
+  type PermissionString,
+  type ProviderModel,
   type ValidatedManifest,
 } from '@janhq/extension-api'
+import { CancellationTokenSource } from '@janhq/extension-runtime'
+import { z } from 'zod'
 import {
   appSettings,
   createServiceRegistry,
@@ -21,26 +25,50 @@ import {
 import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import type { BuiltinExtension } from './builtins'
-import { createContext, type Notify } from './context'
+import { createContext } from './context'
 import { createConversationsApi } from './conversations'
 import { ContributionStore, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
+import { createHostApi, type FetchLike, type Notify } from './host-api'
 import {
   ExtensionSettingsStore,
   type AppSettingsBackend,
   type SecretBackend,
 } from './settings-store'
+import { toToolOutcome, type ToolCallOutcome } from './tools'
+import {
+  createBlobWorker,
+  startWorker,
+  type CreateWorker,
+  type WorkerConnection,
+} from './worker-runtime'
 
 export type ExtensionState = 'inactive' | 'activating' | 'active' | 'failed'
+
+/**
+ * Where an extension came from. Built-ins run in process; the rest run in a
+ * worker: `dev` from a folder loaded unpacked, `installed` from the data
+ * folder (P3).
+ */
+export type ExtensionSource = 'builtin' | 'dev' | 'installed'
 
 /** One extension as the host tracks it, for lists and settings pages. */
 export interface HostedExtension {
   id: string
   manifest: ValidatedManifest
-  source: 'builtin'
+  source: ExtensionSource
   state: ExtensionState
   /** Why activation failed, when `state` is `failed`. */
   error?: string
+}
+
+export interface SpawnWorkerOptions {
+  manifest: ValidatedManifest
+  /** The extension's IIFE bundle (`format: 'iife', name: 'JanExtension'`). */
+  bundle: string
+  /** What the user granted; never more than the manifest requests. */
+  grants: readonly PermissionString[]
+  source: Exclude<ExtensionSource, 'builtin'>
 }
 
 export interface ExtensionHostOptions {
@@ -50,24 +78,34 @@ export interface ExtensionHostOptions {
   /** Defaults to a private store; the app passes `useContributions`. */
   contributions?: ContributionStore
   conversations?: ConversationsApi
-  http?: HttpApi
+  /** The network path of `ctx.http.fetch`; absent means none. */
+  fetch?: FetchLike
+  /** Defaults to a blob-URL `Worker`; tests pass the sandbox harness. */
+  createWorker?: CreateWorker
 }
 
 interface Entry {
   hosted: HostedExtension
   module?: ExtensionModule
   ctx?: ExtensionContext
+  worker?: WorkerConnection
   /** Host-side registrations: contributions, settings schema, grants. */
   registrations?: DisposableStore
 }
+
+// listModels results come from extension code; only this shape is used.
+const providerModels = z.array(
+  z.object({ id: z.string().min(1), displayName: z.string().optional() })
+)
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error)
 
 /**
- * Runs extensions through `activate(ctx)` and owns what they share: the
- * contribution registries, the settings store, the service registry and the
- * permission dispatcher. Built-ins run in process (P1); workers join in P2.
+ * Runs extensions and owns what they share: the contribution registries,
+ * the settings store, the service registry and the permission dispatcher.
+ * Built-ins run in process through `activate(ctx)`; third-party extensions
+ * run in a worker each. Both reach the host only through the dispatcher.
  */
 export class ExtensionHost {
   readonly services: ServiceRegistry = createServiceRegistry()
@@ -155,6 +193,141 @@ export class ExtensionHost {
     })
   }
 
+  /**
+   * Starts a third-party extension in its own worker. Resolves with its
+   * entry once it is active, or failed with the reason; never rejects for
+   * the extension's own faults. Grants beyond what the manifest requests
+   * are dropped.
+   */
+  spawnWorkerExtension(options: SpawnWorkerOptions): Promise<HostedExtension> {
+    const { manifest, source } = options
+    return this.enqueue(async () => {
+      const state = this.entries.get(manifest.id)?.hosted.state
+      if (state === 'active' || state === 'activating')
+        throw new ExtensionError(
+          'E_INVALID_ARGS',
+          `Extension '${manifest.id}' is already running`
+        )
+      const entry: Entry = {
+        hosted: { id: manifest.id, manifest, source, state: 'activating' },
+      }
+      this.entries.set(manifest.id, entry)
+      this.changes.fire()
+      try {
+        if (!isApiCompatible(manifest.apiVersion, API_VERSION)) {
+          throw new Error(
+            `needs extension API ${manifest.apiVersion}, host provides ${API_VERSION}`
+          )
+        }
+        const requested = new Set(manifest.permissions)
+        entry.registrations = this.register(
+          manifest,
+          options.grants.filter((g) => requested.has(g))
+        )
+        entry.worker = await startWorker({
+          manifest,
+          bundle: options.bundle,
+          createWorker: this.options.createWorker ?? createBlobWorker,
+          dispatcher: this.dispatcher,
+          api: createHostApi(manifest, this.apiDeps()),
+        })
+        entry.hosted.state = 'active'
+        this.activeOrder.push(manifest.id)
+        this.changes.fire()
+      } catch (error) {
+        await this.teardown(entry)
+        this.fail(manifest, error, source)
+      }
+    }).then(() => ({ ...this.entries.get(manifest.id)!.hosted }))
+  }
+
+  /**
+   * Stops one extension and releases everything it registered. A worker is
+   * asked to deactivate first and terminated regardless.
+   */
+  terminate(extensionId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const entry = this.entries.get(extensionId)
+      if (entry) await this.teardown(entry)
+    })
+  }
+
+  /**
+   * Runs a contributed tool. Aborting `signal` (the chat's Stop) cancels the
+   * call in the extension too. Failures come back as an `error` outcome,
+   * like other tool sources, rather than as a rejection.
+   */
+  async callTool(
+    extensionId: string,
+    name: string,
+    input: unknown,
+    options: { signal?: AbortSignal; maxOutputChars?: number } = {}
+  ): Promise<ToolCallOutcome> {
+    const handler =
+      this.contributions.getState().tools[extensionId]?.[name]?.handler
+    if (!handler)
+      return { error: `Tool '${name}' of '${extensionId}' is not available` }
+    const cancellation = new CancellationTokenSource()
+    const cancel = () => cancellation.cancel()
+    if (options.signal?.aborted) cancel()
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      return toToolOutcome(
+        await handler(input, cancellation.token),
+        options.maxOutputChars
+      )
+    } catch (error) {
+      return { error: message(error) }
+    } finally {
+      options.signal?.removeEventListener('abort', cancel)
+    }
+  }
+
+  /** The models a contributed provider reports through `listModels`. */
+  async listProviderModels(
+    extensionId: string,
+    providerId: string
+  ): Promise<ProviderModel[] | undefined> {
+    const handler =
+      this.contributions.getState().providers[extensionId]?.[providerId]
+        ?.handler
+    if (!handler?.listModels) return undefined
+    const parsed = providerModels.safeParse(await handler.listModels())
+    if (!parsed.success)
+      throw new ExtensionError(
+        'E_INVALID_ARGS',
+        `'${extensionId}' returned an invalid model list`
+      )
+    return parsed.data
+  }
+
+  /** Registers what the host holds for an extension; dispose releases it. */
+  private register(
+    manifest: ValidatedManifest,
+    grants: readonly PermissionString[]
+  ): DisposableStore {
+    const registrations = new DisposableStore()
+    registrations.add(this.contributions.registerExtension(manifest))
+    registrations.add(this.settings.register(manifest))
+    this.dispatcher.grant(manifest.id, grants)
+    registrations.add(
+      toDisposable(() => this.dispatcher.revokeAll(manifest.id))
+    )
+    return registrations
+  }
+
+  private apiDeps() {
+    return {
+      dispatcher: this.dispatcher,
+      contributions: this.contributions,
+      settings: this.settings,
+      storage: this.options.appSettings,
+      notify: this.options.notify,
+      conversations: this.options.conversations,
+      fetch: this.options.fetch,
+    }
+  }
+
   private enqueue(task: () => Promise<void>): Promise<void> {
     const run = this.queue.then(task)
     this.queue = run.catch(() => undefined)
@@ -179,28 +352,13 @@ export class ExtensionHost {
           `needs extension API ${manifest.apiVersion}, host provides ${API_VERSION}`
         )
       }
-      const registrations = new DisposableStore()
-      entry.registrations = registrations
-      registrations.add(this.contributions.registerExtension(manifest))
-      registrations.add(this.settings.register(manifest))
       // P1: a built-in gets exactly what its manifest requests.
-      this.dispatcher.grant(manifest.id, manifest.permissions)
-      registrations.add(
-        toDisposable(() => this.dispatcher.revokeAll(manifest.id))
-      )
+      entry.registrations = this.register(manifest, manifest.permissions)
 
       entry.module = await def.load()
       entry.ctx = createContext(
         manifest,
-        {
-          dispatcher: this.dispatcher,
-          contributions: this.contributions,
-          settings: this.settings,
-          storage: this.options.appSettings,
-          notify: this.options.notify,
-          conversations: this.options.conversations,
-          http: this.options.http,
-        },
+        this.apiDeps(),
         {
           services: this.services,
           fs,
@@ -220,13 +378,17 @@ export class ExtensionHost {
     }
   }
 
-  private fail(manifest: ValidatedManifest, error: unknown): void {
+  private fail(
+    manifest: ValidatedManifest,
+    error: unknown,
+    source: ExtensionSource = 'builtin'
+  ): void {
     console.error(`Extension '${manifest.id}' failed to activate:`, error)
     const entry = this.entries.get(manifest.id)
     const hosted: HostedExtension = {
       id: manifest.id,
       manifest,
-      source: 'builtin',
+      source,
       state: 'failed',
       error: message(error),
     }
@@ -244,7 +406,9 @@ export class ExtensionHost {
       } catch (error) {
         console.error(`Extension '${id}' failed to deactivate:`, error)
       }
+      await entry.worker?.deactivate()
     }
+    entry.worker?.terminate()
     for (const store of [entry.ctx?.subscriptions, entry.registrations]) {
       try {
         store?.dispose()
@@ -254,6 +418,7 @@ export class ExtensionHost {
     }
     entry.module = undefined
     entry.ctx = undefined
+    entry.worker = undefined
     entry.registrations = undefined
     const index = this.activeOrder.indexOf(id)
     if (index >= 0) this.activeOrder.splice(index, 1)
@@ -295,6 +460,9 @@ export function getExtensionHost(): ExtensionHost {
     // Resolved per call: the hub is ready before any extension activates,
     // but the host may be constructed earlier.
     conversations: createConversationsApi(getServiceHub),
+    // The providers service's fetch is @tauri-apps/plugin-http on desktop,
+    // which runs the request from Rust and honours `maxRedirections`.
+    fetch: (url, init) => getServiceHub().providers().fetch()(url, init),
   })
   return host
 }

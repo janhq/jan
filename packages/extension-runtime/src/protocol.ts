@@ -189,6 +189,38 @@ export interface HostMethodSignatures {
 }
 
 export type HostMethod = keyof HostMethodSignatures
+
+// A record rather than an array so the compiler rejects a missing or an
+// unknown method; the runtime list is what the host filters requests by.
+const HOST_METHOD_SET: Record<HostMethod, true> = {
+  'log': true,
+  'settings.get': true,
+  'settings.set': true,
+  'storage.get': true,
+  'storage.set': true,
+  'storage.delete': true,
+  'storage.keys': true,
+  'commands.register': true,
+  'commands.execute': true,
+  'ui.notify': true,
+  'ui.setStatusItem': true,
+  'conversations.listThreads': true,
+  'conversations.getThread': true,
+  'conversations.listMessages': true,
+  'conversations.createThread': true,
+  'conversations.appendMessage': true,
+  'tools.register': true,
+  'providers.register': true,
+  'http.fetch': true,
+  'events.subscribe': true,
+}
+
+/** Every `HostMethod`, for runtime checks. */
+export const HOST_METHODS = Object.keys(HOST_METHOD_SET) as HostMethod[]
+
+export function isHostMethod(method: string): method is HostMethod {
+  return Object.prototype.hasOwnProperty.call(HOST_METHOD_SET, method)
+}
 export type HostArgs<M extends HostMethod> = Parameters<HostMethodSignatures[M]>
 export type HostResult<M extends HostMethod> = ReturnType<
   HostMethodSignatures[M]

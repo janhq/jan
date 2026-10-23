@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { isPermissionString } from '@janhq/extension-api'
 
 const SRC = resolve(__dirname, '../..')
 const LOCALES_ROOT = resolve(__dirname, '..')
@@ -176,6 +177,8 @@ function referencedKeys(): Map<string, Set<string>> {
   for (const file of sourceFiles(SRC)) {
     const content = readFileSync(file, 'utf8')
     for (const match of content.matchAll(pattern)) {
+      // Extension permissions share the `<ns>:<key>` shape ('chat:hooks').
+      if (isPermissionString(`${match[1]}:${match[2]}`)) continue
       found.get(match[1])!.add(match[2])
     }
   }
