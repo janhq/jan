@@ -68,3 +68,28 @@ describe('invoke for plugin:llamacpp stays in guest-js', () => {
     expect(offenders, offenders.join('\n')).toEqual([])
   })
 })
+
+// App commands (read_yaml, settings_get, ...) are reached through the
+// @janhq/core wrappers, so the extension never needs Tauri's raw `invoke`.
+const EXTENSION_SRC = join(__dirname, '..')
+const CORE_INVOKE_IMPORT = /['"]@tauri-apps\/api\/core['"]/
+
+describe('llamacpp-extension does not import @tauri-apps/api/core', () => {
+  it('has no @tauri-apps/api/core import in production source', () => {
+    const offenders: string[] = []
+    for (const file of collect(EXTENSION_SRC)) {
+      // Test harness files mock the module rather than calling it.
+      if (file.startsWith(join(EXTENSION_SRC, 'test'))) continue
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (CORE_INVOKE_IMPORT.test(line)) {
+            offenders.push(
+              `${file.slice(REPO_ROOT.length + 1)}:${i + 1}: ${line.trim()}`
+            )
+          }
+        })
+    }
+    expect(offenders, offenders.join('\n')).toEqual([])
+  })
+})

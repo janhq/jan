@@ -14,7 +14,6 @@
  */
 
 import { fs, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
 import { findModelEntries } from './model-tree'
 import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 
@@ -514,7 +513,7 @@ export async function generatePreset(
   for (const { modelId, configPath } of modelEntries) {
     let mc: ModelYaml
     try {
-      mc = await invoke<ModelYaml>('read_yaml', { path: configPath })
+      mc = await fs.readYaml<ModelYaml>(configPath)
     } catch {
       // Skip unreadable model entries rather than aborting the whole preset.
       continue
