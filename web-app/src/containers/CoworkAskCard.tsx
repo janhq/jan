@@ -1,5 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -13,20 +20,25 @@ const OTHER = '\u0000other'
 function CheckSquare({ checked }: { checked: boolean }) {
   return (
     <span
-      className={cn(
-        'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
-        checked
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-main-view-fg/30'
-      )}
+      aria-hidden
+      className="flex size-6 shrink-0 items-center justify-center"
     >
-      {checked && <Check size={11} strokeWidth={3} />}
+      <span
+        className={cn(
+          'flex size-4 items-center justify-center rounded border transition-colors',
+          checked
+            ? 'border-primary bg-primary text-primary-foreground'
+            : 'border-main-view-fg/30'
+        )}
+      >
+        {checked && <Check size={11} strokeWidth={3} />}
+      </span>
     </span>
   )
 }
 
 /** Numbered badge for single-select rows; fills when selected. Matches the 1–9 shortcuts. */
-function NumberBadge({ n, checked }: { n: number; checked: boolean }) {
+function NumberBadge({ n, checked }: { n: React.ReactNode; checked: boolean }) {
   return (
     <span
       aria-hidden
@@ -65,6 +77,9 @@ export function CoworkAskCard({
   const otherInputRef = useRef<HTMLInputElement>(null)
   const keyHandlerRef = useRef<((e: KeyboardEvent) => void) | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  // The option row last pressed with a pointer. A clicked row keeps focus, so
+  // Enter there means "continue"; a row reached by Tab means "pick this one".
+  const pointerRowRef = useRef<Element | null>(null)
   // Option picks set aside while free text is active, so clearing the text
   // restores them instead of leaving the user with nothing selected.
   const stashRef = useRef<Record<string, string[]>>({})
@@ -100,20 +115,22 @@ export function CoworkAskCard({
     if (picks.includes(OTHER)) return !!custom[qid]?.trim()
     return picks.length > 0
   }
-  // The core rejects a response that doesn't answer every question exactly
-  // once (`validate_results`), so submit stays closed until all are answered.
-  const allAnswered = useMemo(
-    () => questions.length > 0 && questions.every((q) => isAnswered(q.id)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [questions, selected, custom]
-  )
 
   // The chat box autofocuses and would swallow the digits, so a new question
-  // takes focus itself. Clicking the chat box still lets the user reply normally.
+  // takes focus itself — on arrival and on every page change, since the control
+  // that advanced (the arrow) may unmount and drop focus to the page. A chat
+  // box the user is already typing into keeps its focus and its text.
   const hasQuestion = !!requestId && !!question
   useEffect(() => {
-    if (hasQuestion) cardRef.current?.focus({ preventScroll: true })
-  }, [requestId, hasQuestion])
+    if (!hasQuestion) return
+    const active = document.activeElement
+    const typing =
+      (active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLInputElement) &&
+      !cardRef.current?.contains(active) &&
+      active.value.trim() !== ''
+    if (!typing) cardRef.current?.focus({ preventScroll: true })
+  }, [requestId, hasQuestion, index])
 
   if (!requestId || !question) return null
 
@@ -124,7 +141,7 @@ export function CoworkAskCard({
   const toggle = (label: string) => {
     // Picking an option drops the free-text answer, so don't leave its text
     // sitting in the input looking like the live answer.
-    if (label !== OTHER && picks.includes(OTHER)) {
+    if (picks.includes(OTHER)) {
       setCustom((c) => ({ ...c, [question.id]: '' }))
       const stashed = stashRef.current[question.id] ?? []
       delete stashRef.current[question.id]
@@ -132,7 +149,9 @@ export function CoworkAskCard({
         // Bring the set-aside checks back and add this one, rather than losing them.
         setSelected((prev) => ({
           ...prev,
-          [question.id]: stashed.includes(label) ? stashed : [...stashed, label],
+          [question.id]: stashed.includes(label)
+            ? stashed
+            : [...stashed, label],
         }))
         return
       }
@@ -141,13 +160,10 @@ export function CoworkAskCard({
       const current = prev[question.id] ?? []
       // Free text is exclusive with options: the contract allows one or the
       // other on a `QuestionResult`, never both.
-      if (label === OTHER) {
-        return { ...prev, [question.id]: current.includes(OTHER) ? [] : [OTHER] }
-      }
       const withoutOther = current.filter((l) => l !== OTHER)
-      if (!question.multi) {
-        return { ...prev, [question.id]: withoutOther.includes(label) ? [] : [label] }
-      }
+      // Radio semantics: picking again keeps the pick, so pressing the same
+      // number twice can't silently clear the answer.
+      if (!question.multi) return { ...prev, [question.id]: [label] }
       return {
         ...prev,
         [question.id]: withoutOther.includes(label)
@@ -164,18 +180,35 @@ export function CoworkAskCard({
         const answer = selected[q.id] ?? []
         return answer.includes(OTHER)
           ? { id: q.id, selected: [], custom_input: custom[q.id]?.trim() }
-          : { id: q.id, selected: answer }
+          : {
+              id: q.id,
+              // Option order, not click order, so the answer reads like the list.
+              selected: q.options
+                .map((o) => o.label)
+                .filter((l) => answer.includes(l)),
+            }
       })
     )
   }
 
-  const advance = () => (isLast ? submit() : setIndex((i) => i + 1))
+  // The core rejects a response that doesn't answer every question exactly
+  // once (`validate_results`), so submit waits until all are answered.
+  const firstUnanswered = questions.findIndex((q) => !isAnswered(q.id))
+  const openElsewhere = questions.some(
+    (q, i) => i !== index && !isAnswered(q.id)
+  )
+  // On the last page with an earlier question still open (the user paged ahead),
+  // continuing takes them to it rather than leaving a disabled dead end.
+  const advance = () => {
+    if (!isLast) setIndex((i) => i + 1)
+    else if (firstUnanswered === -1) submit()
+    else setIndex(firstUnanswered)
+  }
 
-  // Single-select only: 1–9 pick the matching option; the number after the last
-  // option focuses the free-text row. Ignored while typing so digits still reach
-  // inputs.
+  // Enter continues once this question is answered. Single-select also gets 1–9
+  // to pick the matching option, and the number after the last option focuses
+  // the free-text row. Ignored while typing so digits still reach inputs.
   handleKey = (e: KeyboardEvent) => {
-    if (question.multi) return
     if (e.defaultPrevented || e.isComposing || e.repeat) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const el = e.target instanceof HTMLElement ? e.target : null
@@ -192,22 +225,26 @@ export function CoworkAskCard({
     ) {
       return
     }
-    // Keyboard-only path: after a number pick, Enter continues. Handled on the
-    // page or on a focused option row (a mouse-clicked option keeps focus, and
-    // its native Enter would re-toggle it); other buttons keep native Enter.
+    // Keyboard-only path: after a pick, Enter continues. Handled on the page or
+    // on the focused option row that is already picked (a mouse-clicked option
+    // keeps focus, and its native Enter would re-toggle it). Enter on any other
+    // row keeps its native meaning — pick that row — so it never submits a
+    // different answer than the one the user is looking at.
     if (e.key === 'Enter') {
       const onPage =
         !el ||
         el === document.body ||
         el === cardRef.current ||
-        el.getAttribute('role') === 'radio'
-      if (onPage && (isLast ? allAnswered : isAnswered(question.id))) {
+        (/^(radio|checkbox)$/.test(el.getAttribute('role') ?? '') &&
+          (el.getAttribute('aria-checked') === 'true' ||
+            el === pointerRowRef.current))
+      if (onPage && isAnswered(question.id)) {
         e.preventDefault()
         advance()
       }
       return
     }
-    if (!/^[1-9]$/.test(e.key)) return
+    if (question.multi || !/^[1-9]$/.test(e.key)) return
     const n = Number(e.key)
     if (n <= question.options.length) {
       e.preventDefault()
@@ -221,20 +258,54 @@ export function CoworkAskCard({
   // per-question skip, since every question must come back answered.
   const decline = () => onRespond(requestId, null)
 
+  const answered = isAnswered(question.id)
+  const canAdvance = answered
+  // Typed text replaces the option picks (the contract allows one or the other),
+  // so the options recede — for multi-select too, where the unticking is
+  // otherwise easy to miss.
+  const dimOptions = usingCustom
+
+  const iconButton =
+    'rounded p-1 hover:text-main-view-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-30'
+
+  const skipButton = (
+    <Button variant="ghost" size="sm" className="h-7" onClick={decline}>
+      {t('common:skip')}
+    </Button>
+  )
+  const continueButton = (
+    <Button
+      size="icon-sm"
+      className="rounded-md"
+      disabled={!canAdvance}
+      // Distinct from the chevron's `askNext`: that only pages the view,
+      // this is the primary action (record this answer, then move on).
+      aria-label={
+        isLast && !openElsewhere ? t('common:submit') : t('common:askContinue')
+      }
+      onClick={advance}
+    >
+      <ArrowRight size={14} />
+    </Button>
+  )
+
   return (
     <div
       ref={cardRef}
       tabIndex={-1}
+      role="group"
+      aria-label={
+        questions.length > 1
+          ? `${question.question} (${t('common:askPageOf', { current: index + 1, total: questions.length })})`
+          : question.question
+      }
       className="mb-2 rounded-lg border bg-main-view outline-none"
     >
-      <div className="flex items-start gap-2 px-3 pt-2.5 pb-2">
-        <p className="min-w-0 flex-1 text-sm font-medium">{question.question}</p>
+      <div className="flex items-start gap-2 px-4 pt-3 pb-1.5">
+        <p className="min-w-0 flex-1 text-sm font-medium">
+          {question.question}
+        </p>
         <div className="flex shrink-0 items-center gap-0.5 text-main-view-fg/50">
-          {question.multi && !usingCustom && (
-            <span className="mr-1.5 text-xs">
-              {t('common:askSelectedCount', { count: picks.length })}
-            </span>
-          )}
           {questions.length > 1 && (
             <>
               <button
@@ -242,19 +313,24 @@ export function CoworkAskCard({
                 onClick={() => setIndex((i) => Math.max(0, i - 1))}
                 disabled={index === 0}
                 aria-label={t('common:askPrev')}
-                className="rounded p-0.5 hover:text-main-view-fg disabled:opacity-30"
+                className={iconButton}
               >
                 <ChevronLeft size={14} />
               </button>
               <span className="px-0.5 text-xs tabular-nums">
-                {index + 1}/{questions.length}
+                {t('common:askPageOf', {
+                  current: index + 1,
+                  total: questions.length,
+                })}
               </span>
               <button
                 type="button"
-                onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}
+                onClick={() =>
+                  setIndex((i) => Math.min(questions.length - 1, i + 1))
+                }
                 disabled={isLast}
                 aria-label={t('common:askNext')}
-                className="rounded p-0.5 hover:text-main-view-fg disabled:opacity-30"
+                className={iconButton}
               >
                 <ChevronRight size={14} />
               </button>
@@ -264,7 +340,7 @@ export function CoworkAskCard({
             type="button"
             onClick={decline}
             aria-label={t('common:close')}
-            className="ml-0.5 rounded p-0.5 hover:text-main-view-fg"
+            className={cn(iconButton, 'ml-1')}
           >
             <X size={14} />
           </button>
@@ -274,55 +350,83 @@ export function CoworkAskCard({
       <div
         role={question.multi ? 'group' : 'radiogroup'}
         aria-label={question.question}
-        className="flex flex-col gap-0.5 px-2 pb-2"
+        // Capped so a long list can't push the chat box off screen.
+        className="flex max-h-[45vh] flex-col overflow-y-auto px-2"
       >
         {question.options.map((option, i) => {
           const checked = picks.includes(option.label)
           return (
-            <button
+            // The hairline sits on a flat wrapper so the row's rounded hover
+            // fill doesn't curl its ends.
+            <div
               key={option.label}
-              type="button"
-              role={question.multi ? 'checkbox' : 'radio'}
-              aria-checked={checked}
-              aria-keyshortcuts={question.multi || i > 8 ? undefined : String(i + 1)}
-              onClick={() => toggle(option.label)}
-              title={option.description}
-              className="flex items-start gap-3 rounded-lg px-2 py-2 text-left hover:bg-main-view-fg/5"
+              className="border-b border-main-view-fg/5 py-px last:border-b-0"
             >
-              {question.multi ? (
-                <CheckSquare checked={checked} />
-              ) : (
-                <NumberBadge n={i + 1} checked={checked} />
-              )}
-              <span className="min-w-0 flex-1 leading-5">
-                <span className="text-[13px]">{option.label}</span>
-                {question.recommended === i && (
-                  <span className="ml-1.5 text-[11px] text-main-view-fg/45">
-                    {t('common:askRecommended')}
-                  </span>
+              <button
+                type="button"
+                role={question.multi ? 'checkbox' : 'radio'}
+                aria-checked={checked}
+                aria-keyshortcuts={
+                  question.multi || i > 8 ? undefined : String(i + 1)
+                }
+                onPointerDown={(e) => (pointerRowRef.current = e.currentTarget)}
+                onClick={() => toggle(option.label)}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left transition-[opacity,background-color] hover:bg-main-view-fg/5',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                  checked && 'bg-main-view-fg/5',
+                  dimOptions &&
+                    'opacity-50 hover:opacity-100 focus-visible:opacity-100'
                 )}
-                {option.description && (
-                  <span className="block text-[11px] leading-4 text-main-view-fg/50">
-                    {option.description}
-                  </span>
+              >
+                {question.multi ? (
+                  <CheckSquare checked={checked} />
+                ) : (
+                  // Only 1–9 have key shortcuts; past that a number would read as a
+                  // shortcut that doesn't exist.
+                  <NumberBadge n={i < 9 ? i + 1 : '·'} checked={checked} />
                 )}
-              </span>
-            </button>
+                {/* leading-6 matches the 24px badge so the label centres on it. */}
+                <span className="min-w-0 flex-1 leading-6">
+                  <span className="text-[13px]">{option.label}</span>
+                  {question.recommended === i && (
+                    // The leading space keeps the accessible name from running
+                    // "label.Recommended" together.
+                    <span className="ml-1 text-[11px] text-main-view-fg/60">
+                      {' '}
+                      {t('common:askRecommended')}
+                    </span>
+                  )}
+                  {option.description && (
+                    <span className="block text-[11px] leading-4 text-main-view-fg/60">
+                      {option.description}
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
           )
         })}
       </div>
 
-      {/* Always-visible field (like Claude's ask card) so it's obvious users can
-          type their own answer; Skip and continue sit inline on the same row. */}
-      <div className="flex items-center gap-2 px-2 pb-2">
+      {/* Always-visible row (like Claude's ask card) so it's obvious users can
+          type their own answer. Its leading mark matches the option rows: a
+          pencil badge for single-select, a checkbox for multi-select. */}
+      <div className="px-2 pt-1 pb-2">
         <div
           onClick={() => otherInputRef.current?.focus()}
           className={cn(
-            'flex h-10 min-w-0 flex-1 cursor-text items-center gap-2.5 rounded-lg border bg-main-view-fg/5 px-3 transition-colors focus-within:border-main-view-fg/40',
-            usingCustom && 'border-main-view-fg/40'
+            'flex h-11 cursor-text items-center gap-3 rounded-lg px-2 transition-colors',
+            usingCustom
+              ? 'bg-main-view-fg/8'
+              : 'bg-main-view-fg/4 focus-within:bg-main-view-fg/8'
           )}
         >
-          <Pencil size={14} className="shrink-0 text-main-view-fg/50" />
+          {question.multi ? (
+            <CheckSquare checked={usingCustom} />
+          ) : (
+            <NumberBadge n={<Pencil size={12} />} checked={false} />
+          )}
           <Input
             ref={otherInputRef}
             value={custom[question.id] ?? ''}
@@ -333,7 +437,8 @@ export function CoworkAskCard({
               // the QuestionResult contract); the prior picks are stashed and come
               // back when the text is cleared. Blank text never touches picks.
               if (value.trim()) {
-                if (!picks.includes(OTHER)) stashRef.current[question.id] = picks
+                if (!picks.includes(OTHER))
+                  stashRef.current[question.id] = picks
                 setSelected((prev) => ({ ...prev, [question.id]: [OTHER] }))
               } else if (picks.includes(OTHER)) {
                 const restored = stashRef.current[question.id] ?? []
@@ -346,7 +451,7 @@ export function CoworkAskCard({
                 // Confirming an IME composition must not advance or submit.
                 if (e.nativeEvent.isComposing || e.keyCode === 229) return
                 e.preventDefault()
-                if (isLast ? allAnswered : isAnswered(question.id)) {
+                if (answered) {
                   e.currentTarget.blur()
                   advance()
                 }
@@ -356,27 +461,35 @@ export function CoworkAskCard({
             }}
             placeholder={t('common:askSomethingElse')}
             aria-label={t('common:askSomethingElse')}
-            aria-keyshortcuts={question.multi || question.options.length > 8 ? undefined : String(question.options.length + 1)}
+            aria-keyshortcuts={
+              question.multi || question.options.length > 8
+                ? undefined
+                : String(question.options.length + 1)
+            }
             className="h-8 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px] dark:bg-transparent"
           />
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button variant="ghost" size="sm" className="h-7" onClick={decline}>
-            {t('common:skip')}
-          </Button>
-          <Button
-            size="icon-sm"
-            className="rounded-full"
-            disabled={isLast ? !allAnswered : !isAnswered(question.id)}
-            // Distinct from the chevron's `askNext`: that only pages the view,
-            // this is the primary action (record this answer, then move on).
-            aria-label={isLast ? t('common:submit') : t('common:askContinue')}
-            onClick={advance}
-          >
-            <ArrowRight size={14} />
-          </Button>
+          {/* Single-select keeps its actions in this row: Skip until there is an
+              answer, then the continue arrow. Multi-select uses the footer. */}
+          {!question.multi && (
+            <div
+              className="flex shrink-0 items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {answered ? continueButton : skipButton}
+            </div>
+          )}
         </div>
       </div>
+
+      {question.multi && (
+        <div className="flex items-center gap-1.5 border-t px-4 py-2">
+          <span className="flex-1 text-xs text-main-view-fg/50">
+            {t('common:askSelectedCount', { count: picks.length })}
+          </span>
+          {skipButton}
+          {continueButton}
+        </div>
+      )}
     </div>
   )
 }

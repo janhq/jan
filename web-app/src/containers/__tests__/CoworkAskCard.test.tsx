@@ -45,6 +45,10 @@ beforeEach(() => {
 })
 
 const submitButton = () => screen.getByLabelText('common:submit')
+// Single-select shows Skip in the free-text row until there is an answer; the
+// continue arrow only appears once one exists.
+const expectNoSubmit = () =>
+  expect(screen.queryByLabelText('common:submit')).not.toBeInTheDocument()
 
 describe('CoworkAskCard', () => {
   it('renders nothing when there is no pending request', () => {
@@ -94,11 +98,11 @@ describe('CoworkAskCard', () => {
 
   it('cannot submit on empty free text', () => {
     render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
     fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
       target: { value: '   ' },
     })
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
   })
 
   it('shows the free-text input up front, without clicking anything', () => {
@@ -127,7 +131,7 @@ describe('CoworkAskCard', () => {
     fireEvent.click(screen.getByText('A1'))
     fireEvent.click(screen.getByLabelText('common:askNext'))
     expect(screen.getByText('Second?')).toBeInTheDocument()
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
 
     fireEvent.click(screen.getByText('B1'))
     fireEvent.click(submitButton())
@@ -171,7 +175,7 @@ describe('CoworkAskCard', () => {
     fireEvent.keyDown(screen.getByTestId('chat'), { key: '1' })
     fireEvent.keyDown(window, { key: '1', metaKey: true })
     fireEvent.keyDown(window, { key: '9' })
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
   })
 
   it('Enter in the input does not submit while an earlier question is unanswered', () => {
@@ -235,12 +239,15 @@ describe('CoworkAskCard', () => {
     expect(screen.queryByText('10')).not.toBeInTheDocument()
   })
 
-  it('does not count free text as a selected option', () => {
+  it('counts free text as the one selection, since it replaces the picks', () => {
     render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    fireEvent.click(screen.getByText(multi.questions[0].options[0].label))
+    fireEvent.click(screen.getByText(multi.questions[0].options[1].label))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
       target: { value: 'x' },
     })
-    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
   })
 
   it('groups the options with an accessible name', () => {
@@ -251,11 +258,41 @@ describe('CoworkAskCard', () => {
   it('Enter on a mouse-focused option continues with the number-picked answer', () => {
     render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     const small = screen.getByText('Small').closest('button')!
+    fireEvent.pointerDown(small)
     fireEvent.click(small)
     small.focus()
     fireEvent.keyDown(small, { key: '2' })
     fireEvent.keyDown(small, { key: 'Enter' })
     expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Large'] }])
+  })
+
+  it('Enter on a row reached by keyboard picks that row instead of submitting the earlier pick', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    fireEvent.keyDown(window, { key: '1' })
+    const large = screen.getByText('Large').closest('button')!
+    large.focus()
+    fireEvent.keyDown(large, { key: 'Enter' })
+    expect(onRespond).not.toHaveBeenCalled()
+  })
+
+  it('submits multi-select picks in option order, not click order', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    const [first, second] = multi.questions[0].options.map((o) => o.label)
+    fireEvent.click(screen.getByText(second))
+    fireEvent.click(screen.getByText(first))
+    fireEvent.click(submitButton())
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [
+      { id: multi.questions[0].id, selected: [first, second] },
+    ])
+  })
+
+  it('on the last page, continue jumps back to an unanswered earlier question', () => {
+    render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+    fireEvent.click(screen.getByLabelText('common:askNext'))
+    fireEvent.click(screen.getByText('B1'))
+    fireEvent.click(screen.getByLabelText('common:askContinue'))
+    expect(onRespond).not.toHaveBeenCalled()
+    expect(screen.getByText('First?')).toBeInTheDocument()
   })
 
   it('ignores digits when focus is on a control outside the card', () => {
@@ -268,7 +305,7 @@ describe('CoworkAskCard', () => {
     const outside = screen.getByTestId('outside')
     outside.focus()
     fireEvent.keyDown(outside, { key: '1' })
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
   })
 
   it('takes focus when a question appears so number keys work over an autofocused chat box', () => {
@@ -314,6 +351,6 @@ describe('CoworkAskCard', () => {
     fireEvent.click(screen.getByText('Small'))
     // A second request must not inherit the first one's pick.
     rerender(<CoworkAskCard requestId="ask-2" request={single} onRespond={onRespond} />)
-    expect(submitButton()).toBeDisabled()
+    expectNoSubmit()
   })
 })
