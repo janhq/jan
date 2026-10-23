@@ -42,6 +42,7 @@ import {
   refreshMemoryDigest,
   sandboxEnforces,
 } from '@/lib/agentTools'
+import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -1691,11 +1692,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the
     // user sees a seamless continuation rather than an empty box.
-    const finalStream = continueContent
+    const continuedStream = continueContent
       ? prependContinuationToUIStream(uiStream, continueContent)
       : uiStream
 
-    return finalStream
+    // A call to the built-in shell while the user has it switched off is not in
+    // `this.tools`, so the SDK would reject it and end the turn. Hand it to the
+    // tool loop instead, which answers it with the "turned off" refusal.
+    return routeRefusedToolCalls(
+      continuedStream,
+      (toolName) =>
+        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+        !(toolName in this.tools) &&
+        !useChatShell.getState().shellEnabled
+    )
   }
 
   async reconnectToStream(
