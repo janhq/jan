@@ -26,10 +26,13 @@ import {
   logger,
 } from '@janhq/core'
 
-import { invoke } from '@tauri-apps/api/core'
 import {
   loadMlxModel,
   unloadMlxModel,
+  isMlxProcessRunning,
+  getMlxRandomPort,
+  findMlxSessionByModel,
+  getMlxLoadedModels,
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
 import {
@@ -125,7 +128,7 @@ export default class mlx_extension extends AIEngine {
 
     if (!(await fs.existsSync(path))) return undefined
 
-    const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+    const modelConfig = await fs.readYaml<ModelConfig>(path)
 
     return {
       id: modelId,
@@ -138,9 +141,9 @@ export default class mlx_extension extends AIEngine {
   }
 
   async getModelContextLimit(modelId: string): Promise<number | undefined> {
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(
+      await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml'])
+    )
     const modelPath = isAbsoluteModelPath(modelConfig.model_path)
       ? modelConfig.model_path
       : await joinPath([await getJanDataFolderPath(), modelConfig.model_path])
@@ -153,9 +156,7 @@ export default class mlx_extension extends AIEngine {
         ? modelPath
         : modelPath.substring(0, modelPath.lastIndexOf('/'))
       const config = JSON.parse(
-        await invoke<string>('read_file_sync', {
-          args: [await joinPath([directory, 'config.json'])],
-        })
+        await fs.readFileSync(await joinPath([directory, 'config.json']))
       ) as {
         max_position_embeddings?: number
         text_config?: { max_position_embeddings?: number }
@@ -196,7 +197,7 @@ export default class mlx_extension extends AIEngine {
     let modelInfos: modelInfo[] = []
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
-      const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+      const modelConfig = await fs.readYaml<ModelConfig>(path)
 
       const capabilities: string[] = []
       if (modelConfig.mmproj_path) {
@@ -228,7 +229,7 @@ export default class mlx_extension extends AIEngine {
 
   private async getRandomPort(): Promise<number> {
     try {
-      return await invoke<number>('plugin:mlx|get_mlx_random_port')
+      return await getMlxRandomPort()
     } catch {
       logger.error('Unable to find a suitable port for MLX server')
       throw new Error('Unable to find a suitable port for MLX model')
@@ -303,9 +304,7 @@ export default class mlx_extension extends AIEngine {
       modelId,
       'model.yml',
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
     const port = await this.getRandomPort()
 
     const api_key = await this.generateApiKey(modelId, String(port))
@@ -374,9 +373,7 @@ export default class mlx_extension extends AIEngine {
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
-      return await invoke<SessionInfo>('plugin:mlx|find_mlx_session_by_model', {
-        modelId,
-      })
+      return await findMlxSessionByModel(modelId)
     } catch (e) {
       logger.error(e)
       throw new Error(String(e))
@@ -393,9 +390,7 @@ export default class mlx_extension extends AIEngine {
     }
 
     // Check if the process is alive
-    const isAlive = await invoke<boolean>('plugin:mlx|is_mlx_process_running', {
-      pid: sessionInfo.pid,
-    })
+    const isAlive = await isMlxProcessRunning(sessionInfo.pid)
 
     if (isAlive) {
       try {
@@ -542,9 +537,7 @@ export default class mlx_extension extends AIEngine {
       throw new Error(`Model ${modelId} does not exist`)
     }
 
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
 
     // Check if model_path is a relative path within mlx folder
     if (!isAbsoluteModelPath(modelConfig.model_path)) {
@@ -576,9 +569,9 @@ export default class mlx_extension extends AIEngine {
       'models',
       modelId,
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: await joinPath([modelFolderPath, 'model.yml']),
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(
+      await joinPath([modelFolderPath, 'model.yml'])
+    )
     const newFolderPath = await joinPath([
       await this.getProviderPath(),
       'models',
@@ -589,15 +582,12 @@ export default class mlx_extension extends AIEngine {
     }
     const newModelConfigPath = await joinPath([newFolderPath, 'model.yml'])
     await fs.mv(modelFolderPath, newFolderPath).then(() =>
-      invoke('write_yaml', {
-        data: {
-          ...modelConfig,
-          model_path: modelConfig?.model_path?.replace(
-            `mlx/models/${modelId}`,
-            `mlx/models/${model.id}`
-          ),
-        },
-        savePath: newModelConfigPath,
+      fs.writeYaml(newModelConfigPath, {
+        ...modelConfig,
+        model_path: modelConfig?.model_path?.replace(
+          `mlx/models/${modelId}`,
+          `mlx/models/${model.id}`
+        ),
       })
     )
   }
@@ -718,10 +708,7 @@ export default class mlx_extension extends AIEngine {
       }
 
       await fs.mkdir(modelDir)
-      await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: configPath,
-      })
+      await fs.writeYaml(configPath, modelConfig)
 
       events.emit(AppEvent.onModelImported, {
         modelId,
@@ -777,10 +764,7 @@ export default class mlx_extension extends AIEngine {
       ])
       await fs.mkdir(modelDir)
 
-      await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: configPath,
-      })
+      await fs.writeYaml(configPath, modelConfig)
 
       events.emit(AppEvent.onModelImported, {
         modelId,
@@ -849,7 +833,7 @@ export default class mlx_extension extends AIEngine {
 
   override async getLoadedModels(): Promise<string[]> {
     try {
-      return await invoke<string[]>('plugin:mlx|get_mlx_loaded_models')
+      return await getMlxLoadedModels()
     } catch (e) {
       logger.error(e)
       throw new Error(e)
@@ -879,9 +863,7 @@ export default class mlx_extension extends AIEngine {
     }
 
     try {
-      const configContent = await invoke<string>('read_file_sync', {
-        args: [configPath],
-      })
+      const configContent = await fs.readFileSync(configPath)
       const config = JSON.parse(configContent)
 
       // Check architecture for vision models
@@ -935,9 +917,9 @@ export default class mlx_extension extends AIEngine {
       ])
       if (await fs.existsSync(preprocessorConfigPath)) {
         try {
-          const preprocessorConfig = await invoke<string>('read_file_sync', {
-            args: [preprocessorConfigPath],
-          })
+          const preprocessorConfig = await fs.readFileSync(
+            preprocessorConfigPath
+          )
           const pc = JSON.parse(preprocessorConfig)
           if (pc.do_resize || pc.size || pc.patch_size) {
             logger.info('Vision support detected from preprocessor_config.json')
@@ -963,9 +945,7 @@ export default class mlx_extension extends AIEngine {
       modelId,
       'model.yml',
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      path: modelConfigPath,
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
 
     // model_path could be absolute or relative
     let modelPath: string
@@ -989,11 +969,8 @@ export default class mlx_extension extends AIEngine {
       ])
       if (await fs.existsSync(tokenizerConfigPath)) {
         try {
-          const tokenizerConfigContent = await invoke<string>(
-            'read_file_sync',
-            {
-              args: [tokenizerConfigPath],
-            }
+          const tokenizerConfigContent = await fs.readFileSync(
+            tokenizerConfigPath
           )
           // Check for tool/function calling indicators
           const tcLower = tokenizerConfigContent.toLowerCase()
@@ -1017,9 +994,7 @@ export default class mlx_extension extends AIEngine {
       const chatTemplatePath = await joinPath([modelDir, 'chat_template.jinja'])
       if (await fs.existsSync(chatTemplatePath)) {
         try {
-          const chatTemplateContent = await invoke<string>('read_file_sync', {
-            args: [chatTemplatePath],
-          })
+          const chatTemplateContent = await fs.readFileSync(chatTemplatePath)
           // Common tool/function calling template patterns
           const ctLower = chatTemplateContent.toLowerCase()
           const toolPatterns = [

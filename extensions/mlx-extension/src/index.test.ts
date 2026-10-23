@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import mlx_extension from './index'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
-import { unloadMlxModel } from '@janhq/tauri-plugin-mlx-api'
+import {
+  unloadMlxModel,
+  findMlxSessionByModel,
+  isMlxProcessRunning,
+  getMlxLoadedModels,
+  getMlxRandomPort,
+} from '@janhq/tauri-plugin-mlx-api'
 import { readGgufMetadata } from '@janhq/tauri-plugin-llamacpp-api'
 
-const mockInvoke = vi.mocked(invoke)
+const mockReadYaml = vi.mocked(fs.readYaml)
+const mockWriteYaml = vi.mocked(fs.writeYaml)
+const mockReadFileSync = vi.mocked(fs.readFileSync)
+const mockFindSession = vi.mocked(findMlxSessionByModel)
+const mockIsRunning = vi.mocked(isMlxProcessRunning)
+const mockLoadedModels = vi.mocked(getMlxLoadedModels)
 const mockExistsSync = vi.mocked(fs.existsSync)
 const mockRm = vi.mocked(fs.rm)
 const mockFileStat = vi.mocked(fs.fileStat)
@@ -74,20 +84,22 @@ describe('getModelProps', () => {
 describe('getModelContextLimit', () => {
   it('uses the text model limit from a multimodal config', async () => {
     const ext = new mlx_extension()
-    mockInvoke.mockResolvedValueOnce({ model_path: '/external/model' })
+    mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
-    mockInvoke.mockResolvedValueOnce(JSON.stringify({
+    mockReadFileSync.mockResolvedValueOnce(JSON.stringify({
       max_position_embeddings: 1024,
       text_config: { max_position_embeddings: 32768 },
     }))
     expect(await ext.getModelContextLimit('model')).toBe(32768)
+    expect(mockReadYaml).toHaveBeenCalledWith('/data/mlx/models/model/model.yml')
+    expect(mockReadFileSync).toHaveBeenCalledWith('/external/model/config.json')
   })
 
   it('does not assume a context limit when the config omits it', async () => {
     const ext = new mlx_extension()
-    mockInvoke.mockResolvedValueOnce({ model_path: '/external/model' })
+    mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
-    mockInvoke.mockResolvedValueOnce('{}')
+    mockReadFileSync.mockResolvedValueOnce('{}')
     expect(await ext.getModelContextLimit('model')).toBeUndefined()
   })
 })
@@ -114,7 +126,7 @@ describe('get', () => {
   it('maps model config to modelInfo with fallbacks', async () => {
     const ext = newExt()
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue({ size_bytes: 1234, embedding: true })
+    mockReadYaml.mockResolvedValue({ size_bytes: 1234, embedding: true })
 
     const info = await ext.get('foo')
     expect(info).toEqual({
@@ -125,12 +137,13 @@ describe('get', () => {
       sizeBytes: 1234,
       embedding: true,
     })
+    expect(mockReadYaml).toHaveBeenCalledWith('/data/mlx/models/foo/model.yml')
   })
 
   it('prefers the configured name over the model id', async () => {
     const ext = newExt()
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue({ name: 'Pretty Name' })
+    mockReadYaml.mockResolvedValue({ name: 'Pretty Name' })
 
     const info = await ext.get('foo')
     expect(info.name).toBe('Pretty Name')
@@ -142,14 +155,13 @@ describe('get', () => {
 describe('getLoadedModels', () => {
   it('returns the plugin result', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue(['a', 'b'])
+    mockLoadedModels.mockResolvedValue(['a', 'b'])
     expect(await ext.getLoadedModels()).toEqual(['a', 'b'])
-    expect(mockInvoke).toHaveBeenCalledWith('plugin:mlx|get_mlx_loaded_models')
   })
 
   it('throws when the plugin call fails', async () => {
     const ext = newExt()
-    mockInvoke.mockRejectedValue('boom')
+    mockLoadedModels.mockRejectedValue('boom')
     await expect(ext.getLoadedModels()).rejects.toThrow('boom')
   })
 })
@@ -157,8 +169,7 @@ describe('getLoadedModels', () => {
 describe('unload', () => {
   it('throws when there is no active session', async () => {
     const ext = newExt()
-    // findSessionByModel invokes plugin:mlx|find_mlx_session_by_model
-    mockInvoke.mockResolvedValue(undefined)
+    mockFindSession.mockResolvedValue(null)
     await expect(ext.unload('foo')).rejects.toThrow(
       'No active MLX session found for model: foo'
     )
@@ -166,17 +177,18 @@ describe('unload', () => {
 
   it('returns the unload result on success', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue({ pid: 99, model_id: 'foo' })
+    mockFindSession.mockResolvedValue({ pid: 99, model_id: 'foo' } as never)
     mockUnload.mockResolvedValue({ success: true })
 
     const result = await ext.unload('foo')
     expect(result).toEqual({ success: true })
+    expect(mockFindSession).toHaveBeenCalledWith('foo')
     expect(mockUnload).toHaveBeenCalledWith(99)
   })
 
   it('returns a failure object when unload throws', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue({ pid: 99, model_id: 'foo' })
+    mockFindSession.mockResolvedValue({ pid: 99, model_id: 'foo' } as never)
     mockUnload.mockRejectedValue(new Error('nope'))
 
     const result = await ext.unload('foo')
@@ -188,13 +200,13 @@ describe('unload', () => {
 describe('load', () => {
   it('throws when the model is already loaded', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue({ pid: 1, model_id: 'foo' })
+    mockFindSession.mockResolvedValue({ pid: 1, model_id: 'foo' } as never)
     await expect(ext.load('foo')).rejects.toThrow('Model already loaded!')
   })
 
   it('deduplicates concurrent loads of the same model', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue(undefined)
+    mockFindSession.mockResolvedValue(null)
     const sentinel = Promise.resolve({ pid: 7 })
     ext.performLoad = vi.fn().mockReturnValue(sentinel)
 
@@ -215,7 +227,7 @@ describe('delete', () => {
   it('removes the parent dir for relative paths and the model dir', async () => {
     const ext = newExt()
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue({
+    mockReadYaml.mockResolvedValue({
       model_path: 'mlx/models/foo/model.safetensors',
     })
     mockRm.mockResolvedValue(undefined)
@@ -228,7 +240,7 @@ describe('delete', () => {
   it('does not remove a parent dir for absolute paths', async () => {
     const ext = newExt()
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue({ model_path: '/abs/model/model.safetensors' })
+    mockReadYaml.mockResolvedValue({ model_path: '/abs/model/model.safetensors' })
     mockRm.mockResolvedValue(undefined)
 
     await ext.delete('foo')
@@ -240,7 +252,7 @@ describe('delete', () => {
 describe('chat', () => {
   it('throws when no session is found', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue(undefined)
+    mockFindSession.mockResolvedValue(null)
     await expect(ext.chat({ model: 'foo' })).rejects.toThrow(
       'No active MLX session found for model: foo'
     )
@@ -248,15 +260,16 @@ describe('chat', () => {
 
   it('throws when the process is not running', async () => {
     const ext = newExt()
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'plugin:mlx|find_mlx_session_by_model')
-        return { pid: 5, port: 1, model_id: 'foo' }
-      if (cmd === 'plugin:mlx|is_mlx_process_running') return false
-      return undefined
-    })
+    mockFindSession.mockResolvedValue({
+      pid: 5,
+      port: 1,
+      model_id: 'foo',
+    } as never)
+    mockIsRunning.mockResolvedValue(false)
     await expect(ext.chat({ model: 'foo' })).rejects.toThrow(
       'MLX model has crashed! Please reload!'
     )
+    expect(mockIsRunning).toHaveBeenCalledWith(5)
   })
 })
 
@@ -272,17 +285,18 @@ describe('isVisionSupported', () => {
     const ext = newExt()
     mockFileStat.mockResolvedValue({ isDirectory: true })
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue(
+    mockReadFileSync.mockResolvedValue(
       JSON.stringify({ architectures: ['Qwen2VLForConditionalGeneration'] })
     )
     expect(await ext.isVisionSupported('/model/dir')).toBe(true)
+    expect(mockReadFileSync).toHaveBeenCalledWith('/model/dir/config.json')
   })
 
   it('detects vision from vision_config', async () => {
     const ext = newExt()
     mockFileStat.mockResolvedValue({ isDirectory: true })
     mockExistsSync.mockResolvedValue(true)
-    mockInvoke.mockResolvedValue(
+    mockReadFileSync.mockResolvedValue(
       JSON.stringify({ architectures: ['LlamaForCausalLM'], vision_config: {} })
     )
     expect(await ext.isVisionSupported('/model/dir')).toBe(true)
@@ -295,7 +309,7 @@ describe('isVisionSupported', () => {
     mockExistsSync.mockImplementation(async (p: string) =>
       p.endsWith('config.json') && !p.includes('image') && !p.includes('preprocessor')
     )
-    mockInvoke.mockResolvedValue(
+    mockReadFileSync.mockResolvedValue(
       JSON.stringify({ architectures: ['LlamaForCausalLM'] })
     )
     expect(await ext.isVisionSupported('/model/dir')).toBe(false)
@@ -305,7 +319,7 @@ describe('isVisionSupported', () => {
 describe('isToolSupported', () => {
   it('detects tools from GGUF chat template metadata', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue({ model_path: '/abs/model.gguf' })
+    mockReadYaml.mockResolvedValue({ model_path: '/abs/model.gguf' })
     mockReadGguf.mockResolvedValue({
       metadata: { 'tokenizer.chat_template': 'you may use tools here' },
     })
@@ -314,7 +328,7 @@ describe('isToolSupported', () => {
 
   it('returns false when GGUF chat template has no tools', async () => {
     const ext = newExt()
-    mockInvoke.mockResolvedValue({ model_path: '/abs/model.gguf' })
+    mockReadYaml.mockResolvedValue({ model_path: '/abs/model.gguf' })
     mockReadGguf.mockResolvedValue({
       metadata: { 'tokenizer.chat_template': 'plain template' },
     })
@@ -323,15 +337,49 @@ describe('isToolSupported', () => {
 
   it('detects tools from a safetensors tokenizer_config.json', async () => {
     const ext = newExt()
-    mockInvoke.mockImplementation(async (cmd: string, args: any) => {
-      if (cmd === 'read_yaml') return { model_path: '/abs/model.safetensors' }
-      if (cmd === 'read_file_sync')
-        return JSON.stringify({ chat_template: 'uses tool_use blocks' })
-      return undefined
-    })
+    mockReadYaml.mockResolvedValue({ model_path: '/abs/model.safetensors' })
+    mockReadFileSync.mockResolvedValue(
+      JSON.stringify({ chat_template: 'uses tool_use blocks' })
+    )
     mockExistsSync.mockImplementation(async (p: string) =>
       p.endsWith('tokenizer_config.json')
     )
     expect(await ext.isToolSupported('foo')).toBe(true)
+    expect(mockReadFileSync).toHaveBeenCalledWith('/abs/tokenizer_config.json')
+  })
+})
+
+describe('getRandomPort', () => {
+  it('returns the port picked by the plugin', async () => {
+    const ext = newExt()
+    vi.mocked(getMlxRandomPort).mockResolvedValue(4321)
+    expect(await ext.getRandomPort()).toBe(4321)
+  })
+
+  it('throws a readable error when no port is available', async () => {
+    const ext = newExt()
+    vi.mocked(getMlxRandomPort).mockRejectedValue('none')
+    await expect(ext.getRandomPort()).rejects.toThrow(
+      'Unable to find a suitable port for MLX model'
+    )
+  })
+})
+
+describe('update', () => {
+  it('moves the model folder and rewrites model.yml with the new path', async () => {
+    const ext = newExt()
+    mockReadYaml.mockResolvedValue({
+      name: 'foo',
+      model_path: 'mlx/models/foo/model.safetensors',
+    })
+    mockExistsSync.mockResolvedValue(false)
+    vi.mocked(fs.mv).mockResolvedValue(undefined)
+
+    await ext.update('foo', { id: 'bar' })
+    expect(mockReadYaml).toHaveBeenCalledWith('/data/mlx/models/foo/model.yml')
+    expect(mockWriteYaml).toHaveBeenCalledWith('/data/mlx/models/bar/model.yml', {
+      name: 'foo',
+      model_path: 'mlx/models/bar/model.safetensors',
+    })
   })
 })
