@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
@@ -136,9 +136,9 @@ describe('DownloadManagement', () => {
     hoisted.eventHandlers = {}
   })
 
-  it('renders empty state when no downloads', () => {
-    render(<DownloadManagement />)
-    expect(screen.getByText(/Your download progress/)).toBeInTheDocument()
+  it('renders nothing when no downloads are in progress', () => {
+    const { container } = render(<DownloadManagement />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('renders a download item with progress', () => {
@@ -218,6 +218,27 @@ describe('DownloadManagement', () => {
 
 
 
+
+  it('appears when an app update starts downloading', () => {
+    const { container } = render(<DownloadManagement />)
+    expect(container).toBeEmptyDOMElement()
+    act(() => {
+      hoisted.eventHandlers['audu']({ progress: 0.1, downloadedBytes: 10, totalBytes: 100 })
+    })
+    expect(screen.getByText('App Update')).toBeInTheDocument()
+  })
+
+  it('stays visible mid app update when updater state syncs', () => {
+    const { rerender } = render(<DownloadManagement />)
+    act(() => {
+      hoisted.eventHandlers['audu']({ progress: 0.1, downloadedBytes: 10, totalBytes: 100 })
+    })
+    // A sync from another useAppUpdater instance hands back a fresh state
+    // object that still says isDownloading: false
+    hoisted.updateState = { ...hoisted.updateState, isDownloading: false }
+    rerender(<DownloadManagement />)
+    expect(screen.getByText('App Update')).toBeInTheDocument()
+  })
 
   it('on app update download success, shows success toast', () => {
     render(<DownloadManagement />)

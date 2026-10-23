@@ -42,7 +42,6 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
       >
         {!open && (
           <>
-            <DownloadManagement />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -54,6 +53,8 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
                 className="text-muted-foreground relative size-4.5"
               />
             </Button>
+            {/* After the toggle so the toggle stays put when this appears */}
+            <DownloadManagement />
           </>
         )}
         <div

@@ -38,6 +38,10 @@ export function DownloadManagement() {
   })
 
   useEffect(() => {
+    // This hook instance never downloads, and download state isn't synced
+    // across instances, so a `false` here is stale: the download events below
+    // own it. Copying it would hide the button mid-update on any state sync.
+    if (!updateState.isDownloading) return
     setAppUpdateState({
       isDownloading: updateState.isDownloading,
       downloadProgress: updateState.downloadProgress,
@@ -230,11 +234,16 @@ export function DownloadManagement() {
     onAppUpdateDownloadError,
   ])
 
+  // Stay mounted so the app-update listeners above keep firing; only the
+  // button hides. Keep it while the popover is open so the last download
+  // finishing doesn't yank the anchor out from under it.
+  if (downloadCount === 0 && !isPopoverOpen) return null
+
   return (
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
+          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative animate-in fade-in-0 zoom-in-95">
             <DownloadIcon className='text-muted-foreground size-4' />
             {downloadCount > 0 && (
               <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">
