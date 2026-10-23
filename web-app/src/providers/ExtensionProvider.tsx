@@ -1,4 +1,7 @@
 import { ExtensionManager } from '@/lib/extension'
+import { getHostBuiltins } from '@/lib/extensions/builtins'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform'
 import { APIs } from '@/lib/service'
 import { EventEmitter } from '@/services/events/EventEmitter'
 import { EngineManager, ModelManager } from '@janhq/core'
@@ -33,6 +36,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
 
     window.core.events = new EventEmitter()
     window.core.extensionManager = new ExtensionManager()
+    window.core.extensionHost = getExtensionHost()
     window.core.engineManager = new EngineManager()
     window.core.modelManager = new ModelManager()
 
@@ -44,8 +48,17 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // Register extensions - same pattern for both platforms.
     // Always finish setup even if registration/load throws so a single
     // faulty extension can't gate the entire UI.
+    setStatus({ key: 'registeringExtensions' })
+    // Host built-ins first: legacy extensions (llamacpp, mlx) reach host
+    // services such as Downloads through window.core.extensionHost.
     try {
-      setStatus({ key: 'registeringExtensions' })
+      await getExtensionHost().activateBuiltins(
+        getHostBuiltins({ mobile: isPlatformIOS() || isPlatformAndroid() })
+      )
+    } catch (e) {
+      console.error('Extension host setup failed:', e)
+    }
+    try {
       await ExtensionManager.getInstance().registerActive()
       await ExtensionManager.getInstance().load((done, total) =>
         setStatus({ key: 'loadingExtensions', vars: { done, total } })
@@ -71,6 +84,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       clearTimeout(watchdog)
       if (isMainWindow()) {
         ExtensionManager.getInstance().unload()
+        getExtensionHost().deactivateAll()
       }
     }
   }, [setupExtensions])

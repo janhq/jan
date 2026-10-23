@@ -23,6 +23,7 @@
     "@dnd-kit/modifiers": "9.0.0",
     "@dnd-kit/sortable": "10.0.0",
     "@janhq/core": "workspace:*",
+    "@janhq/extension-api": "workspace:*",
     "@janhq/interfaces": "0.0.2",
     "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools",
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp",
