@@ -12,6 +12,7 @@ export default defineConfig({
       // Workspace packages - each ships its own vitest config
       './packages/extension-api',
       './packages/extension-runtime',
+      './extensions-samples/hello-provider',
 
       // Extensions - each ships its own vitest config
       './extensions/assistant-extension',
