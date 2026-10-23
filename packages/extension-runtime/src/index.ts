@@ -1,7 +1,8 @@
 /**
  * The worker runtime for Jan extensions: the wire protocol, the endpoint both
- * sides run, and the handle tables that carry callbacks and disposables
- * across the boundary.
+ * sides run, the handle tables that carry callbacks and disposables across
+ * the boundary, and the composition of a worker script. The prelude itself
+ * is `./prelude-source`; the node:vm sandbox for tests is `./testing`.
  */
 export {
   DEFAULT_TIMEOUT_MS,
@@ -50,4 +51,9 @@ export {
   type LogLevel,
   type RegistrationReply,
   type Wire,
+  type WireResult,
 } from './protocol.js'
+export { composeWorkerSource } from './compose.js'
+export { workerTransport, type WorkerLike } from './worker-like.js'
+export { ACTIVATE_TIMEOUT_MS, BOOT_FUNCTION } from './worker/runtime.js'
+export { STRIPPED_GLOBALS, STRIPPED_NAVIGATOR } from './worker/strip.js'
