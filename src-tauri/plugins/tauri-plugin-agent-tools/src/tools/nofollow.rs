@@ -266,7 +266,7 @@ mod imp {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -274,18 +274,62 @@ mod tests {
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+    /// A directory link. Windows uses a junction: it needs no privilege, so the
+    /// test runs on every Windows machine, and it is the link a sandboxed
+    /// process could actually plant.
+    fn link_dir(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "mklink /J failed");
+        }
+    }
+
+    /// A file link, or `false` where the platform will not make one: Windows
+    /// file symlinks need Developer Mode or elevation. CI runners have it, so
+    /// there a refusal is a failure, not a skip.
+    fn link_file(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(target, link);
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(target, link);
+        match made {
+            Ok(()) => true,
+            Err(e) if std::env::var_os("CI").is_none() => {
+                eprintln!("skipping: cannot create a file symlink here: {e}");
+                false
+            }
+            Err(e) => panic!("file symlink on CI: {e}"),
+        }
+    }
+
     fn dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let d = std::env::temp_dir()
             .join(format!("jan_nofollow_test_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&d).unwrap();
-        d.canonicalize().unwrap()
+        // Unix: macOS's temp dir sits behind the `/var -> /private/var` link,
+        // which the walk would rightly refuse. Windows: keep the plain
+        // spelling, since `mklink` does not take a `\\?\` path.
+        #[cfg(unix)]
+        let d = d.canonicalize().unwrap();
+        d
     }
 
     #[test]
     fn writes_and_reads_creating_parents() {
         let root = dir();
-        let target = root.join("a/b/c.txt");
+        let target = root.join("a").join("b").join("c.txt");
         write(&target, b"hello").unwrap();
         assert_eq!(read(&target).unwrap(), b"hello");
         write(&target, b"hi").unwrap();
@@ -299,12 +343,13 @@ mod tests {
     fn a_link_in_a_directory_component_is_refused() {
         let root = dir();
         let outside = dir();
-        std::os::unix::fs::symlink(&outside, root.join("sub")).unwrap();
+        link_dir(&outside, &root.join("sub"));
+        let through = root.join("sub").join("x.txt");
         for create in [true, false] {
             let err = if create {
-                write(&root.join("sub/x.txt"), b"x").unwrap_err()
+                write(&through, b"x").unwrap_err()
             } else {
-                read(&root.join("sub/x.txt")).unwrap_err()
+                read(&through).unwrap_err()
             };
             assert!(is_link_refused(&err), "create={create}: {err}");
         }
@@ -319,8 +364,11 @@ mod tests {
         let root = dir();
         let outside = dir();
         std::fs::write(outside.join("existing"), b"keep").unwrap();
-        std::os::unix::fs::symlink(outside.join("existing"), root.join("a")).unwrap();
-        std::os::unix::fs::symlink(outside.join("new"), root.join("b")).unwrap();
+        if !link_file(&outside.join("existing"), &root.join("a"))
+            || !link_file(&outside.join("new"), &root.join("b"))
+        {
+            return;
+        }
         assert!(is_link_refused(&write(&root.join("a"), b"x").unwrap_err()));
         assert!(is_link_refused(&write(&root.join("b"), b"x").unwrap_err()));
         assert!(is_link_refused(&read(&root.join("a")).unwrap_err()));
