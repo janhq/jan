@@ -199,6 +199,52 @@ describe('CoworkAskCard', () => {
     expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Small'] }])
   })
 
+  it('multi-select picks come back when the free text is cleared', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    fireEvent.click(screen.getByText('Team'))
+    const input = screen.getByPlaceholderText('common:askSomethingElse')
+    fireEvent.change(input, { target: { value: 'x' } })
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.click(submitButton())
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'who', selected: ['Team'] }])
+  })
+
+  it('does not count free text as a selected option', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
+      target: { value: 'x' },
+    })
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+  })
+
+  it('groups the options with an accessible name', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    expect(screen.getByRole('radiogroup', { name: 'Which scope?' })).toBeInTheDocument()
+  })
+
+  it('Enter on a mouse-focused option continues with the number-picked answer', () => {
+    render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
+    const small = screen.getByText('Small').closest('button')!
+    fireEvent.click(small)
+    small.focus()
+    fireEvent.keyDown(small, { key: '2' })
+    fireEvent.keyDown(small, { key: 'Enter' })
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Large'] }])
+  })
+
+  it('ignores digits when focus is on a control outside the card', () => {
+    render(
+      <>
+        <button data-testid="outside">sidebar</button>
+        <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
+      </>
+    )
+    const outside = screen.getByTestId('outside')
+    outside.focus()
+    fireEvent.keyDown(outside, { key: '1' })
+    expect(submitButton()).toBeDisabled()
+  })
+
   it('removes the key listener on unmount', () => {
     const { unmount } = render(
       <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />

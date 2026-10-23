@@ -64,6 +64,10 @@ export function CoworkAskCard({
   const [custom, setCustom] = useState<Record<string, string>>({})
   const otherInputRef = useRef<HTMLInputElement>(null)
   const keyHandlerRef = useRef<((e: KeyboardEvent) => void) | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  // Option picks set aside while free text is active, so clearing the text
+  // restores them instead of leaving the user with nothing selected.
+  const stashRef = useRef<Record<string, string[]>>({})
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => keyHandlerRef.current?.(e)
@@ -77,6 +81,7 @@ export function CoworkAskCard({
     setIndex(0)
     setSelected({})
     setCustom({})
+    stashRef.current = {}
   }, [requestId])
 
   const questions = request?.questions ?? []
@@ -110,6 +115,7 @@ export function CoworkAskCard({
     // sitting in the input looking like the live answer.
     if (label !== OTHER && picks.includes(OTHER)) {
       setCustom((c) => ({ ...c, [question.id]: '' }))
+      delete stashRef.current[question.id]
     }
     setSelected((prev) => {
       const current = prev[question.id] ?? []
@@ -153,6 +159,9 @@ export function CoworkAskCard({
     if (e.defaultPrevented || e.isComposing || e.repeat) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const el = e.target instanceof HTMLElement ? e.target : null
+    // Only act when focus is on the page itself or inside this card; a press on
+    // a sidebar button or link elsewhere must not change the pending answer.
+    if (el && el !== document.body && !cardRef.current?.contains(el)) return
     if (
       el &&
       (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) ||
@@ -163,10 +172,12 @@ export function CoworkAskCard({
     ) {
       return
     }
-    // Keyboard-only path: after a number pick, Enter continues. Only when focus
-    // is on the page itself, so it never double-fires a focused button.
+    // Keyboard-only path: after a number pick, Enter continues. Handled on the
+    // page or on a focused option row (a mouse-clicked option keeps focus, and
+    // its native Enter would re-toggle it); other buttons keep native Enter.
     if (e.key === 'Enter') {
-      if ((!el || el === document.body) && (isLast ? allAnswered : isAnswered(question.id))) {
+      const onPage = !el || el === document.body || el.getAttribute('role') === 'radio'
+      if (onPage && (isLast ? allAnswered : isAnswered(question.id))) {
         e.preventDefault()
         advance()
       }
@@ -187,7 +198,7 @@ export function CoworkAskCard({
   const decline = () => onRespond(requestId, null)
 
   return (
-    <div className="mb-2 rounded-lg border bg-main-view">
+    <div ref={cardRef} className="mb-2 rounded-lg border bg-main-view">
       <div className="flex items-start gap-2 px-3 pt-2.5 pb-2">
         <p className="min-w-0 flex-1 text-sm font-medium">{question.question}</p>
         <div className="flex shrink-0 items-center gap-0.5 text-main-view-fg/50">
@@ -227,7 +238,11 @@ export function CoworkAskCard({
         </div>
       </div>
 
-      <div className="flex flex-col gap-0.5 px-2 pb-1">
+      <div
+        role={question.multi ? 'group' : 'radiogroup'}
+        aria-label={question.question}
+        className="flex flex-col gap-0.5 px-2 pb-1"
+      >
         {question.options.map((option, i) => {
           const checked = picks.includes(option.label)
           return (
@@ -246,8 +261,8 @@ export function CoworkAskCard({
               ) : (
                 <NumberBadge n={i + 1} checked={checked} />
               )}
-              <span className="min-w-0 flex-1">
-                <span className="text-[13px] leading-5">{option.label}</span>
+              <span className="min-w-0 flex-1 leading-5">
+                <span className="text-[13px]">{option.label}</span>
                 {question.recommended === i && (
                   <span className="ml-1.5 text-[11px] text-main-view-fg/45">
                     {t('common:askRecommended')}
@@ -266,7 +281,7 @@ export function CoworkAskCard({
         <div
           onClick={() => otherInputRef.current?.focus()}
           className={cn(
-            'flex items-center gap-2 rounded-md px-2 py-1',
+            'flex items-center gap-2 rounded-md px-2 py-1 focus-within:bg-main-view-fg/5',
             usingCustom && 'bg-main-view-fg/5'
           )}
         >
@@ -281,15 +296,17 @@ export function CoworkAskCard({
             onChange={(e) => {
               const value = e.target.value
               setCustom((prev) => ({ ...prev, [question.id]: value }))
-              // Real text selects the free-text answer (exclusive with options).
-              // Blank text never touches an option pick; it only releases the
-              // free-text selection when that was the active one.
-              setSelected((prev) => {
-                const current = prev[question.id] ?? []
-                if (value.trim()) return { ...prev, [question.id]: [OTHER] }
-                if (current.includes(OTHER)) return { ...prev, [question.id]: [] }
-                return prev
-              })
+              // Real text selects the free-text answer (exclusive with options, per
+              // the QuestionResult contract); the prior picks are stashed and come
+              // back when the text is cleared. Blank text never touches picks.
+              if (value.trim()) {
+                if (!picks.includes(OTHER)) stashRef.current[question.id] = picks
+                setSelected((prev) => ({ ...prev, [question.id]: [OTHER] }))
+              } else if (picks.includes(OTHER)) {
+                const restored = stashRef.current[question.id] ?? []
+                delete stashRef.current[question.id]
+                setSelected((prev) => ({ ...prev, [question.id]: restored }))
+              }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -306,14 +323,14 @@ export function CoworkAskCard({
             }}
             placeholder={t('common:askSomethingElse')}
             aria-label={t('common:askSomethingElse')}
-            className="h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px]"
+            className="h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px] dark:bg-transparent"
           />
         </div>
       </div>
 
       <div className="flex items-center gap-2 border-t px-3 py-2">
         <span className="text-xs text-main-view-fg/50">
-          {question.multi
+          {question.multi && !usingCustom
             ? t('common:askSelectedCount', { count: picks.length })
             : null}
         </span>
