@@ -381,8 +381,8 @@ pub fn hidden_under(base: &Path, hidden: &Path) -> Option<PathBuf> {
 /// override their approval. An unresolvable path fails closed.
 ///
 /// Still a re-check, not a guarantee: a swap landing between this call and the
-/// open is not covered. That needs descriptor-relative no-follow opens
-/// (`openat2` with `RESOLVE_BENEATH`, reparse-point handling on Windows).
+/// open is not covered. A handler that writes resolves once with [`landing`]
+/// and opens the result through [`super::nofollow`], which closes that window.
 pub fn symlink_escapes_root(project_root: &Path, scratch: Option<&Path>, target: &Path) -> bool {
     symlink_escapes_any_root(project_root, scratch, &[], target)
 }
@@ -399,27 +399,59 @@ pub fn symlink_escapes_any_root(
     read_roots: &[PathBuf],
     target: &Path,
 ) -> bool {
-    let mut roots = vec![project_root];
+    matches!(landing(project_root, scratch, read_roots, target), Landing::Escapes)
+}
+
+/// Where a handler's target really lands, see [`landing`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum Landing {
+    /// Under a trusted root, and resolves (every link followed) inside one.
+    Inside(PathBuf),
+    /// Claims a trusted root but resolves outside all of them, or cannot be
+    /// resolved at all: refuse.
+    Escapes,
+    /// Not lexically under any root: an escape the gate already put to the
+    /// user. Carries the real path when it resolves.
+    Outside(Option<PathBuf>),
+}
+
+/// Resolve `target` once and classify it against the trusted roots.
+///
+/// A writer must open exactly the path this returns rather than re-resolving
+/// `target`: two resolutions leave room for a link swapped in between to send
+/// the second one somewhere the first was never checked against.
+pub fn landing(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    roots: &[PathBuf],
+    target: &Path,
+) -> Landing {
+    let mut all = vec![project_root];
     if let Some(s) = scratch {
-        roots.push(s);
+        all.push(s);
     }
-    for r in read_roots {
-        roots.push(r.as_path());
+    for r in roots {
+        all.push(r.as_path());
     }
     let normalized = lexical_normalize(target);
-    if !roots
+    if !all
         .iter()
         .any(|r| normalized.starts_with(lexical_normalize(r)))
     {
-        return false;
+        return Landing::Outside(canonicalize_lenient(&normalized).ok());
     }
     let Ok(resolved) = canonicalize_lenient(&normalized) else {
-        return true;
+        return Landing::Escapes;
     };
-    !roots
+    if all
         .iter()
         .filter_map(|r| r.canonicalize().ok())
         .any(|r| resolved.starts_with(r))
+    {
+        Landing::Inside(resolved)
+    } else {
+        Landing::Escapes
+    }
 }
 
 /// Canonicalize a path that may not fully exist, resolving `.`/`..` lexically
