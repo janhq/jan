@@ -3,8 +3,8 @@ import type { AskSummaryRow } from '@/lib/coworkAsk'
 
 /**
  * A settled `ask`, kept in the transcript so the user's answers stay visible
- * once the card above the input closes. The full tool call stays in the
- * reasoning trace; this is the record a reader actually looks for.
+ * once the card above the input closes. It replaces the tool call's entry in
+ * the reasoning trace (MessageItem skips the part after rendering this).
  */
 export function AskSummaryCard({ rows }: { rows: AskSummaryRow[] }) {
   const { t } = useTranslation()
