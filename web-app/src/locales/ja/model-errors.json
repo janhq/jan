@@ -6,5 +6,9 @@
   "increaseContextSize": "コンテキストサイズを増やす",
   "lastRequestOverflowed": "前回のリクエストがコンテキストウィンドウを超過しました。",
   "contextOverflowDetail": "このリクエストには {{request}} token が必要でしたが、モデルのコンテキストウィンドウは {{context}} token しか保持できません。",
-  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。"
+  "contextOverflowGeneric": "リクエストが利用可能なコンテキストサイズを超えています。",
+  "rateLimited": "プロバイダのレート上限に達しました: {{reason}}",
+  "rateLimitRetrying": "{{seconds}} 秒後に自動で再試行します（{{attempt}}/{{max}} 回目）",
+  "rateLimitCancelRetry": "再試行しない",
+  "rateLimitGaveUp": "自動の再試行を中止しました。1 分ほど待ってから再生成するか、プロバイダでこのデプロイの 1 分あたりのトークン数（クォータ）を増やしてください（Azure なら Azure AI Foundry ポータル）。"
 }
