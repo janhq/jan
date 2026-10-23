@@ -160,13 +160,24 @@ const continueReplaceIds = new Map<string, string>()
 // "Increase Context Size" button to resume from.
 const pendingContinuations = new Map<
   string,
-  { message: UIMessage; text: string }
+  { message: UIMessage; content: { text: string; reasoning: string } }
 >()
 // The n_ctx the thread's local model launched with, read by isContextLimitStop.
 const launchedCtxLens = new Map<string, number | undefined>()
 // The thread's in-flight title summarization. Only that thread's own activity
 // cancels it.
 const titleAborts = new Map<string, AbortController>()
+
+// The text and reasoning a reply generated so far: what a resume replays as
+// the assistant prefill, so a thinking model keeps its reasoning.
+const partialOf = (message: UIMessage) => {
+  const collect = (type: 'text' | 'reasoning') =>
+    message.parts
+      .filter((p) => p.type === type)
+      .map((p) => (p as { text: string }).text)
+      .join('')
+  return { text: collect('text'), reasoning: collect('reasoning') }
+}
 
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
@@ -535,13 +546,10 @@ function ThreadDetail() {
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
-          // button — auto-increase was removed; the user explicitly opts in.
-          const partialText = message.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { type: 'text'; text: string }).text)
-            .join('')
-          if (partialText) {
-            pendingContinuations.set(threadId, { message, text: partialText })
+          // button - auto-increase was removed; the user explicitly opts in.
+          const content = partialOf(message)
+          if (content.text || content.reasoning) {
+            pendingContinuations.set(threadId, { message, content })
           }
           // Stamped on the thread's own messages, so a thread that finished in
           // the background shows the banner when the user returns to it.
@@ -549,10 +557,11 @@ function ThreadDetail() {
           if (openThreadIdRef.current === threadId) {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
           }
-          return
+          // Falls through to store the partial as a stopped reply: returning
+          // here dropped everything the model had generated.
         }
-        // Non-context-limit length truncation: fall through and persist the
-        // partial marked as stopped so the "Continue" button can resume it.
+        // Any other length stop is the output-token cap: the partial is stored
+        // as stopped so the "Continue" button can resume it.
       }
 
       if (!isAbort && message.parts.length) clearPendingContinue(threadId)
@@ -1908,13 +1917,7 @@ function ThreadDetail() {
     (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
-      const collect = (type: 'text' | 'reasoning') =>
-        msg.parts
-          .filter((p) => p.type === type)
-          .map((p) => (p as { text: string }).text)
-          .join('')
-      const text = collect('text')
-      const reasoning = collect('reasoning')
+      const { text, reasoning } = partialOf(msg)
       if (!text && !reasoning) return
       setContinueFromContent({ text, reasoning })
       continueReplaceIds.set(threadId, messageId)
@@ -1981,6 +1984,21 @@ function ThreadDetail() {
   // Handler for increasing context size
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
+
+    // The reply this click resumes if the turn that stopped is not in
+    // pendingContinuations (a restart empties it): the stored partial, marked
+    // `stopped`, that hydration restored. Read before the awaits below, while
+    // the open thread is still this one.
+    const lastMessage = chatMessagesRef.current.at(-1)
+    const stoppedPartial =
+      lastMessage?.role === 'assistant' &&
+      (lastMessage.metadata as { stopped?: boolean } | undefined)?.stopped
+        ? { message: lastMessage, content: partialOf(lastMessage) }
+        : undefined
+    const storedPartial =
+      stoppedPartial?.content.text || stoppedPartial?.content.reasoning
+        ? stoppedPartial
+        : undefined
 
     const updateProvider = useModelProvider.getState().updateProvider
     const provider = getProviderByName(selectedProvider)
@@ -2058,21 +2076,27 @@ function ThreadDetail() {
       await serviceHub.models().stopModel(selectedModel.id)
     }
 
-    // Consume any pending partial captured at the `finishReason === 'length'`
-    // event so the regenerate resumes from where the stream stopped, and the
-    // "Growing the Mind…" shimmer renders while the model reloads.
+    // Resume from the partial the reply stopped at: the one captured at the
+    // `finishReason === 'length'` event, or, when none was (the Map is empty
+    // after an application restart), the stored reply read above. The
+    // regenerate then continues it, and the "Growing the Mind…" shimmer renders
+    // while the model reloads.
     // The prefill goes on this thread's own transport: the user may have
     // opened another thread while the model reloaded.
-    const pending = takeFrom(pendingContinuations, threadId)
+    const pending =
+      takeFrom(pendingContinuations, threadId) ?? storedPartial
     if (pending) {
       useChatSessions
         .getState()
-        .sessions[threadId]?.transport.setContinueFromContent(pending.text)
+        .sessions[threadId]?.transport.setContinueFromContent(pending.content)
       setPendingContinue({ threadId, message: pending.message })
+      // The partial is stored (see onFinish), so the resumed reply replaces it
+      // in place rather than forking a second version of the same answer.
+      continueReplaceIds.set(threadId, pending.message.id)
     }
 
     setTimeout(() => {
-      handleRegenerate()
+      handleRegenerate(pending?.message.id)
     }, 1000)
   }, [
     selectedModel,
@@ -2254,12 +2278,15 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                // A banner error stands in for the failed assistant turn:
-                // regenerate/reload restarts it from scratch, so hide the
-                // partial (tool calls, "Worked for Ns") and show only the banner.
+                // An out-of-memory or backend error stands in for the failed
+                // assistant turn: regenerate/reload restarts it from scratch, so
+                // hide the partial (tool calls, "Worked for Ns") and show only
+                // the banner. A context-limit stop keeps its partial: that text
+                // was generated and stored, and the banner only offers a bigger
+                // context to resume it.
                 if (
                   isLastMessage &&
-                  hasBannerError &&
+                  (oomError || backendError) &&
                   message.role === 'assistant'
                 )
                   return null

@@ -1056,16 +1056,131 @@ describe('ThreadDetail route', () => {
       expect(screen.queryByText('Increase Context Size')).toBeNull()
     })
 
-    it('still offers Increase Context Size for a local model near ctx_len', () => {
+    // A reply that fills a local model's context was generated; dropping it left
+    // the user with only their own message and a banner.
+    it('keeps the partial reply of a local model near ctx_len, with the banner', () => {
       h.modelProviderState.selectedProvider = 'llamacpp'
       renderComponent()
       act(() => {
         finishAtLength()
       })
-      expect(
-        h.messagesState.addMessage.mock.calls.some((c: any[]) => c[0].id === 'a-len')
-      ).toBe(false)
+      const added = h.messagesState.addMessage.mock.calls.map((c: any[]) => c[0])
+      const persisted = added.find((m: any) => m.id === 'a-len')
+      expect(persisted).toBeTruthy()
+      expect(persisted.metadata.stopped).toBe(true)
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
+    })
+
+    // Clicks Increase Context Size and lets its delayed regenerate fire. Returns
+    // what the click replayed to the thread's transport as the assistant prefill.
+    const increaseContext = async () => {
+      const setContinueFromContent = vi.fn()
+      h.chatSessionsState.sessions = {
+        'thread-1': {
+          transport: { getTurnModelSelection: () => null, setContinueFromContent },
+        },
+      }
+      const realModels = hub.models as () => Record<string, unknown>
+      hub.models = () => ({
+        ...realModels(),
+        updateModelSettings: vi.fn().mockResolvedValue(undefined),
+      })
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          screen.getByText('Increase Context Size').click()
+        })
+        await act(async () => {
+          vi.advanceTimersByTime(1000)
+        })
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+        hub.models = realModels
+        h.chatSessionsState.sessions = {}
+      }
+      return setContinueFromContent
+    }
+
+    // The saved partial is in memory only; after a restart the stopped reply is
+    // what hydration restored. Increase Context Size resumes it in place instead
+    // of regenerating from scratch and keeping the partial as another version,
+    // and replays its reasoning with its text.
+    it('resumes the stored partial in place after an application restart', async () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error(
+        'request (518 tokens) exceeds the available context size (512 tokens)'
+      )
+      h.chatState.messages = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'q' }] },
+        {
+          id: 'a-len',
+          role: 'assistant',
+          parts: [
+            { type: 'reasoning', text: 'thinking' },
+            { type: 'text', text: 'partial answer' },
+          ],
+          metadata: { stopped: true, parentId: 'u1' },
+        },
+      ]
+      const stored = [
+        { id: 'u1', role: 'user', thread_id: 'thread-1', content: [], metadata: { parentId: null } },
+        { id: 'a-len', role: 'assistant', thread_id: 'thread-1', content: [], metadata: { stopped: true, parentId: 'u1' } },
+      ]
+      h.messagesState.getMessages = vi.fn(() => stored)
+      renderComponent()
+      const onFinish = (h as any).capturedOnFinish
+
+      const prefill = await increaseContext()
+      expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'a-len' })
+      expect(prefill).toHaveBeenCalledWith({
+        text: 'partial answer',
+        reasoning: 'thinking',
+      })
+
+      act(() => {
+        onFinish({
+          message: {
+            id: 'a-new',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer, done' }],
+            metadata: {},
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+      expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', 'a-len')
+    })
+
+    // A thinking model can fill the context while still reasoning: there is no
+    // text yet, but the reasoning is what to resume from.
+    it('resumes a reply that filled the context while still reasoning', async () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      renderComponent()
+      act(() => {
+        ;(h as any).capturedOnFinish({
+          message: {
+            id: 'a-len',
+            role: 'assistant',
+            parts: [{ type: 'reasoning', text: 'still thinking' }],
+            metadata: {
+              finishReason: 'length',
+              usage: { inputTokens: 30000, outputTokens: 4000 },
+            },
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+
+      const prefill = await increaseContext()
+      expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'a-len' })
+      expect(prefill).toHaveBeenCalledWith({
+        text: '',
+        reasoning: 'still thinking',
+      })
     })
   })
 
