@@ -41,6 +41,12 @@ export * from './extension'
 export * from './extensions'
 
 /**
+ * Export the extension host's internal tier.
+ * @module
+ */
+export * from './host'
+
+/**
  * Export all base models.
  * @module
  */

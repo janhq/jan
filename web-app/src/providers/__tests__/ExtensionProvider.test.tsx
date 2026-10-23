@@ -9,6 +9,11 @@ const h = vi.hoisted(() => ({
   unload: vi.fn(),
   emit: vi.fn().mockResolvedValue(undefined),
   windowLabel: 'main',
+  calls: [] as string[],
+  host: {
+    activateBuiltins: vi.fn().mockResolvedValue(undefined),
+    deactivateAll: vi.fn().mockResolvedValue(undefined),
+  },
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -30,6 +35,8 @@ vi.mock('@/lib/extension', () => ({
     }
   },
 }))
+
+vi.mock('@/lib/extensions/host', () => ({ getExtensionHost: () => h.host }))
 
 vi.mock('@/lib/service', () => ({ APIs: {} }))
 vi.mock('@/services/events/EventEmitter', () => ({ EventEmitter: class {} }))
@@ -55,6 +62,10 @@ describe('ExtensionProvider', () => {
     h.load.mockResolvedValue(undefined)
     h.emit.mockResolvedValue(undefined)
     h.windowLabel = 'main'
+    h.calls = []
+    h.host.activateBuiltins.mockImplementation(async () => void h.calls.push('host'))
+    h.host.deactivateAll.mockResolvedValue(undefined)
+    h.registerActive.mockImplementation(async () => void h.calls.push('legacy'))
     document.body.className = ''
     document.body.innerHTML =
       '<div id="initial-loader"><p id="initial-loader-caption"></p></div>'
@@ -91,6 +102,31 @@ describe('ExtensionProvider', () => {
     expect(h.load).toHaveBeenCalled()
   })
 
+  it('exposes the host and activates its built-ins before the legacy manager', async () => {
+    renderProvider()
+    await screen.findByTestId('child')
+    expect(window.core?.extensionHost).toBe(h.host)
+    // No built-in has migrated to the host yet, so the list is empty.
+    expect(h.host.activateBuiltins).toHaveBeenCalledWith([])
+    expect(h.calls).toEqual(['host', 'legacy'])
+  })
+
+  it('still runs the legacy manager if host activation rejects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.host.activateBuiltins.mockRejectedValue(new Error('boom'))
+    renderProvider()
+    expect(await screen.findByTestId('child')).toBeInTheDocument()
+    expect(h.registerActive).toHaveBeenCalled()
+  })
+
+  it('deactivates host extensions on unmount', async () => {
+    const { unmount } = renderProvider()
+    await screen.findByTestId('child')
+    unmount()
+    expect(h.host.deactivateAll).toHaveBeenCalled()
+    expect(h.unload).toHaveBeenCalled()
+  })
+
   it('dismisses the branded loader only after setup completes', async () => {
     renderProvider()
     expect(document.body.classList.contains('loaded')).toBe(false)
@@ -122,6 +158,7 @@ describe('ExtensionProvider', () => {
     expect(await screen.findByTestId('child')).toBeInTheDocument()
     expect(h.registerActive).not.toHaveBeenCalled()
     expect(h.load).not.toHaveBeenCalled()
+    expect(h.host.activateBuiltins).not.toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalledWith('app-ready')
   })
 })

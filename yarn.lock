@@ -2759,6 +2759,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/core@workspace:core"
   dependencies:
+    "@janhq/extension-api": "workspace:*"
     "@npmcli/arborist": "npm:^7.1.0"
     "@types/node": "npm:^22.10.0"
     "@types/react": "npm:19.1.2"
@@ -2797,7 +2798,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@janhq/extension-api@workspace:packages/extension-api":
+"@janhq/extension-api@workspace:*, @janhq/extension-api@workspace:packages/extension-api":
   version: 0.0.0-use.local
   resolution: "@janhq/extension-api@workspace:packages/extension-api"
   dependencies:
@@ -3004,6 +3005,7 @@ __metadata:
     "@dnd-kit/sortable": "npm:10.0.0"
     "@eslint/js": "npm:8.57.0"
     "@janhq/core": "workspace:*"
+    "@janhq/extension-api": "workspace:*"
     "@janhq/interfaces": "npm:0.0.2"
     "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools"
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp"

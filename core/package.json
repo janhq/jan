@@ -43,6 +43,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "@janhq/extension-api": "workspace:*",
     "rxjs": "^7.8.1",
     "ulidx": "^2.3.0"
   },
