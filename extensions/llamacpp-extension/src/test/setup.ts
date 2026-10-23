@@ -42,11 +42,13 @@ Object.defineProperty(globalThis, 'window', {
       api: {
         // getSystemInfo: vi.fn(),
       },
-      extensionManager: {
-        getByName: vi.fn().mockReturnValue({
-          downloadFiles: vi.fn().mockResolvedValue(undefined),
-          cancelDownload: vi.fn().mockResolvedValue(undefined),
-        }),
+      extensionHost: {
+        services: {
+          get: vi.fn().mockReturnValue({
+            downloadFiles: vi.fn().mockResolvedValue(undefined),
+            cancelDownload: vi.fn().mockResolvedValue(undefined),
+          }),
+        },
       },
     },
   },
@@ -76,6 +78,7 @@ vi.mock('@tauri-apps/api/path', () => ({
 
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
+  ServiceKeys: { Downloads: { id: 'downloads' } },
   logger: {
     debug: vi.fn(),
     info: vi.fn(),

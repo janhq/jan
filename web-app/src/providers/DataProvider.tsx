@@ -1,10 +1,7 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import {
-  useGeneralSetting,
-  HUGGINGFACE_TOKEN_SECRET_KEY,
-} from '@/hooks/useGeneralSetting'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useRef } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
@@ -14,7 +11,7 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
-import { AppEvent, events } from '@janhq/core'
+import { AppEvent, events, HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { sweepThreadWorkspaces } from '@/lib/agentTools'
@@ -226,7 +223,7 @@ export function DataProvider() {
       })
     })
     // Re-seed the Hugging Face token from the keyring (no longer persisted to
-    // settings storage) into the store + download extension for this session.
+    // settings storage) into the store for this session.
     invoke<string | null>('get_secret', {
       key: HUGGINGFACE_TOKEN_SECRET_KEY,
     })

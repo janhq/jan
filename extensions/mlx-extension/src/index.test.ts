@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import mlx_extension from './index'
-import { fs, getJanDataFolderPath, events } from '@janhq/core'
+import { fs, getJanDataFolderPath, events, ServiceKeys } from '@janhq/core'
 import {
   unloadMlxModel,
   findMlxSessionByModel,
@@ -381,5 +381,36 @@ describe('update', () => {
       name: 'foo',
       model_path: 'mlx/models/bar/model.safetensors',
     })
+  })
+})
+
+describe('pauseImport / abortImport', () => {
+  const downloads = () => ({
+    pauseDownload: vi.fn().mockResolvedValue(undefined),
+    cancelDownload: vi.fn().mockResolvedValue(undefined),
+  })
+
+  it('pauses the task through the host Downloads service', async () => {
+    const service = downloads()
+    const getService = vi.fn().mockReturnValue(service)
+    window.core.extensionHost.services.get = getService
+    await newExt().pauseImport('m1')
+    expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
+    expect(service.pauseDownload).toHaveBeenCalledWith('mlx/m1')
+  })
+
+  it('cancels the task through the host Downloads service', async () => {
+    mockExistsSync.mockResolvedValue(false)
+    const service = downloads()
+    window.core.extensionHost.services.get = vi.fn().mockReturnValue(service)
+    await newExt().abortImport('m1')
+    expect(service.cancelDownload).toHaveBeenCalledWith('mlx/m1')
+  })
+
+  it('fails loudly when no Downloads service is provided', async () => {
+    window.core.extensionHost.services.get = vi.fn().mockReturnValue(undefined)
+    await expect(newExt().pauseImport('m1')).rejects.toThrow(
+      'Downloads service is not available'
+    )
   })
 })

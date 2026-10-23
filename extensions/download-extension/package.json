@@ -1,9 +1,17 @@
 {
   "name": "@janhq/download-extension",
-  "productName": "Download Manager",
   "version": "1.0.0",
   "description": "Download and manage files and AI models in Jan.",
   "main": "dist/index.js",
+  "jan": {
+    "id": "jan.download",
+    "displayName": "Download Manager",
+    "description": "Download and manage files and AI models in Jan.",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {

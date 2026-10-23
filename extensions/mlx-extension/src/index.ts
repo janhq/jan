@@ -23,6 +23,8 @@ import {
   events,
   AppEvent,
   DownloadEvent,
+  ServiceKeys,
+  type DownloadService,
   logger,
 } from '@janhq/core'
 
@@ -620,10 +622,6 @@ export default class mlx_extension extends AIEngine {
       ])
       const localPath = await joinPath([modelDir, 'model.safetensors'])
 
-      const downloadManager = window.core.extensionManager.getByName(
-        '@janhq/download-extension'
-      )
-
       // Build download items list
       const downloadItems: any[] = [
         {
@@ -645,7 +643,7 @@ export default class mlx_extension extends AIEngine {
       }
 
       try {
-        await downloadManager.downloadFiles(
+        await this.downloads().downloadFiles(
           downloadItems,
           this.createDownloadTaskId(modelId),
           (transferred: number, total: number) => {
@@ -775,6 +773,16 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
+  // The download built-in runs on the extension host now; this legacy
+  // class reaches it through the window global until it migrates (P4).
+  private downloads(): DownloadService {
+    const service = window.core?.extensionHost?.services.get(
+      ServiceKeys.Downloads
+    )
+    if (!service) throw new Error('Downloads service is not available')
+    return service
+  }
+
   private createDownloadTaskId(modelId: string) {
     // prepend provider to make taksId unique across providers
     const cleanModelId = modelId.includes('.')
@@ -787,12 +795,8 @@ export default class mlx_extension extends AIEngine {
     // Cancel any active download task
     // prepend provider name to avoid name collision
     const taskId = this.createDownloadTaskId(modelId)
-    const downloadManager = window.core.extensionManager.getByName(
-      '@janhq/download-extension'
-    )
-
     try {
-      await downloadManager.cancelDownload(taskId)
+      await this.downloads().cancelDownload(taskId)
     } catch (cancelError) {
       logger.warn('Failed to cancel download task:', cancelError)
     }
@@ -803,11 +807,8 @@ export default class mlx_extension extends AIEngine {
 
   override async pauseImport(modelId: string): Promise<void> {
     const taskId = this.createDownloadTaskId(modelId)
-    const downloadManager = window.core.extensionManager.getByName(
-      '@janhq/download-extension'
-    )
     // Pause keeps the partial .tmp for resume; the model folder is preserved.
-    await downloadManager.pauseDownload(taskId)
+    await this.downloads().pauseDownload(taskId)
   }
 
   /**

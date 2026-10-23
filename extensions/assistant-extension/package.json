@@ -1,10 +1,17 @@
 {
   "name": "@janhq/assistant-extension",
-  "productName": "Jan Assistant",
   "version": "1.0.2",
   "description": "Powers the default AI assistant that works with all your installed models.",
   "main": "dist/index.js",
-  "node": "dist/node/index.js",
+  "jan": {
+    "id": "jan.assistant",
+    "displayName": "Jan Assistant",
+    "description": "Powers the default AI assistant that works with all your installed models.",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {

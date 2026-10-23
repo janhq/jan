@@ -134,6 +134,27 @@ describe('ExtensionHost', () => {
     expect(host.services.get(key)).toBeUndefined()
   })
 
+  it('lets built-ins read host keyring secrets through the internal context', async () => {
+    const secrets = memorySecrets()
+    secrets.data.set('huggingface', 'hf_abc')
+    const host = new ExtensionHost({
+      appSettings: memoryAppSettings(),
+      secrets,
+      notify: vi.fn(),
+    })
+    const seen: (string | null)[] = []
+    await host.activateBuiltin(
+      builtin(manifest('jan.reader'), {
+        activate: async (ctx: ExtensionContext) => {
+          const { internal } = ctx as InternalExtensionContext
+          seen.push(await internal.secrets.get('huggingface'))
+          seen.push(await internal.secrets.get('absent'))
+        },
+      })
+    )
+    expect(seen).toEqual(['hf_abc', null])
+  })
+
   it('grants a built-in exactly the permissions its manifest requests', async () => {
     const host = newHost()
     await host.activateBuiltin(

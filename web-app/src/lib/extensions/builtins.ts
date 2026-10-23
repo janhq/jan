@@ -1,4 +1,6 @@
 import type { ExtensionModule, ValidatedManifest } from '@janhq/extension-api'
+import * as assistant from '../../../../extensions/assistant-extension/package.json'
+import * as download from '../../../../extensions/download-extension/package.json'
 
 /**
  * A built-in that runs in the host process through `activate(ctx)`. The
@@ -15,11 +17,37 @@ export interface BuiltinExtension {
   mobile?: boolean
 }
 
+// Read field by field off the namespace import (never the whole object) so
+// the bundler keeps only these exports of each package.json.
+const manifestOf = (pkg: {
+  name: string
+  version: string
+  jan: Omit<ValidatedManifest, 'name' | 'version'>
+}): ValidatedManifest => ({ ...pkg.jan, name: pkg.name, version: pkg.version })
+
 /**
  * The built-ins the host activates, in no particular order (dependsOn
- * decides). Empty until the first migration (P1-5).
+ * decides). Legacy `BaseExtension` built-ins live in
+ * services/core/bundled-extensions.ts until they migrate.
  */
-export const HOST_BUILTINS: BuiltinExtension[] = []
+export const HOST_BUILTINS: BuiltinExtension[] = [
+  {
+    manifest: manifestOf({
+      name: assistant.name,
+      version: assistant.version,
+      jan: assistant.jan,
+    }),
+    load: () => import('@janhq/assistant-extension'),
+  },
+  {
+    manifest: manifestOf({
+      name: download.name,
+      version: download.version,
+      jan: download.jan,
+    }),
+    load: () => import('@janhq/download-extension'),
+  },
+]
 
 export function getHostBuiltins(
   opts: { mobile?: boolean } = {}

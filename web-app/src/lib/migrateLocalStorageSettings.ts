@@ -1,7 +1,7 @@
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { localStorageKey } from '@/constants/localStorage'
-import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@/hooks/useGeneralSetting'
+import { HUGGINGFACE_TOKEN_SECRET_KEY } from '@janhq/core'
 
 /**
  * One-time migration of settings from webview localStorage to the backend
