@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { getBundledExtensions } from '../bundled-extensions'
 import assistant from '../../../../../extensions/assistant-extension/package.json'
-import conversational from '../../../../../extensions/conversational-extension/package.json'
 import download from '../../../../../extensions/download-extension/package.json'
 import llamacpp from '../../../../../extensions/llamacpp-extension/package.json'
 import rag from '../../../../../extensions/rag-extension/package.json'
 import vectorDb from '../../../../../extensions/vector-db-extension/package.json'
 
 // vitest defines IS_MACOS as false, so mlx is not bundled here.
-const PACKAGES = [assistant, conversational, download, llamacpp, rag, vectorDb]
+const PACKAGES = [assistant, download, llamacpp, rag, vectorDb]
 
 const manifestFields = (m: {
   name: string
@@ -38,8 +37,9 @@ describe('getBundledExtensions', () => {
     }
   })
 
-  it('bundles only Conversational on mobile', async () => {
-    const exts = await getBundledExtensions({ mobile: true })
-    expect(exts.map(manifestFields)).toEqual([manifestFields(conversational)])
+  // Threads and messages are host services now; every bundled extension
+  // needs a native plugin, so mobile runs none of them.
+  it('bundles no legacy extension on mobile', async () => {
+    expect(await getBundledExtensions({ mobile: true })).toEqual([])
   })
 })
