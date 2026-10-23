@@ -1,5 +1,12 @@
 import type { BaseExtension } from '@janhq/core'
 import type { ExtensionManifest } from '@/lib/extension'
+import * as assistant from '../../../../extensions/assistant-extension/package.json'
+import * as conversational from '../../../../extensions/conversational-extension/package.json'
+import * as download from '../../../../extensions/download-extension/package.json'
+import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
+import * as rag from '../../../../extensions/rag-extension/package.json'
+import * as vectorDb from '../../../../extensions/vector-db-extension/package.json'
+import * as mlx from '../../../../extensions/mlx-extension/package.json'
 
 type ExtensionCtor = new (
   url: string,
@@ -20,54 +27,56 @@ type BundledEntry = {
   mobile?: boolean
 }
 
+// Manifest fields come from each package.json so they cannot drift. Each field
+// is read off a namespace import (never the whole object) so the bundler keeps
+// only these named exports and drops scripts, dependencies and the rest.
+//
 // Lazily imported so the extension bundles are NOT part of the service-hub
 // bootstrap graph; they load only when extensions are enumerated (after the
 // hub is ready), matching the pre-bundling load order.
 const ENTRIES: BundledEntry[] = [
   {
     load: () => import('@janhq/assistant-extension'),
-    name: '@janhq/assistant-extension',
-    productName: 'Jan Assistant',
-    version: '1.0.2',
-    description:
-      'Powers the default AI assistant that works with all your installed models.',
+    name: assistant.name,
+    productName: assistant.productName,
+    version: assistant.version,
+    description: assistant.description,
   },
   {
     load: () => import('@janhq/conversational-extension'),
-    name: '@janhq/conversational-extension',
-    productName: 'Conversational',
-    version: '1.0.0',
-    description: 'Enables conversations and state persistence via your file system.',
+    name: conversational.name,
+    productName: conversational.productName,
+    version: conversational.version,
+    description: conversational.description,
     mobile: true,
   },
   {
     load: () => import('@janhq/download-extension'),
-    name: '@janhq/download-extension',
-    productName: 'Download Manager',
-    version: '1.0.0',
-    description: 'Download and manage files and AI models in Jan.',
+    name: download.name,
+    productName: download.productName,
+    version: download.version,
+    description: download.description,
   },
   {
     load: () => import('@janhq/llamacpp-extension'),
-    name: '@janhq/llamacpp-extension',
-    productName: 'llama.cpp Inference Engine',
-    version: '1.0.1',
-    description: 'This extension enables llama.cpp chat completion API calls',
+    name: llamacpp.name,
+    productName: llamacpp.productName,
+    version: llamacpp.version,
+    description: llamacpp.description,
   },
   {
     load: () => import('@janhq/rag-extension'),
-    name: '@janhq/rag-extension',
-    productName: 'RAG Tools',
-    version: '0.1.0',
-    description:
-      'Registers RAG tools and orchestrates retrieval across parser, embeddings, and vector DB',
+    name: rag.name,
+    productName: rag.productName,
+    version: rag.version,
+    description: rag.description,
   },
   {
     load: () => import('@janhq/vector-db-extension'),
-    name: '@janhq/vector-db-extension',
-    productName: 'Vector DB',
-    version: '0.1.0',
-    description: 'Vector DB integration using sqlite-vec if available with linear fallback',
+    name: vectorDb.name,
+    productName: vectorDb.productName,
+    version: vectorDb.version,
+    description: vectorDb.description,
   },
 ]
 
@@ -77,10 +86,10 @@ const ENTRIES: BundledEntry[] = [
 if (IS_MACOS) {
   ENTRIES.push({
     load: () => import('@janhq/mlx-extension'),
-    name: '@janhq/mlx-extension',
-    productName: 'MLX Inference Engine',
-    version: '1.0.0',
-    description: 'This extension enables MLX-Swift inference on Apple Silicon Macs',
+    name: mlx.name,
+    productName: mlx.productName,
+    version: mlx.version,
+    description: mlx.description,
   })
 }
 
