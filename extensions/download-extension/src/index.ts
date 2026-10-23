@@ -1,23 +1,8 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { BaseExtension, events, logger } from '@janhq/core'
+import { BaseExtension, downloads, logger } from '@janhq/core'
+import type { DownloadItem } from '@janhq/core'
 
 export enum Settings {
   hfToken = 'hf-token',
-}
-
-interface DownloadItem {
-  url: string
-  save_path: string
-  proxy?: Record<string, string | string[] | boolean>
-  sha256?: string
-  size?: number
-  model_id?: string
-}
-
-type DownloadEvent = {
-  transferred: number
-  total: number
 }
 
 export default class DownloadManager extends BaseExtension {
@@ -55,34 +40,28 @@ export default class DownloadManager extends BaseExtension {
     taskId: string,
     onProgress?: (transferred: number, total: number) => void
   ) {
-    // relay tauri events to onProgress callback
-    const unlisten = await listen<DownloadEvent>(
-      `download-${taskId}`,
-      (event) => {
+    const unsubscribe = await downloads.onDownloadProgress(
+      taskId,
+      (progress) => {
         if (onProgress) {
-          let payload = event.payload
-          onProgress(payload.transferred, payload.total)
+          onProgress(progress.transferred, progress.total)
         }
       }
     )
 
     try {
-      await invoke<void>('download_files', {
-        items,
-        taskId,
-        headers: this._getHeaders(),
-      })
+      await downloads.downloadFiles(items, taskId, this._getHeaders())
     } catch (error) {
       logger.error('Error downloading task', taskId, error)
       throw error
     } finally {
-      unlisten()
+      unsubscribe()
     }
   }
 
   async cancelDownload(taskId: string) {
     try {
-      await invoke<void>('cancel_download_task', { taskId })
+      await downloads.cancelDownload(taskId)
     } catch (error) {
       logger.error('Error cancelling download:', error)
       throw error
@@ -91,14 +70,14 @@ export default class DownloadManager extends BaseExtension {
 
   async pauseDownload(taskId: string) {
     try {
-      await invoke<void>('pause_download_task', { taskId })
+      await downloads.pauseDownload(taskId)
     } catch (error) {
       logger.error('Error pausing download:', error)
       throw error
     }
   }
 
-  _getHeaders() {
+  _getHeaders(): Record<string, string> {
     return {
       ...(this.hfToken && { Authorization: `Bearer ${this.hfToken}` }),
     }

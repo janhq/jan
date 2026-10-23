@@ -6,15 +6,6 @@ Object.defineProperty(globalThis, 'SETTINGS', {
   writable: true,
 })
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => undefined),
-  emit: vi.fn(),
-}))
-
 vi.mock('@janhq/core', () => {
   class BaseExtension {
     registerSettings = vi.fn()
@@ -22,6 +13,12 @@ vi.mock('@janhq/core', () => {
   }
   return {
     BaseExtension,
+    downloads: {
+      downloadFiles: vi.fn(),
+      cancelDownload: vi.fn(),
+      pauseDownload: vi.fn(),
+      onDownloadProgress: vi.fn().mockResolvedValue(() => undefined),
+    },
     logger: {
       debug: vi.fn(),
       info: vi.fn(),
