@@ -1,0 +1,15 @@
+{
+  "commands": "Commands",
+  "categorizedCommand": "{{category}}: {{title}}",
+  "commandFailed": "{{command}} ({{extension}}) failed",
+  "moreActions": "More actions",
+  "statusItemTooltip": "{{text}} - {{extension}}",
+  "settingSaveFailed": "Could not save {{setting}}",
+  "activationFailed": "Failed to start: {{error}}",
+  "state": {
+    "inactive": "Inactive",
+    "activating": "Starting",
+    "active": "Active",
+    "failed": "Failed"
+  }
+}

@@ -61,6 +61,22 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
+const hosted = vi.hoisted(() => ({
+  list: [] as Array<Record<string, unknown>>,
+}))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({
+    list: () => hosted.list,
+    onDidChange: () => ({ dispose: () => undefined }),
+  }),
+}))
+
+vi.mock('@/containers/extensions/ExtensionSettingsForm', () => ({
+  ExtensionSettingsForm: ({ extensionId }: { extensionId: string }) => (
+    <div data-testid={`settings-form-${extensionId}`} />
+  ),
+}))
+
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -85,6 +101,41 @@ vi.mock('@tanstack/react-router', () => ({
 describe('Extensions Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    hosted.list = []
+  })
+
+  it('lists host extensions with their settings form when active', () => {
+    const manifest = (id: string, settings: unknown[]) => ({
+      id,
+      displayName: `Host ${id}`,
+      version: '0.1.0',
+      contributes: { settings },
+    })
+    const setting = {
+      key: 'k',
+      title: 'K',
+      control: { type: 'checkbox', default: false },
+    }
+    hosted.list = [
+      { id: 'acme.on', manifest: manifest('acme.on', [setting]), state: 'active' },
+      {
+        id: 'acme.off',
+        manifest: manifest('acme.off', [setting]),
+        state: 'failed',
+        error: 'boom',
+      },
+    ]
+    const Component = ExtensionsRoute.component as React.ComponentType
+    render(<Component />)
+
+    expect(screen.getByText('Host acme.on')).toBeInTheDocument()
+    expect(screen.getByText('extensions:state.active')).toBeInTheDocument()
+    expect(screen.getByTestId('settings-form-acme.on')).toBeInTheDocument()
+    expect(screen.getByText('Host acme.off')).toBeInTheDocument()
+    expect(screen.getByText('extensions:activationFailed')).toBeInTheDocument()
+    expect(screen.queryByTestId('settings-form-acme.off')).toBeNull()
+    // The legacy list stays below, read-only.
+    expect(screen.getAllByTestId('card-item')).toHaveLength(3)
   })
 
   it('should render the extensions settings page', () => {

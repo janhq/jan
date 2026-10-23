@@ -2341,6 +2341,7 @@ function ThreadDetail() {
                     onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
+                    threadId={threadId}
                   />
                 )
               })}
