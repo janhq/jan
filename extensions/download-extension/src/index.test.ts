@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { logger } from '@janhq/core'
+import { downloads, logger } from '@janhq/core'
 import DownloadManager, { Settings } from './index'
 
-const mockInvoke = vi.mocked(invoke)
-const mockListen = vi.mocked(listen)
+const mockDownloadFiles = vi.mocked(downloads.downloadFiles)
+const mockCancel = vi.mocked(downloads.cancelDownload)
+const mockPause = vi.mocked(downloads.pauseDownload)
+const mockOnProgress = vi.mocked(downloads.onDownloadProgress)
 const mockLoggerError = vi.mocked(logger.error)
 
 function newManager(): DownloadManager {
@@ -18,7 +18,7 @@ describe('DownloadManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockListen.mockResolvedValue(() => undefined as void)
+    mockOnProgress.mockResolvedValue(() => undefined)
     manager = newManager()
   })
 
@@ -62,75 +62,72 @@ describe('DownloadManager', () => {
   })
 
   describe('downloadFiles', () => {
-    it('listens on the task-scoped channel and invokes download_files with items, taskId and headers', async () => {
+    it('subscribes to the task progress and downloads with items, taskId and headers', async () => {
       manager.hfToken = 'tok'
-      mockInvoke.mockResolvedValueOnce(undefined)
+      mockDownloadFiles.mockResolvedValueOnce(undefined)
 
       const items = [{ url: 'http://x/a.gguf', save_path: '/models/a.gguf' }]
       await manager.downloadFiles(items, 'task-1')
 
-      expect(mockListen).toHaveBeenCalledWith(
-        'download-task-1',
-        expect.any(Function)
-      )
-      expect(mockInvoke).toHaveBeenCalledWith('download_files', {
-        items,
-        taskId: 'task-1',
-        headers: { Authorization: 'Bearer tok' },
+      expect(mockOnProgress).toHaveBeenCalledWith('task-1', expect.any(Function))
+      expect(mockDownloadFiles).toHaveBeenCalledWith(items, 'task-1', {
+        Authorization: 'Bearer tok',
       })
     })
 
-    it('relays tauri progress events into the onProgress callback', async () => {
-      let captured: ((event: { payload: unknown }) => void) | undefined
-      mockListen.mockImplementationOnce(async (_name, handler) => {
-        captured = handler as typeof captured
-        return () => undefined as void
+    it('relays progress events into the onProgress callback', async () => {
+      let captured: ((progress: { transferred: number; total: number }) => void) | undefined
+      mockOnProgress.mockImplementationOnce(async (_taskId, handler) => {
+        captured = handler
+        return () => undefined
       })
-      mockInvoke.mockResolvedValueOnce(undefined)
+      mockDownloadFiles.mockResolvedValueOnce(undefined)
       const onProgress = vi.fn()
 
       await manager.downloadFiles([], 'task-2', onProgress)
 
-      captured?.({ payload: { transferred: 30, total: 100 } })
+      captured?.({ transferred: 30, total: 100 })
       expect(onProgress).toHaveBeenCalledWith(30, 100)
     })
 
     it('does not throw when a progress event arrives without a callback', async () => {
-      let captured: ((event: { payload: unknown }) => void) | undefined
-      mockListen.mockImplementationOnce(async (_name, handler) => {
-        captured = handler as typeof captured
-        return () => undefined as void
+      let captured: ((progress: { transferred: number; total: number }) => void) | undefined
+      mockOnProgress.mockImplementationOnce(async (_taskId, handler) => {
+        captured = handler
+        return () => undefined
       })
-      mockInvoke.mockResolvedValueOnce(undefined)
+      mockDownloadFiles.mockResolvedValueOnce(undefined)
 
       await manager.downloadFiles([], 'task-3')
 
-      expect(() =>
-        captured?.({ payload: { transferred: 1, total: 2 } })
-      ).not.toThrow()
+      expect(() => captured?.({ transferred: 1, total: 2 })).not.toThrow()
     })
 
-    it('unlistens after a successful download', async () => {
-      const unlisten = vi.fn()
-      mockListen.mockResolvedValueOnce(unlisten)
-      mockInvoke.mockResolvedValueOnce(undefined)
+    it('unsubscribes after a successful download', async () => {
+      const unsubscribe = vi.fn()
+      mockOnProgress.mockResolvedValueOnce(unsubscribe)
+      mockDownloadFiles.mockResolvedValueOnce(undefined)
 
       await manager.downloadFiles([], 'task-4')
 
-      expect(unlisten).toHaveBeenCalledTimes(1)
+      expect(unsubscribe).toHaveBeenCalledTimes(1)
     })
 
-    it('logs, unlistens and rethrows when invoke fails', async () => {
-      const unlisten = vi.fn()
-      mockListen.mockResolvedValueOnce(unlisten)
+    it('logs, unsubscribes and rethrows when the download fails', async () => {
+      const unsubscribe = vi.fn()
+      mockOnProgress.mockResolvedValueOnce(unsubscribe)
       const err = new Error('network down')
-      mockInvoke.mockRejectedValueOnce(err)
+      mockDownloadFiles.mockRejectedValueOnce(err)
 
       await expect(manager.downloadFiles([], 'task-5')).rejects.toThrow(
         'network down'
       )
-      expect(mockLoggerError).toHaveBeenCalled()
-      expect(unlisten).toHaveBeenCalledTimes(1)
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        'Error downloading task',
+        'task-5',
+        err
+      )
+      expect(unsubscribe).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -173,17 +170,15 @@ describe('DownloadManager', () => {
   })
 
   describe('cancelDownload', () => {
-    it('invokes cancel_download_task with the taskId', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined)
+    it('cancels the task through the core download API', async () => {
+      mockCancel.mockResolvedValueOnce(undefined)
       await manager.cancelDownload('task-8')
-      expect(mockInvoke).toHaveBeenCalledWith('cancel_download_task', {
-        taskId: 'task-8',
-      })
+      expect(mockCancel).toHaveBeenCalledWith('task-8')
     })
 
     it('logs and rethrows on failure', async () => {
       const err = new Error('cancel failed')
-      mockInvoke.mockRejectedValueOnce(err)
+      mockCancel.mockRejectedValueOnce(err)
       await expect(manager.cancelDownload('task-8')).rejects.toThrow(
         'cancel failed'
       )
@@ -192,17 +187,15 @@ describe('DownloadManager', () => {
   })
 
   describe('pauseDownload', () => {
-    it('invokes pause_download_task with the taskId', async () => {
-      mockInvoke.mockResolvedValueOnce(undefined)
+    it('pauses the task through the core download API', async () => {
+      mockPause.mockResolvedValueOnce(undefined)
       await manager.pauseDownload('task-9')
-      expect(mockInvoke).toHaveBeenCalledWith('pause_download_task', {
-        taskId: 'task-9',
-      })
+      expect(mockPause).toHaveBeenCalledWith('task-9')
     })
 
     it('logs and rethrows on failure', async () => {
       const err = new Error('pause failed')
-      mockInvoke.mockRejectedValueOnce(err)
+      mockPause.mockRejectedValueOnce(err)
       await expect(manager.pauseDownload('task-9')).rejects.toThrow(
         'pause failed'
       )

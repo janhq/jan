@@ -23,6 +23,12 @@ export * from './fs'
 export * from './settings'
 
 /**
+ * Export download module.
+ * @module
+ */
+export * from './download'
+
+/**
  * Export Extension module.
  * @module
  */

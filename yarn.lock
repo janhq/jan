@@ -1655,7 +1655,6 @@ __metadata:
   resolution: "@janhq/download-extension@workspace:extensions/download-extension"
   dependencies:
     "@janhq/core": "workspace:*"
-    "@tauri-apps/api": "npm:2.8.0"
     cpx: "npm:1.5.0"
     jsdom: "npm:^26.1.0"
     rimraf: "npm:6.0.1"
