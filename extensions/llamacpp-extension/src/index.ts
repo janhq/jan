@@ -35,7 +35,6 @@ import {
 } from './settings-store'
 
 import { listen } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
 import {
  getProxyConfig,
  buildEmbedBatches,
@@ -1246,9 +1245,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    if (!(await fs.existsSync(configPath))) continue
 
-   const cfg = (await invoke<ModelConfig>('read_yaml', {
-    path: configPath,
-   })) as ModelConfig & Record<string, unknown>
+   const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig &
+    Record<string, unknown>
 
    let touched = false
 
@@ -1283,7 +1281,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    }
 
    if (touched) {
-    await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+    await fs.writeYaml(configPath, cfg)
    }
   }
 
@@ -1406,9 +1404,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   if (!(await fs.existsSync(path))) return undefined
 
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path,
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(path)
 
   const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
   await this.resolveMtpLayersConfig(modelId, modelConfig)
@@ -1431,9 +1427,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  }
 
  async getModelContextLimit(modelId: string): Promise<number | undefined> {
-  const config = await invoke<ModelConfig>('read_yaml', {
-   path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
-  })
+  const config = await fs.readYaml<ModelConfig>(
+   await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml'])
+  )
   const path = await joinPath([await getJanDataFolderPath(), config.model_path])
   const { metadata } = await readGgufMetadata(path)
   const limit = Number(metadata?.[`${metadata?.['general.architecture']}.context_length`])
@@ -1498,10 +1494,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if (!c.batch_size) c.batch_size = 2048
    }
 
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to update config for ${modelId}`, e)
   }
@@ -1555,10 +1548,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.expert_count = expertCount
    cfg.expert_check_v = EXPERT_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist expert count for ${modelId}`, e)
   }
@@ -1606,10 +1596,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.mtp_layers = mtpLayers
    cfg.mtp_check_v = MTP_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist MTP layers for ${modelId}`, e)
   }
@@ -1664,10 +1651,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    ])
    cfg.template_kwargs = kwargs
    cfg.template_kwargs_check_v = TEMPLATE_KWARGS_CHECK_VERSION
-   await invoke<void>('write_yaml', {
-    data: cfg,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, cfg)
   } catch (e) {
    logger.warn(`Failed to persist template kwargs for ${modelId}`, e)
   }
@@ -1733,7 +1717,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   for (const modelId of modelIds) {
    try {
     const path = await joinPath([modelsDir, modelId, 'model.yml'])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+    const modelConfig = await fs.readYaml<ModelConfig>(path)
     const isEmbedding = await this.resolveEmbeddingConfig(
      modelId,
      modelConfig
@@ -1807,12 +1791,10 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       // check if model.yml exists
       const modelConfigPath = child
       if (await fs.existsSync(modelConfigPath)) {
-       const legacyModelConfig = await invoke<{
+       const legacyModelConfig = await fs.readYaml<{
         files: string[]
         model: string
-       }>('read_yaml', {
-        path: modelConfigPath,
-       })
+       }>(modelConfigPath)
        const legacyModelPath = legacyModelConfig.files?.[0]
        if (!legacyModelPath) continue
        // +1 to remove the leading slash
@@ -1849,10 +1831,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         size_bytes,
        } as ModelConfig
        await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-       await invoke<void>('write_yaml', {
-        data: modelConfig,
-        savePath: configPath,
-       })
+       await fs.writeYaml(configPath, modelConfig)
        continue
       }
      }
@@ -1896,9 +1875,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    'models',
    modelId,
   ])
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path: await joinPath([modelFolderPath, 'model.yml']),
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(
+   await joinPath([modelFolderPath, 'model.yml'])
+  )
   const newFolderPath = await joinPath([
    await this.getProviderPath(),
    'models',
@@ -1911,19 +1890,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const newModelConfigPath = await joinPath([newFolderPath, 'model.yml'])
   await fs.mv(modelFolderPath, newFolderPath).then(() =>
    // now replace what values have previous model name with format
-   invoke('write_yaml', {
-    data: {
-     ...modelConfig,
-     model_path: modelConfig?.model_path?.replace(
-      `${this.providerId}/models/${modelId}`,
-      `${this.providerId}/models/${model.id}`
-     ),
-     mmproj_path: modelConfig?.mmproj_path?.replace(
-      `${this.providerId}/models/${modelId}`,
-      `${this.providerId}/models/${model.id}`
-     ),
-    },
-    savePath: newModelConfigPath,
+   fs.writeYaml(newModelConfigPath, {
+    ...modelConfig,
+    model_path: modelConfig?.model_path?.replace(
+     `${this.providerId}/models/${modelId}`,
+     `${this.providerId}/models/${model.id}`
+    ),
+    mmproj_path: modelConfig?.mmproj_path?.replace(
+     `${this.providerId}/models/${modelId}`,
+     `${this.providerId}/models/${model.id}`
+    ),
    })
   )
 
@@ -2232,10 +2208,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     : {}),
   } as ModelConfig
   await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
-  await invoke<void>('write_yaml', {
-   data: modelConfig,
-   savePath: configPath,
-  })
+  await fs.writeYaml(configPath, modelConfig)
   events.emit(AppEvent.onModelImported, {
    modelId,
    modelPath,
@@ -2712,9 +2685,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     'model.yml',
    ])
 
-   const modelConfig = await invoke<ModelConfig>('read_yaml', {
-    path: modelConfigPath,
-   })
+   const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
 
    // If mmproj_path is not defined in YAML, return false
    if (modelConfig.mmproj_path) {
@@ -2752,7 +2723,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(path))) {
    return { mtp_layers: 0, mtp: false }
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', { path })) as ModelConfig & {
+  const cfg = (await fs.readYaml<ModelConfig>(path)) as ModelConfig & {
    mtp_layers?: number
    mtp?: boolean
    spec_draft_n_max?: number
@@ -2792,7 +2763,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(configPath))) {
    throw new Error(`model.yml not found for ${modelId}`)
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', { path: configPath })) as ModelConfig & {
+  const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig & {
    mtp?: boolean
    spec_draft_n_max?: number
    spec_draft_n_min?: number
@@ -2827,7 +2798,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    cfg.spec_draft_sampling = patch.spec_draft_sampling
   }
 
-  await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+  await fs.writeYaml(configPath, cfg)
 
   try {
    await this.refreshEnginePreset()
@@ -2858,9 +2829,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   if (!(await fs.existsSync(configPath))) {
    throw new Error(`model.yml not found for ${modelId}`)
   }
-  const cfg = (await invoke<ModelConfig>('read_yaml', {
-   path: configPath,
-  })) as ModelConfig & Record<string, unknown>
+  const cfg = (await fs.readYaml<ModelConfig>(configPath)) as ModelConfig & Record<string, unknown>
   const previousConfig = { ...cfg }
 
   let touched = false
@@ -2881,15 +2850,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   if (!touched) return
 
-  await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
+  await fs.writeYaml(configPath, cfg)
 
   try {
    await this.refreshEnginePreset()
   } catch (e) {
-   await invoke<void>('write_yaml', {
-    data: previousConfig,
-    savePath: configPath,
-   })
+   await fs.writeYaml(configPath, previousConfig)
    throw e
   }
  }
@@ -3263,9 +3229,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    modelId,
    'model.yml',
   ])
-  const modelConfig = await invoke<ModelConfig>('read_yaml', {
-   path: modelConfigPath,
-  })
+  const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
   // model option is required
   // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
   const modelPath = await joinPath([
@@ -3356,9 +3320,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
      opts.model,
      'model.yml',
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-     path: modelConfigPath,
-    })
+    const modelConfig = await fs.readYaml<ModelConfig>(modelConfigPath)
     if (modelConfig.mmproj_path) {
      const mmprojPath = await joinPath([
       janDataFolderPath,

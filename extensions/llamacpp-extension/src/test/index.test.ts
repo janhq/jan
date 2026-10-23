@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 import { fs, getJanDataFolderPath, joinPath } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
 import {
   readGgufMetadata,
   reloadEngineModels,
@@ -177,7 +176,6 @@ describe('llamacpp_extension', () => {
 
     it('should return model list when models exist', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
 
       // Set up providerPath first
       extension['providerPath'] = '/path/to/jan/llamacpp'
@@ -202,7 +200,7 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.readdirSync).mockResolvedValue(['test-model'])
       vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 1000 })
 
-      vi.mocked(invoke).mockResolvedValue({
+      vi.mocked(fs.readYaml).mockResolvedValue({
         model_path: 'test-model/model.gguf',
         name: 'Test Model',
         size_bytes: 1000000
@@ -248,7 +246,6 @@ describe('llamacpp_extension', () => {
 
     it('should import model from URL', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { invoke } = await import('@tauri-apps/api/core')
       const apiModule = await import('@janhq/tauri-plugin-llamacpp-api')
       vi.mocked(apiModule.readGgufMetadata).mockResolvedValue({
         version: 3,
@@ -267,7 +264,7 @@ describe('llamacpp_extension', () => {
       vi.mocked(fs.existsSync).mockResolvedValue(false)
       vi.mocked(fs.fileStat).mockResolvedValue({ size: 1000000 })
       vi.mocked(fs.mkdir).mockResolvedValue(undefined)
-      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.writeYaml).mockResolvedValue(undefined)
 
       await extension.import('test-model', {
         modelPath: 'https://example.com/model.gguf'
@@ -275,7 +272,10 @@ describe('llamacpp_extension', () => {
 
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
       expect(fs.mkdir).toHaveBeenCalled()
-      expect(invoke).toHaveBeenCalledWith('write_yaml', expect.any(Object))
+      expect(fs.writeYaml).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object)
+      )
     })
   })
 
@@ -656,7 +656,7 @@ describe('llamacpp_extension', () => {
   it('reads the architecture-specific context limit without inventing an unknown limit', async () => {
     vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
     vi.mocked(joinPath).mockImplementation(async (parts) => parts.join('/'))
-    vi.mocked(invoke).mockResolvedValue({ model_path: 'model.gguf' })
+    vi.mocked(fs.readYaml).mockResolvedValue({ model_path: 'model.gguf' })
     vi.mocked(readGgufMetadata).mockResolvedValueOnce({
       version: 3, tensor_count: 1,
       metadata: { 'general.architecture': 'qwen3', 'qwen3.context_length': '65536' },
@@ -749,11 +749,11 @@ describe('llamacpp_extension', () => {
     it('rejects a failed context application and restores model.yml', async () => {
       let savedModel: Record<string, unknown> = { ctx_size: 4096 }
       vi.mocked(fs.existsSync).mockResolvedValue(true)
-      vi.mocked(invoke).mockImplementation(async (command, args) => {
-        if (command === 'read_yaml') return structuredClone(savedModel)
-        if (command === 'write_yaml' && args && 'data' in args) {
-          savedModel = structuredClone(args.data as Record<string, unknown>)
-        }
+      vi.mocked(fs.readYaml).mockImplementation(async () =>
+        structuredClone(savedModel)
+      )
+      vi.mocked(fs.writeYaml).mockImplementation(async (_path, data) => {
+        savedModel = structuredClone(data as Record<string, unknown>)
       })
       vi.mocked(reloadEngineModels).mockRejectedValueOnce(new Error('reload failed'))
       vi.mocked(startEngine).mockRejectedValueOnce(new Error('engine unavailable'))
