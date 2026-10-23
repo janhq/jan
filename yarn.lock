@@ -2793,6 +2793,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@janhq/extension-runtime@workspace:packages/extension-runtime":
+  version: 0.0.0-use.local
+  resolution: "@janhq/extension-runtime@workspace:packages/extension-runtime"
+  dependencies:
+    "@janhq/extension-api": "workspace:*"
+    "@types/node": "npm:^22.10.0"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/interfaces@npm:0.0.2":
   version: 0.0.2
   resolution: "@janhq/interfaces@npm:0.0.2"
