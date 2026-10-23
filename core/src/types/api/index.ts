@@ -106,6 +106,11 @@ export enum FileSystemRoute {
   writeYaml = 'writeYaml',
   decompress = 'decompress',
 }
+export enum DownloadRoute {
+  downloadFiles = 'downloadFiles',
+  cancelDownloadTask = 'cancelDownloadTask',
+  pauseDownloadTask = 'pauseDownloadTask',
+}
 export enum FileManagerRoute {
   copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
@@ -142,6 +147,10 @@ export type FileSystemRouteFunctions = {
   [K in FileSystemRoute]: ApiFunction
 }
 
+export type DownloadRouteFunctions = {
+  [K in DownloadRoute]: ApiFunction
+}
+
 export type FileManagerRouteFunctions = {
   [K in FileManagerRoute]: ApiFunction
 }
@@ -152,6 +161,7 @@ export type APIFunctions = NativeRouteFunctions &
   DownloadEventFunctions &
   ExtensionRouteFunctions &
   FileSystemRouteFunctions &
+  DownloadRouteFunctions &
   FileManagerRoute
 
 export const CoreRoutes = [
@@ -159,6 +169,7 @@ export const CoreRoutes = [
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
+  ...Object.values(DownloadRoute),
   'launchClaudeCodeWithConfig',
   'writeEnvFileToConfig',
 ]

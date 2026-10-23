@@ -1,4 +1,5 @@
 import { CoreRoutes, APIRoutes } from '@janhq/core'
+import type { DownloadProgress, DownloadProgressHandler, Unsubscribe } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
@@ -35,6 +36,17 @@ export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
 // Function to open an external URL in a new browser window
 export function openExternalUrl(url: string) {
   window?.open(url, '_blank')
+}
+
+// Events are not request/response, so this cannot be a mapped route: the host
+// emits progress for a task on its own `download-<taskId>` channel.
+export async function onDownloadProgress(
+  taskId: string,
+  handler: DownloadProgressHandler
+): Promise<Unsubscribe> {
+  return getServiceHub()
+    .events()
+    .listen<DownloadProgress>(`download-${taskId}`, (event) => handler(event.payload))
 }
 
 export const APIs = {
@@ -117,4 +129,5 @@ export const APIs = {
     }
   }, {}),
   openExternalUrl,
+  onDownloadProgress,
 }
