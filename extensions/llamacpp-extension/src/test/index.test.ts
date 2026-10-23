@@ -257,7 +257,9 @@ describe('llamacpp_extension', () => {
         downloadFiles: vi.fn().mockResolvedValue(undefined)
       }
 
-      window.core.extensionManager.getByName = vi.fn().mockReturnValue(mockDownloadManager)
+      const { ServiceKeys } = await import('@janhq/core')
+      const getService = vi.fn().mockReturnValue(mockDownloadManager)
+      window.core.extensionHost.services.get = getService
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
@@ -270,11 +272,52 @@ describe('llamacpp_extension', () => {
         modelPath: 'https://example.com/model.gguf'
       })
 
+      expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
       expect(mockDownloadManager.downloadFiles).toHaveBeenCalled()
       expect(fs.mkdir).toHaveBeenCalled()
       expect(fs.writeYaml).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(Object)
+      )
+    })
+  })
+
+  describe('pauseImport / abortImport', () => {
+    const downloads = () => ({
+      pauseDownload: vi.fn().mockResolvedValue(undefined),
+      cancelDownload: vi.fn().mockResolvedValue(undefined),
+    })
+
+    it('pauses the task through the host Downloads service', async () => {
+      const { ServiceKeys } = await import('@janhq/core')
+      const service = downloads()
+      const getService = vi.fn().mockReturnValue(service)
+      window.core.extensionHost.services.get = getService
+
+      await extension.pauseImport('m1')
+
+      expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
+      expect(service.pauseDownload).toHaveBeenCalledWith('llamacpp/m1')
+    })
+
+    it('cancels the task through the host Downloads service', async () => {
+      const { fs, joinPath } = await import('@janhq/core')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+      const service = downloads()
+      window.core.extensionHost.services.get = vi.fn().mockReturnValue(service)
+
+      await extension.abortImport('m1')
+
+      expect(service.cancelDownload).toHaveBeenCalledWith('llamacpp/m1')
+    })
+
+    it('fails the import loudly when no Downloads service is provided', async () => {
+      window.core.extensionHost.services.get = vi.fn().mockReturnValue(undefined)
+      await expect(extension.pauseImport('m1')).rejects.toThrow(
+        'Downloads service is not available'
       )
     })
   })

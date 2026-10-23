@@ -1,130 +1,184 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { downloads, logger } from '@janhq/core'
-import DownloadManager, { Settings } from './index'
+import {
+  HUGGINGFACE_TOKEN_SECRET_KEY,
+  ServiceKeys,
+  createServiceRegistry,
+  type DownloadService,
+  type InternalExtensionContext,
+} from '@janhq/core'
+import { activate } from './index'
 
-const mockDownloadFiles = vi.mocked(downloads.downloadFiles)
-const mockCancel = vi.mocked(downloads.cancelDownload)
-const mockPause = vi.mocked(downloads.pauseDownload)
-const mockOnProgress = vi.mocked(downloads.onDownloadProgress)
-const mockLoggerError = vi.mocked(logger.error)
+type Progress = { transferred: number; total: number }
+type Disposable = { dispose(): void }
 
-function newManager(): DownloadManager {
-  // BaseExtension constructor args (name, url, active...) are irrelevant to the mock.
-  return new (DownloadManager as unknown as new () => DownloadManager)()
+// The parts of DisposableStore activate uses; disposing releases everything
+// the extension registered.
+function subscriptions() {
+  const items: Disposable[] = []
+  return {
+    add: <T extends Disposable>(d: T) => (items.push(d), d),
+    dispose: () => items.splice(0).forEach((d) => d.dispose()),
+  }
 }
 
-describe('DownloadManager', () => {
-  let manager: DownloadManager
+function fakeContext(secrets: Record<string, string> = {}) {
+  const log = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  }
+  const downloads = {
+    downloadFiles: vi.fn().mockResolvedValue(undefined),
+    cancelDownload: vi.fn().mockResolvedValue(undefined),
+    pauseDownload: vi.fn().mockResolvedValue(undefined),
+    onDownloadProgress: vi.fn().mockResolvedValue(() => undefined),
+  }
+  const services = createServiceRegistry()
+  const ctx = {
+    extension: { id: 'jan.download', version: '1.0.0', displayName: 'D' },
+    subscriptions: subscriptions(),
+    log,
+    internal: {
+      services,
+      downloads,
+      secrets: { get: async (key: string) => secrets[key] ?? null },
+    },
+  } as unknown as InternalExtensionContext
+  return { ctx, log, downloads, services }
+}
 
+async function activated(secrets: Record<string, string> = {}) {
+  const fake = fakeContext(secrets)
+  await activate(fake.ctx)
+  const service = fake.services.get(ServiceKeys.Downloads) as DownloadService
+  return { ...fake, service }
+}
+
+describe('download extension', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    mockOnProgress.mockResolvedValue(() => undefined)
-    manager = newManager()
+    localStorage.clear()
   })
 
-  describe('onLoad', () => {
-    it('registers settings and hydrates hfToken from persisted setting', async () => {
-      ;(manager.getSetting as any).mockResolvedValueOnce('secret-token')
-
-      await manager.onLoad()
-
-      expect(manager.registerSettings).toHaveBeenCalledWith(SETTINGS)
-      expect(manager.getSetting).toHaveBeenCalledWith(Settings.hfToken, undefined)
-      expect(manager.hfToken).toBe('secret-token')
-    })
-  })
-
-  describe('onSettingUpdate', () => {
-    it('updates hfToken when the hf-token key changes', () => {
-      manager.onSettingUpdate(Settings.hfToken, 'new-token')
-      expect(manager.hfToken).toBe('new-token')
+  describe('activate', () => {
+    it('provides the Downloads service until its subscriptions are disposed', async () => {
+      const { ctx, services, service } = await activated()
+      expect(service).toBeDefined()
+      ctx.subscriptions.dispose()
+      expect(services.get(ServiceKeys.Downloads)).toBeUndefined()
     })
 
-    it('ignores unrelated setting keys', () => {
-      manager.hfToken = 'keep'
-      manager.onSettingUpdate('some-other-key', 'value')
-      expect(manager.hfToken).toBe('keep')
-    })
-  })
-
-  describe('_getHeaders', () => {
-    it('returns empty headers when no token is set', () => {
-      manager.hfToken = undefined
-      expect(manager._getHeaders()).toEqual({})
-    })
-
-    it('returns a bearer Authorization header when a token is set', () => {
-      manager.hfToken = 'abc123'
-      expect(manager._getHeaders()).toEqual({
-        Authorization: 'Bearer abc123',
-      })
+    it('drops the settings the legacy extension kept in localStorage', async () => {
+      localStorage.setItem('@janhq/download-extension', '[{"key":"hf-token"}]')
+      localStorage.setItem('unrelated', 'kept')
+      await activated()
+      expect(localStorage.getItem('@janhq/download-extension')).toBeNull()
+      expect(localStorage.getItem('unrelated')).toBe('kept')
     })
   })
 
   describe('downloadFiles', () => {
-    it('subscribes to the task progress and downloads with items, taskId and headers', async () => {
-      manager.hfToken = 'tok'
-      mockDownloadFiles.mockResolvedValueOnce(undefined)
-
+    it('sends the keyring Hugging Face token as a bearer Authorization header', async () => {
+      const { service, downloads } = await activated({
+        [HUGGINGFACE_TOKEN_SECRET_KEY]: 'hf_tok',
+      })
       const items = [{ url: 'http://x/a.gguf', save_path: '/models/a.gguf' }]
-      await manager.downloadFiles(items, 'task-1')
+      await service.downloadFiles(items, 'task-1')
+      expect(downloads.onDownloadProgress).toHaveBeenCalledWith(
+        'task-1',
+        expect.any(Function)
+      )
+      expect(downloads.downloadFiles).toHaveBeenCalledWith(items, 'task-1', {
+        Authorization: 'Bearer hf_tok',
+      })
+    })
 
-      expect(mockOnProgress).toHaveBeenCalledWith('task-1', expect.any(Function))
-      expect(mockDownloadFiles).toHaveBeenCalledWith(items, 'task-1', {
-        Authorization: 'Bearer tok',
+    it('sends no Authorization header when the keyring has no token', async () => {
+      const { service, downloads } = await activated()
+      await service.downloadFiles([], 'task-2')
+      expect(downloads.downloadFiles).toHaveBeenCalledWith([], 'task-2', {})
+    })
+
+    it('sends no Authorization header when the stored token is empty', async () => {
+      const { service, downloads } = await activated({
+        [HUGGINGFACE_TOKEN_SECRET_KEY]: '',
+      })
+      await service.downloadFiles([], 'task-3')
+      expect(downloads.downloadFiles).toHaveBeenCalledWith([], 'task-3', {})
+    })
+
+    it('downloads without Authorization when the keyring cannot be read', async () => {
+      const fake = fakeContext()
+      const err = new Error('keyring locked')
+      fake.ctx.internal.secrets.get = vi.fn().mockRejectedValue(err)
+      await activate(fake.ctx)
+      const service = fake.services.get(ServiceKeys.Downloads) as DownloadService
+      await service.downloadFiles([], 'task-3b')
+      expect(fake.downloads.downloadFiles).toHaveBeenCalledWith([], 'task-3b', {})
+      expect(fake.log.warn).toHaveBeenCalledWith(
+        'Could not read the Hugging Face token:',
+        err
+      )
+    })
+
+    it('reads the token at download time, so a changed token applies at once', async () => {
+      const secrets: Record<string, string> = {}
+      const { service, downloads } = await activated(secrets)
+      secrets[HUGGINGFACE_TOKEN_SECRET_KEY] = 'hf_new'
+      await service.downloadFiles([], 'task-4')
+      expect(downloads.downloadFiles).toHaveBeenCalledWith([], 'task-4', {
+        Authorization: 'Bearer hf_new',
       })
     })
 
     it('relays progress events into the onProgress callback', async () => {
-      let captured: ((progress: { transferred: number; total: number }) => void) | undefined
-      mockOnProgress.mockImplementationOnce(async (_taskId, handler) => {
-        captured = handler
-        return () => undefined
-      })
-      mockDownloadFiles.mockResolvedValueOnce(undefined)
+      const { service, downloads } = await activated()
+      let captured: ((p: Progress) => void) | undefined
+      downloads.onDownloadProgress.mockImplementationOnce(
+        async (_taskId: string, handler: (p: Progress) => void) => {
+          captured = handler
+          return () => undefined
+        }
+      )
       const onProgress = vi.fn()
-
-      await manager.downloadFiles([], 'task-2', onProgress)
-
+      await service.downloadFiles([], 'task-5', onProgress)
       captured?.({ transferred: 30, total: 100 })
       expect(onProgress).toHaveBeenCalledWith(30, 100)
     })
 
-    it('does not throw when a progress event arrives without a callback', async () => {
-      let captured: ((progress: { transferred: number; total: number }) => void) | undefined
-      mockOnProgress.mockImplementationOnce(async (_taskId, handler) => {
-        captured = handler
-        return () => undefined
-      })
-      mockDownloadFiles.mockResolvedValueOnce(undefined)
-
-      await manager.downloadFiles([], 'task-3')
-
+    it('ignores progress events when no callback was given', async () => {
+      const { service, downloads } = await activated()
+      let captured: ((p: Progress) => void) | undefined
+      downloads.onDownloadProgress.mockImplementationOnce(
+        async (_taskId: string, handler: (p: Progress) => void) => {
+          captured = handler
+          return () => undefined
+        }
+      )
+      await service.downloadFiles([], 'task-6')
       expect(() => captured?.({ transferred: 1, total: 2 })).not.toThrow()
     })
 
-    it('unsubscribes after a successful download', async () => {
+    it('unsubscribes from progress after a successful download', async () => {
+      const { service, downloads } = await activated()
       const unsubscribe = vi.fn()
-      mockOnProgress.mockResolvedValueOnce(unsubscribe)
-      mockDownloadFiles.mockResolvedValueOnce(undefined)
-
-      await manager.downloadFiles([], 'task-4')
-
+      downloads.onDownloadProgress.mockResolvedValueOnce(unsubscribe)
+      await service.downloadFiles([], 'task-7')
       expect(unsubscribe).toHaveBeenCalledTimes(1)
     })
 
     it('logs, unsubscribes and rethrows when the download fails', async () => {
+      const { service, downloads, log } = await activated()
       const unsubscribe = vi.fn()
-      mockOnProgress.mockResolvedValueOnce(unsubscribe)
+      downloads.onDownloadProgress.mockResolvedValueOnce(unsubscribe)
       const err = new Error('network down')
-      mockDownloadFiles.mockRejectedValueOnce(err)
-
-      await expect(manager.downloadFiles([], 'task-5')).rejects.toThrow(
+      downloads.downloadFiles.mockRejectedValueOnce(err)
+      await expect(service.downloadFiles([], 'task-8')).rejects.toThrow(
         'network down'
       )
-      expect(mockLoggerError).toHaveBeenCalledWith(
+      expect(log.error).toHaveBeenCalledWith(
         'Error downloading task',
-        'task-5',
+        'task-8',
         err
       )
       expect(unsubscribe).toHaveBeenCalledTimes(1)
@@ -132,80 +186,76 @@ describe('DownloadManager', () => {
   })
 
   describe('downloadFile', () => {
-    it('wraps a single item with proxy config and delegates to downloadFiles', async () => {
-      const spy = vi
-        .spyOn(manager, 'downloadFiles')
-        .mockResolvedValueOnce(undefined)
+    it('downloads one item with its proxy config and relays progress', async () => {
+      const { service, downloads } = await activated()
+      let captured: ((p: Progress) => void) | undefined
+      downloads.onDownloadProgress.mockImplementationOnce(
+        async (_taskId: string, handler: (p: Progress) => void) => {
+          captured = handler
+          return () => undefined
+        }
+      )
       const onProgress = vi.fn()
       const proxy = { https: 'http://proxy:8080' }
-
-      await manager.downloadFile(
+      await service.downloadFile(
         'http://x/b.gguf',
         '/models/b.gguf',
-        'task-6',
+        'task-9',
         proxy,
         onProgress
       )
-
-      expect(spy).toHaveBeenCalledWith(
+      expect(downloads.downloadFiles).toHaveBeenCalledWith(
         [{ url: 'http://x/b.gguf', save_path: '/models/b.gguf', proxy }],
-        'task-6',
-        onProgress
+        'task-9',
+        {}
       )
+      captured?.({ transferred: 5, total: 10 })
+      expect(onProgress).toHaveBeenCalledWith(5, 10)
     })
 
-    it('defaults proxy config to an empty object', async () => {
-      const spy = vi
-        .spyOn(manager, 'downloadFiles')
-        .mockResolvedValueOnce(undefined)
-
-      await manager.downloadFile('http://x/c.gguf', '/models/c.gguf', 'task-7')
-
-      expect(spy).toHaveBeenCalledWith(
+    it('defaults the proxy config to an empty object', async () => {
+      const { service, downloads } = await activated()
+      await service.downloadFile('http://x/c.gguf', '/models/c.gguf', 'task-10')
+      expect(downloads.downloadFiles).toHaveBeenCalledWith(
         [{ url: 'http://x/c.gguf', save_path: '/models/c.gguf', proxy: {} }],
-        'task-7',
-        undefined
+        'task-10',
+        {}
       )
     })
   })
 
   describe('cancelDownload', () => {
-    it('cancels the task through the core download API', async () => {
-      mockCancel.mockResolvedValueOnce(undefined)
-      await manager.cancelDownload('task-8')
-      expect(mockCancel).toHaveBeenCalledWith('task-8')
+    it('cancels the task through the host download API', async () => {
+      const { service, downloads } = await activated()
+      await service.cancelDownload('task-11')
+      expect(downloads.cancelDownload).toHaveBeenCalledWith('task-11')
     })
 
     it('logs and rethrows on failure', async () => {
-      const err = new Error('cancel failed')
-      mockCancel.mockRejectedValueOnce(err)
-      await expect(manager.cancelDownload('task-8')).rejects.toThrow(
+      const { service, downloads, log } = await activated()
+      downloads.cancelDownload.mockRejectedValueOnce(new Error('cancel failed'))
+      await expect(service.cancelDownload('task-11')).rejects.toThrow(
         'cancel failed'
       )
-      expect(mockLoggerError).toHaveBeenCalled()
+      expect(log.error).toHaveBeenCalled()
     })
   })
 
   describe('pauseDownload', () => {
-    it('pauses the task through the core download API', async () => {
-      mockPause.mockResolvedValueOnce(undefined)
-      await manager.pauseDownload('task-9')
-      expect(mockPause).toHaveBeenCalledWith('task-9')
+    it('pauses the task through the host download API', async () => {
+      const { service, downloads } = await activated()
+      await service.pauseDownload('task-12')
+      expect(downloads.pauseDownload).toHaveBeenCalledWith('task-12')
     })
 
     it('logs and rethrows on failure', async () => {
-      const err = new Error('pause failed')
-      mockPause.mockRejectedValueOnce(err)
-      await expect(manager.pauseDownload('task-9')).rejects.toThrow(
+      const { service, downloads, log } = await activated()
+      downloads.pauseDownload.mockRejectedValueOnce(new Error('pause failed'))
+      await expect(service.pauseDownload('task-12')).rejects.toThrow(
         'pause failed'
       )
-      expect(mockLoggerError).toHaveBeenCalled()
-    })
-  })
-
-  describe('onUnload', () => {
-    it('resolves without error', async () => {
-      await expect(manager.onUnload()).resolves.toBeUndefined()
+      expect(log.error).toHaveBeenCalled()
     })
   })
 })
+

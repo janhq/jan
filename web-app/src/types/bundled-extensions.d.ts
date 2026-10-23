@@ -8,12 +8,14 @@ type BundledExtensionCtor = new (
 ) => import('@janhq/core').BaseExtension
 
 declare module '@janhq/assistant-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
 declare module '@janhq/download-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
 declare module '@janhq/llamacpp-extension' {
   const ext: BundledExtensionCtor

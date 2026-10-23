@@ -19,12 +19,14 @@ Object.defineProperty(globalThis, 'window', {
   value: {
     localStorage: localStorageMock,
     core: {
-      extensionManager: {
-        getByName: vi.fn().mockReturnValue({
-          downloadFiles: vi.fn().mockResolvedValue(undefined),
-          cancelDownload: vi.fn().mockResolvedValue(undefined),
-          pauseDownload: vi.fn().mockResolvedValue(undefined),
-        }),
+      extensionHost: {
+        services: {
+          get: vi.fn().mockReturnValue({
+            downloadFiles: vi.fn().mockResolvedValue(undefined),
+            cancelDownload: vi.fn().mockResolvedValue(undefined),
+            pauseDownload: vi.fn().mockResolvedValue(undefined),
+          }),
+        },
       },
     },
   },
@@ -54,6 +56,7 @@ class AIEngineMock {
 }
 
 vi.mock('@janhq/core', () => ({
+  ServiceKeys: { Downloads: { id: 'downloads' } },
   logger: {
     debug: vi.fn(),
     info: vi.fn(),

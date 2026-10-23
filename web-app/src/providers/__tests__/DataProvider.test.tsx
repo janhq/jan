@@ -120,6 +120,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
+  HUGGINGFACE_TOKEN_SECRET_KEY: 'huggingface',
   AppEvent: { onModelImported: 'onModelImported' },
   events: {
     on: (...a: unknown[]) => h.eventsOn(...a),
