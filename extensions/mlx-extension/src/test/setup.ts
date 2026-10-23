@@ -31,13 +31,13 @@ Object.defineProperty(globalThis, 'window', {
   writable: true,
 })
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
 vi.mock('@janhq/tauri-plugin-mlx-api', () => ({
   loadMlxModel: vi.fn(),
   unloadMlxModel: vi.fn(),
+  isMlxProcessRunning: vi.fn(),
+  getMlxRandomPort: vi.fn(),
+  findMlxSessionByModel: vi.fn(),
+  getMlxLoadedModels: vi.fn(),
 }))
 
 vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
@@ -68,6 +68,9 @@ vi.mock('@janhq/core', () => ({
     mkdir: vi.fn(),
     rm: vi.fn(),
     mv: vi.fn(),
+    readYaml: vi.fn(),
+    writeYaml: vi.fn(),
+    readFileSync: vi.fn(),
   },
   joinPath,
   events: {
