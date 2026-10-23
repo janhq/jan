@@ -1070,6 +1070,67 @@ describe('ThreadDetail route', () => {
       expect(persisted.metadata.stopped).toBe(true)
       expect(screen.getByText('Increase Context Size')).toBeInTheDocument()
     })
+
+    // The saved partial is in memory only; after a restart the stopped reply is
+    // what hydration restored. Increase Context Size resumes it in place instead
+    // of regenerating from scratch and keeping the partial as another version.
+    it('resumes the stored partial in place after an application restart', async () => {
+      h.modelProviderState.selectedProvider = 'llamacpp'
+      h.chatState.status = 'error'
+      h.chatState.error = new Error(
+        'request (518 tokens) exceeds the available context size (512 tokens)'
+      )
+      h.chatState.messages = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'q' }] },
+        {
+          id: 'a-len',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'partial answer' }],
+          metadata: { stopped: true, parentId: 'u1' },
+        },
+      ]
+      const stored = [
+        { id: 'u1', role: 'user', thread_id: 'thread-1', content: [], metadata: { parentId: null } },
+        { id: 'a-len', role: 'assistant', thread_id: 'thread-1', content: [], metadata: { stopped: true, parentId: 'u1' } },
+      ]
+      h.messagesState.getMessages = vi.fn(() => stored)
+      renderComponent()
+      const onFinish = (h as any).capturedOnFinish
+
+      const realModels = hub.models as () => Record<string, unknown>
+      hub.models = () => ({
+        ...realModels(),
+        updateModelSettings: vi.fn().mockResolvedValue(undefined),
+      })
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          screen.getByText('Increase Context Size').click()
+        })
+        await act(async () => {
+          vi.advanceTimersByTime(1000)
+        })
+      } finally {
+        vi.clearAllTimers()
+        vi.useRealTimers()
+        hub.models = realModels
+      }
+      expect(h.mockRegenerate).toHaveBeenCalledWith({ messageId: 'a-len' })
+
+      act(() => {
+        onFinish({
+          message: {
+            id: 'a-new',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'partial answer, done' }],
+            metadata: {},
+          },
+          isAbort: false,
+          isError: false,
+        })
+      })
+      expect(h.messagesState.deleteMessage).toHaveBeenCalledWith('thread-1', 'a-len')
+    })
   })
 
   // #9311: a turn keeps running after the user opens another thread, and its

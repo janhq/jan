@@ -168,6 +168,13 @@ const launchedCtxLens = new Map<string, number | undefined>()
 // cancels it.
 const titleAborts = new Map<string, AbortController>()
 
+// The visible text a reply generated so far.
+const partialTextOf = (message: UIMessage) =>
+  message.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => (p as { type: 'text'; text: string }).text)
+    .join('')
+
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
   map.delete(threadId)
@@ -536,10 +543,7 @@ function ThreadDetail() {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
           // button - auto-increase was removed; the user explicitly opts in.
-          const partialText = message.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { type: 'text'; text: string }).text)
-            .join('')
+          const partialText = partialTextOf(message)
           if (partialText) {
             pendingContinuations.set(threadId, { message, text: partialText })
           }
@@ -1983,6 +1987,17 @@ function ThreadDetail() {
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
 
+    // The reply this click resumes if the turn that stopped is not in
+    // pendingContinuations (a restart empties it): the stored partial, marked
+    // `stopped`, that hydration restored. Read before the awaits below, while
+    // the open thread is still this one.
+    const lastMessage = chatMessagesRef.current.at(-1)
+    const storedPartial =
+      lastMessage?.role === 'assistant' &&
+      (lastMessage.metadata as { stopped?: boolean } | undefined)?.stopped
+        ? { message: lastMessage, text: partialTextOf(lastMessage) }
+        : undefined
+
     const updateProvider = useModelProvider.getState().updateProvider
     const provider = getProviderByName(selectedProvider)
     if (!provider) return
@@ -2059,12 +2074,16 @@ function ThreadDetail() {
       await serviceHub.models().stopModel(selectedModel.id)
     }
 
-    // Consume any pending partial captured at the `finishReason === 'length'`
-    // event so the regenerate resumes from where the stream stopped, and the
-    // "Growing the Mind…" shimmer renders while the model reloads.
+    // Resume from the partial the reply stopped at: the one captured at the
+    // `finishReason === 'length'` event, or, when none was (the Map is empty
+    // after an application restart), the stored reply read above. The
+    // regenerate then continues it, and the "Growing the Mind…" shimmer renders
+    // while the model reloads.
     // The prefill goes on this thread's own transport: the user may have
     // opened another thread while the model reloaded.
-    const pending = takeFrom(pendingContinuations, threadId)
+    const pending =
+      takeFrom(pendingContinuations, threadId) ??
+      (storedPartial?.text ? storedPartial : undefined)
     if (pending) {
       useChatSessions
         .getState()
