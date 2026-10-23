@@ -209,6 +209,33 @@ describe('CoworkAskCard', () => {
     expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'who', selected: ['Team'] }])
   })
 
+  it('clicking an option while free text is active restores the stashed multi picks', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    fireEvent.click(screen.getByText('Team'))
+    fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {
+      target: { value: 'x' },
+    })
+    fireEvent.click(screen.getByText('Public'))
+    fireEvent.click(submitButton())
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [
+      { id: 'who', selected: ['Team', 'Public'] },
+    ])
+  })
+
+  it('shows a plain square, not a dead number, for the free-text row past 9 options', () => {
+    const many: AskRequestPayload = {
+      questions: [
+        {
+          id: 'm',
+          question: 'Pick?',
+          options: Array.from({ length: 9 }, (_, i) => ({ label: `Opt${i + 1}` })),
+        },
+      ],
+    }
+    render(<CoworkAskCard requestId="ask-1" request={many} onRespond={onRespond} />)
+    expect(screen.queryByText('10')).not.toBeInTheDocument()
+  })
+
   it('does not count free text as a selected option', () => {
     render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
     fireEvent.change(screen.getByPlaceholderText('common:askSomethingElse'), {

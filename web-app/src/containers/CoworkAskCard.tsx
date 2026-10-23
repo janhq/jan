@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,6 +75,14 @@ export function CoworkAskCard({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Built later in render (it needs the question), but only installed once the
+  // render commits, so a discarded render can never leave a stale handler. It
+  // stays null on the early-return path below, which clears the old one.
+  let handleKey: ((e: KeyboardEvent) => void) | null = null
+  useLayoutEffect(() => {
+    keyHandlerRef.current = handleKey
+  })
+
   // A new request is a clean slate; keeping prior picks would silently answer
   // the next question with the previous one's selections.
   useEffect(() => {
@@ -100,11 +108,7 @@ export function CoworkAskCard({
     [questions, selected, custom]
   )
 
-  if (!requestId || !question) {
-    // Don't leave the previous render's closure answering digit presses.
-    keyHandlerRef.current = null
-    return null
-  }
+  if (!requestId || !question) return null
 
   const picks = selected[question.id] ?? []
   const isLast = index === questions.length - 1
@@ -115,7 +119,16 @@ export function CoworkAskCard({
     // sitting in the input looking like the live answer.
     if (label !== OTHER && picks.includes(OTHER)) {
       setCustom((c) => ({ ...c, [question.id]: '' }))
+      const stashed = stashRef.current[question.id] ?? []
       delete stashRef.current[question.id]
+      if (question.multi) {
+        // Bring the set-aside checks back and add this one, rather than losing them.
+        setSelected((prev) => ({
+          ...prev,
+          [question.id]: stashed.includes(label) ? stashed : [...stashed, label],
+        }))
+        return
+      }
     }
     setSelected((prev) => {
       const current = prev[question.id] ?? []
@@ -154,7 +167,7 @@ export function CoworkAskCard({
   // Single-select only: 1–9 pick the matching option; the number after the last
   // option focuses the free-text row. Ignored while typing so digits still reach
   // inputs.
-  keyHandlerRef.current = (e: KeyboardEvent) => {
+  handleKey = (e: KeyboardEvent) => {
     if (question.multi) return
     if (e.defaultPrevented || e.isComposing || e.repeat) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -285,7 +298,8 @@ export function CoworkAskCard({
             usingCustom && 'bg-main-view-fg/5'
           )}
         >
-          {question.multi ? (
+          {/* Past 9 options there is no key for this row, so no number either. */}
+          {question.multi || question.options.length + 1 > 9 ? (
             <CheckSquare checked={usingCustom} />
           ) : (
             <NumberBadge n={question.options.length + 1} checked={usingCustom} />
