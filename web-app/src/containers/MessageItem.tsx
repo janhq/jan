@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils'
 import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
+import { AskSummaryCard } from './message/AskSummaryCard'
+import { summarizeAsk } from '@/lib/coworkAsk'
+import { ASK_TOOL_NAME } from '@/lib/coworkTools'
 import {
   CHAT_STATUS,
   CONTENT_TYPE,
@@ -485,6 +488,18 @@ export const MessageItem = memo(
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i]
         const t = part.type
+        // A settled ask leaves the trace as a Q&A card, so the answers stay in
+        // view instead of being folded into "Worked for…".
+        if (t === `tool-${ASK_TOOL_NAME}` && part.state === 'output-available') {
+          const rows = summarizeAsk(part.input, part.output)
+          if (rows) {
+            flushCot(true)
+            elements.push(
+              <AskSummaryCard key={`${message.id}-ask-${i}`} rows={rows} />
+            )
+            continue
+          }
+        }
         if (isCotPart(t)) {
           cotEntries.push({ part, index: i })
           continue

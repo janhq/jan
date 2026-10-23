@@ -1635,6 +1635,9 @@ function CoworkPage() {
               {ask && typeof ask.request !== 'string' && (
                 <div className="px-1 pb-2">
                   <CoworkAskCard
+                    // A fresh card per request, so a new ask never renders a
+                    // frame with the previous one's page or picks.
+                    key={ask.requestId}
                     requestId={ask.requestId}
                     request={ask.request}
                     onRespond={respondAsk}
