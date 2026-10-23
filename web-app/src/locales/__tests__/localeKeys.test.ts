@@ -72,6 +72,14 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'state.activating',
     'state.active',
     'state.failed',
+    // Permission risk labels and dev-load error codes.
+    'risk.low',
+    'risk.medium',
+    'risk.high',
+    'devLoad.readFailed',
+    'devLoad.invalidJson',
+    'devLoad.invalidManifest',
+    'devLoad.alreadyLoaded',
   ],
   'model-errors': [
     'engine.unknown',

@@ -8,7 +8,7 @@ import {
   type SandboxWorker,
 } from '@janhq/extension-runtime/testing'
 import { ExtensionHost } from '../host'
-import { manifest } from './fixtures'
+import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
 const sample = (overrides: Partial<ValidatedManifest> = {}) =>
@@ -232,5 +232,68 @@ describe('spawnWorkerExtension', () => {
     })
     expect(workers[0].scope.__result).toBe('E_PERMISSION')
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('unload stops a worker extension and removes it from the list', async () => {
+    const { host } = newHost()
+    await host.spawnWorkerExtension({
+      manifest: sample(),
+      bundle: BUNDLE,
+      grants: ['tools', 'ui:notify'],
+      source: 'dev',
+    })
+    const listener = vi.fn()
+    host.onDidChange(listener)
+    await host.unload('acme.worker')
+    expect(host.list()).toEqual([])
+    expect(workers[0].terminated).toBe(true)
+    expect(host.contributions.getState().tools['acme.worker']).toBeUndefined()
+    expect(listener).toHaveBeenCalled()
+  })
+
+  it('unload removes a failed worker extension too', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host } = newHost()
+    await host.spawnWorkerExtension({
+      manifest: sample(),
+      bundle: 'var Other = {}',
+      grants: [],
+      source: 'dev',
+    })
+    await host.unload('acme.worker')
+    expect(host.list()).toEqual([])
+  })
+
+  it('refuses to unload a built-in', async () => {
+    const { host } = newHost()
+    await host.activateBuiltin(
+      builtin(manifest('jan.core'), { activate: () => {} })
+    )
+    await expect(host.unload('jan.core')).rejects.toThrow(/built-in/)
+    expect(host.list()[0].state).toBe('active')
+  })
+
+  it('honours proposals only for dev loads', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host } = newHost()
+    const proposing = sample({ proposals: ['chat'] })
+    const installed = await host.spawnWorkerExtension({
+      manifest: proposing,
+      bundle: BUNDLE,
+      grants: ['tools', 'ui:notify'],
+      source: 'installed',
+    })
+    expect(installed).toMatchObject({
+      state: 'failed',
+      error: expect.stringContaining('proposals'),
+    })
+    await host.unload('acme.worker')
+    const dev = await host.spawnWorkerExtension({
+      manifest: proposing,
+      bundle: BUNDLE,
+      grants: ['tools', 'ui:notify'],
+      source: 'dev',
+    })
+    expect(dev.state).toBe('active')
   })
 })
