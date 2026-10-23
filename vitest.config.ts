@@ -9,6 +9,9 @@ export default defineConfig({
       // Web-app package - use its own vitest config
       './web-app',
 
+      // Published packages - each ships its own vitest config
+      './packages/extension-api',
+
       // Extensions - each ships its own vitest config
       './extensions/assistant-extension',
       './extensions/conversational-extension',
