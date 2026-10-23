@@ -12,12 +12,17 @@ import {
   IconHistory,
   IconCirclePlus,
   IconFolder,
+  IconCommand,
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { useContributedMenuItems } from '@/containers/extensions/menuItems'
+import { useExecuteCommand } from '@/containers/extensions/useExecuteCommand'
+
+const PALETTE_CONTEXT = { location: 'commandPalette' } as const
 
 const MAX_RECENT_SEARCHES = 5
 
@@ -37,6 +42,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
   const threads = useThreads((state) => state.threads)
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
+  const paletteItems = useContributedMenuItems('commandPalette', PALETTE_CONTEXT)
+  const executeCommand = useExecuteCommand()
 
   // Focus input when dialog opens
   useEffect(() => {
@@ -132,9 +139,24 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     return { withProject, withoutProject }
   }, [searchQuery, getFilteredThreads])
 
+  // Extension commands listed in the palette, matched on title, category
+  // and extension name.
+  const commands = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return paletteItems
+    return paletteItems.filter((item) =>
+      [item.title, item.category, item.extensionName].some((field) =>
+        field?.toLowerCase().includes(query)
+      )
+    )
+  }, [paletteItems, searchQuery])
+
   // Calculate all selectable items for keyboard navigation
   const allItems = useMemo(() => {
-    const items: Array<{ type: 'new' | 'recent' | 'result'; id: string }> = []
+    const items: Array<{
+      type: 'new' | 'recent' | 'result' | 'command'
+      id: string
+    }> = []
 
     if (!searchQuery) {
       // Start new chat option
@@ -153,9 +175,16 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         items.push({ type: 'result', id: thread.id })
       })
     }
+    commands.forEach((item) => {
+      items.push({
+        type: 'command',
+        id: `${item.extensionId}/${item.commandId}`,
+      })
+    })
 
     return items
-  }, [searchQuery, recentSearches, searchResults])
+  }, [searchQuery, recentSearches, searchResults, commands])
+  const firstCommandIndex = allItems.length - commands.length
 
   // Reset selected index when items change
   useEffect(() => {
@@ -185,6 +214,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
       if (selectedItem) {
         if (selectedItem.type === 'new') {
           handleStartNewChat()
+        } else if (selectedItem.type === 'command') {
+          handleRunCommand(selectedIndex - firstCommandIndex)
         } else {
           handleSelectThread(selectedItem.id)
         }
@@ -197,10 +228,18 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     navigate({ to: '/' })
   }
 
+  const handleRunCommand = (index: number) => {
+    const item = commands[index]
+    if (!item) return
+    handleClose()
+    void executeCommand(item.extensionId, item.commandId, PALETTE_CONTEXT)
+  }
+
   const showStartNewChat = !searchQuery
   const hasResults =
     searchResults.withProject.length > 0 ||
-    searchResults.withoutProject.length > 0
+    searchResults.withoutProject.length > 0 ||
+    commands.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -340,6 +379,44 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                   >
                     <IconMessage className="size-4 text-muted-foreground shrink-0" />
                     <span className="text-sm truncate">{thread.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Commands contributed by extensions */}
+          {commands.length > 0 && (
+            <div className="p-1">
+              <div className="px-3 pt-1.5 mb-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('extensions:commands')}
+                </span>
+              </div>
+              {commands.map((item, index) => {
+                const itemIndex = firstCommandIndex + index
+                return (
+                  <button
+                    key={`${item.extensionId}/${item.commandId}`}
+                    data-index={itemIndex}
+                    onClick={() => handleRunCommand(index)}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      selectedIndex === itemIndex && 'bg-secondary/50'
+                    )}
+                  >
+                    <IconCommand className="size-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm truncate">
+                      {item.category
+                        ? t('extensions:categorizedCommand', {
+                            category: item.category,
+                            title: item.title,
+                          })
+                        : item.title}
+                    </span>
+                    <span className="ml-auto pl-2 text-xs text-muted-foreground truncate">
+                      {item.extensionName}
+                    </span>
                   </button>
                 )
               })}

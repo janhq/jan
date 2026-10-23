@@ -127,6 +127,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useElementWidth } from '@/hooks/useElementWidth'
+import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
 
 type ChatInputProps = {
   className?: string
@@ -2405,6 +2406,17 @@ const ChatInput = memo(function ChatInput({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+                    {/* Only chat threads: a scoped surface (Cowork) has no thread id. */}
+                    {!scopeKey && currentThreadId && (
+                      <ContributedMenuItems
+                        location="chatInput/actions"
+                        context={{
+                          location: 'chatInput/actions',
+                          threadId: currentThreadId,
+                        }}
+                        separator
+                      />
+                    )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

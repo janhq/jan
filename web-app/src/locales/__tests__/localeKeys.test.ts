@@ -6,7 +6,14 @@ const SRC = resolve(__dirname, '../..')
 const LOCALES_ROOT = resolve(__dirname, '..')
 
 /** Namespaces whose keys are asserted to exist. */
-const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat', 'tools']
+const GUARDED_NAMESPACES = [
+  'setup',
+  'model-errors',
+  'common',
+  'chat',
+  'tools',
+  'extensions',
+]
 
 /**
  * Namespaces every shipped locale must translate in full. The runtime falls
@@ -57,6 +64,13 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'coworkEmpty.folder.first',
     'coworkEmpty.folder.second',
     'coworkEmpty.folder.third',
+  ],
+  // The settings page labels each host extension by its lifecycle state.
+  extensions: [
+    'state.inactive',
+    'state.activating',
+    'state.active',
+    'state.failed',
   ],
   'model-errors': [
     'engine.unknown',
