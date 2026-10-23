@@ -4,7 +4,6 @@ import { logger } from './logger'
 
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
-  Conversational = 'conversational',
   Inference = 'inference',
   MCP = 'mcp',
   RAG = 'rag',

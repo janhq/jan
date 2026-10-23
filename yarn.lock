@@ -2741,20 +2741,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@janhq/conversational-extension@workspace:extensions/conversational-extension":
-  version: 0.0.0-use.local
-  resolution: "@janhq/conversational-extension@workspace:extensions/conversational-extension"
-  dependencies:
-    "@janhq/core": "workspace:*"
-    cpx: "npm:1.5.0"
-    jsdom: "npm:^26.1.0"
-    rimraf: "npm:6.0.1"
-    rolldown: "npm:1.0.0-beta.1"
-    typescript: "npm:5.9.2"
-    vitest: "npm:3.2.4"
-  languageName: unknown
-  linkType: soft
-
 "@janhq/core@workspace:*, @janhq/core@workspace:core":
   version: 0.0.0-use.local
   resolution: "@janhq/core@workspace:core"

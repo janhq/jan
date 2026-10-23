@@ -1,7 +1,6 @@
 import type { BaseExtension } from '@janhq/core'
 import type { ExtensionManifest } from '@/lib/extension'
 import * as assistant from '../../../../extensions/assistant-extension/package.json'
-import * as conversational from '../../../../extensions/conversational-extension/package.json'
 import * as download from '../../../../extensions/download-extension/package.json'
 import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
 import * as rag from '../../../../extensions/rag-extension/package.json'
@@ -41,14 +40,6 @@ const ENTRIES: BundledEntry[] = [
     productName: assistant.productName,
     version: assistant.version,
     description: assistant.description,
-  },
-  {
-    load: () => import('@janhq/conversational-extension'),
-    name: conversational.name,
-    productName: conversational.productName,
-    version: conversational.version,
-    description: conversational.description,
-    mobile: true,
   },
   {
     load: () => import('@janhq/download-extension'),
