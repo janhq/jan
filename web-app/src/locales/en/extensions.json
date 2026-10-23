@@ -11,5 +11,39 @@
     "activating": "Starting",
     "active": "Active",
     "failed": "Failed"
+  },
+  "permissions": {
+    "uiNotify": {
+      "title": "Show notifications",
+      "description": "Show short messages in the app, labelled with the extension's name."
+    },
+    "commandsExecute": {
+      "title": "Run commands",
+      "description": "Run commands that belong to Jan or to other extensions."
+    },
+    "network": {
+      "title": "Connect to {{host}}",
+      "description": "Send requests to this host and read the replies."
+    },
+    "providers": {
+      "title": "Add model providers",
+      "description": "Add model providers that appear in the model picker."
+    },
+    "tools": {
+      "title": "Add tools for models",
+      "description": "Add tools that models can call during a chat. Each call still asks for your approval."
+    },
+    "conversationsRead": {
+      "title": "Read your conversations",
+      "description": "Read your threads and the messages in them."
+    },
+    "conversationsWrite": {
+      "title": "Change your conversations",
+      "description": "Create threads and add messages to them."
+    },
+    "chatHooks": {
+      "title": "Change messages before they are sent",
+      "description": "Rewrite the text of your messages before they reach the model."
+    }
   }
 }

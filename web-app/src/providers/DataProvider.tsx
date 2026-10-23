@@ -17,6 +17,7 @@ import { isDev } from '@/lib/utils'
 import { sweepThreadWorkspaces } from '@/lib/agentTools'
 import { invoke } from '@tauri-apps/api/core'
 import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { useExtensionProviders } from '@/hooks/useExtensionProviders'
 
 type ProviderCustomHeader = {
   header: string
@@ -35,6 +36,9 @@ type RegisterProviderRequest = {
 async function registerRemoteProvider(provider: ModelProvider) {
   // Skip llamacpp - those are local models
   if (provider.provider === 'llamacpp') return
+  // An extension's provider is reachable from the chat only: registering it
+  // would serve it, with the extension's key, to every local API client.
+  if (provider.source) return
 
   const chain = providerRemoteApiKeyChain(provider)
   if (chain.length === 0) {
@@ -71,7 +75,8 @@ async function seedProviderKeysFromKeyring(
 ): Promise<ModelProvider[]> {
   return Promise.all(
     providers.map(async (provider) => {
-      if (provider.provider === 'llamacpp') return provider
+      // Extension providers keep their key in the extension's settings.
+      if (provider.provider === 'llamacpp' || provider.source) return provider
       try {
         const keys = await invoke<string[]>('get_provider_keys', {
           provider: provider.provider,
@@ -123,6 +128,7 @@ const syncRemoteProviders = () => {
     if (
       provider.active &&
       provider.provider !== 'llamacpp' &&
+      !provider.source &&
       providerHasRemoteApiKeys(provider)
     ) {
       registerRemoteProvider(provider)
@@ -188,6 +194,7 @@ export function DataProvider() {
   const sweptWorkspaces = useRef(false)
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
+  useExtensionProviders()
 
   // Local API Server hooks
   const {

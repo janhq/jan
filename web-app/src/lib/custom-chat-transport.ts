@@ -1224,6 +1224,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
+      // Tools contributed by extensions, under their prefixed wire names so
+      // they can never shadow an MCP or built-in tool. Toggled per
+      // extension like an MCP server.
+      for (const tool of useAppState.getState().extensionTools) {
+        if (isToolDisabled(tool.server, tool.wireName)) continue
+        toolsRecord[tool.wireName] = {
+          description: tool.description,
+          inputSchema: jsonSchema(
+            normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+          ),
+        } as Tool
+      }
+
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`

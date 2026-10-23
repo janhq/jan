@@ -75,6 +75,11 @@ type ProviderObject = {
   custom_header?: ProviderCustomHeader[] | null
   /** Wire format of the provider's HTTP API. Missing = 'openai' (default). */
   api_type?: ProviderApiType
+  /**
+   * Set when an extension contributed the provider. Such providers live only
+   * while the extension runs and are never persisted.
+   */
+  source?: { extensionId: string }
 }
 
 /**

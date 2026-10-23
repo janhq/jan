@@ -1,65 +1,31 @@
 import {
   DisposableStore,
-  ExtensionError,
-  isLocalHost,
-  type CommandContext,
-  type ConversationsApi,
   type Event,
   type ExtensionContext,
-  type HttpApi,
   type JsonValue,
-  type Logger,
-  type NotifyLevel,
-  type PermissionString,
   type SettingValue,
   type ValidatedManifest,
 } from '@janhq/extension-api'
-import type { InternalExtensionContext } from '@janhq/core'
-import type { ContributionStore } from './contributions'
-import type { PermissionDispatcher } from './dispatcher'
 import type {
-  AppSettingsBackend,
-  ExtensionSettingsStore,
-} from './settings-store'
-import { createExtensionStorage } from './storage'
+  HostArgs,
+  HostEventName,
+  HostEvents,
+  HostMethod,
+  HostResult,
+} from '@janhq/extension-runtime'
+import type { InternalExtensionContext } from '@janhq/core'
+import { createHostApi, createLogger, type HostApiDeps } from './host-api'
 
-export type Notify = (notification: {
-  extensionName: string
-  level: NotifyLevel
-  message: string
-}) => void
+export type { Notify } from './host-api'
 
 /** What a context is built on; shared by every extension of one host. */
-export interface ContextDeps {
-  dispatcher: PermissionDispatcher
-  contributions: ContributionStore
-  settings: ExtensionSettingsStore
-  storage: AppSettingsBackend
-  notify: Notify
-  conversations?: ConversationsApi
-  /** Absent until the network path exists (P2). */
-  http?: HttpApi
-}
-
-function createLogger(extensionId: string): Logger {
-  const tag = `[ext:${extensionId}]`
-  // console, not the Tauri log plugin: the app's console interceptor already
-  // forwards to app.log, and writing to both would duplicate lines.
-  return {
-    debug: (...args) => console.debug(tag, ...args),
-    info: (...args) => console.info(tag, ...args),
-    warn: (...args) => console.warn(tag, ...args),
-    error: (...args) => console.error(tag, ...args),
-  }
-}
-
-const notProvided = (what: string) =>
-  new ExtensionError('E_NOT_FOUND', `${what} is not available in this host`)
+export type ContextDeps = HostApiDeps
 
 /**
- * Builds the `ExtensionContext` for one extension. Every gated call checks
- * the dispatcher at call time rather than at creation, so a later revoke
- * takes effect without rebuilding the context.
+ * Builds the in-process `ExtensionContext` of a built-in. Every gated call
+ * goes through `PermissionDispatcher.dispatch`, the path worker requests
+ * take too, and is checked at call time, so a later revoke takes effect
+ * without rebuilding the context.
  */
 export function createContext(
   manifest: ValidatedManifest,
@@ -75,150 +41,80 @@ export function createContext(
   deps: ContextDeps,
   internal?: InternalExtensionContext['internal']
 ): ExtensionContext | InternalExtensionContext {
-  const { id } = manifest
-  const { dispatcher, contributions, settings } = deps
-  const check = (permission: PermissionString) =>
-    dispatcher.check(id, permission)
+  const api = createHostApi(manifest, deps)
+  const call = <M extends HostMethod>(
+    method: M,
+    ...args: HostArgs<M>
+  ): HostResult<M> => deps.dispatcher.dispatch(manifest, api, method, args)
   // Async API methods report denials as rejections, never as sync throws.
-  const gated =
-    <A extends unknown[], R>(
-      permission: PermissionString,
-      fn: (...args: A) => Promise<R>
-    ) =>
-    async (...args: A): Promise<R> => {
-      check(permission)
-      return fn(...args)
-    }
-  const gatedEvent =
-    <T>(permission: PermissionString, event: () => Event<T>): Event<T> =>
-    (listener) => {
-      check(permission)
-      return event()(listener)
-    }
-  const conversations = (): ConversationsApi => {
-    if (!deps.conversations) throw notProvided('Conversations')
-    return deps.conversations
-  }
+  const callAsync = async <M extends HostMethod>(
+    method: M,
+    ...args: HostArgs<M>
+  ): Promise<Awaited<HostResult<M>>> =>
+    (await call(method, ...args)) as Awaited<HostResult<M>>
+  // Not through `call`: the name/listener pairing is a union TypeScript
+  // cannot spread generically, and dispatch validates it anyway.
+  const subscribe =
+    <E extends HostEventName>(name: E): Event<HostEvents[E]> =>
+    (listener) =>
+      deps.dispatcher.dispatch(manifest, api, 'events.subscribe', [
+        name,
+        listener,
+      ])
 
   const ctx: ExtensionContext = {
     extension: {
-      id,
+      id: manifest.id,
       version: manifest.version,
       displayName: manifest.displayName,
     },
     subscriptions: new DisposableStore(),
-    log: createLogger(id),
+    // Logging is implicit and in process; it skips the dispatcher so a
+    // built-in's log line costs nothing more than console.
+    log: createLogger(manifest.id),
     settings: {
       get: async <T extends SettingValue>(key: string) =>
-        (await settings.getSettingValue(id, key)) as T | undefined,
-      set: (key, value) => settings.setSettingValue(id, key, value),
-      onDidChange: (listener) =>
-        settings.onDidChange((change) => {
-          if (change.extensionId === id)
-            listener({ key: change.key, value: change.value })
-        }),
+        (await callAsync('settings.get', key)) as T | undefined,
+      set: (key, value) => callAsync('settings.set', key, value),
+      onDidChange: subscribe('settings.didChange'),
     },
-    storage: createExtensionStorage(id, deps.storage),
+    storage: {
+      get: async <T extends JsonValue>(key: string) =>
+        (await callAsync('storage.get', key)) as T | undefined,
+      set: (key, value) => callAsync('storage.set', key, value),
+      delete: (key) => callAsync('storage.delete', key),
+      keys: () => callAsync('storage.keys'),
+    },
     commands: {
-      registerCommand: (commandId, handler) =>
-        contributions.registerCommand(id, commandId, handler),
-      execute: async <T>(commandId: string, ...args: JsonValue[]) => {
-        const context: CommandContext = {
-          location: 'extension',
-          extensionId: id,
-        }
-        if (contributions.getState().commands[id]?.[commandId]) {
-          return (await contributions.executeCommand(
-            id,
-            commandId,
-            context,
-            ...args
-          )) as T
-        }
-        check('commands:execute')
-        // The allowlist of host commands arrives with the first host command.
-        throw new ExtensionError(
-          'E_NOT_FOUND',
-          `Command '${commandId}' is not available`
-        )
-      },
+      registerCommand: (id, handler) =>
+        call('commands.register', id, handler),
+      execute: async <T>(id: string, ...args: JsonValue[]) =>
+        (await callAsync('commands.execute', id, ...args)) as T,
     },
     ui: {
-      notify: ({ level, message }) => {
-        check('ui:notify')
-        deps.notify({ extensionName: manifest.displayName, level, message })
-      },
-      setStatusItem: (itemId, update) =>
-        contributions.setStatusItem(id, itemId, update),
+      notify: (notification) => call('ui.notify', notification),
+      setStatusItem: (id, update) => call('ui.setStatusItem', id, update),
     },
     conversations: {
-      listThreads: gated('conversations:read', async () =>
-        conversations().listThreads()
-      ),
-      getThread: gated('conversations:read', async (threadId: string) =>
-        conversations().getThread(threadId)
-      ),
-      listMessages: gated(
-        'conversations:read',
-        async (threadId: string, opts?: { limit?: number; before?: string }) =>
-          conversations().listMessages(threadId, opts)
-      ),
-      createThread: gated(
-        'conversations:write',
-        async (input: { title: string }) => conversations().createThread(input)
-      ),
-      appendMessage: gated(
-        'conversations:write',
-        async (
-          threadId: string,
-          msg: { role: 'user' | 'assistant'; text: string }
-        ) => conversations().appendMessage(threadId, msg)
-      ),
-      onDidCreateMessage: gatedEvent(
-        'conversations:read',
-        () => conversations().onDidCreateMessage
-      ),
-      onDidDeleteThread: gatedEvent(
-        'conversations:read',
-        () => conversations().onDidDeleteThread
-      ),
+      listThreads: () => callAsync('conversations.listThreads'),
+      getThread: (id) => callAsync('conversations.getThread', id),
+      listMessages: (threadId, opts) =>
+        callAsync('conversations.listMessages', threadId, opts),
+      createThread: (input) => callAsync('conversations.createThread', input),
+      appendMessage: (threadId, msg) =>
+        callAsync('conversations.appendMessage', threadId, msg),
+      onDidCreateMessage: subscribe('conversations.didCreateMessage'),
+      onDidDeleteThread: subscribe('conversations.didDeleteThread'),
     },
     tools: {
-      registerTool: (name, handler) => {
-        check('tools')
-        return contributions.registerTool(id, name, handler)
-      },
+      registerTool: (name, handler) => call('tools.register', name, handler),
     },
     providers: {
-      registerProvider: (providerId, handlers) => {
-        check('providers')
-        return contributions.registerProvider(id, providerId, handlers)
-      },
+      registerProvider: (id, handlers) =>
+        call('providers.register', id, handlers),
     },
     http: {
-      fetch: async (url, init) => {
-        let parsed: URL
-        try {
-          parsed = new URL(url)
-        } catch {
-          throw new ExtensionError(
-            'E_INVALID_ARGS',
-            `'${url}' is not an absolute URL`
-          )
-        }
-        const host = parsed.hostname
-        const secure =
-          parsed.protocol === 'https:' ||
-          (parsed.protocol === 'http:' && isLocalHost(host))
-        if (!secure)
-          throw new ExtensionError(
-            'E_PERMISSION',
-            `Only https is allowed for '${host}'`
-          )
-        check(`network:${host}`)
-        if (!deps.http) throw notProvided('Network access')
-        return deps.http.fetch(url, init)
-      },
+      fetch: (url, init) => callAsync('http.fetch', url, init),
     },
     // No proposal is implemented yet.
     proposed: {},

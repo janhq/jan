@@ -8,6 +8,7 @@ const mockUpdateTools = vi.fn()
 const mockListen = vi.fn()
 const mockUnsubscribe = vi.fn()
 const mockInvalidateCache = vi.fn()
+const mockUpdateExtensionTools = vi.fn()
 
 vi.mock('@/lib/mcp-orchestrator/mcp-orchestrator', () => ({
   mcpOrchestrator: { invalidateCache: mockInvalidateCache },
@@ -15,7 +16,11 @@ vi.mock('@/lib/mcp-orchestrator/mcp-orchestrator', () => ({
 
 // Mock useAppState
 vi.mock('../useAppState', () => ({
-  useAppState: (selector: any) => selector({ updateTools: mockUpdateTools }),
+  useAppState: (selector: any) =>
+    selector({
+      updateTools: mockUpdateTools,
+      updateExtensionTools: mockUpdateExtensionTools,
+    }),
 }))
 
 // Mock the ServiceHub
@@ -211,5 +216,43 @@ describe('useTools', () => {
     rerender()
     expect(mockGetTools).toHaveBeenCalledTimes(1)
     expect(mockListen).toHaveBeenCalledTimes(1)
+  })
+  it('publishes bound contributed tools under their wire names, once per change', async () => {
+    const { useTools } = await import('../useTools')
+    const { useContributions } = await import('@/lib/extensions/contributions')
+    const declared = {
+      name: 'echo',
+      description: 'Echo',
+      inputSchema: { type: 'object' as const },
+    }
+    useContributions.setState({ tools: { 'acme.one': { echo: declared } } })
+
+    renderHook(() => useTools())
+    expect(mockUpdateExtensionTools).toHaveBeenLastCalledWith([])
+
+    act(() => {
+      useContributions.setState({
+        tools: {
+          'acme.one': {
+            echo: { ...declared, handler: async () => ({ content: [] }) },
+          },
+        },
+      })
+    })
+    expect(mockUpdateExtensionTools).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        wireName: 'x_acme_one__echo',
+        extensionId: 'acme.one',
+        name: 'echo',
+        server: 'ext:acme.one',
+      }),
+    ])
+    const calls = mockUpdateExtensionTools.mock.calls.length
+    // An unrelated contribution change does not republish the tools.
+    act(() => {
+      useContributions.setState({ statusItems: { 'acme.one': {} } })
+    })
+    expect(mockUpdateExtensionTools).toHaveBeenCalledTimes(calls)
+    useContributions.setState({ tools: {}, statusItems: {} })
   })
 })

@@ -60,6 +60,9 @@ vi.mock('@/hooks/useModelProvider', () => {
   return { useModelProvider }
 })
 
+vi.mock('@/hooks/useExtensionProviders', () => ({
+  useExtensionProviders: vi.fn(),
+}))
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({ checkForUpdate: h.checkForUpdate }),
 }))
