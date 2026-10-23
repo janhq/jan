@@ -37,26 +37,29 @@ export function parseAskRequest(input: unknown): AskRequestPayload | string {
     if (!Array.isArray(q.options) || q.options.length < 2) {
       return `question '${q.id}' requires at least two options`
     }
-    let recommended =
+    const requested =
       typeof q.recommended === 'number' && Number.isInteger(q.recommended)
         ? q.recommended
         : undefined
+    let recommended: number | undefined
     const options: AskQuestion['options'] = []
     q.options.forEach((entry, i) => {
       const o = entry as { label?: unknown; description?: unknown }
-      if (typeof o.label !== 'string' || !o.label.trim()) {
-        // Dropping a blank option shifts the ones after it, so the
-        // recommended index has to follow (or go, if it pointed here).
-        if (recommended === i) recommended = undefined
-        else if (recommended !== undefined && recommended > i) recommended--
-        return
-      }
+      if (typeof o.label !== 'string') return
       // Models trained on other harnesses mark a suggestion by suffixing the
       // label; read it as the field so the answer carries the clean label.
       const marked = RECOMMENDED_SUFFIX.exec(o.label)
-      if (marked && recommended === undefined) recommended = options.length
+      const label = marked ? o.label.slice(0, marked.index) : o.label
+      // Blank options are dropped (checked after stripping, so a bare
+      // "(Recommended)" goes too).
+      if (!label.trim()) return
+      // Blanks shift the options after them, so the field's index is mapped
+      // to this option's position as it lands; the field wins over a suffix.
+      if (i === requested || (marked && requested === undefined)) {
+        recommended = options.length
+      }
       options.push({
-        label: marked ? o.label.slice(0, marked.index) : o.label,
+        label,
         ...(typeof o.description === 'string'
           ? { description: o.description }
           : {}),
@@ -74,11 +77,7 @@ export function parseAskRequest(input: unknown): AskRequestPayload | string {
       question: q.question,
       options,
       ...(q.multi === true ? { multi: true } : {}),
-      ...(recommended !== undefined &&
-      recommended >= 0 &&
-      recommended < options.length
-        ? { recommended }
-        : {}),
+      ...(recommended !== undefined ? { recommended } : {}),
     })
   }
   return { questions }

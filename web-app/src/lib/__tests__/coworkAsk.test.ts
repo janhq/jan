@@ -90,6 +90,28 @@ describe('parseAskRequest hardening', () => {
     expect(out.questions[0].options[out.questions[0].recommended!].label).toBe('A')
   })
 
+  it('keeps recommended on the same option past several dropped blanks', () => {
+    const out = parseAskRequest({
+      questions: [
+        q({
+          options: [{ label: '' }, { label: ' ' }, { label: 'A' }, { label: 'B' }],
+          recommended: 2,
+        }),
+      ],
+    }) as Parsed
+    expect(out.questions[0].options[out.questions[0].recommended!].label).toBe('A')
+  })
+
+  it('drops a label that is only the "(Recommended)" suffix', () => {
+    const out = parseAskRequest({
+      questions: [
+        q({ options: [{ label: '(Recommended)' }, { label: 'A' }, { label: 'B' }] }),
+      ],
+    }) as Parsed
+    expect(out.questions[0].options.map((o) => o.label)).toEqual(['A', 'B'])
+    expect(out.questions[0].recommended).toBeUndefined()
+  })
+
   it('drops an out-of-range recommended index', () => {
     const out = parseAskRequest({ questions: [q({ recommended: 7 })] }) as Parsed
     expect(out.questions[0].recommended).toBeUndefined()
