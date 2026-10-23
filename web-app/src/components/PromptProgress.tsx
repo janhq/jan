@@ -4,12 +4,19 @@ import { Loader } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react'
 
 export function PromptProgress({
   hideIdle = false,
   stateKey,
+  waitingSince,
 }: {
   hideIdle?: boolean
+  /**
+   * When the reply last moved (ms since the epoch). While it waits, the time
+   * since then is shown next to "Working…", so a long wait reads as alive.
+   */
+  waitingSince?: number
   /**
    * Identifies a caller outside the `/threads/:threadId` route — Cowork, keyed
    * by its own session id — overriding the auto-detected route param, and
@@ -20,6 +27,14 @@ export function PromptProgress({
    */
   stateKey?: string
 }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (waitingSince === undefined) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(timer)
+  }, [waitingSince])
+
   const params = useParams({ strict: false })
   const threadId = stateKey ?? (params as { threadId?: string })?.threadId
   const promptProgress = useAppState((state) =>
@@ -81,7 +96,9 @@ export function PromptProgress({
       : 'Loading model…'
     : showReading
       ? `Reading: ${percentage}%`
-      : 'Working…'
+      : waitingSince !== undefined
+        ? `Working… ${formatElapsed(now - waitingSince)}`
+        : 'Working…'
 
   const detail =
     showReading && !loadingModel ? buildDetail(promptProgress) : undefined
@@ -112,6 +129,12 @@ export function PromptProgress({
       )}
     </div>
   )
+}
+
+/** m:ss, e.g. 1:23. */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1_000))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
 function describeLoadStage(stage: string | undefined): string | undefined {
