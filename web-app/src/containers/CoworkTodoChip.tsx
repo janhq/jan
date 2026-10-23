@@ -39,7 +39,10 @@ export function CoworkTodoChip({
           aria-pressed={open}
           aria-label={t('common:todoPanelTitle')}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           <ListTodo className="size-3.5 shrink-0" />
           <span className="font-mono tabular-nums text-muted-foreground">

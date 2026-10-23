@@ -1,4 +1,4 @@
-import { Diamond } from 'lucide-react'
+import { ListChecks } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -40,12 +40,9 @@ export function CoworkPlanToggle({ planMode, onChange }: Props) {
               planMode ? 'text-primary' : 'text-muted-foreground'
             )}
           >
-            <Diamond
+            <ListChecks
               aria-hidden
-              className={cn(
-                'shrink-0',
-                planMode ? 'size-3.5 fill-current' : 'size-[18px]'
-              )}
+              className={cn('shrink-0', planMode ? 'size-3.5' : 'size-[18px]')}
             />
             {planMode && <span>{t('common:planMode.label')}</span>}
           </Button>
