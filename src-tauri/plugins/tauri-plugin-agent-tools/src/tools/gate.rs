@@ -955,6 +955,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A dangling link out of the project is an escape even under a session
+    /// write grant: the prompt would name only the in-project link, so the user
+    /// could not tell the write lands on, say, `~/.ssh/authorized_keys`.
+    #[cfg(unix)]
+    #[test]
+    fn write_through_dangling_symlink_prompts_write_escape() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(outside.join("authorized_keys"), root.join("notes.md"))
+            .unwrap();
+        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
+        let mut grants = SessionGrants::default();
+        grants.grant(PromptKind::Write);
+        let d = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": "notes.md"}),
+            &GateContext {
+                project_root: &root,
+                scratch: None,
+                read_roots: &[],
+                write_roots: &[],
+                hidden_root: None,
+            },
+            &perms,
+            &grants,
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::WriteEscape));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     #[test]
     fn session_grant_allows_write_escape() {
         let root = unique_root();

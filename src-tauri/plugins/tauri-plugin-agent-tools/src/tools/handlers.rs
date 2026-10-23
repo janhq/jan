@@ -2596,6 +2596,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A write through a dangling link out of the project must not create the
+    /// link's target, confined or not: the handler's symlink re-check is what
+    /// stands between an approved in-project name and the host file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_through_dangling_symlink_is_refused() {
+        let root = unique_root();
+        let outside = unique_root();
+        let target = outside.join("authorized_keys");
+        std::os::unix::fs::symlink(&target, root.join("notes.md")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        for confine in [false, true] {
+            let ctx = ToolContext::new(&root, &store, &[]).with_confined_writes(confine);
+            let out = super::execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": "notes.md", "content": "ATTACKER"}),
+                &ctx,
+            )
+            .await
+            .0;
+            assert!(out.starts_with("ERROR: refused to write"), "confine={confine}: {out}");
+            assert!(!target.exists(), "confine={confine}: target was created");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
     /// With write confinement enabled, a `..` write is refused at the handler,
     /// independent of the gate -- the defense-in-depth layer.
     #[tokio::test]

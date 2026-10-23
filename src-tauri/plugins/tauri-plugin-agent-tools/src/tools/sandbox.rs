@@ -422,42 +422,73 @@ pub fn symlink_escapes_any_root(
         .any(|r| resolved.starts_with(r))
 }
 
-/// Canonicalize a path that may not fully exist: canonicalize the deepest
-/// existing ancestor, then re-append the non-existing tail (resolving `.`/`..`
-/// lexically). Errors only if no ancestor up to root exists.
+/// Canonicalize a path that may not fully exist, resolving `.`/`..` lexically
+/// past the point where the path stops existing.
+///
+/// Walked one component at a time so every symlink on the way is followed,
+/// including a dangling one: `canonicalize` fails on a link whose target does
+/// not exist, yet a write through it creates that target. Re-appending such a
+/// link by name would keep `notes.md -> ~/.ssh/authorized_keys` inside the
+/// project. A link's target is spliced in place of its name instead, relative
+/// targets against the link's own directory, as the kernel does. Too many hops
+/// (a cycle) is an error, so callers fail closed.
 fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+    // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
+    const MAX_HOPS: usize = 40;
     if let Ok(p) = path.canonicalize() {
         return Ok(p);
     }
-    let mut existing = path;
-    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
-    loop {
-        match existing.parent() {
-            Some(parent) => {
-                if let Some(name) = existing.file_name() {
-                    tail.push(name);
-                }
-                existing = parent;
-                if let Ok(base) = existing.canonicalize() {
-                    let mut result = base;
-                    for comp in tail.iter().rev() {
-                        if *comp == std::ffi::OsStr::new(".") {
-                            continue;
-                        }
-                        if *comp == std::ffi::OsStr::new("..") {
-                            result.pop();
-                        } else {
-                            result.push(comp);
-                        }
-                    }
-                    return Ok(result);
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("current dir: {e}"))?
+            .join(path)
+    };
+    // Components still to resolve, next one last so a link splices onto the end.
+    let mut pending: Vec<std::ffi::OsString> =
+        abs.components().rev().map(|c| c.as_os_str().to_owned()).collect();
+    let mut resolved = PathBuf::new();
+    let mut hops = 0;
+    while let Some(raw) = pending.pop() {
+        match Path::new(&raw).components().next() {
+            Some(Component::Prefix(_) | Component::RootDir) => {
+                resolved.push(&raw);
+                if let Ok(root) = resolved.canonicalize() {
+                    resolved = root;
                 }
             }
-            None => {
-                return Err(format!("no existing ancestor for {:?}", path));
+            Some(Component::ParentDir) => {
+                resolved.pop();
             }
+            Some(Component::Normal(name)) => {
+                let candidate = resolved.join(name);
+                if let Ok(real) = candidate.canonicalize() {
+                    resolved = real;
+                    continue;
+                }
+                let is_link = std::fs::symlink_metadata(&candidate)
+                    .is_ok_and(|m| m.file_type().is_symlink());
+                if !is_link {
+                    // Does not exist: nothing below it can be a link either way.
+                    resolved = candidate;
+                    continue;
+                }
+                hops += 1;
+                if hops > MAX_HOPS {
+                    return Err(format!("too many levels of symbolic links in {:?}", path));
+                }
+                let target = std::fs::read_link(&candidate)
+                    .map_err(|e| format!("read link {:?}: {e}", candidate))?;
+                // An absolute target restarts from its own root when its
+                // RootDir component is popped; a relative one stays here.
+                pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
+            }
+            Some(Component::CurDir) | None => {}
         }
     }
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -708,6 +739,59 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "link/secret.txt"), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A dangling link (its target does not exist yet) is still a link: a write
+    /// through it creates the target. Resolving only the deepest existing
+    /// ancestor and re-appending the rest lexically kept the in-project name,
+    /// so `notes.md -> ~/.ssh/authorized_keys` passed as an in-project write.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_out_of_the_project_escapes() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(outside.join("authorized_keys"), root.join("notes.md"))
+            .unwrap();
+        // A dangling directory link: the tail hangs off a link that resolves nowhere.
+        std::os::unix::fs::symlink(outside.join("no-such-dir"), root.join("d")).unwrap();
+        // Relative targets resolve against the link's own directory.
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let rel = Path::new("../..").join(outside.file_name().unwrap()).join("rel.txt");
+        std::os::unix::fs::symlink(&rel, root.join("sub/rel.md")).unwrap();
+
+        assert_eq!(escapes_project(&root, None, "notes.md"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "d/x.txt"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "sub/rel.md"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "missing/../notes.md"), Ok(true));
+        assert_eq!(escapes_write_roots(&root, None, &[], "notes.md"), Ok(true));
+        assert!(symlink_escapes_root(&root, None, &root.join("notes.md")));
+        assert!(symlink_escapes_root(&root, None, &root.join("d/x.txt")));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A dangling link that stays inside the project is an ordinary write.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_inside_the_project_does_not_escape() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::os::unix::fs::symlink("docs/README.md", root.join("README.md")).unwrap();
+        assert_eq!(escapes_project(&root, None, "README.md"), Ok(false));
+        assert!(!symlink_escapes_root(&root, None, &root.join("README.md")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A link cycle resolves to nothing: fail closed rather than loop.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_cycle_fails_closed() {
+        let root = unique_root();
+        std::os::unix::fs::symlink("b", root.join("a")).unwrap();
+        std::os::unix::fs::symlink("a", root.join("b")).unwrap();
+        assert!(escapes_project(&root, None, "a").is_err());
+        assert!(symlink_escapes_root(&root, None, &root.join("a")));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The re-check flags only symlinks that *leave* the trusted roots. An
