@@ -204,6 +204,28 @@ export function resolveSpecDraftKind(
   return 'mtp'
 }
 
+/**
+ * The number of MoE experts a GGUF declares (`<arch>.expert_count`), or 0 for
+ * a dense model. Only the model's own architecture is read: unlike the MTP
+ * suffix scan, a false positive here makes llama.cpp refuse the load when the
+ * MoE cache is set, while a false negative only skips the cache.
+ */
+export function detectExpertCountFromGgufMeta(
+  meta: Record<string, unknown> | undefined
+): number {
+  if (!meta) return 0
+  const arch = meta['general.architecture']
+  if (typeof arch !== 'string' || arch.length === 0) return 0
+  const raw = meta[`${arch}.expert_count`]
+  const n =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.length > 0
+        ? Number(raw)
+        : NaN
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
 export function detectMtpLayersFromGgufMeta(
   meta: Record<string, unknown> | undefined
 ): number {

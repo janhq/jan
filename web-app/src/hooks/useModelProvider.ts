@@ -795,9 +795,29 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 19 && state?.providers) {
+          // llama.cpp 0.7.0 added --moe-cache-mib. It is per-model because
+          // llama.cpp refuses to load a dense model with it set; add the
+          // control to persisted llamacpp models so the sidebar renders it.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (!model.settings) model.settings = {}
+              if (!model.settings.moe_cache_mib) {
+                model.settings.moe_cache_mib = {
+                  ...modelSettings.moe_cache_mib,
+                  controller_props: {
+                    ...modelSettings.moe_cache_mib.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 19,
+      version: 20,
     }
   )
 )

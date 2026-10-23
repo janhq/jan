@@ -35,7 +35,7 @@ namespace {
 /// Mirrors upstream's `ex_wrapper` (tools/server/server.cpp), which every route
 /// is registered behind. `build_table` captures the *unwrapped* handler members,
 /// so the two things that wrapper does have to be done here instead: map
-/// `std::invalid_argument` to 400 rather than 500, and build the body with the
+/// `std::invalid_argument` and `common_json_error` to 400 rather than 500, and build the body with the
 /// JSON library. Upstream's own messages quote the offending field
 /// (`response_format type must be one of "text" or "json_object"`), and a
 /// nlohmann parse error echoes the caller's bytes, so concatenating `e.what()`
@@ -263,7 +263,7 @@ struct jan_llama_engine {
     }
 };
 
-// server-context.cpp:4188 does `res->set_req(&req)`, and server_res_spipe keeps
+// server-context.cpp:4897 does `res->set_req(&req)`, and server_res_spipe keeps
 // that pointer for the life of the stream -- so the request, and the
 // std::function its `should_stop` member references, must outlive the response.
 // Declaration order here is the destruction order that guarantees it.
@@ -368,7 +368,7 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         global.apply_to_params(engine->params);
         it->second.apply_to_params(engine->params);
 
-        // common_params_parse does this at arg.cpp:892-896; apply_to_params does
+        // common_params_parse does this at arg.cpp:886-890; apply_to_params does
         // not. Without it n_threads stays 0 and ggml_threadpool_new_impl
         // memsets a zero-length array -> SIGSEGV. The router never hits this
         // because it forwards keys to a child that re-parses them.
@@ -379,7 +379,7 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
-        // arg.cpp:886-890, added in 0.4.1: an unset `-mmdev` follows `--device`
+        // arg.cpp:892-896, added in 0.4.1: an unset `-mmdev` follows `--device`
         // rather than falling back to auto-placement. Without it a preset that
         // pins the model to one GPU would still let the projector land wherever
         // ggml chose, which is the split the setting exists to prevent.
@@ -409,7 +409,7 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
             engine->params.kv_overrides.back().key[0] = 0;
         }
 
-        // arg.cpp:963-966, at the end of common_params_parse_ex. Since 0.4.0 the
+        // arg.cpp:964-967, at the end of common_params_parse_ex. Since 0.4.0 the
         // kwarg defaults to on when the user did not name it, and a template
         // with `supports_preserve_reasoning` reads it -- so omitting this here
         // would have the preset path preserve less reasoning than the argv path
@@ -433,7 +433,7 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
-        // server.cpp:156-161, in llama-server's main() -- which neither entry
+        // server.cpp:168-173, in llama-server's main() -- which neither entry
         // point here goes through. n_parallel = -1 is the SERVER default, and
         // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
         // slots, so leaving the sentinel unresolved yields an engine with no
@@ -443,7 +443,7 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
             engine->params.kv_unified = true;
         }
 
-        // server.cpp:164-174, immediately after the block above and dependent on
+        // server.cpp:176-186, immediately after the block above and dependent on
         // it: the pool is n_parallel wide, so it can only be sized once the
         // sentinel is resolved. Only `-c 0` (size to the model's trained
         // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size
@@ -592,9 +592,15 @@ jan_llama_response * jan_llama_engine_request(jan_llama_engine * engine,
         return out;
     } catch (const std::invalid_argument & e) {
         // Upstream's own mapping: a malformed request is the client's to fix, so
-        // it must not look retryable. server-common.cpp throws this from 16
+        // it must not look retryable. server-common.cpp throws this from 23
         // sites (missing `messages`, bad `content` type, `top_logprobs` without
         // `logprobs`, ...), all of which reached Jan's API as 500 before.
+        out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
+        return out;
+    } catch (const common_json_error & e) {
+        // Since 0.7.0 upstream maps JSON parse and type errors to 400 too
+        // (server.cpp ex_wrapper); it derives from std::runtime_error, so it
+        // must be caught before the std::exception arm below.
         out->res = error_response(e.what(), ERROR_TYPE_INVALID_REQUEST);
         return out;
     } catch (const std::exception & e) {
@@ -676,7 +682,7 @@ void jan_llama_load_backends(const char * dir) {
     }
 }
 
-// Mirrors common_print_available_devices (common/arg.cpp:1139-1161): load every
+// Mirrors common_print_available_devices (common/arg.cpp:1144-1167): load every
 // backend, then report the non-CPU devices with memory in MiB. The CPU device
 // is excluded there too -- "offload to CPU" is not a choice the setting offers.
 char * jan_llama_devices_json(void) {

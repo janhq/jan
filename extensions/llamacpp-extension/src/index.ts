@@ -42,6 +42,7 @@ import {
   mergeEmbedResponses,
   detectEmbeddingFromGgufMeta,
   detectMtpLayersFromGgufMeta,
+ detectExpertCountFromGgufMeta,
   resolveSpecDraftKind,
   detectTemplateKwargsFromChatTemplate,
   getDefaultEmbeddingModelId,
@@ -97,6 +98,7 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 const EMBEDDING_CHECK_VERSION = 3
 const MTP_CHECK_VERSION = 1
+const EXPERT_CHECK_VERSION = 1
 
 // The tensor that marks a DSpark draft: it is a DFlash one plus this Markov
 // head (common/speculative.cpp, llama-arch.cpp LLM_TENSOR_DSPARK_MARKOV_W1).
@@ -325,6 +327,14 @@ const MODEL_SETTINGS_YAML_MAPPING: Record<
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
     },
   },
+ moe_cache_mib: {
+  yamlKey: 'moe_cache_mib',
+  coerce: (v) => {
+   if (v === '' || v == null) return null
+   const n = typeof v === 'number' ? v : Number(v)
+   return Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+  },
+ },
   no_kv_offload: {
     yamlKey: 'no_kv_offload',
     coerce: (v) => (v === true ? true : null),
@@ -1386,6 +1396,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
     await this.resolveMtpLayersConfig(modelId, modelConfig)
+  await this.resolveExpertCountConfig(modelId, modelConfig)
     const templateKwargs = await this.resolveTemplateKwargsConfig(
       modelId,
       modelConfig
@@ -1481,6 +1492,63 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
     return isEmbedding
   }
+
+ /**
+  * Record the GGUF's MoE expert count in model.yml, which the preset reads to
+  * decide whether `moe-cache-mib` may be emitted: llama.cpp refuses to load a
+  * model without experts when it is set. Backfilled lazily, like mtp_layers,
+  * for models imported before the count was recorded.
+  */
+ private async resolveExpertCountConfig(
+  modelId: string,
+  modelConfig: ModelConfig
+ ): Promise<number> {
+  const cfg = modelConfig as ModelConfig & {
+   expert_count?: number
+   expert_check_v?: number
+  }
+  if (
+   typeof cfg.expert_count === 'number' &&
+   cfg.expert_check_v === EXPERT_CHECK_VERSION
+  ) {
+   return cfg.expert_count
+  }
+
+  let expertCount = 0
+  try {
+   const janDataFolderPath = await getJanDataFolderPath()
+   const fullModelPath = await joinPath([
+    janDataFolderPath,
+    modelConfig.model_path,
+   ])
+   if (await fs.existsSync(fullModelPath)) {
+    const metadata = await readGgufMetadata(fullModelPath)
+    expertCount = detectExpertCountFromGgufMeta(metadata.metadata)
+   }
+  } catch (e) {
+   logger.warn(`Failed to check expert count for ${modelId}`, e)
+   return cfg.expert_count ?? 0
+  }
+
+  try {
+   const configPath = await joinPath([
+    await this.getProviderPath(),
+    'models',
+    modelId,
+    'model.yml',
+   ])
+   cfg.expert_count = expertCount
+   cfg.expert_check_v = EXPERT_CHECK_VERSION
+   await invoke<void>('write_yaml', {
+    data: cfg,
+    savePath: configPath,
+   })
+  } catch (e) {
+   logger.warn(`Failed to persist expert count for ${modelId}`, e)
+  }
+
+  return expertCount
+ }
 
   private async resolveMtpLayersConfig(
     modelId: string,
@@ -2031,6 +2099,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
     let mtpLayers = 0
+  let expertCount = 0
     let specKind: SpecDraftKind = 'mtp'
     let templateKwargs: TemplateKwarg[] = []
     let resolvedName: string | undefined
@@ -2046,6 +2115,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
         isEmbedding = true
       }
       mtpLayers = detectMtpLayersFromGgufMeta(modelMetadata.metadata)
+   expertCount = detectExpertCountFromGgufMeta(modelMetadata.metadata)
       templateKwargs = detectTemplateKwargsFromChatTemplate(
         modelMetadata.metadata?.['tokenizer.chat_template']
       )
@@ -2128,6 +2198,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       embedding_check_v: EMBEDDING_CHECK_VERSION,
       mtp_layers: mtpLayers,
       mtp_check_v: MTP_CHECK_VERSION,
+   expert_count: expertCount,
+   expert_check_v: EXPERT_CHECK_VERSION,
       template_kwargs: templateKwargs,
       template_kwargs_check_v: TEMPLATE_KWARGS_CHECK_VERSION,
       // A separate draft gguf is downloaded only to be used, so enable it by
@@ -2616,6 +2688,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     spec_draft_n_max?: number
     spec_draft_n_min?: number
     spec_draft_p_min?: number
+  spec_draft_sampling?: string
+  spec_draft_n_ubatch?: number
   }> {
     const path = await joinPath([
       await this.getProviderPath(),
@@ -2632,6 +2706,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       spec_draft_n_max?: number
       spec_draft_n_min?: number
       spec_draft_p_min?: number
+   spec_draft_sampling?: string
+   spec_draft_n_ubatch?: number
     }
     return {
       mtp_layers: typeof cfg.mtp_layers === 'number' ? cfg.mtp_layers : 0,
@@ -2639,6 +2715,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       spec_draft_n_max: cfg.spec_draft_n_max,
       spec_draft_n_min: cfg.spec_draft_n_min,
       spec_draft_p_min: cfg.spec_draft_p_min,
+   spec_draft_sampling: cfg.spec_draft_sampling,
+   spec_draft_n_ubatch: cfg.spec_draft_n_ubatch,
     }
   }
 
@@ -2649,6 +2727,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       spec_draft_n_max?: number | null
       spec_draft_n_min?: number | null
       spec_draft_p_min?: number | null
+   spec_draft_sampling?: string | null
+   spec_draft_n_ubatch?: number | null
     }
   ): Promise<void> {
     const configPath = await joinPath([
@@ -2665,11 +2745,17 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
       spec_draft_n_max?: number
       spec_draft_n_min?: number
       spec_draft_p_min?: number
+   spec_draft_sampling?: string
+   spec_draft_n_ubatch?: number
     }
 
     if (typeof patch.mtp === 'boolean') cfg.mtp = patch.mtp
     const assignNumeric = (
-      key: 'spec_draft_n_max' | 'spec_draft_n_min' | 'spec_draft_p_min',
+   key:
+    | 'spec_draft_n_max'
+    | 'spec_draft_n_min'
+    | 'spec_draft_p_min'
+    | 'spec_draft_n_ubatch',
       value: number | null | undefined
     ) => {
       if (value === null) {
@@ -2681,6 +2767,13 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     if ('spec_draft_n_max' in patch) assignNumeric('spec_draft_n_max', patch.spec_draft_n_max)
     if ('spec_draft_n_min' in patch) assignNumeric('spec_draft_n_min', patch.spec_draft_n_min)
     if ('spec_draft_p_min' in patch) assignNumeric('spec_draft_p_min', patch.spec_draft_p_min)
+  if ('spec_draft_n_ubatch' in patch)
+   assignNumeric('spec_draft_n_ubatch', patch.spec_draft_n_ubatch)
+  if (patch.spec_draft_sampling === null) {
+   delete cfg.spec_draft_sampling
+  } else if (typeof patch.spec_draft_sampling === 'string') {
+   cfg.spec_draft_sampling = patch.spec_draft_sampling
+  }
 
     await invoke<void>('write_yaml', { data: cfg, savePath: configPath })
 
