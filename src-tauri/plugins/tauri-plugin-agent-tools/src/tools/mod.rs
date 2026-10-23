@@ -20,6 +20,9 @@ pub mod jail;
 /// The `monitor` tool's core: file watching + condition-script evaluation.
 /// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
 pub mod monitor;
+/// Opens a resolved path refusing every link on the way, so a write lands on
+/// exactly the path the containment check approved.
+pub mod nofollow;
 /// Tools an installed plugin declares in its `plugin.toml`. Loop-dispatched
 /// like the monitor tool, so they are not in `BUILTIN_TOOLS`.
 pub mod plugin_tools;
