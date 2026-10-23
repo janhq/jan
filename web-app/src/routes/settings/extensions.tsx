@@ -6,6 +6,9 @@ import { Card, CardItem } from '@/containers/Card'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { ExtensionSettingsForm } from '@/containers/extensions/ExtensionSettingsForm'
+import { LoadUnpacked } from '@/containers/extensions/LoadUnpacked'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { ExtensionManager } from '@/lib/extension'
 import { getExtensionHost, type HostedExtension } from '@/lib/extensions/host'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -15,6 +18,14 @@ import HeaderPage from '@/containers/HeaderPage'
 export const Route = createFileRoute(route.settings.extensions as any)({
   component: ExtensionsContent,
 })
+
+/**
+ * `IS_DEV` is defined only by `tauri dev` (`IS_DEV=true`), and the define
+ * passes the env string through, so an unset variable leaves it undefined.
+ */
+const isDevBuild = (): boolean =>
+  typeof IS_DEV !== 'undefined' &&
+  (IS_DEV === true || (IS_DEV as unknown as string) === 'true')
 
 /** The host's extensions, re-read whenever one changes state. */
 function useHostedExtensions(): HostedExtension[] {
@@ -54,8 +65,19 @@ function Description({ content }: { content: string }) {
 
 function HostedExtensionCard({ extension }: { extension: HostedExtension }) {
   const { t } = useTranslation()
-  const { manifest, state, error } = extension
+  const { manifest, state, error, source } = extension
   const settings = manifest.contributes?.settings ?? []
+  const unload = () =>
+    getExtensionHost()
+      .unload(extension.id)
+      .catch((e: unknown) =>
+        toast.error(
+          t('extensions:unloadFailed', {
+            extension: manifest.displayName,
+            error: e instanceof Error ? e.message : String(e),
+          })
+        )
+      )
   return (
     <Card
       header={
@@ -65,9 +87,24 @@ function HostedExtensionCard({ extension }: { extension: HostedExtension }) {
               {manifest.displayName}
             </h1>
             <Version version={manifest.version} />
+            {source === 'dev' && (
+              <span className="bg-primary/10 px-1 py-0.5 rounded text-primary text-xs">
+                {t('extensions:development')}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {t(`extensions:state.${state}`)}
             </span>
+            {source === 'dev' && (
+              <Button
+                size="xs"
+                variant="outline"
+                className="ml-auto"
+                onClick={unload}
+              >
+                {t('extensions:unload')}
+              </Button>
+            )}
           </div>
           {manifest.description && (
             <Description content={manifest.description} />
@@ -103,6 +140,8 @@ function ExtensionsContent() {
         <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            {/* Folder loading is a developer tool; release builds never show it. */}
+            {isDevBuild() && <LoadUnpacked />}
             {hosted.map((extension) => (
               <HostedExtensionCard key={extension.id} extension={extension} />
             ))}
