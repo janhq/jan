@@ -13,9 +13,10 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
+use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_scratch, lexical_normalize, refuse_windows_name,
-    resolve_path, scratch_display_path, symlink_escapes_any_root,
+    escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
+    refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
@@ -740,31 +741,53 @@ async fn write(
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
     let shown = display_path(root, scratch, &target);
-    // Re-validate before `create_dir_all`, not just before the write: a
-    // concurrent sandboxed process can swap a path component between the gate
-    // decision and this call, and creating the parents first would already have
-    // made directories through the swapped link. Fail closed.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
-        return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
-    }
-    if let Some(parent) = target.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return format!("ERROR: {shown}: {e}");
+    // Resolve once, before any directory is created, and open only what that
+    // resolution approved: a concurrent sandboxed process can swap a path
+    // component for a link at any point, and both `create_dir_all` and a
+    // by-name write would follow it.
+    let real = match write_landing(root, scratch, write_roots, &target) {
+        Ok(real) => real,
+        Err(()) => {
+            return format!("ERROR: refused to write through a symlink out of the workspace: {path}")
         }
-    }
-    // Existence decides created/overwrote; a non-UTF8 file still exists, so it
-    // must not be read_to_string's error path that answers that question.
-    let existed = tokio::fs::try_exists(&target).await.unwrap_or(false);
-    let unchanged = existed
-        && tokio::fs::read_to_string(&target)
-            .await
-            .is_ok_and(|prior| prior == content);
-    let bytes = content.len();
-    match tokio::fs::write(&target, content).await {
-        Ok(()) if unchanged => format!("No change: {shown} already had these {bytes} bytes"),
-        Ok(()) if existed => format!("Overwrote {shown} ({bytes} bytes)"),
-        Ok(()) => format!("Created {shown} ({bytes} bytes)"),
+    };
+    let content = content.to_string();
+    let outcome = tokio::task::spawn_blocking(move || {
+        // Existence decides created/overwrote; a non-UTF8 file still exists, so
+        // it must not be a failed UTF-8 decode that answers that question.
+        let prior = nofollow::read(&real);
+        let existed = !matches!(&prior, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+        let unchanged = prior.is_ok_and(|p| p == content.as_bytes());
+        nofollow::write(&real, content.as_bytes()).map(|()| (existed, unchanged, content.len()))
+    })
+    .await;
+    match outcome {
+        Ok(Ok((_, true, bytes))) => format!("No change: {shown} already had these {bytes} bytes"),
+        Ok(Ok((true, _, bytes))) => format!("Overwrote {shown} ({bytes} bytes)"),
+        Ok(Ok((false, _, bytes))) => format!("Created {shown} ({bytes} bytes)"),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to write through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
+    }
+}
+
+/// The link-free path a `write`/`edit` must open, or `Err` to refuse.
+///
+/// A target under a trusted root must resolve inside one. A target outside
+/// every root was already put to the user by the gate as an escape, so it is
+/// written where it really lands; one that cannot be resolved at all is
+/// refused rather than handed to a by-name open.
+fn write_landing(
+    root: &Path,
+    scratch: Option<&Path>,
+    write_roots: &[PathBuf],
+    target: &Path,
+) -> Result<PathBuf, ()> {
+    match landing(root, scratch, write_roots, target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => Ok(real),
+        Landing::Escapes | Landing::Outside(None) => Err(()),
     }
 }
 
@@ -819,13 +842,22 @@ async fn edit(
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
-    // Re-validate before the final read+write pair so a swapped symlink cannot
-    // redirect either the read or the later write.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
+    // Resolve once and use that path for both the read and the write, each
+    // opened without following links, so a swapped component redirects neither.
+    let Ok(real) = write_landing(root, scratch, write_roots, &target) else {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
-    }
-    let mut content = match tokio::fs::read_to_string(&target).await {
-        Ok(c) => c,
+    };
+    let read_path = real.clone();
+    let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;
+    let mut content = match read {
+        Ok(Ok(bytes)) => match String::from_utf8(bytes) {
+            Ok(c) => c,
+            Err(_) => return format!("ERROR: {shown}: stream did not contain valid UTF-8"),
+        },
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            return format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => return format!("ERROR: {shown}: {e}"),
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };
 
@@ -850,8 +882,13 @@ async fn edit(
         content = content.replacen(&*old_string, &new_string, 1);
     }
 
-    match tokio::fs::write(&target, content).await {
-        Ok(()) => format!("Applied {} edit(s) to {shown}", edits.len()),
+    let written = tokio::task::spawn_blocking(move || nofollow::write(&real, content.as_bytes()));
+    match written.await {
+        Ok(Ok(())) => format!("Applied {} edit(s) to {shown}", edits.len()),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
     }
 }
@@ -2593,6 +2630,59 @@ mod tests {
             "must name the real destination, got: {out}"
         );
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A write through a dangling link out of the project must not create the
+    /// link's target, confined or not: the handler's symlink re-check is what
+    /// stands between an approved in-project name and the host file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_through_dangling_symlink_is_refused() {
+        let root = unique_root();
+        let outside = unique_root();
+        let target = outside.join("authorized_keys");
+        std::os::unix::fs::symlink(&target, root.join("notes.md")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        for confine in [false, true] {
+            let ctx = ToolContext::new(&root, &store, &[]).with_confined_writes(confine);
+            let out = super::execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": "notes.md", "content": "ATTACKER"}),
+                &ctx,
+            )
+            .await
+            .0;
+            assert!(out.starts_with("ERROR: refused to write"), "confine={confine}: {out}");
+            assert!(!target.exists(), "confine={confine}: target was created");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Links that stay inside the project (a yarn workspace's shape) keep
+    /// working for both `write` and `edit`, landing on the real file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_and_edit_follow_an_in_project_link() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::os::unix::fs::symlink(root.join("pkg"), root.join("linked")).unwrap();
+        let w = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "linked/new/a.txt", "content": "one"}),
+            &root,
+        )
+        .await;
+        assert_eq!(w, "Created linked/new/a.txt (3 bytes)");
+        let e = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "linked/new/a.txt", "edits": [{"old_string": "one", "new_string": "two"}]}),
+            &root,
+        )
+        .await;
+        assert_eq!(e, "Applied 1 edit(s) to linked/new/a.txt");
+        assert_eq!(std::fs::read_to_string(root.join("pkg/new/a.txt")).unwrap(), "two");
         let _ = std::fs::remove_dir_all(&root);
     }
 
