@@ -195,6 +195,15 @@ export type HostResult<M extends HostMethod> = ReturnType<
 >
 
 /**
+ * What a host method resolves to on the wire: a registration answers with
+ * the id of the host-side disposable instead of the disposable itself.
+ */
+export type WireResult<M extends HostMethod> =
+  HostResult<M> extends Disposable
+    ? RegistrationReply
+    : Awaited<HostResult<M>>
+
+/**
  * Runtime methods outside the extension API. The worker sends `$dispose`
  * with a disposable id the host returned; the host sends `$invoke` with a
  * callback handle and its arguments, and `$deactivate` before terminating.

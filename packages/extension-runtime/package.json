@@ -14,10 +14,18 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./prelude-source": {
+      "types": "./dist/prelude-source.d.ts",
+      "default": "./dist/prelude-source.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/harness.d.ts",
+      "default": "./dist/testing/harness.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-prelude.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
@@ -26,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "rolldown": "1.0.0-beta.1",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
   },
