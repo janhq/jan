@@ -1661,7 +1661,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@janhq/extension-runtime@workspace:packages/extension-runtime":
+"@janhq/extension-runtime@workspace:*, @janhq/extension-runtime@workspace:packages/extension-runtime":
   version: 0.0.0-use.local
   resolution: "@janhq/extension-runtime@workspace:packages/extension-runtime"
   dependencies:
@@ -1872,6 +1872,7 @@ __metadata:
     "@eslint/js": "npm:8.57.0"
     "@janhq/core": "workspace:*"
     "@janhq/extension-api": "workspace:*"
+    "@janhq/extension-runtime": "workspace:*"
     "@janhq/interfaces": "npm:0.0.2"
     "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools"
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp"

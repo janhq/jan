@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  ConversationsApi,
-  HttpApi,
-  PermissionString,
-} from '@janhq/extension-api'
+import type { ConversationsApi, PermissionString } from '@janhq/extension-api'
 import { Emitter } from '@janhq/extension-api'
 import { ContributionStore } from '../contributions'
 import { createContext, type ContextDeps } from '../context'
@@ -173,11 +169,9 @@ describe('createContext', () => {
   })
 
   it('checks the host and scheme of every fetch', async () => {
-    const http: HttpApi = {
-      fetch: vi.fn().mockResolvedValue({ status: 200, headers: {}, body: '' }),
-    }
+    const fetch = vi.fn(async () => new Response('', { status: 200 }))
     const { ctx } = setup(['network:api.acme.dev', 'network:localhost'], {
-      http,
+      fetch,
     })
     await expect(
       ctx.http.fetch('https://api.acme.dev/x')
@@ -194,7 +188,7 @@ describe('createContext', () => {
     await expect(ctx.http.fetch('not a url')).rejects.toMatchObject({
       code: 'E_INVALID_ARGS',
     })
-    expect(http.fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('scopes settings to the extension and forwards only its own changes', async () => {

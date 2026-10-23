@@ -30,7 +30,8 @@
         "media-src": "'self' asset: http://asset.localhost blob: data: https:",
         "frame-src": "'self' preview: http://preview.localhost",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' 'wasm-unsafe-eval' https://eu-assets.i.posthog.com https://posthog.com"
+        "script-src": "'self' 'wasm-unsafe-eval' https://eu-assets.i.posthog.com https://posthog.com",
+        "worker-src": "'self' blob:"
       },
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {

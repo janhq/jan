@@ -47,7 +47,7 @@
     "build:tauri:plugin:api:win32": "cd src-tauri/plugins && yarn workspaces foreach -Apt --exclude @janhq/tauri-plugin-mlx-api run build",
     "build:tauri:plugin:api:linux": "cd src-tauri/plugins && yarn workspaces foreach -Apt --exclude @janhq/tauri-plugin-mlx-api run build",
     "build:icon": "tauri icon ./src-tauri/icons-macos/icon.png -o ./src-tauri/icons-macos && tauri icon ./src-tauri/icons/icon.png && node ./scripts/build-windows-icon.mjs",
-    "build:core": "yarn build:extension-api && cd core && yarn build && yarn pack",
+    "build:core": "yarn build:extension-api && yarn build:extension-runtime && cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extension-api": "yarn workspace @janhq/extension-api build",
     "build:extension-runtime": "yarn workspace @janhq/extension-runtime build",
