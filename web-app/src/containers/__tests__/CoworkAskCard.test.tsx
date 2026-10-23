@@ -109,7 +109,6 @@ describe('CoworkAskCard', () => {
   it('single-select shows numbers and the number keys pick an option', () => {
     render(<CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />)
     expect(screen.getByText('1')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument() // free-text row
     fireEvent.keyDown(window, { key: '2' })
     fireEvent.click(submitButton())
     expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Large'] }])
@@ -222,7 +221,7 @@ describe('CoworkAskCard', () => {
     ])
   })
 
-  it('shows a plain square, not a dead number, for the free-text row past 9 options', () => {
+  it('never numbers the free-text field (it shows a pencil), even past 9 options', () => {
     const many: AskRequestPayload = {
       questions: [
         {
@@ -270,6 +269,20 @@ describe('CoworkAskCard', () => {
     outside.focus()
     fireEvent.keyDown(outside, { key: '1' })
     expect(submitButton()).toBeDisabled()
+  })
+
+  it('takes focus when a question appears so number keys work over an autofocused chat box', () => {
+    render(
+      <>
+        <textarea data-testid="chat" autoFocus />
+        <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
+      </>
+    )
+    const card = screen.getByRole('radiogroup').parentElement!
+    expect(card).toHaveFocus()
+    fireEvent.keyDown(card, { key: '2' })
+    fireEvent.keyDown(card, { key: 'Enter' })
+    expect(onRespond).toHaveBeenCalledWith('ask-1', [{ id: 'scope', selected: ['Large'] }])
   })
 
   it('removes the key listener on unmount', () => {

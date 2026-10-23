@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -31,7 +31,7 @@ function NumberBadge({ n, checked }: { n: number; checked: boolean }) {
     <span
       aria-hidden
       className={cn(
-        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-[11px] font-medium tabular-nums transition-colors',
+        'flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-medium tabular-nums transition-colors',
         checked
           ? 'bg-primary text-primary-foreground'
           : 'bg-main-view-fg/10 text-main-view-fg/60'
@@ -107,6 +107,13 @@ export function CoworkAskCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [questions, selected, custom]
   )
+
+  // The chat box autofocuses and would swallow the digits, so a new question
+  // takes focus itself. Clicking the chat box still lets the user reply normally.
+  const hasQuestion = !!requestId && !!question
+  useEffect(() => {
+    if (hasQuestion) cardRef.current?.focus({ preventScroll: true })
+  }, [requestId, hasQuestion])
 
   if (!requestId || !question) return null
 
@@ -189,7 +196,11 @@ export function CoworkAskCard({
     // page or on a focused option row (a mouse-clicked option keeps focus, and
     // its native Enter would re-toggle it); other buttons keep native Enter.
     if (e.key === 'Enter') {
-      const onPage = !el || el === document.body || el.getAttribute('role') === 'radio'
+      const onPage =
+        !el ||
+        el === document.body ||
+        el === cardRef.current ||
+        el.getAttribute('role') === 'radio'
       if (onPage && (isLast ? allAnswered : isAnswered(question.id))) {
         e.preventDefault()
         advance()
@@ -211,10 +222,19 @@ export function CoworkAskCard({
   const decline = () => onRespond(requestId, null)
 
   return (
-    <div ref={cardRef} className="mb-2 rounded-lg border bg-main-view">
+    <div
+      ref={cardRef}
+      tabIndex={-1}
+      className="mb-2 rounded-lg border bg-main-view outline-none"
+    >
       <div className="flex items-start gap-2 px-3 pt-2.5 pb-2">
         <p className="min-w-0 flex-1 text-sm font-medium">{question.question}</p>
         <div className="flex shrink-0 items-center gap-0.5 text-main-view-fg/50">
+          {question.multi && !usingCustom && (
+            <span className="mr-1.5 text-xs">
+              {t('common:askSelectedCount', { count: picks.length })}
+            </span>
+          )}
           {questions.length > 1 && (
             <>
               <button
@@ -254,7 +274,7 @@ export function CoworkAskCard({
       <div
         role={question.multi ? 'group' : 'radiogroup'}
         aria-label={question.question}
-        className="flex flex-col gap-0.5 px-2 pb-1"
+        className="flex flex-col gap-0.5 px-2 pb-2"
       >
         {question.options.map((option, i) => {
           const checked = picks.includes(option.label)
@@ -267,7 +287,7 @@ export function CoworkAskCard({
               aria-keyshortcuts={question.multi || i > 8 ? undefined : String(i + 1)}
               onClick={() => toggle(option.label)}
               title={option.description}
-              className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-main-view-fg/5"
+              className="flex items-start gap-3 rounded-lg px-2 py-2 text-left hover:bg-main-view-fg/5"
             >
               {question.multi ? (
                 <CheckSquare checked={checked} />
@@ -290,20 +310,19 @@ export function CoworkAskCard({
             </button>
           )
         })}
-        {/* Always-visible input so users can see they can type their own answer. */}
+      </div>
+
+      {/* Always-visible field (like Claude's ask card) so it's obvious users can
+          type their own answer; Skip and continue sit inline on the same row. */}
+      <div className="flex items-center gap-2 px-2 pb-2">
         <div
           onClick={() => otherInputRef.current?.focus()}
           className={cn(
-            'flex items-center gap-2 rounded-md px-2 py-1 focus-within:bg-main-view-fg/5',
-            usingCustom && 'bg-main-view-fg/5'
+            'flex h-10 min-w-0 flex-1 cursor-text items-center gap-2.5 rounded-lg border bg-main-view-fg/5 px-3 transition-colors focus-within:border-main-view-fg/40',
+            usingCustom && 'border-main-view-fg/40'
           )}
         >
-          {/* Past 9 options there is no key for this row, so no number either. */}
-          {question.multi || question.options.length + 1 > 9 ? (
-            <CheckSquare checked={usingCustom} />
-          ) : (
-            <NumberBadge n={question.options.length + 1} checked={usingCustom} />
-          )}
+          <Pencil size={14} className="shrink-0 text-main-view-fg/50" />
           <Input
             ref={otherInputRef}
             value={custom[question.id] ?? ''}
@@ -337,18 +356,11 @@ export function CoworkAskCard({
             }}
             placeholder={t('common:askSomethingElse')}
             aria-label={t('common:askSomethingElse')}
-            className="h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px] dark:bg-transparent"
+            aria-keyshortcuts={question.multi || question.options.length > 8 ? undefined : String(question.options.length + 1)}
+            className="h-8 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 md:text-[13px] dark:bg-transparent"
           />
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 border-t px-3 py-2">
-        <span className="text-xs text-main-view-fg/50">
-          {question.multi && !usingCustom
-            ? t('common:askSelectedCount', { count: picks.length })
-            : null}
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button variant="ghost" size="sm" className="h-7" onClick={decline}>
             {t('common:skip')}
           </Button>
