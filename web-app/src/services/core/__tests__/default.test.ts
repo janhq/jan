@@ -42,32 +42,6 @@ describe('DefaultCoreService', () => {
     })
   })
 
-  describe('installExtensions', () => {
-    it('resolves without error', async () => {
-      await expect(svc.installExtensions()).resolves.toBeUndefined()
-    })
-  })
-
-  describe('installExtension', () => {
-    it('returns the same extensions passed in', async () => {
-      const exts = [{ name: 'ext1' }] as any
-      const result = await svc.installExtension(exts)
-      expect(result).toBe(exts)
-    })
-  })
-
-  describe('uninstallExtension', () => {
-    it('returns false', async () => {
-      const result = await svc.uninstallExtension(['ext1'])
-      expect(result).toBe(false)
-    })
-
-    it('returns false with reload param', async () => {
-      const result = await svc.uninstallExtension(['ext1', 'ext2'], false)
-      expect(result).toBe(false)
-    })
-  })
-
   describe('getAppToken', () => {
     it('returns null', async () => {
       const result = await svc.getAppToken()

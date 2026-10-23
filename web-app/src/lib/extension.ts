@@ -197,41 +197,16 @@ export class ExtensionManager {
   }
 
   /**
-   * Register a extension with its class.
-   * @param {Extension} extension extension object as provided by the main process.
+   * Registers an extension's pre-built instance.
+   * @param {Extension} extension extension object as provided by the core service.
    * @returns {void}
    */
-  async activateExtension(extension: Extension) {
-    // Check if extension already has a pre-loaded instance (web extensions)
-    if (extension.extensionInstance) {
-      this.register(extension.name, extension.extensionInstance)
-      console.log(`Extension '${extension.name}' registered with pre-loaded instance`)
+  activateExtension(extension: Extension) {
+    if (!extension.extensionInstance) {
+      console.error(`Extension '${extension.name}' has no instance to register`)
       return
     }
-    
-    // Import class for Tauri extensions
-    const extensionUrl = extension.url
-    await import(/* @vite-ignore */ getServiceHub().core().convertFileSrc(extensionUrl)).then(
-      (extensionClass) => {
-        // Register class if it has a default export
-        if (
-          typeof extensionClass.default === 'function' &&
-          extensionClass.default.prototype
-        ) {
-          this.register(
-            extension.name,
-            new extensionClass.default(
-              extension.url,
-              extension.name,
-              extension.productName,
-              extension.active,
-              extension.description,
-              extension.version
-            )
-          )
-        }
-      }
-    )
+    this.register(extension.name, extension.extensionInstance)
   }
 
   /**
@@ -240,41 +215,8 @@ export class ExtensionManager {
    */
   async registerActive() {
     // Get active extensions
-    const activeExtensions = (await this.getActive()) ?? []
-    // Activate all
-    await Promise.all(
-      activeExtensions.map((ext: Extension) => this.activateExtension(ext))
-    )
-  }
-
-  /**
-   * Install a new extension.
-   * @param {Array.<installOptions | string>} extensions A list of NPM specifiers, or installation configuration objects.
-   * @returns {Promise.<Array.<Extension> | false>} extension as defined by the main process. Has property cancelled set to true if installation was cancelled in the main process.
-   */
-  async install(extensions: ExtensionManifest[]) {
-    if (typeof window === 'undefined') {
-      return
-    }
-    const res = await getServiceHub().core().installExtension(extensions)
-    return res.map(async (ext: ExtensionManifest) => {
-      const extension = new Extension(ext.name, ext.url)
-      await this.activateExtension(extension)
-      return extension
-    })
-  }
-
-  /**
-   * Uninstall provided extensions
-   * @param {Array.<string>} extensions List of names of extensions to uninstall.
-   * @param {boolean} reload Whether to reload all renderers after updating the extensions.
-   * @returns {Promise.<boolean>} Whether uninstalling the extensions was successful.
-   */
-  async uninstall(extensions: string[], reload = true) {
-    if (typeof window === 'undefined') {
-      return
-    }
-    return await getServiceHub().core().uninstallExtension(extensions, reload)
+    const activeExtensions = await this.getActive()
+    activeExtensions.forEach((ext) => this.activateExtension(ext))
   }
 
   /**

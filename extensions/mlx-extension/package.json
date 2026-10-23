@@ -4,13 +4,11 @@
   "version": "1.0.0",
   "description": "This extension enables MLX-Swift inference on Apple Silicon Macs",
   "main": "dist/index.js",
-  "module": "dist/module.js",
   "engine": "mlx",
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest run"
   },
   "devDependencies": {

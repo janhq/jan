@@ -32,16 +32,6 @@ export class TauriCoreService extends DefaultCoreService {
     return getBundledExtensions()
   }
 
-  async installExtensions(): Promise<void> {}
-
-  async installExtension(): Promise<ExtensionManifest[]> {
-    return getBundledExtensions()
-  }
-
-  async uninstallExtension(): Promise<boolean> {
-    return false
-  }
-
   // App token
   async getAppToken(): Promise<string | null> {
     try {

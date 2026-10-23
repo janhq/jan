@@ -9,7 +9,6 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest run"
   },
   "devDependencies": {

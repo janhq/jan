@@ -13,14 +13,4 @@ export class MobileCoreService extends TauriCoreService {
   override async getActiveExtensions(): Promise<ExtensionManifest[]> {
     return getBundledExtensions({ mobile: true })
   }
-
-  override async installExtensions(): Promise<void> {}
-
-  override async installExtension(): Promise<ExtensionManifest[]> {
-    return getBundledExtensions({ mobile: true })
-  }
-
-  override async uninstallExtension(): Promise<boolean> {
-    return false
-  }
 }

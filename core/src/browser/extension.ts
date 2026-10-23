@@ -6,12 +6,7 @@ export enum ExtensionTypeEnum {
   Assistant = 'assistant',
   Conversational = 'conversational',
   Inference = 'inference',
-  Model = 'model',
-  SystemMonitoring = 'systemMonitoring',
   MCP = 'mcp',
-  HuggingFace = 'huggingFace',
-  Engine = 'engine',
-  Hardware = 'hardware',
   RAG = 'rag',
   VectorDB = 'vectorDB',
 }
@@ -20,19 +15,11 @@ export interface ExtensionType {
   type(): ExtensionTypeEnum | undefined
 }
 
-export interface Compatibility {
-  platform: string[]
-  version: string
-}
-
 /**
  * Represents a base extension.
  * This class should be extended by any class that represents an extension.
  */
 export abstract class BaseExtension implements ExtensionType {
-  protected settingFolderName = 'settings'
-  protected settingFileName = 'settings.json'
-
   /** @type {string} Name of the extension. */
   name: string
 
@@ -87,15 +74,6 @@ export abstract class BaseExtension implements ExtensionType {
    * Any cleanup logic for the extension should be put here.
    */
   abstract onUnload(): void
-
-  /**
-   * The compatibility of the extension.
-   * This is used to check if the extension is compatible with the current environment.
-   * @property {Array} platform
-   */
-  compatibility(): Compatibility | undefined {
-    return undefined
-  }
 
   /**
    * Registers models - it persists in-memory shared ModelManager instance's data map.
@@ -169,15 +147,6 @@ export abstract class BaseExtension implements ExtensionType {
   }
 
   onSettingUpdate<T>(key: string, value: T) {
-    return
-  }
-
-  /**
-   * Install the prerequisites for the extension.
-   *
-   * @returns {Promise<void>}
-   */
-  async install(): Promise<void> {
     return
   }
 

@@ -39,7 +39,6 @@ const triple = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
 
 for (const dir of [
   'src-tauri/resources/bin',
-  'src-tauri/resources/pre-install',
   'src-tauri/icons',
   'src-tauri/icons-macos',
   'src-tauri/icons-windows',
@@ -50,9 +49,6 @@ for (const dir of [
 
 touch(path('src-tauri/resources/LICENSE'))
 touch(path('web-app/dist/index.html'))
-if (readdirSync(path('src-tauri/resources/pre-install')).length === 0) {
-  touch(path('src-tauri/resources/pre-install/.gitkeep'))
-}
 
 // The executable suffix, and the ggml runtime that ships beside the engine
 // worker. `libggml*` is a glob in the bundle config, and a glob that matches
