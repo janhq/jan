@@ -11,8 +11,9 @@
 //! Unix walks with `openat(O_NOFOLLOW)` relative to the previous directory's
 //! descriptor. Windows has no `openat` in std, so each ancestor is held open
 //! without `FILE_SHARE_DELETE`, which keeps it from being renamed or replaced
-//! while the walk below it runs, and each node is opened with
-//! `FILE_FLAG_OPEN_REPARSE_POINT` and refused if it is a link or junction.
+//! while the walk below it runs, and each node is probed with
+//! `FILE_FLAG_OPEN_REPARSE_POINT` and refused if it is a link or junction. The
+//! leaf is then reopened normally, so cloud placeholders still download.
 
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -182,6 +183,34 @@ mod imp {
         Ok(dir)
     }
 
+    /// Open the leaf itself, never what a link there points at, holding it
+    /// against rename and delete. With `create`, a missing leaf is created as
+    /// a plain file: `create_new` refuses to reuse anything already there,
+    /// a dangling link included, so the retry re-probes what appeared.
+    fn probe_leaf(path: &Path, create: bool) -> io::Result<File> {
+        let probe = || {
+            OpenOptions::new()
+                .access_mode(FILE_READ_ATTRIBUTES)
+                .share_mode(SHARE)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(path)
+        };
+        match probe() {
+            Err(e) if create && e.kind() == io::ErrorKind::NotFound => {}
+            other => return other,
+        }
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(SHARE)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+        {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => probe(),
+            other => other,
+        }
+    }
+
     pub(super) fn open_leaf(path: &Path, create: bool) -> io::Result<File> {
         let (Some(parent), Some(_)) = (path.parent(), path.file_name()) else {
             return Err(invalid(path));
@@ -212,18 +241,23 @@ mod imp {
             }
             held.push(pin_dir(&walked)?);
         }
+        // The leaf is checked through a probe and used through a second, plain
+        // open. Opening it with OPEN_REPARSE_POINT for real would hand back a
+        // cloud-only OneDrive placeholder undownloaded, so reads would see the
+        // stub. The probe holds the leaf without FILE_SHARE_DELETE, so it is
+        // still the same file when the plain open follows.
+        let probe = probe_leaf(path, create)?;
+        reject_link(&probe)?;
         let mut opts = OpenOptions::new();
-        opts.share_mode(SHARE)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        opts.share_mode(SHARE);
         if create {
-            // Not `truncate`: a link opened with OPEN_REPARSE_POINT would be
-            // truncated itself before the check below could refuse it.
-            opts.write(true).create(true);
+            // Not `truncate`: kept symmetric with the probe; emptied below.
+            opts.write(true);
         } else {
             opts.read(true);
         }
         let file = opts.open(path)?;
-        reject_link(&file)?;
+        drop(probe);
         if create {
             file.set_len(0)?;
         }
