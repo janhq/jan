@@ -248,6 +248,19 @@ def holding(text: str) -> Callable[[_Handler], None]:
     return write
 
 
+def settle(runtime: Any, timeout: float = 10) -> None:
+    """Return once every listener event queued so far has been delivered.
+
+    Listeners run on the runtime's dispatch thread, not the one iterating a
+    turn, so a turn can finish while its last events are still queued for them.
+    The queue drains in order, so a marker put behind them runs after they do.
+    """
+    done = threading.Event()
+    runtime._notify(lambda _payload: done.set(), None)
+    if not done.wait(timeout):
+        raise AssertionError(f"listeners still busy after {timeout}s")
+
+
 class Scratch:
     """A private home and project, removed by :meth:`cleanup`."""
 
