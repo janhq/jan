@@ -6,7 +6,6 @@ import type { InvokeArgs } from '@/services/core/types'
 import { openExternalUrl } from '@/lib/externalLink'
 
 export const AppRoutes = [
-  'installExtensions',
   'getTools',
   'callTool',
   'cancelToolCall',
