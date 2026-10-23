@@ -30,10 +30,6 @@ Object.defineProperty(globalThis, 'core', {
   configurable: true,
 })
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}))
-
 vi.mock('@janhq/tauri-plugin-rag-api', () => ({
   parseDocument: vi.fn(),
 }))
