@@ -12,6 +12,27 @@
     "active": "Active",
     "failed": "Failed"
   },
+  "development": "Development",
+  "unload": "Unload",
+  "unloadFailed": "Could not unload {{extension}}: {{error}}",
+  "risk": {
+    "low": "Low risk",
+    "medium": "Medium risk",
+    "high": "High risk"
+  },
+  "devLoad": {
+    "button": "Load unpacked",
+    "title": "Load {{name}} from a folder?",
+    "description": "This development extension runs until Jan restarts. It is granted everything it requests:",
+    "noPermissions": "It requests no permissions.",
+    "proposals": "Proposed APIs: {{proposals}}",
+    "confirm": "Load",
+    "cancel": "Cancel",
+    "readFailed": "Could not read {{file}}: {{error}}",
+    "invalidJson": "package.json is not valid JSON: {{error}}",
+    "invalidManifest": "The manifest is invalid: {{errors}}",
+    "alreadyLoaded": "An extension with the id {{id}} is already loaded"
+  },
   "permissions": {
     "uiNotify": {
       "title": "Show notifications",

@@ -219,6 +219,10 @@ export class ExtensionHost {
             `needs extension API ${manifest.apiVersion}, host provides ${API_VERSION}`
           )
         }
+        // Proposed APIs may change in any minor, so only a developer's own
+        // unpacked folder may opt into them.
+        if (source !== 'dev' && manifest.proposals?.length)
+          throw new Error('proposals are only allowed when loaded unpacked')
         const requested = new Set(manifest.permissions)
         entry.registrations = this.register(
           manifest,
@@ -249,6 +253,26 @@ export class ExtensionHost {
     return this.enqueue(async () => {
       const entry = this.entries.get(extensionId)
       if (entry) await this.teardown(entry)
+    })
+  }
+
+  /**
+   * Stops a worker extension and forgets it, so it leaves `list()`. Nothing
+   * about a worker extension is kept host-side, so loading it again starts
+   * from scratch. Built-ins cannot be unloaded.
+   */
+  unload(extensionId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const entry = this.entries.get(extensionId)
+      if (!entry) return
+      if (entry.hosted.source === 'builtin')
+        throw new ExtensionError(
+          'E_INVALID_ARGS',
+          `Extension '${extensionId}' is a built-in and cannot be unloaded`
+        )
+      await this.teardown(entry)
+      this.entries.delete(extensionId)
+      this.changes.fire()
     })
   }
 
