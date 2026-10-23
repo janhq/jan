@@ -8,12 +8,10 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "test": "vitest run"
   },
   "exports": {
-    ".": "./dist/index.js",
-    "./main": "./dist/module.js"
+    ".": "./dist/index.js"
   },
   "devDependencies": {
     "cpx": "1.5.0",

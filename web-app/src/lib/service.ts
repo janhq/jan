@@ -5,7 +5,6 @@ import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
 
 export const AppRoutes = [
-  'installExtensions',
   'getTools',
   'callTool',
   'cancelToolCall',

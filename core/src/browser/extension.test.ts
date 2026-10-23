@@ -38,10 +38,6 @@ describe('BaseExtension', () => {
     expect(baseExtension.onUnload).toBeDefined()
   })
 
-  it('should install the extension', async () => {
-    await baseExtension.install()
-    // Add your assertions here
-  })
 })
 
 describe('BaseExtension', () => {
@@ -76,11 +72,6 @@ describe('BaseExtension', () => {
   it('should have abstract methods onLoad() and onUnload()', () => {
     expect(baseExtension.onLoad).toBeDefined()
     expect(baseExtension.onUnload).toBeDefined()
-  })
-
-  it('should install the extension', async () => {
-    await baseExtension.install()
-    // Add your assertions here
   })
 
   it('should register settings', async () => {

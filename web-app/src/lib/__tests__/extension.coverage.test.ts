@@ -18,17 +18,11 @@ vi.mock('@janhq/core', () => ({
 }))
 
 const mockGetActiveExtensions = vi.fn()
-const mockConvertFileSrc = vi.fn((p: string) => `asset://${p}`)
-const mockInstallExtension = vi.fn()
-const mockUninstallExtension = vi.fn()
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     core: () => ({
       getActiveExtensions: mockGetActiveExtensions,
-      convertFileSrc: mockConvertFileSrc,
-      installExtension: mockInstallExtension,
-      uninstallExtension: mockUninstallExtension,
     }),
   }),
 }))
@@ -132,27 +126,17 @@ describe('ExtensionManager - coverage', () => {
   })
 
   describe('activateExtension', () => {
-    it('registers pre-loaded extension instance directly', async () => {
+    it('registers pre-loaded extension instance directly', () => {
       const instance = { type: () => 'a', onLoad: vi.fn(), onUnload: vi.fn() } as any
       const ext = new Extension('http://ext', 'preloaded', undefined, true, undefined, undefined, instance)
-      await manager.activateExtension(ext)
+      manager.activateExtension(ext)
       expect(manager.getByName('preloaded')).toBe(instance)
     })
 
-    it('imports and registers Tauri extensions', async () => {
-      const MockClass = vi.fn().mockImplementation(function (this: any) {
-        this.type = () => 'a'
-        this.onLoad = vi.fn()
-        this.onUnload = vi.fn()
-      })
-
-      // Mock dynamic import
-      vi.doMock('asset://http://ext.js', () => ({ default: MockClass }), { virtual: true })
-      mockConvertFileSrc.mockReturnValue('asset://http://ext.js')
-
-      const ext = new Extension('http://ext.js', 'tauri-ext')
-      await manager.activateExtension(ext)
-      expect(MockClass).toHaveBeenCalled()
+    it('skips an extension without an instance', () => {
+      const ext = new Extension('built-in', 'no-instance')
+      manager.activateExtension(ext)
+      expect(manager.getByName('no-instance')).toBeUndefined()
     })
   })
 
@@ -164,26 +148,6 @@ describe('ExtensionManager - coverage', () => {
       ])
       await manager.registerActive()
       expect(manager.getByName('test')).toBe(instance)
-    })
-  })
-
-  describe('install', () => {
-    it('returns undefined when window is undefined', async () => {
-      // Can't truly test this in jsdom, but we can test the normal path
-      mockInstallExtension.mockResolvedValue([
-        { url: 'http://new', name: 'new-ext' },
-      ])
-      const result = await manager.install([{ url: 'http://new', name: 'new-ext' }])
-      expect(result).toBeDefined()
-    })
-  })
-
-  describe('uninstall', () => {
-    it('calls uninstallExtension on service hub', async () => {
-      mockUninstallExtension.mockResolvedValue(true)
-      const result = await manager.uninstall(['ext-1'])
-      expect(mockUninstallExtension).toHaveBeenCalledWith(['ext-1'], true)
-      expect(result).toBe(true)
     })
   })
 

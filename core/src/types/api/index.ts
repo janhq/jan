@@ -87,10 +87,8 @@ export enum DownloadEvent {
 export enum ExtensionRoute {
   baseExtensions = 'baseExtensions',
   getActiveExtensions = 'getActiveExtensions',
-  installExtension = 'installExtension',
   invokeExtensionFunc = 'invokeExtensionFunc',
   updateExtension = 'updateExtension',
-  uninstallExtension = 'uninstallExtension',
 }
 export enum FileSystemRoute {
   appendFileSync = 'appendFileSync',

@@ -85,15 +85,6 @@ yarn test
 
 ## Common Patterns
 
-### Service Registration
-```typescript
-async onLoad() {
-  this.registerService('myService', {
-    doSomething: async () => 'result'
-  })
-}
-```
-
 ### Event Handling  
 ```typescript
 async onLoad() {
