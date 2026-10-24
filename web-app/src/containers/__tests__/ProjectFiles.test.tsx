@@ -26,17 +26,16 @@ const hoisted = vi.hoisted(() => ({
   deleteFileForProjectMock: vi.fn(),
   ingestFileAttachmentForProjectMock: vi.fn(),
   dialogOpenMock: vi.fn(),
-  extMock: {} as any,
+  vectorDB: undefined as
+    | { listAttachmentsForProject: unknown; deleteFileForProject: unknown }
+    | undefined,
 }))
-hoisted.extMock.listAttachmentsForProject = hoisted.listAttachmentsForProjectMock
-hoisted.extMock.deleteFileForProject = hoisted.deleteFileForProjectMock
 
 const {
   listAttachmentsForProjectMock,
   deleteFileForProjectMock,
   ingestFileAttachmentForProjectMock,
   dialogOpenMock,
-  extMock,
 } = hoisted
 const attachmentsStateRef = hoisted // alias for later mutation
 
@@ -67,12 +66,9 @@ vi.mock('@/stores/project-uploads-store', () => ({
     }),
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => hoisted.extMock,
-    }),
-  },
+// The VectorDB service as the host's service registry returns it.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({ services: { get: () => hoisted.vectorDB } }),
 }))
 
 const coreHoisted = vi.hoisted(() => ({
@@ -81,8 +77,7 @@ const coreHoisted = vi.hoisted(() => ({
 }))
 const { fileStatMock, readdirSyncMock } = coreHoisted
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { VectorDB: 'vectordb' },
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {
     fileStat: coreHoisted.fileStatMock,
     readdirSync: coreHoisted.readdirSyncMock,
@@ -113,8 +108,10 @@ describe('ProjectFiles', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     attachmentsStateRef.attachmentsState = { enabled: true, maxFileSizeMB: 10 }
-    extMock.listAttachmentsForProject = listAttachmentsForProjectMock
-    extMock.deleteFileForProject = deleteFileForProjectMock
+    hoisted.vectorDB = {
+      listAttachmentsForProject: listAttachmentsForProjectMock,
+      deleteFileForProject: deleteFileForProjectMock,
+    }
     listAttachmentsForProjectMock.mockResolvedValue([])
     fileStatMock.mockReset().mockResolvedValue({ isDirectory: false, size: 100 })
     readdirSyncMock.mockReset().mockResolvedValue([])
@@ -150,8 +147,8 @@ describe('ProjectFiles', () => {
     expect(screen.getAllByText('notes.txt').length).toBeGreaterThan(0)
   })
 
-  it('falls back to empty list when extension is missing', async () => {
-    extMock.listAttachmentsForProject = undefined
+  it('falls back to empty list when the VectorDB service is missing', async () => {
+    hoisted.vectorDB = undefined
     render(<ProjectFiles projectId="p1" lng="en" />)
     await waitFor(() =>
       expect(screen.getByText('common:projects.filesDescription')).toBeInTheDocument()

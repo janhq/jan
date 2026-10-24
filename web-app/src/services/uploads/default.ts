@@ -1,8 +1,10 @@
 import type { UploadsService, UploadResult } from './types'
 import type { Attachment } from '@/types/attachment'
 import { ulid } from 'ulidx'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, type RAGExtension, type IngestAttachmentsResult } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { ServiceKeys, type IngestAttachmentsResult } from '@janhq/core'
+
+const ragService = () => getExtensionHost().services.get(ServiceKeys.RAG)
 
 export class DefaultUploadsService implements UploadsService {
   async ingestImage(_threadId: string, attachment: Attachment): Promise<UploadResult> {
@@ -14,9 +16,9 @@ export class DefaultUploadsService implements UploadsService {
 
   async ingestFileAttachment(threadId: string, attachment: Attachment): Promise<UploadResult> {
     if (attachment.type !== 'document') throw new Error('ingestFileAttachment: attachment is not document')
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
-    if (!ext?.ingestAttachments) throw new Error('RAG extension not available')
-    const res: IngestAttachmentsResult = await ext.ingestAttachments(threadId, [
+    const rag = ragService()
+    if (!rag) throw new Error('RAG extension not available')
+    const res: IngestAttachmentsResult = await rag.ingestAttachments(threadId, [
       { path: attachment.path!, name: attachment.name, type: attachment.fileType, size: attachment.size },
     ])
     const files = res.files
@@ -32,9 +34,9 @@ export class DefaultUploadsService implements UploadsService {
 
   async ingestFileAttachmentForProject(projectId: string, attachment: Attachment): Promise<UploadResult> {
     if (attachment.type !== 'document') throw new Error('ingestFileAttachmentForProject: attachment is not document')
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
-    if (!ext?.ingestAttachmentsForProject) throw new Error('RAG extension does not support project-level ingestion')
-    const res: IngestAttachmentsResult = await ext.ingestAttachmentsForProject(projectId, [
+    const rag = ragService()
+    if (!rag) throw new Error('RAG extension not available')
+    const res: IngestAttachmentsResult = await rag.ingestAttachmentsForProject(projectId, [
       { path: attachment.path!, name: attachment.name, type: attachment.fileType, size: attachment.size },
     ])
     const files = res.files

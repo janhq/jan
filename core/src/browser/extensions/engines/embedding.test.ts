@@ -14,7 +14,7 @@ const engine = {
 describe('getEmbeddingEngine', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('looks the engine up by provider in the engine manager', () => {
+  it('looks the engine up by provider in the engine registry', () => {
     withExtension(engine)
     expect(getEmbeddingEngine()).toBe(engine)
     expect(window.core.engineManager.get).toHaveBeenCalledWith(

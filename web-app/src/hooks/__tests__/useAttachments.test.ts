@@ -1,394 +1,184 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import type { SettingContribution } from '@janhq/extension-api'
+import { ExtensionHost } from '@/lib/extensions/host'
+import { builtin, manifest } from '@/lib/extensions/__tests__/fixtures'
+import {
+  memoryAppSettings,
+  memorySecrets,
+} from '@/lib/extensions/__tests__/memory'
+import rag from '../../../../extensions/rag-extension/package.json'
 
-// Mock ExtensionManager before importing the store
-const mockGetSettings = vi.fn()
-const mockUpdateSettings = vi.fn()
-const mockGetRag = vi.fn()
+const hostRef = vi.hoisted(() => ({ current: undefined as unknown }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: mockGetRag,
-    }),
-  },
+vi.mock('@/lib/extensions/host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/extensions/host')>()),
+  getExtensionHost: () => hostRef.current,
 }))
 
-vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { RAG: 'rag' },
-}))
+import {
+  RAG_EXTENSION_ID,
+  initAttachments,
+  useAttachments,
+} from '../useAttachments'
+
+const settings = rag.jan.contributes.settings as SettingContribution[]
+const initial = useAttachments.getState()
+
+let host: ExtensionHost
+let appSettings: ReturnType<typeof memoryAppSettings>
+let stop: (() => void) | undefined
+
+async function activateRag() {
+  await host.activateBuiltin(
+    builtin(manifest(RAG_EXTENSION_ID, { contributes: { settings } }), {
+      activate: () => undefined,
+    })
+  )
+}
+
+const stored = () =>
+  JSON.parse(appSettings.data.get(`extension:${RAG_EXTENSION_ID}:settings`) ?? '{}')
+
+beforeEach(() => {
+  appSettings = memoryAppSettings()
+  host = new ExtensionHost({
+    appSettings,
+    secrets: memorySecrets(),
+    notify: vi.fn(),
+  })
+  hostRef.current = host
+  useAttachments.setState(initial, true)
+})
+
+afterEach(async () => {
+  stop?.()
+  stop = undefined
+  await host.deactivateAll()
+})
 
 describe('useAttachments', () => {
-  let initialState: any
-
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    mockGetRag.mockReturnValue(undefined)
-
-    // Fully reset the Zustand store to its default state before each test so
-    // state does not leak across tests (the store is a module-level singleton).
-    const { useAttachments } = await import('../useAttachments')
-    if (!initialState) {
-      const s = useAttachments.getState()
-      initialState = {
-        enabled: true,
-        maxFileSizeMB: 20,
-        retrievalLimit: 3,
-        retrievalThreshold: 0.3,
-        chunkSizeChars: 512,
-        overlapChars: 64,
-        searchMode: 'auto',
-        parseMode: 'auto',
-        autoInlineContextRatio: 0.75,
-        settingsDefs: [],
-        loadSettingsDefs: s.loadSettingsDefs,
-        setEnabled: s.setEnabled,
-        setMaxFileSizeMB: s.setMaxFileSizeMB,
-        setRetrievalLimit: s.setRetrievalLimit,
-        setRetrievalThreshold: s.setRetrievalThreshold,
-        setChunkSizeChars: s.setChunkSizeChars,
-        setOverlapChars: s.setOverlapChars,
-        setSearchMode: s.setSearchMode,
-        setParseMode: s.setParseMode,
-        setAutoInlineContextRatio: s.setAutoInlineContextRatio,
-      }
-    }
-    useAttachments.setState(initialState, true)
-  })
-
-  it('should have correct default values', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
+  it('has the manifest defaults before anything loads', () => {
     const state = useAttachments.getState()
-    expect(state.enabled).toBe(true)
-    expect(state.maxFileSizeMB).toBe(20)
-    expect(state.retrievalLimit).toBe(3)
-    expect(state.retrievalThreshold).toBe(0.3)
-    expect(state.chunkSizeChars).toBe(512)
-    expect(state.overlapChars).toBe(64)
-    expect(state.searchMode).toBe('auto')
-    expect(state.parseMode).toBe('auto')
-    expect(state.autoInlineContextRatio).toBe(0.75)
+    expect(state).toMatchObject({
+      enabled: true,
+      maxFileSizeMB: 100,
+      retrievalLimit: 3,
+      retrievalThreshold: 0.3,
+      chunkSizeChars: 512,
+      overlapChars: 64,
+      searchMode: 'auto',
+      parseMode: 'auto',
+      autoInlineContextRatio: 0.75,
+    })
     expect(state.settingsDefs).toEqual([])
   })
 
-  it('should set enabled', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setEnabled(false)
-    })
-
-    expect(useAttachments.getState().enabled).toBe(false)
+  it('returns false while the rag built-in is not active', async () => {
+    expect(await useAttachments.getState().loadSettingsDefs()).toBe(false)
   })
 
-  it('should set maxFileSizeMB', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setMaxFileSizeMB(50)
+  it('loads the stored values and one def per declared setting', async () => {
+    appSettings.data.set(
+      `extension:${RAG_EXTENSION_ID}:settings`,
+      JSON.stringify({ enabled: false, retrieval_limit: 5, search_mode: 'linear' })
+    )
+    await activateRag()
+    expect(await useAttachments.getState().loadSettingsDefs()).toBe(true)
+    const state = useAttachments.getState()
+    expect(state).toMatchObject({
+      enabled: false,
+      retrievalLimit: 5,
+      searchMode: 'linear',
+      maxFileSizeMB: 100,
     })
-
-    expect(useAttachments.getState().maxFileSizeMB).toBe(50)
+    expect(state.settingsDefs.map((d) => d.key)).toEqual(settings.map((s) => s.key))
   })
 
-  it('should set retrievalLimit', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setRetrievalLimit(10)
+  it('renders numeric settings as number inputs with their range and i18n keys', async () => {
+    await activateRag()
+    await useAttachments.getState().loadSettingsDefs()
+    const def = useAttachments
+      .getState()
+      .settingsDefs.find((d) => d.key === 'max_file_size_mb')
+    expect(def).toMatchObject({
+      controllerType: 'input',
+      titleKey: 'settings:attachments.maxFile',
+      descriptionKey: 'settings:attachments.maxFileDesc',
+      controllerProps: { type: 'number', min: 1, max: 200, step: 1, value: 100 },
     })
-
-    expect(useAttachments.getState().retrievalLimit).toBe(10)
+    const mode = useAttachments
+      .getState()
+      .settingsDefs.find((d) => d.key === 'search_mode')
+    expect(mode).toMatchObject({
+      controllerType: 'dropdown',
+      controllerProps: { value: 'auto' },
+    })
   })
 
-  it('should set retrievalThreshold', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setRetrievalThreshold(0.5)
-    })
-
-    expect(useAttachments.getState().retrievalThreshold).toBe(0.5)
-  })
-
-  it('should set chunkSizeChars', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setChunkSizeChars(1024)
-    })
-
-    expect(useAttachments.getState().chunkSizeChars).toBe(1024)
-  })
-
-  it('should set overlapChars', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setOverlapChars(128)
-    })
-
-    expect(useAttachments.getState().overlapChars).toBe(128)
-  })
-
-  it('should set searchMode', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setSearchMode('ann')
-    })
-
-    expect(useAttachments.getState().searchMode).toBe('ann')
-  })
-
-  it('should set parseMode', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setParseMode('inline')
-    })
-
-    expect(useAttachments.getState().parseMode).toBe('inline')
-  })
-
-  it('should set autoInlineContextRatio', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setAutoInlineContextRatio(0.5)
-    })
-
-    expect(useAttachments.getState().autoInlineContextRatio).toBe(0.5)
-  })
-
-  it('should call updateSettings on RAG extension when setting enabled', async () => {
-    mockGetRag.mockReturnValue({
-      getSettings: mockGetSettings,
-      updateSettings: mockUpdateSettings,
-    })
-
-    const { useAttachments } = await import('../useAttachments')
-
-    await act(async () => {
-      await useAttachments.getState().setEnabled(false)
-    })
-
-    expect(mockUpdateSettings).toHaveBeenCalledWith([
-      { key: 'enabled', controllerProps: { value: false } },
-    ])
-  })
-
-  it('should update settingsDefs when setting values with existing defs', async () => {
-    const { useAttachments } = await import('../useAttachments')
-
-    // Set up initial settingsDefs
-    act(() => {
-      useAttachments.setState({
-        settingsDefs: [
-          { key: 'enabled', controllerProps: { value: true } } as any,
-          { key: 'max_file_size_mb', controllerProps: { value: 20 } } as any,
-        ],
-      })
-    })
-
-    await act(async () => {
-      await useAttachments.getState().setEnabled(false)
-    })
-
-    const defs = useAttachments.getState().settingsDefs
-    const enabledDef = defs.find((d) => d.key === 'enabled')
-    expect((enabledDef as any)?.controllerProps?.value).toBe(false)
-  })
-
-  it('should load settings defs from RAG extension', async () => {
-    const mockDefs = [
-      { key: 'enabled', controllerProps: { value: false } },
-      { key: 'max_file_size_mb', controllerProps: { value: 50 } },
-      { key: 'retrieval_limit', controllerProps: { value: 5 } },
-      { key: 'search_mode', controllerProps: { value: 'linear' } },
-      { key: 'parse_mode', controllerProps: { value: 'embeddings' } },
-      { key: 'auto_inline_context_ratio', controllerProps: { value: 0.9 } },
-    ]
-
-    mockGetRag.mockReturnValue({
-      getSettings: vi.fn().mockResolvedValue(mockDefs),
-      updateSettings: mockUpdateSettings,
-    })
-
-    const { useAttachments } = await import('../useAttachments')
-
-    let success: boolean = false
-    await act(async () => {
-      success = await useAttachments.getState().loadSettingsDefs()
-    })
-
-    expect(success).toBe(true)
-    expect(useAttachments.getState().enabled).toBe(false)
-    expect(useAttachments.getState().maxFileSizeMB).toBe(50)
-    expect(useAttachments.getState().retrievalLimit).toBe(5)
-    expect(useAttachments.getState().searchMode).toBe('linear')
-    expect(useAttachments.getState().parseMode).toBe('embeddings')
-    expect(useAttachments.getState().autoInlineContextRatio).toBe(0.9)
-  })
-
-  it('should return false when RAG extension not found', async () => {
-    mockGetRag.mockReturnValue(undefined)
-
-    const { useAttachments } = await import('../useAttachments')
-
-    let success: boolean = true
-    await act(async () => {
-      success = await useAttachments.getState().loadSettingsDefs()
-    })
-
-    expect(success).toBe(false)
-  })
-
-  it('should return false when getSettings returns non-array', async () => {
-    mockGetRag.mockReturnValue({
-      getSettings: vi.fn().mockResolvedValue('not-an-array'),
-    })
-
-    const { useAttachments } = await import('../useAttachments')
-
-    let success: boolean = true
-    await act(async () => {
-      success = await useAttachments.getState().loadSettingsDefs()
-    })
-
-    expect(success).toBe(false)
-  })
-
-  it('should return false when loadSettingsDefs throws', async () => {
-    mockGetRag.mockReturnValue({
-      getSettings: vi.fn().mockRejectedValue(new Error('boom')),
-    })
-
-    const { useAttachments } = await import('../useAttachments')
-
-    let success: boolean = true
-    await act(async () => {
-      success = await useAttachments.getState().loadSettingsDefs()
-    })
-
-    expect(success).toBe(false)
-  })
-
-  describe('setters persist to the RAG extension and patch settingsDefs', () => {
+  describe('setters write to the host settings store', () => {
     const cases = [
-      {
-        name: 'setMaxFileSizeMB',
-        key: 'max_file_size_mb',
-        stateKey: 'maxFileSizeMB',
-        value: 99,
-      },
-      {
-        name: 'setRetrievalLimit',
-        key: 'retrieval_limit',
-        stateKey: 'retrievalLimit',
-        value: 7,
-      },
-      {
-        name: 'setRetrievalThreshold',
-        key: 'retrieval_threshold',
-        stateKey: 'retrievalThreshold',
-        value: 0.7,
-      },
-      {
-        name: 'setChunkSizeChars',
-        key: 'chunk_size_chars',
-        stateKey: 'chunkSizeChars',
-        value: 2048,
-      },
-      {
-        name: 'setOverlapChars',
-        key: 'overlap_chars',
-        stateKey: 'overlapChars',
-        value: 256,
-      },
-      {
-        name: 'setSearchMode',
-        key: 'search_mode',
-        stateKey: 'searchMode',
-        value: 'linear' as const,
-      },
-      {
-        name: 'setParseMode',
-        key: 'parse_mode',
-        stateKey: 'parseMode',
-        value: 'embeddings' as const,
-      },
-      {
-        name: 'setAutoInlineContextRatio',
-        key: 'auto_inline_context_ratio',
-        stateKey: 'autoInlineContextRatio',
-        value: 0.42,
-      },
+      ['setEnabled', 'enabled', 'enabled', false],
+      ['setMaxFileSizeMB', 'max_file_size_mb', 'maxFileSizeMB', 99],
+      ['setRetrievalLimit', 'retrieval_limit', 'retrievalLimit', 7],
+      ['setRetrievalThreshold', 'retrieval_threshold', 'retrievalThreshold', 0.7],
+      ['setChunkSizeChars', 'chunk_size_chars', 'chunkSizeChars', 2048],
+      ['setOverlapChars', 'overlap_chars', 'overlapChars', 256],
+      ['setSearchMode', 'search_mode', 'searchMode', 'linear'],
+      ['setParseMode', 'parse_mode', 'parseMode', 'embeddings'],
+      ['setAutoInlineContextRatio', 'auto_inline_context_ratio', 'autoInlineContextRatio', 0.45],
     ] as const
 
-    cases.forEach(({ name, key, stateKey, value }) => {
-      it(`${name} calls updateSettings and patches settingsDefs`, async () => {
-        mockGetRag.mockReturnValue({
-          getSettings: mockGetSettings,
-          updateSettings: mockUpdateSettings,
-        })
-
-        const { useAttachments } = await import('../useAttachments')
-
-        act(() => {
-          useAttachments.setState({
-            settingsDefs: [
-              { key, controllerProps: { value: 'before' } } as any,
-            ],
-          })
-        })
-
-        await act(async () => {
-          await (useAttachments.getState() as any)[name](value)
-        })
-
-        expect(mockUpdateSettings).toHaveBeenCalledWith([
-          { key, controllerProps: { value } },
-        ])
-        expect((useAttachments.getState() as any)[stateKey]).toEqual(value)
-        const def = useAttachments
-          .getState()
-          .settingsDefs.find((d) => d.key === key)
-        expect((def as any)?.controllerProps?.value).toEqual(value)
+    for (const [name, key, field, value] of cases) {
+      it(`${name} persists ${key} and updates the store`, async () => {
+        await activateRag()
+        stop = initAttachments()
+        await vi.waitFor(() =>
+          expect(useAttachments.getState().settingsDefs.length).toBeGreaterThan(0)
+        )
+        const setter = useAttachments.getState()[name] as (v: typeof value) => Promise<void>
+        await setter(value)
+        expect(stored()[key]).toBe(value)
+        expect(useAttachments.getState()[field]).toBe(value)
+        const def = useAttachments.getState().settingsDefs.find((d) => d.key === key)
+        expect(def?.controllerProps.value).toBe(value)
       })
+    }
+
+    it('keeps the stored value when the store refuses one outside the declared range', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      await activateRag()
+      await useAttachments.getState().setRetrievalLimit(500)
+      expect(stored().retrieval_limit).toBeUndefined()
+      expect(useAttachments.getState().retrievalLimit).toBe(3)
+      expect(spy).toHaveBeenCalled()
+      spy.mockRestore()
     })
   })
 
   describe('initAttachments', () => {
-    it('returns early on first successful load', async () => {
-      mockGetRag.mockReturnValue({
-        getSettings: vi.fn().mockResolvedValue([]),
-      })
-
-      const { initAttachments } = await import('../useAttachments')
-      await initAttachments()
-
-      // If it didn't return early, the 5-attempt loop with 300ms waits would
-      // take >1s. The test finishing fast is the assertion.
-      expect(mockGetRag).toHaveBeenCalled()
+    it('loads once the rag built-in activates', async () => {
+      stop = initAttachments()
+      expect(useAttachments.getState().settingsDefs).toEqual([])
+      await activateRag()
+      await vi.waitFor(() =>
+        expect(useAttachments.getState().settingsDefs.length).toBe(settings.length)
+      )
     })
 
-    it('retries until success', async () => {
-      vi.useFakeTimers()
-      const getSettings = vi
-        .fn()
-        .mockResolvedValueOnce('bad')
-        .mockResolvedValueOnce([])
-      mockGetRag.mockReturnValue({ getSettings })
+    it('follows changes made elsewhere, such as Settings > Extensions', async () => {
+      await activateRag()
+      stop = initAttachments()
+      await host.settings.setSettingValue(RAG_EXTENSION_ID, 'parse_mode', 'inline')
+      expect(useAttachments.getState().parseMode).toBe('inline')
+    })
 
-      const { initAttachments } = await import('../useAttachments')
-      const done = initAttachments()
-      await vi.advanceTimersByTimeAsync(400)
-      await done
-
-      expect(getSettings).toHaveBeenCalledTimes(2)
-      vi.useRealTimers()
+    it('ignores other extensions and stops following when disposed', async () => {
+      await activateRag()
+      stop = initAttachments()
+      stop()
+      stop = undefined
+      await host.settings.setSettingValue(RAG_EXTENSION_ID, 'parse_mode', 'inline')
+      expect(useAttachments.getState().parseMode).toBe('auto')
     })
   })
 })

@@ -3,11 +3,13 @@ import { EngineManager } from './EngineManager'
 
 /**
  * The provider of the only embedding-capable engine that ships today. Named
- * here rather than in each consumer because the RAG and vector-db extensions
+ * here rather than in each consumer because the RAG and vector-db built-ins
  * both reached for it by string literal, so a rename had three places to miss.
  */
 export const EMBEDDING_ENGINE_PROVIDER = 'llamacpp'
 
+// Through the engine registry rather than the extension that provides the
+// engine, so the lookup does not depend on how that extension is loaded.
 function lookup(provider: string): unknown {
   return EngineManager.instance().get(provider)
 }

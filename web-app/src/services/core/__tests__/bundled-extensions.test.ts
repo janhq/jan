@@ -10,46 +10,13 @@ import rag from '../../../../../extensions/rag-extension/package.json'
 import vectorDb from '../../../../../extensions/vector-db-extension/package.json'
 
 // vitest defines IS_MACOS as false, so mlx is not a host built-in here.
-const LEGACY_PACKAGES = [rag, vectorDb]
-const HOST_PACKAGES = [assistant, download, llamacpp]
-
-const manifestFields = (m: {
-  name: string
-  productName?: string
-  version?: string
-  description?: string
-}) => ({
-  name: m.name,
-  productName: m.productName,
-  version: m.version,
-  description: m.description,
-})
+const HOST_PACKAGES = [assistant, download, llamacpp, vectorDb, rag]
 
 describe('getBundledExtensions', () => {
-  it('takes every entry name, productName, version and description from its package.json', async () => {
-    const exts = await getBundledExtensions()
-    expect(exts.map(manifestFields)).toEqual(
-      LEGACY_PACKAGES.map(manifestFields)
-    )
-  })
-
-  it('passes the package.json fields to the extension instance', async () => {
-    const exts = await getBundledExtensions()
-    for (const [i, ext] of exts.entries()) {
-      expect(ext.extensionInstance?.name).toBe(LEGACY_PACKAGES[i].name)
-      expect(ext.extensionInstance?.productName).toBe(
-        LEGACY_PACKAGES[i].productName
-      )
-      expect(ext.extensionInstance?.version).toBe(LEGACY_PACKAGES[i].version)
-      expect(ext.extensionInstance?.description).toBe(
-        LEGACY_PACKAGES[i].description
-      )
-    }
-  })
-
-  // Threads and messages are host services now; every bundled extension
-  // needs a native plugin, so mobile runs none of them.
-  it('bundles no legacy extension on mobile', async () => {
+  // Every built-in runs on the host now; the legacy list stays empty until
+  // the legacy loader is removed.
+  it('bundles no legacy extension', async () => {
+    expect(await getBundledExtensions()).toEqual([])
     expect(await getBundledExtensions({ mobile: true })).toEqual([])
   })
 })
@@ -85,6 +52,11 @@ describe('host built-ins', () => {
       ok: true,
       manifest: { id: 'jan.mlx' },
     })
+  })
+
+  it('activates rag only after the vector DB it reads', () => {
+    const ragBuiltin = HOST_BUILTINS.find((b) => b.manifest.id === 'jan.rag')
+    expect(ragBuiltin?.dependsOn).toEqual(['jan.vector-db'])
   })
 
   it('runs no host built-in on mobile', () => {

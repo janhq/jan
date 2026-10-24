@@ -1,7 +1,5 @@
 import type { BaseExtension } from '@janhq/core'
 import type { ExtensionManifest } from '@/lib/extension'
-import * as rag from '../../../../extensions/rag-extension/package.json'
-import * as vectorDb from '../../../../extensions/vector-db-extension/package.json'
 
 type ExtensionCtor = new (
   url: string,
@@ -23,7 +21,8 @@ type BundledEntry = {
 }
 
 // Legacy BaseExtension built-ins; the ones migrated to activate(ctx) are
-// HOST_BUILTINS in lib/extensions/builtins.ts.
+// HOST_BUILTINS in lib/extensions/builtins.ts. Every built-in has migrated,
+// so this stays empty until the legacy loader itself is removed.
 //
 // Manifest fields come from each package.json so they cannot drift. Each field
 // is read off a namespace import (never the whole object) so the bundler keeps
@@ -32,22 +31,7 @@ type BundledEntry = {
 // Lazily imported so the extension bundles are NOT part of the service-hub
 // bootstrap graph; they load only when extensions are enumerated (after the
 // hub is ready), matching the pre-bundling load order.
-const ENTRIES: BundledEntry[] = [
-  {
-    load: () => import('@janhq/rag-extension'),
-    name: rag.name,
-    productName: rag.productName,
-    version: rag.version,
-    description: rag.description,
-  },
-  {
-    load: () => import('@janhq/vector-db-extension'),
-    name: vectorDb.name,
-    productName: vectorDb.productName,
-    version: vectorDb.version,
-    description: vectorDb.description,
-  },
-]
+const ENTRIES: BundledEntry[] = []
 
 export async function getBundledExtensions(
   opts: { mobile?: boolean } = {}
