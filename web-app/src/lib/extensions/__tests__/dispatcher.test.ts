@@ -3,7 +3,13 @@ import { HOST_METHODS, type HostMethod } from '@janhq/extension-runtime'
 import type { PermissionString } from '@janhq/extension-api'
 import { ContributionStore } from '../contributions'
 import { METHOD_POLICY, PermissionDispatcher } from '../dispatcher'
-import { createHostApi, type HostApiDeps } from '../host-api'
+import {
+  MAX_LOG_ARGS,
+  MAX_LOG_CHARS,
+  MAX_SUBSCRIPTIONS_PER_EVENT,
+  createHostApi,
+  type HostApiDeps,
+} from '../host-api'
 import { ExtensionSettingsStore } from '../settings-store'
 import { manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
@@ -151,6 +157,81 @@ describe('PermissionDispatcher.dispatch', () => {
     expect(() =>
       call('conversations.listMessages', ['t1', { limit: -1 }])
     ).toThrowError(invalid)
+  })
+
+  it('refuses contribution ids outside the manifest grammar, and inherited names', () => {
+    const { call, contributions } = setup(['tools', 'providers'])
+    const handler = vi.fn()
+    for (const bad of ['__proto__', 'a b', 'x'.repeat(65), ''])
+      expect(() => call('tools.register', [bad, handler]), bad).toThrowError(invalid)
+    expect(() => call('ui.setStatusItem', ['__proto__', { text: 'x' }])).toThrowError(invalid)
+    const notFound = expect.objectContaining({ code: 'E_NOT_FOUND' })
+    expect(() => call('tools.register', ['constructor', handler])).toThrowError(notFound)
+    expect(() => call('commands.register', ['valueOf', handler])).toThrowError(notFound)
+    // Undeclared, so it must not skip the baseUrl grant check and bind.
+    expect(() => call('providers.register', ['toString', {}])).toThrowError(notFound)
+    expect(() => call('ui.setStatusItem', ['toString', { text: 'x' }])).toThrowError(notFound)
+    expect(Object.keys(contributions.getState().tools['acme.one'])).toEqual(['echo'])
+  })
+
+  it("refuses the local API server's port for fetches and provider baseUrls", () => {
+    const local = new PermissionDispatcher(() => 11999)
+    local.grant('acme.one', ['network:127.0.0.1'])
+    expect(() => local.checkUrl('acme.one', 'http://127.0.0.1:11999/v1')).toThrowError(
+      permission
+    )
+    expect(() => local.checkUrl('acme.one', 'http://127.0.0.1:8080/v1')).not.toThrow()
+  })
+
+  it('caps subscriptions per extension and event, and frees a slot on dispose', () => {
+    const { call } = setup([])
+    const subs = Array.from({ length: MAX_SUBSCRIPTIONS_PER_EVENT }, () =>
+      call('events.subscribe', ['settings.didChange', () => undefined]) as {
+        dispose(): void
+      }
+    )
+    const tooMany = expect.objectContaining({ code: 'E_TOO_LARGE' })
+    expect(() =>
+      call('events.subscribe', ['settings.didChange', () => undefined])
+    ).toThrowError(tooMany)
+    subs[0].dispose()
+    subs[0].dispose()
+    expect(() =>
+      call('events.subscribe', ['settings.didChange', () => undefined])
+    ).not.toThrow()
+    expect(() =>
+      call('events.subscribe', ['settings.didChange', () => undefined])
+    ).toThrowError(tooMany)
+  })
+
+  it('truncates log arguments and drops lines over the rate limit', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { call } = setup([])
+    call('log', ['info', 'x'.repeat(100_000), ...Array.from({ length: 100 }, () => 'y')])
+    const [, ...logged] = info.mock.calls[0]
+    expect(logged.length).toBeLessThanOrEqual(MAX_LOG_ARGS)
+    expect(logged.join('').length).toBeLessThanOrEqual(MAX_LOG_CHARS + 64)
+    for (let i = 0; i < 1000; i++) call('log', ['info', 'line'])
+    expect(info.mock.calls.length).toBeLessThan(200)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('rate-limits notifications', () => {
+    const notify = vi.fn()
+    const { call } = setup(['ui:notify'], { notify })
+    const tooMany = expect.objectContaining({ code: 'E_TOO_LARGE' })
+    let refused = 0
+    for (let i = 0; i < 50; i++) {
+      try {
+        call('ui.notify', [{ level: 'info', message: 'spam' }])
+      } catch (error) {
+        expect(error).toEqual(tooMany)
+        refused++
+      }
+    }
+    expect(notify.mock.calls.length).toBeLessThanOrEqual(10)
+    expect(refused).toBe(50 - notify.mock.calls.length)
   })
 
   it('binds a registration only to a declared contribution', () => {

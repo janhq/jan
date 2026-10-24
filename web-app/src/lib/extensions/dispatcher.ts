@@ -1,6 +1,7 @@
 import { z, type ZodType } from 'zod'
 import {
   ExtensionError,
+  isContributionId,
   networkHostMatches,
   networkHostOf,
   type JsonValue,
@@ -13,7 +14,7 @@ import type {
   HostMethod,
   HostResult,
 } from '@janhq/extension-runtime'
-import type { HostApi } from './host-api'
+import type { CallOptions, HostApi } from './host-api'
 import { matchesNetwork } from './permissions'
 
 /**
@@ -38,6 +39,10 @@ const fn = <F>() =>
 
 const json: ZodType<JsonValue> = z.json()
 const id = z.string().min(1).max(256)
+// Command, status item, tool and provider ids, in the manifest's grammar.
+const contributionId = z
+  .string()
+  .refine(isContributionId, 'Expected a contribution id as in the manifest')
 const settingValue = z.union([z.string(), z.number(), z.boolean()])
 const statusUpdate = z.strictObject({
   text: z.string().max(256).optional(),
@@ -80,7 +85,7 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
   'storage.keys': { permission: 'implicit', args: z.tuple([]) },
   'commands.register': {
     permission: 'implicit',
-    args: z.tuple([id, fn<HostArgs<'commands.register'>[1]>()]),
+    args: z.tuple([contributionId, fn<HostArgs<'commands.register'>[1]>()]),
   },
   'commands.execute': {
     // Its own declared commands are implicit; anyone else's needs the grant.
@@ -90,7 +95,7 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
       )
       if (!declared) dispatcher.check(manifest.id, 'commands:execute')
     },
-    args: z.tuple([id], json),
+    args: z.tuple([contributionId], json),
   },
   'ui.notify': {
     permission: 'ui:notify',
@@ -103,7 +108,7 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
   },
   'ui.setStatusItem': {
     permission: 'implicit',
-    args: z.tuple([id, statusUpdate]),
+    args: z.tuple([contributionId, statusUpdate]),
   },
   'conversations.listThreads': {
     permission: 'conversations:read',
@@ -141,12 +146,12 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
   },
   'tools.register': {
     permission: 'tools',
-    args: z.tuple([id, fn<HostArgs<'tools.register'>[1]>()]),
+    args: z.tuple([contributionId, fn<HostArgs<'tools.register'>[1]>()]),
   },
   'providers.register': {
     permission: 'providers',
     args: z.tuple([
-      id,
+      contributionId,
       z.strictObject({
         listModels: fn<NonNullable<HostArgs<'providers.register'>[1]['listModels']>>().optional(),
       }),
@@ -178,6 +183,13 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
  */
 export class PermissionDispatcher {
   private readonly grants = new Map<string, ReadonlySet<PermissionString>>()
+
+  /**
+   * @param localApiPort The port of Jan's local API server right now, read
+   *   per check so a changed setting applies at once. Nothing an extension
+   *   is granted reaches it: it serves with the user's provider keys.
+   */
+  constructor(private readonly localApiPort: () => number | undefined = () => undefined) {}
 
   /** Replaces the grants of `extensionId`. */
   grant(extensionId: string, permissions: readonly PermissionString[]): void {
@@ -218,7 +230,10 @@ export class PermissionDispatcher {
   /** Throws `E_PERMISSION` unless some network grant allows `url`. */
   checkUrl(extensionId: string, url: string): void {
     const granted = this.grants.get(extensionId)
-    const allowed = [...(granted ?? [])].some((g) => matchesNetwork(g, url))
+    const port = this.localApiPort()
+    const allowed = [...(granted ?? [])].some((g) =>
+      matchesNetwork(g, url, port)
+    )
     if (!allowed) {
       let target = url
       try {
@@ -244,7 +259,8 @@ export class PermissionDispatcher {
     manifest: ValidatedManifest,
     api: HostApi,
     method: M,
-    args: unknown[]
+    args: unknown[],
+    call: CallOptions = {}
   ): HostResult<M> {
     const policy: MethodPolicy<M> = METHOD_POLICY[method]
     const parsed = policy.args.safeParse(args)
@@ -258,7 +274,10 @@ export class PermissionDispatcher {
     if (typeof permission === 'function')
       permission(parsed.data, manifest, this)
     else if (permission !== 'implicit') this.check(manifest.id, permission)
-    const impl = api[method] as (...a: HostArgs<M>) => HostResult<M>
-    return impl(...parsed.data)
+    const impl = api[method] as (
+      call: CallOptions,
+      ...a: HostArgs<M>
+    ) => HostResult<M>
+    return impl(call, ...parsed.data)
   }
 }

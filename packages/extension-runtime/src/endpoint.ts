@@ -67,6 +67,12 @@ export interface EndpointOptions {
   handle?: RequestHandler
   /** Receives lifecycle messages (`init`, `ready`, `ping`, ...). */
   onControl?: (message: ControlMessage) => void
+  /**
+   * Hears about every message refused without reaching a handler: one that
+   * is malformed or over the size cap. The host counts them to stop a
+   * worker that floods it.
+   */
+  onRejected?: (error: ExtensionError) => void
   maxMessageBytes?: number
   maxInFlight?: number
   defaultTimeoutMs?: number
@@ -275,9 +281,15 @@ export class Endpoint {
   private receive(data: unknown): void {
     if (this.isClosed) return
     const message = parseWire(data)
-    if (!message) return
+    if (!message) {
+      this.options.onRejected?.(
+        new ExtensionError('E_INVALID_ARGS', 'Malformed message')
+      )
+      return
+    }
     const size = estimateSize(message)
     const oversized = size === undefined || size > this.maxBytes
+    if (oversized) this.options.onRejected?.(tooLarge(this.maxBytes))
     switch (message.t) {
       case 'req':
         if (oversized) return this.respondError(message.id, tooLarge(this.maxBytes))

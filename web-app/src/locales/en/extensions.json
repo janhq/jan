@@ -3,7 +3,8 @@
   "categorizedCommand": "{{category}}: {{title}}",
   "commandFailed": "{{command}} ({{extension}}) failed",
   "moreActions": "More actions",
-  "statusItemTooltip": "{{text}} - {{extension}}",
+  "extensionLabel": "Extension: {{extension}}",
+  "statusItemTooltip": "Extension: {{extension}} - {{text}}",
   "settingSaveFailed": "Could not save {{setting}}",
   "activationFailed": "Failed to start: {{error}}",
   "state": {
@@ -31,6 +32,7 @@
     "readFailed": "Could not read {{file}}: {{error}}",
     "invalidJson": "package.json is not valid JSON: {{error}}",
     "invalidManifest": "The manifest is invalid: {{errors}}",
+    "invalidBundle": "{{file}} is not a valid extension bundle: {{error}}",
     "alreadyLoaded": "An extension with the id {{id}} is already loaded"
   },
   "permissions": {
@@ -44,7 +46,8 @@
     },
     "network": {
       "title": "Connect to {{host}}",
-      "description": "Send requests to this host and read the replies."
+      "description": "Send requests to this host and read the replies.",
+      "localServers": "Includes servers on this computer. Jan's own local API server is always blocked."
     },
     "providers": {
       "title": "Add model providers",

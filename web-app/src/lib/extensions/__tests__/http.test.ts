@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PermissionString } from '@janhq/extension-api'
+import type { HttpRequestInit, PermissionString } from '@janhq/extension-api'
+import { MAX_MESSAGE_BYTES } from '@janhq/extension-runtime'
 import { ContributionStore } from '../contributions'
 import { PermissionDispatcher } from '../dispatcher'
 import {
+  MAX_CONCURRENT_FETCHES,
   MAX_RESPONSE_BYTES,
   createHostApi,
   type FetchLike,
@@ -26,8 +28,14 @@ function setup(grants: PermissionString[], fetch: FetchLike) {
     notify: vi.fn(),
     fetch,
   })
-  return (url: string, init?: Parameters<typeof api['http.fetch']>[1]) =>
-    dispatcher.dispatch(m, api, 'http.fetch', init ? [url, init] : [url])
+  return (
+    url: string,
+    init?: HttpRequestInit,
+    signal?: AbortSignal
+  ) =>
+    dispatcher.dispatch(m, api, 'http.fetch', init ? [url, init] : [url], {
+      signal,
+    })
 }
 
 const redirect = (status: number, location: string) =>
@@ -89,7 +97,92 @@ describe('ctx.http.fetch', () => {
     expect(first.get('cookie')).toBeNull()
     expect(first.get('authorization')).toBe('Bearer t')
     expect(second.get('authorization')).toBeNull()
-    expect(second.get('x-key')).toBe('k')
+    expect(second.get('x-key')).toBeNull()
+  })
+
+  it('keeps only CORS-safelisted headers across a cross-origin redirect', async () => {
+    const fetch = vi.fn<FetchLike>(async (url) =>
+      url === 'https://a.acme.dev/'
+        ? redirect(307, 'https://b.acme.dev/')
+        : url === 'https://b.acme.dev/'
+          ? redirect(307, 'https://b.acme.dev/same')
+          : new Response('ok')
+    )
+    const call = setup(['network:*.acme.dev'], fetch)
+    await call('https://a.acme.dev/', {
+      method: 'POST',
+      body: '{}',
+      headers: {
+        'X-Api-Key': 'k',
+        'Proxy-Authorization': 'p',
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'Accept-Language': 'en',
+      },
+    })
+    const [first, second, third] = fetch.mock.calls.map(
+      ([, init]) => new Headers(init.headers)
+    )
+    expect(first.get('x-api-key')).toBe('k')
+    for (const h of [second, third]) {
+      expect(h.get('x-api-key')).toBeNull()
+      expect(h.get('proxy-authorization')).toBeNull()
+      expect(h.get('accept')).toBe('application/json')
+      expect(h.get('content-type')).toBe('application/json')
+      expect(h.get('accept-language')).toBe('en')
+    }
+  })
+
+  it('caps the body below the RPC message cap, so a reply can always cross', () => {
+    expect(MAX_RESPONSE_BYTES).toBeLessThanOrEqual(MAX_MESSAGE_BYTES / 2)
+  })
+
+  it('runs at most MAX_CONCURRENT_FETCHES requests per extension at once', async () => {
+    const release: (() => void)[] = []
+    const fetch = vi.fn<FetchLike>(
+      () =>
+        new Promise<Response>((resolve) =>
+          release.push(() => resolve(new Response('ok')))
+        )
+    )
+    const call = setup(['network:api.acme.dev'], fetch)
+    const running = Array.from({ length: MAX_CONCURRENT_FETCHES }, () =>
+      call('https://api.acme.dev/')
+    )
+    await expect(call('https://api.acme.dev/')).rejects.toMatchObject({
+      code: 'E_TOO_LARGE',
+    })
+    expect(fetch).toHaveBeenCalledTimes(MAX_CONCURRENT_FETCHES)
+    for (const r of release) r()
+    await Promise.all(running)
+    await vi.waitFor(() => expect(release).toHaveLength(MAX_CONCURRENT_FETCHES))
+    const next = call('https://api.acme.dev/')
+    await vi.waitFor(() => expect(release).toHaveLength(MAX_CONCURRENT_FETCHES + 1))
+    release[MAX_CONCURRENT_FETCHES]()
+    await expect(next).resolves.toMatchObject({ status: 200 })
+  })
+
+  it('aborts the platform request when the caller cancels', async () => {
+    let seen: AbortSignal | undefined
+    const fetch = vi.fn<FetchLike>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init.signal ?? undefined
+          seen?.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+    )
+    const call = setup(['network:api.acme.dev'], fetch)
+    const controller = new AbortController()
+    const pending = call('https://api.acme.dev/', undefined, controller.signal)
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    controller.abort()
+    expect(seen?.aborted).toBe(true)
+    await expect(pending).rejects.toMatchObject({ code: 'E_CANCELLED' })
+    // Already cancelled: nothing is sent at all.
+    await expect(
+      call('https://api.acme.dev/', undefined, controller.signal)
+    ).rejects.toMatchObject({ code: 'E_CANCELLED' })
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('caps the response body at 10 MiB', async () => {

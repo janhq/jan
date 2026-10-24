@@ -13,6 +13,7 @@ import {
   type ControlMessage,
 } from '../protocol.js'
 import { createWorkerContext, type WorkerCallback } from './context.js'
+import type { Realm } from './realm.js'
 import { stripGlobals } from './strip.js'
 
 /** How long `activate` may take before the worker reports a timeout. */
@@ -62,8 +63,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
  * throws, which aborts the rest of the composed script, so extension code
  * never runs with the globals still in place.
  */
-export function installRuntime(scope: object): void {
-  if (!isScope(scope)) throw new Error('Not a worker global scope')
+export function installRuntime(realm: Realm): void {
+  const scope = realm.global
+  if (!isScope(scope)) throw realm.replaced('postMessage')
   // Captured first; a forged message from extension code could only reach
   // the same host-checked API, so these are not hidden afterwards.
   const post = scope.postMessage.bind(scope)
@@ -72,7 +74,7 @@ export function installRuntime(scope: object): void {
   const closeScope = scope.close?.bind(scope)
 
   try {
-    stripGlobals(scope)
+    stripGlobals(realm, scope)
   } catch (error) {
     post({ v: 1, t: 'activateFailed', error: toRpcError(error) })
     throw error
@@ -154,7 +156,7 @@ export function installRuntime(scope: object): void {
     }
   }
 
-  Object.defineProperty(scope, BOOT_FUNCTION, {
+  realm.defineProperty(scope, BOOT_FUNCTION, {
     value: (mod: unknown) => {
       if (module !== undefined) return
       module =

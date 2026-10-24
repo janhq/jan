@@ -55,8 +55,8 @@ describe('StatusItems', () => {
     render(<StatusItems />)
     const buttons = screen.getAllByRole('button')
     expect(buttons.map((b) => b.textContent)).toEqual(['High', 'Low'])
-    expect(buttons[0]).toHaveAccessibleName('Very high - Acme Status')
-    expect(buttons[1]).toHaveAccessibleName('Low - Acme Status')
+    expect(buttons[0]).toHaveAccessibleName('Extension: Acme Status - Very high')
+    expect(buttons[1]).toHaveAccessibleName('Extension: Acme Status - Low')
 
     await act(() => host.deactivateAll())
     expect(screen.queryByRole('button')).toBeNull()

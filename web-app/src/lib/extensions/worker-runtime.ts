@@ -59,8 +59,25 @@ export const createBlobWorker: CreateWorker = (source, name) => {
   const revoke = () => URL.revokeObjectURL(url)
   worker.addEventListener('message', revoke, { once: true })
   worker.addEventListener('error', revoke, { once: true })
-  return worker
+  // A script that never posts nor throws (a top-level endless loop) would
+  // otherwise keep the URL alive; revoking twice is harmless.
+  return {
+    postMessage: (message) => worker.postMessage(message),
+    addEventListener: worker.addEventListener.bind(worker),
+    removeEventListener: worker.removeEventListener.bind(worker),
+    terminate: () => {
+      worker.terminate()
+      revoke()
+    },
+  }
 }
+
+/**
+ * Messages a worker may send that are refused before any handler sees
+ * them (malformed, or over the size cap) before it is stopped. A real
+ * extension never sends one; a stream of them only costs the main thread.
+ */
+export const MAX_REJECTED_MESSAGES = 16
 
 const REGISTRATIONS: ReadonlySet<HostMethod> = new Set<HostMethod>([
   'commands.register',
@@ -148,10 +165,24 @@ export function startWorker(options: {
     settle(new ExtensionError('E_INTERNAL', e.message || 'The worker failed'))
   worker.addEventListener('error', onError)
 
+  // Aborted on terminate, so host-side work (a fetch) stops with the worker.
+  const lifetime = new AbortController()
+  let rejected = 0
+
   const endpoint: Endpoint = new Endpoint(
     workerTransport(worker),
     {
-      handle: async (method, args) => {
+      onRejected: (error) => {
+        rejected++
+        if (rejected < MAX_REJECTED_MESSAGES) return
+        console.warn(
+          `Extension '${manifest.id}' was stopped after ${rejected} refused messages:`,
+          error.message
+        )
+        settle(error)
+        terminate()
+      },
+      handle: async (method, args, token) => {
         if (method === DISPOSE_METHOD) {
           const [id] = args
           if (typeof id === 'number') owned.dispose(id)
@@ -159,15 +190,26 @@ export function startWorker(options: {
         }
         if (!isHostMethod(method))
           throw new ExtensionError('E_NOT_FOUND', `Unknown method '${method}'`)
-        const result = await dispatcher.dispatch(
-          manifest,
-          api,
-          method,
-          revive(method, args)
-        )
-        if (REGISTRATIONS.has(method))
-          return { disposable: owned.add(result as { dispose(): void }) }
-        return result
+        // The worker's cancellation and the worker's end both abort it.
+        const call = new AbortController()
+        const abort = () => call.abort()
+        lifetime.signal.addEventListener('abort', abort)
+        const cancellation = token.onCancellationRequested(abort)
+        try {
+          const result = await dispatcher.dispatch(
+            manifest,
+            api,
+            method,
+            revive(method, args),
+            { signal: call.signal }
+          )
+          if (REGISTRATIONS.has(method))
+            return { disposable: owned.add(result as { dispose(): void }) }
+          return result
+        } finally {
+          cancellation.dispose()
+          lifetime.signal.removeEventListener('abort', abort)
+        }
       },
       onControl: (message) => {
         if (message.t === 'ready') settle()
@@ -179,6 +221,7 @@ export function startWorker(options: {
 
   const terminate = () => {
     worker.removeEventListener('error', onError)
+    lifetime.abort()
     endpoint.close()
     owned.disposeAll()
   }
