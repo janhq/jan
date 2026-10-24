@@ -105,8 +105,7 @@ import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import { getExtensionHost } from '@/lib/extensions/host'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
@@ -1215,11 +1214,12 @@ function ThreadDetail() {
       const projectId = thread?.metadata?.project?.id
       if (projectId) {
         try {
-          const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-            ExtensionTypeEnum.VectorDB
+          const vectorDB = getExtensionHost().services.get(
+            ServiceKeys.VectorDB
           )
-          if (ext?.listAttachmentsForProject) {
-            const projectFiles = await ext.listAttachmentsForProject(projectId)
+          if (vectorDB) {
+            const projectFiles =
+              await vectorDB.listAttachmentsForProject(projectId)
             hasProjectDocuments = projectFiles.length > 0
           }
         } catch (error) {

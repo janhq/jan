@@ -13,7 +13,7 @@ vi.mock('@janhq/core', () => ({
   ExtensionTypeEnum: {
     SystemMonitor: 'system-monitor',
     Model: 'model',
-    RAG: 'rag',
+    MCP: 'mcp',
   },
 }))
 
@@ -44,7 +44,7 @@ describe('ExtensionManager - coverage', () => {
 
   describe('register and retrieval', () => {
     it('registers and retrieves extension by name', () => {
-      const ext = { type: () => 'rag', onLoad: vi.fn(), onUnload: vi.fn() } as any
+      const ext = { type: () => 'mcp', onLoad: vi.fn(), onUnload: vi.fn() } as any
       manager.register('my-ext', ext)
       expect(manager.getByName('my-ext')).toBe(ext)
     })
@@ -61,9 +61,9 @@ describe('ExtensionManager - coverage', () => {
     })
 
     it('get by type returns matching extension', () => {
-      const ext = { type: () => 'rag', onLoad: vi.fn(), onUnload: vi.fn() } as any
-      manager.register('rag-ext', ext)
-      expect(manager.get(ExtensionTypeEnum.RAG)).toBe(ext)
+      const ext = { type: () => 'mcp', onLoad: vi.fn(), onUnload: vi.fn() } as any
+      manager.register('mcp-ext', ext)
+      expect(manager.get(ExtensionTypeEnum.MCP)).toBe(ext)
     })
 
     it('get by type returns undefined when no match', () => {
