@@ -7,7 +7,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
+use jan_utils::{is_cors_header, is_valid_host, is_valid_origin, remove_prefix};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -787,8 +787,7 @@ async fn proxy_request(
             );
 
         if !origin.is_empty() {
-            let origin_host = extract_host_from_origin(origin);
-            if is_valid_host(&origin_host, &config.trusted_hosts) {
+            if is_valid_origin(origin, &config.trusted_hosts) {
                 response = response
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Credentials", "true");
@@ -2358,8 +2357,7 @@ pub(crate) fn add_cors_headers_with_host_and_origin(
     let mut builder = builder;
 
     let origin_trusted = if !origin.is_empty() {
-        let origin_host = extract_host_from_origin(origin);
-        is_valid_host(&origin_host, trusted_hosts)
+        is_valid_origin(origin, trusted_hosts)
     } else {
         false
     };

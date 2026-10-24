@@ -15,11 +15,6 @@ pub fn is_cors_header(header_name: &str) -> bool {
     header_lower.starts_with("access-control-")
 }
 
-/// Strips a leading scheme (e.g. "app://", "http://") from a host/origin value.
-fn strip_scheme(value: &str) -> &str {
-    value.split("://").nth(1).unwrap_or(value)
-}
-
 /// Validates if host is in trusted hosts list
 pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     if trusted_hosts.iter().any(|hosts| hosts.contains(&"*".to_string())) {
@@ -63,28 +58,70 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
         }
     }
 
+    // Scheme-qualified entries (e.g. "app://obsidian.md") only apply to
+    // Origins, where the scheme is known; see `is_valid_origin`.
+    trusted_hosts
+        .iter()
+        .flatten()
+        .filter(|valid| !valid.contains("://"))
+        .any(|valid| host_matches(host, host_without_port, valid))
+}
+
+/// Compares a host (optionally with port) against a trusted entry without a
+/// scheme. A port on either side is ignored when the full values differ.
+fn host_matches(host: &str, host_without_port: &str, valid: &str) -> bool {
+    if host.eq_ignore_ascii_case(valid) {
+        return true;
+    }
+
+    let valid_without_port = if valid.starts_with('[') {
+        valid
+            .split(']')
+            .next()
+            .unwrap_or(valid)
+            .trim_start_matches('[')
+    } else {
+        valid.split(':').next().unwrap_or(valid)
+    };
+
+    host_without_port.eq_ignore_ascii_case(valid_without_port)
+}
+
+/// Validates an Origin header value against the trusted hosts list.
+///
+/// Bare-host entries (and the built-in local hosts) match any scheme, as with
+/// `is_valid_host`. An entry with a scheme, such as "app://obsidian.md", only
+/// matches an Origin with that same scheme and host, so it does not also trust
+/// "https://obsidian.md".
+pub fn is_valid_origin(origin: &str, trusted_hosts: &[Vec<String>]) -> bool {
+    let host = extract_host_from_origin(origin);
+    if is_valid_host(&host, trusted_hosts) {
+        return true;
+    }
+
+    let Some((scheme, _)) = origin.split_once("://") else {
+        return false;
+    };
+    if host.is_empty() {
+        return false;
+    }
+    let host_without_port = if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .unwrap_or(&host)
+            .trim_start_matches('[')
+    } else {
+        host.split(':').next().unwrap_or(&host)
+    };
+
     trusted_hosts.iter().flatten().any(|valid| {
-        // Users may list a scheme-qualified origin (e.g. "app://obsidian.md")
-        // in Trusted Hosts. Normalize both sides so the bare host matches.
-        let valid = strip_scheme(valid);
-        let host_lower = host.to_lowercase();
-        let valid_lower = valid.to_lowercase();
-
-        if host_lower == valid_lower {
-            return true;
-        }
-
-        let valid_without_port = if valid.starts_with('[') {
-            valid
-                .split(']')
-                .next()
-                .unwrap_or(valid)
-                .trim_start_matches('[')
-        } else {
-            valid.split(':').next().unwrap_or(valid)
+        let Some((valid_scheme, valid_rest)) = valid.split_once("://") else {
+            return false;
         };
-
-        host_without_port.to_lowercase() == valid_without_port.to_lowercase()
+        let valid_host = valid_rest.split('/').next().unwrap_or(valid_rest);
+        valid_scheme.eq_ignore_ascii_case(scheme)
+            && !valid_host.is_empty()
+            && host_matches(&host, host_without_port, valid_host)
     })
 }
 
