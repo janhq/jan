@@ -23,7 +23,12 @@ export class DefaultExtensionsService implements ExtensionsService {
   }
 
   async list(): Promise<ListResult> {
-    return { safeMode: false, extensions: [] }
+    return {
+      safeMode: false,
+      safeModeForced: false,
+      recoveredFrom: null,
+      extensions: [],
+    }
   }
 
   async listSources(): Promise<IndexSource[]> {

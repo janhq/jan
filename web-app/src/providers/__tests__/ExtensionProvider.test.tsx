@@ -12,8 +12,10 @@ const h = vi.hoisted(() => ({
   calls: [] as string[],
   host: {
     activateBuiltins: vi.fn().mockResolvedValue(undefined),
+    loadInstalled: vi.fn().mockResolvedValue(undefined),
     deactivateAll: vi.fn().mockResolvedValue(undefined),
   },
+  installSupported: true,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -37,6 +39,11 @@ vi.mock('@/lib/extension', () => ({
 }))
 
 vi.mock('@/lib/extensions/host', () => ({ getExtensionHost: () => h.host }))
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    extensions: () => ({ isSupported: () => h.installSupported }),
+  }),
+}))
 
 vi.mock('@/lib/service', () => ({ APIs: {} }))
 vi.mock('@/services/events/EventEmitter', () => ({ EventEmitter: class {} }))
@@ -64,7 +71,11 @@ describe('ExtensionProvider', () => {
     h.emit.mockResolvedValue(undefined)
     h.windowLabel = 'main'
     h.calls = []
+    h.installSupported = true
     h.host.activateBuiltins.mockImplementation(async () => void h.calls.push('host'))
+    h.host.loadInstalled.mockImplementation(
+      async () => void h.calls.push('installed')
+    )
     h.host.deactivateAll.mockResolvedValue(undefined)
     h.registerActive.mockImplementation(async () => void h.calls.push('legacy'))
     document.body.className = ''
@@ -108,6 +119,14 @@ describe('ExtensionProvider', () => {
     await screen.findByTestId('child')
     expect(window.core?.extensionHost).toBe(h.host)
     expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
+    expect(h.calls).toEqual(['host', 'installed', 'legacy'])
+  })
+
+  it('loads no installed extension where there is no install pipeline', async () => {
+    h.installSupported = false
+    renderProvider()
+    await screen.findByTestId('child')
+    expect(h.host.loadInstalled).not.toHaveBeenCalled()
     expect(h.calls).toEqual(['host', 'legacy'])
   })
 

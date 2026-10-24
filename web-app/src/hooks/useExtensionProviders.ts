@@ -32,9 +32,10 @@ async function resolve(provider: ActiveExtensionProvider): Promise<ModelProvider
 
 /**
  * Mirrors the providers extensions contribute into `useModelProvider`, so
- * they show up in the model picker. Sending to them is refused until the
- * host has a jar-less fetch (`assertNotExtensionProvider`). A provider leaves the list when its extension
- * releases it or stops; a change of its API key setting refreshes it.
+ * they show up in the model picker; inference with them runs on their
+ * extension's network path (`extensionProviderFetch`). A provider leaves
+ * the list when its extension releases it or stops; a change of its API
+ * key setting refreshes it.
  */
 export function useExtensionProviders() {
   useEffect(() => {

@@ -27,7 +27,7 @@
   "engineReportedDetail": "The engine reported: {{detail}}",
   "startModelFailed": "Failed to start model: {{reason}}",
   "createModelFailed": "Failed to create model: {{reason}}",
-  "extensionProviderUnavailable": "{{provider}} comes from an extension. Chatting with extension providers is not available yet in this version of Jan.",
+  "extensionProviderUnavailable": "{{provider}} comes from an extension that is not running, or that was loaded for development. Only a running installed extension can reach its provider.",
   "noRunningSession": "No running session found for model: {{model}}",
   "serverPortOccupied": "Port has been occupied",
   "serverPortOccupiedDescription": "Port {{port}} is already in use. Please try a different port.",

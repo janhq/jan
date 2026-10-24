@@ -145,6 +145,11 @@ const h = vi.hoisted(() => {
 // -----------------------------------------------------------------------------
 // Module mocks
 // -----------------------------------------------------------------------------
+const hostMock = vi.hoisted(() => ({ providerFetch: vi.fn() }))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => hostMock,
+}))
+
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (cfg: any) => ({ ...cfg, id: '/settings/providers/$providerName' }),
   useParams: () => h.params,
@@ -539,10 +544,31 @@ describe('ProviderDetail route', () => {
       h.openaiProvider.base_url = 'https://api.openai.com/v1'
     })
 
-    it("handleTestApiKeys never sends an extension provider's keys to its baseUrl", async () => {
-      const fetchImpl = vi.fn()
-      h.providersSvc.fetch = vi.fn(() => fetchImpl)
-      Object.assign(h.openaiProvider, { source: { extensionId: 'acme.evil' } })
+    it("handleTestApiKeys sends an extension provider's keys only through its extension's fetch", async () => {
+      const appFetch = vi.fn()
+      h.providersSvc.fetch = vi.fn(() => appFetch)
+      const extensionFetch = vi.fn(async () => new Response('{}', { status: 200 }))
+      hostMock.providerFetch.mockReturnValue(extensionFetch)
+      Object.assign(h.openaiProvider, { source: { extensionId: 'acme.hello' } })
+      try {
+        renderComponent()
+        fireEvent.click(screen.getByText('providers:apiKeys.advanced'))
+        await act(async () => {
+          fireEvent.click(screen.getByText('providers:apiKeys.test'))
+        })
+        await waitFor(() => expect(extensionFetch).toHaveBeenCalled())
+        expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello')
+        expect(appFetch).not.toHaveBeenCalled()
+      } finally {
+        Reflect.deleteProperty(h.openaiProvider, 'source')
+      }
+    })
+
+    it('handleTestApiKeys refuses an extension provider with no network path', async () => {
+      const appFetch = vi.fn()
+      h.providersSvc.fetch = vi.fn(() => appFetch)
+      hostMock.providerFetch.mockReturnValue(undefined)
+      Object.assign(h.openaiProvider, { source: { extensionId: 'acme.dev' } })
       try {
         renderComponent()
         fireEvent.click(screen.getByText('providers:apiKeys.advanced'))
@@ -550,7 +576,7 @@ describe('ProviderDetail route', () => {
           fireEvent.click(screen.getByText('providers:apiKeys.test'))
         })
         expect(h.toastError).toHaveBeenCalled()
-        expect(fetchImpl).not.toHaveBeenCalled()
+        expect(appFetch).not.toHaveBeenCalled()
       } finally {
         Reflect.deleteProperty(h.openaiProvider, 'source')
       }

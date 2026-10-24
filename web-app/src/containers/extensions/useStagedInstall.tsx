@@ -57,7 +57,7 @@ export function useStagedInstall({ service, refresh }: InstalledRegistry): {
       toast.success(
         t('extensions:install.done', {
           name: entry.manifest.displayName,
-          version: entry.active,
+          version: entry.version,
         })
       )
       await reloadInstalled(entry.id)

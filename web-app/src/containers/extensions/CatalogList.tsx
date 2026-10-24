@@ -116,7 +116,7 @@ function CatalogEntry({
   const latest = latestVersion(entry.versions)
   const newer =
     latest &&
-    (!installed || compareVersions(latest.version, installed.active) > 0)
+    (!installed || compareVersions(latest.version, installed.version) > 0)
   const label = !installed
     ? t('extensions:catalog.install')
     : newer
