@@ -7874,6 +7874,7 @@ name = "tauri-plugin-extensions"
 version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
+ "ed25519-dalek",
  "flate2",
  "log",
  "reqwest 0.12.28",

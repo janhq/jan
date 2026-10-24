@@ -18,5 +18,6 @@ permissions = [
     "allow-add-source",
     "allow-remove-source",
     "allow-get-catalog",
+    "allow-accept-next-key",
     "allow-stage-from-index",
 ]

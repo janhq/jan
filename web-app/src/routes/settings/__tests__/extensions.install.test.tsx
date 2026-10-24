@@ -265,7 +265,7 @@ describe('safe mode', () => {
 })
 
 describe('catalog', () => {
-  const catalog = {
+  const index = {
     schema: 1 as const,
     generatedAt: '2026-10-23T00:00:00Z',
     extensions: [
@@ -288,17 +288,35 @@ describe('catalog', () => {
             integrity: 'sha512-b',
             apiVersion: '^0.1.0',
             permissions: [],
+            provenance: 'https://search.sigstore.dev/?hash=b',
           },
         ],
       },
     ],
   }
+  const KEY = 'A'.repeat(42) + 'E='
+  const NEXT = 'B'.repeat(42) + 'E='
+  const catalog = { index, signed: true, nextPublicKey: null }
   const source = {
     id: 'src-1',
     name: 'Acme Index',
     url: 'https://acme.dev/index.json',
+    publicKey: KEY,
     addedAt: '2026-10-23T10:00:00Z',
   }
+  const indexStage = (signed: boolean) =>
+    staged('acme.hello', ['ui:notify'], {
+      verified: signed,
+      integrityChecked: true,
+      source: {
+        kind: 'index',
+        sourceId: 'src-1',
+        sourceName: 'Acme Index',
+        url: source.url,
+        tarball: 'https://a.b/0.2.0.tgz',
+        integrity: 'sha512-b',
+      },
+    })
 
   it('adds an https source and refuses an http one', async () => {
     render(<Page />)
@@ -337,7 +355,7 @@ describe('catalog', () => {
   it('installs the latest version of a catalog entry, labelled with its source', async () => {
     mock.state.sources = [source]
     mock.state.catalogs = { 'src-1': catalog }
-    mock.state.stage = staged('acme.hello', ['ui:notify'], { verified: true })
+    mock.state.stage = indexStage(true)
     render(<Page />)
     await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
     expect(await screen.findByText('Says hello')).toBeInTheDocument()
@@ -348,13 +366,113 @@ describe('catalog', () => {
       '0.2.0'
     )
     const dialog = await screen.findByRole('dialog')
-    expect(dialog).toHaveTextContent('From Acme Index')
+    expect(dialog).toHaveTextContent('Verified by Acme Index')
     expect(dialog).toHaveTextContent('Integrity checked')
+    expect(within(dialog).queryByRole('checkbox')).toBeNull()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Install' }))
     expect(mock.service.confirmInstall).toHaveBeenCalledWith(
       'stage-acme.hello',
       ['ui:notify']
     )
+    await userEvent.click(screen.getByRole('tab', { name: 'Installed' }))
+    const mine = await screen.findByRole('region', { name: 'Installed' })
+    expect(await within(mine).findByText('Verified by Acme Index')).toBeInTheDocument()
+  })
+
+  it('labels an unkeyed source unsigned and requires consent to install from it', async () => {
+    const open = { ...source, id: 'src-2', name: 'Open Index' }
+    delete (open as { publicKey?: string }).publicKey
+    mock.state.sources = [open]
+    mock.state.catalogs = { 'src-2': { index, signed: false, nextPublicKey: null } }
+    mock.state.stage = indexStage(false)
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    expect(await screen.findByText('Unsigned source')).toBeInTheDocument()
+    expect(screen.queryByText('Signing key pinned')).toBeNull()
+    await userEvent.click(await screen.findByRole('button', { name: 'Install' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Unsigned source')).toBeInTheDocument()
+    expect(dialog).toHaveTextContent('From Acme Index')
+    expect(dialog).not.toHaveTextContent('Verified by')
+    const install = within(dialog).getByRole('button', { name: 'Install' })
+    expect(install).toBeDisabled()
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', {
+        name: 'I trust the author and this index',
+      })
+    )
+    expect(install).toBeEnabled()
+    await userEvent.click(install)
+    expect(mock.service.confirmInstall).toHaveBeenCalledWith(
+      'stage-acme.hello',
+      ['ui:notify']
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Installed' }))
+    const mine = await screen.findByRole('region', { name: 'Installed' })
+    expect(await within(mine).findByText('Integrity checked')).toBeInTheDocument()
+    expect(within(mine).queryByText(/Verified by/)).toBeNull()
+  })
+
+  it('re-pins a key offered as nextPublicKey only after explicit confirmation', async () => {
+    mock.state.sources = [source]
+    mock.state.catalogs = {
+      'src-1': { index, signed: true, nextPublicKey: NEXT },
+    }
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    expect(
+      await screen.findByText('This index announces a new signing key.')
+    ).toBeInTheDocument()
+    expect(mock.service.acceptNextKey).not.toHaveBeenCalled()
+
+    // Opening and cancelling the prompt changes nothing.
+    await userEvent.click(screen.getByRole('button', { name: 'Review new key' }))
+    let dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Change the signing key of Acme Index?')
+    expect(dialog).toHaveTextContent(KEY)
+    expect(dialog).toHaveTextContent(NEXT)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(mock.service.acceptNextKey).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Review new key' }))
+    dialog = await screen.findByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Pin the new key' })
+    )
+    expect(mock.service.acceptNextKey).toHaveBeenCalledWith('src-1', NEXT)
+    await waitFor(() =>
+      expect(
+        screen.queryByText('This index announces a new signing key.')
+      ).toBeNull()
+    )
+    expect(mock.state.sources[0].publicKey).toBe(NEXT)
+  })
+
+  it('shows reported provenance as a link only', async () => {
+    mock.state.sources = [source]
+    mock.state.catalogs = { 'src-1': catalog }
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    const link = await screen.findByRole('link', {
+      name: 'Provenance reported by source',
+    })
+    expect(link).toHaveAttribute('href', 'https://search.sigstore.dev/?hash=b')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('shows a signature failure of a keyed source as an error', async () => {
+    mock.state.sources = [source]
+    mock.service.getCatalog.mockRejectedValueOnce(
+      new Error("the index signature does not match the source's pinned key")
+    )
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Could not load Acme Index: the index signature does not match the source's pinned key"
+    )
+    expect(screen.queryByRole('button', { name: 'Install' })).toBeNull()
   })
 
   it('offers an update only when the index has a newer version', async () => {

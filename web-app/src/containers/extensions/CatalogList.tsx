@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { IconTrash } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Card } from '@/containers/Card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,12 +20,13 @@ import {
   type SourceErrors,
 } from '@/lib/extensions/index-sources'
 import type {
-  CuratedIndex,
+  Catalog,
   IndexExtension,
   IndexSource,
   InstalledExtension,
   StagedInstall,
 } from '@/services/extensions/types'
+import { UnsignedSourceBadge } from './TrustBadge'
 import { errorMessage, type InstalledRegistry } from './useExtensions'
 
 type Begin = (
@@ -142,6 +151,17 @@ function CatalogEntry({
           </span>
         )}
       </div>
+      {latest?.provenance && (
+        <a
+          href={latest.provenance}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={latest.provenance}
+          className="bg-foreground/10 px-1 py-0.5 rounded text-foreground/70 text-xs underline"
+        >
+          {t('extensions:catalog.provenance')}
+        </a>
+      )}
       <Button
         size="xs"
         variant={newer ? 'default' : 'outline'}
@@ -154,21 +174,71 @@ function CatalogEntry({
   )
 }
 
+/**
+ * Asks before re-pinning a source's key to the one its signed index names
+ * as next. Nothing changes until the user confirms here.
+ */
+function RotateKeyDialog({
+  source,
+  nextPublicKey,
+  onConfirm,
+  onCancel,
+}: {
+  source: IndexSource
+  nextPublicKey: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t('extensions:sources.rotate.title', { name: source.name })}
+          </DialogTitle>
+          <DialogDescription>
+            {t('extensions:sources.rotate.description')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1 text-xs">
+          <span>{t('extensions:sources.rotate.current')}</span>
+          <code className="break-all">{source.publicKey}</code>
+          <span>{t('extensions:sources.rotate.next')}</span>
+          <code className="break-all">{nextPublicKey}</code>
+        </div>
+        <DialogFooter>
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            {t('extensions:cancel')}
+          </Button>
+          <Button size="sm" onClick={onConfirm}>
+            {t('extensions:sources.rotate.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function SourceCatalog({
   source,
   registry,
   onRemove,
+  onRotated,
   begin,
 }: {
   source: IndexSource
   registry: InstalledRegistry
   onRemove: () => void
+  /** Called once a key rotation was accepted, to re-read the sources. */
+  onRotated: () => Promise<void>
   begin: Begin
 }) {
   const { t } = useTranslation()
-  const { service } = registry
-  const [catalog, setCatalog] = useState<CuratedIndex>()
+  const { service, change } = registry
+  const [catalog, setCatalog] = useState<Catalog>()
   const [error, setError] = useState<string>()
+  const [rotating, setRotating] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -186,7 +256,16 @@ function SourceCatalog({
     return () => {
       live = false
     }
-  }, [service, source.id, source.name, t])
+  }, [service, source.id, source.name, source.publicKey, t])
+
+  const rotate = (next: string) => {
+    setRotating(false)
+    return change(async () => {
+      await service.acceptNextKey(source.id, next)
+      await onRotated()
+    })
+  }
+  const offer = catalog?.nextPublicKey ?? undefined
 
   const installedById = new Map(
     (registry.registry?.extensions ?? []).map((e) => [e.id, e])
@@ -202,9 +281,16 @@ function SourceCatalog({
             <span className="text-xs text-muted-foreground truncate">
               {source.url}
             </span>
-            {source.publicKey && (
+            {source.publicKey ? (
               <span className="text-xs text-muted-foreground">
                 {t('extensions:sources.keyPinned')}
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <UnsignedSourceBadge />
+                <span className="text-xs text-muted-foreground">
+                  {t('extensions:sources.unsignedHint')}
+                </span>
               </span>
             )}
           </div>
@@ -219,6 +305,24 @@ function SourceCatalog({
         </div>
       }
     >
+      {offer && (
+        <div className="flex items-center gap-2 mb-2 rounded-md border border-border p-2">
+          <span className="text-xs flex-1">
+            {t('extensions:sources.rotate.offer')}
+          </span>
+          <Button size="xs" variant="outline" onClick={() => setRotating(true)}>
+            {t('extensions:sources.rotate.review')}
+          </Button>
+        </div>
+      )}
+      {offer && rotating && (
+        <RotateKeyDialog
+          source={source}
+          nextPublicKey={offer}
+          onConfirm={() => void rotate(offer)}
+          onCancel={() => setRotating(false)}
+        />
+      )}
       {error ? (
         <span role="alert" className="text-xs text-destructive">
           {error}
@@ -227,13 +331,13 @@ function SourceCatalog({
         <span className="text-xs text-muted-foreground">
           {t('extensions:catalog.loading')}
         </span>
-      ) : catalog.extensions.length === 0 ? (
+      ) : catalog.index.extensions.length === 0 ? (
         <span className="text-xs text-muted-foreground">
           {t('extensions:catalog.empty')}
         </span>
       ) : (
         <ul className="divide-y divide-border">
-          {catalog.extensions.map((entry) => (
+          {catalog.index.extensions.map((entry) => (
             <CatalogEntry
               key={entry.id}
               entry={entry}
@@ -314,6 +418,7 @@ export function CatalogList({
             source={source}
             registry={registry}
             onRemove={() => remove(source.id)}
+            onRotated={refresh}
             begin={begin}
           />
         ))

@@ -9,9 +9,8 @@ use tauri::ipc::Channel;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::catalog;
+use crate::catalog::{self, Catalog};
 use crate::error::{Error, Result};
-use crate::index::CuratedIndex;
 use crate::http::{self, HttpRequest, HttpResponse, HttpStreamEvent};
 use crate::install::{self, EntrySource, InstalledExtension, ListResult, StagedInstall};
 use crate::sources::IndexSourceEntry;
@@ -134,8 +133,17 @@ async fn remove_source(state: Shared<'_>, id: String) -> Result<()> {
 }
 
 #[tauri::command]
-async fn get_catalog(state: Shared<'_>, source_id: String) -> Result<CuratedIndex> {
+async fn get_catalog(state: Shared<'_>, source_id: String) -> Result<Catalog> {
     catalog::get_catalog(&state, &source_id).await
+}
+
+#[tauri::command]
+async fn accept_next_key(
+    state: Shared<'_>,
+    source_id: String,
+    next_public_key: String,
+) -> Result<IndexSourceEntry> {
+    catalog::accept_next_key(&state, &source_id, &next_public_key).await
 }
 
 #[tauri::command]
@@ -185,6 +193,7 @@ where
             add_source,
             remove_source,
             get_catalog,
+            accept_next_key,
             stage_from_index,
         ])
         .setup(move |app, _api| {

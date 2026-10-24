@@ -21,6 +21,7 @@ pub mod integrity;
 pub mod manifest;
 pub mod permissions;
 pub mod registry;
+pub mod signature;
 pub mod sources;
 pub mod state;
 pub mod store;

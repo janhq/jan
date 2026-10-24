@@ -55,7 +55,8 @@ pub struct StagedInstall {
     pub manifest: Value,
     /// SRI of the tarball.
     pub sha512: String,
-    /// Signature-checked. False until index signatures exist (P4).
+    /// From a source with a pinned key whose index signature verified.
+    /// Never true for a file from disk or an unsigned source.
     pub verified: bool,
     /// The tarball matched an SRI pinned by an index.
     pub integrity_checked: bool,
@@ -86,7 +87,8 @@ pub struct InstalledExtension {
     pub permissions: Vec<String>,
     /// Where the active version came from.
     pub source: Source,
-    /// Signature-checked.
+    /// The active version came from a keyed source whose index signature
+    /// verified.
     pub verified: bool,
     /// The tarball matched a pinned SRI.
     pub integrity_checked: bool,
@@ -207,7 +209,16 @@ pub fn stage_bundle(state: &ExtensionsState, path: &Path) -> Result<StagedInstal
         file_name: file_name_of(path),
         sha512: sha512_sri(&bytes),
     };
-    stage_tarball(state, slot, &bytes, source, false, None)
+    stage_tarball(state, slot, &bytes, source, Trust::default(), None)
+}
+
+/// What is known about where a tarball came from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Trust {
+    /// It matched an SRI pinned by an index.
+    pub integrity_checked: bool,
+    /// That index verified against its source's pinned key.
+    pub verified: bool,
 }
 
 /// Extracts and validates `bytes` into the stage reserved by `slot`.
@@ -218,9 +229,15 @@ pub fn stage_tarball(
     slot: StageSlot,
     bytes: &[u8],
     source: Source,
-    integrity_checked: bool,
+    trust: Trust,
     expected: Option<&Expected>,
 ) -> Result<StagedInstall> {
+    // A signature vouches for the listing, and only the pinned SRI binds the
+    // tarball to it.
+    let trust = Trust {
+        verified: trust.verified && trust.integrity_checked,
+        ..trust
+    };
     if bytes.len() as u64 > MAX_TARBALL_BYTES {
         return Err(Error::TooLarge(format!(
             "the tarball is larger than {MAX_TARBALL_BYTES} bytes"
@@ -267,8 +284,8 @@ pub fn stage_tarball(
         stage_id: stage_id.clone(),
         manifest: manifest.package.clone(),
         sha512: sha512.clone(),
-        verified: false,
-        integrity_checked,
+        verified: trust.verified,
+        integrity_checked: trust.integrity_checked,
         source: source.clone(),
         existing: existing.map(|e| Existing {
             version: e.active,
@@ -283,7 +300,8 @@ pub fn stage_tarball(
             manifest,
             sha512,
             source,
-            integrity_checked,
+            integrity_checked: trust.integrity_checked,
+            verified: trust.verified,
             entry_sha512,
         },
     );
@@ -446,7 +464,7 @@ pub fn confirm_install(
 
     let record = VersionRecord {
         source: stage.source,
-        verified: false,
+        verified: stage.verified,
         integrity_checked: stage.integrity_checked,
         main: stage.manifest.main.clone(),
         permissions: requested.clone(),
@@ -674,18 +692,19 @@ pub(crate) fn network_grants(state: &ExtensionsState, id: &str) -> Result<Vec<St
 }
 
 /// Stages the tarball `bytes` of `id@version` as listed in `index` by the
-/// user-added `source`, into the stage reserved by `slot`. The bytes must match the pinned SRI, and the
-/// package's id, version and permissions must equal the listing.
+/// user-added `source`, into the stage reserved by `slot`. The bytes must
+/// match the pinned SRI, and the package's id, version and permissions must
+/// equal the listing. The stage is verified when `index` was signed.
 pub fn stage_index_tarball(
     state: &ExtensionsState,
     slot: StageSlot,
     source: &crate::sources::IndexSourceEntry,
-    index: &crate::index::CuratedIndex,
+    index: &crate::index::FetchedIndex,
     id: &str,
     version: &str,
     bytes: &[u8],
 ) -> Result<StagedInstall> {
-    let listed = crate::index::resolve(index, id, version)?;
+    let listed = crate::index::resolve(&index.index, id, version)?;
     crate::integrity::verify(bytes, &listed.integrity)?;
     let expected = Expected {
         id: id.to_string(),
@@ -699,5 +718,9 @@ pub fn stage_index_tarball(
         tarball: listed.tarball.clone(),
         integrity: listed.integrity.clone(),
     };
-    stage_tarball(state, slot, bytes, origin, true, Some(&expected))
+    let trust = Trust {
+        integrity_checked: true,
+        verified: index.signed,
+    };
+    stage_tarball(state, slot, bytes, origin, trust, Some(&expected))
 }
