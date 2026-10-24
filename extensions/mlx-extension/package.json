@@ -4,6 +4,15 @@
   "version": "1.0.0",
   "description": "This extension enables MLX-Swift inference on Apple Silicon Macs",
   "main": "dist/index.js",
+  "jan": {
+    "id": "jan.mlx",
+    "displayName": "MLX Inference Engine",
+    "description": "This extension enables MLX-Swift inference on Apple Silicon Macs",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "engine": "mlx",
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",

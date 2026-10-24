@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import mlx_extension from './index'
+import type { InternalExtensionContext } from '@janhq/core'
+import mlx_extension, { activate } from './index'
 import { fs, getJanDataFolderPath, events, ServiceKeys } from '@janhq/core'
 import {
   unloadMlxModel,
@@ -23,8 +24,11 @@ const mockJanData = vi.mocked(getJanDataFolderPath)
 const mockUnload = vi.mocked(unloadMlxModel)
 const mockReadGguf = vi.mocked(readGgufMetadata)
 
+// The host service registry the engine reaches the Downloads service through.
+const hostServices = { get: vi.fn() }
+
 function newExt(): any {
-  const ext = new mlx_extension() as any
+  const ext = new mlx_extension(hostServices) as any
   ext.providerPath = '/data/mlx'
   return ext
 }
@@ -36,7 +40,7 @@ beforeEach(() => {
 
 describe('getProviderPath', () => {
   it('joins the jan data folder with the mlx dir and caches it', async () => {
-    const ext = new mlx_extension() as any
+    const ext = new mlx_extension(hostServices) as any
     const path = await ext.getProviderPath()
     expect(path).toBe('/data/mlx')
 
@@ -83,7 +87,7 @@ describe('getModelProps', () => {
 
 describe('getModelContextLimit', () => {
   it('uses the text model limit from a multimodal config', async () => {
-    const ext = new mlx_extension()
+    const ext = new mlx_extension(hostServices)
     mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
     mockReadFileSync.mockResolvedValueOnce(JSON.stringify({
@@ -96,7 +100,7 @@ describe('getModelContextLimit', () => {
   })
 
   it('does not assume a context limit when the config omits it', async () => {
-    const ext = new mlx_extension()
+    const ext = new mlx_extension(hostServices)
     mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
     mockReadFileSync.mockResolvedValueOnce('{}')
@@ -393,7 +397,7 @@ describe('pauseImport / abortImport', () => {
   it('pauses the task through the host Downloads service', async () => {
     const service = downloads()
     const getService = vi.fn().mockReturnValue(service)
-    window.core.extensionHost.services.get = getService
+    hostServices.get = getService
     await newExt().pauseImport('m1')
     expect(getService).toHaveBeenCalledWith(ServiceKeys.Downloads)
     expect(service.pauseDownload).toHaveBeenCalledWith('mlx/m1')
@@ -402,15 +406,129 @@ describe('pauseImport / abortImport', () => {
   it('cancels the task through the host Downloads service', async () => {
     mockExistsSync.mockResolvedValue(false)
     const service = downloads()
-    window.core.extensionHost.services.get = vi.fn().mockReturnValue(service)
+    hostServices.get = vi.fn().mockReturnValue(service)
     await newExt().abortImport('m1')
     expect(service.cancelDownload).toHaveBeenCalledWith('mlx/m1')
   })
 
   it('fails loudly when no Downloads service is provided', async () => {
-    window.core.extensionHost.services.get = vi.fn().mockReturnValue(undefined)
+    hostServices.get = vi.fn().mockReturnValue(undefined)
     await expect(newExt().pauseImport('m1')).rejects.toThrow(
       'Downloads service is not available'
     )
+  })
+})
+
+describe('activate', () => {
+  type Disposable = { dispose(): void }
+
+  function fakeContext() {
+    const disposables: Disposable[] = []
+    const provided = new Map<string, unknown>()
+    const unregister = vi.fn()
+    const engines = { register: vi.fn().mockReturnValue({ dispose: unregister }) }
+    const services = {
+      get: vi.fn((key: { id: string }) => provided.get(key.id)),
+      provide: vi.fn((key: { id: string }, impl: unknown) => {
+        provided.set(key.id, impl)
+        return { dispose: () => provided.delete(key.id) }
+      }),
+    }
+    const ctx = {
+      subscriptions: {
+        add: <T extends Disposable>(d: T) => (disposables.push(d), d),
+      },
+      internal: { services, engines },
+    } as unknown as InternalExtensionContext
+    const deactivate = () => disposables.splice(0).reverse().forEach((d) => d.dispose())
+    return { ctx, engines, unregister, provided, deactivate }
+  }
+
+  it('registers the engine and provides the mlx service it backs', async () => {
+    const fake = fakeContext()
+    await activate(fake.ctx)
+    const engine = fake.engines.register.mock.calls[0][0]
+    expect(engine).toBeInstanceOf(mlx_extension)
+    expect(engine.provider).toBe('mlx')
+    engine.onSettingUpdate('ctx_size', 2048)
+    mockUnload.mockResolvedValue({ success: true })
+    mockFindSession.mockResolvedValue({ pid: 7 } as never)
+    const service = fake.provided.get(ServiceKeys.Mlx.id) as {
+      getModelProps(id: string): Promise<unknown>
+      unload(id: string): Promise<unknown>
+    }
+    await expect(service.getModelProps('m')).resolves.toEqual({
+      nCtx: 2048,
+      modelAlias: 'm',
+    })
+    await service.unload('m')
+    expect(mockFindSession).toHaveBeenCalledWith('m')
+  })
+
+  it('reaches the Downloads service through the host registry', async () => {
+    const fake = fakeContext()
+    const downloads = { pauseDownload: vi.fn().mockResolvedValue(undefined) }
+    fake.provided.set(ServiceKeys.Downloads.id, downloads)
+    await activate(fake.ctx)
+    await fake.engines.register.mock.calls[0][0].pauseImport('m1')
+    expect(downloads.pauseDownload).toHaveBeenCalledWith('mlx/m1')
+  })
+
+  it('unregisters the engine and withdraws the service on deactivation', async () => {
+    const fake = fakeContext()
+    await activate(fake.ctx)
+    fake.deactivate()
+    expect(fake.unregister).toHaveBeenCalled()
+    expect(fake.provided.has(ServiceKeys.Mlx.id)).toBe(false)
+  })
+})
+
+describe('settings', () => {
+  const KEY = '@janhq/mlx-extension'
+  const defaults = () => [
+    {
+      key: 'auto_unload',
+      title: 'Auto unload',
+      description: '',
+      controllerType: 'checkbox',
+      controllerProps: { value: true },
+    },
+    {
+      key: 'timeout',
+      title: 'Timeout',
+      description: '',
+      controllerType: 'input',
+      controllerProps: { value: 600 },
+    },
+  ]
+
+  beforeEach(() => {
+    localStorage.clear()
+    ;(globalThis as any).SETTINGS = defaults()
+  })
+
+  it('keeps the values a previous run stored under the package name', async () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify([{ key: 'auto_unload', controllerProps: { value: false } }])
+    )
+    const ext = newExt()
+    await ext.start()
+    expect(ext.autoUnload).toBe(false)
+    expect(ext.timeout).toBe(600)
+    const saved = await ext.getSettings()
+    expect(saved.map((s: any) => [s.key, s.controllerProps.value])).toEqual([
+      ['auto_unload', false],
+      ['timeout', 600],
+    ])
+    expect(saved[0].extensionName).toBe(KEY)
+  })
+
+  it('stores updates and applies them to the running engine', async () => {
+    const ext = newExt()
+    await ext.start()
+    await ext.updateSettings([{ key: 'timeout', controllerProps: { value: 30 } }])
+    expect(ext.timeout).toBe(30)
+    expect(JSON.parse(localStorage.getItem(KEY)!)[1].controllerProps.value).toBe(30)
   })
 })

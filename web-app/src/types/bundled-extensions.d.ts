@@ -18,12 +18,14 @@ declare module '@janhq/download-extension' {
   ): Promise<void>
 }
 declare module '@janhq/llamacpp-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
 declare module '@janhq/mlx-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
 declare module '@janhq/rag-extension' {
   const ext: BundledExtensionCtor

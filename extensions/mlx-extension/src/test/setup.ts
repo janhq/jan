@@ -3,11 +3,13 @@ import { vi } from 'vitest'
 // SETTINGS is a build-time define (rolldown). Provide an empty list for tests.
 ;(globalThis as any).SETTINGS = []
 
+// Backed by a Map so the settings the engine persists can be read back.
+const stored = new Map<string, string>()
 const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-  clear: vi.fn(),
+  getItem: vi.fn((key: string) => stored.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => void stored.set(key, value)),
+  removeItem: vi.fn((key: string) => void stored.delete(key)),
+  clear: vi.fn(() => stored.clear()),
 }
 
 Object.defineProperty(globalThis, 'localStorage', {
@@ -18,17 +20,6 @@ Object.defineProperty(globalThis, 'localStorage', {
 Object.defineProperty(globalThis, 'window', {
   value: {
     localStorage: localStorageMock,
-    core: {
-      extensionHost: {
-        services: {
-          get: vi.fn().mockReturnValue({
-            downloadFiles: vi.fn().mockResolvedValue(undefined),
-            cancelDownload: vi.fn().mockResolvedValue(undefined),
-            pauseDownload: vi.fn().mockResolvedValue(undefined),
-          }),
-        },
-      },
-    },
   },
   writable: true,
 })
@@ -50,13 +41,11 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
 const joinPath = vi.fn((parts: string[]) => parts.join('/'))
 
 class AIEngineMock {
-  registerSettings = vi.fn()
   getSetting = vi.fn(async (_key: string, def: unknown) => def)
-  onLoad = vi.fn()
 }
 
 vi.mock('@janhq/core', () => ({
-  ServiceKeys: { Downloads: { id: 'downloads' } },
+  ServiceKeys: { Downloads: { id: 'downloads' }, Mlx: { id: 'mlx' } },
   logger: {
     debug: vi.fn(),
     info: vi.fn(),

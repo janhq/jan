@@ -35,7 +35,9 @@ const getByName = vi.fn()
 
 // `@janhq/core` reads `globalThis.core`; the extension code reads `window.core`.
 // They are the same object in the browser, so both names point at one here.
-const core = { extensionManager: { getByName } }
+// The core embedding helpers find the llamacpp engine in the engine manager;
+// the tests stub that engine through the same mock.
+const core = { extensionManager: { getByName }, engineManager: { get: getByName } }
 
 Object.defineProperty(globalThis, 'window', {
   value: { core },

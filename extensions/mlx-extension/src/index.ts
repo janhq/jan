@@ -25,6 +25,10 @@ import {
   DownloadEvent,
   ServiceKeys,
   type DownloadService,
+  type InternalExtensionContext,
+  type MlxService,
+  type ServiceRegistry,
+  type SettingComponentProps,
   logger,
 } from '@janhq/core'
 
@@ -59,6 +63,29 @@ export function isValidModelId(id: string): boolean {
   return parts.every((s) => s !== '' && s !== '.' && s !== '..')
 }
 
+// The package name: what the settings entries carry as their owner, and the
+// key they persist under in webview storage.
+const SETTINGS_KEY = '@janhq/mlx-extension'
+
+/**
+ * Runs the engine on the extension host: registers it with the engine
+ * manager and publishes the runtime queries the app makes of it.
+ */
+export async function activate(ctx: InternalExtensionContext): Promise<void> {
+  const engine = new mlx_extension(ctx.internal.services)
+  ctx.subscriptions.add(ctx.internal.engines.register(engine))
+  const service: MlxService = {
+    getModelProps: (modelId) => engine.getModelProps(modelId),
+    unload: (modelId) => engine.unload(modelId),
+  }
+  ctx.subscriptions.add(ctx.internal.services.provide(ServiceKeys.Mlx, service))
+  // As under the old extension manager, a failed startup is logged and the
+  // engine stays registered, so the provider and its models remain listed.
+  await engine.start().catch((error: unknown) =>
+    ctx.log.error('Engine startup failed:', error)
+  )
+}
+
 export default class mlx_extension extends AIEngine {
   provider: string = 'mlx'
   autoUnload: boolean = true
@@ -70,9 +97,11 @@ export default class mlx_extension extends AIEngine {
   private apiSecret: string = 'JanMLX'
   private loadingModels = new Map<string, Promise<SessionInfo>>()
 
-  override async onLoad(): Promise<void> {
-    super.onLoad()
+  constructor(private readonly services: Pick<ServiceRegistry, 'get'>) {
+    super()
+  }
 
+  async start(): Promise<void> {
     let settings = structuredClone(SETTINGS)
     this.registerSettings(settings)
 
@@ -100,8 +129,63 @@ export default class mlx_extension extends AIEngine {
     return this.providerPath
   }
 
-  override async onUnload(): Promise<void> {
-    // Cleanup handled by Tauri plugin on app exit
+  /**
+   * Stores the settings list, keeping the values (and options when the new
+   * list has none) a previous run saved. Webview storage is where these
+   * settings have always lived, so existing values carry over unchanged.
+   */
+  private registerSettings(settings: SettingComponentProps[]): void {
+    settings.forEach((setting) => {
+      setting.extensionName = SETTINGS_KEY
+    })
+    try {
+      const saved = this.readSettings()
+      settings.forEach((setting) => {
+        const old = saved.find((e) => e.key === setting.key)
+        const props = setting.controllerProps
+        if (old) props.value = old.controllerProps?.value ?? props.value
+        if ('options' in props) {
+          if (!props.options?.length && old && 'options' in old.controllerProps)
+            props.options = old.controllerProps.options
+          if (!props.options?.some((e) => e.value === props.value))
+            props.value = props.options?.[0]?.value ?? props.value
+        }
+      })
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    } catch (err) {
+      logger.error(err)
+    }
+  }
+
+  private readSettings(): SettingComponentProps[] {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '[]')
+      return Array.isArray(parsed) ? (parsed as SettingComponentProps[]) : []
+    } catch (err) {
+      logger.warn(err)
+      return []
+    }
+  }
+
+  override async getSettings(): Promise<SettingComponentProps[]> {
+    return this.readSettings()
+  }
+
+  override async updateSettings(
+    componentProps: Partial<SettingComponentProps>[]
+  ): Promise<void> {
+    const settings = this.readSettings()
+    let updated = settings.map((setting) => {
+      const patch = componentProps.find((p) => p.key === setting.key)
+      if (patch?.controllerProps)
+        setting.controllerProps.value = patch.controllerProps.value
+      return setting
+    })
+    if (!updated.length) updated = componentProps as SettingComponentProps[]
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(updated))
+    updated.forEach((setting) =>
+      this.onSettingUpdate(setting.key, setting.controllerProps.value)
+    )
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
@@ -773,12 +857,8 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
-  // The download built-in runs on the extension host now; this legacy
-  // class reaches it through the window global until it migrates (P4).
   private downloads(): DownloadService {
-    const service = window.core?.extensionHost?.services.get(
-      ServiceKeys.Downloads
-    )
+    const service = this.services.get(ServiceKeys.Downloads)
     if (!service) throw new Error('Downloads service is not available')
     return service
   }
