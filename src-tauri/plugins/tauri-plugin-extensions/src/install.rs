@@ -19,8 +19,8 @@ use crate::error::{Error, Result};
 use crate::integrity::sha512_sri;
 use crate::manifest::{self, is_extension_id, ValidatedManifest, HOST_API_VERSION};
 use crate::registry::{Entry, Registry, Source, VersionRecord};
-use crate::state::{lock, ExtensionsState, Stage, MAX_STAGES, STAGING_DIR};
-use crate::store::{now_rfc3339, random_id};
+use crate::state::{lock, ExtensionsState, Stage, StageSlot, STAGING_DIR};
+use crate::store::now_rfc3339;
 
 /// Largest tarball accepted, compressed.
 pub const MAX_TARBALL_BYTES: u64 = 50 * 1024 * 1024;
@@ -192,6 +192,7 @@ fn file_name_of(path: &Path) -> String {
 /// Reads the `.tgz` at `path` (at most 50 MiB), extracts and validates it
 /// into `.staging`. The result is unverified: anyone could have built it.
 pub fn stage_bundle(state: &ExtensionsState, path: &Path) -> Result<StagedInstall> {
+    let slot = StageSlot::reserve(state)?;
     let meta = fs::metadata(path)?;
     if !meta.is_file() {
         return Err(Error::Invalid(format!("{} is not a file", path.display())));
@@ -206,13 +207,15 @@ pub fn stage_bundle(state: &ExtensionsState, path: &Path) -> Result<StagedInstal
         file_name: file_name_of(path),
         sha512: sha512_sri(&bytes),
     };
-    stage_tarball(state, &bytes, source, false, None)
+    stage_tarball(state, slot, &bytes, source, false, None)
 }
 
-/// Extracts and validates `bytes` into a new stage. `expected` is what an
-/// index pinned; a manifest that disagrees with it is refused.
+/// Extracts and validates `bytes` into the stage reserved by `slot`.
+/// `expected` is what an index pinned; a manifest that disagrees with it is
+/// refused.
 pub fn stage_tarball(
     state: &ExtensionsState,
+    slot: StageSlot,
     bytes: &[u8],
     source: Source,
     integrity_checked: bool,
@@ -223,13 +226,8 @@ pub fn stage_tarball(
             "the tarball is larger than {MAX_TARBALL_BYTES} bytes"
         )));
     }
-    if lock(&state.stages).len() >= MAX_STAGES {
-        return Err(Error::Denied(
-            "too many installs are waiting for confirmation; finish or cancel one first".into(),
-        ));
-    }
     let sha512 = sha512_sri(bytes);
-    let stage_id = random_id();
+    let stage_id = slot.id().to_string();
     let dir = state.root.join(STAGING_DIR).join(&stage_id);
     let extracted = bundle::extract(bytes, &dir, Limits::default())?;
     let validated = (|| -> Result<(ValidatedManifest, String)> {
@@ -278,8 +276,7 @@ pub fn stage_tarball(
         }),
         permission_diff,
     };
-    lock(&state.stages).insert(
-        stage_id.clone(),
+    slot.fill(
         Stage {
             id: stage_id,
             dir,
@@ -312,10 +309,18 @@ pub fn check_expected(manifest: &ValidatedManifest, expected: &Expected) -> Resu
     Ok(())
 }
 
+fn no_stage(stage_id: &str) -> Error {
+    Error::NotFound(format!("no staged install '{stage_id}'"))
+}
+
+/// Removes a ready stage. A slot still being prepared is not a stage and is
+/// left to its [`StageSlot`].
 fn take_stage(state: &ExtensionsState, stage_id: &str) -> Result<Stage> {
-    lock(&state.stages)
-        .remove(stage_id)
-        .ok_or_else(|| Error::NotFound(format!("no staged install '{stage_id}'")))
+    let mut stages = lock(&state.stages);
+    if !matches!(stages.get(stage_id), Some(Some(_))) {
+        return Err(no_stage(stage_id));
+    }
+    stages.remove(stage_id).flatten().ok_or_else(|| no_stage(stage_id))
 }
 
 /// Deletes a stage and its files.
@@ -345,6 +350,12 @@ fn prune_versions(root: &Path, id: &str, keep: &[&str]) {
 /// requested set, so an extra entry can never grant anything. An update
 /// keeps the replaced version as `previous` and deletes any older one; a
 /// version lower than or equal to the active one is refused (use rollback).
+///
+/// The order keeps the registry and the disk consistent on any failure:
+/// rename, verify, save the registry, and only then prune older versions.
+/// Until the save, the registry still names the old active and previous
+/// versions, whose directories are untouched; a failure removes the new
+/// `<id>/<version>` so the same version can be installed again.
 pub fn confirm_install(
     state: &ExtensionsState,
     stage_id: &str,
@@ -354,7 +365,8 @@ pub fn confirm_install(
         let stages = lock(&state.stages);
         let stage = stages
             .get(stage_id)
-            .ok_or_else(|| Error::NotFound(format!("no staged install '{stage_id}'")))?;
+            .and_then(Option::as_ref)
+            .ok_or_else(|| no_stage(stage_id))?;
         stage.manifest.permissions.clone()
     };
     let granted_set = sorted_set(granted);
@@ -393,21 +405,43 @@ pub fn confirm_install(
         }
     }
 
+    let id_dir = state.root.join(&id);
     let target = version_dir(&state.root, &id, &version);
-    let keep_previous = old.as_ref().map(|o| o.active.clone());
-    prune_versions(&state.root, &id, &[keep_previous.as_deref().unwrap_or("")]);
-    fs::create_dir_all(state.root.join(&id))?;
-    if let Err(e) = fs::rename(&stage.dir, &target) {
+    // Undoes a failed install: drops the new version and an `<id>/` this
+    // install created, leaving the recorded versions alone.
+    let fresh = old.is_none();
+    let abandon = |e: Error| -> Error {
+        if let Err(err) = fs::remove_dir_all(&target) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("cannot remove {}: {err}", target.display());
+            }
+        }
         let _ = fs::remove_dir_all(&stage.dir);
-        return Err(e.into());
+        if fresh {
+            // Only succeeds when empty.
+            let _ = fs::remove_dir(&id_dir);
+        }
+        e
+    };
+    // The version is newer than the active one, so it is neither the active
+    // nor the previous version: anything there is left over from an install
+    // that died before it could clean up, and would block the rename.
+    if fs::symlink_metadata(&target).is_ok() {
+        fs::remove_dir_all(&target).map_err(|e| abandon(e.into()))?;
     }
+    fs::create_dir_all(&id_dir).map_err(|e| abandon(e.into()))?;
+    fs::rename(&stage.dir, &target).map_err(|e| abandon(e.into()))?;
     // The hash is taken again from the installed copy, which is what
     // read_entry will compare against.
-    let entry_path = manifest::check_main_file(&target, &stage.manifest.main)?;
-    let entry_sha512 = sha512_sri(&fs::read(entry_path)?);
+    let entry_sha512 = (|| -> Result<String> {
+        let entry_path = manifest::check_main_file(&target, &stage.manifest.main)?;
+        Ok(sha512_sri(&fs::read(entry_path)?))
+    })()
+    .map_err(abandon)?;
     if entry_sha512 != stage.entry_sha512 {
-        let _ = fs::remove_dir_all(&target);
-        return Err(Error::Tampered("the entry file changed while staged".into()));
+        return Err(abandon(Error::Tampered(
+            "the entry file changed while staged".into(),
+        )));
     }
 
     let record = VersionRecord {
@@ -438,11 +472,14 @@ pub fn confirm_install(
             previous_record: None,
         },
     };
+    let keep_previous = entry.previous.clone();
     registry.extensions.insert(id.clone(), entry);
-    if let Err(e) = state.save_registry(&registry) {
-        let _ = fs::remove_dir_all(&target);
-        return Err(e);
-    }
+    state.save_registry(&registry).map_err(abandon)?;
+    prune_versions(
+        &state.root,
+        &id,
+        &[version.as_str(), keep_previous.as_deref().unwrap_or("")],
+    );
     Ok(installed(&state.root, &id, &registry.extensions[&id]))
 }
 
@@ -611,12 +648,18 @@ pub fn read_entry(state: &ExtensionsState, id: &str) -> Result<EntrySource> {
     Ok(EntrySource { code, sha512 })
 }
 
-/// The grants of an enabled extension, for the network check. Read from
-/// `extensions.json` on every call, so a revoke applies to the next request.
+/// The grants of an enabled extension, for the network check. Answered from
+/// the registry the state last read or wrote rather than from disk: this
+/// runs on the async runtime, where file I/O (and waiting on the registry
+/// lock held across an install) would block other tasks. Every change goes
+/// through `save_registry`, so a revoke applies to the next request; an
+/// edit of `extensions.json` behind Jan's back is seen after the next
+/// command that reads it.
 pub(crate) fn network_grants(state: &ExtensionsState, id: &str) -> Result<Vec<String>> {
     checked_id(id)?;
-    let _guard = lock(&state.lock);
-    let registry = state.load_registry()?;
+    let registry = state
+        .cached_registry()
+        .ok_or_else(|| Error::Denied("the extensions registry could not be read".into()))?;
     if state.safe_mode(&registry) {
         return Err(Error::Denied("extensions do not run in safe mode".into()));
     }
@@ -631,10 +674,11 @@ pub(crate) fn network_grants(state: &ExtensionsState, id: &str) -> Result<Vec<St
 }
 
 /// Stages the tarball `bytes` of `id@version` as listed in `index` by the
-/// user-added `source`. The bytes must match the pinned SRI, and the
+/// user-added `source`, into the stage reserved by `slot`. The bytes must match the pinned SRI, and the
 /// package's id, version and permissions must equal the listing.
 pub fn stage_index_tarball(
     state: &ExtensionsState,
+    slot: StageSlot,
     source: &crate::sources::IndexSourceEntry,
     index: &crate::index::CuratedIndex,
     id: &str,
@@ -655,5 +699,5 @@ pub fn stage_index_tarball(
         tarball: listed.tarball.clone(),
         integrity: listed.integrity.clone(),
     };
-    stage_tarball(state, bytes, origin, true, Some(&expected))
+    stage_tarball(state, slot, bytes, origin, true, Some(&expected))
 }

@@ -1,5 +1,5 @@
 [default]
-description = "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/desktop.json)"
+description = "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)"
 permissions = [
     "allow-stage-bundle",
     "allow-confirm-install",
