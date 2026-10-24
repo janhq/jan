@@ -108,6 +108,8 @@ macro_rules! invoke_commands_with_extras {
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_prompt,
+        core::mcp::commands::get_prompts,
         core::mcp::commands::get_tools_for_servers,
         core::mcp::commands::get_server_summaries,
         core::mcp::commands::call_tool,
@@ -332,6 +334,7 @@ pub fn run() {
     let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
         // Mobile-specific remote provider commands
         core::server::remote_provider_commands::abort_remote_stream,
+
     ]);
 
     let app = app_builder
