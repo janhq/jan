@@ -64,6 +64,9 @@ export function useStagedInstall({ service, refresh }: InstalledRegistry): {
     } catch (e) {
       // A refused confirm leaves a stage nothing can use; free its disk.
       service.discardStage(stageId).catch(() => undefined)
+      // Rust may have installed it before a later check failed; the host
+      // then follows the registry whichever way it went.
+      await reloadInstalled(manifest.id).catch(() => undefined)
       toast.error(
         t('extensions:errors.install', {
           name: manifest.displayName,

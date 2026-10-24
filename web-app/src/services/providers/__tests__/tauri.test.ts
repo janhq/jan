@@ -228,7 +228,7 @@ describe('TauriProvidersService', () => {
           source: { extensionId: 'acme.hello' },
         })
       ).resolves.toEqual(['hello-1'])
-      expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello')
+      expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello', 'whole')
       expect(extensionFetch).toHaveBeenCalledWith(
         'http://127.0.0.1:11999/v1/models',
         expect.objectContaining({ method: 'GET' })

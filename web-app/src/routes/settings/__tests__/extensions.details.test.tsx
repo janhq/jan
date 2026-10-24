@@ -107,6 +107,25 @@ describe('installed extension details', () => {
     )
   })
 
+  it('disables the controls while a change is in flight', async () => {
+    let finish = () => {}
+    mock.service.setGrants.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve))
+    )
+    render(<Page />)
+    const grants = await screen.findByRole('list', {
+      name: 'Granted permissions',
+    })
+    const [first] = within(grants).getAllByRole('button', { name: 'Revoke' })
+    await userEvent.click(first)
+    await waitFor(() => expect(first).toBeDisabled())
+    expect(screen.getByRole('switch', { name: 'Enable Hello' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Roll back to 1.0.0' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Uninstall' })).toBeDisabled()
+    finish()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Uninstall' })).toBeEnabled())
+  })
+
   it('shows the version and rolls back to the previous one', async () => {
     render(<Page />)
     expect(await screen.findByText('Version 2.0.0')).toBeInTheDocument()

@@ -33,9 +33,14 @@ import { createConversationsApi } from './conversations'
 import { ContributionStore, own, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
 import { createHostApi, type Notify } from './host-api'
-import { createProviderFetch, type ExtensionHttp } from './http'
 import {
-  loadInstalled,
+  createProviderFetch,
+  type ExtensionHttp,
+  type ProviderFetchMode,
+} from './http'
+import {
+  enabledInstalled,
+  startInstalled,
   type InstalledRegistry,
 } from './installed-loader'
 import {
@@ -144,6 +149,8 @@ export class ExtensionHost {
   // mounts the provider again without awaiting, and the second activate must
   // see the deactivation that came before it.
   private queue: Promise<unknown> = Promise.resolve()
+  // The last reload of each installed id, so the next one runs after it.
+  private readonly reloads = new Map<string, Promise<void>>()
 
   /** Fires whenever an extension's state changes. */
   readonly onDidChange: Event<void> = this.changes.event
@@ -300,12 +307,15 @@ export class ExtensionHost {
   }
 
   /**
-   * Loads every enabled installed extension from the registry; nothing in
-   * safe mode. One that fails is marked `failed` and the rest still load.
+   * Loads every enabled installed extension from the registry, all at
+   * once; nothing in safe mode. One that fails is marked `failed` and the
+   * rest still load.
    */
-  loadInstalled(): Promise<void> {
+  async loadInstalled(): Promise<void> {
     const registry = this.options.installed
-    return registry ? loadInstalled(this, registry) : Promise.resolve()
+    if (!registry) return
+    const entries = await enabledInstalled(registry)
+    await Promise.allSettled(entries.map((e) => this.reload(e.id)))
   }
 
   /**
@@ -313,13 +323,31 @@ export class ExtensionHost {
    * registry after it changed (enable, grants, install, update, rollback,
    * uninstall): stops it, then starts it again from the registry if it is
    * still installed and enabled, so the new grants and version apply.
+   *
+   * Reloads of one id run one after another, each reading the registry
+   * only once the one before it is done. Overlapping ones could let a
+   * reload that read the old grants start the worker last, and the newer
+   * start would then be refused as already running.
    */
-  async reload(extensionId: string): Promise<void> {
+  reload(extensionId: string): Promise<void> {
+    const run = (this.reloads.get(extensionId) ?? Promise.resolve()).then(
+      () => this.reloadNow(extensionId)
+    )
+    const tail = run.catch(() => undefined)
+    this.reloads.set(extensionId, tail)
+    void tail.then(() => {
+      if (this.reloads.get(extensionId) === tail)
+        this.reloads.delete(extensionId)
+    })
+    return run
+  }
+
+  private async reloadNow(extensionId: string): Promise<void> {
     const source = this.entries.get(extensionId)?.hosted.source
     if (source !== undefined && source !== 'installed') return
     await this.unload(extensionId)
     const registry = this.options.installed
-    if (registry) await loadInstalled(this, registry, extensionId)
+    if (registry) await startInstalled(this, registry, extensionId)
   }
 
   /**
@@ -344,7 +372,10 @@ export class ExtensionHost {
    * it is an installed extension that is running: built-ins contribute no
    * providers, and a folder loaded for development has no network path.
    */
-  providerFetch(extensionId: string): typeof globalThis.fetch | undefined {
+  providerFetch(
+    extensionId: string,
+    mode: ProviderFetchMode
+  ): typeof globalThis.fetch | undefined {
     const entry = this.entries.get(extensionId)
     const http = this.options.http
     if (!http || entry?.hosted.source !== 'installed' || !entry.stopped)
@@ -354,6 +385,7 @@ export class ExtensionHost {
       http,
       checkUrl: (url) => this.dispatcher.checkUrl(extensionId, url),
       stopped: entry.stopped.signal,
+      mode,
     })
   }
 

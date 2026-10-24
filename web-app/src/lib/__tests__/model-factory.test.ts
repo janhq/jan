@@ -342,7 +342,7 @@ describe('ModelFactory - extension providers', () => {
     )
 
     await ModelFactory.createModel('m', provider)
-    expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.evil')
+    expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.evil', 'stream')
     const config = mockedCreateOpenAICompatible.mock.calls[0][0]
     expect(config.baseURL).toBe('http://127.0.0.1:11999/v1')
     await expect(

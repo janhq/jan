@@ -60,12 +60,15 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       console.error('Extension host setup failed:', e)
     }
     // Installed extensions run in workers after the built-ins, where there
-    // is an install pipeline (the desktop app).
+    // is an install pipeline (the desktop app). Not awaited: each may take
+    // up to its activation timeout, and llamacpp/mlx must not wait on that.
+    const installedFailed = (e: unknown) =>
+      console.error('Loading installed extensions failed:', e)
     try {
       if (getServiceHub().extensions().isSupported())
-        await getExtensionHost().loadInstalled()
+        void getExtensionHost().loadInstalled().catch(installedFailed)
     } catch (e) {
-      console.error('Loading installed extensions failed:', e)
+      installedFailed(e)
     }
     try {
       await ExtensionManager.getInstance().registerActive()

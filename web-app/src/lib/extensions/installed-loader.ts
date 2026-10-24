@@ -46,6 +46,23 @@ export function installedManifest(
 export const toPermissions = (granted: readonly string[]): PermissionString[] =>
   granted.filter(isPermissionString)
 
+/**
+ * Stands in for a manifest the host refused, so the failure still has an
+ * entry, with the registry's id and version, to show under.
+ */
+const placeholderManifest = (
+  entry: Pick<Plugin.InstalledExtension, 'id' | 'version'>
+): ValidatedManifest => ({
+  name: entry.id,
+  version: entry.version,
+  id: entry.id,
+  displayName: entry.id,
+  publisher: '',
+  apiVersion: '',
+  main: '',
+  permissions: [],
+})
+
 async function loadOne(
   host: ExtensionHost,
   registry: InstalledRegistry,
@@ -53,8 +70,7 @@ async function loadOne(
 ): Promise<void> {
   const checked = installedManifest(entry)
   if (!checked.ok) {
-    // Without a valid manifest the host has nothing to list it under.
-    console.error(`Installed extension '${entry.id}' is invalid:`, checked.error)
+    await host.markFailed(placeholderManifest(entry), new Error(checked.error))
     return
   }
   const { manifest } = checked
@@ -72,26 +88,30 @@ async function loadOne(
   }
 }
 
-/**
- * Starts the enabled installed extensions in workers, or only `only` when
- * given. Nothing loads in safe mode. Each one is independent: a failure is
- * recorded on that extension (`failed` with the reason) and the rest load.
- */
-export async function loadInstalled(
-  host: ExtensionHost,
-  registry: InstalledRegistry,
-  only?: string
-): Promise<void> {
+/** The enabled installed extensions; none in safe mode or when unreadable. */
+export async function enabledInstalled(
+  registry: InstalledRegistry
+): Promise<Plugin.InstalledExtension[]> {
   let listed: Plugin.ListResult
   try {
     listed = await registry.list()
   } catch (error) {
     console.error('Could not read the installed extensions:', errorText(error))
-    return
+    return []
   }
-  if (listed.safeMode) return
-  for (const entry of listed.extensions) {
-    if (!entry.enabled || (only !== undefined && entry.id !== only)) continue
-    await loadOne(host, registry, entry)
-  }
+  return listed.safeMode ? [] : listed.extensions.filter((e) => e.enabled)
+}
+
+/**
+ * Starts installed extension `id` in a worker as the registry has it now,
+ * unless it is disabled, uninstalled or in safe mode. A failure is recorded
+ * on the extension (`failed` with the reason).
+ */
+export async function startInstalled(
+  host: ExtensionHost,
+  registry: InstalledRegistry,
+  id: string
+): Promise<void> {
+  const entry = (await enabledInstalled(registry)).find((e) => e.id === id)
+  if (entry) await loadOne(host, registry, entry)
 }
