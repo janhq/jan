@@ -35,7 +35,7 @@ ${StrLoc}
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
-!define INSTALLERICON "jan_workspace\src-tauri\icons\icon.ico"
+!define INSTALLERICON "jan_workspace\src-tauri\icons-windows\icon.ico"
 !define SIDEBARIMAGE ""
 !define HEADERIMAGE ""
 !define MAINBINARYNAME "jan_mainbinaryname"

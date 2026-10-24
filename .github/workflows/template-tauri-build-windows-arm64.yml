@@ -154,7 +154,7 @@ jobs:
       - name: Replace Icons for Beta Build
         if: env.CHANNEL != 'stable'
         shell: bash
-        run: cp ".github/scripts/icon-${CHANNEL}.png" src-tauri/icons/icon.png
+        run: bash .github/scripts/use-channel-icons.sh "${CHANNEL}"
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
