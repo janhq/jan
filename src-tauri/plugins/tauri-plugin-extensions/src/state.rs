@@ -62,6 +62,10 @@ pub struct ExtensionsState {
     pub(crate) local_api_port: Mutex<Option<u16>>,
     /// Extension traffic: no cookie store, no redirects followed.
     pub(crate) http: reqwest::Client,
+    /// Index and tarball downloads: no cookie store, https redirects only.
+    pub(crate) index_http: reqwest::Client,
+    /// Serializes changes to `sources.json`.
+    pub(crate) sources_lock: Mutex<()>,
     pub(crate) requests: Mutex<HashMap<String, oneshot::Sender<()>>>,
 }
 
@@ -108,6 +112,8 @@ impl ExtensionsState {
             recovered_from: Mutex::new(None),
             local_api_port: Mutex::new(None),
             http: extension_client()?,
+            index_http: crate::index::client()?,
+            sources_lock: Mutex::new(()),
             requests: Mutex::new(HashMap::new()),
         };
         {
