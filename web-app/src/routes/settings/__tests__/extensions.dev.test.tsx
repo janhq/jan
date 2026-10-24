@@ -49,9 +49,6 @@ vi.mock('@/hooks/useServiceHub', () => ({
     extensions: () => new DefaultExtensionsService(),
   }),
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ listExtensions: () => [] }) },
-}))
 vi.mock('@/containers/SettingsMenu', () => ({ default: () => null }))
 vi.mock('@/containers/extensions/ExtensionSettingsForm', () => ({
   ExtensionSettingsForm: ({ extensionId }: { extensionId: string }) => (

@@ -225,19 +225,7 @@ vi.mock('@/stores/message-queue-store', () => ({
   useMessageQueue: useMessageQueueImpl,
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => undefined,
-      getByName: () => undefined,
-      listExtensions: () => [],
-    }),
-  },
-}))
-
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { MCP: 'mcp' },
-  MCPExtension: class {},
   ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {
     existsSync: vi.fn().mockResolvedValue(false),
@@ -273,9 +261,6 @@ vi.mock('@/containers/DropdownToolsAvailable', () => ({
 }))
 vi.mock('@/containers/AvatarEmoji', () => ({
   AvatarEmoji: () => <span data-testid="stub-avatar" />,
-}))
-vi.mock('@/containers/McpExtensionToolLoader', () => ({
-  McpExtensionToolLoader: () => null,
 }))
 vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
   __esModule: true,

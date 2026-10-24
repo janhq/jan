@@ -7,10 +7,8 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { CatalogList } from '@/containers/extensions/CatalogList'
 import {
-  Description,
   DevExtensionCard,
   ExtensionCard,
-  Version,
 } from '@/containers/extensions/HostedExtensionCard'
 import { LoadUnpacked } from '@/containers/extensions/LoadUnpacked'
 import { SafeModeBanner } from '@/containers/extensions/SafeModeBanner'
@@ -24,7 +22,6 @@ import { useStagedInstall } from '@/containers/extensions/useStagedInstall'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { ExtensionManager } from '@/lib/extension'
 import type { HostedExtension } from '@/lib/extensions/host'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { InstalledExtension } from '@/services/extensions/types'
@@ -129,7 +126,6 @@ function InstalledTab({
   )
   const builtins = hosted.filter((e) => e.source === 'builtin')
   const dev = hosted.filter((e) => e.source === 'dev')
-  const legacy = ExtensionManager.getInstance().listExtensions()
 
   const installFromFile = async () => {
     const selection = await dialog.open({
@@ -187,25 +183,6 @@ function InstalledTab({
             actions={<DetailsLink id={e.id} />}
           />
         ))}
-        {/* Legacy extensions, read-only until they move onto the host */}
-        {legacy.length > 0 && (
-          <Card>
-            {legacy.map((item) => (
-              <CardItem
-                key={item.name}
-                title={
-                  <div className="flex items-center gap-x-2">
-                    <span className="text-foreground font-studio font-medium text-base">
-                      {item.productName ?? item.name}
-                    </span>
-                    {item.version && <Version version={item.version} />}
-                  </div>
-                }
-                description={<Description content={item.description ?? ''} />}
-              />
-            ))}
-          </Card>
-        )}
       </Section>
       {supported && (
         <Section title={t('extensions:sections.installed')}>

@@ -9,7 +9,7 @@ import * as rag from '../../../../extensions/rag-extension/package.json'
 /**
  * A built-in that runs in the host process through `activate(ctx)`. The
  * manifest comes from the package's `jan` field and is validated at build
- * time by the bundled-extensions test.
+ * time by the builtins test.
  *
  * Its calls take the same dispatcher path as a worker's, so the same
  * argument checks apply: contribution ids follow the manifest grammar
@@ -37,8 +37,7 @@ const manifestOf = (pkg: {
 
 /**
  * The built-ins the host activates, in no particular order (dependsOn
- * decides). Legacy `BaseExtension` built-ins live in
- * services/core/bundled-extensions.ts until they migrate.
+ * decides).
  */
 export const HOST_BUILTINS: BuiltinExtension[] = [
   {
@@ -80,7 +79,7 @@ export const HOST_BUILTINS: BuiltinExtension[] = [
       name: rag.name,
       version: rag.version,
       // JSON imports widen the control `type` literals to string; the
-      // bundled-extensions test checks this against validateManifest.
+      // builtins test checks this against validateManifest.
       jan: rag.jan as Omit<ValidatedManifest, 'name' | 'version'>,
     }),
     load: () => import('@janhq/rag-extension'),
