@@ -81,11 +81,14 @@ pub struct ValidatedManifest {
 }
 
 /// True for an extension id: `<publisher>.<name>`, each part 2-39 lowercase
-/// letters, digits or dashes, starting with a letter or digit.
+/// letters, digits or dashes, starting with a letter or digit, and not a
+/// Windows device name (the id is a directory name, and Windows reads
+/// `con.ab` as the device `con`).
 pub fn is_extension_id(value: &str) -> bool {
     fn part(s: &str) -> bool {
         let bytes = s.as_bytes();
-        (2..=39).contains(&bytes.len())
+        !crate::bundle::RESERVED_NAMES.contains(&s)
+            && (2..=39).contains(&bytes.len())
             && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
             && bytes
                 .iter()
@@ -899,6 +902,16 @@ mod tests {
         }
         for bad in ["acme", "a.hello", "Acme.hello", "-a.hello", "acme.hello.x", "acme._x", ""] {
             assert!(!is_extension_id(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn id_parts_cannot_be_windows_device_names() {
+        for bad in ["con.ab", "nul.xx", "aux.zz", "prn.hello", "acme.com1", "lpt9.hello", "acme.nul"] {
+            assert!(!is_extension_id(bad), "{bad}");
+        }
+        for good in ["cons.ab", "acme.com10", "acme.nul-x", "conx.hello"] {
+            assert!(is_extension_id(good), "{good}");
         }
     }
 

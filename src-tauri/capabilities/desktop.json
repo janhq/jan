@@ -29,7 +29,6 @@
     "llamacpp:default",
     "deep-link:default",
     "hardware:default",
-    "extensions:default",
     {
       "identifier": "http:default",
       "allow": [

@@ -56,6 +56,26 @@ impl Tarball {
         self.raw(path.as_bytes(), EntryType::Regular, data)
     }
 
+    /// A regular file through `append_data`, which writes a GNU long-name
+    /// entry for paths past the 100-byte ustar field.
+    fn long_file(&mut self, path: &str, data: &[u8]) -> &mut Self {
+        let mut header = Header::new_gnu();
+        header.set_entry_type(EntryType::Regular);
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        self.builder.append_data(&mut header, path, data).unwrap();
+        self
+    }
+
+    fn long_dir(&mut self, path: &str) -> &mut Self {
+        let mut header = Header::new_gnu();
+        header.set_entry_type(EntryType::Directory);
+        header.set_size(0);
+        header.set_mode(0o755);
+        self.builder.append_data(&mut header, path, &[][..]).unwrap();
+        self
+    }
+
     fn file_mode(&mut self, path: &str, data: &[u8], mode: u32) -> &mut Self {
         let mut header = raw_header(path.as_bytes(), EntryType::Regular, data.len() as u64);
         header.set_mode(mode);
@@ -361,4 +381,83 @@ fn ignores_pax_metadata_but_honours_a_pax_path() {
     builder.append(&header, PACKAGE_JSON).unwrap();
     let err = rejected(gzip(&builder.into_inner().unwrap()));
     assert!(matches!(err, BundleError::UnsafePath { .. }), "{err}");
+}
+
+#[test]
+fn rejects_the_deep_path_stall_quickly() {
+    // The review PoC: about 2000 tiny files 200 directories deep. Without a
+    // depth cap every file re-creates every ancestor, which ran for 34 s.
+    let mut t = Tarball::with_package_json();
+    for i in 0..1999 {
+        t.long_file(&format!("package/d{i}/{}x.js", "a/".repeat(200)), b"");
+    }
+    let tgz = t.tgz();
+    let started = std::time::Instant::now();
+    let err = rejected(tgz);
+    assert!(matches!(err, BundleError::PathTooLong { .. }), "{err}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+}
+
+#[test]
+fn caps_nesting_depth() {
+    let limits = Limits::default();
+    let ok = format!("package/{}x.js", "a/".repeat(limits.max_depth - 1));
+    let mut t = Tarball::with_package_json();
+    t.long_file(&ok, b"x");
+    let dir = tempfile::tempdir().unwrap();
+    run(&t.tgz(), &dir.path().join("out")).unwrap();
+
+    let deep = format!("package/{}x.js", "a/".repeat(limits.max_depth));
+    let mut t = Tarball::with_package_json();
+    t.long_file(&deep, b"x");
+    assert!(matches!(rejected(t.tgz()), BundleError::PathTooLong { .. }));
+}
+
+#[test]
+fn caps_the_relative_path_length() {
+    let limits = Limits::default();
+    let name = |len: usize| format!("package/d/{}.js", "n".repeat(len - "d/".len() - ".js".len()));
+    let mut t = Tarball::with_package_json();
+    t.long_file(&name(limits.max_path_bytes), b"x");
+    let dir = tempfile::tempdir().unwrap();
+    run(&t.tgz(), &dir.path().join("out")).unwrap();
+
+    let mut t = Tarball::with_package_json();
+    t.long_file(&name(limits.max_path_bytes + 1), b"x");
+    assert!(matches!(rejected(t.tgz()), BundleError::PathTooLong { .. }));
+    let mut t = Tarball::with_package_json();
+    t.long_dir(&format!("package/{}", "n".repeat(limits.max_path_bytes + 1)));
+    assert!(matches!(rejected(t.tgz()), BundleError::PathTooLong { .. }));
+}
+
+#[test]
+fn shares_ancestors_between_files() {
+    // Many files under one deep directory: each ancestor is created once and
+    // the files all land.
+    let mut t = Tarball::with_package_json();
+    let dir_path = "a/".repeat(20);
+    for i in 0..200 {
+        t.file(&format!("package/{dir_path}f{i}.js"), b"x");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("out");
+    let extracted = run(&t.tgz(), &dest).unwrap();
+    assert_eq!(extracted.files.len(), 201);
+    assert!(dest.join(&dir_path).join("f199.js").is_file());
+}
+
+#[test]
+fn caps_implied_directories_just_under_the_path_caps() {
+    // Within the depth and length caps, distinct deep paths still imply tens
+    // of thousands of directories; the directory cap bounds that work.
+    let limits = Limits::default();
+    let mut t = Tarball::with_package_json();
+    for i in 0..1999 {
+        t.long_file(&format!("package/d{i}/{}x.js", "a/".repeat(limits.max_depth - 2)), b"");
+    }
+    let tgz = t.tgz();
+    let started = std::time::Instant::now();
+    let err = rejected(tgz);
+    assert!(matches!(err, BundleError::TooManyDirectories { .. }), "{err}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
 }
