@@ -2,6 +2,7 @@ import type { ProviderContribution } from '@janhq/extension-api'
 import { i18n } from '@/i18n/react-i18next-compat'
 import type { ContributionState } from './contributions'
 import { getExtensionHost } from './host'
+import type { ProviderFetchMode } from './http'
 
 /**
  * The provider name a contributed provider gets in `useModelProvider`.
@@ -18,13 +19,18 @@ export const extensionProviderName = (extensionId: string, providerId: string) =
  * and redirect hop, so a granted host cannot bounce a chat to Jan's local
  * API server or any other port, and no cookie jar is attached. Throws when
  * the extension has no network path: it is not running, or it was loaded
- * for development.
+ * for development. `whole` suits short JSON requests (model listing, key
+ * tests): they get the plugin's 30 s timeout instead of the stream's.
  */
 export function extensionProviderFetch(
-  provider: Pick<ModelProvider, 'provider' | 'source'>
+  provider: Pick<ModelProvider, 'provider' | 'source'>,
+  mode: ProviderFetchMode
 ): typeof globalThis.fetch | undefined {
   if (!provider.source) return undefined
-  const fetch = getExtensionHost().providerFetch(provider.source.extensionId)
+  const fetch = getExtensionHost().providerFetch(
+    provider.source.extensionId,
+    mode
+  )
   if (!fetch)
     throw new Error(
       i18n.t('model-errors:extensionProviderUnavailable', {

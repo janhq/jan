@@ -30,6 +30,8 @@ export interface InstalledRegistry {
   /** Undefined until the first read finishes. */
   registry?: ListResult
   refresh: () => Promise<void>
+  /** True while a `change` runs; the controls that start one wait for it. */
+  busy: boolean
   /**
    * Runs a registry change, then brings the running copy of `reloadId` in
    * line with it and re-reads the registry. Failures become a toast.
@@ -43,6 +45,7 @@ export function useInstalledRegistry(): InstalledRegistry {
   const service = useServiceHub().extensions()
   const supported = service.isSupported()
   const [registry, setRegistry] = useState<ListResult>()
+  const [pending, setPending] = useState(0)
 
   const refresh = useCallback(async () => {
     try {
@@ -58,16 +61,19 @@ export function useInstalledRegistry(): InstalledRegistry {
 
   const change = useCallback(
     async (action: () => Promise<unknown>, reloadId?: string) => {
+      setPending((n) => n + 1)
       try {
         await action()
         if (reloadId) await reloadInstalled(reloadId)
       } catch (e) {
         toast.error(t('extensions:errors.change', { error: errorMessage(e) }))
+      } finally {
+        setPending((n) => n - 1)
       }
       await refresh()
     },
     [refresh, t]
   )
 
-  return { service, supported, registry, refresh, change }
+  return { service, supported, registry, refresh, busy: pending > 0, change }
 }

@@ -557,7 +557,7 @@ describe('ProviderDetail route', () => {
           fireEvent.click(screen.getByText('providers:apiKeys.test'))
         })
         await waitFor(() => expect(extensionFetch).toHaveBeenCalled())
-        expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello')
+        expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello', 'whole')
         expect(appFetch).not.toHaveBeenCalled()
       } finally {
         Reflect.deleteProperty(h.openaiProvider, 'source')

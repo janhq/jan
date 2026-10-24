@@ -203,7 +203,7 @@ describe('hello-provider sample in a worker', () => {
   })
 
   it('streams provider inference through the plugin', async () => {
-    const fetch = host.providerFetch(ID)
+    const fetch = host.providerFetch(ID, 'stream')
     expect(fetch).toBeTypeOf('function')
     const response = await fetch!(
       'http://127.0.0.1:11999/v1/chat/completions',
@@ -212,7 +212,7 @@ describe('hello-provider sample in a worker', () => {
     expect(await response.text()).toContain('"content":"hi"')
     expect(server.http.httpFetchStream).toHaveBeenCalledTimes(1)
     await host.terminate(ID)
-    expect(host.providerFetch(ID)).toBeUndefined()
+    expect(host.providerFetch(ID, 'stream')).toBeUndefined()
   })
 
   it('terminate releases every registration', async () => {

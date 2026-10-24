@@ -172,7 +172,7 @@ describe('loadInstalled', () => {
     expect(states(host)['acme.ok']).toEqual(['installed', 'active'])
   })
 
-  it('skips a manifest the host refuses, and one whose files are another version', async () => {
+  it('marks a manifest the host refuses, or files of another version, failed and loads the rest', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { registry } = fakeRegistry([
       entry('acme.bad', { manifest: { name: 'x' } }),
@@ -182,7 +182,35 @@ describe('loadInstalled', () => {
     const host = newHost(registry)
     await host.loadInstalled()
     expect(registry.readEntry).toHaveBeenCalledTimes(1)
-    expect(states(host)).toEqual({ 'acme.ok': ['installed', 'active'] })
+    expect(states(host)).toEqual({
+      'acme.bad': ['installed', 'failed'],
+      'acme.moved': ['installed', 'failed'],
+      'acme.ok': ['installed', 'active'],
+    })
+    expect(host.list().find((e) => e.id === 'acme.moved')).toMatchObject({
+      manifest: { id: 'acme.moved', version: '2.0.0', displayName: 'acme.moved' },
+      error: expect.stringContaining('the registry names acme.moved@2.0.0'),
+    })
+    expect(host.list().find((e) => e.id === 'acme.bad')?.error).toMatch(/jan/)
+  })
+
+  it('reads the entries of all extensions at once rather than one by one', async () => {
+    const { registry } = fakeRegistry([entry('acme.one'), entry('acme.two')])
+    const release: (() => void)[] = []
+    const read = registry.readEntry.getMockImplementation()!
+    registry.readEntry.mockImplementation(async (id) => {
+      await new Promise<void>((resolve) => release.push(resolve))
+      return read(id)
+    })
+    const host = newHost(registry)
+    const loading = host.loadInstalled()
+    await vi.waitFor(() => expect(registry.readEntry).toHaveBeenCalledTimes(2))
+    for (const r of release) r()
+    await loading
+    expect(states(host)).toEqual({
+      'acme.one': ['installed', 'active'],
+      'acme.two': ['installed', 'active'],
+    })
   })
 
   it('leaves a built-in or development copy of the same id alone', async () => {
@@ -201,7 +229,7 @@ describe('loadInstalled', () => {
     expect(states(host)).toEqual({ 'acme.dev': ['dev', 'active'] })
     await host.reload('acme.dev')
     expect(states(host)).toEqual({ 'acme.dev': ['dev', 'active'] })
-    expect(registry.readEntry).toHaveBeenCalledTimes(1)
+    expect(registry.readEntry).not.toHaveBeenCalled()
   })
 })
 
@@ -220,6 +248,38 @@ describe('ExtensionHost.reload', () => {
 
     expect(first.terminated).toBe(true)
     expect(workers).toHaveLength(2)
+    expect(states(host)).toEqual({ 'acme.one': ['installed', 'active'] })
+    expect(host.dispatcher.has('acme.one', 'tools')).toBe(false)
+    expect(host.dispatcher.has('acme.one', 'ui:notify')).toBe(true)
+  })
+
+  it('ends with the latest grants when two reloads overlap', async () => {
+    const { state, registry } = fakeRegistry([
+      entry('acme.one', { permissions: ['ui:notify', 'tools'] }),
+    ])
+    const host = newHost(registry)
+    await host.loadInstalled()
+    // Each read of the entry waits for its own gate, so the first reload
+    // has read the old grants when the second one starts.
+    const gates: (() => void)[] = []
+    const opened = [0, 1].map(
+      () => new Promise<void>((resolve) => gates.push(resolve))
+    )
+    const read = registry.readEntry.getMockImplementation()!
+    let reads = 0
+    registry.readEntry.mockImplementation(async (id) => {
+      await opened[reads++]
+      return read(id)
+    })
+
+    const first = host.reload('acme.one')
+    await vi.waitFor(() => expect(reads).toBe(1))
+    state.extensions[0].granted = ['ui:notify']
+    const second = host.reload('acme.one')
+    gates[0]()
+    gates[1]()
+    await Promise.all([first, second])
+
     expect(states(host)).toEqual({ 'acme.one': ['installed', 'active'] })
     expect(host.dispatcher.has('acme.one', 'tools')).toBe(false)
     expect(host.dispatcher.has('acme.one', 'ui:notify')).toBe(true)

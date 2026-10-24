@@ -20,11 +20,9 @@ import type { HttpResponse as PluginHttpResponse } from '@janhq/tauri-plugin-ext
 import { own, type ContributionStore } from './contributions'
 import type { PermissionDispatcher } from './dispatcher'
 import {
+  fetchHop,
   firstHop,
-  newRequestId,
   nextHop,
-  toExtensionError,
-  toPluginRequest,
   withoutCookies,
   type ExtensionHttp,
 } from './http'
@@ -202,22 +200,18 @@ async function fetchChecked(
       'E_NOT_FOUND',
       'ctx.http.fetch is only available to installed extensions'
     )
-  if (signal?.aborted) throw cancelled()
   let hop = firstHop(url, init.method ?? 'GET', init.headers, init.body)
   for (let redirects = 0; ; redirects++) {
+    // The worker may cancel while a redirect is on its way back; its abort
+    // event has fired by then, so nothing else would stop the next hop.
+    if (signal?.aborted) throw cancelled()
     deps.dispatcher.checkUrl(extensionId, hop.url)
-    const requestId = newRequestId()
-    const cancel = () =>
-      void http.httpCancel(extensionId, requestId).catch(() => undefined)
-    signal?.addEventListener('abort', cancel)
     let response: PluginHttpResponse
     try {
-      response = await http.httpFetch(extensionId, toPluginRequest(hop), requestId)
+      response = await fetchHop(http, extensionId, hop, signal)
     } catch (error) {
       if (signal?.aborted) throw cancelled()
-      throw toExtensionError(error)
-    } finally {
-      signal?.removeEventListener('abort', cancel)
+      throw error
     }
     const next = nextHop(hop, response.status, response.headers.location, redirects)
     if (next) {

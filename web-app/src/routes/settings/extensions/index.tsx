@@ -78,7 +78,7 @@ function InstalledCard({
   registry: InstalledRegistry
 }) {
   const { t } = useTranslation()
-  const { service, change } = registry
+  const { service, change, busy } = registry
   return (
     <ExtensionCard
       manifest={entry.manifest}
@@ -93,6 +93,7 @@ function InstalledCard({
               name: entry.manifest.displayName,
             })}
             checked={entry.enabled}
+            disabled={busy}
             onCheckedChange={(on) =>
               change(() => service.setEnabled(entry.id, on), entry.id)
             }
@@ -116,10 +117,16 @@ function InstalledTab({
 }) {
   const { t } = useTranslation()
   const dialog = useServiceHub().dialog()
-  const { service, supported, change } = registry
+  const { service, supported, change, busy } = registry
   const safeMode = registry.registry?.safeMode ?? false
   const installed = registry.registry?.extensions ?? []
   const byId = new Map(hosted.map((e) => [e.id, e]))
+  // Installed ones the registry list leaves out because the host refused
+  // their manifest; the host still holds them as failed, with the reason.
+  const listed = new Set(installed.map((e) => e.id))
+  const unlisted = hosted.filter(
+    (e) => e.source === 'installed' && !listed.has(e.id)
+  )
   const builtins = hosted.filter((e) => e.source === 'builtin')
   const dev = hosted.filter((e) => e.source === 'dev')
   const legacy = ExtensionManager.getInstance().listExtensions()
@@ -164,6 +171,7 @@ function InstalledTab({
               <Switch
                 aria-label={t('extensions:safeMode.title')}
                 checked={safeMode}
+                disabled={busy}
                 onCheckedChange={setSafeMode}
               />
             }
@@ -201,19 +209,24 @@ function InstalledTab({
       </Section>
       {supported && (
         <Section title={t('extensions:sections.installed')}>
-          {installed.length === 0 ? (
+          {installed.length === 0 && unlisted.length === 0 ? (
             <p className="px-1 text-sm text-muted-foreground">
               {t('extensions:noneInstalled')}
             </p>
           ) : (
-            installed.map((entry) => (
-              <InstalledCard
-                key={entry.id}
-                entry={entry}
-                hosted={byId.get(entry.id)}
-                registry={registry}
-              />
-            ))
+            <>
+              {installed.map((entry) => (
+                <InstalledCard
+                  key={entry.id}
+                  entry={entry}
+                  hosted={byId.get(entry.id)}
+                  registry={registry}
+                />
+              ))}
+              {unlisted.map((e) => (
+                <ExtensionCard key={e.id} manifest={e.manifest} hosted={e} />
+              ))}
+            </>
           )}
         </Section>
       )}

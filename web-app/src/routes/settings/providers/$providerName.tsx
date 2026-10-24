@@ -416,10 +416,10 @@ function ProviderDetail() {
     // network path, the one inference uses.
     let extensionFetch: typeof globalThis.fetch | undefined
     try {
-      extensionFetch = extensionProviderFetch({
-        provider: provider.provider,
-        source: provider.source,
-      })
+      extensionFetch = extensionProviderFetch(
+        { provider: provider.provider, source: provider.source },
+        'whole'
+      )
     } catch (error) {
       toast.error(t('providers:models'), {
         description: error instanceof Error ? error.message : String(error),

@@ -971,7 +971,7 @@ export class ModelFactory {
     // A provider an extension contributed is OpenAI-compatible by contract,
     // and every request it makes runs on the extension's checked network
     // path, never on the app's.
-    const extensionFetch = extensionProviderFetch(provider)
+    const extensionFetch = extensionProviderFetch(provider, 'stream')
     if (extensionFetch)
       return this.createOpenAICompatibleModel(
         modelId,
