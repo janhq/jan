@@ -11,6 +11,8 @@ describe('DefaultExtensionsService', () => {
   it('lists nothing installed and no sources', async () => {
     await expect(service.list()).resolves.toEqual({
       safeMode: false,
+      safeModeForced: false,
+      recoveredFrom: null,
       extensions: [],
     })
     await expect(service.listSources()).resolves.toEqual([])

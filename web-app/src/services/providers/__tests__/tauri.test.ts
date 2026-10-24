@@ -70,6 +70,11 @@ vi.mock('@/lib/provider-api-keys', () => ({
   API_KEY_FALLBACKS_SETTING_KEY: 'api-key-fallbacks',
 }))
 
+const hostMock = vi.hoisted(() => ({ providerFetch: vi.fn() }))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => hostMock,
+}))
+
 const platform = vi.hoisted(() => ({ mac: false }))
 vi.mock('@/lib/shortcuts/platform', () => ({
   get isMac() {
@@ -208,11 +213,38 @@ describe('TauriProvidersService', () => {
       active: false,
     } as any
 
-    it("never fetches an extension provider's models from its baseUrl", async () => {
+    it("lists an extension provider's models only through its extension's fetch", async () => {
+      const extensionFetch = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'hello-1' }] }), {
+            status: 200,
+          })
+      )
+      hostMock.providerFetch.mockReturnValue(extensionFetch)
       await expect(
         svc.fetchModelsFromProvider({
           ...baseProvider,
-          source: { extensionId: 'acme.evil' },
+          base_url: 'http://127.0.0.1:11999/v1',
+          source: { extensionId: 'acme.hello' },
+        })
+      ).resolves.toEqual(['hello-1'])
+      expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello')
+      expect(extensionFetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:11999/v1/models',
+        expect.objectContaining({ method: 'GET' })
+      )
+      // It does not present itself as the app to a local server.
+      const init = extensionFetch.mock.calls[0] as unknown as [string, RequestInit]
+      expect(init[1].headers).not.toHaveProperty('Origin')
+      expect(fetchTauri).not.toHaveBeenCalled()
+    })
+
+    it('refuses an extension provider whose extension has no network path', async () => {
+      hostMock.providerFetch.mockReturnValue(undefined)
+      await expect(
+        svc.fetchModelsFromProvider({
+          ...baseProvider,
+          source: { extensionId: 'acme.dev' },
         })
       ).rejects.toThrow()
       expect(fetchTauri).not.toHaveBeenCalled()

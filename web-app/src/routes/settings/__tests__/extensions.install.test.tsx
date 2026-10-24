@@ -319,7 +319,7 @@ describe('catalog', () => {
   it('offers an update only when the index has a newer version', async () => {
     mock.state.sources = [source]
     mock.state.catalogs = { 'src-1': catalog }
-    mock.state.extensions = [installed('acme.hello', { active: '0.2.0' })]
+    mock.state.extensions = [installed('acme.hello', { version: '0.2.0' })]
     render(<Page />)
     await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
     const current = await screen.findByRole('button', { name: 'Installed' })

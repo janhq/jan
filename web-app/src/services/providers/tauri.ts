@@ -18,7 +18,7 @@ import {
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 import { toProviderUnreachable } from '@/lib/provider-unreachable'
-import { assertNotExtensionProvider } from '@/lib/extensions/providers'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -147,12 +147,15 @@ export class TauriProvidersService extends DefaultProvidersService {
   }
 
   async fetchModelsFromProvider(provider: ModelProvider): Promise<string[]> {
-    assertNotExtensionProvider(provider)
     if (!provider.base_url) {
       throw new Error('Provider must have base_url configured')
     }
 
     try {
+      // A contributed provider is reached only on its extension's checked
+      // network path, and never presents itself as the app.
+      const extensionFetch = extensionProviderFetch(provider)
+      const fetchImpl: typeof globalThis.fetch = extensionFetch ?? fetchTauri
       const keyChain = providerRemoteApiKeyChain(provider)
       const keyAttempts: (string | undefined)[] =
         keyChain.length > 0 ? keyChain : [undefined]
@@ -167,8 +170,9 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
 
         if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
+          !extensionFetch &&
+          (provider.base_url.includes('localhost:') ||
+            provider.base_url.includes('127.0.0.1:'))
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
@@ -186,7 +190,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
         ensureAnthropicHeaders(provider, headers)
 
-        const response = await fetchTauri(`${provider.base_url}/models`, {
+        const response = await fetchImpl(`${provider.base_url}/models`, {
           method: 'GET',
           headers,
         })

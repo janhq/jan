@@ -20,6 +20,7 @@ import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
 import { Button } from '@/components/ui/button'
 import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
@@ -411,12 +412,17 @@ function ProviderDetail() {
       return
     }
 
-    // Same path as inference; see assertNotExtensionProvider.
-    if (provider.source) {
+    // A contributed provider's keys go only through its extension's checked
+    // network path, the one inference uses.
+    let extensionFetch: typeof globalThis.fetch | undefined
+    try {
+      extensionFetch = extensionProviderFetch({
+        provider: provider.provider,
+        source: provider.source,
+      })
+    } catch (error) {
       toast.error(t('providers:models'), {
-        description: t('model-errors:extensionProviderUnavailable', {
-          provider: provider.provider,
-        }),
+        description: error instanceof Error ? error.message : String(error),
       })
       return
     }
@@ -432,7 +438,7 @@ function ProviderDetail() {
 
     setIsTestingKeys(true)
     try {
-      const fetchImpl = serviceHub.providers().fetch()
+      const fetchImpl = extensionFetch ?? serviceHub.providers().fetch()
       const results: { index: number; masked: string; status: string; detail: string }[] = []
 
       for (let i = 0; i < keyDraftLines.length; i++) {
@@ -445,8 +451,9 @@ function ProviderDetail() {
           Authorization: `Bearer ${key}`,
         }
         if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
+          !extensionFetch &&
+          (provider.base_url.includes('localhost:') ||
+            provider.base_url.includes('127.0.0.1:'))
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
