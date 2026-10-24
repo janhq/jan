@@ -395,7 +395,9 @@ fn rejects_the_deep_path_stall_quickly() {
     let started = std::time::Instant::now();
     let err = rejected(tgz);
     assert!(matches!(err, BundleError::PathTooLong { .. }), "{err}");
-    assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+    // The unbounded case took ~34 s; 10 s leaves room for slow CI file
+    // systems (NTFS on Windows runners took 2.3 s) while still catching it.
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
 }
 
 #[test]
@@ -459,5 +461,7 @@ fn caps_implied_directories_just_under_the_path_caps() {
     let started = std::time::Instant::now();
     let err = rejected(tgz);
     assert!(matches!(err, BundleError::TooManyDirectories { .. }), "{err}");
-    assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+    // The unbounded case took ~34 s; 10 s leaves room for slow CI file
+    // systems (NTFS on Windows runners took 2.3 s) while still catching it.
+    assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
 }
