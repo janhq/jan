@@ -13,6 +13,9 @@ on:
       - 'Makefile'
       - 'src-tauri/**'
       - 'web-app/**'
+      - 'packages/**'
+      - 'extensions-samples/**'
+      - 'scripts/extensions-smoke.mjs'
 
   pull_request:
     branches:
@@ -27,6 +30,9 @@ on:
       - 'core/**'
       - 'src-tauri/**'
       - 'web-app/**'
+      - 'packages/**'
+      - 'extensions-samples/**'
+      - 'scripts/extensions-smoke.mjs'
 
 concurrency:
   group: linter-test-${{ github.ref }}
@@ -288,6 +294,11 @@ jobs:
           echo -e "Display ID: $DISPLAY"
           make test-ci
           make check-cli
+
+      # After make test-ci: the same toolchain (yarn test ran, cargo built the
+      # extensions plugin for test-rust) packs and installs the sample bundle.
+      - name: Extensions smoke install
+        run: make test-extensions-smoke
 
   coverage-check:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository

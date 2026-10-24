@@ -199,6 +199,12 @@ stub-resources:
 test-ci: test-prepare
 	$(MAKE) test-rust
 
+# End-to-end smoke install of the sample extension: packs it, installs the
+# tarball with the extensions plugin (tests/smoke.rs, ignored by default) and
+# loads the result in the web-app's extension host (smoke.installed.test.ts).
+test-extensions-smoke:
+	node scripts/extensions-smoke.mjs
+
 # Compile and test guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
 #
