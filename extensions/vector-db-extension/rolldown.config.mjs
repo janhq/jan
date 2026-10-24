@@ -7,5 +7,4 @@ export default defineConfig({
     file: 'dist/index.js',
   },
   platform: 'browser',
-  define: {},
 })

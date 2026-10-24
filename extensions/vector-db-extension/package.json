@@ -4,6 +4,15 @@
   "version": "0.1.0",
   "description": "Vector DB integration using sqlite-vec if available with linear fallback",
   "main": "dist/index.js",
+  "jan": {
+    "id": "jan.vector-db",
+    "displayName": "Vector DB",
+    "description": "Vector DB integration using sqlite-vec if available with linear fallback",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {

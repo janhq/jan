@@ -2,6 +2,7 @@ import { Emitter, toDisposable, type Disposable, type Event } from '@janhq/exten
 import type { AssistantInterface } from '../../types'
 import type { DownloadItem } from '../download'
 import type { UnloadResult } from '../extensions/engines/AIEngine'
+import type { RAGIngestService, VectorDBService } from './rag'
 
 /**
  * A typed handle for a host service. `T` exists only at compile time; the
@@ -105,4 +106,6 @@ export const ServiceKeys = {
   Downloads: new ServiceKey<DownloadService>('downloads'),
   Llamacpp: new ServiceKey<LlamacppService>('llamacpp'),
   Mlx: new ServiceKey<MlxService>('mlx'),
+  VectorDB: new ServiceKey<VectorDBService>('vector-db'),
+  RAG: new ServiceKey<RAGIngestService>('rag'),
 }

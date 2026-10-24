@@ -5,8 +5,6 @@ import { logger } from './logger'
 export enum ExtensionTypeEnum {
   Inference = 'inference',
   MCP = 'mcp',
-  RAG = 'rag',
-  VectorDB = 'vectorDB',
 }
 
 export interface ExtensionType {

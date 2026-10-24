@@ -4,6 +4,150 @@
   "version": "0.1.0",
   "description": "Registers RAG tools and orchestrates retrieval across parser, embeddings, and vector DB",
   "main": "dist/index.js",
+  "jan": {
+    "id": "jan.rag",
+    "displayName": "RAG Tools",
+    "description": "Registers RAG tools and orchestrates retrieval across parser, embeddings, and vector DB",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": [],
+    "contributes": {
+      "settings": [
+        {
+          "key": "enabled",
+          "title": "Enable Attachments",
+          "description": "Allow uploading and indexing documents for retrieval.",
+          "control": {
+            "type": "checkbox",
+            "default": true
+          }
+        },
+        {
+          "key": "parse_mode",
+          "title": "Parse preference",
+          "description": "Choose how parsed documents are added to conversations.",
+          "control": {
+            "type": "dropdown",
+            "options": [
+              {
+                "value": "auto",
+                "label": "Auto"
+              },
+              {
+                "value": "inline",
+                "label": "Include in chat"
+              },
+              {
+                "value": "embeddings",
+                "label": "Ingest as embeddings"
+              },
+              {
+                "value": "prompt",
+                "label": "Ask every time"
+              }
+            ],
+            "default": "auto"
+          }
+        },
+        {
+          "key": "auto_inline_context_ratio",
+          "title": "Auto inline threshold",
+          "description": "Fraction of the model context used as the cutoff for inlining parsed files on local models.",
+          "control": {
+            "type": "slider",
+            "min": 0.05,
+            "max": 1,
+            "step": 0.05,
+            "default": 0.75
+          }
+        },
+        {
+          "key": "max_file_size_mb",
+          "title": "Max Document Size (MB)",
+          "description": "Maximum size per document. Enforced at upload and processing time. Images have their own limit above.",
+          "control": {
+            "type": "slider",
+            "min": 1,
+            "max": 200,
+            "step": 1,
+            "default": 100
+          }
+        },
+        {
+          "key": "retrieval_limit",
+          "title": "Top-K",
+          "description": "Maximum citations to return.",
+          "control": {
+            "type": "slider",
+            "min": 1,
+            "max": 20,
+            "step": 1,
+            "default": 3
+          }
+        },
+        {
+          "key": "retrieval_threshold",
+          "title": "Affinity Threshold",
+          "description": "Minimum similarity score (0-1). Only used for linear cosine search, not ANN.",
+          "control": {
+            "type": "slider",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "default": 0.3
+          }
+        },
+        {
+          "key": "chunk_size_chars",
+          "title": "Chunk Size (characters)",
+          "description": "Approximate max characters per chunk for embeddings.",
+          "control": {
+            "type": "slider",
+            "min": 64,
+            "max": 8192,
+            "step": 64,
+            "default": 512
+          }
+        },
+        {
+          "key": "overlap_chars",
+          "title": "Overlap (characters)",
+          "description": "Character overlap between consecutive chunks.",
+          "control": {
+            "type": "slider",
+            "min": 0,
+            "max": 1024,
+            "step": 16,
+            "default": 64
+          }
+        },
+        {
+          "key": "search_mode",
+          "title": "Vector Search Mode",
+          "description": "Choose between sqlite-vec ANN, linear cosine, or auto.",
+          "control": {
+            "type": "dropdown",
+            "options": [
+              {
+                "value": "auto",
+                "label": "Auto (recommended)"
+              },
+              {
+                "value": "ann",
+                "label": "ANN (sqlite-vec)"
+              },
+              {
+                "value": "linear",
+                "label": "Linear"
+              }
+            ],
+            "default": "auto"
+          }
+        }
+      ]
+    }
+  },
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",
   "scripts": {

@@ -322,16 +322,6 @@ vi.mock('@/lib/instructionTemplate', () => ({
   renderInstructions: (i: string) => `rendered:${i}`,
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      get: () => ({
-        listAttachmentsForProject: vi.fn().mockResolvedValue([]),
-      }),
-    }),
-  },
-}))
-
 vi.mock('@/lib/messages', () => ({
   convertThreadMessagesToUIMessages: (msgs: any[]) =>
     msgs.map((m) => ({
@@ -430,7 +420,12 @@ vi.mock('@/hooks/use-chat', () => ({
 vi.mock('@/hooks/useThreads', () => ({ useThreads: h.useThreadsMock }))
 vi.mock('@/hooks/useMessages', () => ({ useMessages: h.useMessagesMock }))
 vi.mock('@/hooks/useTools', () => ({ useTools: vi.fn() }))
-const extensionHost = vi.hoisted(() => ({ callTool: vi.fn() }))
+const extensionHost = vi.hoisted(() => ({
+  callTool: vi.fn(),
+  services: {
+    get: () => ({ listAttachmentsForProject: vi.fn().mockResolvedValue([]) }),
+  },
+}))
 vi.mock('@/lib/extensions/host', () => ({
   getExtensionHost: () => extensionHost,
 }))
@@ -476,8 +471,7 @@ vi.mock('@janhq/core', () => ({
   MessageStatus: { Ready: 'ready' },
   ChatCompletionRole: { Assistant: 'assistant', User: 'user' },
   ContentType: { Text: 'text' },
-  ExtensionTypeEnum: { VectorDB: 'vectorDB' },
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
 }))
 
 vi.mock('@/constants/chat', () => ({

@@ -3,6 +3,8 @@ import * as assistant from '../../../../extensions/assistant-extension/package.j
 import * as download from '../../../../extensions/download-extension/package.json'
 import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
 import * as mlx from '../../../../extensions/mlx-extension/package.json'
+import * as vectorDb from '../../../../extensions/vector-db-extension/package.json'
+import * as rag from '../../../../extensions/rag-extension/package.json'
 
 /**
  * A built-in that runs in the host process through `activate(ctx)`. The
@@ -64,6 +66,25 @@ export const HOST_BUILTINS: BuiltinExtension[] = [
     // No dependsOn download: the engines look the Downloads service up per
     // download, so a failed download built-in must not take inference down.
     load: () => import('@janhq/llamacpp-extension'),
+  },
+  {
+    manifest: manifestOf({
+      name: vectorDb.name,
+      version: vectorDb.version,
+      jan: vectorDb.jan,
+    }),
+    load: () => import('@janhq/vector-db-extension'),
+  },
+  {
+    manifest: manifestOf({
+      name: rag.name,
+      version: rag.version,
+      // JSON imports widen the control `type` literals to string; the
+      // bundled-extensions test checks this against validateManifest.
+      jan: rag.jan as Omit<ValidatedManifest, 'name' | 'version'>,
+    }),
+    load: () => import('@janhq/rag-extension'),
+    dependsOn: ['jan.vector-db'],
   },
 ]
 

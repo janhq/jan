@@ -79,13 +79,9 @@ import type { TokenUsageSource } from '@/hooks/useTokensCount'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import {
-  ExtensionTypeEnum,
-  MCPExtension,
-  fs,
-  VectorDBExtension,
-} from '@janhq/core'
+import { ExtensionTypeEnum, MCPExtension, ServiceKeys, fs } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { getExtensionHost } from '@/lib/extensions/host'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { toast } from 'sonner'
@@ -1205,16 +1201,9 @@ const ChatInput = memo(function ChatInput({
     if (attachmentToRemove?.id && currentThreadId) {
       try {
         if (attachmentToRemove.type === 'document') {
-          const vectorDBExtension = ExtensionManager.getInstance().get(
-            ExtensionTypeEnum.VectorDB
-          ) as VectorDBExtension | undefined
-
-          if (vectorDBExtension?.deleteFile) {
-            await vectorDBExtension.deleteFile(
-              currentThreadId,
-              attachmentToRemove.id
-            )
-          }
+          await getExtensionHost()
+            .services.get(ServiceKeys.VectorDB)
+            ?.deleteFile(currentThreadId, attachmentToRemove.id)
         }
       } catch (error) {
         console.error('Failed to delete attachment from backend:', error)

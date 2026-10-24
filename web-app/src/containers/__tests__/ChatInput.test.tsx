@@ -236,9 +236,9 @@ vi.mock('@/lib/extension', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
-  ExtensionTypeEnum: { MCP: 'mcp', VectorDB: 'vectordb' },
+  ExtensionTypeEnum: { MCP: 'mcp' },
   MCPExtension: class {},
-  VectorDBExtension: class {},
+  ServiceKeys: { VectorDB: { id: 'vector-db' } },
   fs: {
     existsSync: vi.fn().mockResolvedValue(false),
     readFile: vi.fn().mockResolvedValue(''),

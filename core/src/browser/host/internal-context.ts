@@ -4,6 +4,7 @@ import type { EngineManager } from '../extensions/engines/EngineManager'
 import type { fs } from '../fs'
 import type { appSettings } from '../settings'
 import type { ServiceRegistry } from './services'
+import type { InternalToolRegistry } from './tools'
 
 /** Keyring key the app stores the Hugging Face access token under. */
 export const HUGGINGFACE_TOKEN_SECRET_KEY = 'huggingface'
@@ -33,5 +34,7 @@ export interface InternalExtensionContext extends ExtensionContext {
     readonly secrets: HostSecretsReader
     /** Registers inference engines; disposing a registration removes it. */
     readonly engines: Pick<EngineManager, 'register'>
+    /** Tools offered under their plain names and never prompted for. */
+    readonly tools: InternalToolRegistry
   }
 }

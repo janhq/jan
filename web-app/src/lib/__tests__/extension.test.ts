@@ -8,7 +8,7 @@ vi.mock('@janhq/core', () => ({
   ExtensionTypeEnum: {
     SystemMonitor: 'system-monitor',
     Model: 'model',
-    RAG: 'rag',
+    MCP: 'mcp',
   },
 }))
 

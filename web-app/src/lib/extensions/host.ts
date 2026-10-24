@@ -17,10 +17,12 @@ import { CancellationTokenSource } from '@janhq/extension-runtime'
 import { z } from 'zod'
 import {
   appSettings,
+  createInternalToolRegistry,
   createServiceRegistry,
   downloads,
   EngineManager,
   fs,
+  type InternalToolRegistry,
   type ServiceRegistry,
 } from '@janhq/core'
 import { toast } from 'sonner'
@@ -148,6 +150,8 @@ const message = (error: unknown) =>
  */
 export class ExtensionHost {
   readonly services: ServiceRegistry = createServiceRegistry()
+  /** Built-ins' tools, offered under their plain names (`internal.tools`). */
+  readonly internalTools: InternalToolRegistry = createInternalToolRegistry()
   readonly dispatcher: PermissionDispatcher
   readonly contributions: ContributionStore
   readonly settings: ExtensionSettingsStore
@@ -570,6 +574,7 @@ export class ExtensionHost {
           downloads,
           secrets: { get: (key) => this.options.secrets.get(key) },
           engines: { register: (engine) => EngineManager.instance().register(engine) },
+          tools: this.internalTools,
         }
       )
       await entry.module.activate(entry.ctx)

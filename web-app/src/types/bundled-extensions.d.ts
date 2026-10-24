@@ -28,10 +28,12 @@ declare module '@janhq/mlx-extension' {
   ): Promise<void>
 }
 declare module '@janhq/rag-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
 declare module '@janhq/vector-db-extension' {
-  const ext: BundledExtensionCtor
-  export default ext
+  export function activate(
+    ctx: import('@janhq/core').InternalExtensionContext
+  ): Promise<void>
 }
