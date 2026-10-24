@@ -43,6 +43,9 @@ default = [
     "desktop",
 ]
 hardware = ["dep:tauri-plugin-hardware"]
+# Runtime-installed extensions (install pipeline, entry reads, extension
+# network). Desktop only: not part of the CLI or mobile builds.
+extensions = ["dep:tauri-plugin-extensions"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 # WebDriver e2e only. Runs an embedded WebDriver server inside the app so
 # @wdio/tauri-service can drive it. Required on macOS, where no WKWebView driver
@@ -53,6 +56,7 @@ e2e = ["dep:tauri-plugin-wdio-webdriver"]
 # (see [target.'cfg(target_os = "macos")'.dependencies]) rather than a feature.
 desktop = [
     "deep-link",
+    "extensions",
     "hardware",
     "tauri-app",
 ]
@@ -100,6 +104,7 @@ test-tauri = [
     "tauri/tray-icon",
     "tauri/test",
     "deep-link",
+    "extensions",
     "hardware",
 ]
 cli = ["dep:env_logger", "dep:agent-client-protocol", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
@@ -164,6 +169,7 @@ zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
+tauri-plugin-extensions = { path = "./plugins/tauri-plugin-extensions", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp", optional = true }
 # The CLI consumes only these plugins' tauri-free cores (`db`, `provider`, the
 # agent toolset); the desktop feature turns their Tauri command surface back on.
