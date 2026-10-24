@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import type { PermissionString } from '@janhq/extension-api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,49 +16,7 @@ import {
   readUnpacked,
   type UnpackedExtension,
 } from '@/lib/extensions/dev-loader'
-import {
-  PERMISSIONS,
-  parsePermission,
-  reachesLocalApiServer,
-  riskOf,
-  type PermissionRisk,
-} from '@/lib/extensions/permissions'
-import { cn } from '@/lib/utils'
-
-const RISK_CLASS: Record<PermissionRisk, string> = {
-  low: 'text-muted-foreground',
-  medium: 'text-amber-600 dark:text-amber-400',
-  high: 'text-destructive',
-}
-
-function PermissionRow({ permission }: { permission: PermissionString }) {
-  const { t } = useTranslation()
-  const parsed = parsePermission(permission)
-  if (!parsed) return null
-  const info = PERMISSIONS[parsed.kind]
-  const host = parsed.kind === 'network' ? parsed.host : undefined
-  const risk = riskOf(permission)
-  return (
-    <li className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">
-          {t(info.titleKey, { host })}
-        </span>
-        <span className={cn('text-xs', RISK_CLASS[risk])}>
-          {t(`extensions:risk.${risk}`)}
-        </span>
-      </div>
-      <span className="text-xs text-muted-foreground">
-        {t(info.descriptionKey)}
-      </span>
-      {reachesLocalApiServer(permission) && (
-        <span className="text-xs text-amber-600 dark:text-amber-400">
-          {t('extensions:permissions.network.localServers')}
-        </span>
-      )}
-    </li>
-  )
-}
+import { PermissionList } from './PermissionList'
 
 function errorText(
   t: (key: string, options?: Record<string, unknown>) => string,
@@ -135,15 +92,7 @@ export function LoadUnpacked() {
               {t('extensions:devLoad.description')}
             </DialogDescription>
           </DialogHeader>
-          {manifest && manifest.permissions.length > 0 ? (
-            <ul className="flex flex-col gap-2">
-              {manifest.permissions.map((p) => (
-                <PermissionRow key={p} permission={p} />
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm">{t('extensions:devLoad.noPermissions')}</p>
-          )}
+          {manifest && <PermissionList permissions={manifest.permissions} />}
           {manifest?.proposals && manifest.proposals.length > 0 && (
             <p className="text-xs text-muted-foreground">
               {t('extensions:devLoad.proposals', {
@@ -158,7 +107,7 @@ export function LoadUnpacked() {
               disabled={busy}
               onClick={() => setPending(undefined)}
             >
-              {t('extensions:devLoad.cancel')}
+              {t('extensions:cancel')}
             </Button>
             <Button size="sm" disabled={busy} onClick={confirm}>
               {t('extensions:devLoad.confirm')}
