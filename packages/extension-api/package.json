@@ -1,6 +1,6 @@
 {
   "name": "@janhq/extension-api",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Stable API, manifest types and validator for Jan desktop extensions",
   "keywords": [
     "jan",
@@ -31,10 +31,12 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "api-report": "node scripts/api-report.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "5.9.2",
     "vitest": "3.2.4"
   },

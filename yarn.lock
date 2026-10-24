@@ -1656,6 +1656,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/extension-api@workspace:packages/extension-api"
   dependencies:
+    "@types/node": "npm:^22.10.0"
     typescript: "npm:5.9.2"
     vitest: "npm:3.2.4"
   languageName: unknown

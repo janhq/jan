@@ -37,9 +37,6 @@ vi.mock('@/hooks/useServiceHub', () => ({
     extensions: () => h.service,
   }),
 }))
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: { getInstance: () => ({ listExtensions: () => [] }) },
-}))
 vi.mock('@/containers/SettingsMenu', () => ({ default: () => null }))
 vi.mock('@/containers/extensions/ExtensionSettingsForm', () => ({
   ExtensionSettingsForm: ({ extensionId }: { extensionId: string }) => (
@@ -279,14 +276,14 @@ describe('catalog', () => {
             version: '0.1.0',
             tarball: 'https://a.b/0.1.0.tgz',
             integrity: 'sha512-a',
-            apiVersion: '^0.1.0',
+            apiVersion: '^1.0.0',
             permissions: [],
           },
           {
             version: '0.2.0',
             tarball: 'https://a.b/0.2.0.tgz',
             integrity: 'sha512-b',
-            apiVersion: '^0.1.0',
+            apiVersion: '^1.0.0',
             permissions: [],
             provenance: 'https://search.sigstore.dev/?hash=b',
           },

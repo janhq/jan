@@ -26,7 +26,7 @@ import { memoryAppSettings, memorySecrets } from './memory'
 
 const sample = (overrides: Partial<ValidatedManifest> = {}) =>
   manifest('acme.worker', {
-    apiVersion: '^0.1.0',
+    apiVersion: '^1.0.0',
     permissions: ['tools', 'ui:notify'],
     contributes: {
       commands: [{ id: 'hello', title: 'Hello' }],

@@ -17,7 +17,7 @@ Licensed under Apache-2.0.
     "id": "acme.hello",
     "displayName": "Hello",
     "publisher": "Acme",
-    "apiVersion": "^0.1.0",
+    "apiVersion": "^1.0.0",
     "main": "dist/index.js",
     "permissions": ["ui:notify"],
     "contributes": {
@@ -38,9 +38,13 @@ if (!result.ok) console.error(result.errors)
 
 ## Versioning
 
-`apiVersion` must be a caret range. Before 1.0 a caret locks the minor, so
-`^0.1.0` accepts host API 0.1.x only. A deprecated item stays for at least one
-minor and 90 days and is removed only in a major.
+`apiVersion` must be a caret range. `^1.0.0` accepts any host API 1.x, so an
+extension built against 1.0 keeps working on later 1.x hosts. A deprecated
+item stays for at least one minor and 90 days and is removed only in a major.
+
+Every change to the public declarations shows up as a diff of the committed
+`api-report.d.ts`; `src/__tests__/api-report.test.ts` fails until it is
+regenerated with `yarn workspace @janhq/extension-api api-report`.
 
 ## Build
 

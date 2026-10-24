@@ -16,7 +16,7 @@ export function manifest(
     id,
     displayName: id,
     publisher: 'Test',
-    apiVersion: '^0.1.0',
+    apiVersion: '^1.0.0',
     main: 'dist/index.js',
     permissions: [],
     ...jan,
