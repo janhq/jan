@@ -78,6 +78,9 @@ pub struct ExtensionsState {
     pub(crate) document_http: reqwest::Client,
     /// Serializes changes to `sources.json`.
     pub(crate) sources_lock: Mutex<()>,
+    /// What the last repair of `sources.json` dropped, shown in the list of
+    /// sources for the rest of the session.
+    pub(crate) sources_notice: Mutex<Option<crate::sources::SourcesNotice>>,
     pub(crate) requests: Mutex<HashMap<String, Running>>,
     next_token: AtomicU64,
 }
@@ -138,6 +141,7 @@ impl ExtensionsState {
             index_http: crate::index::client()?,
             document_http: crate::index::document_client()?,
             sources_lock: Mutex::new(()),
+            sources_notice: Mutex::new(None),
             requests: Mutex::new(HashMap::new()),
             next_token: AtomicU64::new(0),
         };

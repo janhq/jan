@@ -9,7 +9,7 @@ use tauri::ipc::Channel;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime, State};
 
-use crate::catalog::{self, Catalog};
+use crate::catalog::{self, Catalog, SourceList};
 use crate::error::{Error, Result};
 use crate::http::{self, HttpRequest, HttpResponse, HttpStreamEvent};
 use crate::install::{self, EntrySource, InstalledExtension, ListResult, StagedInstall};
@@ -110,7 +110,7 @@ async fn http_fetch_stream(
 }
 
 #[tauri::command]
-async fn list_sources(state: Shared<'_>) -> Result<Vec<IndexSourceEntry>> {
+async fn list_sources(state: Shared<'_>) -> Result<SourceList> {
     blocking(&state, catalog::list_sources).await
 }
 

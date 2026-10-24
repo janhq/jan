@@ -78,6 +78,82 @@ pub fn now_rfc3339() -> String {
     rfc3339(unix_now())
 }
 
+fn digits(s: &str) -> Option<i64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    // Howard Hinnant's days_from_civil, the inverse of `rfc3339`.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Parses an RFC 3339 timestamp (`2026-10-24T08:00:00Z`, optional
+/// fraction, `Z` or a `+HH:MM` offset) into seconds since the epoch and
+/// nanoseconds, so two timestamps compare as instants rather than as
+/// strings. `None` when it is not one.
+pub fn parse_rfc3339(s: &str) -> Option<(i64, u32)> {
+    let (date, rest) = s.split_once(['T', 't'])?;
+    let mut date_parts = date.split('-');
+    let (year, month, day) = (date_parts.next()?, date_parts.next()?, date_parts.next()?);
+    if date_parts.next().is_some() || year.len() != 4 || month.len() != 2 || day.len() != 2 {
+        return None;
+    }
+    let (year, month, day) = (digits(year)?, digits(month)?, digits(day)?);
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if !(1..=12).contains(&month) || day < 1 || day > month_days[(month - 1) as usize] {
+        return None;
+    }
+    let (time, offset) = if let Some(time) = rest.strip_suffix(['Z', 'z']) {
+        (time, 0)
+    } else {
+        let at = rest.len().checked_sub(6)?;
+        let (time, zone) = (rest.get(..at)?, rest.get(at..)?);
+        let sign = match zone.as_bytes()[0] {
+            b'+' => 1,
+            b'-' => -1,
+            _ => return None,
+        };
+        let (h, m) = zone[1..].split_once(':')?;
+        let (h, m) = (digits(h)?, digits(m)?);
+        if h > 23 || m > 59 {
+            return None;
+        }
+        (time, sign * (h * 3_600 + m * 60))
+    };
+    let (clock, fraction) = match time.split_once('.') {
+        Some((clock, fraction)) => (clock, Some(fraction)),
+        None => (time, None),
+    };
+    let mut clock_parts = clock.split(':');
+    let (h, m, sec) = (clock_parts.next()?, clock_parts.next()?, clock_parts.next()?);
+    if clock_parts.next().is_some() || h.len() != 2 || m.len() != 2 || sec.len() != 2 {
+        return None;
+    }
+    let (h, m, sec) = (digits(h)?, digits(m)?, digits(sec)?);
+    if h > 23 || m > 59 || sec > 60 {
+        return None;
+    }
+    let nanos = match fraction {
+        None => 0,
+        Some(f) if !f.is_empty() && f.len() <= 9 && f.bytes().all(|b| b.is_ascii_digit()) => {
+            format!("{f:0<9}").parse().ok()?
+        }
+        Some(_) => return None,
+    };
+    let secs = days_from_civil(year, month, day) * 86_400 + h * 3_600 + m * 60 + sec - offset;
+    Some((secs, nanos))
+}
+
 /// A 32-hex-digit id that is unique within this process and unpredictable
 /// enough that one stage or source cannot be guessed from another. Not a
 /// secret: ids only name entries the caller already owns.
@@ -114,6 +190,29 @@ mod tests {
         assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
         assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(rfc3339(1_792_744_496), "2026-10-23T08:34:56Z");
+    }
+
+    #[test]
+    fn parses_rfc3339_as_instants() {
+        assert_eq!(parse_rfc3339("1970-01-01T00:00:00Z"), Some((0, 0)));
+        assert_eq!(parse_rfc3339("2026-10-23T08:34:56Z"), Some((1_792_744_496, 0)));
+        assert_eq!(parse_rfc3339("2000-02-29T00:00:00Z"), Some((951_782_400, 0)));
+        assert_eq!(parse_rfc3339("2026-10-23T10:34:56.5+02:00"), Some((1_792_744_496, 500_000_000)));
+        assert_eq!(parse_rfc3339("2026-10-23T07:34:56-01:00"), Some((1_792_744_496, 0)));
+        for bad in [
+            "",
+            "x",
+            "2026-10-23",
+            "2026-10-23T08:34:56",
+            "2026-13-01T00:00:00Z",
+            "2026-02-29T00:00:00Z",
+            "2026-10-23T24:00:00Z",
+            "2026-10-23T08:34:56.Z",
+            "2026-10-23T08:34:56+2:00",
+            "+026-10-23T08:34:56Z",
+        ] {
+            assert_eq!(parse_rfc3339(bad), None, "{bad}");
+        }
     }
 
     #[test]

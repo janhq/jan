@@ -111,6 +111,22 @@ pub enum SignatureError {
     /// The signature does not verify over the index bytes with the key.
     #[error("the index signature does not match the source's pinned key")]
     Mismatch,
+    /// A validly signed index older than one already accepted from the
+    /// source: an old index served again (a rollback or a freeze).
+    #[error("the signed index was generated at {generated_at}, before the index already accepted from this source ({last}); an old index may be being replayed")]
+    Rollback {
+        /// The `generatedAt` of the refused index.
+        generated_at: String,
+        /// The newest `generatedAt` accepted before.
+        last: String,
+    },
+    /// A validly signed index past its signed `expires` time.
+    #[error("the signed index expired at {0}; the source must publish a fresh one")]
+    Expired(String),
+    /// A signed index whose `generatedAt` or `expires` is not an RFC 3339
+    /// time, so its freshness cannot be checked.
+    #[error("the signed index has no valid RFC 3339 {0}")]
+    BadTimestamp(&'static str),
 }
 
 /// One manifest problem, with the same path syntax as the TypeScript

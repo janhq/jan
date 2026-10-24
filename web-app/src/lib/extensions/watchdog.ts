@@ -67,32 +67,63 @@ export function crashCounter(
 /** App starts in a row that did not get the installed extensions loaded. */
 export const FAILED_STARTS_KEY = 'extension-host:failedStarts'
 export const MAX_FAILED_STARTS = 2
+/**
+ * Uptime after the installed extensions loaded before a start counts as
+ * good. An extension can send `ready` and take the window down a few
+ * seconds later (a worker exhausting memory shares the renderer), so the
+ * end of loading alone proves nothing.
+ */
+export const START_GRACE_MS = 60_000
 
 /**
- * Loads the installed extensions with a crash-loop guard. A start counts as
- * failed until `load` settled, so an extension that crashes or hangs the
- * app while loading leaves the counter up. After MAX_FAILED_STARTS such
- * starts in a row, safe mode is turned on before anything loads, and
- * `onSafeMode` tells the user. The counter lives in the app settings,
- * which survive a crash of the window.
+ * Loads the installed extensions with a crash-loop guard. Each start raises
+ * a persistent counter first; it goes back to 0 only once the app ran for
+ * START_GRACE_MS after loading settled, or when the window is closed
+ * cleanly (`onCleanShutdown`, e.g. quitting, a reload or an updater
+ * restart) - never just because loading finished. So a start counts as
+ * failed exactly when the window died or was killed early. A worker cannot
+ * fake a clean shutdown: it has no way to close the window.
+ *
+ * After MAX_FAILED_STARTS failed starts in a row, safe mode is turned on
+ * before anything loads and `onSafeMode` tells the user. If turning it on
+ * fails, the installed extensions are still not loaded this start, and
+ * `onSafeModeFailed` tells the user; the counter stays up, so the next
+ * start tries again. The counter lives in the app settings, which survive
+ * a crash of the window. The clean-shutdown reset is best effort: if its
+ * write does not land before the window goes, that start counts once.
  */
 export async function loadWithCrashLoopGuard(options: {
   settings: AppSettingsBackend
   setSafeMode(on: boolean): Promise<void>
   onSafeMode(): void
+  onSafeModeFailed(error: unknown): void
+  /** Registers `reset` to run when the window closes cleanly. */
+  onCleanShutdown(reset: () => void): void
   load(): Promise<void>
 }): Promise<void> {
   const { settings } = options
   const failed = Number.parseInt((await settings.get(FAILED_STARTS_KEY)) ?? '', 10)
   const failedStarts = Number.isSafeInteger(failed) && failed > 0 ? failed : 0
+  await settings.set(FAILED_STARTS_KEY, String(failedStarts + 1))
+  let good = false
+  const reset = () => {
+    if (good) return
+    good = true
+    void settings.set(FAILED_STARTS_KEY, '0').catch(() => undefined)
+  }
+  options.onCleanShutdown(reset)
   if (failedStarts >= MAX_FAILED_STARTS) {
-    await options.setSafeMode(true)
+    try {
+      await options.setSafeMode(true)
+    } catch (error) {
+      options.onSafeModeFailed(error)
+      return
+    }
     options.onSafeMode()
   }
-  await settings.set(FAILED_STARTS_KEY, String(failedStarts + 1))
   try {
     await options.load()
   } finally {
-    await settings.set(FAILED_STARTS_KEY, '0')
+    setTimeout(reset, START_GRACE_MS)
   }
 }

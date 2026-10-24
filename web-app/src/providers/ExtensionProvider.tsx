@@ -60,8 +60,9 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // Installed extensions run in workers after the built-ins, where there
     // is an install pipeline (the desktop app). Not awaited: each may take
     // up to its activation timeout, and llamacpp/mlx must not wait on that.
-    // The guard turns safe mode on when earlier starts never got them
-    // loaded, so one that takes the window down cannot do it every start.
+    // The guard turns safe mode on when earlier starts died before running
+    // a grace period after loading, so one that takes the window down
+    // cannot do it every start.
     const installedFailed = (e: unknown) =>
       console.error('Loading installed extensions failed:', e)
     try {
@@ -71,6 +72,14 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
           settings: appSettings,
           setSafeMode: (on) => service.setSafeMode(on),
           onSafeMode: () => toast.warning(i18n.t('extensions:crashed.safeMode')),
+          onSafeModeFailed: (e) => {
+            console.error('Turning on safe mode failed:', e)
+            toast.error(i18n.t('extensions:crashed.safeModeFailed'))
+          },
+          // pagehide runs on a quit, a reload or an updater restart, not
+          // when the renderer crashes or the process is killed.
+          onCleanShutdown: (reset) =>
+            window.addEventListener('pagehide', reset, { once: true }),
           load: () => getExtensionHost().loadInstalled(),
         }).catch(installedFailed)
     } catch (e) {

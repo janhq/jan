@@ -15,7 +15,11 @@ const plugin = vi.hoisted(() => ({
   uninstall: vi.fn(async () => undefined),
   rollback: vi.fn(),
   setSafeMode: vi.fn(async () => undefined),
-  listSources: vi.fn(async () => []),
+  listSources: vi.fn(async () => ({
+    sources: [],
+    removedPins: [],
+    notice: null,
+  })),
   addSource: vi.fn(),
   removeSource: vi.fn(async () => undefined),
   getCatalog: vi.fn(),

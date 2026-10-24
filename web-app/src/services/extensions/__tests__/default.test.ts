@@ -15,7 +15,11 @@ describe('DefaultExtensionsService', () => {
       recoveredFrom: null,
       extensions: [],
     })
-    await expect(service.listSources()).resolves.toEqual([])
+    await expect(service.listSources()).resolves.toEqual({
+      sources: [],
+      removedPins: [],
+      notice: null,
+    })
   })
 
   it('refuses anything that would install or change state', async () => {

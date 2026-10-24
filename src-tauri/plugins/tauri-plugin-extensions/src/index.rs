@@ -23,6 +23,7 @@ use crate::integrity::{self, is_sri};
 use crate::manifest::{is_caret_range, is_extension_id, is_semver};
 use crate::permissions::is_permission_string;
 use crate::signature::{self, is_public_key, MAX_SIGNATURE_BYTES};
+use crate::store::parse_rfc3339;
 
 /// Largest index document.
 pub const MAX_INDEX_BYTES: usize = 2 * 1024 * 1024;
@@ -92,8 +93,13 @@ pub struct IndexExtension {
 pub struct CuratedIndex {
     /// Always [`SCHEMA`].
     pub schema: u32,
-    /// When the index was generated, as given.
+    /// When the index was generated, as given. For a keyed source it must
+    /// be RFC 3339: an index older than one accepted before is refused.
     pub generated_at: String,
+    /// RFC 3339 time after which a keyed source's index is refused, so a
+    /// signed index cannot be served forever. Ignored for unsigned sources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<String>,
     /// A base64 ed25519 key the maintainer will sign with next. Only offered
     /// to the user from a signed index, and only re-pinned once confirmed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,6 +190,35 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
         }
     }
     Ok(index)
+}
+
+/// Checks the freshness of a signed index: `generatedAt` must not be older
+/// than `last`, the newest one accepted from the source before (equal is
+/// the same index fetched again), and a signed `expires` must not have
+/// passed at `now` (seconds since the epoch). Returns whether
+/// `generatedAt` is newer than `last`, so the caller records it.
+pub fn check_freshness(index: &CuratedIndex, last: Option<&str>, now: u64) -> Result<bool> {
+    let generated = parse_rfc3339(&index.generated_at).ok_or(SignatureError::BadTimestamp("generatedAt"))?;
+    if let Some(expires) = &index.expires {
+        let (at, nanos) = parse_rfc3339(expires).ok_or(SignatureError::BadTimestamp("expires"))?;
+        let now = i64::try_from(now).unwrap_or(i64::MAX);
+        if now > at || (now == at && nanos == 0) {
+            return Err(SignatureError::Expired(expires.clone()).into());
+        }
+    }
+    // A stored value that no longer parses is ignored rather than locking
+    // the source out; it is replaced by this index's time.
+    let Some((last, last_at)) = last.and_then(|l| parse_rfc3339(l).map(|at| (l, at))) else {
+        return Ok(true);
+    };
+    if generated < last_at {
+        return Err(SignatureError::Rollback {
+            generated_at: index.generated_at.clone(),
+            last: last.to_string(),
+        }
+        .into());
+    }
+    Ok(generated > last_at)
 }
 
 /// The listing of exactly `id@version`.

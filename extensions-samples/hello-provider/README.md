@@ -39,6 +39,19 @@ bound before the runtime prelude runs. Keep everything inside the IIFE: a
 rolldown or esbuild `banner`/`footer`/`intro` that adds top-level code makes
 the bundle fail to load ("is not a valid extension bundle").
 
+Once the worker is running, the host pings it every 5 s and stops it after
+3 unanswered pings in a row. The prelude answers each ping from the
+worker's event loop, so **no synchronous task may run for more than about
+15 s**: a busy loop, a large synchronous parse or a long `Atomics.wait`
+between two turns of the event loop gets the worker terminated at 15-20 s
+and marked crashed. Split long work into chunks (`await` between them, or
+`setTimeout(next, 0)`). Pongs are exempt from the host's message rate
+limit, so sending many messages does not by itself stop the heartbeat.
+A worker stopped this way is restarted from the registry; 3 crashes within
+10 minutes keep it off until Jan restarts. If the app itself dies within
+60 s of loading the installed extensions twice in a row (and was not
+closed cleanly), Jan turns on safe mode on the next start.
+
 Before the bundle runs, the prelude removes `fetch`, `XMLHttpRequest`,
 `WebSocket`, `importScripts`, `Notification`, IndexedDB, `navigator.storage`,
 `navigator.serviceWorker`, the Tauri globals and similar from the worker. `ctx.http.fetch` is the only way to reach the network, and the

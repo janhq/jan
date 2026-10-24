@@ -8,6 +8,7 @@ import type {
   ExtensionsService,
   IndexSource,
   InstalledExtension,
+  SourceList,
   ListResult,
   StagedInstall,
 } from './types'
@@ -31,8 +32,8 @@ export class DefaultExtensionsService implements ExtensionsService {
     }
   }
 
-  async listSources(): Promise<IndexSource[]> {
-    return []
+  async listSources(): Promise<SourceList> {
+    return { sources: [], removedPins: [], notice: null }
   }
 
   stageBundle(): Promise<StagedInstall> {

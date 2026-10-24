@@ -16,6 +16,7 @@ import type {
   IndexSource,
   InstalledExtension,
   ListResult,
+  SourceList,
   StagedInstall,
 } from './types'
 
@@ -145,7 +146,7 @@ export class TauriExtensionsService implements ExtensionsService {
     return call(() => plugin.setSafeMode(on))
   }
 
-  listSources(): Promise<IndexSource[]> {
+  listSources(): Promise<SourceList> {
     return call(() => plugin.listSources())
   }
 

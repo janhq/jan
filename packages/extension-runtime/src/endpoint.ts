@@ -75,7 +75,7 @@ export interface EndpointOptions {
   onRejected?: (error: ExtensionError) => void
   /**
    * Asked for every well-formed message except a reply to a request this
-   * side is waiting on, before it is sized or served; `false` refuses it (a request
+   * side is waiting on and a `pong`, before it is sized or served; `false` refuses it (a request
    * gets an error reply) and reports it to `onRejected`. The host rate
    * limits a worker with it, so a flood costs no more than the parse.
    */
@@ -295,7 +295,11 @@ export class Endpoint {
       return
     }
     const awaited = message.t === 'res' && this.pending.has(message.id)
-    if (!awaited && this.options.admit?.() === false) {
+    // A pong is exempt too: it answers the host's own ping, at most one per
+    // ping interval (an unasked one is ignored), and a worker sending at the
+    // rate limit must not lose its heartbeat to its own traffic.
+    const exempt = awaited || message.t === 'pong'
+    if (!exempt && this.options.admit?.() === false) {
       const error = new ExtensionError('E_TOO_LARGE', 'Too many messages')
       this.options.onRejected?.(error)
       if (message.t === 'req') this.respondError(message.id, error)

@@ -16,6 +16,7 @@ import type * as Plugin from '@janhq/tauri-plugin-extensions-api'
 import type {
   Catalog,
   IndexSourceEntry as IndexSource,
+  SourceList,
 } from '@janhq/tauri-plugin-extensions-api'
 
 export type {
@@ -25,6 +26,9 @@ export type {
   IndexVersion,
   IndexSourceEntry as IndexSource,
   ExtensionSource as InstallSource,
+  RemovedPin,
+  SourceList,
+  SourcesNotice,
 } from '@janhq/tauri-plugin-extensions-api'
 
 /** What an update asks for beyond, and no longer needs from, the old grants. */
@@ -100,7 +104,8 @@ export interface ExtensionsService {
   /** Swaps the active and previous versions. */
   rollback(id: string): Promise<InstalledExtension>
   setSafeMode(on: boolean): Promise<void>
-  listSources(): Promise<IndexSource[]>
+  /** The sources, removed pins, and what a store repair dropped. */
+  listSources(): Promise<SourceList>
   addSource(
     url: string,
     name: string,
