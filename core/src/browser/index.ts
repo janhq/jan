@@ -29,12 +29,6 @@ export * from './settings'
 export * from './download'
 
 /**
- * Export Extension module.
- * @module
- */
-export * from './extension'
-
-/**
  * Export all base extensions.
  * @module
  */

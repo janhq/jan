@@ -192,7 +192,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./dialog/tauri'),
           import('./opener/tauri'),
           import('./path/tauri'),
-          import('./core/mobile'), // Use mobile-specific core service
+          import('./core/tauri'),
           import('./deeplink/tauri'),
         ])
 
@@ -205,7 +205,7 @@ class PlatformServiceHub implements ServiceHub {
         this.dialogService = new dialogModule.TauriDialogService()
         this.openerService = new openerModule.TauriOpenerService()
         this.pathService = new pathModule.TauriPathService()
-        this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
+        this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
       }
 

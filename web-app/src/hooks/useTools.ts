@@ -2,9 +2,6 @@ import { useEffect } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
-import { useToolAvailable } from './useToolAvailable'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator/mcp-orchestrator'
 import { useContributions } from '@/lib/extensions/contributions'
 import { listExtensionTools } from '@/lib/extensions/tools'
@@ -16,7 +13,6 @@ export const useTools = () => {
   const updateExtensionTools = useAppState(
     (state) => state.updateExtensionTools
   )
-  const { isDefaultsInitialized, setDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
 
   useEffect(() => {
     async function setTools() {
@@ -26,11 +22,6 @@ export const useTools = () => {
         // notice via its own TTL, serving stale/reordered tools in the
         // meantime and destabilizing the KV-cache prefix Jan sends.
         mcpOrchestrator.invalidateCache()
-
-        // Get MCP extension first
-        const mcpExtension = ExtensionManager.getInstance().get<MCPExtension>(
-          ExtensionTypeEnum.MCP
-        )
 
         // Fetch tools and tool names in parallel
         const [mcpTools, ragToolNames] = await Promise.all([
@@ -52,15 +43,6 @@ export const useTools = () => {
         }
         updateMcpToolNames(mcpNames)
         updateRagToolNames(ragOnly)
-
-        // Initialize default disabled tools for new users (only once)
-        if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
-          const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
-          if (defaultDisabled.length > 0) {
-            setDisabledTools(defaultDisabled)
-            markDefaultsAsInitialized()
-          }
-        }
       } catch (error) {
         console.error('Failed to fetch MCP tools:', error)
       }

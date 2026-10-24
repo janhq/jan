@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { validateManifest } from '@janhq/extension-api'
-import { getBundledExtensions } from '../bundled-extensions'
-import { HOST_BUILTINS, getHostBuiltins } from '@/lib/extensions/builtins'
+import { HOST_BUILTINS, getHostBuiltins } from '../builtins'
 import assistant from '../../../../../extensions/assistant-extension/package.json'
 import download from '../../../../../extensions/download-extension/package.json'
 import llamacpp from '../../../../../extensions/llamacpp-extension/package.json'
@@ -12,22 +11,7 @@ import vectorDb from '../../../../../extensions/vector-db-extension/package.json
 // vitest defines IS_MACOS as false, so mlx is not a host built-in here.
 const HOST_PACKAGES = [assistant, download, llamacpp, vectorDb, rag]
 
-describe('getBundledExtensions', () => {
-  // Every built-in runs on the host now; the legacy list stays empty until
-  // the legacy loader is removed.
-  it('bundles no legacy extension', async () => {
-    expect(await getBundledExtensions()).toEqual([])
-    expect(await getBundledExtensions({ mobile: true })).toEqual([])
-  })
-})
-
 describe('host built-ins', () => {
-  it('never lists a package in both the host and the legacy list', async () => {
-    const legacy = (await getBundledExtensions()).map((e) => e.name)
-    const host = HOST_BUILTINS.map((b) => b.manifest.name)
-    expect(host.filter((name) => legacy.includes(name))).toEqual([])
-  })
-
   it('gives every host built-in the manifest its package.json validates to', () => {
     expect(HOST_BUILTINS.map((b) => b.manifest.name)).toEqual(
       HOST_PACKAGES.map((p) => p.name)

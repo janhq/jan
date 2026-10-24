@@ -9,7 +9,7 @@ import type { ValidatedManifest } from '@janhq/extension-api'
 import { ExtensionSettingsForm } from './ExtensionSettingsForm'
 import { errorMessage } from './useExtensions'
 
-export function Version({ version }: { version: string }) {
+function Version({ version }: { version: string }) {
   return (
     <div className="bg-foreground/10 px-1 py-0.5 rounded text-foreground/70 text-xs">
       v{version}
@@ -17,7 +17,7 @@ export function Version({ version }: { version: string }) {
   )
 }
 
-export function Description({ content }: { content: string }) {
+function Description({ content }: { content: string }) {
   return (
     <RenderMarkdown
       content={content}
