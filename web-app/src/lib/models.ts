@@ -35,10 +35,22 @@ export const getModelCapabilities = (
     ? (providerConfig.supportsImages as unknown as string[])
     : []
 
+  // `supportsVideo` is optional on the provider table — only entries with at
+  // least one video-input model declare it, so read it defensively.
+  const supportsVideoList = (
+    providerConfig as unknown as
+      | { supportsVideo?: readonly string[] }
+      | undefined
+  )?.supportsVideo
+  const supportsVideo = Array.isArray(supportsVideoList)
+    ? (supportsVideoList as string[])
+    : []
+
   return [
     ModelCapabilities.COMPLETION,
     supportsToolCalls.includes(modelId) ? ModelCapabilities.TOOLS : undefined,
     supportsImages.includes(modelId) ? ModelCapabilities.VISION : undefined,
+    supportsVideo.includes(modelId) ? ModelCapabilities.VIDEO : undefined,
   ].filter(Boolean) as string[]
 }
 
