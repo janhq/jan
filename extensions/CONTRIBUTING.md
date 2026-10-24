@@ -41,7 +41,7 @@ The host activates them from `HOST_BUILTINS` in
      "id": "jan.<name>",
      "displayName": "My Feature",
      "publisher": "Jan",
-     "apiVersion": "^0.1.0",
+     "apiVersion": "^1.0.0",
      "main": "dist/index.js",
      "permissions": []
    }

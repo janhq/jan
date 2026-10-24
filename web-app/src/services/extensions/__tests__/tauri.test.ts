@@ -34,7 +34,7 @@ const packageJson = (version = '1.0.0', jan: Record<string, unknown> = {}) => ({
     id: ID,
     displayName: 'Hello',
     publisher: 'Acme',
-    apiVersion: '^0.1.0',
+    apiVersion: '^1.0.0',
     main: 'dist/index.js',
     permissions: ['ui:notify'],
     ...jan,

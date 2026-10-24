@@ -18,7 +18,7 @@ export interface JanManifest {
   displayName: string
   description?: string
   publisher: string
-  /** A caret range on this package's version, for example `^0.1.0`. */
+  /** A caret range on this package's version, for example `^1.0.0`. */
   apiVersion: string
   /** Relative path to the worker bundle (IIFE assigning `JanExtension`). */
   main: string

@@ -27,7 +27,7 @@ function entry(
     apiVersion?: string
   } = {}
 ): InstalledExtension {
-  const { apiVersion = '^0.1.0', permissions = ['ui:notify'], ...rest } = extra
+  const { apiVersion = '^1.0.0', permissions = ['ui:notify'], ...rest } = extra
   const { name, version, ...jan } = manifest(id, {
     apiVersion,
     permissions,

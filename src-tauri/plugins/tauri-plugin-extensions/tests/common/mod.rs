@@ -22,7 +22,7 @@ pub fn package_json(id: &str, version: &str, permissions: &[&str]) -> Value {
             "id": id,
             "displayName": "Test",
             "publisher": "Test",
-            "apiVersion": "^0.1.0",
+            "apiVersion": "^1.0.0",
             "main": "dist/index.js",
             "permissions": permissions,
         }

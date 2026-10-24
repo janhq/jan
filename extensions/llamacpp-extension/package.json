@@ -9,7 +9,7 @@
     "displayName": "llama.cpp Inference Engine",
     "description": "This extension enables llama.cpp chat completion API calls",
     "publisher": "Jan",
-    "apiVersion": "^0.1.0",
+    "apiVersion": "^1.0.0",
     "main": "dist/index.js",
     "permissions": []
   },

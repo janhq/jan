@@ -18,7 +18,7 @@ use crate::permissions::{
 
 /// The `@janhq/extension-api` version this host implements. A vitest guard
 /// keeps it equal to that package's version and `API_VERSION`.
-pub const HOST_API_VERSION: &str = "0.1.0";
+pub const HOST_API_VERSION: &str = "1.0.0";
 
 /// Largest entry bundle the host will load into a worker.
 pub const MAX_MAIN_BYTES: u64 = 5 * 1024 * 1024;
@@ -745,7 +745,7 @@ pub fn validate(
             }
         }
         _ => {
-            c.fail("jan.apiVersion", "must be a caret range such as '^0.1.0'");
+            c.fail("jan.apiVersion", "must be a caret range such as '^1.0.0'");
         }
     }
     check_main(&mut c, jan.get("main"));
@@ -854,7 +854,7 @@ mod tests {
                 "id": "acme.hello",
                 "displayName": "%name%",
                 "publisher": "Acme",
-                "apiVersion": "^0.1.0",
+                "apiVersion": "^1.0.0",
                 "main": "./dist/index.js",
                 "permissions": ["ui:notify", "tools", "providers", "network:127.0.0.1"],
                 "contributes": {

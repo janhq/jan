@@ -39,7 +39,7 @@ fn listing_bytes(tarball: &[u8], permissions: &[&str]) -> Vec<u8> {
                     "version": "0.1.0",
                     "tarball": "https://cdn.example.com/hello-0.1.0.tgz",
                     "integrity": sha512_sri(tarball),
-                    "apiVersion": "^0.1.0",
+                    "apiVersion": "^1.0.0",
                     "engines": { "jan": ">=0.8.0" },
                     "permissions": permissions,
                 }]

@@ -526,7 +526,7 @@ export function validateManifest(pkg: unknown): ValidationResult {
   c.string(jan, 'description', 'jan', { optional: true })
   c.string(jan, 'publisher', 'jan')
   if (typeof jan.apiVersion !== 'string' || !isCaretRange(jan.apiVersion))
-    c.fail('jan.apiVersion', "must be a caret range such as '^0.1.0'")
+    c.fail('jan.apiVersion', "must be a caret range such as '^1.0.0'")
   checkMain(c, jan.main)
   const permissions = checkPermissions(c, jan.permissions)
   checkProposals(c, jan.proposals)

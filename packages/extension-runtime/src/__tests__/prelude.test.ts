@@ -22,7 +22,7 @@ const manifest: ValidatedManifest = {
   id: 'acme.one',
   displayName: 'One',
   publisher: 'Acme',
-  apiVersion: '^0.1.0',
+  apiVersion: '^1.0.0',
   main: 'dist/index.js',
   permissions: [],
 }
