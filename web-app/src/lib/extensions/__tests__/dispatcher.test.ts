@@ -4,8 +4,12 @@ import type { PermissionString } from '@janhq/extension-api'
 import { ContributionStore } from '../contributions'
 import { METHOD_POLICY, PermissionDispatcher } from '../dispatcher'
 import {
+  LOG_LINES_BURST,
+  LOG_LINES_PER_SECOND,
+  LOG_WINDOW_MS,
   MAX_LOG_ARGS,
   MAX_LOG_CHARS,
+  MAX_LOG_CHARS_PER_WINDOW,
   MAX_SUBSCRIPTIONS_PER_EVENT,
   createHostApi,
   type HostApiDeps,
@@ -215,6 +219,48 @@ describe('PermissionDispatcher.dispatch', () => {
     for (let i = 0; i < 1000; i++) call('log', ['info', 'line'])
     expect(info.mock.calls.length).toBeLessThan(200)
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps one extension within a log budget per window', () => {
+    vi.useFakeTimers()
+    try {
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { call } = setup([])
+      const line = 'x'.repeat(MAX_LOG_CHARS)
+      const logged = () =>
+        info.mock.calls.reduce((n, [, ...args]) => n + args.join('').length, 0)
+      // Ten lines a second, every second, for a whole window.
+      for (let s = 0; s < LOG_WINDOW_MS / 1000; s++) {
+        for (let i = 0; i < LOG_LINES_PER_SECOND; i++) call('log', ['info', line])
+        vi.advanceTimersByTime(1000)
+      }
+      expect(logged()).toBeLessThanOrEqual(MAX_LOG_CHARS_PER_WINDOW)
+      expect(logged()).toBeGreaterThan(MAX_LOG_CHARS_PER_WINDOW - 2 * MAX_LOG_CHARS)
+      const before = logged()
+      call('log', ['info', line])
+      expect(logged()).toBe(before + MAX_LOG_CHARS)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sustains no more than LOG_LINES_PER_SECOND', () => {
+    vi.useFakeTimers()
+    try {
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const { call } = setup([])
+      for (let s = 0; s < 10; s++) {
+        for (let i = 0; i < 100; i++) call('log', ['info', 'x'])
+        vi.advanceTimersByTime(1000)
+      }
+      expect(info.mock.calls.length).toBeLessThanOrEqual(
+        LOG_LINES_BURST + 10 * LOG_LINES_PER_SECOND
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rate-limits notifications', () => {

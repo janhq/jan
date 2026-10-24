@@ -411,6 +411,16 @@ function ProviderDetail() {
       return
     }
 
+    // Same path as inference; see assertNotExtensionProvider.
+    if (provider.source) {
+      toast.error(t('providers:models'), {
+        description: t('model-errors:extensionProviderUnavailable', {
+          provider: provider.provider,
+        }),
+      })
+      return
+    }
+
     const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
     const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
     if (nonEmptyKeyCount === 0) {
@@ -473,7 +483,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider?.base_url, provider?.source, provider?.provider, serviceHub, t])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately

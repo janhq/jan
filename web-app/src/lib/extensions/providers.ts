@@ -1,4 +1,5 @@
 import type { ProviderContribution } from '@janhq/extension-api'
+import { i18n } from '@/i18n/react-i18next-compat'
 import type { ContributionState } from './contributions'
 
 /**
@@ -8,6 +9,24 @@ import type { ContributionState } from './contributions'
  */
 export const extensionProviderName = (extensionId: string, providerId: string) =>
   `${extensionId}/${providerId}`
+
+/**
+ * Refuses any request to the baseUrl of a provider an extension contributed.
+ * Until P3's jar-less Rust fetch, the only network path is plugin-http, which
+ * shares the app's cookie jar and follows redirects itself, so a granted
+ * host could bounce a chat (body and all) to Jan's local API server or to
+ * any other local port, and the grant check at register time would not
+ * see it. Such providers stay listed, with the models `listModels` gave;
+ * sending to them fails with this error.
+ */
+export function assertNotExtensionProvider(provider: ModelProvider): void {
+  if (provider.source)
+    throw new Error(
+      i18n.t('model-errors:extensionProviderUnavailable', {
+        provider: provider.provider,
+      })
+    )
+}
 
 /** A contributed provider whose extension has activated it. */
 export interface ActiveExtensionProvider {
@@ -32,8 +51,9 @@ export function listExtensionProviders(
 
 /**
  * The `useModelProvider` entry of a contributed provider: OpenAI-compatible,
- * so the host's model factory runs inference against `baseUrl` itself and
- * no token streams over RPC. It carries no settings of its own; the base URL
+ * so the host's model factory will run inference against `baseUrl` itself
+ * and no token streams over RPC (refused for now, see
+ * `assertNotExtensionProvider`). It carries no settings of its own; the base URL
  * is fixed by the manifest and the key lives in the extension's settings.
  */
 export function toModelProvider(

@@ -42,10 +42,6 @@ const { getPrototypeOf, getOwnPropertyDescriptor, defineProperty, hasOwn } =
 const replaced = (name: string) =>
   new ErrorCtor(`The worker global '${name}' was replaced before the prelude ran`)
 
-function require(ok: boolean, name: string): void {
-  if (!ok) throw replaced(name)
-}
-
 const isObject = (v: unknown): v is object => typeof v === 'object' && v !== null
 
 // A collection constructor: a hoisted function's own prototype has no `has`.
@@ -61,6 +57,27 @@ const isHostFunction = (v: unknown): boolean =>
   typeof v === 'function' &&
   !hasOwn(v, 'prototype') &&
   getPrototypeOf(v) !== AsyncFunctionProto
+
+// Taken before any check, only if it is the host's own: an abort is then
+// reported at once instead of leaving the host to its start timeout. A
+// replaced postMessage reports nothing; the host still times out. Called
+// with no `this`, which a worker's global operations accept.
+const hostPost: ((message: unknown) => void) | undefined = isHostFunction(
+  postMessage
+)
+  ? postMessage
+  : undefined
+
+function require(ok: boolean, name: string): void {
+  if (ok) return
+  const error = replaced(name)
+  hostPost?.({
+    v: 1,
+    t: 'activateFailed',
+    error: { code: 'E_INTERNAL', message: error.message },
+  })
+  throw error
+}
 
 require(Object === ObjectCtor, 'Object')
 require(Array === ArrayCtor, 'Array')

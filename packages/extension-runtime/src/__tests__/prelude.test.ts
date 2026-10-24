@@ -331,6 +331,32 @@ describe('prelude intrinsics', () => {
     expect(controls.some((m) => m.t === 'ready')).toBe(false)
   })
 
+  it('reports a realm abort to the host at once, through the real postMessage', async () => {
+    const { controls } = bootUnchecked(`
+      function Reflect() {}
+      var JanExtension = { activate: function () {} };`)
+    await vi.waitFor(() =>
+      expect(controls).toContainEqual({
+        v: 1,
+        t: 'activateFailed',
+        error: {
+          code: 'E_INTERNAL',
+          message: "The worker global 'Reflect' was replaced before the prelude ran",
+        },
+      })
+    )
+  })
+
+  it('reports nothing when postMessage itself was replaced', async () => {
+    const { worker, controls, errors } = bootUnchecked(`
+      function postMessage() { self.__posted = true }
+      var JanExtension = { activate: function () {} };`)
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(controls).toEqual([])
+    expect(worker.scope.__posted).toBeUndefined()
+  })
+
   it('strips storage off the real navigator even when the name is shadowed (nav.mjs)', async () => {
     for (const shadow of ['function navigator() {}', 'var navigator;']) {
       const { worker, controls, logs } = bootUnchecked(`

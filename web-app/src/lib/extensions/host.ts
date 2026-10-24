@@ -257,8 +257,8 @@ export class ExtensionHost {
             ...this.apiDeps(),
             // Not until P3's Rust http_fetch: plugin-http sends every request
             // through the app's cookie jar, and nothing in JS can turn that
-            // off per request. Inference of a contributed provider runs in
-            // the host, not through this path, so providers still work.
+            // off per request. Inference with a contributed provider waits
+            // for it too (assertNotExtensionProvider).
             fetch: undefined,
           }),
         })

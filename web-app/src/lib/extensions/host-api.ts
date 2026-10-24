@@ -82,6 +82,15 @@ export const MAX_SUBSCRIPTIONS_PER_EVENT = 16
 /** What one log line may carry, after the level. */
 export const MAX_LOG_ARGS = 16
 export const MAX_LOG_CHARS = 4096
+/** Log lines one extension may write: a burst, then this many a second. */
+export const LOG_LINES_BURST = 50
+export const LOG_LINES_PER_SECOND = 10
+/**
+ * Characters one extension may log per window. app.log rotates at
+ * 10 MB x 5, so one extension can push at most a fraction of it out.
+ */
+export const LOG_WINDOW_MS = 10 * 60_000
+export const MAX_LOG_CHARS_PER_WINDOW = 1024 * 1024
 const MAX_REDIRECTS = 5
 const FETCH_TIMEOUT_MS = 30_000
 // Never forwarded either way: the host's cookie jar is not the extension's.
@@ -125,6 +134,32 @@ function logText(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+/**
+ * The limits a worker extension runs under. Built-ins are Jan's own code
+ * and get none: a download built-in may toast progress, hold many
+ * listeners or run many requests (see `createHostApi`).
+ */
+export interface HostApiLimits {
+  /** Notifications: a burst of 5, then one every 2 s. */
+  notifyRate: boolean
+  /** MAX_SUBSCRIPTIONS_PER_EVENT listeners per event. */
+  subscriptions: boolean
+  /** MAX_CONCURRENT_FETCHES requests at once. */
+  fetchConcurrency: boolean
+}
+
+export const WORKER_LIMITS: HostApiLimits = {
+  notifyRate: true,
+  subscriptions: true,
+  fetchConcurrency: true,
+}
+
+export const BUILTIN_LIMITS: HostApiLimits = {
+  notifyRate: false,
+  subscriptions: false,
+  fetchConcurrency: false,
 }
 
 /** At most MAX_LOG_ARGS arguments and MAX_LOG_CHARS characters in all. */
@@ -294,11 +329,14 @@ async function fetchChecked(
  * no permission or argument checks: `PermissionDispatcher.dispatch` runs
  * those first, for in-process built-ins and workers alike. The only checks
  * here are the ones that depend on runtime state the policy cannot see:
- * redirect targets and what the contribution store holds.
+ * redirect targets, what the contribution store holds, and `limits`.
+ * Worker logging is always limited; built-ins log through `createLogger`
+ * directly and never reach `log` here.
  */
 export function createHostApi(
   manifest: ValidatedManifest,
-  deps: HostApiDeps
+  deps: HostApiDeps,
+  limits: HostApiLimits = WORKER_LIMITS
 ): HostApi {
   const { id } = manifest
   const { contributions, settings } = deps
@@ -306,13 +344,15 @@ export function createHostApi(
   const storage = createExtensionStorage(id, deps.storage)
   let fetches = 0
   const subscriptions = new Map<string, number>()
-  const logAllowed = rateLimiter(100, 50)
+  const logAllowed = rateLimiter(LOG_LINES_BURST, LOG_LINES_PER_SECOND)
   const notifyAllowed = rateLimiter(5, 0.5)
   let logDropped = false
+  let logWindowStart = Date.now()
+  let logWindowChars = 0
   // Counts the listeners of one event and releases the slot on dispose.
   const capped = (name: string, subscribe: () => { dispose(): void }) => {
     const count = subscriptions.get(name) ?? 0
-    if (count >= MAX_SUBSCRIPTIONS_PER_EVENT)
+    if (limits.subscriptions && count >= MAX_SUBSCRIPTIONS_PER_EVENT)
       throw tooMany(`subscriptions to '${name}'`)
     const subscription = subscribe()
     subscriptions.set(name, count + 1)
@@ -331,14 +371,22 @@ export function createHostApi(
 
   return {
     'log': (_call, level: LogLevel, ...args: unknown[]) => {
-      if (!logAllowed()) {
+      const now = Date.now()
+      if (now - logWindowStart >= LOG_WINDOW_MS) {
+        logWindowStart = now
+        logWindowChars = 0
+      }
+      const line = logAllowed() ? capLogArgs(args) : undefined
+      const chars = line?.reduce((n, s) => n + s.length, 0) ?? 0
+      if (!line || logWindowChars + chars > MAX_LOG_CHARS_PER_WINDOW) {
         if (!logDropped)
-          logger.warn('Logging too fast; dropping lines for a while')
+          logger.warn('Logging too much; dropping lines for a while')
         logDropped = true
         return
       }
       logDropped = false
-      logger[level](...capLogArgs(args))
+      logWindowChars += chars
+      logger[level](...line)
     },
     'settings.get': (_call, key) => settings.getSettingValue(id, key),
     'settings.set': (_call, key, value) => settings.setSettingValue(id, key, value),
@@ -363,7 +411,7 @@ export function createHostApi(
       )
     },
     'ui.notify': (_call, { level, message }) => {
-      if (!notifyAllowed()) throw tooMany('notifications')
+      if (limits.notifyRate && !notifyAllowed()) throw tooMany('notifications')
       deps.notify({ extensionName: manifest.displayName, level, message })
     },
     'ui.setStatusItem': (_call, itemId, update) =>
@@ -395,7 +443,7 @@ export function createHostApi(
       return contributions.registerProvider(id, providerId, handlers)
     },
     'http.fetch': async ({ signal }, url, init) => {
-      if (fetches >= MAX_CONCURRENT_FETCHES)
+      if (limits.fetchConcurrency && fetches >= MAX_CONCURRENT_FETCHES)
         throw tooMany(`requests at once (at most ${MAX_CONCURRENT_FETCHES})`)
       fetches++
       try {

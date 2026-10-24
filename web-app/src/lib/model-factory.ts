@@ -80,6 +80,7 @@ import {
   getProviderApiType,
 } from '@/lib/providerCaps'
 import { engineFailure } from '@/lib/engineError'
+import { assertNotExtensionProvider } from '@/lib/extensions/providers'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -964,6 +965,7 @@ export class ModelFactory {
     provider: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
+    assertNotExtensionProvider(provider)
     const providerName = provider.provider.toLowerCase()
     parameters = stripUnsupportedSamplers(parameters, provider, modelId)
 

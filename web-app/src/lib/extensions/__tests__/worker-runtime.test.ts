@@ -9,12 +9,13 @@ import {
 } from '@janhq/extension-runtime/testing'
 import { HOST_BUILTINS } from '../builtins'
 import { ContributionStore } from '../contributions'
-import { PermissionDispatcher } from '../dispatcher'
+import { METHOD_POLICY, PermissionDispatcher } from '../dispatcher'
 import { ExtensionHost } from '../host'
 import { createHostApi, type FetchLike } from '../host-api'
 import { ExtensionSettingsStore } from '../settings-store'
 import {
   MAX_REJECTED_MESSAGES,
+  MESSAGE_BURST,
   createBlobWorker,
   startWorker,
 } from '../worker-runtime'
@@ -461,6 +462,52 @@ describe('startWorker', () => {
     )
     await expect(started).rejects.toMatchObject({ code: 'E_INVALID_ARGS' })
     expect(worker()?.terminated).toBe(true)
+  })
+
+  it('terminates a worker that floods well-formed calls', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    const parse = vi.spyOn(METHOD_POLICY.log.args, 'safeParse')
+    const { started, worker } = start(
+      `var JanExtension = { activate: function () {
+        setTimeout(function () {
+          for (var i = 0; i < ${MESSAGE_BURST * 4}; i++)
+            self.postMessage({ v: 1, t: 'req', id: i + 1, method: 'log', args: ['info', 'x'] });
+        }, 10);
+      } };`
+    )
+    await started
+    await vi.waitFor(() => expect(worker()?.terminated).toBe(true))
+    // Calls over the budget never reached argument validation.
+    expect(parse.mock.calls.length).toBeLessThanOrEqual(MESSAGE_BURST + 1)
+    parse.mockRestore()
+  })
+
+  it('terminates a worker that keeps making calls it is refused', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { started, worker } = start(
+      `var JanExtension = { activate: function () {
+        setTimeout(function () {
+          for (var i = 0; i < ${MAX_REJECTED_MESSAGES}; i++)
+            self.postMessage({ v: 1, t: 'req', id: i + 1, method: 'ui.notify', args: [{ level: 'info', message: 'x' }] });
+        }, 10);
+      } };`
+    )
+    await started
+    await vi.waitFor(() => expect(worker()?.terminated).toBe(true))
+  })
+
+  it('lets a worker that stays within the budget run', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    const { started, worker } = start(
+      `var JanExtension = { activate: function (ctx) {
+        for (var i = 0; i < ${MESSAGE_BURST - 10}; i++) ctx.log.info('x');
+      } };`
+    )
+    const connection = await started
+    await new Promise((r) => setTimeout(r, 50))
+    expect(worker()?.terminated).toBe(false)
+    connection.terminate()
   })
 
   it('terminates a running worker that floods oversized messages', async () => {

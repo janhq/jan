@@ -14,7 +14,12 @@ import type {
   HostResult,
 } from '@janhq/extension-runtime'
 import type { InternalExtensionContext } from '@janhq/core'
-import { createHostApi, createLogger, type HostApiDeps } from './host-api'
+import {
+  BUILTIN_LIMITS,
+  createHostApi,
+  createLogger,
+  type HostApiDeps,
+} from './host-api'
 
 export type { Notify } from './host-api'
 
@@ -41,7 +46,7 @@ export function createContext(
   deps: ContextDeps,
   internal?: InternalExtensionContext['internal']
 ): ExtensionContext | InternalExtensionContext {
-  const api = createHostApi(manifest, deps)
+  const api = createHostApi(manifest, deps, BUILTIN_LIMITS)
   const call = <M extends HostMethod>(
     method: M,
     ...args: HostArgs<M>
