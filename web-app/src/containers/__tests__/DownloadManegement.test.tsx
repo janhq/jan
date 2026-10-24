@@ -15,12 +15,6 @@ const hoisted = vi.hoisted(() => ({
     setPaused: vi.fn(),
     addLocalDownloadingModel: vi.fn(),
   },
-  updateState: {
-    isDownloading: false,
-    downloadProgress: 0,
-    downloadedBytes: 0,
-    totalBytes: 0,
-  },
   navigateMock: vi.fn(),
   toastMock: {
     success: vi.fn(),
@@ -43,10 +37,6 @@ vi.mock('@/hooks/useDownloadStore', () => {
   useDownloadStore.getState = () => hoisted.downloadStore
   return { useDownloadStore }
 })
-
-vi.mock('@/hooks/useAppUpdater', () => ({
-  useAppUpdater: () => ({ updateState: hoisted.updateState }),
-}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
@@ -120,6 +110,7 @@ window.core = {
 }
 
 import { DownloadManagement } from '../DownloadManegement'
+import { useAppUpdateDownload } from '@/stores/app-update-download-store'
 
 describe('DownloadManagement', () => {
   beforeEach(() => {
@@ -127,12 +118,12 @@ describe('DownloadManagement', () => {
     hoisted.downloadStore.downloads = {}
     hoisted.downloadStore.resumeParams = {}
     hoisted.downloadStore.localDownloadingModels = new Set()
-    hoisted.updateState = {
+    useAppUpdateDownload.setState({
       isDownloading: false,
       downloadProgress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
-    }
+    })
     hoisted.eventHandlers = {}
   })
 
@@ -170,13 +161,13 @@ describe('DownloadManagement', () => {
     expect(screen.getByText('Downloading...')).toBeInTheDocument()
   })
 
-  it('renders App Update progress when updater is downloading', () => {
-    hoisted.updateState = {
+  it('renders App Update progress when an update is downloading', () => {
+    useAppUpdateDownload.setState({
       isDownloading: true,
       downloadProgress: 0.5,
       downloadedBytes: 1024,
       totalBytes: 2048,
-    }
+    })
     render(<DownloadManagement />)
     expect(screen.getByText('App Update')).toBeInTheDocument()
     expect(screen.getByText('50%')).toBeInTheDocument()
@@ -228,16 +219,26 @@ describe('DownloadManagement', () => {
     expect(screen.getByText('App Update')).toBeInTheDocument()
   })
 
-  it('stays visible mid app update when updater state syncs', () => {
-    const { rerender } = render(<DownloadManagement />)
+  it('keeps app update progress across a remount (sidebar toggle)', () => {
+    const { unmount } = render(<DownloadManagement />)
     act(() => {
       hoisted.eventHandlers['audu']({ progress: 0.1, downloadedBytes: 10, totalBytes: 100 })
     })
-    // A sync from another useAppUpdater instance hands back a fresh state
-    // object that still says isDownloading: false
-    hoisted.updateState = { ...hoisted.updateState, isDownloading: false }
-    rerender(<DownloadManagement />)
+    unmount()
+    // No further progress events: the new mount must not wait for one
+    render(<DownloadManagement />)
     expect(screen.getByText('App Update')).toBeInTheDocument()
+  })
+
+  it('hides again once the app update download finishes', () => {
+    const { container } = render(<DownloadManagement />)
+    act(() => {
+      hoisted.eventHandlers['audu']({ progress: 0.5, downloadedBytes: 50, totalBytes: 100 })
+    })
+    act(() => {
+      hoisted.eventHandlers['auds']()
+    })
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('on app update download success, shows success toast', () => {

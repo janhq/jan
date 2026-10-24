@@ -5,7 +5,7 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useAppUpdateDownload } from '@/stores/app-update-download-store'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { events, AppEvent } from '@janhq/core'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
@@ -28,27 +28,8 @@ export function DownloadManagement() {
     setPaused,
     addLocalDownloadingModel,
   } = useDownloadStore()
-  const { updateState } = useAppUpdater()
-
-  const [appUpdateState, setAppUpdateState] = useState({
-    isDownloading: false,
-    downloadProgress: 0,
-    downloadedBytes: 0,
-    totalBytes: 0,
-  })
-
-  useEffect(() => {
-    // This hook instance never downloads, and download state isn't synced
-    // across instances, so a `false` here is stale: the download events below
-    // own it. Copying it would hide the button mid-update on any state sync.
-    if (!updateState.isDownloading) return
-    setAppUpdateState({
-      isDownloading: updateState.isDownloading,
-      downloadProgress: updateState.downloadProgress,
-      downloadedBytes: updateState.downloadedBytes,
-      totalBytes: updateState.totalBytes,
-    })
-  }, [updateState])
+  const appUpdateState = useAppUpdateDownload()
+  const setAppUpdateState = appUpdateState.update
 
   const onAppUpdateDownloadUpdate = useCallback(
     (data: {
@@ -56,37 +37,32 @@ export function DownloadManagement() {
       downloadedBytes?: number
       totalBytes?: number
     }) => {
-      setAppUpdateState((prev) => ({
-        ...prev,
+      setAppUpdateState({
         isDownloading: true,
         downloadProgress: data.progress || 0,
         downloadedBytes: data.downloadedBytes || 0,
         totalBytes: data.totalBytes || 0,
-      }))
+      })
     },
-    []
+    [setAppUpdateState]
   )
 
   const onAppUpdateDownloadSuccess = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
+    setAppUpdateState({
       isDownloading: false,
       downloadProgress: 1,
-    }))
+    })
     toast.success(t('common:toast.appUpdateDownloaded.title'), {
       description: t('common:toast.appUpdateDownloaded.description'),
     })
-  }, [t])
+  }, [t, setAppUpdateState])
 
   const onAppUpdateDownloadError = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
-      isDownloading: false,
-    }))
+    setAppUpdateState({ isDownloading: false })
     toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
       description: t('common:toast.appUpdateDownloadFailed.description'),
     })
-  }, [t])
+  }, [t, setAppUpdateState])
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
