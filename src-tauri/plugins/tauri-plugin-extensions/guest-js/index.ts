@@ -221,6 +221,40 @@ export interface IndexSourceEntry {
    */
   publicKey?: string
   addedAt: string
+  /**
+   * The `generatedAt` of the newest signed index accepted from this keyed
+   * source; an older signed index is refused as a replay (`signature`).
+   */
+  lastGeneratedAt?: string
+}
+
+/** The key a keyed source had when the user removed it. */
+export interface RemovedPin {
+  url: string
+  publicKey: string
+  removedAt: string
+}
+
+/** A `sources.json` entry dropped on load because it failed the checks. */
+export interface DroppedSource {
+  name: string | null
+  url: string | null
+  reason: string
+}
+
+/** What a repair of `sources.json` dropped; the old file is at `movedTo`. */
+export interface SourcesNotice {
+  movedTo: string
+  /** Empty when the file was unreadable and every source was lost. */
+  dropped: DroppedSource[]
+}
+
+/** The index sources, with the remembered pins and any repair notice. */
+export interface SourceList {
+  sources: IndexSourceEntry[]
+  /** Keys of removed keyed sources, to warn when one is re-added unkeyed. */
+  removedPins: RemovedPin[]
+  notice: SourcesNotice | null
 }
 
 /** One version of an indexed extension. */
@@ -256,7 +290,13 @@ export interface IndexExtension {
  */
 export interface CuratedIndex {
   schema: 1
+  /**
+   * RFC 3339 for a keyed source: a signed index older than one already
+   * accepted from the source is refused.
+   */
   generatedAt: string
+  /** RFC 3339; a keyed source's index is refused after it. */
+  expires?: string
   /** The base64 ed25519 key the maintainer will sign with next. */
   nextPublicKey?: string
   extensions: IndexExtension[]
@@ -274,7 +314,7 @@ export interface Catalog {
   nextPublicKey: string | null
 }
 
-export async function listSources(): Promise<IndexSourceEntry[]> {
+export async function listSources(): Promise<SourceList> {
   return await invoke('plugin:extensions|list_sources')
 }
 
@@ -293,7 +333,9 @@ export async function removeSource(id: string): Promise<void> {
 
 /**
  * Fetches the index of a source (https, 2 MiB, 15 s, no redirects). For a
- * keyed source the `.sig` must verify, or this rejects with `signature`.
+ * keyed source the `.sig` must verify and the index must not be older than
+ * one accepted before nor past its `expires`, or this rejects with
+ * `signature`.
  */
 export async function getCatalog(sourceId: string): Promise<Catalog> {
   return await invoke('plugin:extensions|get_catalog', { sourceId })

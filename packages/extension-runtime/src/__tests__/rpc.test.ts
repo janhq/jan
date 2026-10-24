@@ -385,6 +385,28 @@ describe('Endpoint', () => {
     expect(sized).not.toContainEqual(expect.objectContaining({ t: 'res', id: 77 }))
     port2.close()
   })
+
+  it('lets a pong through even when admit refuses everything else', async () => {
+    const rejected = vi.fn()
+    const control = vi.fn()
+    const admit = vi.fn(() => false)
+    const { port1, port2 } = new MessageChannel()
+    const host = new Endpoint(portTransport(port1), {
+      onRejected: rejected,
+      onControl: control,
+      admit,
+    })
+    open.push(host)
+    port2.postMessage({ v: 1, t: 'evt', sub: 1, value: 'flood' })
+    port2.postMessage({ v: 1, t: 'pong', n: 1 })
+    await vi.waitFor(() => expect(control).toHaveBeenCalledTimes(1))
+    expect(control).toHaveBeenCalledWith({ v: 1, t: 'pong', n: 1 })
+    expect(rejected).toHaveBeenCalledTimes(1)
+    // The pong spent no token: a busy but alive worker is not starved of
+    // its heartbeat by its own traffic.
+    expect(admit).toHaveBeenCalledTimes(1)
+    port2.close()
+  })
 })
 
 describe('parseWire', () => {

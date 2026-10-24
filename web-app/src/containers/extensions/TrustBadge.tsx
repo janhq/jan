@@ -5,6 +5,8 @@ const DANGER =
   'bg-destructive/10 px-1 py-0.5 rounded text-destructive text-xs font-medium'
 const MUTED =
   'bg-foreground/10 px-1 py-0.5 rounded text-foreground/70 text-xs font-medium'
+const WARNING =
+  'bg-amber-500/10 px-1 py-0.5 rounded text-amber-600 dark:text-amber-400 text-xs font-medium'
 
 /** Marks a bundle nobody vouched for: installed from a file, not an index. */
 export function UnverifiedBadge() {
@@ -20,8 +22,8 @@ export function UnsignedSourceBadge() {
 
 /**
  * How far an installed version can be trusted: verified by the key pinned
- * for its source, only integrity checked against an unsigned index, or
- * unverified (a file from disk).
+ * for its source, only integrity checked against an unsigned index (a
+ * warning), or unverified (a file from disk).
  */
 export function TrustBadge({
   entry,
@@ -37,9 +39,13 @@ export function TrustBadge({
         })}
       </span>
     )
+  // The SRI was chosen by the same unsigned index it was checked against,
+  // so it says nothing about the author: never styled like "Verified by".
   if (entry.integrityChecked)
     return (
-      <span className={MUTED}>{t('extensions:origin.integrityChecked')}</span>
+      <span className={WARNING}>
+        {t('extensions:origin.integrityCheckedUnsigned')}
+      </span>
     )
   return <UnverifiedBadge />
 }

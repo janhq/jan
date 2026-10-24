@@ -486,7 +486,10 @@ export class ExtensionHost {
    * A running worker was stopped by the runtime. It is marked `crashed` and
    * released. An installed one is started again from the registry, unless
    * it crashed CRASH_LIMIT times within the window: then it stays off until
-   * the app restarts, and the user is told.
+   * the app restarts, and the user is told. A crash of an entry that is no
+   * longer the running one (it was already being stopped or replaced, e.g.
+   * its heartbeat ran out while a user-initiated teardown waited on
+   * `deactivate`) is neither counted nor restarted.
    */
   private onCrash(entry: Entry, error: Error): void {
     const { id, manifest, source } = entry.hosted
@@ -497,17 +500,18 @@ export class ExtensionHost {
       entry.hosted = { ...entry.hosted, state: 'crashed', error: error.message }
       await this.teardown(entry)
       this.changes.fire()
+      if (this.crashLimitReached(id)) {
+        this.disabledForSession.add(id)
+        this.options.notify({
+          extensionName: manifest.displayName,
+          level: 'error',
+          message: i18n.t('extensions:crashed.disabled'),
+        })
+      } else if (source === 'installed') {
+        // Not awaited: reload enqueues work of its own behind this task.
+        void this.reload(id)
+      }
     })
-    if (this.crashLimitReached(id)) {
-      this.disabledForSession.add(id)
-      this.options.notify({
-        extensionName: manifest.displayName,
-        level: 'error',
-        message: i18n.t('extensions:crashed.disabled'),
-      })
-    } else if (source === 'installed') {
-      void this.reload(id)
-    }
   }
 
   /** Registers what the host holds for an extension; dispose releases it. */
