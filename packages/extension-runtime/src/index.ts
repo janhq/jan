@@ -55,7 +55,11 @@ export {
   type Wire,
   type WireResult,
 } from './protocol.js'
-export { composeWorkerSource } from './compose.js'
+export {
+  BUNDLE_GLOBAL,
+  assertBundleShape,
+  composeWorkerSource,
+} from './compose.js'
 export { workerTransport, type WorkerLike } from './worker-like.js'
 export { ACTIVATE_TIMEOUT_MS, BOOT_FUNCTION } from './worker/runtime.js'
 export { STRIPPED_GLOBALS, STRIPPED_NAVIGATOR } from './worker/strip.js'

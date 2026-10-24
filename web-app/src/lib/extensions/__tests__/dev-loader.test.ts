@@ -39,6 +39,8 @@ const pkg = (jan: Record<string, unknown> = {}) => ({
   },
 })
 
+const BUNDLE = 'var JanExtension = { activate: function () {} }'
+
 const writePkg = (value: unknown) =>
   files.map.set(`${DIR}/package.json`, JSON.stringify(value))
 
@@ -66,8 +68,8 @@ describe('readUnpacked', () => {
 
   it('accepts a ./ prefix and a trailing separator on the folder', async () => {
     writePkg(pkg({ main: './dist/index.js' }))
-    files.map.set(`${DIR}/dist/index.js`, 'x')
-    await expect(readUnpacked(`${DIR}/`)).resolves.toMatchObject({ bundle: 'x' })
+    files.map.set(`${DIR}/dist/index.js`, BUNDLE)
+    await expect(readUnpacked(`${DIR}/`)).resolves.toMatchObject({ bundle: BUNDLE })
   })
 
   it('reports a missing package.json', async () => {
@@ -99,6 +101,20 @@ describe('readUnpacked', () => {
     }
   )
 
+  it('refuses a bundle that is not a single var JanExtension (hoisted declarations)', async () => {
+    writePkg(pkg())
+    files.map.set(
+      `${DIR}/dist/index.js`,
+      `function Set() { self.__net = fetch }\n${BUNDLE}`
+    )
+    const error = await codeOf(readUnpacked(DIR))
+    expect(error.code).toBe('invalidBundle')
+    expect(error.params).toMatchObject({
+      file: 'dist/index.js',
+      error: expect.stringContaining('JanExtension'),
+    })
+  })
+
   it('reports a missing bundle', async () => {
     writePkg(pkg())
     const error = await codeOf(readUnpacked(DIR))
@@ -116,14 +132,14 @@ describe('loadUnpacked', () => {
 
   it('spawns a dev worker granted everything the manifest requests', async () => {
     writePkg(pkg({ permissions: ['ui:notify', 'network:api.example.com'] }))
-    files.map.set(`${DIR}/dist/index.js`, 'bundle')
+    files.map.set(`${DIR}/dist/index.js`, BUNDLE)
     const unpacked = await readUnpacked(DIR)
     host.spawnWorkerExtension.mockResolvedValue(hosted('dev', 'active'))
 
     await expect(loadUnpacked(unpacked)).resolves.toMatchObject({ state: 'active' })
     expect(host.spawnWorkerExtension).toHaveBeenCalledWith({
       manifest: unpacked.manifest,
-      bundle: 'bundle',
+      bundle: BUNDLE,
       grants: ['ui:notify', 'network:api.example.com'],
       source: 'dev',
     })
@@ -131,7 +147,7 @@ describe('loadUnpacked', () => {
 
   it('refuses an id that is already running', async () => {
     writePkg(pkg())
-    files.map.set(`${DIR}/dist/index.js`, 'bundle')
+    files.map.set(`${DIR}/dist/index.js`, BUNDLE)
     const unpacked = await readUnpacked(DIR)
     host.list.mockReturnValue([hosted('builtin', 'failed')])
     expect((await codeOf(loadUnpacked(unpacked))).code).toBe('alreadyLoaded')
@@ -142,7 +158,7 @@ describe('loadUnpacked', () => {
 
   it('replaces a dev load that failed, so a fixed folder can be retried', async () => {
     writePkg(pkg())
-    files.map.set(`${DIR}/dist/index.js`, 'bundle')
+    files.map.set(`${DIR}/dist/index.js`, BUNDLE)
     const unpacked = await readUnpacked(DIR)
     host.list.mockReturnValue([hosted('dev', 'failed')])
     host.spawnWorkerExtension.mockResolvedValue(hosted('dev', 'active'))

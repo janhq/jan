@@ -24,43 +24,53 @@ const state = (
 })
 
 describe('toolWireName', () => {
-  it('prefixes the extension id with . and - replaced', () => {
-    expect(toolWireName('jan-samples.hello-provider', 'echo_upper')).toBe(
-      'x_jan_samples_hello_provider__echo_upper'
-    )
+  it('is x_<hash of id and name>__<name>, within 64 provider-safe characters', () => {
+    const name = toolWireName('jan-samples.hello-provider', 'echo_upper')
+    expect(name).toMatch(/^x_[0-9a-f]{16}__echo_upper$/)
+    expect(toolWireName('acme.one', 'say hi!')).toMatch(/^x_[0-9a-f]{16}__say_hi_$/)
+    const long = toolWireName('acme.' + 'a'.repeat(38), 'b'.repeat(64))
+    expect(long).toHaveLength(64)
+    expect(long).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 
-  it('cuts to 64 characters and replaces what providers reject', () => {
-    const name = toolWireName('acme.' + 'a'.repeat(38), 'b'.repeat(40))
-    expect(name).toHaveLength(64)
-    expect(toolWireName('acme.one', 'say hi!')).toBe('x_acme_one__say_hi_')
+  it('keeps ids and names apart that sanitize or truncate to the same text', () => {
+    // Both used to be x_acme_x_foo__t.
+    expect(toolWireName('acme-x.foo', 't')).not.toBe(toolWireName('acme.x-foo', 't'))
+    expect(toolWireName('acme.one', 'a.b')).not.toBe(toolWireName('acme.one', 'a_b'))
+    const long = 'n'.repeat(60)
+    expect(toolWireName('acme.one', `${long}1`)).not.toBe(
+      toolWireName('acme.one', `${long}2`)
+    )
   })
 })
 
 describe('listExtensionTools', () => {
-  it('lists bound tools only, sorted, with unique names', () => {
-    const long = 'n'.repeat(60)
+  it('lists bound tools only, sorted, under their own wire names', () => {
     const tools = listExtensionTools(
       state({
         'acme.two': { b: tool('b'), a: tool('a') },
-        'acme.one': {
-          [`${long}1`]: tool(`${long}1`),
-          [`${long}2`]: tool(`${long}2`),
-          idle: tool('idle', false),
-        },
+        'acme.one': { echo: tool('echo'), idle: tool('idle', false) },
       })
     )
     expect(tools.map((t) => [t.extensionId, t.name])).toEqual([
-      ['acme.one', `${long}1`],
-      ['acme.one', `${long}2`],
+      ['acme.one', 'echo'],
       ['acme.two', 'a'],
       ['acme.two', 'b'],
     ])
-    const names = tools.map((t) => t.wireName)
-    expect(new Set(names).size).toBe(names.length)
-    expect(names.every((n) => n.length <= 64)).toBe(true)
-    expect(names[1].endsWith('_2')).toBe(true)
+    for (const t of tools)
+      expect(t.wireName).toBe(toolWireName(t.extensionId, t.name))
     expect(tools[0].server).toBe('ext:acme.one')
+  })
+
+  it('never moves a wire name to another extension when one loads', () => {
+    const before = listExtensionTools(state({ 'acme.x-foo': { t: tool('t') } }))
+    const after = listExtensionTools(
+      state({ 'acme-x.foo': { t: tool('t') }, 'acme.x-foo': { t: tool('t') } })
+    )
+    const owner = (list: typeof after, wireName: string) =>
+      list.find((t) => t.wireName === wireName)?.extensionId
+    expect(owner(after, before[0].wireName)).toBe('acme.x-foo')
+    expect(new Set(after.map((t) => t.wireName)).size).toBe(2)
   })
 })
 

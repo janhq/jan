@@ -20,6 +20,7 @@ import {
 import {
   PERMISSIONS,
   parsePermission,
+  reachesLocalApiServer,
   riskOf,
   type PermissionRisk,
 } from '@/lib/extensions/permissions'
@@ -51,6 +52,11 @@ function PermissionRow({ permission }: { permission: PermissionString }) {
       <span className="text-xs text-muted-foreground">
         {t(info.descriptionKey)}
       </span>
+      {reachesLocalApiServer(permission) && (
+        <span className="text-xs text-amber-600 dark:text-amber-400">
+          {t('extensions:permissions.network.localServers')}
+        </span>
+      )}
     </li>
   )
 }

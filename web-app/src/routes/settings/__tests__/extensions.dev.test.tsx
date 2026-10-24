@@ -157,6 +157,10 @@ describe('Load unpacked', () => {
     expect(dialog).toHaveTextContent('Low risk')
     expect(dialog).toHaveTextContent('Connect to *')
     expect(dialog).toHaveTextContent('High risk')
+    // network:* also covers local servers; the consent says so.
+    expect(dialog).toHaveTextContent(
+      "Includes servers on this computer. Jan's own local API server is always blocked."
+    )
     expect(host.spawnWorkerExtension).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Load' }))
@@ -173,9 +177,22 @@ describe('Load unpacked', () => {
     expect(screen.getByText('Development')).toBeInTheDocument()
   })
 
+  it('shows an i18n error for a bundle with more than var JanExtension', async () => {
+    writePackage({})
+    files.map.set(`${DIR}/dist/index.js`, 'function Set() {}\nvar JanExtension = {}')
+    picker.open.mockResolvedValue(DIR)
+    render(<Page />)
+    await userEvent.click(screen.getByRole('button', { name: 'Load unpacked' }))
+    expect(
+      await screen.findByText(/dist\/index\.js is not a valid extension bundle/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(host.spawnWorkerExtension).not.toHaveBeenCalled()
+  })
+
   it('spawns nothing when the confirm dialog is cancelled', async () => {
     writePackage({})
-    files.map.set(`${DIR}/dist/index.js`, 'x')
+    files.map.set(`${DIR}/dist/index.js`, 'var JanExtension = {}')
     picker.open.mockResolvedValue(DIR)
     render(<Page />)
     await userEvent.click(screen.getByRole('button', { name: 'Load unpacked' }))

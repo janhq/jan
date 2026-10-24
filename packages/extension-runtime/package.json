@@ -30,7 +30,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@janhq/extension-api": "workspace:*"
+    "@janhq/extension-api": "workspace:*",
+    "acorn": "^8.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

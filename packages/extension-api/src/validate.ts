@@ -24,6 +24,18 @@ type Obj = Record<string, unknown>
 const ID = /^[a-z0-9][a-z0-9-]{1,38}\.[a-z0-9][a-z0-9-]{1,38}$/
 const L10N_REF = /^%([A-Za-z0-9_.-]+)%$/
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+const CONTRIBUTION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+/**
+ * The grammar of a command, status item or provider id and of a tool name:
+ * up to 64 letters, digits, `.`, `_` and `-`, starting with a letter or
+ * digit. Hosts look contributions up by these ids, so none of them can be
+ * `__proto__`; names such as `constructor` stay valid and hosts must look
+ * them up as own properties.
+ */
+export function isContributionId(value: unknown): value is string {
+  return typeof value === 'string' && CONTRIBUTION_ID.test(value)
+}
 
 const MANIFEST_KEYS = [
   'id',
@@ -135,6 +147,18 @@ class Checker {
       if (isObj(item)) each(item, itemPath)
       else this.fail(itemPath, 'must be an object')
     })
+  }
+
+  /** A contribution id, see `isContributionId`. */
+  contributionId(obj: Obj, field: string, path: string): boolean {
+    if (!this.string(obj, field, path)) return false
+    return (
+      isContributionId(obj[field]) ||
+      this.fail(
+        key(path, field),
+        'must be 1-64 letters, digits, dots, underscores or dashes, starting with a letter or digit'
+      )
+    )
   }
 
   /** Records a duplicate of `obj[field]` within one list. */
@@ -332,7 +356,7 @@ function checkContributions(
   const commands = new Set<string>()
   c.list(contributes, 'commands', path, (cmd, p) => {
     c.known(cmd, ['id', 'title', 'category', 'icon'], p)
-    c.string(cmd, 'id', p)
+    c.contributionId(cmd, 'id', p)
     c.unique(commands, cmd, 'id', p)
     c.string(cmd, 'title', p)
     c.string(cmd, 'category', p, { optional: true })
@@ -373,7 +397,7 @@ function checkContributions(
   const statusIds = new Set<string>()
   c.list(contributes, 'statusItems', path, (item, p) => {
     c.known(item, ['id', 'text', 'tooltip', 'command', 'priority'], p)
-    c.string(item, 'id', p)
+    c.contributionId(item, 'id', p)
     c.unique(statusIds, item, 'id', p)
     c.string(item, 'text', p)
     c.string(item, 'tooltip', p, { optional: true })
@@ -387,7 +411,7 @@ function checkContributions(
   const toolNames = new Set<string>()
   c.list(contributes, 'tools', path, (tool, p) => {
     c.known(tool, ['name', 'description', 'inputSchema'], p)
-    c.string(tool, 'name', p)
+    c.contributionId(tool, 'name', p)
     c.unique(toolNames, tool, 'name', p)
     c.string(tool, 'description', p)
     if (!isObj(tool.inputSchema) || tool.inputSchema.type !== 'object')
@@ -399,7 +423,7 @@ function checkContributions(
   const providerIds = new Set<string>()
   c.list(contributes, 'providers', path, (provider, p) => {
     c.known(provider, ['id', 'displayName', 'baseUrl', 'apiKeySetting'], p)
-    c.string(provider, 'id', p)
+    c.contributionId(provider, 'id', p)
     c.unique(providerIds, provider, 'id', p)
     c.string(provider, 'displayName', p)
     if (c.string(provider, 'baseUrl', p))

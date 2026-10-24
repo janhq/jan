@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateManifest } from '../manifest.js'
+import { isContributionId } from '../index.js'
 
 type Pkg = {
   name: string
@@ -297,6 +298,26 @@ describe('validateManifest', () => {
       'jan.contributes.commands[1].id',
       "jan.contributes.menus['message/actions'][0].command",
     ])
+  })
+
+  it('rejects contribution ids outside the id grammar', () => {
+    const pkg = full()
+    const c = contributes(pkg)
+    ;(c.commands as Record<string, unknown>[])[1].id = '__proto__'
+    ;(c.statusItems as Record<string, unknown>[])[0].id = 'has space'
+    ;(c.tools as Record<string, unknown>[])[0].name = 'x'.repeat(65)
+    ;(c.providers as Record<string, unknown>[])[0].id = '-lead'
+    expect(errorPaths(pkg)).toEqual([
+      'jan.contributes.commands[1].id',
+      "jan.contributes.menus['message/actions'][0].command",
+      'jan.contributes.statusItems[0].id',
+      'jan.contributes.tools[0].name',
+      'jan.contributes.providers[0].id',
+    ])
+    expect(isContributionId('hello.greet')).toBe(true)
+    expect(isContributionId('echo_upper')).toBe(true)
+    expect(isContributionId('constructor')).toBe(true)
+    expect(isContributionId('__proto__')).toBe(false)
   })
 
   it('rejects a menu item pointing at an undeclared command', () => {

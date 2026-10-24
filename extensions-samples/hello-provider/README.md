@@ -29,9 +29,19 @@ has to be:
 - free of runtime imports. Import only types from `@janhq/extension-api`;
   everything else goes through `ctx`.
 
+The host enforces the shape before it starts a worker: parsed on its own as
+a classic script, the file must be exactly one top-level
+`var JanExtension = <expression>;` statement, optionally preceded by a
+`'use strict'` directive and with comments anywhere. No other top-level
+`function`, `class`, `var`, `let` or `const`, and no other statement, is
+allowed, because top-level declarations of the shared worker script are
+bound before the runtime prelude runs. Keep everything inside the IIFE: a
+rolldown or esbuild `banner`/`footer`/`intro` that adds top-level code makes
+the bundle fail to load ("is not a valid extension bundle").
+
 Before the bundle runs, the prelude removes `fetch`, `XMLHttpRequest`,
-`WebSocket`, `importScripts`, IndexedDB, the Tauri globals and similar from
-the worker. `ctx.http.fetch` is the only way to reach the network, and the
+`WebSocket`, `importScripts`, `Notification`, IndexedDB, `navigator.storage`,
+`navigator.serviceWorker`, the Tauri globals and similar from the worker. `ctx.http.fetch` is the only way to reach the network, and the
 host checks every call (and every redirect) against the granted
 `network:<host>` permissions.
 

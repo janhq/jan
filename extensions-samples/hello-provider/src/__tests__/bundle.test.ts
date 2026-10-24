@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { validateManifest, type ValidatedManifest } from '@janhq/extension-api'
 import {
   Endpoint,
+  assertBundleShape,
   composeWorkerSource,
   workerTransport,
   type ControlMessage,
@@ -31,6 +32,8 @@ afterEach(() => {
 
 describe('hello-provider bundle', () => {
   it('is a single IIFE with no runtime imports', () => {
+    // The host refuses anything but one top-level `var JanExtension = ...`.
+    expect(() => assertBundleShape(bundle)).not.toThrow()
     expect(bundle).toMatch(/^var JanExtension = \(function/m)
     expect(bundle).not.toMatch(/\bimport\s*[({"'*]|\brequire\s*\(|^export\b/m)
   })

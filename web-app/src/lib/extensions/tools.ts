@@ -20,17 +20,38 @@ export interface ExtensionTool {
   server: string
 }
 
-export const extensionToolServer = (extensionId: string) => `ext:${extensionId}`
+/** The server name prefix of every contributed tool. */
+export const EXTENSION_SERVER_PREFIX = 'ext:'
+
+export const extensionToolServer = (extensionId: string) =>
+  `${EXTENSION_SERVER_PREFIX}${extensionId}`
 
 const sanitize = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_')
 
+const FNV_OFFSET = 0xcbf29ce484222325n
+const FNV_PRIME = 0x100000001b3n
+const MASK_64 = 0xffffffffffffffffn
+
+/** 64-bit FNV-1a of the UTF-16 code units of `text`, as 16 hex digits. */
+function fnv1a64(text: string): string {
+  let hash = FNV_OFFSET
+  for (let i = 0; i < text.length; i++) {
+    hash ^= BigInt(text.charCodeAt(i))
+    hash = (hash * FNV_PRIME) & MASK_64
+  }
+  return hash.toString(16).padStart(16, '0')
+}
+
 /**
- * `x_<extension id>__<tool name>`, with `.` and `-` of the id (and anything
- * a provider would reject) turned into `_`, cut to 64 characters. The
- * prefix keeps extension tools apart from MCP and built-in names.
+ * `x_<hash>__<tool name>`, where the hash covers the extension id and the
+ * exact name, cut to 64 characters. The readable part is only a hint: two
+ * ids or names that sanitize or truncate to the same text (`acme-x.foo`
+ * and `acme.x-foo`) still get different wire names, and a tool keeps its
+ * wire name whatever else is loaded, so a new extension can never take
+ * over a name the model, the history or an approval already refers to.
  */
 export function toolWireName(extensionId: string, name: string): string {
-  return `x_${extensionId.replace(/[.-]/g, '_')}__${sanitize(name)}`.slice(
+  return `x_${fnv1a64(`${extensionId}\u0000${name}`)}__${sanitize(name)}`.slice(
     0,
     MAX_WIRE_NAME
   )
@@ -38,27 +59,20 @@ export function toolWireName(extensionId: string, name: string): string {
 
 /**
  * Every contributed tool with a bound handler, in a stable order (the tool
- * list is part of the prompt prefix, so it must not reshuffle). Names that
- * collide after truncation get a numeric suffix, keeping them unique.
+ * list is part of the prompt prefix, so it must not reshuffle). The hash is
+ * not collision resistant against a determined author, so two tools that
+ * still end up with one wire name are both left out: neither may answer
+ * calls, or inherit approvals, meant for the other.
  */
 export function listExtensionTools(state: ContributionState): ExtensionTool[] {
-  const used = new Set<string>()
   const result: ExtensionTool[] = []
   for (const extensionId of Object.keys(state.tools).sort()) {
     const tools = state.tools[extensionId]
     for (const name of Object.keys(tools).sort()) {
       const tool = tools[name]
       if (!tool.handler) continue
-      let wireName = toolWireName(extensionId, name)
-      for (let n = 2; used.has(wireName); n++) {
-        const suffix = `_${n}`
-        wireName =
-          toolWireName(extensionId, name).slice(0, MAX_WIRE_NAME - suffix.length) +
-          suffix
-      }
-      used.add(wireName)
       result.push({
-        wireName,
+        wireName: toolWireName(extensionId, name),
         extensionId,
         name,
         description: tool.description,
@@ -67,7 +81,10 @@ export function listExtensionTools(state: ContributionState): ExtensionTool[] {
       })
     }
   }
-  return result
+  const counts = new Map<string, number>()
+  for (const t of result)
+    counts.set(t.wireName, (counts.get(t.wireName) ?? 0) + 1)
+  return result.filter((t) => counts.get(t.wireName) === 1)
 }
 
 // What a worker returns is untrusted; it reaches the model only in this shape.

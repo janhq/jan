@@ -1,4 +1,5 @@
 import { validateManifest, type ValidatedManifest } from '@janhq/extension-api'
+import { assertBundleShape } from '@janhq/extension-runtime'
 import { fs, joinPath } from '@janhq/core'
 import { getExtensionHost, type HostedExtension } from './host'
 
@@ -10,6 +11,7 @@ export type DevLoadErrorCode =
   | 'readFailed'
   | 'invalidJson'
   | 'invalidManifest'
+  | 'invalidBundle'
   | 'alreadyLoaded'
 
 export class DevLoadError extends Error {
@@ -45,7 +47,9 @@ async function readText(dir: string, file: string): Promise<string> {
 /**
  * Reads `package.json` and its `jan.main` bundle from an extension folder.
  * `validateManifest` refuses a `main` that is absolute or has `..` in it,
- * so the bundle path cannot leave the folder.
+ * so the bundle path cannot leave the folder. The bundle must have the
+ * shape the worker runtime accepts (`assertBundleShape`), checked here so
+ * the developer sees why before confirming anything.
  */
 export async function readUnpacked(folder: string): Promise<UnpackedExtension> {
   const dir = folder.replace(/[\\/]+$/, '')
@@ -64,7 +68,16 @@ export async function readUnpacked(folder: string): Promise<UnpackedExtension> {
       errors: result.errors.map((e) => `${e.path}: ${e.message}`).join('; '),
     })
   const main = result.manifest.main.replace(/^\.\//, '')
-  return { dir, manifest: result.manifest, bundle: await readText(dir, main) }
+  const bundle = await readText(dir, main)
+  try {
+    assertBundleShape(bundle)
+  } catch (error) {
+    throw new DevLoadError('invalidBundle', {
+      file: main,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+  return { dir, manifest: result.manifest, bundle }
 }
 
 /**

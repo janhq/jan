@@ -17,6 +17,7 @@ const NETWORK_GLOBALS = [
   'Worker',
   'SharedWorker',
   'BroadcastChannel',
+  'Notification',
   'indexedDB',
   'caches',
 ] as const
@@ -132,6 +133,7 @@ export function runInSandbox(
   define(realm.workerNavigator, {
     storage: { getDirectory: fake('navigator.storage') },
     locks: { request: fake('navigator.locks') },
+    serviceWorker: { register: fake('navigator.serviceWorker') },
     userAgent: 'jan-sandbox',
   })
   define(realm.dedicated, {

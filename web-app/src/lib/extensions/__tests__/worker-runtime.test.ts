@@ -7,7 +7,17 @@ import {
   runInSandbox,
   type SandboxWorker,
 } from '@janhq/extension-runtime/testing'
+import { HOST_BUILTINS } from '../builtins'
+import { ContributionStore } from '../contributions'
+import { PermissionDispatcher } from '../dispatcher'
 import { ExtensionHost } from '../host'
+import { createHostApi, type FetchLike } from '../host-api'
+import { ExtensionSettingsStore } from '../settings-store'
+import {
+  MAX_REJECTED_MESSAGES,
+  createBlobWorker,
+  startWorker,
+} from '../worker-runtime'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -204,6 +214,75 @@ describe('spawnWorkerExtension', () => {
     })
   })
 
+  it('refuses a bundle with hoisted declarations before creating a worker', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host } = newHost()
+    const hosted = await host.spawnWorkerExtension({
+      manifest: sample(),
+      bundle: `function Set() { self.__net = fetch }\n${BUNDLE}`,
+      grants: [],
+      source: 'dev',
+    })
+    expect(hosted).toMatchObject({
+      state: 'failed',
+      error: expect.stringContaining("'var JanExtension = <expression>'"),
+    })
+    expect(workers).toHaveLength(0)
+  })
+
+  it('gives worker extensions no ctx.http.fetch until P3 (the app cookie jar)', async () => {
+    const fetch = vi.fn<FetchLike>()
+    const host = new ExtensionHost({
+      appSettings: memoryAppSettings(),
+      secrets: memorySecrets(),
+      notify: vi.fn(),
+      fetch,
+      createWorker: (source, name) => {
+        const worker = runInSandbox(source, { name })
+        workers.push(worker)
+        return worker
+      },
+    })
+    hosts.push(host)
+    const bundle = `var JanExtension = { activate: function (ctx) {
+      return ctx.http.fetch('http://127.0.0.1:1/').then(
+        function () { self.__result = 'allowed' },
+        function (e) { self.__result = e.code + ': ' + e.message }
+      );
+    } };`
+    await host.spawnWorkerExtension({
+      manifest: manifest('acme.net', { permissions: ['network:127.0.0.1'] }),
+      bundle,
+      grants: ['network:127.0.0.1'],
+      source: 'dev',
+    })
+    expect(workers[0].scope.__result).toMatch(/^E_NOT_FOUND: .*not available.*P3/)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("reserves built-in ids and the 'jan.' prefix for built-ins", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host } = newHost()
+    await host.activateBuiltin(builtin(manifest('acme.builtin'), { activate: () => {} }))
+    await host.deactivateAll()
+    for (const id of ['jan.assistant', 'jan.anything', 'acme.builtin']) {
+      await expect(
+        host.spawnWorkerExtension({
+          manifest: sample({ id }),
+          bundle: BUNDLE,
+          grants: [],
+          source: 'dev',
+        })
+      ).rejects.toMatchObject({ code: 'E_PERMISSION' })
+    }
+    // The inactive built-in keeps its entry.
+    expect(host.list()).toEqual([
+      expect.objectContaining({ id: 'acme.builtin', source: 'builtin' }),
+    ])
+    expect(workers).toHaveLength(0)
+    for (const b of HOST_BUILTINS) expect(b.manifest.id).toMatch(/^jan\./)
+  })
+
   it('refuses a network call outside the grants', async () => {
     const fetch = vi.fn()
     const host = new ExtensionHost({
@@ -295,5 +374,135 @@ describe('spawnWorkerExtension', () => {
       source: 'dev',
     })
     expect(dev.state).toBe('active')
+  })
+})
+
+describe('startWorker', () => {
+  function start(bundle: string, fetch?: FetchLike) {
+    const m = manifest('acme.net', { permissions: ['network:127.0.0.1'] })
+    const dispatcher = new PermissionDispatcher()
+    dispatcher.grant(m.id, m.permissions)
+    const api = createHostApi(m, {
+      dispatcher,
+      contributions: new ContributionStore(),
+      settings: new ExtensionSettingsStore({
+        appSettings: memoryAppSettings(),
+        secrets: memorySecrets(),
+      }),
+      storage: memoryAppSettings(),
+      notify: vi.fn(),
+      fetch,
+    })
+    let worker: SandboxWorker | undefined
+    const started = startWorker({
+      manifest: m,
+      bundle,
+      dispatcher,
+      api,
+      createWorker: (source, name) => {
+        worker = runInSandbox(source, { name })
+        return worker
+      },
+    })
+    return { started, worker: () => worker }
+  }
+
+  const hanging = (signals: Map<string, AbortSignal>) =>
+    vi.fn<FetchLike>(
+      (url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          if (init.signal) signals.set(url, init.signal)
+          init.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted'))
+          )
+        })
+    )
+
+  it('aborts a host-side fetch when the worker cancels the request', async () => {
+    const signals = new Map<string, AbortSignal>()
+    // A request and its cancel on the wire, as the worker endpoint sends
+    // them when a call times out or its token fires.
+    const { started } = start(
+      `var JanExtension = { activate: function () {
+        self.postMessage({ v: 1, t: 'req', id: 9001, method: 'http.fetch', args: ['http://127.0.0.1:1/a'] });
+        setTimeout(function () { self.postMessage({ v: 1, t: 'cancel', id: 9001 }) }, 20);
+      } };`,
+      hanging(signals)
+    )
+    const connection = await started
+    await vi.waitFor(() =>
+      expect(signals.get('http://127.0.0.1:1/a')?.aborted).toBe(true)
+    )
+    connection.terminate()
+  })
+
+  it('aborts host-side fetches when the worker is terminated', async () => {
+    const signals = new Map<string, AbortSignal>()
+    const { started } = start(
+      `var JanExtension = { activate: function (ctx) {
+        ctx.http.fetch('http://127.0.0.1:1/b').catch(function () {});
+      } };`,
+      hanging(signals)
+    )
+    const connection = await started
+    await vi.waitFor(() => expect(signals.size).toBe(1))
+    expect(signals.get('http://127.0.0.1:1/b')?.aborted).toBe(false)
+    connection.terminate()
+    expect(signals.get('http://127.0.0.1:1/b')?.aborted).toBe(true)
+  })
+
+  it('terminates a worker that keeps sending refused messages', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { started, worker } = start(
+      `var JanExtension = { activate: function () {
+        for (var i = 0; i < ${MAX_REJECTED_MESSAGES}; i++) self.postMessage('junk');
+        return new Promise(function () {});
+      } };`
+    )
+    await expect(started).rejects.toMatchObject({ code: 'E_INVALID_ARGS' })
+    expect(worker()?.terminated).toBe(true)
+  })
+
+  it('terminates a running worker that floods oversized messages', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { started, worker } = start(
+      `var JanExtension = { activate: function () {
+        setTimeout(function () {
+          var big = new Array(5 * 1024 * 1024).join('x');
+          for (var i = 0; i < ${MAX_REJECTED_MESSAGES}; i++)
+            self.postMessage({ v: 1, t: 'evt', sub: 1, value: big });
+        }, 10);
+      } };`
+    )
+    await started
+    await vi.waitFor(() => expect(worker()?.terminated).toBe(true))
+  })
+})
+
+describe('createBlobWorker', () => {
+  it('revokes the blob URL on terminate even if the script never ran', () => {
+    const revoke = vi.fn()
+    vi.stubGlobal(
+      'URL',
+      Object.assign(class extends URL {}, {
+        createObjectURL: () => 'blob:test',
+        revokeObjectURL: revoke,
+      })
+    )
+    const terminate = vi.fn()
+    class FakeWorker {
+      addEventListener() {}
+      removeEventListener() {}
+      postMessage() {}
+      terminate = terminate
+    }
+    vi.stubGlobal('Worker', FakeWorker)
+    try {
+      createBlobWorker('while (true) {}', 'ext:acme.loop').terminate()
+      expect(terminate).toHaveBeenCalled()
+      expect(revoke).toHaveBeenCalledWith('blob:test')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

@@ -15,7 +15,7 @@ import {
 import { ExtensionHost } from '../host'
 import type { FetchLike } from '../host-api'
 import { extensionProviderName, listExtensionProviders } from '../providers'
-import { listExtensionTools } from '../tools'
+import { listExtensionTools, toolWireName } from '../tools'
 import { memoryAppSettings, memorySecrets } from './memory'
 
 // A path, not import.meta.url: under jsdom that URL is not a file: URL.
@@ -89,7 +89,7 @@ describe('hello-provider sample in a worker', () => {
 
     expect(listExtensionTools(state)).toMatchObject([
       {
-        wireName: 'x_jan_samples_hello_provider__echo_upper',
+        wireName: toolWireName(ID, 'echo_upper'),
         extensionId: ID,
         name: 'echo_upper',
         server: `ext:${ID}`,
@@ -171,16 +171,15 @@ describe('hello-provider sample in a worker', () => {
     )
   })
 
-  it('reaches only the network it was granted', async () => {
+  it('reaches no network until P3, and nothing outside its grants', async () => {
+    // Worker extensions get no ctx.http.fetch in P2: plugin-http would send
+    // their requests through the app's cookie jar. Inference of hello-local
+    // runs in the host and is unaffected.
     await expect(
       host.contributions.executeCommand(ID, 'hello.ping', {
         location: 'commandPalette',
       })
-    ).resolves.toBe(200)
-    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
-      'http://127.0.0.1:11999/v1/models',
-    ])
-
+    ).rejects.toMatchObject({ code: 'E_NOT_FOUND', message: expect.stringContaining('P3') })
     await expect(
       host.contributions.executeCommand(
         ID,
@@ -189,7 +188,7 @@ describe('hello-provider sample in a worker', () => {
         'https://example.com'
       )
     ).rejects.toMatchObject({ code: 'E_PERMISSION' })
-    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('terminate releases every registration', async () => {

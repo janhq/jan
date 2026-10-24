@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import type { CommandContext } from '@janhq/extension-api'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getExtensionHost } from '@/lib/extensions/host'
-import { useContributions } from '@/lib/extensions/contributions'
+import { own, useContributions } from '@/lib/extensions/contributions'
 
 /**
  * Runs a contributed command from host UI. A failure never reaches the
@@ -33,7 +33,8 @@ export function useExecuteCommand() {
         toast.error(
           t('extensions:commandFailed', {
             command:
-              state.commands[extensionId]?.[commandId]?.title ?? commandId,
+              own(own(state.commands, extensionId), commandId)?.title ??
+              commandId,
             extension:
               state.extensions[extensionId]?.displayName ?? extensionId,
           }),

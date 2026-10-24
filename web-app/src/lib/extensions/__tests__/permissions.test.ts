@@ -3,6 +3,7 @@ import en from '@/locales/en/extensions.json'
 import {
   PERMISSIONS,
   diffPermissions,
+  reachesLocalApiServer,
   matchesNetwork,
   parsePermission,
   riskOf,
@@ -78,6 +79,34 @@ describe('matchesNetwork', () => {
     expect(matchesNetwork('network:*', 'https://user:pw@example.com/')).toBe(false)
     expect(matchesNetwork('network:*', 'not a url')).toBe(false)
     expect(matchesNetwork('tools', 'https://example.com/')).toBe(false)
+  })
+})
+
+describe('matchesNetwork and the local API server', () => {
+  it("never reaches Jan's own API server port, whatever the grant", () => {
+    for (const [grant, host] of [
+      ['network:*', '127.0.0.1'],
+      ['network:*', 'localhost'],
+      ['network:localhost', 'localhost'],
+      ['network:127.0.0.1', '127.0.0.1'],
+    ] as const) {
+      expect(matchesNetwork(grant, `http://${host}:1337/v1/chat`, 1337)).toBe(false)
+      expect(matchesNetwork(grant, `https://${host}:1337/`, 1337)).toBe(false)
+      // Another port of the same host stays reachable.
+      expect(matchesNetwork(grant, `http://${host}:11999/v1`, 1337)).toBe(true)
+    }
+    // A remote host on the same port is not the local server.
+    expect(matchesNetwork('network:*', 'https://example.com:1337/', 1337)).toBe(true)
+    // Default ports count: the server may run on 80.
+    expect(matchesNetwork('network:localhost', 'http://localhost/', 80)).toBe(false)
+  })
+
+  it('flags grants that can reach a local server', () => {
+    expect(reachesLocalApiServer('network:*')).toBe(true)
+    expect(reachesLocalApiServer('network:localhost')).toBe(true)
+    expect(reachesLocalApiServer('network:127.0.0.1')).toBe(true)
+    expect(reachesLocalApiServer('network:api.acme.dev')).toBe(false)
+    expect(reachesLocalApiServer('tools')).toBe(false)
   })
 })
 
