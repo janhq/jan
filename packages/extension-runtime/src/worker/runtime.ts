@@ -98,6 +98,11 @@ export function installRuntime(realm: Realm): void {
 
   const endpoint: Endpoint = new Endpoint(transport, {
     onControl: (message: ControlMessage) => {
+      // The host's liveness check: a worker stuck in a loop cannot answer.
+      if (message.t === 'ping') {
+        endpoint.sendControl({ v: 1, t: 'pong', n: message.n })
+        return
+      }
       if (message.t !== 'init' || manifest) return
       manifest = message.manifest
       void start()

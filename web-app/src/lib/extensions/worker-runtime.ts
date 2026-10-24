@@ -25,6 +25,7 @@ import {
 import prelude from '@janhq/extension-runtime/prelude-source'
 import type { PermissionDispatcher } from './dispatcher'
 import { rateLimiter, type HostApi } from './host-api'
+import { startHeartbeat, type Heartbeat } from './watchdog'
 
 /** Creates the Worker for a composed script; injectable so tests need none. */
 export type CreateWorker = (source: string, name: string) => WorkerLike
@@ -114,6 +115,12 @@ export function startWorker(options: {
   createWorker: CreateWorker
   dispatcher: PermissionDispatcher
   api: HostApi
+  /**
+   * Runs once if the runtime stops the worker after it started: it stopped
+   * answering pings, or kept breaking the limits. A failure before `ready`
+   * rejects the start instead.
+   */
+  onCrash?(error: ExtensionError): void
 }): Promise<WorkerConnection> {
   const { manifest, dispatcher, api } = options
   const owned = new DisposableTable()
@@ -196,9 +203,18 @@ export function startWorker(options: {
       `Extension '${manifest.id}' was stopped after ${MAX_REJECTED_MESSAGES} refused messages:`,
       error.message
     )
+    crash(error)
+  }
+  // Ends the worker for misbehaving: before `ready` that fails the start,
+  // after it the host hears about it.
+  const crash = (error: ExtensionError) => {
+    if (lifetime.signal.aborted) return
+    const running = settled
     settle(error)
     terminate()
+    if (running) options.onCrash?.(error)
   }
+  let heartbeat: Heartbeat | undefined
 
   const endpoint: Endpoint = new Endpoint(
     workerTransport(worker),
@@ -239,7 +255,8 @@ export function startWorker(options: {
         }
       },
       onControl: (message) => {
-        if (message.t === 'ready') settle()
+        if (message.t === 'pong') heartbeat?.pong(message.n)
+        else if (message.t === 'ready') settle()
         else if (message.t === 'activateFailed')
           settle(fromRpcError(message.error))
       },
@@ -247,6 +264,7 @@ export function startWorker(options: {
   )
 
   const terminate = () => {
+    heartbeat?.dispose()
     worker.removeEventListener('error', onError)
     lifetime.abort()
     endpoint.close()
@@ -254,6 +272,7 @@ export function startWorker(options: {
   }
 
   let settle: (error?: Error) => void = () => undefined
+  let settled = false
   return new Promise<WorkerConnection>((resolve, reject) => {
     const timer = setTimeout(
       () =>
@@ -265,7 +284,6 @@ export function startWorker(options: {
         ),
       HOST_ACTIVATE_TIMEOUT_MS
     )
-    let settled = false
     settle = (error) => {
       if (settled) return
       settled = true
@@ -275,6 +293,20 @@ export function startWorker(options: {
         reject(error)
         return
       }
+      heartbeat = startHeartbeat({
+        ping: (n) => {
+          if (!endpoint.disposed) endpoint.sendControl({ v: 1, t: 'ping', n })
+        },
+        onDead: () => {
+          console.warn(`Extension '${manifest.id}' stopped responding`)
+          crash(
+            new ExtensionError(
+              'E_TIMEOUT',
+              `Extension '${manifest.id}' stopped responding`
+            )
+          )
+        },
+      })
       resolve({
         deactivate: async () => {
           try {

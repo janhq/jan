@@ -187,6 +187,21 @@ describe('worker prelude', () => {
     expect(outcome()).toMatchObject({ error: { code: 'E_TIMEOUT' } })
   })
 
+  it('answers every ping with a pong of the same number', async () => {
+    const { host, controls, outcome } = boot(
+      'var JanExtension = { activate: function () {} };'
+    )
+    await vi.waitFor(() => expect(outcome()?.t).toBe('ready'))
+    host.sendControl({ v: 1, t: 'ping', n: 1 })
+    host.sendControl({ v: 1, t: 'ping', n: 2 })
+    await vi.waitFor(() =>
+      expect(controls.filter((m) => m.t === 'pong')).toEqual([
+        { v: 1, t: 'pong', n: 1 },
+        { v: 1, t: 'pong', n: 2 },
+      ])
+    )
+  })
+
   it('runs deactivate and disposes subscriptions on $deactivate', async () => {
     const logs: unknown[][] = []
     const disposed: number[] = []

@@ -194,6 +194,22 @@ describe('Endpoint', () => {
     })
   })
 
+  it('reports a request over the in-flight cap to onRejected', async () => {
+    const rejected: string[] = []
+    const [host, worker] = pair({
+      maxInFlight: 2,
+      handle: () => new Promise(() => {}),
+      onRejected: (e) => rejected.push(e.code),
+    })
+    void host
+    void worker.request('a', []).catch(() => undefined)
+    void worker.request('b', []).catch(() => undefined)
+    await expect(worker.request('c', [])).rejects.toMatchObject({
+      code: 'E_TOO_LARGE',
+    })
+    expect(rejected).toEqual(['E_TOO_LARGE'])
+  })
+
   it('carries a disposable across and disposes it on request', async () => {
     // Worker side: callbacks by handle.
     const callbacks = new HandleTable<(args: unknown[]) => unknown>()
