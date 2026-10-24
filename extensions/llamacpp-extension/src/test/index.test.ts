@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
+import { hostServices, newExtension } from './host'
 import { fs, getJanDataFolderPath, joinPath } from '@janhq/core'
 import {
   readGgufMetadata,
@@ -91,7 +92,7 @@ describe('llamacpp_extension', () => {
       pid: 1234,
       models: [],
     })
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   afterEach(() => {
@@ -259,7 +260,7 @@ describe('llamacpp_extension', () => {
 
       const { ServiceKeys } = await import('@janhq/core')
       const getService = vi.fn().mockReturnValue(mockDownloadManager)
-      window.core.extensionHost.services.get = getService
+      hostServices.get = getService
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) => Promise.resolve(paths.join('/')))
@@ -292,7 +293,7 @@ describe('llamacpp_extension', () => {
       const { ServiceKeys } = await import('@janhq/core')
       const service = downloads()
       const getService = vi.fn().mockReturnValue(service)
-      window.core.extensionHost.services.get = getService
+      hostServices.get = getService
 
       await extension.pauseImport('m1')
 
@@ -307,7 +308,7 @@ describe('llamacpp_extension', () => {
       )
       vi.mocked(fs.existsSync).mockResolvedValue(false)
       const service = downloads()
-      window.core.extensionHost.services.get = vi.fn().mockReturnValue(service)
+      hostServices.get = vi.fn().mockReturnValue(service)
 
       await extension.abortImport('m1')
 
@@ -315,7 +316,7 @@ describe('llamacpp_extension', () => {
     })
 
     it('fails the import loudly when no Downloads service is provided', async () => {
-      window.core.extensionHost.services.get = vi.fn().mockReturnValue(undefined)
+      hostServices.get = vi.fn().mockReturnValue(undefined)
       await expect(extension.pauseImport('m1')).rejects.toThrow(
         'Downloads service is not available'
       )
@@ -817,7 +818,7 @@ describe('a dead worker is noticed rather than cached', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('re-asks the command even after a successful answer', async () => {
@@ -868,7 +869,7 @@ describe('refreshEnginePreset embedding slot reservation', () => {
     userModelsMax: number
     embeddingCount: number
   }) => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = { models_max: opts.userModelsMax } as never
     return (async () => {
       // A running worker is what get_engine_info reports, not what the
@@ -970,7 +971,7 @@ describe('bootstrapDefaultEmbedder', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('imports the fallback embedder when none is installed, then marks the bootstrap done', async () => {
@@ -1044,7 +1045,7 @@ describe('verifyEmbeddingModel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     // The probe is gated on a configured backend, since the router it needs
     // cannot exist before one is selected.
     extension.config = {
@@ -1140,7 +1141,7 @@ describe('verifyGpuOffload', () => {
   let extension: llamacpp_extension
 
   const arm = async (devices: unknown[], gpus: unknown[] | undefined) => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
     vi.spyOn(extension, 'getDevices').mockResolvedValue(devices as never)
     const { getSystemInfo } = await import('@janhq/tauri-plugin-hardware-api')
@@ -1198,7 +1199,7 @@ describe('verifyGpuOffload', () => {
   // Without a device list there is no basis for a reason code, so the raw cause
   // is reported rather than a guess between "no GPU" and "unreachable GPU".
   it('reports the raw error when the device probe throws', async () => {
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
     vi.spyOn(extension, 'getDevices').mockRejectedValue(new Error('no worker'))
     const result = await extension.verifyGpuOffload()
@@ -1213,7 +1214,7 @@ describe('bootstrapDefaultEmbedder failure reporting', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('records why the bootstrap failed instead of only logging it', async () => {
@@ -1276,7 +1277,7 @@ describe('reportMissingLibrariesFromError', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {
       version_backend: 'b9145/linux-cuda-12-common_cpus-x64',
     } as never
@@ -1363,7 +1364,7 @@ describe('createDownloadTaskId', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   const taskId = (modelId: string) =>
@@ -1403,7 +1404,7 @@ describe('import deduplication', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   // Two callers racing on one model both passed the model.yml guard and then
@@ -1474,7 +1475,7 @@ describe('embedding readiness during the first-run fetch', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension()
+    extension = newExtension()
     extension['config'] = {} as never
   })
 
@@ -1517,7 +1518,7 @@ describe('forgetThreadCache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension('http://localhost', 'llamacpp')
+    extension = newExtension()
   })
 
   afterEach(() => {
@@ -1574,7 +1575,7 @@ describe('reconcileEngineDevices', () => {
     vi.mocked(api.beginEngineRestart).mockResolvedValue(true)
     vi.mocked(api.endEngineRestart).mockResolvedValue(undefined)
     vi.mocked(api.stopEngine).mockResolvedValue(undefined)
-    extension = new llamacpp_extension()
+    extension = newExtension()
     // Standing in for the real spawn, which the plugin does.
     return vi
       .spyOn(extension as never, 'runStartEngine' as never)
@@ -2021,7 +2022,7 @@ describe('engine requests bypass a configured proxy', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     httpFetch.mockReset()
-    extension = new llamacpp_extension()
+    extension = newExtension()
   })
 
   it('sends the embeddings request direct', async () => {

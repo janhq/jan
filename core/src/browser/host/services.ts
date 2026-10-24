@@ -1,6 +1,7 @@
 import { Emitter, toDisposable, type Disposable, type Event } from '@janhq/extension-api'
 import type { AssistantInterface } from '../../types'
 import type { DownloadItem } from '../download'
+import type { UnloadResult } from '../extensions/engines/AIEngine'
 
 /**
  * A typed handle for a host service. `T` exists only at compile time; the
@@ -66,7 +67,42 @@ export interface DownloadService {
   pauseDownload(taskId: string): Promise<void>
 }
 
+/** What a local engine reports for a loaded model. */
+export interface LocalModelProps {
+  /** The context window the model was launched with. */
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
+  modalities?: { vision: boolean; video: boolean; audio: boolean }
+}
+
+/** The runtime queries the app makes of a local inference engine. */
+export interface LocalEngineService {
+  /** Undefined until the model is loaded. */
+  getModelProps(modelId: string): Promise<LocalModelProps | undefined>
+  unload(modelId: string): Promise<UnloadResult>
+}
+
+/** A compute device the llama.cpp engine can run on. */
+export interface EngineDevice {
+  id: string
+  name: string
+  mem: number
+  free: number
+}
+
+export interface LlamacppService extends LocalEngineService {
+  getDevices(): Promise<EngineDevice[]>
+  /** Restarts the engine when the machine's devices changed since it started. */
+  reconcileEngineDevices(): Promise<'unchanged' | 'restarted' | 'busy'>
+}
+
+export type MlxService = LocalEngineService
+
 export const ServiceKeys = {
   Assistants: new ServiceKey<AssistantService>('assistants'),
   Downloads: new ServiceKey<DownloadService>('downloads'),
+  Llamacpp: new ServiceKey<LlamacppService>('llamacpp'),
+  Mlx: new ServiceKey<MlxService>('mlx'),
 }

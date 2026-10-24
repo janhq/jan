@@ -42,14 +42,6 @@ Object.defineProperty(globalThis, 'window', {
       api: {
         // getSystemInfo: vi.fn(),
       },
-      extensionHost: {
-        services: {
-          get: vi.fn().mockReturnValue({
-            downloadFiles: vi.fn().mockResolvedValue(undefined),
-            cancelDownload: vi.fn().mockResolvedValue(undefined),
-          }),
-        },
-      },
     },
   },
 })
@@ -78,7 +70,10 @@ vi.mock('@tauri-apps/api/path', () => ({
 
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
-  ServiceKeys: { Downloads: { id: 'downloads' } },
+  ServiceKeys: {
+    Downloads: { id: 'downloads' },
+    Llamacpp: { id: 'llamacpp' },
+  },
   logger: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -116,5 +111,5 @@ vi.mock('@janhq/core', () => ({
     onModelValidationStarted: 'onModelValidationStarted',
     onModelValidationFailed: 'onModelValidationFailed',
   },
-  AIEngine: vi.fn(),
+  AIEngine: class {},
 }))

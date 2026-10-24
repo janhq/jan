@@ -7,7 +7,6 @@ import { providerModels } from '@/constants/models'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
-import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
@@ -309,8 +308,8 @@ export class TauriProvidersService extends DefaultProvidersService {
       // Blank the key entries at this single chokepoint regardless of caller.
       const isSecretKey = (key: string) =>
         key === 'api-key' || key === API_KEY_FALLBACKS_SETTING_KEY
-      return ExtensionManager.getInstance()
-        .getEngine(providerName)
+      return EngineManager.instance()
+        .get(providerName)
         ?.updateSettings(
           settings.map((setting) => ({
             ...setting,

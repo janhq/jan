@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ThreadMessage } from '@janhq/core'
+import { ThreadMessage, type LocalModelProps } from '@janhq/core'
 import { parseContextOverflow } from '@/utils/error'
-import {
-  getLocalPropsExtension,
-  type LlamacppModelProps,
-} from '@/lib/llamacppRouterProps'
+import { getLocalPropsExtension } from '@/lib/llamacppRouterProps'
 import { useModelProvider } from './useModelProvider'
 import { useAppState } from './useAppState'
 
-export type ModelProps = LlamacppModelProps
+export type ModelProps = LocalModelProps
 
 export interface TokenCountData {
   tokenCount: number

@@ -11,11 +11,15 @@ Object.defineProperty(globalThis, 'SETTINGS', {
 // through. `@janhq/core` reads `globalThis.core`, so both names must reach the
 // same object -- in the browser they are the same object, and a setup that set
 // only one made the core helpers silently see no extensions.
+const getByName = vi.fn()
 const core = {
   extensionManager: {
     get: vi.fn(),
-    getByName: vi.fn(),
+    getByName,
   },
+  // The core embedding helpers find the llamacpp engine in the engine
+  // manager; the tests stub that engine through the same mock.
+  engineManager: { get: getByName },
 }
 
 Object.defineProperty(globalThis, 'window', {

@@ -52,7 +52,7 @@ describe('TauriCoreService', () => {
       expect(exts.length).toBeGreaterThan(0)
       expect(exts.every((e) => e.url === 'built-in')).toBe(true)
       expect(exts.every((e) => e.extensionInstance)).toBe(true)
-      expect(exts.map((e) => e.name)).toContain('@janhq/llamacpp-extension')
+      expect(exts.map((e) => e.name)).toContain('@janhq/rag-extension')
     })
   })
 

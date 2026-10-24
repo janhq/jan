@@ -1,3 +1,4 @@
+import { toDisposable, type Disposable } from '@janhq/extension-api'
 import { AIEngine } from './AIEngine'
 
 /**
@@ -8,11 +9,15 @@ export class EngineManager {
   public controller: AbortController | null = null
 
   /**
-   * Registers an engine.
+   * Registers an engine under its provider until the result is disposed.
    * @param engine - The engine to register.
    */
-  register<T extends AIEngine>(engine: T) {
+  register<T extends AIEngine>(engine: T): Disposable {
     this.engines.set(engine.provider, engine)
+    return toDisposable(() => {
+      // A newer engine may have taken the provider since.
+      if (this.engines.get(engine.provider) === engine) this.engines.delete(engine.provider)
+    })
   }
 
   /**
