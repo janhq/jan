@@ -10,7 +10,7 @@ use tauri_plugin_extensions::error::Error;
 use tauri_plugin_extensions::http::{self, HttpRequest, HttpStreamEvent};
 use tauri_plugin_extensions::install::{self, PermissionDiff};
 use tauri_plugin_extensions::registry::{self, Source};
-use tauri_plugin_extensions::state::{ExtensionsState, Options, STAGING_DIR};
+use tauri_plugin_extensions::state::{ExtensionsState, Options, StageSlot, MAX_STAGES, STAGING_DIR};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const ID: &str = "acme.hello";
@@ -436,4 +436,194 @@ fn http_fetch_can_be_cancelled() {
         let (result, ()) = tokio::join!(fetch, cancel);
         assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
     });
+}
+
+fn versions_on_disk(root: &std::path::Path) -> Vec<String> {
+    let mut versions: Vec<String> = fs::read_dir(root.join(ID))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    versions.sort();
+    versions
+}
+
+/// Asserts 0.2.0 is active with 0.1.0 kept for rollback, on disk and in
+/// the registry, as after the two installs of `two_versions`.
+fn assert_still_at_0_2_0(root: &std::path::Path) {
+    let reg = registry::load(root).unwrap().registry;
+    let entry = &reg.extensions[ID];
+    assert_eq!(entry.active, "0.2.0");
+    assert_eq!(entry.previous.as_deref(), Some("0.1.0"));
+    assert_eq!(versions_on_disk(root), vec!["0.1.0", "0.2.0"]);
+}
+
+fn two_versions(state: &ExtensionsState, files: &std::path::Path) {
+    install_version(state, files, "0.1.0", &["ui:notify"]);
+    install_version(state, files, "0.2.0", &["ui:notify"]);
+}
+
+fn stage_0_3_0(state: &ExtensionsState, files: &std::path::Path) -> install::StagedInstall {
+    let path = write(files, "hello-0.3.0.tgz", &extension(ID, "0.3.0", &["ui:notify"]));
+    install::stage_bundle(state, &path).unwrap()
+}
+
+#[test]
+fn a_failed_entry_check_after_rename_keeps_rollback_and_allows_a_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    two_versions(&state, files.path());
+    let staged = stage_0_3_0(&state, files.path());
+    let staged_entry = root.path().join(STAGING_DIR).join(&staged.stage_id).join("dist/index.js");
+    fs::write(&staged_entry, "var JanExtension = swapped").unwrap();
+    let err = install::confirm_install(&state, &staged.stage_id, &strings(&["ui:notify"])).unwrap_err();
+    assert!(matches!(err, Error::Tampered(_)), "{err}");
+    assert_still_at_0_2_0(root.path());
+    assert_eq!(install::rollback(&state, ID).unwrap().version, "0.1.0");
+    install::rollback(&state, ID).unwrap();
+
+    install_version(&state, files.path(), "0.3.0", &["ui:notify"]);
+    assert_eq!(versions_on_disk(root.path()), vec!["0.2.0", "0.3.0"]);
+}
+
+#[test]
+fn a_missing_entry_after_rename_leaves_no_stray_version_dir() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    two_versions(&state, files.path());
+    let staged = stage_0_3_0(&state, files.path());
+    fs::remove_file(root.path().join(STAGING_DIR).join(&staged.stage_id).join("dist/index.js")).unwrap();
+    assert!(install::confirm_install(&state, &staged.stage_id, &strings(&["ui:notify"])).is_err());
+    assert_still_at_0_2_0(root.path());
+
+    install_version(&state, files.path(), "0.3.0", &["ui:notify"]);
+    assert_eq!(install::list(&state).unwrap().extensions[0].version, "0.3.0");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_registry_save_keeps_rollback_and_allows_a_retry() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    two_versions(&state, files.path());
+    let staged = stage_0_3_0(&state, files.path());
+    // The version is renamed into <id>/ and verified, then writing the
+    // registry's temp file into the read-only root fails.
+    let mode = |m| fs::set_permissions(root.path(), fs::Permissions::from_mode(m)).unwrap();
+    mode(0o555);
+    let result = install::confirm_install(&state, &staged.stage_id, &strings(&["ui:notify"]));
+    mode(0o755);
+    assert!(result.is_err());
+    assert_still_at_0_2_0(root.path());
+    assert_eq!(install::list(&state).unwrap().extensions[0].version, "0.2.0");
+
+    install_version(&state, files.path(), "0.3.0", &["ui:notify"]);
+    assert_eq!(versions_on_disk(root.path()), vec!["0.2.0", "0.3.0"]);
+}
+
+#[test]
+fn a_stray_version_dir_left_by_a_crash_does_not_block_the_install() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    two_versions(&state, files.path());
+    let stray = root.path().join(ID).join("0.3.0");
+    fs::create_dir_all(stray.join("dist")).unwrap();
+    fs::write(stray.join("dist/index.js"), "half written").unwrap();
+    install_version(&state, files.path(), "0.3.0", &["ui:notify"]);
+    assert!(install::read_entry(&state, ID).unwrap().code.contains("0.3.0"));
+}
+
+#[test]
+fn network_grants_do_not_read_the_registry_file() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    install_version(&state, files.path(), "0.1.0", &["network:api.acme.dev"]);
+    // The async network path answers from the registry the state last wrote,
+    // so it neither reads nor moves aside the file.
+    fs::write(root.path().join("extensions.json"), "garbage").unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let req = HttpRequest { url: "https://evil.invalid/".into(), ..HttpRequest::default() };
+    let err = rt.block_on(http::http_fetch(&state, ID, "r", &req)).unwrap_err();
+    assert!(matches!(err, Error::Denied(_)), "{err}");
+    assert_eq!(fs::read_to_string(root.path().join("extensions.json")).unwrap(), "garbage");
+}
+
+#[test]
+fn a_revoke_reaches_the_network_path_through_the_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    install_version(&state, files.path(), "0.1.0", &["network:127.0.0.1"]);
+    install::set_enabled(&state, ID, false).unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let req = HttpRequest { url: "http://127.0.0.1:9/".into(), ..HttpRequest::default() };
+    assert!(matches!(rt.block_on(http::http_fetch(&state, ID, "r", &req)), Err(Error::Denied(_))));
+    install::uninstall(&state, ID).unwrap();
+    assert!(matches!(rt.block_on(http::http_fetch(&state, ID, "r", &req)), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn stage_slots_are_reserved_before_extracting() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let slots: Vec<_> = (0..MAX_STAGES).map(|_| StageSlot::reserve(&state).unwrap()).collect();
+    let path = write(files.path(), "h.tgz", &extension(ID, "0.1.0", &[]));
+    assert!(matches!(install::stage_bundle(&state, &path), Err(Error::Denied(_))));
+    assert!(matches!(StageSlot::reserve(&state), Err(Error::Denied(_))));
+    // Nothing was extracted for the refused stage.
+    let staged_dirs = fs::read_dir(root.path().join(STAGING_DIR)).map(|d| d.count()).unwrap_or(0);
+    assert_eq!(staged_dirs, 0);
+    drop(slots);
+    let staged = install::stage_bundle(&state, &path).unwrap();
+    install::discard_stage(&state, &staged.stage_id).unwrap();
+}
+
+#[test]
+fn a_reserved_slot_is_not_a_stage() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let slot = StageSlot::reserve(&state).unwrap();
+    let id = slot.id().to_string();
+    assert!(matches!(install::confirm_install(&state, &id, &[]), Err(Error::NotFound(_))));
+    assert!(matches!(install::discard_stage(&state, &id), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn failed_stages_release_their_slots() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let bad = write(files.path(), "bad.tgz", b"not a tarball");
+    for _ in 0..MAX_STAGES + 1 {
+        assert!(matches!(install::stage_bundle(&state, &bad), Err(Error::Bundle(_))));
+    }
+    let good = write(files.path(), "h.tgz", &extension(ID, "0.1.0", &[]));
+    assert!(install::stage_bundle(&state, &good).is_ok());
+}
+
+#[test]
+fn concurrent_stages_never_exceed_the_limit() {
+    let root = tempfile::tempdir().unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let path = write(files.path(), "h.tgz", &extension(ID, "0.1.0", &[]));
+    let barrier = std::sync::Barrier::new(MAX_STAGES * 2);
+    let ok = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..MAX_STAGES * 2)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    install::stage_bundle(&state, &path).is_ok()
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).filter(|ok| *ok).count()
+    });
+    assert_eq!(ok, MAX_STAGES);
 }

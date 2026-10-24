@@ -13,6 +13,7 @@ use tauri_plugin_extensions::install;
 use tauri_plugin_extensions::integrity::sha512_sri;
 use tauri_plugin_extensions::registry::{self, Source};
 use tauri_plugin_extensions::sources::IndexSourceEntry;
+use tauri_plugin_extensions::state::{ExtensionsState, StageSlot};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const ID: &str = "acme.hello";
@@ -39,6 +40,10 @@ fn listing(tarball: &[u8], permissions: &[&str]) -> CuratedIndex {
     .unwrap()
 }
 
+fn slot(state: &ExtensionsState) -> StageSlot {
+    StageSlot::reserve(state).unwrap()
+}
+
 fn source() -> IndexSourceEntry {
     IndexSourceEntry {
         id: "0123456789abcdef0123456789abcdef".into(),
@@ -56,7 +61,7 @@ fn stages_and_records_an_index_install() {
     let tarball = extension(ID, "0.1.0", &["ui:notify", "tools"]);
     // Order does not matter, the set does.
     let index = listing(&tarball, &["tools", "ui:notify"]);
-    let staged = install::stage_index_tarball(&state, &source(), &index, ID, "0.1.0", &tarball).unwrap();
+    let staged = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap();
     assert!(staged.integrity_checked);
     assert!(!staged.verified);
     assert!(matches!(&staged.source, Source::Index { source_name, .. } if source_name == "Acme index"));
@@ -86,7 +91,7 @@ fn a_manifest_index_permission_mismatch_is_rejected() {
     for listed in [&["ui:notify"][..], &["ui:notify", "tools"][..]] {
         let tarball = extension(ID, "0.1.0", &["ui:notify", "network:*"]);
         let index = listing(&tarball, listed);
-        let err = install::stage_index_tarball(&state, &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
+        let err = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
         assert!(matches!(err, Error::Tampered(_)), "{listed:?}: {err}");
     }
     let staging = root.path().join(".staging");
@@ -99,7 +104,7 @@ fn an_id_or_version_mismatch_is_rejected() {
     let state = state(root.path());
     for tarball in [extension("acme.other", "0.1.0", &["ui:notify"]), extension(ID, "0.1.1", &["ui:notify"])] {
         let index = listing(&tarball, &["ui:notify"]);
-        let err = install::stage_index_tarball(&state, &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
+        let err = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
         assert!(matches!(err, Error::Tampered(_)), "{err}");
     }
 }
@@ -110,7 +115,7 @@ fn a_tarball_that_does_not_match_its_pin_is_rejected() {
     let state = state(root.path());
     let tarball = extension(ID, "0.1.0", &["ui:notify"]);
     let index = listing(&extension(ID, "0.1.0", &["tools"]), &["ui:notify"]);
-    let err = install::stage_index_tarball(&state, &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
+    let err = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap_err();
     assert!(matches!(err, Error::Integrity(_)), "{err}");
 }
 
@@ -205,7 +210,7 @@ fn an_index_update_of_a_bundle_install_diffs_against_its_grants() {
 
     let tarball = extension(ID, "0.1.0", &["ui:notify", "tools"]);
     let index = listing(&tarball, &["ui:notify", "tools"]);
-    let staged = install::stage_index_tarball(&state, &source(), &index, ID, "0.1.0", &tarball).unwrap();
+    let staged = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap();
     assert_eq!(staged.existing.unwrap().version, "0.0.9");
     assert_eq!(staged.permission_diff.added, strings(&["tools"]));
     let installed = install::confirm_install(&state, &staged.stage_id, &strings(&["ui:notify", "tools"])).unwrap();
@@ -214,4 +219,32 @@ fn an_index_update_of_a_bundle_install_diffs_against_its_grants() {
         registry::load(root.path()).unwrap().registry.extensions[ID].previous_record.as_ref().unwrap().source,
         Source::Bundle { .. }
     ));
+}
+
+#[tokio::test]
+async fn index_and_tarball_fetches_refuse_redirects_to_ip_literals() {
+    // A second listener stands for an internal service; the redirect must
+    // never reach it, whatever its scheme.
+    let internal = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let internal_port = internal.local_addr().unwrap().port();
+    let client = index::client().unwrap();
+    for scheme in ["https", "http"] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let location = format!("{scheme}://127.0.0.1:{internal_port}/admin");
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = socket.read(&mut buf).await.unwrap();
+            let head = format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            socket.write_all(head.as_bytes()).await.unwrap();
+            socket.shutdown().await.ok();
+        });
+        let err = index::get_capped(&client, &format!("http://127.0.0.1:{port}/index.json"), 1024, index::INDEX_TIMEOUT)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Network(_)), "{err}");
+    }
+    let reached = tokio::time::timeout(std::time::Duration::from_millis(200), internal.accept()).await;
+    assert!(reached.is_err(), "a redirect reached the internal listener");
 }

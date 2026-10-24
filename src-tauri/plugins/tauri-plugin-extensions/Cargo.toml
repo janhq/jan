@@ -28,7 +28,7 @@ sha2 = "0.10"
 tar = "0.4"
 tauri = { version = "2.5.0", default-features = false, features = [], optional = true }
 thiserror = "2.0.12"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 url = "2.5"
 
 [dev-dependencies]

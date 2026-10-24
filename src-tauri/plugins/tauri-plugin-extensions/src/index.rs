@@ -180,17 +180,43 @@ pub fn resolve<'a>(index: &'a CuratedIndex, id: &str, version: &str) -> Result<&
         .ok_or_else(|| Error::NotFound(format!("the index does not list {id}@{version}")))
 }
 
-/// The client used for indexes and tarballs: no cookies, and no redirect
-/// that leaves https.
+/// Why a redirect of an index or tarball fetch is refused, if it is.
+///
+/// Redirects stay allowed because common tarball hosts (GitHub release
+/// assets, CDNs) answer with one to another host. A hop must stay on https
+/// and name a host by DNS: an IP literal or a localhost name is refused, so
+/// a listing cannot bounce Jan onto loopback or a private address it spells
+/// out. A name that resolves to a private address is the accepted DNS risk
+/// described in [`crate::http`]; TLS still has to verify for it.
+pub fn redirect_refusal(url: &Url) -> Option<&'static str> {
+    if url.scheme() != "https" {
+        return Some("redirect away from https");
+    }
+    match url.host() {
+        Some(url::Host::Domain(name)) => {
+            let name = name.trim_end_matches('.').to_ascii_lowercase();
+            if name == "localhost" || name.ends_with(".localhost") {
+                Some("redirect to localhost")
+            } else {
+                None
+            }
+        }
+        Some(_) => Some("redirect to an IP address"),
+        None => Some("redirect without a host"),
+    }
+}
+
+/// The client used for indexes and tarballs: no cookies, at most 5
+/// redirects, each checked by [`redirect_refusal`].
 pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
-                attempt.error("too many redirects")
-            } else if attempt.url().scheme() != "https" {
-                attempt.error("redirect away from https")
-            } else {
-                attempt.follow()
+                return attempt.error("too many redirects");
+            }
+            match redirect_refusal(attempt.url()) {
+                Some(reason) => attempt.error(reason),
+                None => attempt.follow(),
             }
         }))
         .connect_timeout(Duration::from_secs(15))
@@ -258,6 +284,33 @@ pub async fn download_tarball(client: &reqwest::Client, version: &IndexVersion) 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn redirects_only_reach_named_https_hosts() {
+        let refused = |u: &str| redirect_refusal(&Url::parse(u).unwrap());
+        for ok in [
+            "https://objects.githubusercontent.com/x.tgz",
+            "https://cdn.example.com/a",
+        ] {
+            assert_eq!(refused(ok), None, "{ok}");
+        }
+        for bad in [
+            "http://cdn.example.com/a",
+            "https://127.0.0.1/",
+            "https://127.1/",
+            "https://0x7f000001/",
+            "https://10.0.0.5/",
+            "https://192.168.1.1/",
+            "https://169.254.169.254/latest/meta-data",
+            "https://[::1]/",
+            "https://[fd00::1]/",
+            "https://localhost/",
+            "https://LOCALHOST./",
+            "https://api.localhost/",
+        ] {
+            assert!(refused(bad).is_some(), "{bad}");
+        }
+    }
 
     const SRI: &str = "sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==";
 

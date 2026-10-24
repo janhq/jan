@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::index::{self, CuratedIndex, IndexSource};
 use crate::install::{self, StagedInstall};
 use crate::sources::{self, IndexSourceEntry};
-use crate::state::{lock, ExtensionsState};
+use crate::state::{lock, ExtensionsState, StageSlot};
 
 /// Every source the user added.
 pub fn list_sources(state: &ExtensionsState) -> Result<Vec<IndexSourceEntry>> {
@@ -55,16 +55,20 @@ pub struct Downloaded {
     pub index: CuratedIndex,
     /// The tarball bytes, already checked against the pinned SRI.
     pub bytes: Vec<u8>,
+    /// The stage slot reserved before the download.
+    pub slot: StageSlot,
 }
 
 /// Fetches the index of `source_id` and downloads the tarball of
-/// `id@version` it lists (https, at most 50 MiB, SRI checked).
+/// `id@version` it lists (https, at most 50 MiB, SRI checked). A stage slot
+/// is reserved first, so no download starts while the stages are full.
 pub async fn download_from_index(
     state: &ExtensionsState,
     source_id: &str,
     id: &str,
     version: &str,
 ) -> Result<Downloaded> {
+    let slot = StageSlot::reserve(state)?;
     let source = source(state, source_id)?;
     let index = index::fetch_index(&state.index_http, &IndexSource::Url(source.url.clone())).await?;
     let listed = index::resolve(&index, id, version)?.clone();
@@ -73,6 +77,7 @@ pub async fn download_from_index(
         source,
         index,
         bytes,
+        slot,
     })
 }
 
@@ -80,12 +85,13 @@ pub async fn download_from_index(
 /// the listing. Blocking: it extracts to disk.
 pub fn stage_downloaded(
     state: &ExtensionsState,
-    downloaded: &Downloaded,
+    downloaded: Downloaded,
     id: &str,
     version: &str,
 ) -> Result<StagedInstall> {
     install::stage_index_tarball(
         state,
+        downloaded.slot,
         &downloaded.source,
         &downloaded.index,
         id,

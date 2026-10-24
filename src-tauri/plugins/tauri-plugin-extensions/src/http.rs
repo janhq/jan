@@ -8,6 +8,27 @@
 //! headers are dropped both ways and a request cannot set transport
 //! headers (Host and the like), so a granted connection cannot be pointed
 //! at another virtual host.
+//!
+//! # Accepted risks
+//!
+//! **DNS rebinding.** A `network:<host>` grant is checked against the URL's
+//! host name; the address it resolves to is not checked. Every host other
+//! than `localhost` and `127.0.0.1` must be https with a certificate that
+//! verifies for that name, and Jan's local API server speaks plain http, so
+//! a name rebound to loopback cannot complete a TLS handshake with it. What
+//! remains is an internal https service that holds a valid certificate for
+//! the granted public name, which an extension cannot arrange.
+//!
+//! **Proxies.** Requests go through whatever proxy reqwest picks up: the
+//! `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` variables (honouring
+//! `NO_PROXY`), and in the app build also the system proxy settings, since
+//! cargo unifies reqwest's default features from the app crate. Extension
+//! traffic, including granted `http://localhost` and `http://127.0.0.1`
+//! requests, may therefore pass through the user's proxy unless `NO_PROXY`
+//! excludes it. That is the user's own configuration, so it is accepted;
+//! the grant check is unaffected because it runs on the URL before the
+//! request is built. Index and tarball downloads ([`crate::index`]) behave
+//! the same way.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -19,7 +40,7 @@ use url::Url;
 use crate::error::{Error, Result};
 use crate::install::network_grants;
 use crate::permissions::url_allowed;
-use crate::state::{lock, ExtensionsState};
+use crate::state::{lock, ExtensionsState, Running};
 
 /// Largest response body returned by [`http_fetch`].
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -195,15 +216,21 @@ fn response_headers(response: &reqwest::Response) -> BTreeMap<String, String> {
     out
 }
 
-/// Removes the request from the in-flight map when dropped.
+/// Removes the request from the in-flight map when dropped, unless the key
+/// already belongs to a later request: `cancel` only signals, but a caller
+/// may still re-use a request id once its request has finished.
 struct InFlight<'a> {
     state: &'a ExtensionsState,
     key: String,
+    token: u64,
 }
 
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
-        lock(&self.state.requests).remove(&self.key);
+        let mut requests = lock(&self.state.requests);
+        if requests.get(&self.key).is_some_and(|r| r.token == self.token) {
+            requests.remove(&self.key);
+        }
     }
 }
 
@@ -227,14 +254,27 @@ fn register<'a>(
         )));
     }
     let (tx, rx) = oneshot::channel();
-    requests.insert(key.clone(), tx);
-    Ok((InFlight { state, key }, rx))
+    let token = state.next_request_token();
+    requests.insert(
+        key.clone(),
+        Running {
+            token,
+            cancel: Some(tx),
+        },
+    );
+    Ok((InFlight { state, key, token }, rx))
 }
 
 /// Cancels a running request of `id`. Unknown ids are ignored: the request
-/// may just have finished.
+/// may just have finished. The entry stays until the request's future is
+/// dropped, so it keeps counting towards the in-flight cap until it has
+/// actually stopped.
 pub fn cancel(state: &ExtensionsState, id: &str, request_id: &str) {
-    if let Some(tx) = lock(&state.requests).remove(&format!("{id}\n{request_id}")) {
+    let mut requests = lock(&state.requests);
+    if let Some(tx) = requests
+        .get_mut(&format!("{id}\n{request_id}"))
+        .and_then(|r| r.cancel.take())
+    {
         let _ = tx.send(());
     }
 }
@@ -451,6 +491,56 @@ mod tests {
         assert!(check_request(&g, &r, None).is_ok());
         r.body = Some("x".repeat(MAX_REQUEST_BYTES + 1));
         assert!(matches!(check_request(&g, &r, None), Err(Error::TooLarge(_))));
+    }
+
+    fn in_flight(state: &ExtensionsState, id: &str) -> usize {
+        let prefix = format!("{id}\n");
+        lock(&state.requests).keys().filter(|k| k.starts_with(&prefix)).count()
+    }
+
+    #[test]
+    fn a_cancelled_request_does_not_drop_its_successor() {
+        let root = tempfile::tempdir().unwrap();
+        let options = crate::state::Options {
+            app_version: "0.8.5".into(),
+            safe_mode_forced: false,
+        };
+        let state = ExtensionsState::new(root.path(), options).unwrap();
+        let id = "acme.hello";
+        // A worker re-using one request id: cancel, then register it again
+        // before and after the cancelled future is dropped.
+        for _ in 0..MAX_IN_FLIGHT_PER_EXTENSION * 2 {
+            let (first, mut first_rx) = register(&state, id, "same").unwrap();
+            cancel(&state, id, "same");
+            assert!(first_rx.try_recv().is_ok());
+            // Still counted, and still owning its id, until it is dropped.
+            assert_eq!(in_flight(&state, id), 1);
+            assert!(matches!(register(&state, id, "same"), Err(Error::Invalid(_))));
+            cancel(&state, id, "same");
+            drop(first);
+            assert_eq!(in_flight(&state, id), 0);
+            let (second, mut rx) = register(&state, id, "same").unwrap();
+            assert_eq!(in_flight(&state, id), 1);
+            cancel(&state, id, "same");
+            assert!(rx.try_recv().is_ok());
+            drop(second);
+        }
+        assert_eq!(in_flight(&state, id), 0);
+
+        // A guard whose key was taken over by a later request leaves it.
+        let (stale, _rx) = register(&state, id, "k").unwrap();
+        lock(&state.requests).remove(&format!("{id}\nk"));
+        let (live, _live_rx) = register(&state, id, "k").unwrap();
+        drop(stale);
+        assert_eq!(in_flight(&state, id), 1);
+        drop(live);
+        assert_eq!(in_flight(&state, id), 0);
+
+        let guards: Vec<_> = (0..MAX_IN_FLIGHT_PER_EXTENSION)
+            .map(|i| register(&state, id, &format!("r{i}")).unwrap())
+            .collect();
+        assert!(matches!(register(&state, id, "one-more"), Err(Error::Denied(_))));
+        drop(guards);
     }
 
     #[test]

@@ -29,6 +29,14 @@ pub struct Limits {
     pub max_entries: usize,
     /// Bytes of one file.
     pub max_file_bytes: u64,
+    /// Distinct directories, explicit or implied by a file's path.
+    pub max_dirs: usize,
+    /// Segments of one path below `package/`, the file name included.
+    pub max_depth: usize,
+    /// Bytes of one path below `package/`, `/` separators included. Kept
+    /// short enough that the extracted tree fits the Windows MAX_PATH budget
+    /// under a typical data folder.
+    pub max_path_bytes: usize,
 }
 
 impl Default for Limits {
@@ -37,6 +45,9 @@ impl Default for Limits {
             max_total_bytes: 50 * 1024 * 1024,
             max_entries: 2000,
             max_file_bytes: 20 * 1024 * 1024,
+            max_dirs: 2000,
+            max_depth: 32,
+            max_path_bytes: 240,
         }
     }
 }
@@ -72,8 +83,9 @@ impl<R: Read> Read for Counted<R> {
     }
 }
 
-// Windows treats these as devices in any directory, with any extension.
-const RESERVED_NAMES: &[&str] = &[
+/// Names Windows treats as devices in any directory, with any extension.
+/// Shared with the extension id check, whose parts become directory names.
+pub(crate) const RESERVED_NAMES: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
     "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
@@ -191,6 +203,17 @@ fn extract_into<R: Read>(
     let mut seen: HashMap<String, Seen> = HashMap::new();
     let mut files = Vec::new();
     let mut entries = 0usize;
+    let mut dirs = 0usize;
+    // Counts a directory about to be created, before the syscall.
+    let mut new_dir = || -> Result<(), BundleError> {
+        dirs += 1;
+        if dirs > limits.max_dirs {
+            return Err(BundleError::TooManyDirectories {
+                limit: limits.max_dirs,
+            });
+        }
+        Ok(())
+    };
 
     for entry in archive.entries()? {
         let mut entry = entry?;
@@ -219,25 +242,51 @@ fn extract_into<R: Read>(
         if segments.is_empty() {
             continue;
         }
+        // Bounds the per-entry work below: without them a few KiB of
+        // compressed headers can demand millions of ancestor checks.
+        let joined = segments.join("/");
+        if segments.len() > limits.max_depth || joined.len() > limits.max_path_bytes {
+            return Err(BundleError::PathTooLong {
+                path: shown,
+                max_depth: limits.max_depth,
+                max_bytes: limits.max_path_bytes,
+            });
+        }
 
         // Every ancestor is a directory, and nothing may already be a file
-        // there, compared case-insensitively as macOS and Windows would.
+        // there, compared case-insensitively as macOS and Windows would. An
+        // ancestor already recorded as a directory exists on disk.
+        let lower_segments: Vec<String> = segments.iter().map(|s| s.to_lowercase()).collect();
+        let lower = lower_segments.join("/");
         let mut target = dest.to_path_buf();
-        for depth in 0..segments.len() - 1 {
-            let ancestor = segments[..=depth].join("/").to_lowercase();
-            if seen.insert(ancestor, Seen::Dir) == Some(Seen::File) {
-                return Err(BundleError::Duplicate { path: shown });
+        let mut end = 0;
+        for (segment, lower_segment) in segments.iter().zip(&lower_segments).take(segments.len() - 1) {
+            // Offsets come from the lowercased segments: lowercasing may
+            // change a character's byte length.
+            end += lower_segment.len();
+            let ancestor = &lower[..end];
+            end += 1;
+            target.push(segment);
+            match seen.get(ancestor) {
+                Some(Seen::Dir) => continue,
+                Some(Seen::File) => return Err(BundleError::Duplicate { path: shown }),
+                None => {}
             }
-            target.push(&segments[depth]);
+            new_dir()?;
+            seen.insert(ancestor.to_string(), Seen::Dir);
             make_dir(&target)?;
         }
         target.push(&segments[segments.len() - 1]);
-        let lower = segments.join("/").to_lowercase();
         if is_dir {
-            if seen.insert(lower, Seen::Dir) == Some(Seen::File) {
-                return Err(BundleError::Duplicate { path: shown });
+            match seen.get(&lower) {
+                Some(Seen::Dir) => {}
+                Some(Seen::File) => return Err(BundleError::Duplicate { path: shown }),
+                None => {
+                    new_dir()?;
+                    seen.insert(lower, Seen::Dir);
+                    make_dir(&target)?;
+                }
             }
-            make_dir(&target)?;
             continue;
         }
         if seen.insert(lower, Seen::File).is_some() {
@@ -261,7 +310,7 @@ fn extract_into<R: Read>(
         file.flush()?;
         drop(file);
         set_mode(&target, 0o644)?;
-        files.push(segments.join("/"));
+        files.push(joined);
     }
 
     // Read to the end of the gzip stream: it checks the CRC, and anything

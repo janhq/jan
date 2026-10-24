@@ -147,7 +147,7 @@ async fn stage_from_index(
 ) -> Result<StagedInstall> {
     let downloaded = catalog::download_from_index(&state, &source_id, &id, &version).await?;
     blocking(&state, move |s| {
-        catalog::stage_downloaded(s, &downloaded, &id, &version)
+        catalog::stage_downloaded(s, downloaded, &id, &version)
     })
     .await
 }

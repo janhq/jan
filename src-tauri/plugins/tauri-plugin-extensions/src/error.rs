@@ -24,6 +24,12 @@ pub enum BundleError {
         /// The cap that was exceeded.
         limit: usize,
     },
+    /// More distinct directories than `Limits::max_dirs`.
+    #[error("the package has more than {limit} directories")]
+    TooManyDirectories {
+        /// The cap that was exceeded.
+        limit: usize,
+    },
     /// One file is larger than `Limits::max_file_bytes`.
     #[error("'{path}' is larger than {limit} bytes")]
     FileTooLarge {
@@ -39,6 +45,16 @@ pub enum BundleError {
         path: String,
         /// A readable name of its type.
         kind: String,
+    },
+    /// A path nested deeper or longer than `Limits` allows.
+    #[error("'{path}' is nested deeper than {max_depth} levels or longer than {max_bytes} bytes")]
+    PathTooLong {
+        /// The offending entry, lossily decoded.
+        path: String,
+        /// The depth cap.
+        max_depth: usize,
+        /// The length cap.
+        max_bytes: usize,
     },
     /// A path that is not `package/` followed by plain relative components.
     #[error("'{path}' is not a safe path inside package/")]
