@@ -114,6 +114,28 @@ describe('sections', () => {
   })
 })
 
+describe('failed installed extensions', () => {
+  it('lists one whose manifest the host refused, with the reason', async () => {
+    h.hosted = [
+      {
+        id: 'acme.broken',
+        manifest: manifest('acme.broken', { displayName: 'acme.broken' }),
+        source: 'installed',
+        state: 'failed',
+        error: 'jan.apiVersion: must be a caret range',
+      },
+    ]
+    render(<Page />)
+    const mine = await screen.findByRole('region', { name: 'Installed' })
+    expect(
+      await within(mine).findByText(
+        'Failed to start: jan.apiVersion: must be a caret range'
+      )
+    ).toBeInTheDocument()
+    expect(within(mine).queryByText('No extensions installed yet.')).toBeNull()
+  })
+})
+
 describe('install from file', () => {
   it('opens a .tgz picker, gates on trust, and confirms exactly the requested grants', async () => {
     h.open.mockResolvedValue('/downloads/hello.tgz')
@@ -139,6 +161,25 @@ describe('install from file', () => {
     )
     await waitFor(() => expect(h.reload).toHaveBeenCalledWith('acme.hello'))
     expect(await screen.findByText('Ext acme.hello')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('reloads and re-reads the list when the install fails after Rust took it', async () => {
+    h.open.mockResolvedValue('/downloads/hello.tgz')
+    mock.state.stage = staged('acme.hello', ['ui:notify'])
+    mock.service.confirmInstall.mockRejectedValueOnce(
+      new Error("Installed extension 'acme.hello' has an invalid manifest")
+    )
+    render(<Page />)
+    await waitFor(() => expect(mock.service.list).toHaveBeenCalledTimes(1))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Install from file...' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('checkbox'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Install' }))
+    await waitFor(() => expect(h.reload).toHaveBeenCalledWith('acme.hello'))
+    await waitFor(() => expect(mock.service.list).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

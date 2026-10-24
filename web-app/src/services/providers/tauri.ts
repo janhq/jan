@@ -154,7 +154,7 @@ export class TauriProvidersService extends DefaultProvidersService {
     try {
       // A contributed provider is reached only on its extension's checked
       // network path, and never presents itself as the app.
-      const extensionFetch = extensionProviderFetch(provider)
+      const extensionFetch = extensionProviderFetch(provider, 'whole')
       const fetchImpl: typeof globalThis.fetch = extensionFetch ?? fetchTauri
       const keyChain = providerRemoteApiKeyChain(provider)
       const keyAttempts: (string | undefined)[] =

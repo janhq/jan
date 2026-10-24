@@ -120,6 +120,30 @@ describe('ExtensionProvider', () => {
     expect(window.core?.extensionHost).toBe(h.host)
     expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
     expect(h.calls).toEqual(['host', 'installed', 'legacy'])
+    expect(h.host.activateBuiltins.mock.invocationCallOrder[0]).toBeLessThan(
+      h.host.loadInstalled.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('does not hold the legacy extensions back while installed ones start', async () => {
+    h.host.loadInstalled.mockImplementation(() => new Promise<void>(() => {}))
+    renderProvider()
+    expect(await screen.findByTestId('child')).toBeInTheDocument()
+    expect(h.host.loadInstalled).toHaveBeenCalled()
+    expect(h.load).toHaveBeenCalled()
+  })
+
+  it('logs a failure to load the installed extensions', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.host.loadInstalled.mockRejectedValue(new Error('registry gone'))
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith(
+        'Loading installed extensions failed:',
+        expect.any(Error)
+      )
+    )
   })
 
   it('loads no installed extension where there is no install pipeline', async () => {

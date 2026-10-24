@@ -3,7 +3,12 @@ import type { HttpRequestInit, PermissionString } from '@janhq/extension-api'
 import { ContributionStore } from '../contributions'
 import { PermissionDispatcher } from '../dispatcher'
 import { MAX_CONCURRENT_FETCHES, createHostApi } from '../host-api'
-import { MAX_REDIRECTS, createProviderFetch, type ExtensionHttp } from '../http'
+import {
+  MAX_REDIRECTS,
+  MAX_UNREAD_BYTES,
+  createProviderFetch,
+  type ExtensionHttp,
+} from '../http'
 import { ExtensionSettingsStore } from '../settings-store'
 import { fakeHttp, redirectTo, type FakeReply } from './fake-http'
 import { manifest } from './fixtures'
@@ -201,6 +206,23 @@ describe('ctx.http.fetch', () => {
     expect(server.sent).toHaveLength(1)
   })
 
+  it('does not send the next hop once the caller cancelled after a redirect', async () => {
+    const controller = new AbortController()
+    const server = fakeHttp(({ url }) => {
+      if (url.endsWith('/old')) {
+        // The worker cancels while the redirect is on its way back.
+        controller.abort()
+        return redirectTo(302, '/new')
+      }
+      return { body: 'ok' }
+    })
+    const call = setup(['network:api.acme.dev'], server.http)
+    await expect(
+      call('https://api.acme.dev/old', undefined, controller.signal)
+    ).rejects.toMatchObject({ code: 'E_CANCELLED' })
+    expect(server.urls()).toEqual(['https://api.acme.dev/old'])
+  })
+
   it('reports what the plugin refuses with the matching error code', async () => {
     const http = fakeHttp(() => ({})).http
     http.httpFetch.mockRejectedValueOnce({ kind: 'denied', message: 'revoked' })
@@ -249,7 +271,8 @@ describe('createProviderFetch', () => {
   function providerFetch(
     grants: PermissionString[],
     answer: Parameters<typeof fakeHttp>[0],
-    stopped?: AbortSignal
+    stopped?: AbortSignal,
+    mode: 'stream' | 'whole' = 'stream'
   ) {
     const server = fakeHttp(answer)
     const dispatcher = dispatcherFor(grants)
@@ -258,9 +281,103 @@ describe('createProviderFetch', () => {
       http: server.http,
       checkUrl: (url) => dispatcher.checkUrl(ID, url),
       stopped,
+      mode,
     })
     return { server, fetch }
   }
+
+  it('reads a whole response through httpFetch, checking every hop, in whole mode', async () => {
+    const { server, fetch } = providerFetch(
+      ['network:api.acme.dev'],
+      ({ url }) =>
+        url.endsWith('/old')
+          ? redirectTo(308, '/v1/models')
+          : { body: '{"data":[]}', headers: { 'content-type': 'application/json' } },
+      undefined,
+      'whole'
+    )
+    const response = await fetch('https://api.acme.dev/old', {
+      headers: { Authorization: 'Bearer k' },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('{"data":[]}')
+    expect(server.urls()).toEqual([
+      'https://api.acme.dev/old',
+      'https://api.acme.dev/v1/models',
+    ])
+    expect(server.http.httpFetchStream).not.toHaveBeenCalled()
+    for (const s of server.sent) expect(s.requestId).toMatch(/^[\w-]{1,64}$/)
+  })
+
+  it('cancels a whole-mode request in Rust when the caller aborts', async () => {
+    const { server, fetch } = providerFetch(
+      ['network:api.acme.dev'],
+      () => ({ hang: true }),
+      undefined,
+      'whole'
+    )
+    const controller = new AbortController()
+    const pending = fetch('https://api.acme.dev/v1/models', {
+      signal: controller.signal,
+    })
+    await vi.waitFor(() => expect(server.sent).toHaveLength(1))
+    controller.abort()
+    await expect(pending).rejects.toBeDefined()
+    expect(server.http.httpCancel).toHaveBeenCalledWith(ID, server.sent[0].requestId)
+  })
+
+  it('does not need AbortSignal.any to combine the caller and stop signals', async () => {
+    const any = vi.spyOn(AbortSignal, 'any').mockImplementation(() => {
+      throw new TypeError('AbortSignal.any is not a function')
+    })
+    try {
+      const stopped = new AbortController()
+      const { server, fetch } = providerFetch(
+        ['network:127.0.0.1'],
+        () => ({ hang: true }),
+        stopped.signal
+      )
+      const controller = new AbortController()
+      const pending = fetch('http://127.0.0.1:11999/v1/models', {
+        signal: controller.signal,
+      })
+      await vi.waitFor(() => expect(server.sent).toHaveLength(1))
+      controller.abort()
+      await expect(pending).rejects.toBeDefined()
+      expect(server.http.httpCancel).toHaveBeenCalledWith(
+        ID,
+        server.sent[0].requestId
+      )
+    } finally {
+      any.mockRestore()
+    }
+  })
+
+  it('cancels the stream when the Response cannot be built from the head', async () => {
+    const { server, fetch } = providerFetch(['network:127.0.0.1'], () => ({
+      // Rust decodes header values lossily; a U+FFFD is not Latin-1.
+      headers: { 'x-name': 'caf\uFFFD' },
+      chunks: ['data: 1\n\n', 'data: 2\n\n'],
+    }))
+    await expect(
+      fetch('http://127.0.0.1:11999/v1/chat/completions')
+    ).rejects.toBeInstanceOf(TypeError)
+    expect(server.http.httpCancel).toHaveBeenCalledWith(ID, server.sent[0].requestId)
+  })
+
+  it('cancels a stream nobody reads once too much is buffered', async () => {
+    const { server, fetch } = providerFetch(['network:127.0.0.1'], () => ({
+      chunks: ['x'.repeat(MAX_UNREAD_BYTES), 'x'],
+    }))
+    const response = await fetch('http://127.0.0.1:11999/v1/chat/completions')
+    await vi.waitFor(() =>
+      expect(server.http.httpCancel).toHaveBeenCalledWith(
+        ID,
+        server.sent[0].requestId
+      )
+    )
+    await expect(response.text()).rejects.toMatchObject({ code: 'E_TOO_LARGE' })
+  })
 
   it('streams the body back as a web Response the AI SDK can read', async () => {
     const { server, fetch } = providerFetch(['network:127.0.0.1'], () => ({

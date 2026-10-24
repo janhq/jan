@@ -50,7 +50,12 @@ function UninstallButton({
   }
   return (
     <>
-      <Button size="xs" variant="destructive" onClick={() => setOpen(true)}>
+      <Button
+        size="xs"
+        variant="destructive"
+        disabled={registry.busy}
+        onClick={() => setOpen(true)}
+      >
         {t('extensions:details.uninstall')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -89,7 +94,7 @@ function InstalledDetails({
   registry: InstalledRegistry
 }) {
   const { t } = useTranslation()
-  const { service, change } = registry
+  const { service, change, busy } = registry
   const revoke = (permission: PermissionString) =>
     change(
       () =>
@@ -115,6 +120,7 @@ function InstalledDetails({
                 name: entry.manifest.displayName,
               })}
               checked={entry.enabled}
+              disabled={busy}
               onCheckedChange={(on) =>
                 change(() => service.setEnabled(entry.id, on), entry.id)
               }
@@ -132,6 +138,7 @@ function InstalledDetails({
               size="xs"
               variant="outline"
               className="ml-auto"
+              disabled={busy}
               onClick={() => change(() => service.rollback(entry.id), entry.id)}
             >
               {t('extensions:details.rollback', { version: entry.previous })}
@@ -147,6 +154,7 @@ function InstalledDetails({
             <Button
               size="xs"
               variant="outline"
+              disabled={busy}
               onClick={() => revoke(permission)}
             >
               {t('extensions:details.revoke')}
