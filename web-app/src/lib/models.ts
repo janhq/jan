@@ -105,6 +105,7 @@ export const getHuggingFaceUrl = (model: {
   model_name: string
   developer?: string
 }): string => {
+  // model_name is always `author/repo` from the HF API (fetchHuggingFaceRepo); catalog entries are bare names.
   if (model.model_name.includes('/')) {
     return `https://huggingface.co/${model.model_name}`
   }
