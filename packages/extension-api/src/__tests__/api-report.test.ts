@@ -16,7 +16,10 @@ describe('api-report.d.ts', () => {
       [join(ROOT, 'scripts', 'api-report.mjs'), '--stdout'],
       { cwd: ROOT, encoding: 'utf8' }
     )
+    // A Windows checkout with core.autocrlf turns the committed file into
+    // CRLF; the generator always emits LF.
     const committed = readFileSync(join(ROOT, 'api-report.d.ts'), 'utf8')
+      .replace(/\r\n/g, '\n')
     expect(
       committed,
       'The public API of @janhq/extension-api changed. Review the change, then ' +
