@@ -1,0 +1,96 @@
+---
+title: Extension Permissions
+description: Every permission a Jan extension can request, its risk level and what it allows.
+keywords:
+  [
+    Jan,
+    extensions,
+    permissions,
+    network access,
+    security,
+  ]
+---
+import { Callout } from 'nextra/components'
+
+# Extension Permissions
+
+An extension lists the permissions it needs in the `jan.permissions` field of its
+manifest. Jan shows them with a risk level before you install it, and every call
+the extension makes is checked against what you granted. Installing means
+granting everything the extension requests; afterwards you can revoke
+individual permissions on its Details page.
+
+## Always allowed
+
+These need no permission:
+
+- reading and writing its own settings (`ctx.settings`),
+- its own key-value storage (`ctx.storage`, 1 MiB),
+- registering and running its own declared commands, updating its own status
+  items,
+- logging to the app log (`ctx.log`).
+
+## Permission table
+
+| Permission | Shown as | Risk | What it allows |
+|---|---|---|---|
+| `ui:notify` | Show notifications | Low | Show short messages in the app, labelled with the extension's name (`ctx.ui.notify`). |
+| `commands:execute` | Run commands | Medium | Run commands that belong to Jan or to other extensions (`ctx.commands.execute` with an id the extension did not declare). Not available yet: no such command is exposed in this release. |
+| `network:<host>` | Connect to &lt;host&gt; | Medium (High for `network:*`) | Send requests to this host and read the replies (`ctx.http.fetch`), and serve a contributed provider whose `baseUrl` is on it. |
+| `providers` | Add model providers | Medium | Add model providers that appear in the model picker. Each provider also needs `network:` for its `baseUrl` host. |
+| `tools` | Add tools for models | High | Add tools that models can call during a chat. Each call still asks for your approval. |
+| `conversations:read` | Read your conversations | High | Read your threads and the messages in them, and be told when messages are created or threads deleted. |
+| `conversations:write` | Change your conversations | High | Create threads and add user or assistant messages to them. |
+| `chat:hooks` | Change messages before they are sent | High | Rewrite the text of your messages before they reach the model. Part of a [proposed API](/docs/desktop/extensions/api#stable-and-proposed-apis); not available to installed extensions. |
+
+A call without the needed grant fails with the error code `E_PERMISSION`.
+
+## Network permissions
+
+`network:<host>` names one host, without scheme, port or path:
+
+| Grant | Matches |
+|---|---|
+| `network:api.example.com` | exactly `api.example.com` |
+| `network:*.example.com` | any subdomain, such as `api.example.com` or `a.b.example.com`, but **not** `example.com` itself |
+| `network:localhost`, `network:127.0.0.1` | that local host, on any port |
+| `network:*` | any host (shown as high risk) |
+
+Host names are lowercase. Rules that apply to every request:
+
+- **https only**, except `localhost` and `127.0.0.1`, which may also use plain
+  http.
+- URLs with a user name or password are refused.
+- Ports are not checked: a grant for a host covers every port on it.
+- **Jan's own Local API Server is always blocked.** Its port on `localhost` and
+  `127.0.0.1` is refused whatever the grant, because it serves requests with
+  your provider keys. The consent dialog notes this next to a local grant.
+- Redirects are not followed automatically. Jan checks every hop against the
+  grants (at most 5 redirects) and drops non-safelisted headers once a redirect
+  leaves the original origin.
+- No cookies are sent or stored, and the extension cannot set `Host`,
+  `Content-Length`, `Connection` or other transport headers.
+- Grants are re-checked on every request, so a revoke applies to the next one.
+
+<Callout type="info">
+The host name is checked, not the address it resolves to. Requests use the
+proxy configured in your environment (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`,
+honouring `NO_PROXY`) or your system proxy, including requests to local hosts.
+</Callout>
+
+## Tools and providers
+
+- Tools contributed by an extension are grouped under `ext:<extension id>` in
+  the tool toggles and approval prompts, so an extension cannot pose as an MCP
+  server you already trust. The model sees them under a hashed name of the
+  form `x_<hash>__<tool name>`.
+- A contributed provider is listed as `<extension id>/<provider id>`. Jan runs
+  inference against the provider's `baseUrl` itself, on the extension's network
+  path, so revoking the `network:` grant for that host stops it.
+
+## Development folders
+
+A folder loaded with **Load unpacked** (development builds only) is granted
+everything its manifest requests after you confirm the list, until Jan
+restarts. It has no network path: `ctx.http.fetch` fails and its providers
+cannot be chatted with. See [Build an Extension](/docs/desktop/extensions/develop).

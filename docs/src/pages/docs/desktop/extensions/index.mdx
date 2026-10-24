@@ -1,0 +1,207 @@
+---
+title: Extensions
+description: Install, manage and trust third-party extensions in Jan Desktop.
+keywords:
+  [
+    Jan,
+    extensions,
+    plugins,
+    extension index,
+    permissions,
+    safe mode,
+    local AI,
+    privacy focus,
+  ]
+---
+import { Callout, Steps } from 'nextra/components'
+
+# Extensions
+
+Extensions add features to Jan Desktop without a new release of the app. Anyone
+can write one, and you install them yourself, either from a file or from an
+index someone publishes.
+
+<Callout type="info">
+Third-party extensions are a **desktop** feature (Windows, macOS, Linux). The
+mobile apps do not run them, and the `jan` CLI has its own plugin system.
+</Callout>
+
+## What an extension can do
+
+An extension can contribute:
+
+- **Commands**, shown in the command palette (search dialog), thread and message
+  menus, and the chat input actions.
+- **Settings**, shown on the extension's card in **Settings > Extensions**.
+  Secret settings (such as API keys) are stored in the OS keyring, not in a file.
+- **Status items** in the left sidebar.
+- **Tools** that models can call during a chat. Every call still goes through
+  Jan's tool approval.
+- **Model providers** that speak the OpenAI API and appear in the model picker.
+
+Anything beyond showing its own settings, commands and status items needs a
+[permission](/docs/desktop/extensions/permissions) that you grant when you install it.
+
+## How extensions run
+
+Jan ships a few built-in extensions (the llama.cpp engine, MLX on macOS, downloads,
+assistants, RAG and the vector store). They are part of Jan and cannot be
+disabled or uninstalled.
+
+Every extension you install runs in its own sandboxed Web Worker:
+
+- It has no access to the page, the file system, Jan's internal APIs or the
+  browser's network primitives (`fetch`, `XMLHttpRequest`, `WebSocket` and the
+  like are removed before its code runs).
+- It can only call the [extension API](/docs/desktop/extensions/api). Every call
+  is checked against the permissions you granted.
+- It has no UI of its own. It describes commands, settings and status items in
+  its manifest, and Jan draws them.
+- Network requests go through Jan's backend, only to the hosts you granted.
+  They carry no cookies, redirects are checked hop by hop, and Jan's own
+  [Local API Server](/docs/desktop/api-server) is never reachable.
+
+<Callout type="warning">
+The sandbox limits what an extension can reach, but it is not a guarantee
+against malicious code. Install extensions only from people and indexes you
+trust, and grant only the permissions you are comfortable with.
+</Callout>
+
+## Trust labels
+
+Jan has no central extension store and ships no index. Each install is labelled
+by where it came from:
+
+| Label | Meaning |
+|---|---|
+| **Verified by &lt;source&gt;** | From an index you added **with a pinned signing key**. The index signature checked out and the download matched the hash the index listed. |
+| **Integrity checked (unsigned source)** | From an index you added **without** a key. The download matched the listed hash, but nothing proves who published the listing. |
+| **Unverified** | A `.tgz` file from disk. Nobody vouched for it. Jan shows its SHA-512 so you can compare it with what the author published. |
+
+For anything that is not verified, the install button stays disabled until you
+tick **I trust the author of this file** (or **I trust the author and this
+index**).
+
+## Install an extension
+
+### From a file
+
+<Steps>
+### Open the Extensions page
+Go to **Settings > Extensions**.
+
+### Pick the file
+Click **Install from file...** and choose the extension's `.tgz` bundle.
+
+### Review and confirm
+Jan checks the package and shows its name, version, publisher, the permissions
+it requests with their risk level, and its SHA-512. Tick the trust box and click
+**Install**.
+</Steps>
+
+Jan never runs package scripts. A bundle is refused when it is larger than
+50 MiB, when its manifest is invalid, when it needs a newer extension API or Jan
+version than yours, or when its files break the archive rules (see
+[Build an Extension](/docs/desktop/extensions/develop#package-it)).
+
+### From an index source
+
+An index is a JSON catalog of extensions published by a community member or an
+organization. See [Publishing an Index](/docs/desktop/extensions/publishing) to
+host one.
+
+<Steps>
+### Add the source
+On the **Catalog** tab of **Settings > Extensions**, enter the index URL
+(https only), a name, and, if the publisher gives you one, its **public key**.
+
+### Browse the catalog
+Jan downloads the index and lists its extensions with their latest version.
+When the publisher links a provenance attestation, a
+**Provenance reported by source** link is shown; Jan does not check it.
+
+### Install
+Click **Install**. Jan downloads the tarball, checks it against the hash in the
+index, and refuses it if its id, version or permissions differ from the listing.
+Then the same consent dialog as above opens.
+</Steps>
+
+<Callout type="info">
+Pin the publisher's public key whenever one is offered. With a key, Jan rejects
+any index that is not signed by it, any index older than one it already
+accepted from that source (a replayed index), and any index past its `expires`
+date. Without a key, the index is read as is and installs are labelled
+**Integrity checked (unsigned source)**.
+</Callout>
+
+**Key rotation.** A signed index can announce the key it will be signed with
+next. Jan then shows **Review new key** on that source. Accept it only if you
+expected the change; after that, only indexes signed with the new key are
+trusted.
+
+**Removing a source.** Installed extensions stay installed. If the source had a
+pinned key, Jan asks first and remembers the key; adding the same URL again
+without a key shows a warning with the old key.
+
+## Manage installed extensions
+
+Each installed extension has a card in **Settings > Extensions** with an enable
+switch and a **Details** page.
+
+- **Enable / disable.** A disabled extension is stopped and does not start with
+  Jan. Its settings and data are kept.
+- **Revoke permissions.** On the Details page, **Revoke** removes a granted
+  permission. The extension restarts without it, and calls that need it fail.
+  A revoked permission can only be granted again by an update, which asks for
+  it again, or by uninstalling and installing the extension again.
+- **Update.** Install a newer version from a file or from the catalog (the
+  catalog shows **Update to &lt;version&gt;**). The dialog lists **New
+  permissions** and the ones **No longer needed**; permissions you already
+  granted are kept. A version that is not newer than the installed one is refused.
+- **Roll back.** After an update, the previous version is kept on disk.
+  **Roll back to &lt;version&gt;** makes it active again. Grants shrink to what that
+  version requests; nothing is added. Rolling back again returns to the newer
+  version.
+- **Uninstall.** Removes the extension's files. This cannot be undone.
+
+Jan also re-checks the extension's main file against the hash recorded at
+install time each time it starts the extension. If the file was changed on
+disk, the extension is not started and must be reinstalled.
+
+## Safe mode
+
+Safe mode starts Jan without loading any installed extension. Built-in
+extensions still run.
+
+- Turn it on or off with the **Safe mode** switch in **Settings > Extensions**.
+  While it is on, a banner offers **Turn off safe mode**.
+- Start Jan with the environment variable `JAN_EXTENSIONS_SAFE_MODE=1` to force
+  it on for that run. It cannot be turned off from the app then.
+
+```bash
+# macOS / Linux
+JAN_EXTENSIONS_SAFE_MODE=1 /path/to/Jan
+
+# Windows (PowerShell)
+$env:JAN_EXTENSIONS_SAFE_MODE = "1"; & "C:\path\to\Jan.exe"
+```
+
+## When an extension crashes
+
+- An extension that stops responding (it does not answer Jan's heartbeat for
+  15-20 seconds) or keeps breaking the API limits is stopped and marked
+  **Crashed**, with the reason on its card. Jan restarts it.
+- After **3 crashes within 10 minutes** it stays off until you restart Jan.
+- If Jan itself fails to start twice in a row after loading installed
+  extensions (it closed or was killed within 60 seconds, not by quitting), it
+  turns on safe mode on the next start and tells you. Find the culprit by
+  enabling extensions one at a time, then turn safe mode off.
+
+Extension log lines are written to the app log (see
+[Jan Data Folder](/docs/desktop/data-folder)), tagged `[ext:<extension id>]`.
+
+## Where extensions are stored
+
+Installed extensions live in `<Jan data folder>/extensions/`. See
+[Jan Data Folder](/docs/desktop/data-folder#extensions) for the layout. A factory
+reset removes them.
