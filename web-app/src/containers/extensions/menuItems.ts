@@ -4,7 +4,7 @@ import type {
   MenuLocation,
   WhenClause,
 } from '@janhq/extension-api'
-import { useContributions } from '@/lib/extensions/contributions'
+import { own, useContributions } from '@/lib/extensions/contributions'
 import { useMessages } from '@/hooks/useMessages'
 
 /** One contributed menu entry, resolved against its command and extension. */
@@ -79,7 +79,7 @@ export function useContributedMenuItems<L extends MenuLocation>(
       Object.entries(menus)
         .flatMap(([extensionId, byLocation]) =>
           (byLocation[location] ?? []).flatMap((item) => {
-            const command = commands[extensionId]?.[item.command]
+            const command = own(own(commands, extensionId), item.command)
             const extension = extensions[extensionId]
             if (!command || !extension) return []
             return [

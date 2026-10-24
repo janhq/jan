@@ -80,12 +80,33 @@ export function riskOf(permission: PermissionString): PermissionRisk {
 }
 
 /**
+ * Whether `grant` covers a local host, and so the port of Jan's own local
+ * API server. That server is always refused (see `matchesNetwork`); the
+ * consent screen says so next to such a grant.
+ */
+export function reachesLocalApiServer(grant: PermissionString): boolean {
+  const host = networkHostOf(grant)
+  return (
+    host !== undefined &&
+    (host === '*' || isLocalHost(host))
+  )
+}
+
+const DEFAULT_PORTS: Record<string, number> = { 'http:': 80, 'https:': 443 }
+
+/**
  * Whether the grant `grant` allows a request to `url`. https is required
  * except for localhost/127.0.0.1, where http is allowed too (a local
  * server rarely has a certificate). URLs with credentials are refused:
  * nothing legitimate needs them, and they hide the real host from a reader.
+ * `localApiPort` is the port of Jan's own local API server, which proxies
+ * with the user's provider keys: no grant reaches it on a local host.
  */
-export function matchesNetwork(grant: PermissionString, url: string): boolean {
+export function matchesNetwork(
+  grant: PermissionString,
+  url: string,
+  localApiPort?: number
+): boolean {
   const host = networkHostOf(grant)
   if (host === undefined) return false
   let parsed: URL
@@ -99,6 +120,10 @@ export function matchesNetwork(grant: PermissionString, url: string): boolean {
   const scheme = parsed.protocol
   if (scheme !== 'https:' && !(scheme === 'http:' && isLocalHost(hostname)))
     return false
+  if (localApiPort !== undefined && isLocalHost(hostname)) {
+    const port = parsed.port ? Number(parsed.port) : DEFAULT_PORTS[scheme]
+    if (port === localApiPort) return false
+  }
   return networkHostMatches(host, hostname)
 }
 

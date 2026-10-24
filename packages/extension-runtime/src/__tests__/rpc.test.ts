@@ -309,6 +309,28 @@ describe('Endpoint', () => {
     expect(control).toHaveBeenCalledWith({ v: 1, t: 'ready' })
     port2.close()
   })
+
+  it('reports every malformed or oversized message to onRejected', async () => {
+    const rejected = vi.fn()
+    const { port1, port2 } = new MessageChannel()
+    const host = new Endpoint(portTransport(port1), {
+      onRejected: rejected,
+      maxMessageBytes: 256,
+      handle: async () => 'ok',
+    })
+    open.push(host)
+    port2.postMessage('hello')
+    port2.postMessage({ v: 1, t: 'req', id: 1, method: 'm', args: ['x'.repeat(1024)] })
+    port2.postMessage({ v: 1, t: 'evt', sub: 1, value: 'x'.repeat(1024) })
+    port2.postMessage({ v: 1, t: 'req', id: 2, method: 'm', args: [] })
+    await vi.waitFor(() => expect(rejected).toHaveBeenCalledTimes(3))
+    expect(rejected.mock.calls.map(([e]) => e.code)).toEqual([
+      'E_INVALID_ARGS',
+      'E_TOO_LARGE',
+      'E_TOO_LARGE',
+    ])
+    port2.close()
+  })
 })
 
 describe('parseWire', () => {

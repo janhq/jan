@@ -16,7 +16,7 @@ export {
   type PermissionString,
 } from './permissions.js'
 export { isApiCompatible } from './semver.js'
-export { validateManifest } from './validate.js'
+export { isContributionId, validateManifest } from './validate.js'
 export type * from './context.js'
 export type * from './contributions.js'
 export type {

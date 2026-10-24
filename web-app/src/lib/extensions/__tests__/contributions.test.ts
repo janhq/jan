@@ -119,6 +119,29 @@ describe('ContributionStore', () => {
     expect(store.getState().providers['acme.one'].p.handler).toBeUndefined()
   })
 
+  it('treats inherited property names as undeclared', async () => {
+    const store = new ContributionStore()
+    store.registerExtension(helloManifest('acme.one'))
+    const before = store.getState()
+    const notFound = expect.objectContaining({ code: 'E_NOT_FOUND' })
+    expect(() => store.registerTool('acme.one', 'constructor', vi.fn())).toThrowError(notFound)
+    expect(() => store.registerCommand('acme.one', 'valueOf', vi.fn())).toThrowError(notFound)
+    expect(() => store.registerProvider('acme.one', 'toString', {})).toThrowError(notFound)
+    expect(() =>
+      store.setStatusItem('acme.one', 'toString', { text: 'spoof' })
+    ).toThrowError(notFound)
+    await expect(
+      store.executeCommand('acme.one', 'constructor', { location: 'extension' })
+    ).rejects.toEqual(notFound)
+    expect(() =>
+      store.registerExtension(manifest('hasOwnProperty'))
+    ).not.toThrow()
+    const after = store.getState()
+    expect(Object.keys(after.tools['acme.one'])).toEqual(['echo'])
+    expect(Object.keys(after.statusItems['acme.one'])).toEqual(['status'])
+    expect(after.commands['acme.one']).toBe(before.commands['acme.one'])
+  })
+
   it('updates a declared status item and ignores a stale binding after re-registration', () => {
     const store = new ContributionStore()
     const first = store.registerExtension(helloManifest('acme.one'))

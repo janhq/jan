@@ -24,10 +24,12 @@ import {
 } from '@janhq/core'
 import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { i18n } from '@/i18n/react-i18next-compat'
 import type { BuiltinExtension } from './builtins'
 import { createContext } from './context'
 import { createConversationsApi } from './conversations'
-import { ContributionStore, useContributions } from './contributions'
+import { ContributionStore, own, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
 import { createHostApi, type FetchLike, type Notify } from './host-api'
 import {
@@ -82,7 +84,16 @@ export interface ExtensionHostOptions {
   fetch?: FetchLike
   /** Defaults to a blob-URL `Worker`; tests pass the sandbox harness. */
   createWorker?: CreateWorker
+  /** The port of Jan's local API server, which no extension may reach. */
+  localApiPort?: () => number | undefined
 }
+
+/**
+ * Ids only built-ins may use: the `jan.` namespace, plus whatever id a
+ * built-in of this host has, active or not. A worker extension with such
+ * an id would otherwise take over the built-in's entry and settings.
+ */
+const RESERVED_PREFIX = 'jan.'
 
 interface Entry {
   hosted: HostedExtension
@@ -109,7 +120,7 @@ const message = (error: unknown) =>
  */
 export class ExtensionHost {
   readonly services: ServiceRegistry = createServiceRegistry()
-  readonly dispatcher = new PermissionDispatcher()
+  readonly dispatcher: PermissionDispatcher
   readonly contributions: ContributionStore
   readonly settings: ExtensionSettingsStore
 
@@ -126,6 +137,7 @@ export class ExtensionHost {
   readonly onDidChange: Event<void> = this.changes.event
 
   constructor(private readonly options: ExtensionHostOptions) {
+    this.dispatcher = new PermissionDispatcher(options.localApiPort)
     this.contributions = options.contributions ?? new ContributionStore()
     this.settings = new ExtensionSettingsStore({
       appSettings: options.appSettings,
@@ -202,6 +214,14 @@ export class ExtensionHost {
   spawnWorkerExtension(options: SpawnWorkerOptions): Promise<HostedExtension> {
     const { manifest, source } = options
     return this.enqueue(async () => {
+      if (
+        manifest.id.startsWith(RESERVED_PREFIX) ||
+        this.entries.get(manifest.id)?.hosted.source === 'builtin'
+      )
+        throw new ExtensionError(
+          'E_PERMISSION',
+          `The id '${manifest.id}' is reserved for Jan's built-in extensions`
+        )
       const state = this.entries.get(manifest.id)?.hosted.state
       if (state === 'active' || state === 'activating')
         throw new ExtensionError(
@@ -233,7 +253,14 @@ export class ExtensionHost {
           bundle: options.bundle,
           createWorker: this.options.createWorker ?? createBlobWorker,
           dispatcher: this.dispatcher,
-          api: createHostApi(manifest, this.apiDeps()),
+          api: createHostApi(manifest, {
+            ...this.apiDeps(),
+            // Not until P3's Rust http_fetch: plugin-http sends every request
+            // through the app's cookie jar, and nothing in JS can turn that
+            // off per request. Inference of a contributed provider runs in
+            // the host, not through this path, so providers still work.
+            fetch: undefined,
+          }),
         })
         entry.hosted.state = 'active'
         this.activeOrder.push(manifest.id)
@@ -287,8 +314,8 @@ export class ExtensionHost {
     input: unknown,
     options: { signal?: AbortSignal; maxOutputChars?: number } = {}
   ): Promise<ToolCallOutcome> {
-    const handler =
-      this.contributions.getState().tools[extensionId]?.[name]?.handler
+    const handler = own(own(this.contributions.getState().tools, extensionId), name)
+      ?.handler
     if (!handler)
       return { error: `Tool '${name}' of '${extensionId}' is not available` }
     const cancellation = new CancellationTokenSource()
@@ -312,9 +339,10 @@ export class ExtensionHost {
     extensionId: string,
     providerId: string
   ): Promise<ProviderModel[] | undefined> {
-    const handler =
-      this.contributions.getState().providers[extensionId]?.[providerId]
-        ?.handler
+    const handler = own(
+      own(this.contributions.getState().providers, extensionId),
+      providerId
+    )?.handler
     if (!handler?.listModels) return undefined
     const parsed = providerModels.safeParse(await handler.listModels())
     if (!parsed.success)
@@ -453,6 +481,14 @@ export class ExtensionHost {
   }
 }
 
+/**
+ * The title of an extension's toast. The display name is the extension's
+ * own claim, so it never stands alone: a fixed prefix keeps an extension
+ * named "Jan" from passing for the app.
+ */
+export const toastTitle = (extensionName: string) =>
+  i18n.t('extensions:extensionLabel', { extension: extensionName })
+
 const notify: Notify = ({ extensionName, level, message }) => {
   const show = {
     info: toast.info,
@@ -460,7 +496,7 @@ const notify: Notify = ({ extensionName, level, message }) => {
     warning: toast.warning,
     error: toast.error,
   }[level]
-  show(extensionName, { description: message })
+  show(toastTitle(extensionName), { description: message })
 }
 
 // Secrets go through the core service's `get_secret`/`set_secret`, the same
@@ -487,6 +523,7 @@ export function getExtensionHost(): ExtensionHost {
     // The providers service's fetch is @tauri-apps/plugin-http on desktop,
     // which runs the request from Rust and honours `maxRedirections`.
     fetch: (url, init) => getServiceHub().providers().fetch()(url, init),
+    localApiPort: () => useLocalApiServer.getState().serverPort,
   })
   return host
 }

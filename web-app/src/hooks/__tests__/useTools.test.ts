@@ -220,6 +220,7 @@ describe('useTools', () => {
   it('publishes bound contributed tools under their wire names, once per change', async () => {
     const { useTools } = await import('../useTools')
     const { useContributions } = await import('@/lib/extensions/contributions')
+    const { toolWireName } = await import('@/lib/extensions/tools')
     const declared = {
       name: 'echo',
       description: 'Echo',
@@ -241,7 +242,7 @@ describe('useTools', () => {
     })
     expect(mockUpdateExtensionTools).toHaveBeenLastCalledWith([
       expect.objectContaining({
-        wireName: 'x_acme_one__echo',
+        wireName: toolWireName('acme.one', 'echo'),
         extensionId: 'acme.one',
         name: 'echo',
         server: 'ext:acme.one',

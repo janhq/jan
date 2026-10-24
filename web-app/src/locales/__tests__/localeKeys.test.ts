@@ -79,6 +79,7 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'devLoad.readFailed',
     'devLoad.invalidJson',
     'devLoad.invalidManifest',
+    'devLoad.invalidBundle',
     'devLoad.alreadyLoaded',
   ],
   'model-errors': [

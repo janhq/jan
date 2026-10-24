@@ -51,11 +51,42 @@ const emptyState = (): ContributionState => ({
   providers: {},
 })
 
+/**
+ * `record[key]` only if `record` holds it itself. Contribution ids come
+ * from extensions, and a plain lookup of `constructor` or `toString` would
+ * find what every object inherits and pass for a declared entry.
+ */
+export function own<T>(
+  record: Readonly<Record<string, T>> | undefined,
+  key: string
+): T | undefined {
+  return record !== undefined &&
+    Object.prototype.hasOwnProperty.call(record, key)
+    ? record[key]
+    : undefined
+}
+
+/** A null-prototype copy of `record` with `key` set to `value`. */
+function withEntry<T>(
+  record: Readonly<Record<string, T>> | undefined,
+  key: string,
+  value: T
+): Record<string, T> {
+  const next: Record<string, T> = Object.assign(Object.create(null), record)
+  next[key] = value
+  return next
+}
+
+// Null-prototype, so nothing inherited is there to be found even by a
+// lookup that forgets `own`.
 const byId = <T, K extends keyof T>(
   items: T[] | undefined,
   field: K
-): Record<string, T> =>
-  Object.fromEntries((items ?? []).map((item) => [String(item[field]), item]))
+): Record<string, T> => {
+  const record: Record<string, T> = Object.create(null)
+  for (const item of items ?? []) record[String(item[field])] = item
+  return record
+}
 
 const without = <T>(
   record: Record<string, T>,
@@ -101,7 +132,7 @@ export class ContributionStore {
   /** Adds every declared contribution of `manifest`; dispose removes them all. */
   registerExtension(manifest: ValidatedManifest): Disposable {
     const { id, contributes = {} } = manifest
-    if (id in this.getState().extensions) {
+    if (own(this.getState().extensions, id)) {
       throw new ExtensionError(
         'E_INVALID_ARGS',
         `Extension '${id}' is already registered`
@@ -164,7 +195,7 @@ export class ContributionStore {
     itemId: string,
     update: { text?: string; tooltip?: string }
   ): void {
-    const item = this.getState().statusItems[extensionId]?.[itemId]
+    const item = own(own(this.getState().statusItems, extensionId), itemId)
     if (!item)
       throw new ExtensionError(
         'E_NOT_FOUND',
@@ -173,10 +204,10 @@ export class ContributionStore {
     this.store.setState((s) => ({
       statusItems: {
         ...s.statusItems,
-        [extensionId]: {
-          ...s.statusItems[extensionId],
-          [itemId]: { ...item, ...update },
-        },
+        [extensionId]: withEntry(own(s.statusItems, extensionId), itemId, {
+          ...item,
+          ...update,
+        }),
       },
     }))
   }
@@ -188,7 +219,8 @@ export class ContributionStore {
     context: CommandContext,
     ...args: JsonValue[]
   ): Promise<unknown> {
-    const handler = this.getState().commands[extensionId]?.[commandId]?.handler
+    const handler = own(own(this.getState().commands, extensionId), commandId)
+      ?.handler
     if (!handler)
       throw new ExtensionError(
         'E_NOT_FOUND',
@@ -204,7 +236,7 @@ export class ContributionStore {
     value: NonNullable<HandlerEntries[S]['handler']>
   ): Disposable {
     const read = () =>
-      handlerSlices(this.getState())[slice][extensionId]?.[entryId]
+      own(own(handlerSlices(this.getState())[slice], extensionId), entryId)
     const entry = read()
     if (!entry)
       throw new ExtensionError(
@@ -219,13 +251,16 @@ export class ContributionStore {
     const set = (next: typeof value | undefined) =>
       this.store.setState((s) => {
         const entries = handlerSlices(s)[slice]
+        const current = own(entries, extensionId)
+        const entry = own(current, entryId)
+        if (!entry) return {}
         return {
           [slice]: {
             ...entries,
-            [extensionId]: {
-              ...entries[extensionId],
-              [entryId]: { ...entries[extensionId][entryId], handler: next },
-            },
+            [extensionId]: withEntry<HandlerEntries[S]>(current, entryId, {
+              ...entry,
+              handler: next,
+            }),
           },
         }
       })

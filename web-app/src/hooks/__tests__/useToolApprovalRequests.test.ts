@@ -219,4 +219,36 @@ describe('useToolApprovalRequests', () => {
 
     expect(result.current.pending['tcA']).toMatchObject({ threadId: 'thread-A' })
   })
+
+  it('does not auto-approve extension tools when allowAllMCPPermissions is set', () => {
+    useToolApproval.setState({ allowAllMCPPermissions: true })
+    const { result } = renderHook(() => useToolApprovalRequests())
+    act(() => {
+      result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
+    })
+    expect(result.current.pending['tc1']).toBeDefined()
+  })
+
+  it('keeps an allow-thread approval with the extension that got it', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
+    })
+    act(() => result.current.resolveApproval('tc1', 'allow-thread'))
+    await expect(p!).resolves.toBe(true)
+    // The same tool name from another extension, or from an MCP server, asks.
+    act(() => {
+      result.current.requestApproval('tc2', 'x_tool', 'thread-1', 'ext:acme.two')
+      result.current.requestApproval('tc3', 'x_tool', 'thread-1', 'mcp-server')
+      result.current.requestApproval('tc4', 'x_tool', 'thread-1')
+    })
+    expect(Object.keys(result.current.pending).sort()).toEqual(['tc2', 'tc3', 'tc4'])
+    // The extension that was approved is not asked again.
+    let again: Promise<boolean>
+    act(() => {
+      again = result.current.requestApproval('tc5', 'x_tool', 'thread-1', 'ext:acme.one')
+    })
+    await expect(again!).resolves.toBe(true)
+  })
 })

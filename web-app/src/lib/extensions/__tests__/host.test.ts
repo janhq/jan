@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ExtensionContext, ExtensionModule } from '@janhq/extension-api'
 import { ServiceKey, type InternalExtensionContext } from '@janhq/core'
-import { ExtensionHost } from '../host'
+import { ExtensionHost, toastTitle } from '../host'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -239,5 +239,29 @@ describe('ExtensionHost', () => {
       builtin(manifest('jan.x'), { activate: () => {} })
     )
     expect(listener).toHaveBeenCalled()
+  })
+
+  it("labels an extension's toast with a fixed 'Extension:' prefix", async () => {
+    const notify = vi.fn()
+    const host = new ExtensionHost({
+      appSettings: memoryAppSettings(),
+      secrets: memorySecrets(),
+      notify,
+    })
+    await host.activateBuiltin(
+      builtin(
+        manifest('jan.notifier', { displayName: 'Jan', permissions: ['ui:notify'] }),
+        {
+          activate: (ctx) =>
+            ctx.ui.notify({ level: 'warning', message: 'Update now' }),
+        }
+      )
+    )
+    expect(notify).toHaveBeenCalledWith({
+      extensionName: 'Jan',
+      level: 'warning',
+      message: 'Update now',
+    })
+    expect(toastTitle('Jan')).toBe('Extension: Jan')
   })
 })

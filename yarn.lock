@@ -2799,6 +2799,7 @@ __metadata:
   dependencies:
     "@janhq/extension-api": "workspace:*"
     "@types/node": "npm:^22.10.0"
+    acorn: "npm:^8.15.0"
     rolldown: "npm:1.0.0-beta.1"
     typescript: "npm:5.9.2"
     vitest: "npm:3.2.4"

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useToolApproval } from './useToolApproval'
+import { EXTENSION_SERVER_PREFIX } from '@/lib/extensions/tools'
 
 export type PendingApproval = {
   toolCallId: string
@@ -36,6 +37,17 @@ type ToolApprovalRequestsState = {
   clearPendingForThread: (threadId: string) => void
 }
 
+/**
+ * The name a grant is recorded under. A contributed tool is keyed by its
+ * `ext:<id>` server as well, so a thread or global grant can never cover
+ * a same-named tool of another extension or of an MCP server.
+ */
+const approvalKey = (toolName: string, serverName?: string) =>
+  isExtensionServer(serverName) ? `${serverName}/${toolName}` : toolName
+
+const isExtensionServer = (serverName?: string): serverName is string =>
+  serverName?.startsWith(EXTENSION_SERVER_PREFIX) ?? false
+
 export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
   (set, get) => ({
     pending: {},
@@ -43,11 +55,21 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
     requestApproval: (toolCallId, toolName, threadId, serverName) => {
       return new Promise<boolean>((resolve) => {
         const settings = useToolApproval.getState()
-        if (settings.allowAllMCPPermissions) {
+        // The shortcut is for MCP; extension tools always go through approval.
+        if (
+          settings.allowAllMCPPermissions &&
+          !isExtensionServer(serverName)
+        ) {
           resolve(true)
           return
         }
-        if (settings.isToolApproved(threadId, toolName, serverName)) {
+        if (
+          settings.isToolApproved(
+            threadId,
+            approvalKey(toolName, serverName),
+            serverName
+          )
+        ) {
           resolve(true)
           return
         }
@@ -70,13 +92,14 @@ export const useToolApprovalRequests = create<ToolApprovalRequestsState>()(
       const entry = get().pending[toolCallId]
       if (!entry) return
       const approval = useToolApproval.getState()
+      const key = approvalKey(entry.toolName, entry.serverName)
       if (decision === 'allow-thread') {
-        approval.approveToolForThread(entry.threadId, entry.toolName)
+        approval.approveToolForThread(entry.threadId, key)
       } else if (decision === 'allow-always') {
         if (entry.serverName) {
           approval.approveServer(entry.serverName)
         } else {
-          approval.approveToolEverywhere(entry.toolName)
+          approval.approveToolEverywhere(key)
         }
       }
       set((s) => {
