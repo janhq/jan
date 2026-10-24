@@ -8,7 +8,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { ExtensionCard } from '@/containers/extensions/HostedExtensionCard'
 import { PermissionList } from '@/containers/extensions/PermissionList'
-import { UnverifiedBadge } from '@/containers/extensions/UnverifiedBadge'
+import { TrustBadge } from '@/containers/extensions/TrustBadge'
 import {
   useHostedExtensions,
   useInstalledRegistry,
@@ -111,7 +111,7 @@ function InstalledDetails({
         manifest={entry.manifest}
         version={entry.version}
         hosted={hosted}
-        badges={!entry.verified && <UnverifiedBadge />}
+        badges={<TrustBadge entry={entry} />}
         actions={
           <>
             <UninstallButton entry={entry} registry={registry} />

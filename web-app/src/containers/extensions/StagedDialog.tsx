@@ -14,12 +14,14 @@ import {
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { StagedInstall } from '@/services/extensions/types'
-import { UnverifiedBadge } from './UnverifiedBadge'
+import { UnsignedSourceBadge, UnverifiedBadge } from './TrustBadge'
 
 /**
  * Where a staged bundle came from, shared by the install and update
- * dialogs. An unverified bundle shows its hash and must be explicitly
- * trusted (`trusted`/`onTrustedChange`) before it can be installed.
+ * dialogs. Only a bundle verified by the key pinned for its source goes
+ * through as is; a file from disk or an entry of an unsigned source shows
+ * its hash and must be explicitly trusted (`trusted`/`onTrustedChange`)
+ * before it can be installed.
  */
 function StagedOrigin({
   staged,
@@ -35,12 +37,14 @@ function StagedOrigin({
 }) {
   const { t } = useTranslation()
   const checkboxId = useId()
+  const source =
+    staged.source.kind === 'index' ? staged.source.sourceName : sourceName
   if (staged.verified)
     return (
       <div className="flex flex-col gap-0.5 text-xs">
-        {sourceName && (
+        {source && (
           <span className="font-medium">
-            {t('extensions:origin.fromSource', { source: sourceName })}
+            {t('extensions:origin.verifiedBy', { source })}
           </span>
         )}
         <span className="text-muted-foreground">
@@ -48,12 +52,22 @@ function StagedOrigin({
         </span>
       </div>
     )
+  const fromIndex = staged.integrityChecked
   return (
     <div className="flex flex-col gap-2 rounded-md border border-destructive/40 p-2">
+      {fromIndex && source && (
+        <span className="text-xs font-medium">
+          {t('extensions:origin.fromSource', { source })}
+        </span>
+      )}
       <div className="flex items-center gap-2">
-        <UnverifiedBadge />
+        {fromIndex ? <UnsignedSourceBadge /> : <UnverifiedBadge />}
         <span className="text-xs text-muted-foreground">
-          {t('extensions:origin.unverifiedHint')}
+          {t(
+            fromIndex
+              ? 'extensions:origin.unsignedSourceHint'
+              : 'extensions:origin.unverifiedHint'
+          )}
         </span>
       </div>
       <code className="text-xs break-all">
@@ -71,7 +85,11 @@ function StagedOrigin({
           </Checkbox.Indicator>
         </Checkbox.Root>
         <Label htmlFor={checkboxId} className="text-xs">
-          {t('extensions:origin.trustAuthor')}
+          {t(
+            fromIndex
+              ? 'extensions:origin.trustSource'
+              : 'extensions:origin.trustAuthor'
+          )}
         </Label>
       </div>
     </div>

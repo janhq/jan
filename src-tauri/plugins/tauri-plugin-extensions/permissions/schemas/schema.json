@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the accept_next_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-accept-next-key",
+          "markdownDescription": "Enables the accept_next_key command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the accept_next_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-accept-next-key",
+          "markdownDescription": "Denies the accept_next_key command without any pre-configured scope."
+        },
+        {
           "description": "Enables the add_source command without any pre-configured scope.",
           "type": "string",
           "const": "allow-add-source",
@@ -511,10 +523,10 @@
           "markdownDescription": "Denies the uninstall command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-stage-from-index`",
+          "description": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-accept-next-key`\n- `allow-stage-from-index`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-stage-from-index`"
+          "markdownDescription": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/extensions.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-accept-next-key`\n- `allow-stage-from-index`"
         }
       ]
     }

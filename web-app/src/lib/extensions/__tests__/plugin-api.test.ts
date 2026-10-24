@@ -66,6 +66,7 @@ describe('@janhq/tauri-plugin-extensions-api', () => {
       [() => api.addSource('https://i.example.com/i.json', 'I', 'k'), 'add_source', { url: 'https://i.example.com/i.json', name: 'I', publicKey: 'k' }],
       [() => api.removeSource('s1'), 'remove_source', { id: 's1' }],
       [() => api.getCatalog('s1'), 'get_catalog', { sourceId: 's1' }],
+      [() => api.acceptNextKey('s1', 'k2'), 'accept_next_key', { sourceId: 's1', nextPublicKey: 'k2' }],
       [() => api.stageFromIndex('s1', 'a.bc', '0.1.0'), 'stage_from_index', { sourceId: 's1', id: 'a.bc', version: '0.1.0' }],
     ]
     for (const [call, command, args] of calls) {

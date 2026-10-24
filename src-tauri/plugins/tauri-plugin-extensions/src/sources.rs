@@ -5,13 +5,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{Error, Result};
 use crate::registry::move_aside;
+use crate::signature::is_public_key;
 use crate::store::{now_rfc3339, random_id, write_json_atomic};
 
 /// File name of the source store inside the extensions root.
@@ -35,8 +34,9 @@ pub struct IndexSourceEntry {
     pub name: String,
     /// The https URL of the index JSON.
     pub url: String,
-    /// Base64 ed25519 public key, pinned when the source was added. Stored
-    /// now; signatures are checked from P4 on.
+    /// Base64 ed25519 public key, pinned when the source was added. When
+    /// set, every index from the source must carry a valid signature by it;
+    /// it only changes through a confirmed `nextPublicKey` rotation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
     /// RFC 3339 UTC.
@@ -87,15 +87,11 @@ pub fn https_url(url: &str) -> Result<Url> {
     Ok(parsed)
 }
 
-fn valid_key(key: &str) -> bool {
-    STANDARD.decode(key).is_ok_and(|bytes| bytes.len() == 32)
-}
-
 impl Sources {
     fn is_sane(&self) -> bool {
         self.schema == SCHEMA
             && self.sources.iter().all(|s| {
-                https_url(&s.url).is_ok() && s.public_key.as_deref().map_or(true, valid_key)
+                https_url(&s.url).is_ok() && s.public_key.as_deref().map_or(true, is_public_key)
             })
     }
 
@@ -119,7 +115,7 @@ impl Sources {
             )));
         }
         let public_key = match public_key.map(str::trim).filter(|k| !k.is_empty()) {
-            Some(key) if valid_key(key) => Some(key.to_string()),
+            Some(key) if is_public_key(key) => Some(key.to_string()),
             Some(_) => {
                 return Err(Error::Invalid(
                     "the public key must be a base64 ed25519 key (32 bytes)".into(),
@@ -142,6 +138,35 @@ impl Sources {
         };
         self.sources.push(entry.clone());
         Ok(entry)
+    }
+
+    /// Re-pins the key of source `id` from `current` to `next`. Refused when
+    /// the source has no key or its key is no longer `current`, so a
+    /// rotation offered by one index never applies over another change.
+    pub fn rotate_key(&mut self, id: &str, current: &str, next: &str) -> Result<IndexSourceEntry> {
+        if !is_public_key(next) {
+            return Err(Error::Invalid(
+                "the next public key must be a base64 ed25519 key (32 bytes)".into(),
+            ));
+        }
+        let entry = self
+            .sources
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| Error::NotFound(format!("no index source '{id}'")))?;
+        match entry.public_key.as_deref() {
+            None => {
+                return Err(Error::Denied(
+                    "an unsigned source has no key to rotate; add it again with a key".into(),
+                ))
+            }
+            Some(pinned) if pinned != current => {
+                return Err(Error::Denied("the source's key changed meanwhile".into()))
+            }
+            Some(_) => {}
+        }
+        entry.public_key = Some(next.to_string());
+        Ok(entry.clone())
     }
 
     /// Removes the source with `id`. Installed extensions keep working: they
@@ -230,6 +255,29 @@ mod tests {
         sources.add("https://a.example.com/", "x", None).unwrap();
         assert!(sources.add("https://a.example.com/", "y", None).is_err());
         assert!(sources.sources.len() == 1);
+    }
+
+    #[test]
+    fn rotates_only_a_pinned_key_still_in_place() {
+        const NEXT: &str = "PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw=";
+        let mut sources = Sources::default();
+        let keyed = sources.add("https://a.example.com/", "a", Some(KEY)).unwrap();
+        let open = sources.add("https://b.example.com/", "b", None).unwrap();
+        assert!(matches!(sources.rotate_key(&open.id, KEY, NEXT), Err(Error::Denied(_))));
+        assert!(matches!(sources.rotate_key(&keyed.id, NEXT, NEXT), Err(Error::Denied(_))));
+        assert!(matches!(sources.rotate_key(&keyed.id, KEY, "AAAA"), Err(Error::Invalid(_))));
+        assert!(matches!(sources.rotate_key("nope", KEY, NEXT), Err(Error::NotFound(_))));
+        assert_eq!(sources.get(&keyed.id).unwrap().public_key.as_deref(), Some(KEY));
+        let rotated = sources.rotate_key(&keyed.id, KEY, NEXT).unwrap();
+        assert_eq!(rotated.public_key.as_deref(), Some(NEXT));
+        assert_eq!(sources.get(&keyed.id).unwrap(), &rotated);
+    }
+
+    #[test]
+    fn a_weak_key_is_not_pinned() {
+        let mut sources = Sources::default();
+        let zero = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        assert!(matches!(sources.add("https://a.example.com/", "a", Some(zero)), Err(Error::Invalid(_))));
     }
 
     #[test]

@@ -4,7 +4,7 @@
  */
 
 import type {
-  CuratedIndex,
+  Catalog,
   ExtensionsService,
   IndexSource,
   InstalledExtension,
@@ -78,7 +78,11 @@ export class DefaultExtensionsService implements ExtensionsService {
     return unsupported()
   }
 
-  getCatalog(): Promise<CuratedIndex> {
+  getCatalog(): Promise<Catalog> {
+    return unsupported()
+  }
+
+  acceptNextKey(): Promise<IndexSource> {
     return unsupported()
   }
 }
