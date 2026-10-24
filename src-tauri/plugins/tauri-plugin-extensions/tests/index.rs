@@ -59,6 +59,7 @@ fn source() -> IndexSourceEntry {
         url: "https://index.example.com/index.json".into(),
         public_key: None,
         added_at: "2026-10-24T00:00:00Z".into(),
+        last_generated_at: None,
     }
 }
 
@@ -131,16 +132,16 @@ fn a_tarball_that_does_not_match_its_pin_is_rejected() {
 fn the_source_store_adds_removes_and_rejects_plain_http() {
     let root = tempfile::tempdir().unwrap();
     let state = state(root.path());
-    assert!(catalog::list_sources(&state).unwrap().is_empty());
+    assert!(catalog::list_sources(&state).unwrap().sources.is_empty());
     let added = catalog::add_source(&state, "https://index.example.com/index.json", "Acme", None).unwrap();
     assert!(matches!(
         catalog::add_source(&state, "http://index.example.com/index.json", "Plain", None),
         Err(Error::Invalid(_))
     ));
-    assert_eq!(catalog::list_sources(&state).unwrap(), vec![added.clone()]);
+    assert_eq!(catalog::list_sources(&state).unwrap().sources, vec![added.clone()]);
     assert!(root.path().join("sources.json").is_file());
     catalog::remove_source(&state, &added.id).unwrap();
-    assert!(catalog::list_sources(&state).unwrap().is_empty());
+    assert!(catalog::list_sources(&state).unwrap().sources.is_empty());
 }
 
 /// Serves `body` once on 127.0.0.1 with `status`.
@@ -192,7 +193,7 @@ async fn catalog_and_index_installs_refuse_plain_http() {
     let root = tempfile::tempdir().unwrap();
     let state = state(root.path());
     // A source can only be https, so a tampered sources.json is the only
-    // way to point one at http; it is moved aside rather than used.
+    // way to point one at http; the entry is dropped rather than used.
     std::fs::write(
         root.path().join("sources.json"),
         r#"{"schema":1,"sources":[{"id":"s","name":"x","url":"http://127.0.0.1:9/i.json","addedAt":"t"}]}"#,
@@ -467,7 +468,7 @@ fn accepting_a_next_public_key_repins_only_on_explicit_confirmation() {
     let view = catalog::catalog_of(&added, fetched.clone());
     assert!(view.signed);
     assert_eq!(view.next_public_key.as_deref(), Some(public_key(&new).as_str()));
-    assert_eq!(catalog::list_sources(&state).unwrap()[0].public_key.as_deref(), Some(public_key(&old).as_str()));
+    assert_eq!(catalog::list_sources(&state).unwrap().sources[0].public_key.as_deref(), Some(public_key(&old).as_str()));
 
     // Some other key than the one offered is refused.
     let err = catalog::apply_rotation(&state, &added, &fetched, &public_key(&signing_key(10))).unwrap_err();
@@ -475,7 +476,7 @@ fn accepting_a_next_public_key_repins_only_on_explicit_confirmation() {
     // The user's confirmation re-pins exactly the offered key.
     let rotated = catalog::apply_rotation(&state, &added, &fetched, &public_key(&new)).unwrap();
     assert_eq!(rotated.public_key.as_deref(), Some(public_key(&new).as_str()));
-    assert_eq!(catalog::list_sources(&state).unwrap(), vec![rotated.clone()]);
+    assert_eq!(catalog::list_sources(&state).unwrap().sources, vec![rotated.clone()]);
 
     // The old key's signatures no longer verify; the new key's do.
     let next_doc = rotating_index(None);
@@ -500,7 +501,7 @@ fn an_unsigned_index_cannot_offer_a_key() {
     assert_eq!(view.next_public_key, None);
     let err = catalog::apply_rotation(&state, &added, &fetched, &next).unwrap_err();
     assert!(matches!(err, Error::Denied(_)), "{err}");
-    assert_eq!(catalog::list_sources(&state).unwrap()[0].public_key, None);
+    assert_eq!(catalog::list_sources(&state).unwrap().sources[0].public_key, None);
 }
 
 #[test]
@@ -516,4 +517,189 @@ fn provenance_and_next_public_key_are_checked_and_kept() {
     let mut bad = doc.clone();
     bad["nextPublicKey"] = json!("AAAA");
     assert!(index::parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+}
+
+/// The index document of `listing_bytes` with `generatedAt` and `expires`.
+fn dated_index(generated_at: &str, expires: Option<&str>) -> Vec<u8> {
+    let mut doc: serde_json::Value = serde_json::from_slice(&listing_bytes(&extension(ID, "0.1.0", &[]), &[])).unwrap();
+    doc["generatedAt"] = json!(generated_at);
+    if let Some(expires) = expires {
+        doc["expires"] = json!(expires);
+    }
+    serde_json::to_vec(&doc).unwrap()
+}
+
+/// Seconds since the epoch of 2026-10-24T12:00:00Z.
+const NOON: u64 = 1_792_843_200;
+
+fn stored(state: &ExtensionsState) -> IndexSourceEntry {
+    catalog::list_sources(state).unwrap().sources[0].clone()
+}
+
+#[test]
+fn a_replayed_older_signed_index_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let key = signing_key(7);
+    let added = catalog::add_source(&state, "https://index.example.com/index.json", "Acme", Some(&public_key(&key))).unwrap();
+    let signed = |doc: &[u8]| index::verify_and_parse(doc, Some(Ok(sign(&key, doc))), Some(&public_key(&key))).unwrap();
+    let old = signed(&dated_index("2026-10-20T00:00:00Z", None));
+    let new = signed(&dated_index("2026-10-22T00:00:00+02:00", None));
+
+    // The first signed index is accepted and its generatedAt recorded.
+    catalog::accept_index(&state, &added, &new, NOON).unwrap();
+    assert_eq!(stored(&state).last_generated_at.as_deref(), Some("2026-10-22T00:00:00+02:00"));
+    // Fetching the same index again is fine.
+    catalog::accept_index(&state, &stored(&state), &new, NOON).unwrap();
+    // The older one, validly signed by the same key, is a replay. Also
+    // checked against the store, not only the caller's copy of the entry.
+    for entry in [stored(&state), added.clone()] {
+        let err = catalog::accept_index(&state, &entry, &old, NOON).unwrap_err();
+        assert!(matches!(err, Error::Signature(SignatureError::Rollback { .. })), "{err}");
+        assert_eq!(err.kind(), "signature");
+    }
+    assert_eq!(stored(&state).last_generated_at.as_deref(), Some("2026-10-22T00:00:00+02:00"));
+    // A newer one moves the mark forward; compared as instants, not text.
+    let newer = signed(&dated_index("2026-10-21T23:00:00Z", None));
+    catalog::accept_index(&state, &stored(&state), &newer, NOON).unwrap();
+    assert_eq!(stored(&state).last_generated_at.as_deref(), Some("2026-10-21T23:00:00Z"));
+    // The mark survives a restart.
+    let reopened = common::state(root.path());
+    let err = catalog::accept_index(&reopened, &stored(&reopened), &new, NOON).unwrap_err();
+    assert!(matches!(err, Error::Signature(SignatureError::Rollback { .. })), "{err}");
+}
+
+#[test]
+fn an_expired_or_undated_signed_index_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let key = signing_key(7);
+    let added = catalog::add_source(&state, "https://index.example.com/index.json", "Acme", Some(&public_key(&key))).unwrap();
+    let signed = |doc: &[u8]| index::verify_and_parse(doc, Some(Ok(sign(&key, doc))), Some(&public_key(&key))).unwrap();
+
+    let expired = signed(&dated_index("2026-10-20T00:00:00Z", Some("2026-10-24T11:59:59Z")));
+    let err = catalog::accept_index(&state, &added, &expired, NOON).unwrap_err();
+    assert!(matches!(err, Error::Signature(SignatureError::Expired(_))), "{err}");
+    assert_eq!(stored(&state).last_generated_at, None);
+    let at_expiry = signed(&dated_index("2026-10-20T00:00:00Z", Some("2026-10-24T12:00:00Z")));
+    assert!(catalog::accept_index(&state, &added, &at_expiry, NOON).is_err());
+
+    let valid = signed(&dated_index("2026-10-20T00:00:00Z", Some("2026-10-25T00:00:00Z")));
+    catalog::accept_index(&state, &added, &valid, NOON).unwrap();
+
+    for (generated, expires) in [("yesterday", None), ("2026-10-20T00:00:00Z", Some("soon"))] {
+        let undated = signed(&dated_index(generated, expires));
+        let err = catalog::accept_index(&state, &stored(&state), &undated, NOON).unwrap_err();
+        assert!(matches!(err, Error::Signature(SignatureError::BadTimestamp(_))), "{err}");
+    }
+}
+
+#[test]
+fn an_unsigned_index_is_not_dated_or_recorded() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let added = catalog::add_source(&state, "https://index.example.com/index.json", "Open", None).unwrap();
+    let doc = dated_index("whenever", Some("2000-01-01T00:00:00Z"));
+    let fetched = index::verify_and_parse(&doc, None, None).unwrap();
+    catalog::accept_index(&state, &added, &fetched, NOON).unwrap();
+    assert_eq!(stored(&state).last_generated_at, None);
+}
+
+#[tokio::test]
+async fn a_replayed_index_served_over_the_wire_is_refused() {
+    let key = signing_key(7);
+    let tarball = extension(ID, "0.1.0", &["ui:notify"]);
+    let doc = listing_bytes(&tarball, &["ui:notify"]);
+    let base = serve(vec![
+        ("/index.json", "200 OK", doc.clone()),
+        ("/index.json.sig", "200 OK", sign(&key, &doc)),
+    ])
+    .await;
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    // The local listener is plain http, which add_source refuses; write
+    // the store as a later one would look, with a newer index accepted.
+    std::fs::write(
+        root.path().join("sources.json"),
+        serde_json::to_vec(&json!({
+            "schema": 1,
+            "sources": [{
+                "id": "s", "name": "Acme", "url": "https://index.example.com/index.json",
+                "publicKey": public_key(&key), "addedAt": "t",
+                "lastGeneratedAt": "2026-10-25T00:00:00Z",
+            }],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    // The signature verifies; only the freshness check refuses it. The
+    // catalog, `stage_from_index` and `accept_next_key` all fetch through
+    // `catalog::fetch`, which runs this check.
+    let fetched = fetch_at(&base, Some(&public_key(&key))).await.unwrap();
+    assert!(fetched.signed);
+    let err = catalog::accept_index(&state, &stored(&state), &fetched, NOON).unwrap_err();
+    assert!(matches!(err, Error::Signature(SignatureError::Rollback { .. })), "{err}");
+}
+
+#[test]
+fn removing_a_keyed_source_remembers_its_pin() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let key = public_key(&signing_key(7));
+    let url = "https://index.example.com/index.json";
+    let keyed = catalog::add_source(&state, url, "Acme", Some(&key)).unwrap();
+    let open = catalog::add_source(&state, "https://open.example.com/i.json", "Open", None).unwrap();
+    catalog::remove_source(&state, &open.id).unwrap();
+    assert!(catalog::list_sources(&state).unwrap().removed_pins.is_empty());
+
+    catalog::remove_source(&state, &keyed.id).unwrap();
+    let pins = catalog::list_sources(&state).unwrap().removed_pins;
+    assert_eq!(pins.len(), 1);
+    assert_eq!((pins[0].url.as_str(), pins[0].public_key.as_str()), (url, key.as_str()));
+
+    // Re-added without a key, the pin stays on record for the next warning.
+    let readded = catalog::add_source(&state, url, "Acme", None).unwrap();
+    assert_eq!(catalog::list_sources(&state).unwrap().removed_pins.len(), 1);
+    catalog::remove_source(&state, &readded.id).unwrap();
+    // Re-added with a key, the removal is settled.
+    catalog::add_source(&state, url, "Acme", Some(&key)).unwrap();
+    assert!(catalog::list_sources(&state).unwrap().removed_pins.is_empty());
+}
+
+#[test]
+fn one_bad_source_entry_is_dropped_and_reported() {
+    let root = tempfile::tempdir().unwrap();
+    let key = public_key(&signing_key(7));
+    let weak = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    std::fs::write(
+        root.path().join("sources.json"),
+        serde_json::to_vec(&json!({
+            "schema": 1,
+            "sources": [
+                { "id": "a", "name": "Keyed", "url": "https://a.example.com/i.json", "publicKey": key, "addedAt": "t" },
+                { "id": "b", "name": "Weak", "url": "https://b.example.com/i.json", "publicKey": weak, "addedAt": "t" },
+                { "id": "c", "name": "Open", "url": "https://c.example.com/i.json", "addedAt": "t" },
+                { "id": "d", "name": 7 },
+            ],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let state = state(root.path());
+    let listed = catalog::list_sources(&state).unwrap();
+    let ids: Vec<&str> = listed.sources.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["a", "c"]);
+    let notice = listed.notice.expect("a notice");
+    assert_eq!(notice.dropped.len(), 2);
+    assert_eq!(notice.dropped[0].name.as_deref(), Some("Weak"));
+    assert_eq!(notice.dropped[0].url.as_deref(), Some("https://b.example.com/i.json"));
+    assert_eq!(notice.dropped[1].name, None);
+    // The original is kept aside, and the repaired store was written back.
+    assert!(std::fs::read(&notice.moved_to).unwrap().windows(4).any(|w| w == b"Weak"));
+    let reopened = common::state(root.path());
+    let again = catalog::list_sources(&reopened).unwrap();
+    assert_eq!(again.sources.len(), 2);
+    assert!(again.notice.is_none());
+    // The notice stays for the rest of the session.
+    assert!(catalog::list_sources(&state).unwrap().notice.is_some());
 }

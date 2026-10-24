@@ -338,8 +338,9 @@ describe('catalog', () => {
     expect(await screen.findByText('Signing key pinned')).toBeInTheDocument()
   })
 
-  it('removes a source', async () => {
-    mock.state.sources = [source]
+  it('removes an unsigned source without asking', async () => {
+    const open = { ...source, publicKey: undefined }
+    mock.state.sources = [open]
     render(<Page />)
     await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
     await userEvent.click(
@@ -347,6 +348,86 @@ describe('catalog', () => {
     )
     expect(mock.service.removeSource).toHaveBeenCalledWith('src-1')
     await waitFor(() => expect(screen.queryByText('Acme Index')).toBeNull())
+  })
+
+  it('asks before removing a keyed source', async () => {
+    mock.state.sources = [source]
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    const remove = await screen.findByRole('button', {
+      name: 'Remove Acme Index',
+    })
+    await userEvent.click(remove)
+    let dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Remove Acme Index and its signing key?')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(mock.service.removeSource).not.toHaveBeenCalled()
+
+    await userEvent.click(remove)
+    dialog = await screen.findByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Remove source' })
+    )
+    expect(mock.service.removeSource).toHaveBeenCalledWith('src-1')
+    await waitFor(() => expect(screen.queryByText('Acme Index')).toBeNull())
+  })
+
+  it('warns when a URL that had a pinned key is added again without one', async () => {
+    mock.state.removedPins = [
+      { url: source.url, publicKey: KEY, removedAt: '2026-10-24T10:00:00Z' },
+    ]
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    const warning =
+      'This index had a pinned signing key when you removed it. Without a key its listings are unsigned. Add it again with its key, or press Add source again to continue without one.'
+    await userEvent.type(await screen.findByLabelText('Index URL'), source.url)
+    await userEvent.type(screen.getByLabelText('Name'), 'Acme')
+    await userEvent.click(screen.getByRole('button', { name: 'Add source' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(warning)
+    expect(screen.getByRole('alert')).toHaveTextContent(KEY)
+    expect(mock.service.addSource).not.toHaveBeenCalled()
+
+    // Editing the URL withdraws the warning; a second press after it adds.
+    await userEvent.type(screen.getByLabelText('Index URL'), '?')
+    expect(screen.queryByRole('alert')).toBeNull()
+    await userEvent.type(screen.getByLabelText('Index URL'), '{Backspace}')
+    await userEvent.click(screen.getByRole('button', { name: 'Add source' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Add source' }))
+    expect(mock.service.addSource).toHaveBeenCalledWith(source.url, 'Acme', undefined)
+  })
+
+  it('adds a previously pinned URL with a key without a warning', async () => {
+    mock.state.removedPins = [
+      { url: source.url, publicKey: KEY, removedAt: '2026-10-24T10:00:00Z' },
+    ]
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    await userEvent.type(await screen.findByLabelText('Index URL'), source.url)
+    await userEvent.type(screen.getByLabelText('Name'), 'Acme')
+    await userEvent.type(screen.getByLabelText('Public key (optional)'), KEY)
+    await userEvent.click(screen.getByRole('button', { name: 'Add source' }))
+    expect(mock.service.addSource).toHaveBeenCalledWith(source.url, 'Acme', KEY)
+    expect(screen.queryByText(/had a pinned signing key/)).toBeNull()
+  })
+
+  it('says which sources were dropped from a damaged sources file', async () => {
+    mock.state.sources = [{ ...source, publicKey: undefined }]
+    mock.state.catalogs = { 'src-1': { index, signed: false, nextPublicKey: null } }
+    mock.state.sourcesNotice = {
+      movedTo: '/data/extensions/sources.json.corrupt-1',
+      dropped: [
+        { name: 'Weak Index', url: 'https://weak.dev/i.json', reason: 'bad key' },
+      ],
+    }
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent(
+      'Some saved sources failed a check and were removed: Weak Index (https://weak.dev/i.json). The previous file was kept at /data/extensions/sources.json.corrupt-1.'
+    )
+    expect(await screen.findByText('Acme Index')).toBeInTheDocument()
   })
 
   it('installs the latest version of a catalog entry, labelled with its source', async () => {
@@ -407,7 +488,12 @@ describe('catalog', () => {
     )
     await userEvent.click(screen.getByRole('tab', { name: 'Installed' }))
     const mine = await screen.findByRole('region', { name: 'Installed' })
-    expect(await within(mine).findByText('Integrity checked')).toBeInTheDocument()
+    const badge = await within(mine).findByText(
+      'Integrity checked (unsigned source)'
+    )
+    // A warning, not the neutral style of "Verified by": the SRI came from
+    // the same unsigned index, so it proves nothing about the author.
+    expect(badge.className).toMatch(/amber/)
     expect(within(mine).queryByText(/Verified by/)).toBeNull()
   })
 

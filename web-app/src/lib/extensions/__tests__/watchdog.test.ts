@@ -23,6 +23,7 @@ import {
   FAILED_STARTS_KEY,
   MAX_FAILED_STARTS,
   PING_INTERVAL_MS,
+  START_GRACE_MS,
   crashCounter,
   loadWithCrashLoopGuard,
   startHeartbeat,
@@ -301,34 +302,137 @@ describe('the host watchdog', () => {
   })
 })
 
+describe('a crash of an entry already being stopped', () => {
+  it('neither counts nor restarts it', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.useFakeTimers()
+    const m = manifest('acme.stale')
+    const { name, version, ...jan } = m
+    const entry: InstalledExtension = {
+      id: m.id,
+      version,
+      previous: null,
+      enabled: true,
+      granted: [],
+      permissions: [],
+      source: { kind: 'bundle', fileName: 'x.tgz', sha512: 'sha512-x' },
+      verified: false,
+      integrityChecked: false,
+      installedAt: '2026-10-23T10:00:00Z',
+      manifest: { name, version, jan },
+    }
+    const registry = {
+      list: vi.fn(
+        async (): Promise<ListResult> => ({
+          safeMode: false,
+          safeModeForced: false,
+          recoveredFrom: null,
+          extensions: [entry],
+        })
+      ),
+      readEntry: vi.fn(async () => ({ code: BUNDLE, sha512: 'sha512-e' })),
+    } satisfies InstalledRegistry
+    const spawned: ReturnType<typeof fakeWorker>[] = []
+    const { host, notify } = newHost(() => {
+      const fake = fakeWorker()
+      spawned.push(fake)
+      return fake.worker
+    }, registry)
+    await host.loadInstalled()
+    expect(host.list()[0].state).toBe('active')
+
+    // The worker hangs; the user stops it while two pings are unanswered,
+    // and its heartbeat expires while teardown waits on `deactivate`.
+    spawned[0].state.alive = false
+    await vi.advanceTimersByTimeAsync(PING_INTERVAL_MS * MAX_MISSED_PONGS + 1)
+    const stopping = host.terminate(m.id)
+    await vi.advanceTimersByTimeAsync(PING_INTERVAL_MS)
+    expect(spawned[0].state.terminated).toBe(true)
+    await stopping
+    await vi.advanceTimersByTimeAsync(PING_INTERVAL_MS * 4)
+    expect(spawned).toHaveLength(1)
+    expect(host.list()[0].state).toBe('inactive')
+    expect(registry.readEntry).toHaveBeenCalledTimes(1)
+
+    // Nor did it count: after it, CRASH_LIMIT - 1 real crashes still get
+    // it restarted rather than disabled.
+    await host.reload(m.id)
+    expect(host.list()[0].state).toBe('active')
+    for (let i = 0; i < CRASH_LIMIT - 1; i++) {
+      const before = spawned.length
+      spawned[before - 1].state.alive = false
+      await vi.advanceTimersByTimeAsync(UNTIL_DEAD)
+      await vi.waitFor(() => expect(spawned).toHaveLength(before + 1))
+      await vi.waitFor(() => expect(host.list()[0].state).toBe('active'))
+    }
+    expect(notify).not.toHaveBeenCalled()
+  })
+})
+
 describe('loadWithCrashLoopGuard', () => {
   function guard(settings = memoryAppSettings()) {
     const setSafeMode = vi.fn(async () => {})
     const onSafeMode = vi.fn()
+    const onSafeModeFailed = vi.fn()
+    let shutdown: (() => void) | undefined
     const run = (load: () => Promise<void>) =>
-      loadWithCrashLoopGuard({ settings, setSafeMode, onSafeMode, load })
-    return { settings, setSafeMode, onSafeMode, run }
+      loadWithCrashLoopGuard({
+        settings,
+        setSafeMode,
+        onSafeMode,
+        onSafeModeFailed,
+        onCleanShutdown: (reset) => {
+          shutdown = reset
+        },
+        load,
+      })
+    const cleanShutdown = () => shutdown?.()
+    return { settings, setSafeMode, onSafeMode, onSafeModeFailed, run, cleanShutdown }
   }
   // A start that never reaches 'ready': the window dies while loading.
   const hang = () => new Promise<void>(() => {})
+  const counter = (settings: ReturnType<typeof memoryAppSettings>) =>
+    settings.data.get(FAILED_STARTS_KEY)
 
-  it('counts a start as failed until the extensions are loaded, then resets', async () => {
+  it('keeps a start counted as failed until it ran the grace period after loading', async () => {
+    vi.useFakeTimers()
     const { settings, run } = guard()
     let seen: string | undefined
     await run(async () => {
-      seen = settings.data.get(FAILED_STARTS_KEY)
+      seen = counter(settings)
     })
     expect(seen).toBe('1')
-    expect(settings.data.get(FAILED_STARTS_KEY)).toBe('0')
+    // Loaded, but an extension could still take the window down.
+    expect(counter(settings)).toBe('1')
+    await vi.advanceTimersByTimeAsync(START_GRACE_MS - 1)
+    expect(counter(settings)).toBe('1')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(counter(settings)).toBe('0')
+  })
+
+  it('trips on extensions that kill the window shortly after loading', async () => {
+    vi.useFakeTimers()
+    const { settings, setSafeMode, onSafeMode, run } = guard()
+    for (let i = 0; i < MAX_FAILED_STARTS; i++) {
+      // Loading finishes; the window dies 5 s later, before the grace
+      // period, so no timer of this start ever fires.
+      await run(async () => {})
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(counter(settings)).toBe(String(i + 1))
+      vi.clearAllTimers()
+    }
+    expect(setSafeMode).not.toHaveBeenCalled()
+    await run(async () => {})
+    expect(setSafeMode).toHaveBeenCalledWith(true)
+    expect(onSafeMode).toHaveBeenCalledTimes(1)
   })
 
   it('enables safe mode before loading after two failed starts in a row', async () => {
+    vi.useFakeTimers()
     const { settings, setSafeMode, onSafeMode, run } = guard()
     for (let i = 0; i < MAX_FAILED_STARTS; i++) {
       void run(hang)
-      await vi.waitFor(() =>
-        expect(settings.data.get(FAILED_STARTS_KEY)).toBe(String(i + 1))
-      )
+      await vi.waitFor(() => expect(counter(settings)).toBe(String(i + 1)))
       expect(setSafeMode).not.toHaveBeenCalled()
     }
     const order: string[] = []
@@ -337,17 +441,52 @@ describe('loadWithCrashLoopGuard', () => {
     expect(setSafeMode).toHaveBeenCalledWith(true)
     expect(onSafeMode).toHaveBeenCalledTimes(1)
     expect(order).toEqual(['safe', 'load'])
-    expect(settings.data.get(FAILED_STARTS_KEY)).toBe('0')
+    await vi.advanceTimersByTimeAsync(START_GRACE_MS)
+    expect(counter(settings)).toBe('0')
   })
 
-  it('does not count a start whose loading failed cleanly', async () => {
+  it('does not count a start that was shut down cleanly', async () => {
+    vi.useFakeTimers()
+    const { settings, setSafeMode, run, cleanShutdown } = guard()
+    for (let i = 0; i <= MAX_FAILED_STARTS; i++) {
+      // Quit (or reload) while loading, and right after it.
+      void run(i === 0 ? hang : async () => {})
+      await vi.waitFor(() => expect(counter(settings)).toBe('1'))
+      cleanShutdown()
+      await vi.waitFor(() => expect(counter(settings)).toBe('0'))
+      vi.clearAllTimers()
+    }
+    expect(setSafeMode).not.toHaveBeenCalled()
+  })
+
+  it('does not count a start whose loading failed cleanly once it ran on', async () => {
+    vi.useFakeTimers()
     const { settings, setSafeMode, run } = guard()
-    for (let i = 0; i <= MAX_FAILED_STARTS; i++)
+    for (let i = 0; i <= MAX_FAILED_STARTS; i++) {
       await run(() => Promise.reject(new Error('registry gone'))).catch(
         () => undefined
       )
+      await vi.advanceTimersByTimeAsync(START_GRACE_MS)
+    }
     expect(setSafeMode).not.toHaveBeenCalled()
-    expect(settings.data.get(FAILED_STARTS_KEY)).toBe('0')
+    expect(counter(settings)).toBe('0')
+  })
+
+  it('still skips loading and tells the user when safe mode cannot be turned on', async () => {
+    vi.useFakeTimers()
+    const settings = memoryAppSettings()
+    settings.data.set(FAILED_STARTS_KEY, String(MAX_FAILED_STARTS))
+    const { setSafeMode, onSafeMode, onSafeModeFailed, run } = guard(settings)
+    const failure = new Error('registry I/O')
+    setSafeMode.mockRejectedValue(failure)
+    const load = vi.fn(async () => {})
+    await expect(run(load)).resolves.toBeUndefined()
+    expect(load).not.toHaveBeenCalled()
+    expect(onSafeMode).not.toHaveBeenCalled()
+    expect(onSafeModeFailed).toHaveBeenCalledWith(failure)
+    // Still counted, so the next start skips loading again.
+    await vi.advanceTimersByTimeAsync(START_GRACE_MS)
+    expect(counter(settings)).toBe(String(MAX_FAILED_STARTS + 1))
   })
 
   it('treats a garbled counter as zero', async () => {

@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   settings: new Map<string, string>(),
   setSafeMode: vi.fn().mockResolvedValue(undefined),
   toastWarning: vi.fn(),
+  toastError: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -49,7 +50,9 @@ vi.mock('@janhq/core', () => ({
     set: async (key: string, value: string) => void h.settings.set(key, value),
   },
 }))
-vi.mock('sonner', () => ({ toast: { warning: h.toastWarning } }))
+vi.mock('sonner', () => ({
+  toast: { warning: h.toastWarning, error: h.toastError },
+}))
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   getCurrentWebviewWindow: () => ({ label: h.windowLabel }),
 }))
@@ -148,6 +151,32 @@ describe('ExtensionProvider', () => {
       h.host.loadInstalled.mock.invocationCallOrder[0]
     )
     expect(h.toastWarning).toHaveBeenCalledWith('extensions:crashed.safeMode')
+  })
+
+  it('skips the installed extensions and says so when safe mode cannot be turned on', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.settings.set('extension-host:failedStarts', '2')
+    h.setSafeMode.mockRejectedValue(new Error('registry I/O'))
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        'extensions:crashed.safeModeFailed'
+      )
+    )
+    expect(h.host.loadInstalled).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledWith(
+      'Turning on safe mode failed:',
+      expect.any(Error)
+    )
+  })
+
+  it('counts a start as good once the window closes cleanly', async () => {
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() => expect(h.host.loadInstalled).toHaveBeenCalled())
+    expect(h.settings.get('extension-host:failedStarts')).toBe('1')
+    window.dispatchEvent(new Event('pagehide'))
     await waitFor(() =>
       expect(h.settings.get('extension-host:failedStarts')).toBe('0')
     )

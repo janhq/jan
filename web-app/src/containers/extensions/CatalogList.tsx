@@ -24,6 +24,8 @@ import type {
   IndexExtension,
   IndexSource,
   InstalledExtension,
+  RemovedPin,
+  SourcesNotice,
   StagedInstall,
 } from '@/services/extensions/types'
 import { UnsignedSourceBadge } from './TrustBadge'
@@ -62,9 +64,21 @@ function Field({
   )
 }
 
+// The plugin stores a source URL as the WHATWG URL serializes it.
+const sameUrl = (a: string, b: string) => {
+  try {
+    return new URL(a.trim()).href === new URL(b).href
+  } catch {
+    return false
+  }
+}
+
 function AddSourceForm({
+  removedPins,
   onAdd,
 }: {
+  /** Keys of removed keyed sources: re-adding one without a key warns. */
+  removedPins: RemovedPin[]
   onAdd: (url: string, name: string, publicKey?: string) => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -72,17 +86,32 @@ function AddSourceForm({
   const [name, setName] = useState('')
   const [publicKey, setPublicKey] = useState('')
   const [errors, setErrors] = useState<SourceErrors>({})
+  // The removed pin the user was warned about for the URL as typed; a
+  // second press of Add with the same URL goes ahead without a key.
+  const [warned, setWarned] = useState<RemovedPin>()
   const err = (code?: string) =>
     code ? t(`extensions:sources.errors.${code}`) : undefined
+
+  const changeUrl = (value: string) => {
+    setUrl(value)
+    setWarned(undefined)
+  }
 
   const submit = async () => {
     const found = validateSource({ url, name, publicKey })
     setErrors(found)
     if (Object.keys(found).length > 0) return
-    await onAdd(url.trim(), name.trim(), publicKey.trim() || undefined)
+    const key = publicKey.trim() || undefined
+    const pin = key ? undefined : removedPins.find((p) => sameUrl(url, p.url))
+    if (pin && warned !== pin) {
+      setWarned(pin)
+      return
+    }
+    await onAdd(url.trim(), name.trim(), key)
     setUrl('')
     setName('')
     setPublicKey('')
+    setWarned(undefined)
   }
 
   return (
@@ -90,7 +119,7 @@ function AddSourceForm({
       <Field
         label={t('extensions:sources.url')}
         value={url}
-        onChange={setUrl}
+        onChange={changeUrl}
         error={err(errors.url)}
       />
       <Field
@@ -105,6 +134,18 @@ function AddSourceForm({
         onChange={setPublicKey}
         error={err(errors.publicKey)}
       />
+      {warned && (
+        <div
+          role="alert"
+          className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs"
+        >
+          <span>{t('extensions:sources.removedPin.warning')}</span>
+          <span className="text-muted-foreground">
+            {t('extensions:sources.removedPin.key')}
+          </span>
+          <code className="break-all">{warned.publicKey}</code>
+        </div>
+      )}
       <Button size="sm" className="self-end" onClick={submit}>
         {t('extensions:sources.add')}
       </Button>
@@ -220,6 +261,65 @@ function RotateKeyDialog({
   )
 }
 
+/** Asks before a keyed source and its pinned key are removed. */
+function RemoveKeyedSourceDialog({
+  source,
+  onConfirm,
+  onCancel,
+}: {
+  source: IndexSource
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t('extensions:sources.removeKeyed.title', { name: source.name })}
+          </DialogTitle>
+          <DialogDescription>
+            {t('extensions:sources.removeKeyed.description')}
+          </DialogDescription>
+        </DialogHeader>
+        <code className="break-all text-xs">{source.publicKey}</code>
+        <DialogFooter>
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            {t('extensions:cancel')}
+          </Button>
+          <Button size="sm" variant="destructive" onClick={onConfirm}>
+            {t('extensions:sources.removeKeyed.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** What a repair of the stored sources dropped. */
+function SourcesNoticeBanner({ notice }: { notice: SourcesNotice }) {
+  const { t } = useTranslation()
+  const dropped = notice.dropped
+    .map((d) =>
+      d.name && d.url ? `${d.name} (${d.url})` : (d.name ?? d.url ?? '?')
+    )
+    .join(', ')
+  return (
+    <div
+      role="status"
+      className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
+    >
+      {notice.dropped.length > 0
+        ? t('extensions:sources.notice.dropped', {
+            sources: dropped,
+            path: notice.movedTo,
+          })
+        : t('extensions:sources.notice.unreadable', { path: notice.movedTo })}
+    </div>
+  )
+}
+
 function SourceCatalog({
   source,
   registry,
@@ -239,6 +339,7 @@ function SourceCatalog({
   const [catalog, setCatalog] = useState<Catalog>()
   const [error, setError] = useState<string>()
   const [rotating, setRotating] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -298,13 +399,25 @@ function SourceCatalog({
             size="icon-xs"
             variant="ghost"
             aria-label={t('extensions:sources.remove', { name: source.name })}
-            onClick={onRemove}
+            onClick={() =>
+              source.publicKey ? setConfirmRemove(true) : onRemove()
+            }
           >
             <IconTrash size={14} />
           </Button>
         </div>
       }
     >
+      {confirmRemove && (
+        <RemoveKeyedSourceDialog
+          source={source}
+          onConfirm={() => {
+            setConfirmRemove(false)
+            onRemove()
+          }}
+          onCancel={() => setConfirmRemove(false)}
+        />
+      )}
       {offer && (
         <div className="flex items-center gap-2 mb-2 rounded-md border border-border p-2">
           <span className="text-xs flex-1">
@@ -370,9 +483,14 @@ export function CatalogList({
   const { t } = useTranslation()
   const { service, change } = registry
   const [sources, setSources] = useState<IndexSource[]>([])
+  const [removedPins, setRemovedPins] = useState<RemovedPin[]>([])
+  const [notice, setNotice] = useState<SourcesNotice | null>(null)
 
   const refresh = useCallback(async () => {
-    setSources(await service.listSources())
+    const listed = await service.listSources()
+    setSources(listed.sources)
+    setRemovedPins(listed.removedPins)
+    setNotice(listed.notice)
   }, [service])
 
   useEffect(() => {
@@ -405,8 +523,9 @@ export function CatalogList({
           </div>
         }
       >
-        <AddSourceForm onAdd={add} />
+        <AddSourceForm removedPins={removedPins} onAdd={add} />
       </Card>
+      {notice && <SourcesNoticeBanner notice={notice} />}
       {sources.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {t('extensions:sources.none')}

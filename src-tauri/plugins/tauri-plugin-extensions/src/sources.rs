@@ -1,6 +1,11 @@
 //! `<root>/sources.json`: the extension indexes the user added. Jan ships
 //! none and has no compiled-in index URL or key; every source is one the
 //! user typed in, and its public key (if given) is pinned when it is added.
+//!
+//! The file also remembers, per keyed source, the newest `generatedAt` an
+//! accepted signed index carried (rollback protection), and the keys of
+//! keyed sources the user removed, so re-adding one of those URLs without a
+//! key can be flagged in the UI.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +28,8 @@ pub const MAX_SOURCES: usize = 32;
 pub const MAX_NAME_CHARS: usize = 64;
 /// Longest index URL, in bytes.
 pub const MAX_URL_BYTES: usize = 2048;
+/// Removed pins remembered; the oldest is forgotten first.
+pub const MAX_REMOVED_PINS: usize = 64;
 
 /// One user-added index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +48,48 @@ pub struct IndexSourceEntry {
     pub public_key: Option<String>,
     /// RFC 3339 UTC.
     pub added_at: String,
+    /// The `generatedAt` of the newest signed index accepted from this
+    /// source, as written in that index. An index generated earlier is a
+    /// replay and is refused. Only kept for a keyed source: an unsigned
+    /// index can claim any date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_generated_at: Option<String>,
+}
+
+/// The key a keyed source had when the user removed it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovedPin {
+    /// The source's index URL, as stored.
+    pub url: String,
+    /// The key that was pinned for it.
+    pub public_key: String,
+    /// RFC 3339 UTC.
+    pub removed_at: String,
+}
+
+/// A source entry that failed the checks on load and was dropped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedSource {
+    /// Its name, when it had a readable one.
+    pub name: Option<String>,
+    /// Its URL, when it had a readable one.
+    pub url: Option<String>,
+    /// Why it was dropped.
+    pub reason: String,
+}
+
+/// What loading the store had to repair. The file as it was is kept at
+/// `moved_to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourcesNotice {
+    /// Where the unrepaired file was kept.
+    pub moved_to: String,
+    /// The dropped entries. Empty when the whole file was unreadable and
+    /// every source was lost.
+    pub dropped: Vec<DroppedSource>,
 }
 
 /// The whole file.
@@ -52,6 +101,9 @@ pub struct Sources {
     /// In the order they were added.
     #[serde(default)]
     pub sources: Vec<IndexSourceEntry>,
+    /// Keys of removed keyed sources, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_pins: Vec<RemovedPin>,
 }
 
 impl Default for Sources {
@@ -59,8 +111,20 @@ impl Default for Sources {
         Sources {
             schema: SCHEMA,
             sources: Vec::new(),
+            removed_pins: Vec::new(),
         }
     }
+}
+
+/// The file as read before the entries are checked one by one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSources {
+    schema: u32,
+    #[serde(default)]
+    sources: Vec<serde_json::Value>,
+    #[serde(default)]
+    removed_pins: Vec<serde_json::Value>,
 }
 
 /// Path of the store in `root`.
@@ -87,12 +151,59 @@ pub fn https_url(url: &str) -> Result<Url> {
     Ok(parsed)
 }
 
+/// Why a stored entry cannot be used, if it cannot.
+fn entry_problem(entry: &IndexSourceEntry) -> Option<String> {
+    if let Err(e) = https_url(&entry.url) {
+        return Some(e.to_string());
+    }
+    if entry.public_key.as_deref().is_some_and(|k| !is_public_key(k)) {
+        return Some("its pinned key is not a valid ed25519 public key".into());
+    }
+    None
+}
+
+fn dropped(value: &serde_json::Value, reason: String) -> DroppedSource {
+    let field = |name: &str| value.get(name).and_then(serde_json::Value::as_str).map(str::to_string);
+    DroppedSource {
+        name: field("name"),
+        url: field("url"),
+        reason,
+    }
+}
+
 impl Sources {
-    fn is_sane(&self) -> bool {
-        self.schema == SCHEMA
-            && self.sources.iter().all(|s| {
-                https_url(&s.url).is_ok() && s.public_key.as_deref().map_or(true, is_public_key)
-            })
+    /// Checks the entries of `raw` one by one: a bad source is dropped and
+    /// reported, the others are kept. A bad removed pin is only advisory and
+    /// is dropped silently.
+    fn from_raw(raw: RawSources) -> (Sources, Vec<DroppedSource>) {
+        let mut sources = Sources::default();
+        let mut bad = Vec::new();
+        for value in raw.sources {
+            match serde_json::from_value::<IndexSourceEntry>(value.clone()) {
+                Ok(entry) => match entry_problem(&entry) {
+                    Some(reason) => bad.push(dropped(&value, reason)),
+                    None if sources.sources.iter().any(|s| s.id == entry.id || s.url == entry.url) => {
+                        bad.push(dropped(&value, "it repeats another source".into()))
+                    }
+                    None => sources.sources.push(entry),
+                },
+                Err(e) => bad.push(dropped(&value, format!("it is malformed: {e}"))),
+            }
+        }
+        sources.removed_pins = raw
+            .removed_pins
+            .into_iter()
+            .filter_map(|v| serde_json::from_value::<RemovedPin>(v).ok())
+            .filter(|p| https_url(&p.url).is_ok() && is_public_key(&p.public_key))
+            .collect();
+        (sources, bad)
+    }
+
+    /// The key that was pinned for `url` when a keyed source with that URL
+    /// was last removed.
+    pub fn removed_pin(&self, url: &str) -> Option<&RemovedPin> {
+        let url = https_url(url).ok()?.to_string();
+        self.removed_pins.iter().find(|p| p.url == url)
     }
 
     /// The source with `id`.
@@ -129,12 +240,18 @@ impl Sources {
         if self.sources.len() >= MAX_SOURCES {
             return Err(Error::Denied(format!("at most {MAX_SOURCES} sources can be added")));
         }
+        // Pinning a key again settles the earlier removal; adding without
+        // one keeps the pin on record, so the next add still warns.
+        if public_key.is_some() {
+            self.removed_pins.retain(|p| p.url != url);
+        }
         let entry = IndexSourceEntry {
             id: random_id(),
             name: name.to_string(),
             url,
             public_key,
             added_at: now_rfc3339(),
+            last_generated_at: None,
         };
         self.sources.push(entry.clone());
         Ok(entry)
@@ -170,38 +287,88 @@ impl Sources {
     }
 
     /// Removes the source with `id`. Installed extensions keep working: they
-    /// record where they came from.
+    /// record where they came from. A keyed source's key is remembered as a
+    /// removed pin.
     pub fn remove(&mut self, id: &str) -> Result<()> {
-        let before = self.sources.len();
-        self.sources.retain(|s| s.id != id);
-        if self.sources.len() == before {
-            return Err(Error::NotFound(format!("no index source '{id}'")));
+        let at = self
+            .sources
+            .iter()
+            .position(|s| s.id == id)
+            .ok_or_else(|| Error::NotFound(format!("no index source '{id}'")))?;
+        let removed = self.sources.remove(at);
+        if let Some(public_key) = removed.public_key {
+            self.removed_pins.retain(|p| p.url != removed.url);
+            self.removed_pins.push(RemovedPin {
+                url: removed.url,
+                public_key,
+                removed_at: now_rfc3339(),
+            });
+            let excess = self.removed_pins.len().saturating_sub(MAX_REMOVED_PINS);
+            self.removed_pins.drain(..excess);
         }
+        Ok(())
+    }
+
+    /// Records that a signed index generated at `generated_at` was accepted
+    /// from source `id`.
+    pub fn set_last_generated_at(&mut self, id: &str, generated_at: &str) -> Result<()> {
+        let entry = self
+            .sources
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or_else(|| Error::NotFound(format!("no index source '{id}'")))?;
+        entry.last_generated_at = Some(generated_at.to_string());
         Ok(())
     }
 }
 
-/// Reads the store in `root`. Missing is empty; unreadable is moved aside to
-/// `sources.json.corrupt-<ts>` and empty.
+/// Reads the store in `root`, repairing what it must; see [`load_reporting`].
 pub fn load(root: &Path) -> Result<Sources> {
+    Ok(load_reporting(root)?.0)
+}
+
+/// Reads the store in `root`. Missing is empty. A file that is not JSON or
+/// has another schema is moved aside to `sources.json.corrupt-<ts>` and
+/// read as empty. A source entry that fails the checks (a plain-http URL,
+/// a key the current checks refuse) costs only that entry: the file is
+/// moved aside as it was, the remaining sources are written back, and the
+/// notice says which were dropped. Either repair returns a notice.
+pub fn load_reporting(root: &Path) -> Result<(Sources, Option<SourcesNotice>)> {
     let file = path(root);
     let bytes = match fs::read(&file) {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Sources::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Sources::default(), None)),
         Err(e) => return Err(e.into()),
     };
-    match serde_json::from_slice::<Sources>(&bytes) {
-        Ok(sources) if sources.is_sane() => Ok(sources),
-        _ => {
-            let aside = move_aside(&file)?;
-            log::error!(
-                "extension sources {} are unreadable; moved to {}",
-                file.display(),
-                aside.display()
-            );
-            Ok(Sources::default())
+    let (sources, dropped) = match serde_json::from_slice::<RawSources>(&bytes) {
+        Ok(raw) if raw.schema == SCHEMA => {
+            let (sources, dropped) = Sources::from_raw(raw);
+            if dropped.is_empty() {
+                return Ok((sources, None));
+            }
+            (sources, dropped)
         }
+        _ => (Sources::default(), Vec::new()),
+    };
+    let aside = move_aside(&file)?;
+    log::error!(
+        "extension sources {}: {}; the file as it was is at {}",
+        file.display(),
+        if dropped.is_empty() {
+            "unreadable, every source was dropped".to_string()
+        } else {
+            format!("{} invalid source(s) dropped", dropped.len())
+        },
+        aside.display()
+    );
+    if !dropped.is_empty() {
+        save(root, &sources)?;
     }
+    let notice = SourcesNotice {
+        moved_to: aside.to_string_lossy().into_owned(),
+        dropped,
+    };
+    Ok((sources, Some(notice)))
 }
 
 /// Writes the store to `root` atomically.
@@ -306,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn a_corrupt_or_unsafe_file_is_moved_aside() {
+    fn a_corrupt_file_or_its_only_unsafe_entry_is_moved_aside() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(path(dir.path()), "{").unwrap();
         assert_eq!(load(dir.path()).unwrap(), Sources::default());
