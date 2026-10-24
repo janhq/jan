@@ -2,7 +2,11 @@
  * Tauri Hardware Service - Desktop implementation
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import {
+  getSystemInfo,
+  getSystemUsage,
+  refreshSystemInfo,
+} from '@janhq/tauri-plugin-hardware-api'
 import { ServiceKeys } from '@janhq/core'
 import { getExtensionHost } from '@/lib/extensions/host'
 import type { HardwareData, SystemUsage, DeviceList } from './types'
@@ -10,11 +14,14 @@ import { DefaultHardwareService } from './default'
 
 export class TauriHardwareService extends DefaultHardwareService {
   async getHardwareInfo(): Promise<HardwareData | null> {
-    return invoke('plugin:hardware|get_system_info') as Promise<HardwareData>
+    const info = await getSystemInfo()
+    // The plugin reports static facts only; `usage` is the app's live reading,
+    // filled in later from getSystemUsage().
+    return { ...info, cpu: { ...info.cpu, usage: 0 } }
   }
 
   async getSystemUsage(): Promise<SystemUsage | null> {
-    return invoke('plugin:hardware|get_system_usage') as Promise<SystemUsage>
+    return getSystemUsage()
   }
 
   async getLlamacppDevices(): Promise<DeviceList[]> {
@@ -37,6 +44,6 @@ export class TauriHardwareService extends DefaultHardwareService {
   }
 
   async refreshHardwareInfo(): Promise<void> {
-    await invoke('plugin:hardware|refresh_system_info')
+    await refreshSystemInfo()
   }
 }

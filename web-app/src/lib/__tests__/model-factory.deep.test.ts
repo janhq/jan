@@ -78,6 +78,11 @@ vi.mock('@/lib/platform/utils', () => ({
   isPlatformTauri: vi.fn(() => false),
 }))
 
+const mlxMock = vi.hoisted(() => ({ findSession: vi.fn() }))
+vi.mock('@/lib/llamacppRouterProps', () => ({
+  getMlxExtension: () => mlxMock,
+}))
+
 vi.mock('@/lib/provider-api-keys', () => ({
   providerRemoteApiKeyChain: vi.fn((p: any) => {
     const primary = p.api_key?.trim()
@@ -300,7 +305,7 @@ describe('model-factory deep coverage', () => {
   /* mlx internals */
   describe('mlx internals', () => {
     it('url, headers, and param merge', async () => {
-      vi.mocked(invoke).mockResolvedValue({ port: 9090, api_key: 'mlx-key' })
+      mlxMock.findSession.mockResolvedValue({ port: 9090, api_key: 'mlx-key' })
       await ModelFactory.createModel('m', mkProvider('mlx'), { temperature: 0.3 })
       const opts = getOpts()
       expect(opts.url({ path: '/chat/completions' })).toBe('http://localhost:9090/v1/chat/completions')
@@ -312,7 +317,7 @@ describe('model-factory deep coverage', () => {
     })
 
     it('sends cancel on abort', async () => {
-      vi.mocked(invoke).mockResolvedValue({ port: 9090, api_key: 'k' })
+      mlxMock.findSession.mockResolvedValue({ port: 9090, api_key: 'k' })
       await ModelFactory.createModel('m', mkProvider('mlx'), {})
       const opts = getOpts()
       const ctrl = new AbortController()

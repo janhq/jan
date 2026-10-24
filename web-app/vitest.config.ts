@@ -38,6 +38,7 @@ export default defineConfig({
       // tests exercise the wrappers the app actually calls.
       '@janhq/tauri-plugin-llamacpp-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index.ts'),
       '@janhq/tauri-plugin-extensions-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-extensions/guest-js/index.ts'),
+      '@janhq/tauri-plugin-hardware-api': path.resolve(__dirname, '../src-tauri/plugins/tauri-plugin-hardware/guest-js/index.ts'),
       // The plugin ships its own @tauri-apps/api install; without this the
       // aliased guest-js would get a second module instance that
       // vi.mock('@tauri-apps/api/core') cannot intercept.

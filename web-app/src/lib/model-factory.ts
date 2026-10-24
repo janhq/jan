@@ -56,9 +56,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
 import { createMistral } from '@ai-sdk/mistral'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { invoke } from '@tauri-apps/api/core'
 import { findSessionByModel } from '@janhq/tauri-plugin-llamacpp-api'
-import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
@@ -81,6 +79,7 @@ import {
 } from '@/lib/providerCaps'
 import { engineFailure } from '@/lib/engineError'
 import { extensionProviderFetch } from '@/lib/extensions/providers'
+import { getMlxExtension } from '@/lib/llamacppRouterProps'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -1131,11 +1130,10 @@ export class ModelFactory {
       }
     }
 
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:mlx|find_mlx_session_by_model',
-      { modelId }
-    )
+    // Get session info which includes port and api_key. No mlx service means
+    // the engine is not running here (it only activates on macOS).
+    const sessionInfo =
+      (await getMlxExtension()?.findSession(modelId)) ?? null
 
     if (!sessionInfo) {
       throw new Error(`No running MLX session found for model: ${modelId}`)

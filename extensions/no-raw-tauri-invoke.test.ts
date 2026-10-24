@@ -8,6 +8,7 @@ import { join, relative } from 'node:path'
 // getDevices shipped sending a `libraryPath` the command does not take.
 const REPO_ROOT = join(__dirname, '..')
 const EXTENSIONS_DIR = join(REPO_ROOT, 'extensions')
+const WEB_APP_SRC = join(REPO_ROOT, 'web-app', 'src')
 const PLUGINS_DIR = join(REPO_ROOT, 'src-tauri', 'plugins')
 const PLUGIN_CRATE_PREFIX = 'tauri-plugin-'
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'test', '__tests__'])
@@ -71,6 +72,9 @@ function escapeRegExp(text: string): string {
 }
 
 const plugins = discoverPlugins()
+const rawInvoke = new RegExp(
+  `plugin:(${plugins.map(({ name }) => escapeRegExp(name)).join('|')})\\|`
+)
 
 describe('built-in extensions do not invoke Tauri directly', () => {
   it('derives each plugin name the way its guest-js addresses it', () => {
@@ -90,9 +94,16 @@ describe('built-in extensions do not invoke Tauri directly', () => {
   })
 
   it('has no raw plugin:<name>| command under extensions/*/src', () => {
-    const names = plugins.map(({ name }) => escapeRegExp(name)).join('|')
-    const rawInvoke = new RegExp(`plugin:(${names})\\|`)
     const offenders = offendingLines(extensionSources(), rawInvoke)
+    expect(offenders, offenders.join('\n')).toEqual([])
+  })
+})
+
+// The app is held to the same rule: a command string outside a plugin's
+// guest-js is a second, untyped copy of that plugin's API.
+describe('the web app does not address plugins directly', () => {
+  it('has no raw plugin:<name>| command under web-app/src', () => {
+    const offenders = offendingLines(collectSources(WEB_APP_SRC), rawInvoke)
     expect(offenders, offenders.join('\n')).toEqual([])
   })
 })

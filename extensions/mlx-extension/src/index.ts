@@ -77,6 +77,7 @@ export async function activate(ctx: InternalExtensionContext): Promise<void> {
   const service: MlxService = {
     getModelProps: (modelId) => engine.getModelProps(modelId),
     unload: (modelId) => engine.unload(modelId),
+    findSession: (modelId) => findMlxSessionByModel(modelId),
   }
   ctx.subscriptions.add(ctx.internal.services.provide(ServiceKeys.Mlx, service))
   // As under the old extension manager, a failed startup is logged and the

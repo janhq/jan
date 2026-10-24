@@ -1,7 +1,7 @@
 import { Emitter, toDisposable, type Disposable, type Event } from '@janhq/extension-api'
 import type { AssistantInterface } from '../../types'
 import type { DownloadItem } from '../download'
-import type { UnloadResult } from '../extensions/engines/AIEngine'
+import type { SessionInfo, UnloadResult } from '../extensions/engines/AIEngine'
 import type { RAGIngestService, VectorDBService } from './rag'
 
 /**
@@ -99,7 +99,10 @@ export interface LlamacppService extends LocalEngineService {
   reconcileEngineDevices(): Promise<'unchanged' | 'restarted' | 'busy'>
 }
 
-export type MlxService = LocalEngineService
+export interface MlxService extends LocalEngineService {
+  /** The running server for a model, or null when it is not loaded. */
+  findSession(modelId: string): Promise<SessionInfo | null>
+}
 
 export const ServiceKeys = {
   Assistants: new ServiceKey<AssistantService>('assistants'),
