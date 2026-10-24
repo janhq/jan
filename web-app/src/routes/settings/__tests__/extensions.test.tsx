@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { Route as ExtensionsRoute } from '../extensions'
+import { Route as ExtensionsRoute } from '../extensions/index'
 
 // Mock dependencies
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -96,6 +96,7 @@ vi.mock('@tanstack/react-router', () => ({
     ...config,
     component: config.component,
   }),
+  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
 
 describe('Extensions Settings Route', () => {
@@ -117,10 +118,11 @@ describe('Extensions Settings Route', () => {
       control: { type: 'checkbox', default: false },
     }
     hosted.list = [
-      { id: 'acme.on', manifest: manifest('acme.on', [setting]), state: 'active' },
+      { id: 'acme.on', manifest: manifest('acme.on', [setting]), source: 'builtin', state: 'active' },
       {
         id: 'acme.off',
         manifest: manifest('acme.off', [setting]),
+        source: 'builtin',
         state: 'failed',
         error: 'boom',
       },
@@ -147,13 +149,12 @@ describe('Extensions Settings Route', () => {
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('should render extensions card with header', () => {
+  it('should render the legacy extensions in the built-in section', () => {
     const Component = ExtensionsRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getByTestId('card')).toBeInTheDocument()
-    expect(screen.getByTestId('card-header')).toBeInTheDocument()
-    expect(screen.getByText('settings:extensions.title')).toBeInTheDocument()
+    expect(screen.getByText('extensions:sections.builtin')).toBeInTheDocument()
   })
 
   it('should render list of extensions', () => {
@@ -212,7 +213,6 @@ describe('Extensions Settings Route', () => {
 
     // Should render the card structure
     expect(screen.getByTestId('card')).toBeInTheDocument()
-    expect(screen.getByTestId('card-header')).toBeInTheDocument()
   })
 
   it('should have proper layout structure', () => {
@@ -244,7 +244,7 @@ describe('Extensions Settings Route', () => {
 
     // Test that translations are rendered
     expect(screen.getByText('common:settings')).toBeInTheDocument()
-    expect(screen.getByText('settings:extensions.title')).toBeInTheDocument()
+    expect(screen.getByText('extensions:sections.builtin')).toBeInTheDocument()
   })
 
   it('should render extensions with correct key prop', () => {

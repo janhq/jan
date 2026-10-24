@@ -31,6 +31,8 @@ import { DefaultRAGService } from './rag/default'
 import type { RAGService } from './rag/types'
 import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
+import { DefaultExtensionsService } from './extensions/default'
+import type { ExtensionsService } from './extensions/types'
 
 // Import service types
 import type { ThemeService } from './theme/types'
@@ -76,6 +78,7 @@ export interface ServiceHub {
   projects(): ProjectsService
   rag(): RAGService
   uploads(): UploadsService
+  extensions(): ExtensionsService
 }
 
 class PlatformServiceHub implements ServiceHub {
@@ -100,6 +103,9 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
+  // The install pipeline is desktop only: the desktop branch of initialize()
+  // is where the tauri-plugin-extensions implementation gets assigned.
+  private extensionsService: ExtensionsService = new DefaultExtensionsService()
   private initialized = false
 
   /**
@@ -322,6 +328,11 @@ class PlatformServiceHub implements ServiceHub {
   uploads(): UploadsService {
     this.ensureInitialized()
     return this.uploadsService
+  }
+
+  extensions(): ExtensionsService {
+    this.ensureInitialized()
+    return this.extensionsService
   }
 }
 
