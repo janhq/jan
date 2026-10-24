@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ServiceKeys } from '@janhq/core'
 import { TauriHardwareService } from '../tauri'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
+  refreshSystemInfo: vi.fn(),
 }))
 
 const h = vi.hoisted(() => ({ get: vi.fn() }))
@@ -55,13 +55,13 @@ describe('TauriHardwareService – coverage', () => {
   })
 
   describe('refreshHardwareInfo', () => {
-    it('invokes plugin:hardware|refresh_system_info', async () => {
-      const { invoke } = await import('@tauri-apps/api/core')
-      vi.mocked(invoke).mockResolvedValue(undefined)
+    it('drops the cached detection through the hardware plugin', async () => {
+      const { refreshSystemInfo } = await import('@janhq/tauri-plugin-hardware-api')
+      vi.mocked(refreshSystemInfo).mockResolvedValue(undefined)
 
       await svc.refreshHardwareInfo()
 
-      expect(invoke).toHaveBeenCalledWith('plugin:hardware|refresh_system_info')
+      expect(refreshSystemInfo).toHaveBeenCalled()
     })
   })
 })

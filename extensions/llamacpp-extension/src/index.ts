@@ -49,6 +49,7 @@ import {
  detectTemplateKwargsFromChatTemplate,
  getDefaultEmbeddingModelId,
  setDefaultEmbeddingModelId,
+ fileName,
  type EmbedBatchResult,
 } from './util'
 import { loopbackFetch } from './loopback-fetch'
@@ -70,7 +71,6 @@ import {
  setBackendSetting,
  removeBackendSetting,
 } from './backend-settings'
-import { basename } from '@tauri-apps/api/path'
 import {
  asI32,
  loadLlamaModel,
@@ -365,48 +365,6 @@ async function readPersistedLlamacppModels(): Promise<PersistedModelState[]> {
   logger.warn('Failed to read persisted llamacpp model settings:', error)
   return []
  }
-}
-
-/**
- * Breadth-first search of `rootDir` for the directory directly containing
- * a file named `serverName`. Returns the absolute path of that directory,
- * or null if not found. Used by manual backend install to tolerate
- * different archive layouts (Jan-built `build/bin/...` vs upstream
- * llama.cpp's flat `llama-bXXXX/...`).
- */
-async function findLlamaServerDir(
- rootDir: string,
- serverName: string
-): Promise<string | null> {
- // Note: fs.readdirSync returns absolute child paths (see
- // src-tauri/src/core/filesystem/commands.rs::readdir_sync), not basenames.
- const queue: string[] = [rootDir]
- while (queue.length > 0) {
-  const current = queue.shift() as string
-  let entries: string[]
-  try {
-   entries = await fs.readdirSync(current)
-  } catch {
-   continue
-  }
-  for (const entryPath of entries) {
-   let stat
-   try {
-    stat = await fs.fileStat(entryPath)
-   } catch {
-    continue
-   }
-   if (!stat) continue
-   const entryName = await basename(entryPath)
-   if (!stat.isDirectory && entryName === serverName) {
-    return current
-   }
-   if (stat.isDirectory) {
-    queue.push(entryPath)
-   }
-  }
- }
- return null
 }
 
 // Folder structure for llamacpp extension:
@@ -1825,7 +1783,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
        modelId =
         modelId !== 'imported'
          ? modelId.replace(/^(cortex\.so|huggingface\.co)[\/\\]/, '')
-         : (await basename(child)).replace('.yml', '')
+         : fileName(child).replace('.yml', '')
 
        const modelName = legacyModelConfig.model ?? modelId
        const configPath = await joinPath([
@@ -2189,8 +2147,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   if (!resolvedName) {
-   const base = opts.modelPath.split(/[\\/]/).pop() ?? modelId
-   resolvedName = base.replace(/\.gguf$/i, '') || modelId
+   resolvedName = fileName(opts.modelPath).replace(/\.gguf$/i, '') || modelId
   }
 
   // TODO: add updateModelConfig() method

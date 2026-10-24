@@ -456,6 +456,7 @@ describe('activate', () => {
     const service = fake.provided.get(ServiceKeys.Mlx.id) as {
       getModelProps(id: string): Promise<unknown>
       unload(id: string): Promise<unknown>
+      findSession(id: string): Promise<unknown>
     }
     await expect(service.getModelProps('m')).resolves.toEqual({
       nCtx: 2048,
@@ -463,6 +464,9 @@ describe('activate', () => {
     })
     await service.unload('m')
     expect(mockFindSession).toHaveBeenCalledWith('m')
+    mockFindSession.mockResolvedValueOnce(null)
+    await expect(service.findSession('gone')).resolves.toBeNull()
+    expect(mockFindSession).toHaveBeenCalledWith('gone')
   })
 
   it('reaches the Downloads service through the host registry', async () => {
