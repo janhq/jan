@@ -19,6 +19,7 @@ const plugin = vi.hoisted(() => ({
   addSource: vi.fn(),
   removeSource: vi.fn(async () => undefined),
   getCatalog: vi.fn(),
+  acceptNextKey: vi.fn(),
 }))
 vi.mock('@janhq/tauri-plugin-extensions-api', () => plugin)
 
@@ -144,6 +145,27 @@ describe('TauriExtensionsService', () => {
     expect(plugin.setGrants).toHaveBeenCalledWith(ID, [])
     expect(plugin.uninstall).toHaveBeenCalledWith(ID)
     expect(plugin.setSafeMode).toHaveBeenCalledWith(true)
+  })
+
+  it('passes the catalog signed status and a key rotation through', async () => {
+    const catalog = {
+      index: { schema: 1, generatedAt: 'x', extensions: [] },
+      signed: true,
+      nextPublicKey: 'k2',
+    }
+    plugin.getCatalog.mockResolvedValue(catalog)
+    await expect(service.getCatalog('s1')).resolves.toEqual(catalog)
+    const rotated = { id: 's1', name: 'S', url: 'https://s/', publicKey: 'k2', addedAt: 't' }
+    plugin.acceptNextKey.mockResolvedValue(rotated)
+    await expect(service.acceptNextKey('s1', 'k2')).resolves.toEqual(rotated)
+    expect(plugin.acceptNextKey).toHaveBeenCalledWith('s1', 'k2')
+    plugin.getCatalog.mockRejectedValueOnce({
+      kind: 'signature',
+      message: "the index signature does not match the source's pinned key",
+    })
+    await expect(service.getCatalog('s1')).rejects.toThrow(
+      "the index signature does not match the source's pinned key"
+    )
   })
 
   it('turns plugin rejections into errors with their message', async () => {

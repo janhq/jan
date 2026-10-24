@@ -31,6 +31,7 @@ describe('DefaultExtensionsService', () => {
       service.addSource(),
       service.removeSource(),
       service.getCatalog(),
+      service.acceptNextKey(),
     ]
     for (const call of calls) await expect(call).rejects.toThrow(/not supported/)
   })

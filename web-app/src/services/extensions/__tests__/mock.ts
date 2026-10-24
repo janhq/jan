@@ -2,7 +2,7 @@ import { vi } from 'vitest'
 import type { PermissionString } from '@janhq/extension-api'
 import { manifest } from '@/lib/extensions/__tests__/fixtures'
 import type {
-  CuratedIndex,
+  Catalog,
   ExtensionsService,
   IndexSource,
   InstalledExtension,
@@ -53,7 +53,7 @@ export interface MockState {
   safeMode: boolean
   extensions: InstalledExtension[]
   sources: IndexSource[]
-  catalogs: Record<string, CuratedIndex>
+  catalogs: Record<string, Catalog>
   /** What the next stage call returns. */
   stage?: StagedInstall
 }
@@ -95,6 +95,8 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
           granted,
           permissions: stage.manifest.permissions,
           verified: stage.verified,
+          integrityChecked: stage.integrityChecked,
+          source: stage.source,
         })
         state.extensions = [
           ...state.extensions.filter((e) => e.id !== entry.id),
@@ -150,6 +152,15 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
       const catalog = state.catalogs[sourceId]
       if (!catalog) throw new Error(`unreachable: ${sourceId}`)
       return catalog
+    }),
+    acceptNextKey: vi.fn(async (sourceId: string, nextPublicKey: string) => {
+      const source = state.sources.find((s) => s.id === sourceId)
+      if (!source) throw new Error(`no source: ${sourceId}`)
+      const rotated = { ...source, publicKey: nextPublicKey }
+      state.sources = state.sources.map((s) => (s.id === sourceId ? rotated : s))
+      const catalog = state.catalogs[sourceId]
+      if (catalog) state.catalogs[sourceId] = { ...catalog, nextPublicKey: null }
+      return rotated
     }),
   } satisfies ExtensionsService
   return { service, state }

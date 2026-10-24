@@ -18,6 +18,7 @@ tauri = ["dep:tauri"]
 
 [dependencies]
 base64 = "0.22"
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
 flate2 = "1"
 log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

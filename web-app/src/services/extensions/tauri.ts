@@ -11,7 +11,7 @@ import {
   toPermissions,
 } from '@/lib/extensions/installed-loader'
 import type {
-  CuratedIndex,
+  Catalog,
   ExtensionsService,
   IndexSource,
   InstalledExtension,
@@ -157,7 +157,11 @@ export class TauriExtensionsService implements ExtensionsService {
     return call(() => plugin.removeSource(id))
   }
 
-  getCatalog(sourceId: string): Promise<CuratedIndex> {
+  getCatalog(sourceId: string): Promise<Catalog> {
     return call(() => plugin.getCatalog(sourceId))
+  }
+
+  acceptNextKey(sourceId: string, nextPublicKey: string): Promise<IndexSource> {
+    return call(() => plugin.acceptNextKey(sourceId, nextPublicKey))
   }
 }

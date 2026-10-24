@@ -14,11 +14,12 @@ import type {
 } from '@janhq/extension-api'
 import type * as Plugin from '@janhq/tauri-plugin-extensions-api'
 import type {
-  CuratedIndex,
+  Catalog,
   IndexSourceEntry as IndexSource,
 } from '@janhq/tauri-plugin-extensions-api'
 
 export type {
+  Catalog,
   CuratedIndex,
   IndexExtension,
   IndexVersion,
@@ -41,8 +42,9 @@ export interface ExistingInstall {
 /**
  * A bundle extracted to staging and waiting for consent. Nothing runs and
  * nothing is registered until `confirmInstall`; `discardStage` drops it.
- * `verified` is true only for a signature-checked index entry, so a file
- * picked from disk never is.
+ * `verified` is true only for an entry of a source with a pinned key whose
+ * index signature verified, so a file picked from disk or an entry of an
+ * unsigned source never is; both need the user's explicit trust.
  */
 export type StagedInstall = Omit<
   Plugin.StagedInstall,
@@ -105,5 +107,11 @@ export interface ExtensionsService {
     publicKey?: string
   ): Promise<IndexSource>
   removeSource(id: string): Promise<void>
-  getCatalog(sourceId: string): Promise<CuratedIndex>
+  /** The index of a source; a keyed source's signature must verify. */
+  getCatalog(sourceId: string): Promise<Catalog>
+  /**
+   * Re-pins a source's key to the `nextPublicKey` its signed index offers.
+   * Only after the user confirmed the rotation.
+   */
+  acceptNextKey(sourceId: string, nextPublicKey: string): Promise<IndexSource>
 }

@@ -14,7 +14,7 @@ import {
 } from '@/containers/extensions/HostedExtensionCard'
 import { LoadUnpacked } from '@/containers/extensions/LoadUnpacked'
 import { SafeModeBanner } from '@/containers/extensions/SafeModeBanner'
-import { UnverifiedBadge } from '@/containers/extensions/UnverifiedBadge'
+import { TrustBadge } from '@/containers/extensions/TrustBadge'
 import {
   useHostedExtensions,
   useInstalledRegistry,
@@ -84,7 +84,7 @@ function InstalledCard({
       manifest={entry.manifest}
       version={entry.version}
       hosted={hosted}
-      badges={!entry.verified && <UnverifiedBadge />}
+      badges={<TrustBadge entry={entry} />}
       actions={
         <>
           <DetailsLink id={entry.id} />

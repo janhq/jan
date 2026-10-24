@@ -52,7 +52,8 @@ pub enum Source {
 pub struct VersionRecord {
     /// Where it came from.
     pub source: Source,
-    /// Signature-checked. Always false until index signatures exist (P4).
+    /// From a source with a pinned key whose index signature verified, and
+    /// integrity checked against the SRI that index pinned.
     pub verified: bool,
     /// The tarball matched a pinned SRI (index installs).
     #[serde(default)]

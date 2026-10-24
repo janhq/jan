@@ -16,6 +16,7 @@ const COMMANDS: &[&str] = &[
     "add_source",
     "remove_source",
     "get_catalog",
+    "accept_next_key",
     "stage_from_index",
 ];
 

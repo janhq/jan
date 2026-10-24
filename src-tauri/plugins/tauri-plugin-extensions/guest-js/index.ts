@@ -27,7 +27,10 @@ export interface StagedInstall {
   manifest: Record<string, unknown>
   /** SRI of the tarball. */
   sha512: string
-  /** Signature-checked. Always false until index signatures exist. */
+  /**
+   * From a source with a pinned key whose index signature verified (and
+   * integrity checked). Never true for a file or an unsigned source.
+   */
   verified: boolean
   /** The tarball matched an SRI pinned by an index source. */
   integrityChecked: boolean
@@ -47,7 +50,9 @@ export interface InstalledExtension {
   /** What the active version requests. */
   permissions: string[]
   source: ExtensionSource
+  /** The active version came from a keyed source whose signature verified. */
   verified: boolean
+  /** The tarball matched an SRI pinned by an index source. */
   integrityChecked: boolean
   installedAt: string
   /** The active version's package.json, or null if unreadable. */
@@ -100,6 +105,7 @@ export type HttpStreamEvent =
 export type ExtensionsErrorKind =
   | 'bundle'
   | 'integrity'
+  | 'signature'
   | 'manifest'
   | 'io'
   | 'notFound'
@@ -208,7 +214,11 @@ export interface IndexSourceEntry {
   name: string
   /** https URL of the index JSON. */
   url: string
-  /** Base64 ed25519 public key, pinned when the source was added. */
+  /**
+   * Base64 ed25519 public key, pinned when the source was added. When set,
+   * every index from the source must be signed by it; without it the
+   * source is unsigned.
+   */
   publicKey?: string
   addedAt: string
 }
@@ -224,6 +234,11 @@ export interface IndexVersion {
   engines?: { jan: string }
   /** Exactly the permissions the package's manifest requests. */
   permissions: string[]
+  /**
+   * An https link to a provenance attestation, as reported by the source.
+   * Jan only shows it; it does not verify it.
+   */
+  provenance?: string
 }
 
 export interface IndexExtension {
@@ -235,11 +250,28 @@ export interface IndexExtension {
   versions: IndexVersion[]
 }
 
-/** An index document, schema 1 (unsigned until signatures land). */
+/**
+ * An index document, schema 1. A keyed source signs its exact bytes in a
+ * detached `<index url>.sig` (base64 of the 64-byte ed25519 signature).
+ */
 export interface CuratedIndex {
   schema: 1
   generatedAt: string
+  /** The base64 ed25519 key the maintainer will sign with next. */
+  nextPublicKey?: string
   extensions: IndexExtension[]
+}
+
+/** A source's index as the catalog shows it. */
+export interface Catalog {
+  index: CuratedIndex
+  /** The source has a pinned key and the index signature verified. */
+  signed: boolean
+  /**
+   * A key rotation to offer: the signed index's `nextPublicKey` when it
+   * differs from the pinned key. Never set for an unsigned source.
+   */
+  nextPublicKey: string | null
 }
 
 export async function listSources(): Promise<IndexSourceEntry[]> {
@@ -259,14 +291,33 @@ export async function removeSource(id: string): Promise<void> {
   await invoke('plugin:extensions|remove_source', { id })
 }
 
-/** Fetches the index of a source (https, 2 MiB, 15 s). */
-export async function getCatalog(sourceId: string): Promise<CuratedIndex> {
+/**
+ * Fetches the index of a source (https, 2 MiB, 15 s, no redirects). For a
+ * keyed source the `.sig` must verify, or this rejects with `signature`.
+ */
+export async function getCatalog(sourceId: string): Promise<Catalog> {
   return await invoke('plugin:extensions|get_catalog', { sourceId })
 }
 
 /**
+ * Re-pins a source's key to the `nextPublicKey` its signed index offers.
+ * Call only after the user confirmed; the index is fetched and verified
+ * again and must still offer exactly this key.
+ */
+export async function acceptNextKey(
+  sourceId: string,
+  nextPublicKey: string
+): Promise<IndexSourceEntry> {
+  return await invoke('plugin:extensions|accept_next_key', {
+    sourceId,
+    nextPublicKey,
+  })
+}
+
+/**
  * Downloads `id@version` as listed by a source, checks the pinned sha512 and
- * that the package matches the listing, and stages it (integrityChecked).
+ * that the package matches the listing, and stages it (integrityChecked;
+ * verified when the source is keyed and its index signature verified).
  */
 export async function stageFromIndex(
   sourceId: string,

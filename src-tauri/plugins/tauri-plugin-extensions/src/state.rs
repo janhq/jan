@@ -39,6 +39,8 @@ pub struct Stage {
     pub source: Source,
     /// Whether the tarball matched a pinned SRI.
     pub integrity_checked: bool,
+    /// Whether it came from a keyed source whose index signature verified.
+    pub verified: bool,
     /// SRI of the entry file.
     pub entry_sha512: String,
 }
@@ -70,8 +72,10 @@ pub struct ExtensionsState {
     pub(crate) local_api_port: Mutex<Option<u16>>,
     /// Extension traffic: no cookie store, no redirects followed.
     pub(crate) http: reqwest::Client,
-    /// Index and tarball downloads: no cookie store, https redirects only.
+    /// Tarball downloads: no cookie store, checked https redirects only.
     pub(crate) index_http: reqwest::Client,
+    /// Index documents and their signatures: no cookie store, no redirects.
+    pub(crate) document_http: reqwest::Client,
     /// Serializes changes to `sources.json`.
     pub(crate) sources_lock: Mutex<()>,
     pub(crate) requests: Mutex<HashMap<String, Running>>,
@@ -132,6 +136,7 @@ impl ExtensionsState {
             local_api_port: Mutex::new(None),
             http: extension_client()?,
             index_http: crate::index::client()?,
+            document_http: crate::index::document_client()?,
             sources_lock: Mutex::new(()),
             requests: Mutex::new(HashMap::new()),
             next_token: AtomicU64::new(0),

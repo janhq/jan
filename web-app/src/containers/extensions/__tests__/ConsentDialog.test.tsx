@@ -39,12 +39,13 @@ describe('ConsentDialog', () => {
     expect(onConfirm).toHaveBeenCalledWith(['ui:notify', 'tools'])
   })
 
-  it('names the source of an index install and needs no trust checkbox', async () => {
+  it('names the source that verified an index install and needs no trust checkbox', async () => {
     const onConfirm = vi.fn()
     render(
       <ConsentDialog
         staged={staged('acme.hello', ['network:api.acme.dev'], {
           verified: true,
+          integrityChecked: true,
         })}
         sourceName="Acme Index"
         onConfirm={onConfirm}
@@ -52,12 +53,40 @@ describe('ConsentDialog', () => {
       />
     )
     const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveTextContent('From Acme Index')
+    expect(dialog).toHaveTextContent('Verified by Acme Index')
     expect(dialog).toHaveTextContent('Integrity checked')
     expect(within(dialog).queryByText('Unverified')).toBeNull()
     expect(within(dialog).queryByRole('checkbox')).toBeNull()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Install' }))
     expect(onConfirm).toHaveBeenCalledWith(['network:api.acme.dev'])
+  })
+
+  it('requires trusting an install from an unsigned source', async () => {
+    const onConfirm = vi.fn()
+    render(
+      <ConsentDialog
+        staged={staged('acme.hello', ['ui:notify'], {
+          verified: false,
+          integrityChecked: true,
+        })}
+        sourceName="Open Index"
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('From Open Index')
+    expect(within(dialog).getByText('Unsigned source')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Unverified')).toBeNull()
+    const install = within(dialog).getByRole('button', { name: 'Install' })
+    expect(install).toBeDisabled()
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', {
+        name: 'I trust the author and this index',
+      })
+    )
+    await userEvent.click(install)
+    expect(onConfirm).toHaveBeenCalledWith(['ui:notify'])
   })
 
   it('cancels without confirming', async () => {

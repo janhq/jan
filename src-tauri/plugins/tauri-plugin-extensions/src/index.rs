@@ -1,5 +1,10 @@
-//! The index format (schema 1, unsigned until P4) and how an index and its
+//! The index format (schema 1) and how an index, its signature and its
 //! tarballs are fetched.
+//!
+//! The index of a source with a pinned key must come with a detached
+//! signature (see [`crate::signature`]); it is checked over the exact bytes
+//! before the index is parsed. A source without a key is read unsigned and
+//! labelled as such.
 //!
 //! An index lists extensions and, per version, an https tarball URL pinned
 //! by a sha512 SRI plus the permissions it requests. Installing from an index
@@ -13,10 +18,11 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, SignatureError};
 use crate::integrity::{self, is_sri};
 use crate::manifest::{is_caret_range, is_extension_id, is_semver};
 use crate::permissions::is_permission_string;
+use crate::signature::{self, is_public_key, MAX_SIGNATURE_BYTES};
 
 /// Largest index document.
 pub const MAX_INDEX_BYTES: usize = 2 * 1024 * 1024;
@@ -46,6 +52,10 @@ pub struct IndexVersion {
     pub engines: Option<IndexEngines>,
     /// Exactly the manifest's `jan.permissions`.
     pub permissions: Vec<String>,
+    /// An https link to a provenance attestation the index maintainer
+    /// checked. Shown as reported by the source; Jan does not verify it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
 }
 
 /// `engines` of an index version.
@@ -84,18 +94,21 @@ pub struct CuratedIndex {
     pub schema: u32,
     /// When the index was generated, as given.
     pub generated_at: String,
+    /// A base64 ed25519 key the maintainer will sign with next. Only offered
+    /// to the user from a signed index, and only re-pinned once confirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_public_key: Option<String>,
     /// The listed extensions.
     pub extensions: Vec<IndexExtension>,
 }
 
-/// Where index bytes come from: a URL, or bytes already in hand (tests, and
-/// a future offline import).
-#[derive(Debug, Clone)]
-pub enum IndexSource {
-    /// Fetched over https.
-    Url(String),
-    /// Parsed as given.
-    Bytes(Vec<u8>),
+/// An index as read from a source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchedIndex {
+    /// The parsed document.
+    pub index: CuratedIndex,
+    /// True when the source has a pinned key and the signature verified.
+    pub signed: bool,
 }
 
 fn is_https(url: &str) -> bool {
@@ -127,6 +140,9 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
     let index: CuratedIndex = serde_json::from_slice(bytes)
         .map_err(|e| Error::Invalid(format!("the index is malformed: {e}")))?;
     let bad = |what: String| Err(Error::Invalid(format!("the index lists {what}")));
+    if index.next_public_key.as_deref().is_some_and(|k| !is_public_key(k)) {
+        return bad("a nextPublicKey that is not a base64 ed25519 key".into());
+    }
     let mut ids = BTreeSet::new();
     for ext in &index.extensions {
         if !is_extension_id(&ext.id) {
@@ -152,6 +168,9 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
             }
             if !is_sri(&v.integrity) {
                 return bad(format!("an integrity for {at} that is not a sha512 SRI"));
+            }
+            if v.provenance.as_deref().is_some_and(|p| !is_https(p)) {
+                return bad(format!("a provenance for {at} that is not https"));
             }
             if !is_caret_range(&v.api_version) {
                 return bad(format!("an apiVersion for {at} that is not a caret range"));
@@ -180,7 +199,7 @@ pub fn resolve<'a>(index: &'a CuratedIndex, id: &str, version: &str) -> Result<&
         .ok_or_else(|| Error::NotFound(format!("the index does not list {id}@{version}")))
 }
 
-/// Why a redirect of an index or tarball fetch is refused, if it is.
+/// Why a redirect of a tarball download is refused, if it is.
 ///
 /// Redirects stay allowed because common tarball hosts (GitHub release
 /// assets, CDNs) answer with one to another host. A hop must stay on https
@@ -206,8 +225,9 @@ pub fn redirect_refusal(url: &Url) -> Option<&'static str> {
     }
 }
 
-/// The client used for indexes and tarballs: no cookies, at most 5
-/// redirects, each checked by [`redirect_refusal`].
+/// The client used for tarballs: no cookies, at most 5 redirects, each
+/// checked by [`redirect_refusal`]. Index documents use
+/// [`document_client`], which follows none.
 pub fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -257,16 +277,64 @@ pub async fn get_capped(client: &reqwest::Client, url: &str, cap: usize, timeout
         .map_err(|_| Error::Network(format!("{url} timed out")))?
 }
 
-/// Reads an index from `source`. A URL must be https; the fetch is capped
-/// at 2 MiB and 15 s.
-pub async fn fetch_index(client: &reqwest::Client, source: &IndexSource) -> Result<CuratedIndex> {
-    match source {
-        IndexSource::Bytes(bytes) => parse(bytes),
-        IndexSource::Url(url) => {
-            crate::sources::https_url(url)?;
-            parse(&get_capped(client, url, MAX_INDEX_BYTES, INDEX_TIMEOUT).await?)
+/// The client used for index documents and their signatures: no cookies
+/// and no redirects, so a 3xx fails the fetch. A signed index binds its
+/// bytes, but neither it nor its `.sig` has a reason to move.
+pub fn document_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| Error::Network(format!("cannot create the HTTP client: {e}")))
+}
+
+/// Checks `bytes` against the pinned `public_key`, if any, then parses
+/// them. `signature` is what fetching the `.sig` gave; it is only looked at
+/// for a keyed source, where a missing, malformed or wrong signature
+/// rejects the index before any of it is parsed.
+pub fn verify_and_parse(
+    bytes: &[u8],
+    signature: Option<Result<Vec<u8>>>,
+    public_key: Option<&str>,
+) -> Result<FetchedIndex> {
+    let signed = match public_key {
+        None => false,
+        Some(key) => {
+            let sig = match signature {
+                Some(Ok(sig)) => sig,
+                Some(Err(e)) => return Err(SignatureError::Missing(e.to_string()).into()),
+                None => return Err(SignatureError::Missing("it was not fetched".into()).into()),
+            };
+            signature::verify_index(bytes, &sig, key)?;
+            true
         }
-    }
+    };
+    Ok(FetchedIndex {
+        index: parse(bytes)?,
+        signed,
+    })
+}
+
+/// Fetches the index at `url` (https only, 2 MiB, 15 s) and, for a source
+/// with a pinned `public_key`, its `<url>.sig` with the same client
+/// (1 KiB, 15 s), and checks it with [`verify_and_parse`].
+pub async fn fetch_index(client: &reqwest::Client, url: &str, public_key: Option<&str>) -> Result<FetchedIndex> {
+    let url = crate::sources::https_url(url)?;
+    fetch_index_at(client, &url, public_key).await
+}
+
+/// [`fetch_index`] without the https check, so tests can serve an index
+/// and its signature from a local plain-http listener.
+pub async fn fetch_index_at(client: &reqwest::Client, url: &Url, public_key: Option<&str>) -> Result<FetchedIndex> {
+    let bytes = get_capped(client, url.as_str(), MAX_INDEX_BYTES, INDEX_TIMEOUT).await?;
+    let signature = match public_key {
+        Some(_) => {
+            let sig_url = signature::signature_url(url);
+            Some(get_capped(client, sig_url.as_str(), MAX_SIGNATURE_BYTES, INDEX_TIMEOUT).await)
+        }
+        None => None,
+    };
+    verify_and_parse(&bytes, signature, public_key)
 }
 
 /// Downloads the tarball of `version` (https only, at most 50 MiB) and
@@ -421,13 +489,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_refuses_plain_http_and_reads_bytes() {
-        let client = client().unwrap();
-        let err = fetch_index(&client, &IndexSource::Url("http://127.0.0.1:9/index.json".into()))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, Error::Invalid(_)), "{err}");
-        let bytes = serde_json::to_vec(&sample()).unwrap();
-        assert!(fetch_index(&client, &IndexSource::Bytes(bytes)).await.is_ok());
+    async fn fetch_refuses_plain_http() {
+        let client = document_client().unwrap();
+        for key in [None, Some(signature::tests::public_key(&signature::tests::signing_key(7)))] {
+            let err = fetch_index(&client, "http://127.0.0.1:9/index.json", key.as_deref())
+                .await
+                .unwrap_err();
+            assert!(matches!(err, Error::Invalid(_)), "{err}");
+        }
     }
 }

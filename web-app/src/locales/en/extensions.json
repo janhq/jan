@@ -101,7 +101,11 @@
     "sha512": "SHA-512: {{hash}}",
     "trustAuthor": "I trust the author of this file",
     "fromSource": "From {{source}}",
-    "integrityChecked": "Integrity checked"
+    "integrityChecked": "Integrity checked",
+    "verifiedBy": "Verified by {{source}}",
+    "unsignedSource": "Unsigned source",
+    "unsignedSourceHint": "This index has no pinned signing key, so nothing proves who published this listing. Install it only if you trust the index.",
+    "trustSource": "I trust the author and this index"
   },
   "install": {
     "fromFile": "Install from file...",
@@ -135,6 +139,16 @@
     "add": "Add source",
     "remove": "Remove {{name}}",
     "keyPinned": "Signing key pinned",
+    "unsignedHint": "No signing key pinned: installs from this index need your explicit trust.",
+    "rotate": {
+      "offer": "This index announces a new signing key.",
+      "review": "Review new key",
+      "title": "Change the signing key of {{name}}?",
+      "description": "The index, signed with the key you pinned, names a new key it will be signed with next. After you accept, only indexes signed with the new key are trusted. Accept only if you expected this change.",
+      "current": "Pinned key",
+      "next": "New key",
+      "confirm": "Pin the new key"
+    },
     "errors": {
       "invalidUrl": "Enter a valid URL.",
       "notHttps": "Only https URLs are allowed.",
@@ -149,7 +163,8 @@
     "by": "by {{publisher}}",
     "install": "Install",
     "update": "Update to {{version}}",
-    "installed": "Installed"
+    "installed": "Installed",
+    "provenance": "Provenance reported by source"
   },
   "errors": {
     "list": "Could not read the installed extensions: {{error}}",

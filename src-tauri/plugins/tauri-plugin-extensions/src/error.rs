@@ -95,6 +95,24 @@ pub enum IntegrityError {
     },
 }
 
+/// Why the signature of an index from a keyed source was refused. Any of
+/// these rejects the whole index before it is parsed.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum SignatureError {
+    /// The pinned key is not base64 of a valid, non-weak ed25519 key.
+    #[error("the pinned public key is not a valid ed25519 key")]
+    MalformedKey,
+    /// The source has a pinned key but its `.sig` could not be fetched.
+    #[error("the source has a pinned key, but its index signature is missing: {0}")]
+    Missing(String),
+    /// The `.sig` is not standard base64 of 64 bytes.
+    #[error("the index signature is not base64 of a 64-byte ed25519 signature")]
+    Malformed,
+    /// The signature does not verify over the index bytes with the key.
+    #[error("the index signature does not match the source's pinned key")]
+    Mismatch,
+}
+
 /// One manifest problem, with the same path syntax as the TypeScript
 /// validator (`jan.contributes.commands[1].id`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -147,6 +165,9 @@ pub enum Error {
     /// See [`IntegrityError`].
     #[error(transparent)]
     Integrity(#[from] IntegrityError),
+    /// See [`SignatureError`].
+    #[error(transparent)]
+    Signature(#[from] SignatureError),
     /// See [`ManifestErrors`].
     #[error(transparent)]
     Manifest(#[from] ManifestErrors),
@@ -185,6 +206,7 @@ impl Error {
         match self {
             Error::Bundle(_) => "bundle",
             Error::Integrity(_) => "integrity",
+            Error::Signature(_) => "signature",
             Error::Manifest(_) => "manifest",
             Error::Store(_) | Error::Io(_) => "io",
             Error::NotFound(_) => "notFound",
