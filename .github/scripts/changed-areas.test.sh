@@ -27,7 +27,7 @@ expect() {
 }
 
 none='crates=[]'
-all_crates='crates=["jan-cli","plugins/tauri-plugin-agent-tools","plugins/tauri-plugin-hardware","plugins/tauri-plugin-llamacpp","plugins/tauri-plugin-rag","plugins/tauri-plugin-vector-db","plugins/tauri-plugin-websearch","utils"]'
+all_crates='crates=["jan-cli","plugins/tauri-plugin-agent-tools","plugins/tauri-plugin-extensions","plugins/tauri-plugin-hardware","plugins/tauri-plugin-llamacpp","plugins/tauri-plugin-rag","plugins/tauri-plugin-vector-db","plugins/tauri-plugin-websearch","utils"]'
 all_app='app=["cli","desktop","e2e"]'
 
 expect 'web-app only' 'web-app/src/routes/index.tsx' \

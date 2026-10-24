@@ -320,6 +320,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
     }
 
+    #[cfg(feature = "extensions")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_extensions::init(
+            crate::core::app::paths::extensions_dir,
+        ));
+    }
+
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![

@@ -15,6 +15,7 @@
     "security": {
       "capabilities": [
         "default",
+        "desktop",
         "log-app-window",
         "logs-window",
         "system-monitor-window",
