@@ -54,7 +54,7 @@ const v = (version: string) => ({
   version,
   tarball: `https://a.b/${version}.tgz`,
   integrity: 'sha512-x',
-  apiVersion: '^0.1.0',
+  apiVersion: '^1.0.0',
   permissions: [],
 })
 

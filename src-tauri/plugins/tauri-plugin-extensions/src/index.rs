@@ -394,10 +394,10 @@ mod tests {
                 "homepage": "https://acme.example.com",
                 "versions": [
                     { "version": "0.1.0", "tarball": "https://cdn.example.com/hello-0.1.0.tgz",
-                      "integrity": SRI, "apiVersion": "^0.1.0", "engines": { "jan": ">=0.8.0" },
+                      "integrity": SRI, "apiVersion": "^1.0.0", "engines": { "jan": ">=0.8.0" },
                       "permissions": ["ui:notify"] },
                     { "version": "0.2.0", "tarball": "https://cdn.example.com/hello-0.2.0.tgz",
-                      "integrity": SRI, "apiVersion": "^0.1.0", "permissions": ["ui:notify", "tools"] }
+                      "integrity": SRI, "apiVersion": "^1.0.0", "permissions": ["ui:notify", "tools"] }
                 ]
             }]
         })

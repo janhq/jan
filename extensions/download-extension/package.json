@@ -8,7 +8,7 @@
     "displayName": "Download Manager",
     "description": "Download and manage files and AI models in Jan.",
     "publisher": "Jan",
-    "apiVersion": "^0.1.0",
+    "apiVersion": "^1.0.0",
     "main": "dist/index.js",
     "permissions": []
   },

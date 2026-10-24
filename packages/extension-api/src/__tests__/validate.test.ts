@@ -16,7 +16,7 @@ const minimal = (): Pkg => ({
     id: 'acme.hello',
     displayName: 'Hello',
     publisher: 'Acme',
-    apiVersion: '^0.1.0',
+    apiVersion: '^1.0.0',
     main: 'dist/index.js',
     permissions: [],
   },
@@ -31,7 +31,7 @@ const full = (): Pkg => ({
     displayName: '%displayName%',
     description: 'Says hello',
     publisher: 'Acme',
-    apiVersion: '^0.1.0',
+    apiVersion: '^1.0.0',
     main: './dist/index.js',
     permissions: [
       'ui:notify',

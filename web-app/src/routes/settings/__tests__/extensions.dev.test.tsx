@@ -79,7 +79,7 @@ const writePackage = (jan: Record<string, unknown>) =>
         id: 'acme.hello',
         displayName: 'Hello Provider',
         publisher: 'Acme',
-        apiVersion: '^0.1.0',
+        apiVersion: '^1.0.0',
         main: 'dist/index.js',
         permissions: ['ui:notify', 'network:*'],
         ...jan,
