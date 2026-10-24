@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
-import { ExtensionManager } from './extension'
+import { EngineManager } from '@janhq/core'
 import path from 'path'
 import type { VFile } from 'vfile'
 
@@ -230,8 +230,8 @@ export function getReadableLanguageName(language: string): string {
 }
 
 export const isLocalProvider = (provider: string) => {
-  const extension = ExtensionManager.getInstance().getEngine(provider)
-  return extension && 'load' in extension
+  const engine = EngineManager.instance().get(provider)
+  return !!engine && 'load' in engine
 }
 
 export const toGigabytes = (

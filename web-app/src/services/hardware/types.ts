@@ -10,7 +10,6 @@ export interface DeviceList {
   name: string
   mem: number
   free: number
-  activated: boolean
 }
 
 export interface HardwareService {

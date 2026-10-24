@@ -1,5 +1,6 @@
 import type { ExtensionContext } from '@janhq/extension-api'
 import type { downloads } from '../download'
+import type { EngineManager } from '../extensions/engines/EngineManager'
 import type { fs } from '../fs'
 import type { appSettings } from '../settings'
 import type { ServiceRegistry } from './services'
@@ -30,5 +31,7 @@ export interface InternalExtensionContext extends ExtensionContext {
     readonly appSettings: typeof appSettings
     readonly downloads: typeof downloads
     readonly secrets: HostSecretsReader
+    /** Registers inference engines; disposing a registration removes it. */
+    readonly engines: Pick<EngineManager, 'register'>
   }
 }

@@ -1,9 +1,7 @@
 import type { BaseExtension } from '@janhq/core'
 import type { ExtensionManifest } from '@/lib/extension'
-import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
 import * as rag from '../../../../extensions/rag-extension/package.json'
 import * as vectorDb from '../../../../extensions/vector-db-extension/package.json'
-import * as mlx from '../../../../extensions/mlx-extension/package.json'
 
 type ExtensionCtor = new (
   url: string,
@@ -36,13 +34,6 @@ type BundledEntry = {
 // hub is ready), matching the pre-bundling load order.
 const ENTRIES: BundledEntry[] = [
   {
-    load: () => import('@janhq/llamacpp-extension'),
-    name: llamacpp.name,
-    productName: llamacpp.productName,
-    version: llamacpp.version,
-    description: llamacpp.description,
-  },
-  {
     load: () => import('@janhq/rag-extension'),
     name: rag.name,
     productName: rag.productName,
@@ -57,19 +48,6 @@ const ENTRIES: BundledEntry[] = [
     description: vectorDb.description,
   },
 ]
-
-// The MLX extension depends on @janhq/tauri-plugin-mlx-api, which only exists
-// on macOS. IS_MACOS is a build-time constant, so this import() is dead-code
-// eliminated on other platforms and never enters the bundle graph.
-if (IS_MACOS) {
-  ENTRIES.push({
-    load: () => import('@janhq/mlx-extension'),
-    name: mlx.name,
-    productName: mlx.productName,
-    version: mlx.version,
-    description: mlx.description,
-  })
-}
 
 export async function getBundledExtensions(
   opts: { mobile?: boolean } = {}

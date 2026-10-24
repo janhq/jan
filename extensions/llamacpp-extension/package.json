@@ -4,6 +4,15 @@
   "version": "1.0.1",
   "description": "This extension enables llama.cpp chat completion API calls",
   "main": "dist/index.js",
+  "jan": {
+    "id": "jan.llamacpp",
+    "displayName": "llama.cpp Inference Engine",
+    "description": "This extension enables llama.cpp chat completion API calls",
+    "publisher": "Jan",
+    "apiVersion": "^0.1.0",
+    "main": "dist/index.js",
+    "permissions": []
+  },
   "engine": "llama.cpp",
   "author": "Jan <service@jan.ai>",
   "license": "Apache-2.0",

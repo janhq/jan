@@ -39,7 +39,6 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
 
     window.core.events = new EventEmitter()
     window.core.extensionManager = new ExtensionManager()
-    window.core.extensionHost = getExtensionHost()
     window.core.engineManager = new EngineManager()
     window.core.modelManager = new ModelManager()
 
@@ -52,8 +51,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // Always finish setup even if registration/load throws so a single
     // faulty extension can't gate the entire UI.
     setStatus({ key: 'registeringExtensions' })
-    // Host built-ins first: legacy extensions (llamacpp, mlx) reach host
-    // services such as Downloads through window.core.extensionHost.
+    // Host built-ins first, then the legacy extensions.
     try {
       await getExtensionHost().activateBuiltins(
         getHostBuiltins({ mobile: isPlatformIOS() || isPlatformAndroid() })

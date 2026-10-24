@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
+import { hostServices, newExtension } from './host'
 
 vi.mock('../backend-settings')
 
@@ -8,13 +9,7 @@ describe('migrateLegacyModels', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    extension = new llamacpp_extension({
-      name: 'llamacpp-extension',
-      productName: 'LlamaC++ Extension',
-      version: '1.0.0',
-      description: 'Test extension',
-      main: 'index.js',
-    })
+    extension = newExtension()
     // Set up provider path to avoid issues with getProviderPath() calls
     extension['providerPath'] = '/path/to/jan/llamacpp'
   })

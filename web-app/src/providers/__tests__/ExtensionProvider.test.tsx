@@ -131,10 +131,9 @@ describe('ExtensionProvider', () => {
     expect(h.load).toHaveBeenCalled()
   })
 
-  it('exposes the host and activates its built-ins before the legacy manager', async () => {
+  it('activates the host built-ins before the legacy manager', async () => {
     renderProvider()
     await screen.findByTestId('child')
-    expect(window.core?.extensionHost).toBe(h.host)
     expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
     // Installed and legacy loads do not wait on each other.
     await waitFor(() =>

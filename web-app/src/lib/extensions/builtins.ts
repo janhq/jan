@@ -1,6 +1,8 @@
 import type { ExtensionModule, ValidatedManifest } from '@janhq/extension-api'
 import * as assistant from '../../../../extensions/assistant-extension/package.json'
 import * as download from '../../../../extensions/download-extension/package.json'
+import * as llamacpp from '../../../../extensions/llamacpp-extension/package.json'
+import * as mlx from '../../../../extensions/mlx-extension/package.json'
 
 /**
  * A built-in that runs in the host process through `activate(ctx)`. The
@@ -53,7 +55,27 @@ export const HOST_BUILTINS: BuiltinExtension[] = [
     }),
     load: () => import('@janhq/download-extension'),
   },
+  {
+    manifest: manifestOf({
+      name: llamacpp.name,
+      version: llamacpp.version,
+      jan: llamacpp.jan,
+    }),
+    // No dependsOn download: the engines look the Downloads service up per
+    // download, so a failed download built-in must not take inference down.
+    load: () => import('@janhq/llamacpp-extension'),
+  },
 ]
+
+// The MLX extension depends on @janhq/tauri-plugin-mlx-api, which only exists
+// on macOS. IS_MACOS is a build-time constant, so this import() is dead-code
+// eliminated on other platforms and never enters the bundle graph.
+if (IS_MACOS) {
+  HOST_BUILTINS.push({
+    manifest: manifestOf({ name: mlx.name, version: mlx.version, jan: mlx.jan }),
+    load: () => import('@janhq/mlx-extension'),
+  })
+}
 
 export function getHostBuiltins(
   opts: { mobile?: boolean } = {}

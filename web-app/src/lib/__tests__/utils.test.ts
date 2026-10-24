@@ -9,7 +9,9 @@ import {
   formatDuration,
   getModelDisplayName,
   splitHtmlArtifacts,
+  isLocalProvider,
 } from '../utils'
+import { EngineManager, type AIEngine } from '@janhq/core'
 
 describe('getProviderLogo', () => {
   it('returns correct logo paths for known providers', () => {
@@ -432,5 +434,15 @@ describe('splitHtmlArtifacts', () => {
     const segs = splitHtmlArtifacts(content)
     expect(segs.map((s) => s.type)).toEqual(['markdown', 'svg'])
     expect(segs[1].content).toBe('<svg><circle/></svg>')
+  })
+})
+
+describe('isLocalProvider', () => {
+  it('is true only for a provider whose engine the engine manager holds', () => {
+    const manager = new EngineManager()
+    manager.register({ provider: 'llamacpp', load: vi.fn() } as unknown as AIEngine)
+    vi.spyOn(EngineManager, 'instance').mockReturnValue(manager)
+    expect(isLocalProvider('llamacpp')).toBe(true)
+    expect(isLocalProvider('openai')).toBe(false)
   })
 })

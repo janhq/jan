@@ -19,6 +19,7 @@ import {
   appSettings,
   createServiceRegistry,
   downloads,
+  EngineManager,
   fs,
   type ServiceRegistry,
 } from '@janhq/core'
@@ -568,6 +569,7 @@ export class ExtensionHost {
           appSettings,
           downloads,
           secrets: { get: (key) => this.options.secrets.get(key) },
+          engines: { register: (engine) => EngineManager.instance().register(engine) },
         }
       )
       await entry.module.activate(entry.ctx)

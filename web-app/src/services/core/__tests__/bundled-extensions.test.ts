@@ -5,12 +5,13 @@ import { HOST_BUILTINS, getHostBuiltins } from '@/lib/extensions/builtins'
 import assistant from '../../../../../extensions/assistant-extension/package.json'
 import download from '../../../../../extensions/download-extension/package.json'
 import llamacpp from '../../../../../extensions/llamacpp-extension/package.json'
+import mlx from '../../../../../extensions/mlx-extension/package.json'
 import rag from '../../../../../extensions/rag-extension/package.json'
 import vectorDb from '../../../../../extensions/vector-db-extension/package.json'
 
-// vitest defines IS_MACOS as false, so mlx is not bundled here.
-const LEGACY_PACKAGES = [llamacpp, rag, vectorDb]
-const HOST_PACKAGES = [assistant, download]
+// vitest defines IS_MACOS as false, so mlx is not a host built-in here.
+const LEGACY_PACKAGES = [rag, vectorDb]
+const HOST_PACKAGES = [assistant, download, llamacpp]
 
 const manifestFields = (m: {
   name: string
@@ -76,6 +77,14 @@ describe('host built-ins', () => {
       const mod = await b.load()
       expect(typeof mod.activate).toBe('function')
     }
+  })
+
+  // mlx is a host built-in only on macOS; its manifest must still be valid.
+  it('ships a valid manifest for the macOS-only mlx built-in', () => {
+    expect(validateManifest(mlx)).toMatchObject({
+      ok: true,
+      manifest: { id: 'jan.mlx' },
+    })
   })
 
   it('runs no host built-in on mobile', () => {

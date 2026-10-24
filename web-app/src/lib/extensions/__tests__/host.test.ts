@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ExtensionContext, ExtensionModule } from '@janhq/extension-api'
-import { ServiceKey, type InternalExtensionContext } from '@janhq/core'
+import {
+  EngineManager,
+  ServiceKey,
+  type AIEngine,
+  type InternalExtensionContext,
+} from '@janhq/core'
 import { ExtensionHost, toastTitle } from '../host'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
@@ -132,6 +137,24 @@ describe('ExtensionHost', () => {
     expect(host.services.get(key)?.ping()).toBe('pong')
     await host.deactivateAll()
     expect(host.services.get(key)).toBeUndefined()
+  })
+
+  it('registers built-in engines with the app engine manager until deactivation', async () => {
+    const manager = new EngineManager()
+    window.core = { ...window.core, engineManager: manager } as typeof window.core
+    const engine = { provider: 'local' } as AIEngine
+    const host = newHost()
+    await host.activateBuiltin(
+      builtin(manifest('jan.engine'), {
+        activate: (ctx: ExtensionContext) => {
+          const { internal } = ctx as InternalExtensionContext
+          ctx.subscriptions.add(internal.engines.register(engine))
+        },
+      })
+    )
+    expect(manager.get('local')).toBe(engine)
+    await host.deactivateAll()
+    expect(manager.get('local')).toBeUndefined()
   })
 
   it('lets built-ins read host keyring secrets through the internal context', async () => {

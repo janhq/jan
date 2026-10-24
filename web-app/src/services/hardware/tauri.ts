@@ -3,6 +3,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
+import { ServiceKeys } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
 import type { HardwareData, SystemUsage, DeviceList } from './types'
 import { DefaultHardwareService } from './default'
 
@@ -16,22 +18,17 @@ export class TauriHardwareService extends DefaultHardwareService {
   }
 
   async getLlamacppDevices(): Promise<DeviceList[]> {
-    const extensionManager = window.core.extensionManager
-    const llamacppExtension = extensionManager.getByName('@janhq/llamacpp-extension')
-
-    if (!llamacppExtension) {
+    const llamacpp = getExtensionHost().services.get(ServiceKeys.Llamacpp)
+    if (!llamacpp) {
       throw new Error('llamacpp extension not found')
     }
-
-    return llamacppExtension.getDevices()
+    return llamacpp.getDevices()
   }
 
   async reconcileLlamacppDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
-    const llamacppExtension = window.core.extensionManager.getByName(
-      '@janhq/llamacpp-extension'
-    )
-    if (!llamacppExtension?.reconcileEngineDevices) return 'unchanged'
-    return llamacppExtension.reconcileEngineDevices()
+    const llamacpp = getExtensionHost().services.get(ServiceKeys.Llamacpp)
+    if (!llamacpp) return 'unchanged'
+    return llamacpp.reconcileEngineDevices()
   }
 
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
