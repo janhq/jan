@@ -15,11 +15,6 @@ pub fn is_cors_header(header_name: &str) -> bool {
     header_lower.starts_with("access-control-")
 }
 
-/// Strips a leading scheme (e.g. "app://", "http://") from a host/origin value.
-fn strip_scheme(value: &str) -> &str {
-    value.split("://").nth(1).unwrap_or(value)
-}
-
 /// Validates if host is in trusted hosts list
 pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     if trusted_hosts.iter().any(|hosts| hosts.contains(&"*".to_string())) {
@@ -71,26 +66,56 @@ fn host_without_port(host: &str) -> &str {
     }
 }
 
-/// Whether `host` (with optional port) matches an entry the user put in the
-/// Trusted Hosts list. Entries match on hostname; ports are ignored.
+/// Whether `host` (with optional port) matches a bare-host entry the user put
+/// in the Trusted Hosts list. Entries match on hostname; ports are ignored.
+/// Scheme-qualified entries (e.g. "app://obsidian.md") are skipped: they only
+/// apply to Origins, where the scheme is known (see `scheme_entry_matches`).
 fn host_in_trusted_list(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     let host_without_port = host_without_port(host);
-    trusted_hosts.iter().flatten().any(|valid| {
-        // Users may list a scheme-qualified origin (e.g. "app://obsidian.md")
-        // in Trusted Hosts. Normalize both sides so the bare host matches.
-        let valid = strip_scheme(valid);
-        let host_lower = host.to_lowercase();
-        let valid_lower = valid.to_lowercase();
+    trusted_hosts
+        .iter()
+        .flatten()
+        .filter(|valid| !valid.contains("://"))
+        .any(|valid| {
+            let host_lower = host.to_lowercase();
+            let valid_lower = valid.to_lowercase();
 
-        if host_lower == valid_lower {
-            return true;
-        }
+            if host_lower == valid_lower {
+                return true;
+            }
 
-        let valid_without_port = self::host_without_port(valid);
+            let valid_without_port = self::host_without_port(valid);
 
-        !valid_without_port.is_empty()
-            && host_without_port.to_lowercase() == valid_without_port.to_lowercase()
-    })
+            !valid_without_port.is_empty()
+                && host_without_port.to_lowercase() == valid_without_port.to_lowercase()
+        })
+}
+
+/// Whether a parsed origin (lowercase `scheme`, `authority`) matches a
+/// scheme-qualified Trusted Hosts entry such as "app://obsidian.md" or
+/// "http://localhost:3000/v1". The scheme and hostname must match; the port
+/// must match too when the entry names one. Any path on the entry is ignored.
+fn scheme_entry_matches(scheme: &str, authority: &str, entry: &str) -> bool {
+    let Some((entry_scheme, rest)) = entry.trim().split_once("://") else {
+        return false;
+    };
+    let entry_authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    if !entry_scheme.eq_ignore_ascii_case(scheme)
+        || entry_authority.is_empty()
+        || !is_valid_authority(entry_authority)
+    {
+        return false;
+    }
+    let entry_authority = entry_authority.to_ascii_lowercase();
+    let entry_host = host_without_port(&entry_authority);
+    if entry_host.len() == entry_authority.len()
+        || (entry_authority.starts_with('[') && entry_authority.ends_with(']'))
+    {
+        // No port in the entry: any port on that scheme and host.
+        host_without_port(authority) == entry_host
+    } else {
+        authority == entry_authority
+    }
 }
 
 /// Whether `port` is a decimal port number in 1-65535.
@@ -167,8 +192,9 @@ pub fn is_same_or_app_origin(origin: &str, host_header: &str) -> bool {
 /// the page that issued the request, so only these are trusted:
 /// - everything `is_same_or_app_origin` accepts;
 /// - loopback pages: `http(s)://localhost`, `127.0.0.1`, `[::1]` on any port;
-/// - a host the user listed in Trusted Hosts (any scheme, so a browser
-///   extension id can be listed), or `*` there.
+/// - a bare host the user listed in Trusted Hosts (any scheme, so a browser
+///   extension id can be listed), a scheme-qualified entry such as
+///   `app://obsidian.md` (that scheme and host only), or `*` there.
 ///
 /// A private-range IP origin (another machine on the LAN) is NOT trusted
 /// unless listed. `null` and anything malformed are untrusted.
@@ -187,6 +213,10 @@ pub fn is_trusted_origin(origin: &str, host_header: &str, trusted_hosts: &[Vec<S
         return true;
     }
     host_in_trusted_list(&authority, trusted_hosts)
+        || trusted_hosts
+            .iter()
+            .flatten()
+            .any(|entry| scheme_entry_matches(&scheme, &authority, entry))
 }
 
 #[cfg(test)]
