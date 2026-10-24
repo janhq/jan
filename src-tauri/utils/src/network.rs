@@ -142,7 +142,7 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
     };
 
     let host = match parsed_url.host_str() {
-        Some(h) => h,
+        Some(h) => normalize_no_proxy_host(h),
         None => return false,
     };
 
@@ -152,17 +152,35 @@ pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
             return true;
         }
 
-        // Simple wildcard matching
+        // `*.example.com` matches `example.com` and its subdomains, but not
+        // unrelated hosts that merely end with the same text (`notexample.com`).
         if let Some(domain) = entry.strip_prefix("*.") {
-            if host.ends_with(domain) {
+            if host == domain
+                || host
+                    .strip_suffix(domain)
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+            {
                 return true;
             }
-        } else if host == entry {
+        } else if host == normalize_no_proxy_host(entry) {
             return true;
         }
     }
 
     false
+}
+
+/// Strips the brackets `Url::host_str()` puts around IPv6 literals (`[::1]`)
+/// and canonicalizes the address, so a bare `::1` entry matches.
+fn normalize_no_proxy_host(host: &str) -> String {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    match bare.parse::<std::net::Ipv6Addr>() {
+        Ok(addr) => addr.to_string(),
+        Err(_) => bare.to_string(),
+    }
 }
 
 /// Creates reqwest::Proxy from ProxyConfig with authentication
