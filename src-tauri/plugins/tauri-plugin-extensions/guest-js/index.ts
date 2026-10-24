@@ -201,3 +201,77 @@ export async function httpFetchStream(
 export async function httpCancel(id: string, requestId: string): Promise<void> {
   await invoke('plugin:extensions|http_cancel', { id, requestId })
 }
+
+/** An index source the user added (`sources.json`). */
+export interface IndexSourceEntry {
+  id: string
+  name: string
+  /** https URL of the index JSON. */
+  url: string
+  /** Base64 ed25519 public key, pinned when the source was added. */
+  publicKey?: string
+  addedAt: string
+}
+
+/** One version of an indexed extension. */
+export interface IndexVersion {
+  version: string
+  /** https URL of the tarball. */
+  tarball: string
+  /** `sha512-<base64>` of the tarball. */
+  integrity: string
+  apiVersion: string
+  engines?: { jan: string }
+  /** Exactly the permissions the package's manifest requests. */
+  permissions: string[]
+}
+
+export interface IndexExtension {
+  id: string
+  displayName: string
+  publisher: string
+  description?: string
+  homepage?: string
+  versions: IndexVersion[]
+}
+
+/** An index document, schema 1 (unsigned until signatures land). */
+export interface CuratedIndex {
+  schema: 1
+  generatedAt: string
+  extensions: IndexExtension[]
+}
+
+export async function listSources(): Promise<IndexSourceEntry[]> {
+  return await invoke('plugin:extensions|list_sources')
+}
+
+/** Adds an https index source; `publicKey` is pinned if given. */
+export async function addSource(
+  url: string,
+  name: string,
+  publicKey?: string
+): Promise<IndexSourceEntry> {
+  return await invoke('plugin:extensions|add_source', { url, name, publicKey })
+}
+
+export async function removeSource(id: string): Promise<void> {
+  await invoke('plugin:extensions|remove_source', { id })
+}
+
+/** Fetches the index of a source (https, 2 MiB, 15 s). */
+export async function getCatalog(sourceId: string): Promise<CuratedIndex> {
+  return await invoke('plugin:extensions|get_catalog', { sourceId })
+}
+
+/**
+ * Downloads `id@version` as listed by a source, checks the pinned sha512 and
+ * that the package matches the listing, and stages it (integrityChecked).
+ */
+export async function stageFromIndex(
+  sourceId: string,
+  id: string,
+  version: string
+): Promise<StagedInstall> {
+  return await invoke('plugin:extensions|stage_from_index', { sourceId, id, version })
+}

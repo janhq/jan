@@ -629,3 +629,31 @@ pub(crate) fn network_grants(state: &ExtensionsState, id: &str) -> Result<Vec<St
     }
     Ok(entry.granted.clone())
 }
+
+/// Stages the tarball `bytes` of `id@version` as listed in `index` by the
+/// user-added `source`. The bytes must match the pinned SRI, and the
+/// package's id, version and permissions must equal the listing.
+pub fn stage_index_tarball(
+    state: &ExtensionsState,
+    source: &crate::sources::IndexSourceEntry,
+    index: &crate::index::CuratedIndex,
+    id: &str,
+    version: &str,
+    bytes: &[u8],
+) -> Result<StagedInstall> {
+    let listed = crate::index::resolve(index, id, version)?;
+    crate::integrity::verify(bytes, &listed.integrity)?;
+    let expected = Expected {
+        id: id.to_string(),
+        version: version.to_string(),
+        permissions: listed.permissions.clone(),
+    };
+    let origin = Source::Index {
+        source_id: source.id.clone(),
+        source_name: source.name.clone(),
+        url: source.url.clone(),
+        tarball: listed.tarball.clone(),
+        integrity: listed.integrity.clone(),
+    };
+    stage_tarball(state, bytes, origin, true, Some(&expected))
+}

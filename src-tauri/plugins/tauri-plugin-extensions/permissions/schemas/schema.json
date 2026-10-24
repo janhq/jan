@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the add_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-source",
+          "markdownDescription": "Enables the add_source command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-source",
+          "markdownDescription": "Denies the add_source command without any pre-configured scope."
+        },
+        {
           "description": "Enables the confirm_install command without any pre-configured scope.",
           "type": "string",
           "const": "allow-confirm-install",
@@ -317,6 +329,18 @@
           "type": "string",
           "const": "deny-discard-stage",
           "markdownDescription": "Denies the discard_stage command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-catalog",
+          "markdownDescription": "Enables the get_catalog command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_catalog command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-catalog",
+          "markdownDescription": "Denies the get_catalog command without any pre-configured scope."
         },
         {
           "description": "Enables the http_cancel command without any pre-configured scope.",
@@ -367,6 +391,18 @@
           "markdownDescription": "Denies the list command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-sources",
+          "markdownDescription": "Enables the list_sources command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_sources command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-sources",
+          "markdownDescription": "Denies the list_sources command without any pre-configured scope."
+        },
+        {
           "description": "Enables the read_entry command without any pre-configured scope.",
           "type": "string",
           "const": "allow-read-entry",
@@ -377,6 +413,18 @@
           "type": "string",
           "const": "deny-read-entry",
           "markdownDescription": "Denies the read_entry command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remove_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-remove-source",
+          "markdownDescription": "Enables the remove_source command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remove_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-remove-source",
+          "markdownDescription": "Denies the remove_source command without any pre-configured scope."
         },
         {
           "description": "Enables the rollback command without any pre-configured scope.",
@@ -439,6 +487,18 @@
           "markdownDescription": "Denies the stage_bundle command without any pre-configured scope."
         },
         {
+          "description": "Enables the stage_from_index command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stage-from-index",
+          "markdownDescription": "Enables the stage_from_index command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stage_from_index command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stage-from-index",
+          "markdownDescription": "Denies the stage_from_index command without any pre-configured scope."
+        },
+        {
           "description": "Enables the uninstall command without any pre-configured scope.",
           "type": "string",
           "const": "allow-uninstall",
@@ -451,10 +511,10 @@
           "markdownDescription": "Denies the uninstall command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/desktop.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`",
+          "description": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/desktop.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-stage-from-index`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/desktop.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`"
+          "markdownDescription": "Default permissions for the extensions plugin: every command, for the main window only (see capabilities/desktop.json)\n#### This default permission set includes:\n\n- `allow-stage-bundle`\n- `allow-confirm-install`\n- `allow-discard-stage`\n- `allow-list`\n- `allow-set-enabled`\n- `allow-set-grants`\n- `allow-uninstall`\n- `allow-rollback`\n- `allow-read-entry`\n- `allow-set-safe-mode`\n- `allow-http-fetch`\n- `allow-http-fetch-stream`\n- `allow-http-cancel`\n- `allow-list-sources`\n- `allow-add-source`\n- `allow-remove-source`\n- `allow-get-catalog`\n- `allow-stage-from-index`"
         }
       ]
     }

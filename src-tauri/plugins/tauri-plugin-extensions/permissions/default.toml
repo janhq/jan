@@ -14,4 +14,9 @@ permissions = [
     "allow-http-fetch",
     "allow-http-fetch-stream",
     "allow-http-cancel",
+    "allow-list-sources",
+    "allow-add-source",
+    "allow-remove-source",
+    "allow-get-catalog",
+    "allow-stage-from-index",
 ]

@@ -12,6 +12,11 @@ const COMMANDS: &[&str] = &[
     "http_fetch",
     "http_fetch_stream",
     "http_cancel",
+    "list_sources",
+    "add_source",
+    "remove_source",
+    "get_catalog",
+    "stage_from_index",
 ];
 
 fn main() {
