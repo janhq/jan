@@ -25,10 +25,8 @@
     "button": "Load unpacked",
     "title": "Load {{name}} from a folder?",
     "description": "This development extension runs until Jan restarts. It is granted everything it requests:",
-    "noPermissions": "It requests no permissions.",
     "proposals": "Proposed APIs: {{proposals}}",
     "confirm": "Load",
-    "cancel": "Cancel",
     "readFailed": "Could not read {{file}}: {{error}}",
     "invalidJson": "package.json is not valid JSON: {{error}}",
     "invalidManifest": "The manifest is invalid: {{errors}}",
@@ -69,5 +67,95 @@
       "title": "Change messages before they are sent",
       "description": "Rewrite the text of your messages before they reach the model."
     }
+  },
+  "cancel": "Cancel",
+  "noPermissions": "It requests no permissions.",
+  "tabs": {
+    "installed": "Installed",
+    "catalog": "Catalog"
+  },
+  "sections": {
+    "builtin": "Built-in",
+    "installed": "Installed",
+    "development": "Loaded for development"
+  },
+  "noneInstalled": "No extensions installed yet.",
+  "enable": "Enable {{name}}",
+  "details": {
+    "open": "Details",
+    "back": "Back to extensions",
+    "version": "Version {{version}}",
+    "rollback": "Roll back to {{version}}",
+    "permissions": "Granted permissions",
+    "revoke": "Revoke",
+    "settings": "Settings",
+    "uninstall": "Uninstall",
+    "uninstallTitle": "Uninstall {{name}}?",
+    "uninstallDescription": "Its files are removed from this computer. This cannot be undone.",
+    "builtinFixed": "Built-in extensions are part of Jan and cannot be disabled or uninstalled.",
+    "notFound": "This extension is not installed."
+  },
+  "origin": {
+    "unverified": "Unverified",
+    "unverifiedHint": "This file did not come from an index you added. Install it only if you trust whoever gave it to you.",
+    "sha512": "SHA-512: {{hash}}",
+    "trustAuthor": "I trust the author of this file",
+    "fromSource": "From {{source}}",
+    "integrityChecked": "Integrity checked"
+  },
+  "install": {
+    "fromFile": "Install from file...",
+    "bundleFilter": "Extension bundle",
+    "title": "Install {{name}}?",
+    "description": "Version {{version}} by {{publisher}}. It will be granted these permissions:",
+    "confirm": "Install",
+    "done": "{{name}} {{version}} installed"
+  },
+  "update": {
+    "title": "Update {{name}} to {{version}}?",
+    "description": "You have version {{version}}. Permissions you already granted are kept.",
+    "confirm": "Update",
+    "added": "New permissions",
+    "removed": "No longer needed",
+    "nothingAdded": "This update asks for no new permissions."
+  },
+  "safeMode": {
+    "title": "Safe mode",
+    "description": "Start Jan without loading any installed extension. Built-in extensions still run.",
+    "banner": "Safe mode is on. Installed extensions are not loaded.",
+    "turnOff": "Turn off safe mode"
+  },
+  "sources": {
+    "title": "Index sources",
+    "description": "An index lists extensions you can install. Add only indexes you trust.",
+    "none": "No sources yet. Add an index URL to browse its extensions.",
+    "url": "Index URL",
+    "name": "Name",
+    "publicKey": "Public key (optional)",
+    "add": "Add source",
+    "remove": "Remove {{name}}",
+    "keyPinned": "Signing key pinned",
+    "errors": {
+      "invalidUrl": "Enter a valid URL.",
+      "notHttps": "Only https URLs are allowed.",
+      "credentials": "The URL must not contain a user name or password.",
+      "required": "Enter a name.",
+      "invalidKey": "Enter a base64 ed25519 public key."
+    }
+  },
+  "catalog": {
+    "loading": "Loading the catalog...",
+    "empty": "This index lists no extensions.",
+    "by": "by {{publisher}}",
+    "install": "Install",
+    "update": "Update to {{version}}",
+    "installed": "Installed"
+  },
+  "errors": {
+    "list": "Could not read the installed extensions: {{error}}",
+    "stage": "Could not open the extension: {{error}}",
+    "install": "Could not install {{name}}: {{error}}",
+    "change": "The change failed: {{error}}",
+    "catalog": "Could not load {{source}}: {{error}}"
   }
 }

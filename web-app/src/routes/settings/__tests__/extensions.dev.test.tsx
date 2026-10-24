@@ -3,9 +3,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import type { HostedExtension } from '@/lib/extensions/host'
 import { manifest } from '@/lib/extensions/__tests__/fixtures'
+import { DefaultExtensionsService } from '@/services/extensions/default'
 
 const files = vi.hoisted(() => ({ map: new Map<string, string>() }))
 const picker = vi.hoisted(() => ({ open: vi.fn() }))
@@ -43,7 +44,10 @@ vi.mock('@janhq/core', async (importOriginal) => ({
 }))
 vi.mock('@/lib/extensions/host', () => ({ getExtensionHost: () => host }))
 vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({ dialog: () => ({ open: picker.open }) }),
+  useServiceHub: () => ({
+    dialog: () => ({ open: picker.open }),
+    extensions: () => new DefaultExtensionsService(),
+  }),
 }))
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: { getInstance: () => ({ listExtensions: () => [] }) },
@@ -60,9 +64,10 @@ vi.mock('@/i18n/react-i18next-compat', async () => {
 })
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: { component: ComponentType }) => config,
+  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
 }))
 
-import { Route } from '../extensions'
+import { Route } from '../extensions/index'
 
 const DIR = '/home/dev/hello'
 const Page = Route.component as ComponentType

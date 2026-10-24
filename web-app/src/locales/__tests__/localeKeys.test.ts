@@ -81,6 +81,14 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'devLoad.invalidManifest',
     'devLoad.invalidBundle',
     'devLoad.alreadyLoaded',
+    // Settings > Extensions tabs and source form errors.
+    'tabs.installed',
+    'tabs.catalog',
+    'sources.errors.invalidUrl',
+    'sources.errors.notHttps',
+    'sources.errors.credentials',
+    'sources.errors.required',
+    'sources.errors.invalidKey',
   ],
   'model-errors': [
     'engine.unknown',
