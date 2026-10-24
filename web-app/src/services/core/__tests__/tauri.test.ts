@@ -46,13 +46,12 @@ describe('TauriCoreService', () => {
   })
 
   describe('getActiveExtensions', () => {
-    it('returns bundled extensions without invoking the backend', async () => {
+    // Every built-in runs on the extension host now, so the legacy bundled
+    // list this returns is empty.
+    it('returns the bundled extensions without invoking the backend', async () => {
       const exts = await svc.getActiveExtensions()
       expect(mockInvoke).not.toHaveBeenCalled()
-      expect(exts.length).toBeGreaterThan(0)
-      expect(exts.every((e) => e.url === 'built-in')).toBe(true)
-      expect(exts.every((e) => e.extensionInstance)).toBe(true)
-      expect(exts.map((e) => e.name)).toContain('@janhq/rag-extension')
+      expect(exts).toEqual([])
     })
   })
 
