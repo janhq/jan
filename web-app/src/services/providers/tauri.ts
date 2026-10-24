@@ -18,6 +18,7 @@ import {
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 import { toProviderUnreachable } from '@/lib/provider-unreachable'
+import { assertNotExtensionProvider } from '@/lib/extensions/providers'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -146,6 +147,7 @@ export class TauriProvidersService extends DefaultProvidersService {
   }
 
   async fetchModelsFromProvider(provider: ModelProvider): Promise<string[]> {
+    assertNotExtensionProvider(provider)
     if (!provider.base_url) {
       throw new Error('Provider must have base_url configured')
     }

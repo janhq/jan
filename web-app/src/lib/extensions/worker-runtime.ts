@@ -24,7 +24,7 @@ import {
 } from '@janhq/extension-runtime'
 import prelude from '@janhq/extension-runtime/prelude-source'
 import type { PermissionDispatcher } from './dispatcher'
-import type { HostApi } from './host-api'
+import { rateLimiter, type HostApi } from './host-api'
 
 /** Creates the Worker for a composed script; injectable so tests need none. */
 export type CreateWorker = (source: string, name: string) => WorkerLike
@@ -73,11 +73,28 @@ export const createBlobWorker: CreateWorker = (source, name) => {
 }
 
 /**
- * Messages a worker may send that are refused before any handler sees
- * them (malformed, or over the size cap) before it is stopped. A real
- * extension never sends one; a stream of them only costs the main thread.
+ * Strikes a worker may collect before it is stopped, one forgiven every
+ * STRIKE_FORGIVE_MS. A strike is a message refused before any handler ran
+ * (malformed, over the size cap, over the message rate) or a call the
+ * dispatcher refused (no grant, bad arguments, over a limit). A real
+ * extension rarely earns one; a stream of them only costs the main thread.
  */
 export const MAX_REJECTED_MESSAGES = 16
+const STRIKE_FORGIVE_MS = 10_000
+/**
+ * Messages of all kinds a worker may send: a burst, then a steady rate.
+ * Checked before a message is sized, validated or dispatched, so a flood
+ * of calls that would each pass costs the main thread little.
+ */
+export const MESSAGE_BURST = 200
+const MESSAGES_PER_SECOND = 50
+// What a misbehaving call is refused with, as opposed to a failure of the
+// work it asked for (E_NOT_FOUND, E_TIMEOUT, ...).
+const STRIKE_CODES: ReadonlySet<string> = new Set([
+  'E_PERMISSION',
+  'E_INVALID_ARGS',
+  'E_TOO_LARGE',
+])
 
 const REGISTRATIONS: ReadonlySet<HostMethod> = new Set<HostMethod>([
   'commands.register',
@@ -167,21 +184,27 @@ export function startWorker(options: {
 
   // Aborted on terminate, so host-side work (a fetch) stops with the worker.
   const lifetime = new AbortController()
-  let rejected = 0
+  const admit = rateLimiter(MESSAGE_BURST, MESSAGES_PER_SECOND)
+  // The last strike is the one the bucket has no token for.
+  const strikeForgiven = rateLimiter(
+    MAX_REJECTED_MESSAGES - 1,
+    1000 / STRIKE_FORGIVE_MS
+  )
+  const strike = (error: ExtensionError) => {
+    if (lifetime.signal.aborted || strikeForgiven()) return
+    console.warn(
+      `Extension '${manifest.id}' was stopped after ${MAX_REJECTED_MESSAGES} refused messages:`,
+      error.message
+    )
+    settle(error)
+    terminate()
+  }
 
   const endpoint: Endpoint = new Endpoint(
     workerTransport(worker),
     {
-      onRejected: (error) => {
-        rejected++
-        if (rejected < MAX_REJECTED_MESSAGES) return
-        console.warn(
-          `Extension '${manifest.id}' was stopped after ${rejected} refused messages:`,
-          error.message
-        )
-        settle(error)
-        terminate()
-      },
+      admit,
+      onRejected: strike,
       handle: async (method, args, token) => {
         if (method === DISPOSE_METHOD) {
           const [id] = args
@@ -206,6 +229,10 @@ export function startWorker(options: {
           if (REGISTRATIONS.has(method))
             return { disposable: owned.add(result as { dispose(): void }) }
           return result
+        } catch (error) {
+          if (error instanceof ExtensionError && STRIKE_CODES.has(error.code))
+            strike(error)
+          throw error
         } finally {
           cancellation.dispose()
           lifetime.signal.removeEventListener('abort', abort)

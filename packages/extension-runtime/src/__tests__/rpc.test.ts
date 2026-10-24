@@ -331,6 +331,44 @@ describe('Endpoint', () => {
     ])
     port2.close()
   })
+
+  it('refuses what admit turns down before sizing or serving it, and reports it', async () => {
+    const rejected = vi.fn()
+    const handle = vi.fn(async () => 'ok')
+    let budget = 1
+    const { port1, port2 } = new MessageChannel()
+    const host = new Endpoint(portTransport(port1), {
+      onRejected: rejected,
+      admit: () => budget-- > 0,
+      handle,
+    })
+    open.push(host)
+    const replies: unknown[] = []
+    port2.addEventListener('message', (e) => replies.push((e as MessageEvent).data))
+    port2.start()
+    const stringify = vi.spyOn(JSON, 'stringify')
+    port2.postMessage({ v: 1, t: 'req', id: 1, method: 'm', args: [] })
+    port2.postMessage({ v: 1, t: 'req', id: 2, method: 'm', args: ['x'.repeat(1024)] })
+    port2.postMessage({ v: 1, t: 'evt', sub: 1, value: 'x'.repeat(1024) })
+    // A reply nobody waits for is just another message.
+    port2.postMessage({ v: 1, t: 'res', id: 77, ok: true, value: 'x'.repeat(1024) })
+    await vi.waitFor(() => expect(rejected).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(replies).toHaveLength(2))
+    expect(handle).toHaveBeenCalledTimes(1)
+    expect(rejected.mock.calls.map(([e]) => e.code)).toEqual([
+      'E_TOO_LARGE',
+      'E_TOO_LARGE',
+      'E_TOO_LARGE',
+    ])
+    expect(replies[1]).toMatchObject({ id: 2, ok: false, error: { code: 'E_TOO_LARGE' } })
+    // A refused message is never serialized to be sized.
+    const sized = stringify.mock.calls.map(([value]) => value)
+    stringify.mockRestore()
+    expect(sized).not.toContainEqual(expect.objectContaining({ t: 'req', id: 2 }))
+    expect(sized).not.toContainEqual(expect.objectContaining({ t: 'evt' }))
+    expect(sized).not.toContainEqual(expect.objectContaining({ t: 'res', id: 77 }))
+    port2.close()
+  })
 })
 
 describe('parseWire', () => {

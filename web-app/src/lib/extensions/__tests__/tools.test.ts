@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { ContributionState } from '../contributions'
 import { listExtensionTools, toToolOutcome, toolWireName } from '../tools'
@@ -24,10 +25,13 @@ const state = (
 })
 
 describe('toolWireName', () => {
-  it('is x_<hash of id and name>__<name>, within 64 provider-safe characters', () => {
+  it('is x_<80-bit SHA-256 of id and name>__<name>, within 64 provider-safe characters', () => {
     const name = toolWireName('jan-samples.hello-provider', 'echo_upper')
-    expect(name).toMatch(/^x_[0-9a-f]{16}__echo_upper$/)
-    expect(toolWireName('acme.one', 'say hi!')).toMatch(/^x_[0-9a-f]{16}__say_hi_$/)
+    const digest = createHash('sha256')
+      .update('jan-samples.hello-provider\u0000echo_upper')
+      .digest('hex')
+    expect(name).toBe(`x_${digest.slice(0, 20)}__echo_upper`)
+    expect(toolWireName('acme.one', 'say hi!')).toMatch(/^x_[0-9a-f]{20}__say_hi_$/)
     const long = toolWireName('acme.' + 'a'.repeat(38), 'b'.repeat(64))
     expect(long).toHaveLength(64)
     expect(long).toMatch(/^[A-Za-z0-9_-]+$/)

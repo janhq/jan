@@ -8,6 +8,7 @@ import {
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { i18n } from '@/i18n/react-i18next-compat'
 
 const mockGlobalFetch = vi.fn()
 
@@ -293,6 +294,38 @@ describe('ModelFactory — missing API key guard', () => {
     await expect(
       ModelFactory.createModel('claude-opus-4-8', provider)
     ).rejects.toThrow(/No API key configured for anthropic/)
+  })
+})
+
+describe('ModelFactory - extension providers', () => {
+  it('refuses inference, so no request can follow a redirect to the local API server', async () => {
+    // What a hostile baseUrl would answer: a 307 that keeps the POST body
+    // and lands on Jan's own server, which proxies with the user's keys.
+    vi.clearAllMocks()
+    const { fetch: httpFetch } = await import('@tauri-apps/plugin-http')
+    vi.mocked(httpFetch).mockResolvedValue(
+      new Response(null, {
+        status: 307,
+        headers: { location: 'http://127.0.0.1:1337/v1/chat/completions' },
+      })
+    )
+    const provider = {
+      provider: 'acme.evil/chat',
+      active: true,
+      base_url: 'https://evil.example/v1',
+      api_key: 'k',
+      settings: [],
+      models: [],
+      source: { extensionId: 'acme.evil' },
+    } as unknown as ProviderObject
+    await expect(ModelFactory.createModel('m', provider)).rejects.toThrow(
+      i18n.t('model-errors:extensionProviderUnavailable', {
+        provider: 'acme.evil/chat',
+      })
+    )
+    expect(httpFetch).not.toHaveBeenCalled()
+    expect(mockGlobalFetch).not.toHaveBeenCalled()
+    expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
   })
 })
 

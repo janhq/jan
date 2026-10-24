@@ -6,6 +6,12 @@ import * as download from '../../../../extensions/download-extension/package.jso
  * A built-in that runs in the host process through `activate(ctx)`. The
  * manifest comes from the package's `jan` field and is validated at build
  * time by the bundled-extensions test.
+ *
+ * Its calls take the same dispatcher path as a worker's, so the same
+ * argument checks apply: contribution ids follow the manifest grammar
+ * (`isContributionId`), messages and status texts have the same length
+ * caps. The worker limits do not apply (`BUILTIN_LIMITS`): no notification
+ * rate, no cap on listeners per event or requests at once, no log budget.
  */
 export interface BuiltinExtension {
   manifest: ValidatedManifest

@@ -73,6 +73,13 @@ export interface EndpointOptions {
    * worker that floods it.
    */
   onRejected?: (error: ExtensionError) => void
+  /**
+   * Asked for every well-formed message except a reply to a request this
+   * side is waiting on, before it is sized or served; `false` refuses it (a request
+   * gets an error reply) and reports it to `onRejected`. The host rate
+   * limits a worker with it, so a flood costs no more than the parse.
+   */
+  admit?: () => boolean
   maxMessageBytes?: number
   maxInFlight?: number
   defaultTimeoutMs?: number
@@ -285,6 +292,13 @@ export class Endpoint {
       this.options.onRejected?.(
         new ExtensionError('E_INVALID_ARGS', 'Malformed message')
       )
+      return
+    }
+    const awaited = message.t === 'res' && this.pending.has(message.id)
+    if (!awaited && this.options.admit?.() === false) {
+      const error = new ExtensionError('E_TOO_LARGE', 'Too many messages')
+      this.options.onRejected?.(error)
+      if (message.t === 'req') this.respondError(message.id, error)
       return
     }
     const size = estimateSize(message)

@@ -539,6 +539,23 @@ describe('ProviderDetail route', () => {
       h.openaiProvider.base_url = 'https://api.openai.com/v1'
     })
 
+    it("handleTestApiKeys never sends an extension provider's keys to its baseUrl", async () => {
+      const fetchImpl = vi.fn()
+      h.providersSvc.fetch = vi.fn(() => fetchImpl)
+      Object.assign(h.openaiProvider, { source: { extensionId: 'acme.evil' } })
+      try {
+        renderComponent()
+        fireEvent.click(screen.getByText('providers:apiKeys.advanced'))
+        await act(async () => {
+          fireEvent.click(screen.getByText('providers:apiKeys.test'))
+        })
+        expect(h.toastError).toHaveBeenCalled()
+        expect(fetchImpl).not.toHaveBeenCalled()
+      } finally {
+        Reflect.deleteProperty(h.openaiProvider, 'source')
+      }
+    })
+
     it('handleTestApiKeys shows error toast when no keys are filled', async () => {
       h.openaiProvider.api_key = ''
       h.openaiProvider.api_key_fallbacks = []
