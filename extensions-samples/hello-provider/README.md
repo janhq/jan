@@ -46,8 +46,10 @@ host checks every call (and every redirect) against the granted
 `network:<host>` permissions.
 
 The host runs inference for `hello-local` against its `baseUrl` itself;
-nothing streams through the worker. Start any OpenAI-compatible server on
-port 11999 to chat with it.
+nothing streams through the worker. This version of Jan lists the provider
+and its models but refuses to send chats to it: the only network path today
+shares the app's cookie jar and follows redirects unchecked. Chatting with
+extension providers arrives with the host's own extension fetch.
 
 ## Build
 

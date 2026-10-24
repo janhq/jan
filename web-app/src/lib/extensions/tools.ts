@@ -1,6 +1,7 @@
 import type { JsonSchemaObject, ToolResult } from '@janhq/extension-api'
 import { z } from 'zod'
 import type { ContributionState } from './contributions'
+import { sha256Hex } from './sha256'
 
 /** The longest tool name the OpenAI-style APIs accept. */
 const MAX_WIRE_NAME = 64
@@ -28,41 +29,40 @@ export const extensionToolServer = (extensionId: string) =>
 
 const sanitize = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_')
 
-const FNV_OFFSET = 0xcbf29ce484222325n
-const FNV_PRIME = 0x100000001b3n
-const MASK_64 = 0xffffffffffffffffn
-
-/** 64-bit FNV-1a of the UTF-16 code units of `text`, as 16 hex digits. */
-function fnv1a64(text: string): string {
-  let hash = FNV_OFFSET
-  for (let i = 0; i < text.length; i++) {
-    hash ^= BigInt(text.charCodeAt(i))
-    hash = (hash * FNV_PRIME) & MASK_64
-  }
-  return hash.toString(16).padStart(16, '0')
-}
+// 80 bits of SHA-256: a second preimage (one extension knocking out
+// another's tool by matching its wire name) stays out of reach.
+const HASH_HEX_DIGITS = 20
+// The tool list is rebuilt on every contribution change; each name is
+// hashed once. Bounded by the tools manifests declare.
+const wireNames = new Map<string, string>()
 
 /**
- * `x_<hash>__<tool name>`, where the hash covers the extension id and the
- * exact name, cut to 64 characters. The readable part is only a hint: two
- * ids or names that sanitize or truncate to the same text (`acme-x.foo`
+ * `x_<hash>__<tool name>`, where the hash is the first 80 bits of the
+ * SHA-256 of the extension id and the exact name, cut to 64 characters.
+ * The readable part is only a hint: two ids or names that sanitize or truncate to the same text (`acme-x.foo`
  * and `acme.x-foo`) still get different wire names, and a tool keeps its
  * wire name whatever else is loaded, so a new extension can never take
  * over a name the model, the history or an approval already refers to.
  */
 export function toolWireName(extensionId: string, name: string): string {
-  return `x_${fnv1a64(`${extensionId}\u0000${name}`)}__${sanitize(name)}`.slice(
-    0,
-    MAX_WIRE_NAME
-  )
+  const key = `${extensionId}\u0000${name}`
+  let wireName = wireNames.get(key)
+  if (wireName === undefined) {
+    const hash = sha256Hex(new TextEncoder().encode(key)).slice(
+      0,
+      HASH_HEX_DIGITS
+    )
+    wireName = `x_${hash}__${sanitize(name)}`.slice(0, MAX_WIRE_NAME)
+    wireNames.set(key, wireName)
+  }
+  return wireName
 }
 
 /**
  * Every contributed tool with a bound handler, in a stable order (the tool
- * list is part of the prompt prefix, so it must not reshuffle). The hash is
- * not collision resistant against a determined author, so two tools that
- * still end up with one wire name are both left out: neither may answer
- * calls, or inherit approvals, meant for the other.
+ * list is part of the prompt prefix, so it must not reshuffle). Should two
+ * tools still end up with one wire name, both are left out: neither may
+ * answer calls, or inherit approvals, meant for the other.
  */
 export function listExtensionTools(state: ContributionState): ExtensionTool[] {
   const result: ExtensionTool[] = []

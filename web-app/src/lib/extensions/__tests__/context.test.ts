@@ -4,6 +4,10 @@ import { Emitter } from '@janhq/extension-api'
 import { ContributionStore } from '../contributions'
 import { createContext, type ContextDeps } from '../context'
 import { PermissionDispatcher } from '../dispatcher'
+import {
+  MAX_CONCURRENT_FETCHES,
+  MAX_SUBSCRIPTIONS_PER_EVENT,
+} from '../host-api'
 import { ExtensionSettingsStore } from '../settings-store'
 import { manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
@@ -202,6 +206,32 @@ describe('createContext', () => {
       [{ key: 'greeting', value: 'Hi' }],
       [{ key: 'greeting', value: 'Yo' }],
     ])
+  })
+
+  it('holds a built-in to none of the limits a worker gets', async () => {
+    const release: (() => void)[] = []
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) =>
+          release.push(() => resolve(new Response('ok')))
+        )
+    )
+    const { ctx, deps } = setup(['ui:notify', 'network:api.acme.dev'], {
+      fetch,
+    })
+    for (let i = 0; i < 50; i++)
+      ctx.ui.notify({ level: 'info', message: `${i}` })
+    expect(deps.notify).toHaveBeenCalledTimes(50)
+    for (let i = 0; i < MAX_SUBSCRIPTIONS_PER_EVENT * 2; i++)
+      ctx.settings.onDidChange(() => undefined)
+    const running = Array.from({ length: MAX_CONCURRENT_FETCHES * 2 }, () =>
+      ctx.http.fetch('https://api.acme.dev/')
+    )
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledTimes(MAX_CONCURRENT_FETCHES * 2)
+    )
+    for (const r of release) r()
+    await Promise.all(running)
   })
 
   it('stores data under the extension id', async () => {

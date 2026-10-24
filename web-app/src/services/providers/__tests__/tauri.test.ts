@@ -208,6 +208,16 @@ describe('TauriProvidersService', () => {
       active: false,
     } as any
 
+    it("never fetches an extension provider's models from its baseUrl", async () => {
+      await expect(
+        svc.fetchModelsFromProvider({
+          ...baseProvider,
+          source: { extensionId: 'acme.evil' },
+        })
+      ).rejects.toThrow()
+      expect(fetchTauri).not.toHaveBeenCalled()
+    })
+
     it('throws if no base_url', async () => {
       await expect(svc.fetchModelsFromProvider({ ...baseProvider, base_url: '' }))
         .rejects.toThrow('Provider must have base_url configured')
