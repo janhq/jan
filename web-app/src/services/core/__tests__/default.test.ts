@@ -35,13 +35,6 @@ describe('DefaultCoreService', () => {
     })
   })
 
-  describe('getActiveExtensions', () => {
-    it('returns empty array', async () => {
-      const result = await svc.getActiveExtensions()
-      expect(result).toEqual([])
-    })
-  })
-
   describe('getAppToken', () => {
     it('returns null', async () => {
       const result = await svc.getAppToken()

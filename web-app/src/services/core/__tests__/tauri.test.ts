@@ -45,16 +45,6 @@ describe('TauriCoreService', () => {
     })
   })
 
-  describe('getActiveExtensions', () => {
-    // Every built-in runs on the extension host now, so the legacy bundled
-    // list this returns is empty.
-    it('returns the bundled extensions without invoking the backend', async () => {
-      const exts = await svc.getActiveExtensions()
-      expect(mockInvoke).not.toHaveBeenCalled()
-      expect(exts).toEqual([])
-    })
-  })
-
   describe('getAppToken', () => {
     it('returns token string', async () => {
       mockInvoke.mockResolvedValue('token123')

@@ -2,7 +2,6 @@
  * Default Core Service - Generic implementation with minimal returns
  */
 
-import type { ExtensionManifest } from '@/lib/extension'
 import type { CoreService, InvokeArgs } from './types'
 
 export class DefaultCoreService implements CoreService {
@@ -14,10 +13,6 @@ export class DefaultCoreService implements CoreService {
   convertFileSrc(filePath: string, protocol?: string): string {
     console.log('convertFileSrc called:', { filePath, protocol })
     return filePath
-  }
-
-  async getActiveExtensions(): Promise<ExtensionManifest[]> {
-    return []
   }
 
   async getAppToken(): Promise<string | null> {

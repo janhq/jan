@@ -83,12 +83,6 @@ export enum DownloadEvent {
   onModelValidationFailed = 'onModelValidationFailed',
   onFileDownloadAndVerificationSuccess = 'onFileDownloadAndVerificationSuccess',
 }
-export enum ExtensionRoute {
-  baseExtensions = 'baseExtensions',
-  getActiveExtensions = 'getActiveExtensions',
-  invokeExtensionFunc = 'invokeExtensionFunc',
-  updateExtension = 'updateExtension',
-}
 export enum FileSystemRoute {
   appendFileSync = 'appendFileSync',
   unlinkSync = 'unlinkSync',
@@ -136,10 +130,6 @@ export type DownloadEventFunctions = {
   [K in DownloadEvent]: ApiFunction
 }
 
-export type ExtensionRouteFunctions = {
-  [K in ExtensionRoute]: ApiFunction
-}
-
 export type FileSystemRouteFunctions = {
   [K in FileSystemRoute]: ApiFunction
 }
@@ -156,14 +146,12 @@ export type APIFunctions = NativeRouteFunctions &
   AppRouteFunctions &
   AppEventFunctions &
   DownloadEventFunctions &
-  ExtensionRouteFunctions &
   FileSystemRouteFunctions &
   DownloadRouteFunctions &
   FileManagerRoute
 
 export const CoreRoutes = [
   ...Object.values(AppRoute),
-  ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
   ...Object.values(DownloadRoute),

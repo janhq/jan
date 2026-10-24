@@ -248,7 +248,6 @@
   "loading": "Loading...",
   "settingUpJan": "Booting up Jan…",
   "registeringExtensions": "Registering extensions…",
-  "loadingExtensions": "Loading extensions… ({{done}}/{{total}})",
   "error": "Error",
   "success": "Success",
   "warning": "Warning",

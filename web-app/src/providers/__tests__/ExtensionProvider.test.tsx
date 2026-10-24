@@ -4,9 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import '@testing-library/jest-dom'
 
 const h = vi.hoisted(() => ({
-  registerActive: vi.fn().mockResolvedValue(undefined),
-  load: vi.fn().mockResolvedValue(undefined),
-  unload: vi.fn(),
   emit: vi.fn().mockResolvedValue(undefined),
   windowLabel: 'main',
   calls: [] as string[],
@@ -24,22 +21,12 @@ const h = vi.hoisted(() => ({
 vi.mock('@/i18n/react-i18next-compat', () => ({
   i18n: { t: (k: string) => k },
   useTranslation: () => ({
-    t: (k: string, vars?: Record<string, unknown>) => {
+    t: (k: string) => {
       if (k === 'settingUpJan') return 'Booting up Jan…'
       if (k === 'registeringExtensions') return 'Registering extensions…'
-      if (k === 'loadingExtensions')
-        return `Loading extensions… (${vars?.done ?? 0}/${vars?.total ?? 0})`
       return k
     },
   }),
-}))
-
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: class {
-    static getInstance() {
-      return { registerActive: h.registerActive, load: h.load, unload: h.unload }
-    }
-  },
 }))
 
 vi.mock('@/lib/extensions/host', () => ({ getExtensionHost: () => h.host }))
@@ -81,8 +68,6 @@ const renderProvider = () =>
 describe('ExtensionProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    h.registerActive.mockResolvedValue(undefined)
-    h.load.mockResolvedValue(undefined)
     h.emit.mockResolvedValue(undefined)
     h.windowLabel = 'main'
     h.calls = []
@@ -94,7 +79,6 @@ describe('ExtensionProvider', () => {
       async () => void h.calls.push('installed')
     )
     h.host.deactivateAll.mockResolvedValue(undefined)
-    h.registerActive.mockImplementation(async () => void h.calls.push('legacy'))
     document.body.className = ''
     document.body.innerHTML =
       '<div id="initial-loader"><p id="initial-loader-caption"></p></div>'
@@ -110,16 +94,13 @@ describe('ExtensionProvider', () => {
   })
 
   it('shows phased setup status in the loader caption', async () => {
-    // Stay on the loading phase so the loader isn't dismissed mid-assertion.
-    h.load.mockImplementation((onProgress?: (d: number, t: number) => void) => {
-      onProgress?.(3, 7)
-      return new Promise<void>(() => {})
-    })
+    // Stay on the activation phase so the loader isn't dismissed mid-assertion.
+    h.host.activateBuiltins.mockImplementation(() => new Promise<void>(() => {}))
     renderProvider()
     await waitFor(() =>
       expect(
         document.getElementById('initial-loader-caption')?.textContent
-      ).toBe('Loading extensions… (3/7)')
+      ).toBe('Registering extensions…')
     )
   })
 
@@ -127,30 +108,21 @@ describe('ExtensionProvider', () => {
     renderProvider()
     expect(screen.queryByTestId('child')).toBeNull()
     expect(await screen.findByTestId('child')).toBeInTheDocument()
-    expect(h.registerActive).toHaveBeenCalled()
-    expect(h.load).toHaveBeenCalled()
+    expect(h.host.activateBuiltins).toHaveBeenCalled()
   })
 
-  it('activates the host built-ins before the legacy manager', async () => {
+  it('activates the host built-ins before the installed extensions', async () => {
     renderProvider()
     await screen.findByTestId('child')
     expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
-    // Installed and legacy loads do not wait on each other.
-    await waitFor(() =>
-      expect([...h.calls].sort()).toEqual(['host', 'installed', 'legacy'])
-    )
-    expect(h.calls[0]).toBe('host')
-    expect(h.host.activateBuiltins.mock.invocationCallOrder[0]).toBeLessThan(
-      h.host.loadInstalled.mock.invocationCallOrder[0]
-    )
+    await waitFor(() => expect(h.calls).toEqual(['host', 'installed']))
   })
 
-  it('does not hold the legacy extensions back while installed ones start', async () => {
+  it('does not hold the UI back while installed extensions start', async () => {
     h.host.loadInstalled.mockImplementation(() => new Promise<void>(() => {}))
     renderProvider()
     expect(await screen.findByTestId('child')).toBeInTheDocument()
     expect(h.host.loadInstalled).toHaveBeenCalled()
-    expect(h.load).toHaveBeenCalled()
   })
 
   it('logs a failure to load the installed extensions', async () => {
@@ -196,15 +168,15 @@ describe('ExtensionProvider', () => {
     renderProvider()
     await screen.findByTestId('child')
     expect(h.host.loadInstalled).not.toHaveBeenCalled()
-    expect(h.calls).toEqual(['host', 'legacy'])
+    expect(h.calls).toEqual(['host'])
   })
 
-  it('still runs the legacy manager if host activation rejects', async () => {
+  it('still renders children and loads installed ones if host activation rejects', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     h.host.activateBuiltins.mockRejectedValue(new Error('boom'))
     renderProvider()
     expect(await screen.findByTestId('child')).toBeInTheDocument()
-    expect(h.registerActive).toHaveBeenCalled()
+    await waitFor(() => expect(h.host.loadInstalled).toHaveBeenCalled())
   })
 
   it('deactivates host extensions on unmount', async () => {
@@ -212,7 +184,6 @@ describe('ExtensionProvider', () => {
     await screen.findByTestId('child')
     unmount()
     expect(h.host.deactivateAll).toHaveBeenCalled()
-    expect(h.unload).toHaveBeenCalled()
   })
 
   it('dismisses the branded loader only after setup completes', async () => {
@@ -233,19 +204,10 @@ describe('ExtensionProvider', () => {
     await waitFor(() => expect(h.emit).toHaveBeenCalledWith('app-ready'))
   })
 
-  it('still renders children if extension setup throws', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    h.load.mockRejectedValue(new Error('boom'))
-    renderProvider()
-    expect(await screen.findByTestId('child')).toBeInTheDocument()
-  })
-
   it('finishes immediately on non-main windows without loading extensions', async () => {
     h.windowLabel = 'logs'
     renderProvider()
     expect(await screen.findByTestId('child')).toBeInTheDocument()
-    expect(h.registerActive).not.toHaveBeenCalled()
-    expect(h.load).not.toHaveBeenCalled()
     expect(h.host.activateBuiltins).not.toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalledWith('app-ready')
   })

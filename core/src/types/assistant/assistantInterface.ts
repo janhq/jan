@@ -1,7 +1,6 @@
 import { Assistant } from './assistantEntity'
 /**
- * Assistant extension for managing assistants.
- * @extends BaseExtension
+ * Assistant service for managing assistants.
  */
 export interface AssistantInterface {
   /**

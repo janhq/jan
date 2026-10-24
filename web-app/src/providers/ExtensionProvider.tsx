@@ -1,4 +1,3 @@
-import { ExtensionManager } from '@/lib/extension'
 import { getHostBuiltins } from '@/lib/extensions/builtins'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { loadWithCrashLoopGuard } from '@/lib/extensions/watchdog'
@@ -38,7 +37,6 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     }
 
     window.core.events = new EventEmitter()
-    window.core.extensionManager = new ExtensionManager()
     window.core.engineManager = new EngineManager()
     window.core.modelManager = new ModelManager()
 
@@ -51,7 +49,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // Always finish setup even if registration/load throws so a single
     // faulty extension can't gate the entire UI.
     setStatus({ key: 'registeringExtensions' })
-    // Host built-ins first, then the legacy extensions.
+    // Built-ins first, then the installed extensions.
     try {
       await getExtensionHost().activateBuiltins(
         getHostBuiltins({ mobile: isPlatformIOS() || isPlatformAndroid() })
@@ -78,16 +76,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     } catch (e) {
       installedFailed(e)
     }
-    try {
-      await ExtensionManager.getInstance().registerActive()
-      await ExtensionManager.getInstance().load((done, total) =>
-        setStatus({ key: 'loadingExtensions', vars: { done, total } })
-      )
-    } catch (e) {
-      console.error('Extension setup failed:', e)
-    } finally {
-      setFinishedSetup(true)
-    }
+    setFinishedSetup(true)
   }, [])
 
   useEffect(() => {
@@ -103,7 +92,6 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     return () => {
       clearTimeout(watchdog)
       if (isMainWindow()) {
-        ExtensionManager.getInstance().unload()
         getExtensionHost().deactivateAll()
       }
     }
