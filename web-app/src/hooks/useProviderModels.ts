@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useServiceHub } from './useServiceHub'
+import { suggestedModelIds } from '@/lib/models'
 
 type UseProviderModelsState = {
   models: string[]
@@ -53,7 +54,10 @@ export const useProviderModels = (provider?: ModelProvider): UseProviderModelsSt
     try {
       const fetchedModels = await serviceHub.providers().fetchModelsFromProvider(provider)
       if (currentRequestId !== requestIdRef.current) return
-      const sortedModels = fetchedModels.sort((a, b) => a.localeCompare(b))
+      const sortedModels = suggestedModelIds(
+        provider.provider,
+        fetchedModels.sort((a, b) => a.localeCompare(b))
+      )
 
       setModels(sortedModels)
 
