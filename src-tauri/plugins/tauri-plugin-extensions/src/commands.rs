@@ -9,9 +9,12 @@ use tauri::ipc::Channel;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{AppHandle, Manager, Runtime, State};
 
+use crate::catalog;
 use crate::error::{Error, Result};
+use crate::index::CuratedIndex;
 use crate::http::{self, HttpRequest, HttpResponse, HttpStreamEvent};
 use crate::install::{self, EntrySource, InstalledExtension, ListResult, StagedInstall};
+use crate::sources::IndexSourceEntry;
 use crate::state::{safe_mode_from_env, ExtensionsState, Options};
 use crate::store::random_id;
 
@@ -108,6 +111,48 @@ async fn http_fetch_stream(
 }
 
 #[tauri::command]
+async fn list_sources(state: Shared<'_>) -> Result<Vec<IndexSourceEntry>> {
+    blocking(&state, catalog::list_sources).await
+}
+
+#[tauri::command]
+async fn add_source(
+    state: Shared<'_>,
+    url: String,
+    name: String,
+    public_key: Option<String>,
+) -> Result<IndexSourceEntry> {
+    blocking(&state, move |s| {
+        catalog::add_source(s, &url, &name, public_key.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn remove_source(state: Shared<'_>, id: String) -> Result<()> {
+    blocking(&state, move |s| catalog::remove_source(s, &id)).await
+}
+
+#[tauri::command]
+async fn get_catalog(state: Shared<'_>, source_id: String) -> Result<CuratedIndex> {
+    catalog::get_catalog(&state, &source_id).await
+}
+
+#[tauri::command]
+async fn stage_from_index(
+    state: Shared<'_>,
+    source_id: String,
+    id: String,
+    version: String,
+) -> Result<StagedInstall> {
+    let downloaded = catalog::download_from_index(&state, &source_id, &id, &version).await?;
+    blocking(&state, move |s| {
+        catalog::stage_downloaded(s, &downloaded, &id, &version)
+    })
+    .await
+}
+
+#[tauri::command]
 fn http_cancel(state: Shared<'_>, id: String, request_id: String) {
     http::cancel(&state, &id, &request_id);
 }
@@ -136,6 +181,11 @@ where
             http_fetch,
             http_fetch_stream,
             http_cancel,
+            list_sources,
+            add_source,
+            remove_source,
+            get_catalog,
+            stage_from_index,
         ])
         .setup(move |app, _api| {
             let options = Options {
