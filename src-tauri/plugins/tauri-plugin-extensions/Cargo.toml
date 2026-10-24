@@ -1,0 +1,39 @@
+[package]
+name = "tauri-plugin-extensions"
+version = "0.8.3"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin that installs, verifies and serves runtime Jan extensions"
+license = "Apache-2.0"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-extensions"
+
+[features]
+default = ["tauri"]
+# The Tauri command/plugin surface. The pure modules (bundle, integrity,
+# manifest, registry, index, sources) need no AppHandle and build without it.
+tauri = ["dep:tauri"]
+
+[dependencies]
+base64 = "0.22"
+flate2 = "1"
+log = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+semver = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tar = "0.4"
+tauri = { version = "2.5.0", default-features = false, features = [], optional = true }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+url = "2.5"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "sync", "time"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }
