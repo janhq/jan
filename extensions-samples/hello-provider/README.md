@@ -45,11 +45,18 @@ Before the bundle runs, the prelude removes `fetch`, `XMLHttpRequest`,
 host checks every call (and every redirect) against the granted
 `network:<host>` permissions.
 
-The host runs inference for `hello-local` against its `baseUrl` itself;
-nothing streams through the worker. This version of Jan lists the provider
-and its models but refuses to send chats to it: the only network path today
-shares the app's cookie jar and follows redirects unchecked. Chatting with
-extension providers arrives with the host's own extension fetch.
+Network requests of an installed extension run in Rust
+(tauri-plugin-extensions `http_fetch`): the grants are re-read from
+`extensions.json` on every request, no cookie jar is attached, Jan's local
+API server port is refused, and no redirect is followed there; the host
+follows them itself and checks each hop. The host runs inference for
+`hello-local` against its `baseUrl` itself, on the same path, with the SSE
+body streamed back from Rust; nothing streams through the worker.
+
+A folder loaded unpacked has no entry in `extensions.json`, so it has no
+network path: its `ctx.http.fetch` fails with `E_NOT_FOUND` and its
+provider cannot be chatted with. Install the packed bundle (`yarn pack`,
+then Settings > Extensions > Install from file) to try those.
 
 ## Build
 

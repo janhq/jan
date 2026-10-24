@@ -103,8 +103,7 @@ class PlatformServiceHub implements ServiceHub {
   private projectsService: ProjectsService = new DefaultProjectsService()
   private ragService: RAGService = new DefaultRAGService()
   private uploadsService: UploadsService = new DefaultUploadsService()
-  // The install pipeline is desktop only: the desktop branch of initialize()
-  // is where the tauri-plugin-extensions implementation gets assigned.
+  // The install pipeline is desktop only (tauri-plugin-extensions).
   private extensionsService: ExtensionsService = new DefaultExtensionsService()
   private initialized = false
 
@@ -138,6 +137,7 @@ class PlatformServiceHub implements ServiceHub {
           pathModule,
           coreModule,
           deepLinkModule,
+          extensionsModule,
         ] = await Promise.all([
           import('./theme/tauri'),
           import('./window/tauri'),
@@ -152,6 +152,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./path/tauri'),
           import('./core/tauri'),
           import('./deeplink/tauri'),
+          import('./extensions/tauri'),
         ])
 
         this.themeService = new themeModule.TauriThemeService()
@@ -167,6 +168,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+        this.extensionsService = new extensionsModule.TauriExtensionsService()
       } else if (isPlatformIOS() || isPlatformAndroid()) {
         const [
           themeModule,

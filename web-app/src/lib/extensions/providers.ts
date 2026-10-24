@@ -1,6 +1,7 @@
 import type { ProviderContribution } from '@janhq/extension-api'
 import { i18n } from '@/i18n/react-i18next-compat'
 import type { ContributionState } from './contributions'
+import { getExtensionHost } from './host'
 
 /**
  * The provider name a contributed provider gets in `useModelProvider`.
@@ -11,21 +12,26 @@ export const extensionProviderName = (extensionId: string, providerId: string) =
   `${extensionId}/${providerId}`
 
 /**
- * Refuses any request to the baseUrl of a provider an extension contributed.
- * Until P3's jar-less Rust fetch, the only network path is plugin-http, which
- * shares the app's cookie jar and follows redirects itself, so a granted
- * host could bounce a chat (body and all) to Jan's local API server or to
- * any other local port, and the grant check at register time would not
- * see it. Such providers stay listed, with the models `listModels` gave;
- * sending to them fails with this error.
+ * The `fetch` for a provider an extension contributed, or undefined for any
+ * other provider. Every request then runs on the extension's own network
+ * path (`ExtensionHost.providerFetch`): its grants are checked on each URL
+ * and redirect hop, so a granted host cannot bounce a chat to Jan's local
+ * API server or any other port, and no cookie jar is attached. Throws when
+ * the extension has no network path: it is not running, or it was loaded
+ * for development.
  */
-export function assertNotExtensionProvider(provider: ModelProvider): void {
-  if (provider.source)
+export function extensionProviderFetch(
+  provider: Pick<ModelProvider, 'provider' | 'source'>
+): typeof globalThis.fetch | undefined {
+  if (!provider.source) return undefined
+  const fetch = getExtensionHost().providerFetch(provider.source.extensionId)
+  if (!fetch)
     throw new Error(
       i18n.t('model-errors:extensionProviderUnavailable', {
         provider: provider.provider,
       })
     )
+  return fetch
 }
 
 /** A contributed provider whose extension has activated it. */
@@ -51,10 +57,10 @@ export function listExtensionProviders(
 
 /**
  * The `useModelProvider` entry of a contributed provider: OpenAI-compatible,
- * so the host's model factory will run inference against `baseUrl` itself
- * and no token streams over RPC (refused for now, see
- * `assertNotExtensionProvider`). It carries no settings of its own; the base URL
- * is fixed by the manifest and the key lives in the extension's settings.
+ * so the host's model factory runs inference against `baseUrl` itself (on
+ * `extensionProviderFetch`) and no token streams over RPC. It carries no
+ * settings of its own; the base URL is fixed by the manifest and the key
+ * lives in the extension's settings.
  */
 export function toModelProvider(
   provider: ActiveExtensionProvider,

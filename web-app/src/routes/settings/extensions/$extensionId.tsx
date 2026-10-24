@@ -104,7 +104,7 @@ function InstalledDetails({
     <>
       <ExtensionCard
         manifest={entry.manifest}
-        version={entry.active}
+        version={entry.version}
         hosted={hosted}
         badges={!entry.verified && <UnverifiedBadge />}
         actions={
@@ -125,7 +125,7 @@ function InstalledDetails({
       <Card>
         <div className="flex items-center gap-2">
           <span className="text-sm text-foreground">
-            {t('extensions:details.version', { version: entry.active })}
+            {t('extensions:details.version', { version: entry.version })}
           </span>
           {entry.previous && (
             <Button

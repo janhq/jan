@@ -11,7 +11,8 @@ import { HOST_BUILTINS } from '../builtins'
 import { ContributionStore } from '../contributions'
 import { METHOD_POLICY, PermissionDispatcher } from '../dispatcher'
 import { ExtensionHost } from '../host'
-import { createHostApi, type FetchLike } from '../host-api'
+import { createHostApi } from '../host-api'
+import type { ExtensionHttp } from '../http'
 import { ExtensionSettingsStore } from '../settings-store'
 import {
   MAX_REJECTED_MESSAGES,
@@ -19,6 +20,7 @@ import {
   createBlobWorker,
   startWorker,
 } from '../worker-runtime'
+import { fakeHttp } from './fake-http'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -231,13 +233,13 @@ describe('spawnWorkerExtension', () => {
     expect(workers).toHaveLength(0)
   })
 
-  it('gives worker extensions no ctx.http.fetch until P3 (the app cookie jar)', async () => {
-    const fetch = vi.fn<FetchLike>()
+  it('gives ctx.http.fetch to installed extensions only, through the plugin', async () => {
+    const server = fakeHttp(() => ({ body: 'pong' }))
     const host = new ExtensionHost({
       appSettings: memoryAppSettings(),
       secrets: memorySecrets(),
       notify: vi.fn(),
-      fetch,
+      http: server.http,
       createWorker: (source, name) => {
         const worker = runInSandbox(source, { name })
         workers.push(worker)
@@ -246,19 +248,30 @@ describe('spawnWorkerExtension', () => {
     })
     hosts.push(host)
     const bundle = `var JanExtension = { activate: function (ctx) {
-      return ctx.http.fetch('http://127.0.0.1:1/').then(
-        function () { self.__result = 'allowed' },
+      return ctx.http.fetch('http://127.0.0.1:11999/').then(
+        function (r) { self.__result = r.status + ' ' + r.body },
         function (e) { self.__result = e.code + ': ' + e.message }
       );
     } };`
-    await host.spawnWorkerExtension({
-      manifest: manifest('acme.net', { permissions: ['network:127.0.0.1'] }),
-      bundle,
-      grants: ['network:127.0.0.1'],
-      source: 'dev',
-    })
-    expect(workers[0].scope.__result).toMatch(/^E_NOT_FOUND: .*not available.*P3/)
-    expect(fetch).not.toHaveBeenCalled()
+    const spawn = (id: string, source: 'dev' | 'installed') =>
+      host.spawnWorkerExtension({
+        manifest: manifest(id, { permissions: ['network:127.0.0.1'] }),
+        bundle,
+        grants: ['network:127.0.0.1'],
+        source,
+      })
+    await spawn('acme.installed', 'installed')
+    expect(workers[0].scope.__result).toBe('200 pong')
+    expect(server.sent).toEqual([
+      expect.objectContaining({ extensionId: 'acme.installed' }),
+    ])
+    // A folder loaded for development has no registry entry for the plugin
+    // to check its grants against, so it gets no network path.
+    await spawn('acme.dev', 'dev')
+    expect(workers[1].scope.__result).toMatch(
+      /^E_NOT_FOUND: .*only available to installed extensions/
+    )
+    expect(server.sent).toHaveLength(1)
   })
 
   it("reserves built-in ids and the 'jan.' prefix for built-ins", async () => {
@@ -285,12 +298,12 @@ describe('spawnWorkerExtension', () => {
   })
 
   it('refuses a network call outside the grants', async () => {
-    const fetch = vi.fn()
+    const server = fakeHttp(() => ({}))
     const host = new ExtensionHost({
       appSettings: memoryAppSettings(),
       secrets: memorySecrets(),
       notify: vi.fn(),
-      fetch,
+      http: server.http,
       createWorker: (source, name) => {
         const worker = runInSandbox(source, { name })
         workers.push(worker)
@@ -308,10 +321,10 @@ describe('spawnWorkerExtension', () => {
       manifest: manifest('acme.net', { permissions: ['network:127.0.0.1'] }),
       bundle,
       grants: ['network:127.0.0.1'],
-      source: 'dev',
+      source: 'installed',
     })
     expect(workers[0].scope.__result).toBe('E_PERMISSION')
-    expect(fetch).not.toHaveBeenCalled()
+    expect(server.sent).toEqual([])
   })
 
   it('unload stops a worker extension and removes it from the list', async () => {
@@ -379,7 +392,7 @@ describe('spawnWorkerExtension', () => {
 })
 
 describe('startWorker', () => {
-  function start(bundle: string, fetch?: FetchLike) {
+  function start(bundle: string, http?: ExtensionHttp) {
     const m = manifest('acme.net', { permissions: ['network:127.0.0.1'] })
     const dispatcher = new PermissionDispatcher()
     dispatcher.grant(m.id, m.permissions)
@@ -392,7 +405,7 @@ describe('startWorker', () => {
       }),
       storage: memoryAppSettings(),
       notify: vi.fn(),
-      fetch,
+      http,
     })
     let worker: SandboxWorker | undefined
     const started = startWorker({
@@ -408,19 +421,8 @@ describe('startWorker', () => {
     return { started, worker: () => worker }
   }
 
-  const hanging = (signals: Map<string, AbortSignal>) =>
-    vi.fn<FetchLike>(
-      (url, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          if (init.signal) signals.set(url, init.signal)
-          init.signal?.addEventListener('abort', () =>
-            reject(new Error('aborted'))
-          )
-        })
-    )
-
-  it('aborts a host-side fetch when the worker cancels the request', async () => {
-    const signals = new Map<string, AbortSignal>()
+  it('cancels the plugin request when the worker cancels it', async () => {
+    const server = fakeHttp(() => ({ hang: true }))
     // A request and its cancel on the wire, as the worker endpoint sends
     // them when a call times out or its token fires.
     const { started } = start(
@@ -428,28 +430,34 @@ describe('startWorker', () => {
         self.postMessage({ v: 1, t: 'req', id: 9001, method: 'http.fetch', args: ['http://127.0.0.1:1/a'] });
         setTimeout(function () { self.postMessage({ v: 1, t: 'cancel', id: 9001 }) }, 20);
       } };`,
-      hanging(signals)
+      server.http
     )
     const connection = await started
     await vi.waitFor(() =>
-      expect(signals.get('http://127.0.0.1:1/a')?.aborted).toBe(true)
+      expect(server.http.httpCancel).toHaveBeenCalledWith(
+        'acme.net',
+        server.sent[0].requestId
+      )
     )
     connection.terminate()
   })
 
-  it('aborts host-side fetches when the worker is terminated', async () => {
-    const signals = new Map<string, AbortSignal>()
+  it('cancels plugin requests when the worker is terminated', async () => {
+    const server = fakeHttp(() => ({ hang: true }))
     const { started } = start(
       `var JanExtension = { activate: function (ctx) {
         ctx.http.fetch('http://127.0.0.1:1/b').catch(function () {});
       } };`,
-      hanging(signals)
+      server.http
     )
     const connection = await started
-    await vi.waitFor(() => expect(signals.size).toBe(1))
-    expect(signals.get('http://127.0.0.1:1/b')?.aborted).toBe(false)
+    await vi.waitFor(() => expect(server.sent).toHaveLength(1))
+    expect(server.http.httpCancel).not.toHaveBeenCalled()
     connection.terminate()
-    expect(signals.get('http://127.0.0.1:1/b')?.aborted).toBe(true)
+    expect(server.http.httpCancel).toHaveBeenCalledWith(
+      'acme.net',
+      server.sent[0].requestId
+    )
   })
 
   it('terminates a worker that keeps sending refused messages', async () => {

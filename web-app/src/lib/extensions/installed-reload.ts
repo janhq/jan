@@ -2,10 +2,10 @@ import { getExtensionHost } from './host'
 
 /**
  * Brings the running copy of an installed extension in line with the
- * registry after the page changed it (enable, grants, update, rollback).
- * For now this stops it, so a revoked grant can no longer be used; the
- * installed loader (janhq/jan-internal#471) swaps in a respawn here.
+ * registry after the page changed it (enable, grants, install, update,
+ * rollback, uninstall): stopped, then started again from the registry when
+ * it is still installed and enabled.
  */
 export function reloadInstalled(extensionId: string): Promise<void> {
-  return getExtensionHost().terminate(extensionId)
+  return getExtensionHost().reload(extensionId)
 }

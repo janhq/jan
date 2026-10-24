@@ -82,7 +82,7 @@ function InstalledCard({
   return (
     <ExtensionCard
       manifest={entry.manifest}
-      version={entry.active}
+      version={entry.version}
       hosted={hosted}
       badges={!entry.verified && <UnverifiedBadge />}
       actions={

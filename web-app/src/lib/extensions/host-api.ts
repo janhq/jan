@@ -16,8 +16,18 @@ import {
   type HostResult,
   type LogLevel,
 } from '@janhq/extension-runtime'
+import type { HttpResponse as PluginHttpResponse } from '@janhq/tauri-plugin-extensions-api'
 import { own, type ContributionStore } from './contributions'
 import type { PermissionDispatcher } from './dispatcher'
+import {
+  firstHop,
+  newRequestId,
+  nextHop,
+  toExtensionError,
+  toPluginRequest,
+  withoutCookies,
+  type ExtensionHttp,
+} from './http'
 import type {
   AppSettingsBackend,
   ExtensionSettingsStore,
@@ -30,16 +40,6 @@ export type Notify = (notification: {
   message: string
 }) => void
 
-/**
- * The network primitive behind `ctx.http.fetch`. `maxRedirections: 0` is
- * how `@tauri-apps/plugin-http` is told not to follow redirects, so each hop
- * comes back here to be checked against the grants.
- */
-export type FetchLike = (
-  url: string,
-  init: RequestInit & { maxRedirections: number }
-) => Promise<Response>
-
 /** What every extension of one host shares. */
 export interface HostApiDeps {
   dispatcher: PermissionDispatcher
@@ -49,10 +49,11 @@ export interface HostApiDeps {
   notify: Notify
   conversations?: ConversationsApi
   /**
-   * Absent where the app has no network path for extensions. Worker
-   * extensions get none until P3 (see `ExtensionHost.apiDeps`).
+   * The network path of `ctx.http.fetch`. Only installed extensions get
+   * one: the plugin checks their grants in extensions.json, where neither
+   * built-ins nor folders loaded for development have an entry.
    */
-  fetch?: FetchLike
+  http?: ExtensionHttp
 }
 
 /** Per-call context the dispatcher hands to an implementation. */
@@ -69,12 +70,6 @@ export type HostApi = {
   ) => HostResult<M>
 }
 
-/**
- * Cap on a response body read for an extension: well under the RPC
- * message cap, so the reply of a worker's fetch can always cross (the
- * final size is checked again after JSON escaping, see `fetchChecked`).
- */
-export const MAX_RESPONSE_BYTES = MAX_MESSAGE_BYTES / 4
 /** Requests one extension may have running at once. */
 export const MAX_CONCURRENT_FETCHES = 8
 /** Listeners one extension may hold on one event. */
@@ -91,18 +86,6 @@ export const LOG_LINES_PER_SECOND = 10
  */
 export const LOG_WINDOW_MS = 10 * 60_000
 export const MAX_LOG_CHARS_PER_WINDOW = 1024 * 1024
-const MAX_REDIRECTS = 5
-const FETCH_TIMEOUT_MS = 30_000
-// Never forwarded either way: the host's cookie jar is not the extension's.
-const COOKIE_HEADERS = new Set(['cookie', 'cookie2', 'set-cookie', 'set-cookie2'])
-// What may follow a redirect to another origin. Anything else (Authorization,
-// x-api-key and other custom credentials) was meant for the first origin.
-const CORS_SAFELISTED_HEADERS = new Set([
-  'accept',
-  'accept-language',
-  'content-language',
-  'content-type',
-])
 
 /**
  * A token bucket: `capacity` calls at once, refilled at `perSecond`.
@@ -196,47 +179,15 @@ export function createLogger(extensionId: string): Logger {
 const notProvided = (what: string) =>
   new ExtensionError('E_NOT_FOUND', `${what} is not available in this host`)
 
-const isRedirect = (status: number) =>
-  status === 301 ||
-  status === 302 ||
-  status === 303 ||
-  status === 307 ||
-  status === 308
-
-async function readCapped(response: Response): Promise<string> {
-  const reader = response.body?.getReader()
-  if (!reader) return ''
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > MAX_RESPONSE_BYTES) {
-      void reader.cancel()
-      throw new ExtensionError(
-        'E_TOO_LARGE',
-        `The response exceeds ${MAX_RESPONSE_BYTES} bytes`
-      )
-    }
-    chunks.push(value)
-  }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(bytes)
-}
-
 const cancelled = () => new ExtensionError('E_CANCELLED', 'The request was cancelled')
 
 /**
- * `http.fetch`: follows redirects itself so every hop is checked against
- * the grants, drops cookies both ways, keeps only CORS-safelisted headers
- * once a redirect leaves the origin, caps the body, and aborts the request
- * when `signal` fires (the worker cancelled it or went away).
+ * `http.fetch`: each hop goes through the plugin's `http_fetch`, which
+ * re-checks the grants from extensions.json, keeps no cookie jar, caps the
+ * body at 1 MiB and follows no redirect. Redirects are followed here so
+ * every hop is checked against the grants too, with only CORS-safelisted
+ * headers kept once one leaves the origin. `signal` (the worker cancelled
+ * or went away) cancels the request in Rust.
  */
 async function fetchChecked(
   extensionId: string,
@@ -245,82 +196,47 @@ async function fetchChecked(
   url: string,
   init: HttpRequestInit = {}
 ): Promise<HttpResponse> {
-  const fetch = deps.fetch
-  if (!fetch)
+  const http = deps.http
+  if (!http)
     throw new ExtensionError(
       'E_NOT_FOUND',
-      'ctx.http.fetch is not available to this extension until Jan runs extension requests outside the app cookie jar (P3)'
+      'ctx.http.fetch is only available to installed extensions'
     )
   if (signal?.aborted) throw cancelled()
-  const headers = new Headers()
-  for (const [name, value] of Object.entries(init.headers ?? {}))
-    if (!COOKIE_HEADERS.has(name.toLowerCase())) headers.set(name, value)
-  let method: string = init.method ?? 'GET'
-  let body = init.body
-  let current = url
-  for (let hop = 0; ; hop++) {
-    deps.dispatcher.checkUrl(extensionId, current)
-    const controller = new AbortController()
-    const abort = () => controller.abort()
-    const timer = setTimeout(abort, FETCH_TIMEOUT_MS)
-    signal?.addEventListener('abort', abort)
+  let hop = firstHop(url, init.method ?? 'GET', init.headers, init.body)
+  for (let redirects = 0; ; redirects++) {
+    deps.dispatcher.checkUrl(extensionId, hop.url)
+    const requestId = newRequestId()
+    const cancel = () =>
+      void http.httpCancel(extensionId, requestId).catch(() => undefined)
+    signal?.addEventListener('abort', cancel)
+    let response: PluginHttpResponse
     try {
-      const response = await fetch(current, {
-        method,
-        // A copy per hop: a later hop drops credentials, and the platform
-        // may still read this request's headers.
-        headers: new Headers(headers),
-        body,
-        redirect: 'manual',
-        maxRedirections: 0,
-        credentials: 'omit',
-        signal: controller.signal,
-      })
-      const location = response.headers.get('location')
-      if (isRedirect(response.status) && location) {
-        void response.body?.cancel()
-        if (hop >= MAX_REDIRECTS)
-          throw new ExtensionError('E_INVALID_ARGS', 'Too many redirects')
-        const next = new URL(location, current)
-        if (next.origin !== new URL(current).origin)
-          for (const name of [...headers.keys()])
-            if (!CORS_SAFELISTED_HEADERS.has(name)) headers.delete(name)
-        if (
-          response.status === 303 ||
-          ((response.status === 301 || response.status === 302) &&
-            method === 'POST')
-        ) {
-          method = 'GET'
-          body = undefined
-        }
-        current = next.toString()
-        continue
-      }
-      const responseHeaders: Record<string, string> = {}
-      response.headers.forEach((value, name) => {
-        if (!COOKIE_HEADERS.has(name.toLowerCase()))
-          responseHeaders[name] = value
-      })
-      const result: HttpResponse = {
-        status: response.status,
-        headers: responseHeaders,
-        body: await readCapped(response),
-      }
-      // JSON escaping can grow a body several times over; a reply the RPC
-      // would drop is refused here, with a reason, instead.
-      if (JSON.stringify(result).length > MAX_MESSAGE_BYTES - 1024)
-        throw new ExtensionError(
-          'E_TOO_LARGE',
-          'The response is too large to return to the extension'
-        )
-      return result
+      response = await http.httpFetch(extensionId, toPluginRequest(hop), requestId)
     } catch (error) {
       if (signal?.aborted) throw cancelled()
-      throw error
+      throw toExtensionError(error)
     } finally {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', abort)
+      signal?.removeEventListener('abort', cancel)
     }
+    const next = nextHop(hop, response.status, response.headers.location, redirects)
+    if (next) {
+      hop = next
+      continue
+    }
+    const result: HttpResponse = {
+      status: response.status,
+      headers: withoutCookies(response.headers),
+      body: response.body,
+    }
+    // JSON escaping can grow a body several times over; a reply the RPC
+    // would drop is refused here, with a reason, instead.
+    if (JSON.stringify(result).length > MAX_MESSAGE_BYTES - 1024)
+      throw new ExtensionError(
+        'E_TOO_LARGE',
+        'The response is too large to return to the extension'
+      )
+    return result
   }
 }
 

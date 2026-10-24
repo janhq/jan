@@ -1,6 +1,7 @@
 import { ExtensionManager } from '@/lib/extension'
 import { getHostBuiltins } from '@/lib/extensions/builtins'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform'
 import { APIs } from '@/lib/service'
 import { EventEmitter } from '@/services/events/EventEmitter'
@@ -57,6 +58,14 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       )
     } catch (e) {
       console.error('Extension host setup failed:', e)
+    }
+    // Installed extensions run in workers after the built-ins, where there
+    // is an install pipeline (the desktop app).
+    try {
+      if (getServiceHub().extensions().isSupported())
+        await getExtensionHost().loadInstalled()
+    } catch (e) {
+      console.error('Loading installed extensions failed:', e)
     }
     try {
       await ExtensionManager.getInstance().registerActive()

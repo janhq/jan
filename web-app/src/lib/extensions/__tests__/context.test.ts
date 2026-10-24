@@ -9,6 +9,7 @@ import {
   MAX_SUBSCRIPTIONS_PER_EVENT,
 } from '../host-api'
 import { ExtensionSettingsStore } from '../settings-store'
+import { fakeHttp, type FakeReply } from './fake-http'
 import { manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -173,9 +174,9 @@ describe('createContext', () => {
   })
 
   it('checks the host and scheme of every fetch', async () => {
-    const fetch = vi.fn(async () => new Response('', { status: 200 }))
+    const { http } = fakeHttp(() => ({}))
     const { ctx } = setup(['network:api.acme.dev', 'network:localhost'], {
-      fetch,
+      http,
     })
     await expect(
       ctx.http.fetch('https://api.acme.dev/x')
@@ -192,7 +193,7 @@ describe('createContext', () => {
     await expect(ctx.http.fetch('not a url')).rejects.toMatchObject({
       code: 'E_INVALID_ARGS',
     })
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(http.httpFetch).toHaveBeenCalledTimes(2)
   })
 
   it('scopes settings to the extension and forwards only its own changes', async () => {
@@ -210,14 +211,11 @@ describe('createContext', () => {
 
   it('holds a built-in to none of the limits a worker gets', async () => {
     const release: (() => void)[] = []
-    const fetch = vi.fn(
-      () =>
-        new Promise<Response>((resolve) =>
-          release.push(() => resolve(new Response('ok')))
-        )
+    const { http } = fakeHttp(
+      () => new Promise<FakeReply>((resolve) => release.push(() => resolve({})))
     )
     const { ctx, deps } = setup(['ui:notify', 'network:api.acme.dev'], {
-      fetch,
+      http,
     })
     for (let i = 0; i < 50; i++)
       ctx.ui.notify({ level: 'info', message: `${i}` })
@@ -228,7 +226,7 @@ describe('createContext', () => {
       ctx.http.fetch('https://api.acme.dev/')
     )
     await vi.waitFor(() =>
-      expect(fetch).toHaveBeenCalledTimes(MAX_CONCURRENT_FETCHES * 2)
+      expect(http.httpFetch).toHaveBeenCalledTimes(MAX_CONCURRENT_FETCHES * 2)
     )
     for (const r of release) r()
     await Promise.all(running)

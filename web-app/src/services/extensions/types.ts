@@ -3,14 +3,28 @@
  *
  * The install pipeline of runtime extensions: staging a bundle or an index
  * entry, consenting to its permissions, and managing what is installed and
- * where it can be installed from. Mirrors the commands of
- * tauri-plugin-extensions (janhq/jan-internal#470, #473) in camelCase.
+ * where it can be installed from. The shapes are the ones the guest-js of
+ * tauri-plugin-extensions returns; only the manifest and the permission
+ * lists are narrowed, to what this host validated.
  */
 
 import type {
   PermissionString,
   ValidatedManifest,
 } from '@janhq/extension-api'
+import type * as Plugin from '@janhq/tauri-plugin-extensions-api'
+import type {
+  CuratedIndex,
+  IndexSourceEntry as IndexSource,
+} from '@janhq/tauri-plugin-extensions-api'
+
+export type {
+  CuratedIndex,
+  IndexExtension,
+  IndexVersion,
+  IndexSourceEntry as IndexSource,
+  ExtensionSource as InstallSource,
+} from '@janhq/tauri-plugin-extensions-api'
 
 /** What an update asks for beyond, and no longer needs from, the old grants. */
 export interface PermissionDiff {
@@ -27,94 +41,36 @@ export interface ExistingInstall {
 /**
  * A bundle extracted to staging and waiting for consent. Nothing runs and
  * nothing is registered until `confirmInstall`; `discardStage` drops it.
+ * `verified` is true only for a signature-checked index entry, so a file
+ * picked from disk never is.
  */
-export interface StagedInstall {
-  stageId: string
+export type StagedInstall = Omit<
+  Plugin.StagedInstall,
+  'manifest' | 'existing' | 'permissionDiff'
+> & {
   /** The package's manifest, validated against this app's API version. */
   manifest: ValidatedManifest
-  /** `sha512-<base64>` of the tarball. */
-  sha512: string
-  /**
-   * True only when the tarball matched the integrity pinned by an index.
-   * A file picked from disk is never verified.
-   */
-  verified: boolean
   /** Present when this is an update of an installed extension. */
   existing?: ExistingInstall
   permissionDiff: PermissionDiff
 }
 
-/** Where an installed version came from. */
-export type InstallSource =
-  | { kind: 'bundle'; fileName: string; sha512: string }
-  | {
-      kind: 'index'
-      sourceId: string
-      url: string
-      tarball: string
-      integrity: string
-    }
-
-/** One registry entry of `<jan_data>/extensions/extensions.json`. */
-export interface InstalledExtension {
-  id: string
-  /** The manifest of the active version. */
+/** One entry of `<jan_data>/extensions/extensions.json`. */
+export type InstalledExtension = Omit<
+  Plugin.InstalledExtension,
+  'manifest' | 'granted' | 'permissions'
+> & {
+  /** The manifest of the active version (`version`). */
   manifest: ValidatedManifest
-  enabled: boolean
-  /** The active version. */
-  active: string
-  /** The version `rollback` would restore, when one is kept. */
-  previous?: string
-  source: InstallSource
-  verified: boolean
-  /** What the user granted; a subset of `manifest.permissions`. */
+  /** What the user granted; a subset of `permissions`. */
   granted: PermissionString[]
-  entrySha512: string
-  /** RFC 3339. */
-  installedAt: string
-}
-
-export interface ListResult {
-  /** When on, no installed extension is loaded. */
-  safeMode: boolean
-  extensions: InstalledExtension[]
-}
-
-/** A user-added index to browse and install from (https only). */
-export interface IndexSource {
-  id: string
-  name: string
-  url: string
-  /** base64 ed25519 key, pinned when the source is added. */
-  publicKey?: string
-  /** RFC 3339. */
-  addedAt: string
-}
-
-export interface IndexVersion {
-  version: string
-  tarball: string
-  /** `sha512-<base64>`. */
-  integrity: string
-  apiVersion: string
-  engines?: { jan: string }
+  /** What the active version requests. */
   permissions: PermissionString[]
 }
 
-export interface IndexExtension {
-  id: string
-  displayName: string
-  publisher: string
-  description?: string
-  homepage?: string
-  versions: IndexVersion[]
-}
-
-/** An index document, schema 1. */
-export interface CuratedIndex {
-  schema: 1
-  generatedAt: string
-  extensions: IndexExtension[]
+/** The registry; when `safeMode` is on, no installed extension is loaded. */
+export type ListResult = Omit<Plugin.ListResult, 'extensions'> & {
+  extensions: InstalledExtension[]
 }
 
 export interface ExtensionsService {

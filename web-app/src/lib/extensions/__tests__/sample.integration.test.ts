@@ -3,7 +3,7 @@
 // ExtensionHost composes it with the real prelude, and every call it makes
 // goes through the real dispatcher into the real contribution and settings
 // stores. Only the Worker is swapped for the node:vm sandbox, and the
-// network, keyring and toasts for fakes.
+// plugin's network commands, keyring and toasts for fakes.
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,9 +13,9 @@ import {
   type SandboxWorker,
 } from '@janhq/extension-runtime/testing'
 import { ExtensionHost } from '../host'
-import type { FetchLike } from '../host-api'
 import { extensionProviderName, listExtensionProviders } from '../providers'
 import { listExtensionTools, toolWireName } from '../tools'
+import { fakeHttp } from './fake-http'
 import { memoryAppSettings, memorySecrets } from './memory'
 
 // A path, not import.meta.url: under jsdom that URL is not a file: URL.
@@ -39,19 +39,24 @@ function loadSample(): { manifest: ValidatedManifest; bundle: string } {
 let host: ExtensionHost
 let worker: SandboxWorker | undefined
 let notify: ReturnType<typeof vi.fn>
-let fetch: ReturnType<typeof vi.fn<FetchLike>>
+let server: ReturnType<typeof fakeHttp>
 
 beforeEach(async () => {
   notify = vi.fn()
-  fetch = vi.fn<FetchLike>(
-    async () => new Response('{"data":[]}', { status: 200 })
+  server = fakeHttp(({ url }) =>
+    url.endsWith('/chat/completions')
+      ? {
+          headers: { 'content-type': 'text/event-stream' },
+          chunks: ['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', 'data: [DONE]\n\n'],
+        }
+      : { body: '{"data":[]}' }
   )
   worker = undefined
   host = new ExtensionHost({
     appSettings: memoryAppSettings(),
     secrets: memorySecrets(),
     notify,
-    fetch,
+    http: server.http,
     createWorker: (source, name) => {
       worker = runInSandbox(source, { name })
       return worker
@@ -63,9 +68,9 @@ beforeEach(async () => {
     bundle,
     // What a consent dialog would grant: everything requested.
     grants: manifest.permissions,
-    source: 'dev',
+    source: 'installed',
   })
-  expect(hosted).toMatchObject({ id: ID, state: 'active', source: 'dev' })
+  expect(hosted).toMatchObject({ id: ID, state: 'active', source: 'installed' })
 })
 
 afterEach(async () => {
@@ -171,15 +176,21 @@ describe('hello-provider sample in a worker', () => {
     )
   })
 
-  it('reaches no network until P3, and nothing outside its grants', async () => {
-    // Worker extensions get no ctx.http.fetch in P2: plugin-http would send
-    // their requests through the app's cookie jar. Inference of hello-local
-    // runs in the host and is unaffected.
+  it('reaches the network through the plugin, and nothing outside its grants', async () => {
     await expect(
       host.contributions.executeCommand(ID, 'hello.ping', {
         location: 'commandPalette',
       })
-    ).rejects.toMatchObject({ code: 'E_NOT_FOUND', message: expect.stringContaining('P3') })
+    ).resolves.toBe(200)
+    expect(server.sent).toEqual([
+      expect.objectContaining({
+        extensionId: ID,
+        req: expect.objectContaining({
+          url: 'http://127.0.0.1:11999/v1/models',
+          method: 'GET',
+        }),
+      }),
+    ])
     await expect(
       host.contributions.executeCommand(
         ID,
@@ -188,7 +199,20 @@ describe('hello-provider sample in a worker', () => {
         'https://example.com'
       )
     ).rejects.toMatchObject({ code: 'E_PERMISSION' })
-    expect(fetch).not.toHaveBeenCalled()
+    expect(server.sent).toHaveLength(1)
+  })
+
+  it('streams provider inference through the plugin', async () => {
+    const fetch = host.providerFetch(ID)
+    expect(fetch).toBeTypeOf('function')
+    const response = await fetch!(
+      'http://127.0.0.1:11999/v1/chat/completions',
+      { method: 'POST', body: '{"model":"hello-1","stream":true}' }
+    )
+    expect(await response.text()).toContain('"content":"hi"')
+    expect(server.http.httpFetchStream).toHaveBeenCalledTimes(1)
+    await host.terminate(ID)
+    expect(host.providerFetch(ID)).toBeUndefined()
   })
 
   it('terminate releases every registration', async () => {

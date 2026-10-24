@@ -26,12 +26,18 @@ import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { i18n } from '@/i18n/react-i18next-compat'
+import * as extensionsPlugin from '@janhq/tauri-plugin-extensions-api'
 import type { BuiltinExtension } from './builtins'
 import { createContext } from './context'
 import { createConversationsApi } from './conversations'
 import { ContributionStore, own, useContributions } from './contributions'
 import { PermissionDispatcher } from './dispatcher'
-import { createHostApi, type FetchLike, type Notify } from './host-api'
+import { createHostApi, type Notify } from './host-api'
+import { createProviderFetch, type ExtensionHttp } from './http'
+import {
+  loadInstalled,
+  type InstalledRegistry,
+} from './installed-loader'
 import {
   ExtensionSettingsStore,
   type AppSettingsBackend,
@@ -50,7 +56,9 @@ export type ExtensionState = 'inactive' | 'activating' | 'active' | 'failed'
 /**
  * Where an extension came from. Built-ins run in process; the rest run in a
  * worker: `dev` from a folder loaded unpacked, `installed` from the data
- * folder (P3).
+ * folder. Only `installed` ones have a network path: the plugin checks
+ * every request against the grants in extensions.json, where the others
+ * have no entry.
  */
 export type ExtensionSource = 'builtin' | 'dev' | 'installed'
 
@@ -80,8 +88,10 @@ export interface ExtensionHostOptions {
   /** Defaults to a private store; the app passes `useContributions`. */
   contributions?: ContributionStore
   conversations?: ConversationsApi
-  /** The network path of `ctx.http.fetch`; absent means none. */
-  fetch?: FetchLike
+  /** The network path of installed extensions; absent means none. */
+  http?: ExtensionHttp
+  /** The registry installed extensions are loaded and reloaded from. */
+  installed?: InstalledRegistry
   /** Defaults to a blob-URL `Worker`; tests pass the sandbox harness. */
   createWorker?: CreateWorker
   /** The port of Jan's local API server, which no extension may reach. */
@@ -102,6 +112,8 @@ interface Entry {
   worker?: WorkerConnection
   /** Host-side registrations: contributions, settings schema, grants. */
   registrations?: DisposableStore
+  /** Aborted at teardown: ends the provider streams of a stopped worker. */
+  stopped?: AbortController
 }
 
 // listModels results come from extension code; only this shape is used.
@@ -222,11 +234,18 @@ export class ExtensionHost {
           'E_PERMISSION',
           `The id '${manifest.id}' is reserved for Jan's built-in extensions`
         )
-      const state = this.entries.get(manifest.id)?.hosted.state
-      if (state === 'active' || state === 'activating')
+      const existing = this.entries.get(manifest.id)?.hosted
+      if (existing?.state === 'active' || existing?.state === 'activating')
         throw new ExtensionError(
           'E_INVALID_ARGS',
           `Extension '${manifest.id}' is already running`
+        )
+      // An installed copy and a development copy of one id would share its
+      // settings and contributions; whichever came first keeps it.
+      if (existing && existing.source !== source)
+        throw new ExtensionError(
+          'E_INVALID_ARGS',
+          `Extension '${manifest.id}' is already loaded from another source`
         )
       const entry: Entry = {
         hosted: { id: manifest.id, manifest, source, state: 'activating' },
@@ -255,13 +274,10 @@ export class ExtensionHost {
           dispatcher: this.dispatcher,
           api: createHostApi(manifest, {
             ...this.apiDeps(),
-            // Not until P3's Rust http_fetch: plugin-http sends every request
-            // through the app's cookie jar, and nothing in JS can turn that
-            // off per request. Inference with a contributed provider waits
-            // for it too (assertNotExtensionProvider).
-            fetch: undefined,
+            http: source === 'installed' ? this.options.http : undefined,
           }),
         })
+        entry.stopped = new AbortController()
         entry.hosted.state = 'active'
         this.activeOrder.push(manifest.id)
         this.changes.fire()
@@ -280,6 +296,64 @@ export class ExtensionHost {
     return this.enqueue(async () => {
       const entry = this.entries.get(extensionId)
       if (entry) await this.teardown(entry)
+    })
+  }
+
+  /**
+   * Loads every enabled installed extension from the registry; nothing in
+   * safe mode. One that fails is marked `failed` and the rest still load.
+   */
+  loadInstalled(): Promise<void> {
+    const registry = this.options.installed
+    return registry ? loadInstalled(this, registry) : Promise.resolve()
+  }
+
+  /**
+   * Brings the running copy of an installed extension in line with the
+   * registry after it changed (enable, grants, install, update, rollback,
+   * uninstall): stops it, then starts it again from the registry if it is
+   * still installed and enabled, so the new grants and version apply.
+   */
+  async reload(extensionId: string): Promise<void> {
+    const source = this.entries.get(extensionId)?.hosted.source
+    if (source !== undefined && source !== 'installed') return
+    await this.unload(extensionId)
+    const registry = this.options.installed
+    if (registry) await loadInstalled(this, registry, extensionId)
+  }
+
+  /**
+   * Records that an installed extension could not be started, so its
+   * reason shows next to it. Whatever else holds the id (a built-in, a
+   * development copy, a copy already running) keeps its entry.
+   */
+  markFailed(manifest: ValidatedManifest, error: unknown): Promise<void> {
+    return this.enqueue(async () => {
+      const hosted = this.entries.get(manifest.id)?.hosted
+      const running =
+        hosted?.state === 'active' || hosted?.state === 'activating'
+      if (!hosted || (hosted.source === 'installed' && !running))
+        this.fail(manifest, error, 'installed')
+    })
+  }
+
+  /**
+   * The `fetch` inference with a contributed provider runs on: the
+   * extension's own network path, checked against its grants on every URL
+   * and redirect hop, and ended when the extension stops. Undefined unless
+   * it is an installed extension that is running: built-ins contribute no
+   * providers, and a folder loaded for development has no network path.
+   */
+  providerFetch(extensionId: string): typeof globalThis.fetch | undefined {
+    const entry = this.entries.get(extensionId)
+    const http = this.options.http
+    if (!http || entry?.hosted.source !== 'installed' || !entry.stopped)
+      return undefined
+    return createProviderFetch({
+      extensionId,
+      http,
+      checkUrl: (url) => this.dispatcher.checkUrl(extensionId, url),
+      stopped: entry.stopped.signal,
     })
   }
 
@@ -376,7 +450,6 @@ export class ExtensionHost {
       storage: this.options.appSettings,
       notify: this.options.notify,
       conversations: this.options.conversations,
-      fetch: this.options.fetch,
     }
   }
 
@@ -461,6 +534,7 @@ export class ExtensionHost {
       await entry.worker?.deactivate()
     }
     entry.worker?.terminate()
+    entry.stopped?.abort()
     for (const store of [entry.ctx?.subscriptions, entry.registrations]) {
       try {
         store?.dispose()
@@ -471,6 +545,7 @@ export class ExtensionHost {
     entry.module = undefined
     entry.ctx = undefined
     entry.worker = undefined
+    entry.stopped = undefined
     entry.registrations = undefined
     const index = this.activeOrder.indexOf(id)
     if (index >= 0) this.activeOrder.splice(index, 1)
@@ -520,9 +595,8 @@ export function getExtensionHost(): ExtensionHost {
     // Resolved per call: the hub is ready before any extension activates,
     // but the host may be constructed earlier.
     conversations: createConversationsApi(getServiceHub),
-    // The providers service's fetch is @tauri-apps/plugin-http on desktop,
-    // which runs the request from Rust and honours `maxRedirections`.
-    fetch: (url, init) => getServiceHub().providers().fetch()(url, init),
+    http: extensionsPlugin,
+    installed: extensionsPlugin,
     localApiPort: () => useLocalApiServer.getState().serverPort,
   })
   return host

@@ -14,15 +14,18 @@ export function installed(
   id: string,
   extra: Partial<InstalledExtension> = {}
 ): InstalledExtension {
+  const m = manifest(id, { displayName: `Ext ${id}` })
   return {
     id,
-    manifest: manifest(id, { displayName: `Ext ${id}` }),
+    manifest: m,
     enabled: true,
-    active: '1.0.0',
+    version: m.version,
+    previous: null,
     source: { kind: 'bundle', fileName: `${id}.tgz`, sha512: 'sha512-abc' },
     verified: false,
+    integrityChecked: false,
     granted: [],
-    entrySha512: 'sha512-entry',
+    permissions: m.permissions,
     installedAt: '2026-10-23T10:00:00Z',
     ...extra,
   }
@@ -39,6 +42,8 @@ export function staged(
     manifest: manifest(id, { displayName: `Ext ${id}`, permissions }),
     sha512: 'sha512-c3RhZ2Vk',
     verified: false,
+    integrityChecked: false,
+    source: { kind: 'bundle', fileName: `${id}.tgz`, sha512: 'sha512-c3RhZ2Vk' },
     permissionDiff: { added: permissions, removed: [] },
     ...extra,
   }
@@ -86,8 +91,9 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
         if (!stage || stage.stageId !== stageId) throw new Error('no stage')
         const entry = installed(stage.manifest.id, {
           manifest: stage.manifest,
-          active: stage.manifest.version,
+          version: stage.manifest.version,
           granted,
+          permissions: stage.manifest.permissions,
           verified: stage.verified,
         })
         state.extensions = [
@@ -103,6 +109,8 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
     }),
     list: vi.fn(async () => ({
       safeMode: state.safeMode,
+      safeModeForced: false,
+      recoveredFrom: null,
       extensions: state.extensions.map((e) => ({ ...e })),
     })),
     setEnabled: vi.fn(async (id: string, enabled: boolean) => {
@@ -117,7 +125,7 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
     rollback: vi.fn(async (id: string) => {
       const entry = find(id)
       if (!entry.previous) throw new Error('no previous version')
-      ;[entry.active, entry.previous] = [entry.previous, entry.active]
+      ;[entry.version, entry.previous] = [entry.previous, entry.version]
       return { ...entry }
     }),
     setSafeMode: vi.fn(async (on: boolean) => {

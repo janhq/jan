@@ -15,6 +15,7 @@ import {
   type HostApiDeps,
 } from '../host-api'
 import { ExtensionSettingsStore } from '../settings-store'
+import { fakeHttp } from './fake-http'
 import { manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -85,14 +86,15 @@ function setup(permissions: PermissionString[], deps: Partial<HostApiDeps> = {})
     secrets: memorySecrets(),
   })
   settings.register(m)
-  const fetch = vi.fn(async () => new Response('ok', { status: 200 }))
+  const { http } = fakeHttp(() => ({ body: 'ok' }))
+  const fetch = http.httpFetch
   const api = createHostApi(m, {
     dispatcher,
     contributions,
     settings,
     storage: memoryAppSettings(),
     notify: vi.fn(),
-    fetch,
+    http,
     ...deps,
   })
   const call = (method: HostMethod, args: unknown[]) =>

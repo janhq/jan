@@ -74,7 +74,7 @@ beforeEach(() => {
             ],
           },
         }),
-        active: '2.0.0',
+        version: '2.0.0',
         previous: '1.0.0',
         granted: ['ui:notify', 'tools'],
       }),
@@ -119,7 +119,7 @@ describe('installed extension details', () => {
   })
 
   it('has no rollback without a previous version', async () => {
-    mock.state.extensions[0].previous = undefined
+    mock.state.extensions[0].previous = null
     render(<Page />)
     await screen.findByText('Version 2.0.0')
     expect(screen.queryByRole('button', { name: /Roll back/ })).toBeNull()
