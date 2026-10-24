@@ -49,6 +49,7 @@ import {
   type SecretBackend,
 } from './settings-store'
 import { toToolOutcome, type ToolCallOutcome } from './tools'
+import { crashCounter } from './watchdog'
 import {
   createBlobWorker,
   startWorker,
@@ -56,7 +57,16 @@ import {
   type WorkerConnection,
 } from './worker-runtime'
 
-export type ExtensionState = 'inactive' | 'activating' | 'active' | 'failed'
+/**
+ * `crashed`: the runtime stopped a running worker (it stopped answering, or
+ * kept breaking the limits), as opposed to `failed` to start.
+ */
+export type ExtensionState =
+  | 'inactive'
+  | 'activating'
+  | 'active'
+  | 'failed'
+  | 'crashed'
 
 /**
  * Where an extension came from. Built-ins run in process; the rest run in a
@@ -73,7 +83,7 @@ export interface HostedExtension {
   manifest: ValidatedManifest
   source: ExtensionSource
   state: ExtensionState
-  /** Why activation failed, when `state` is `failed`. */
+  /** Why it failed to start or was stopped (`failed`, `crashed`). */
   error?: string
 }
 
@@ -151,6 +161,9 @@ export class ExtensionHost {
   private queue: Promise<unknown> = Promise.resolve()
   // The last reload of each installed id, so the next one runs after it.
   private readonly reloads = new Map<string, Promise<void>>()
+  private readonly crashLimitReached = crashCounter()
+  // Ids that crashed too often; not started again until the app restarts.
+  private readonly disabledForSession = new Set<string>()
 
   /** Fires whenever an extension's state changes. */
   readonly onDidChange: Event<void> = this.changes.event
@@ -260,6 +273,10 @@ export class ExtensionHost {
       this.entries.set(manifest.id, entry)
       this.changes.fire()
       try {
+        if (this.disabledForSession.has(manifest.id))
+          throw new Error(
+            'it crashed too often and is disabled for this session'
+          )
         if (!isApiCompatible(manifest.apiVersion, API_VERSION)) {
           throw new Error(
             `needs extension API ${manifest.apiVersion}, host provides ${API_VERSION}`
@@ -283,6 +300,7 @@ export class ExtensionHost {
             ...this.apiDeps(),
             http: source === 'installed' ? this.options.http : undefined,
           }),
+          onCrash: (error) => this.onCrash(entry, error),
         })
         entry.stopped = new AbortController()
         entry.hosted.state = 'active'
@@ -457,6 +475,34 @@ export class ExtensionHost {
         `'${extensionId}' returned an invalid model list`
       )
     return parsed.data
+  }
+
+  /**
+   * A running worker was stopped by the runtime. It is marked `crashed` and
+   * released. An installed one is started again from the registry, unless
+   * it crashed CRASH_LIMIT times within the window: then it stays off until
+   * the app restarts, and the user is told.
+   */
+  private onCrash(entry: Entry, error: Error): void {
+    const { id, manifest, source } = entry.hosted
+    void this.enqueue(async () => {
+      if (this.entries.get(id) !== entry || entry.hosted.state !== 'active')
+        return
+      // Marked first, so teardown does not ask a dead worker to deactivate.
+      entry.hosted = { ...entry.hosted, state: 'crashed', error: error.message }
+      await this.teardown(entry)
+      this.changes.fire()
+    })
+    if (this.crashLimitReached(id)) {
+      this.disabledForSession.add(id)
+      this.options.notify({
+        extensionName: manifest.displayName,
+        level: 'error',
+        message: i18n.t('extensions:crashed.disabled'),
+      })
+    } else if (source === 'installed') {
+      void this.reload(id)
+    }
   }
 
   /** Registers what the host holds for an extension; dispose releases it. */

@@ -78,6 +78,11 @@ export function ExtensionCard({
               {t('extensions:activationFailed', { error: hosted.error })}
             </span>
           )}
+          {hosted?.state === 'crashed' && hosted.error && (
+            <span className="text-xs text-destructive">
+              {t('extensions:crashed.reason', { error: hosted.error })}
+            </span>
+          )}
         </div>
       }
     >

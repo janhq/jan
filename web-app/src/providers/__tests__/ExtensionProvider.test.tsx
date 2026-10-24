@@ -16,9 +16,13 @@ const h = vi.hoisted(() => ({
     deactivateAll: vi.fn().mockResolvedValue(undefined),
   },
   installSupported: true,
+  settings: new Map<string, string>(),
+  setSafeMode: vi.fn().mockResolvedValue(undefined),
+  toastWarning: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
+  i18n: { t: (k: string) => k },
   useTranslation: () => ({
     t: (k: string, vars?: Record<string, unknown>) => {
       if (k === 'settingUpJan') return 'Booting up Jan…'
@@ -41,13 +45,24 @@ vi.mock('@/lib/extension', () => ({
 vi.mock('@/lib/extensions/host', () => ({ getExtensionHost: () => h.host }))
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
-    extensions: () => ({ isSupported: () => h.installSupported }),
+    extensions: () => ({
+      isSupported: () => h.installSupported,
+      setSafeMode: h.setSafeMode,
+    }),
   }),
 }))
 
 vi.mock('@/lib/service', () => ({ APIs: {} }))
 vi.mock('@/services/events/EventEmitter', () => ({ EventEmitter: class {} }))
-vi.mock('@janhq/core', () => ({ EngineManager: class {}, ModelManager: class {} }))
+vi.mock('@janhq/core', () => ({
+  EngineManager: class {},
+  ModelManager: class {},
+  appSettings: {
+    get: async (key: string) => h.settings.get(key) ?? null,
+    set: async (key: string, value: string) => void h.settings.set(key, value),
+  },
+}))
+vi.mock('sonner', () => ({ toast: { warning: h.toastWarning } }))
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   getCurrentWebviewWindow: () => ({ label: h.windowLabel }),
 }))
@@ -72,6 +87,8 @@ describe('ExtensionProvider', () => {
     h.windowLabel = 'main'
     h.calls = []
     h.installSupported = true
+    h.settings.clear()
+    h.setSafeMode.mockResolvedValue(undefined)
     h.host.activateBuiltins.mockImplementation(async () => void h.calls.push('host'))
     h.host.loadInstalled.mockImplementation(
       async () => void h.calls.push('installed')
@@ -119,7 +136,11 @@ describe('ExtensionProvider', () => {
     await screen.findByTestId('child')
     expect(window.core?.extensionHost).toBe(h.host)
     expect(h.host.activateBuiltins).toHaveBeenCalledWith(getHostBuiltins())
-    expect(h.calls).toEqual(['host', 'installed', 'legacy'])
+    // Installed and legacy loads do not wait on each other.
+    await waitFor(() =>
+      expect([...h.calls].sort()).toEqual(['host', 'installed', 'legacy'])
+    )
+    expect(h.calls[0]).toBe('host')
     expect(h.host.activateBuiltins.mock.invocationCallOrder[0]).toBeLessThan(
       h.host.loadInstalled.mock.invocationCallOrder[0]
     )
@@ -144,6 +165,31 @@ describe('ExtensionProvider', () => {
         expect.any(Error)
       )
     )
+  })
+
+  it('turns on safe mode after two starts that never got the installed extensions loaded', async () => {
+    h.settings.set('extension-host:failedStarts', '2')
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() => expect(h.host.loadInstalled).toHaveBeenCalled())
+    expect(h.setSafeMode).toHaveBeenCalledWith(true)
+    expect(h.setSafeMode.mock.invocationCallOrder[0]).toBeLessThan(
+      h.host.loadInstalled.mock.invocationCallOrder[0]
+    )
+    expect(h.toastWarning).toHaveBeenCalledWith('extensions:crashed.safeMode')
+    await waitFor(() =>
+      expect(h.settings.get('extension-host:failedStarts')).toBe('0')
+    )
+  })
+
+  it('keeps a start counted as failed while installed extensions are loading', async () => {
+    h.host.loadInstalled.mockImplementation(() => new Promise<void>(() => {}))
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() =>
+      expect(h.settings.get('extension-host:failedStarts')).toBe('1')
+    )
+    expect(h.setSafeMode).not.toHaveBeenCalled()
   })
 
   it('loads no installed extension where there is no install pipeline', async () => {

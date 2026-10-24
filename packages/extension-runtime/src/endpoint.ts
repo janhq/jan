@@ -69,7 +69,7 @@ export interface EndpointOptions {
   onControl?: (message: ControlMessage) => void
   /**
    * Hears about every message refused without reaching a handler: one that
-   * is malformed or over the size cap. The host counts them to stop a
+   * is malformed, over the size cap or over the in-flight cap. The host counts them to stop a
    * worker that floods it.
    */
   onRejected?: (error: ExtensionError) => void
@@ -344,14 +344,14 @@ export class Endpoint {
         id,
         new ExtensionError('E_NOT_FOUND', `No handler for '${method}'`)
       )
-    if (this.serving.size >= this.maxInFlight)
-      return this.respondError(
-        id,
-        new ExtensionError(
-          'E_TOO_LARGE',
-          `More than ${this.maxInFlight} requests in flight`
-        )
+    if (this.serving.size >= this.maxInFlight) {
+      const error = new ExtensionError(
+        'E_TOO_LARGE',
+        `More than ${this.maxInFlight} requests in flight`
       )
+      this.options.onRejected?.(error)
+      return this.respondError(id, error)
+    }
     const source = new CancellationTokenSource()
     this.serving.set(id, source)
     void (async () => {
