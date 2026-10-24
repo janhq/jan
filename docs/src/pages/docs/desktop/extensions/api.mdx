@@ -1,0 +1,343 @@
+---
+title: Extension API
+description: Reference for the ExtensionContext a Jan extension's activate function receives (@janhq/extension-api 1.0.0).
+keywords:
+  [
+    Jan,
+    extensions,
+    extension API,
+    ExtensionContext,
+    TypeScript,
+  ]
+---
+import { Callout } from 'nextra/components'
+
+# Extension API
+
+The types live in the `@janhq/extension-api` package (version **1.0.0**). An
+extension's bundle imports only types from it; at runtime everything comes
+through the `ctx` object passed to `activate`. The authoritative signatures are
+in the package's committed
+[`api-report.d.ts`](https://github.com/janhq/jan/blob/main/packages/extension-api/api-report.d.ts).
+
+```ts
+export interface ExtensionModule {
+  activate(ctx: ExtensionContext): void | Promise<void>
+  deactivate?(): void | Promise<void>
+}
+
+export interface ExtensionContext {
+  readonly extension: { id: string; version: string; displayName: string }
+  /** Disposed by the host on deactivation; add every registration here. */
+  readonly subscriptions: DisposableStore
+  readonly log: Logger
+  readonly settings: SettingsApi
+  readonly storage: StorageApi
+  readonly commands: CommandsApi
+  readonly ui: UiApi
+  readonly conversations: ConversationsApi
+  readonly tools: ToolsApi
+  readonly providers: ProvidersApi
+  readonly http: HttpApi
+  readonly proposed: ProposedApi
+}
+```
+
+Every call is checked by the host: arguments first (`E_INVALID_ARGS`), then the
+permission (`E_PERMISSION`). Methods that return a promise reject; methods that
+return a value or a `Disposable` (registrations, `ui.notify`) send the call at
+once, and a failure is logged and fails `activate` if it happened during
+activation.
+
+## `ctx.log`
+
+```ts
+interface Logger {
+  debug(...args: unknown[]): void
+  info(...args: unknown[]): void
+  warn(...args: unknown[]): void
+  error(...args: unknown[]): void
+}
+```
+
+Writes to the app log, tagged `[ext:<id>]`. Rate limited; see
+[Limits](/docs/desktop/extensions/develop#limits).
+
+## `ctx.settings`
+
+The extension's own settings from `contributes.settings`. No permission needed.
+
+```ts
+interface SettingsApi {
+  /** The current value, or the manifest default. Undefined for an undeclared key. */
+  get<T extends SettingValue>(key: string): Promise<T | undefined>
+  /** Stores a value for a declared key; the type must match the control. */
+  set(key: string, value: SettingValue): Promise<void>
+  readonly onDidChange: Event<{ key: string; value: SettingValue }>
+}
+type SettingValue = string | number | boolean
+```
+
+## `ctx.storage`
+
+Private key-value storage of JSON values, 1 MiB per extension. No permission
+needed.
+
+```ts
+interface StorageApi {
+  get<T extends JsonValue>(key: string): Promise<T | undefined>
+  /** Rejects with E_TOO_LARGE when the stored total would exceed the quota. */
+  set(key: string, value: JsonValue): Promise<void>
+  delete(key: string): Promise<void>
+  keys(): Promise<string[]>
+}
+```
+
+## `ctx.commands`
+
+```ts
+interface CommandsApi {
+  /** Binds a handler to a command declared in contributes.commands. */
+  registerCommand(id: string, handler: CommandHandler): Disposable
+  /** Runs one of the extension's own commands, or (with commands:execute) another one. */
+  execute<T = unknown>(id: string, ...args: JsonValue[]): Promise<T>
+}
+type CommandHandler = (context: CommandContext, ...args: JsonValue[]) => unknown
+
+type CommandContext =
+  | { location: 'commandPalette' }
+  | { location: 'thread/context'; threadId: string }
+  | { location: 'message/actions'; threadId: string; messageId: string; role: 'user' | 'assistant' }
+  | { location: 'chatInput/actions'; threadId: string }
+  | { location: 'statusItem' }
+  | { location: 'extension'; extensionId: string }
+```
+
+The context carries only ids; reading thread content needs
+`conversations:read`.
+
+<Callout type="info">
+In this release `execute` runs only the extension's own commands. Host commands
+and other extensions' commands are not exposed yet and fail with `E_NOT_FOUND`
+even with `commands:execute`.
+</Callout>
+
+## `ctx.ui`
+
+```ts
+interface UiApi {
+  /** Shows a toast labelled with the extension name. Needs ui:notify. */
+  notify(notification: { level: 'info' | 'success' | 'warning' | 'error'; message: string }): void
+  /** Updates a status item declared in contributes.statusItems. */
+  setStatusItem(id: string, update: { text?: string; tooltip?: string }): void
+}
+```
+
+## `ctx.conversations`
+
+Reading needs `conversations:read`; creating needs `conversations:write`.
+
+```ts
+interface ConversationsApi {
+  listThreads(): Promise<ThreadSummary[]>
+  getThread(id: string): Promise<ThreadInfo | undefined>
+  /** The newest `limit` (1-1000) messages before `before`, oldest first. */
+  listMessages(threadId: string, opts?: { limit?: number; before?: string }): Promise<MessageInfo[]>
+  createThread(input: { title: string }): Promise<ThreadInfo>
+  appendMessage(threadId: string, msg: { role: 'user' | 'assistant'; text: string }): Promise<MessageInfo>
+  readonly onDidCreateMessage: Event<{ threadId: string; message: MessageInfo }>
+  readonly onDidDeleteThread: Event<{ threadId: string }>
+}
+
+interface ThreadSummary { id: string; title: string; updatedAt: number }
+interface ThreadInfo extends ThreadSummary { createdAt: number }
+interface MessageInfo {
+  id: string
+  threadId: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  /** The text parts of the message, concatenated. */
+  text: string
+  createdAt: number
+}
+```
+
+Times are Unix epoch milliseconds.
+
+## `ctx.tools`
+
+Needs `tools`. Implements a tool declared in `contributes.tools`.
+
+```ts
+interface ToolsApi {
+  registerTool(name: string, handler: ToolHandler): Disposable
+}
+interface ToolHandler {
+  (input: unknown, token: CancellationToken): Promise<ToolResult>
+}
+interface ToolResult {
+  content: ({ type: 'text'; text: string } | { type: 'json'; value: JsonValue })[]
+  isError?: boolean
+}
+```
+
+`input` is whatever the model sent; Jan does not validate it against
+`inputSchema`. JSON parts are serialized to text before the model sees them, and
+results are capped to the chat's tool output budget. A call times out after
+120 s.
+
+## `ctx.providers`
+
+Needs `providers`, plus a `network:` grant for the provider's `baseUrl` host.
+
+```ts
+interface ProvidersApi {
+  /** Activates a provider declared in contributes.providers. */
+  registerProvider(id: string, handlers: ProviderHandlers): Disposable
+}
+interface ProviderHandlers {
+  /** Overrides the host's GET <baseUrl>/models lookup. */
+  listModels?(): Promise<ProviderModel[]>
+}
+interface ProviderModel { id: string; displayName?: string }
+```
+
+Jan runs inference against `baseUrl` itself (OpenAI-compatible chat
+completions), using the API key from the `apiKeySetting` secret if declared.
+Tokens are not streamed through the extension.
+
+## `ctx.http`
+
+Needs a `network:<host>` grant covering the URL. See
+[network permissions](/docs/desktop/extensions/permissions#network-permissions).
+
+```ts
+interface HttpApi {
+  fetch(url: string, init?: HttpRequestInit): Promise<HttpResponse>
+}
+interface HttpRequestInit {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
+  headers?: Record<string, string>
+  body?: string
+}
+interface HttpResponse {
+  status: number
+  headers: Record<string, string>
+  body: string
+}
+```
+
+Bodies are UTF-8 text. Response headers have lowercase names and no cookie
+headers. Redirects are followed by Jan (at most 5), each hop checked against the
+grants. Only installed extensions have a network path; a folder loaded unpacked
+gets `E_NOT_FOUND`.
+
+## Events and disposables
+
+```ts
+type Event<T> = (listener: (e: T) => void) => Disposable
+
+interface Disposable { dispose(): void }
+
+class DisposableStore implements Disposable {
+  add<T extends Disposable>(d: T): T
+  dispose(): void
+}
+function toDisposable(fn: () => void): Disposable
+class Emitter<T> {
+  readonly event: Event<T>
+  fire(e: T): void
+  dispose(): void
+}
+```
+
+Subscribe by calling the event with a listener and keep the result in
+`ctx.subscriptions`:
+
+```ts
+ctx.subscriptions.add(
+  ctx.settings.onDidChange(({ key, value }) => ctx.log.info(key, value))
+)
+```
+
+A `DisposableStore` disposes its members in reverse order of addition; adding to
+a store that is already disposed disposes the member at once. At most 16
+listeners per event per extension.
+
+## Cancellation
+
+```ts
+interface CancellationToken {
+  readonly isCancellationRequested: boolean
+  readonly onCancellationRequested: Event<void>
+}
+```
+
+Tool handlers receive a token that fires when the user stops the generation or
+the call times out. Check it before expensive steps and stop early:
+
+```ts
+ctx.tools.registerTool('slow', async (input, token) => {
+  for (const step of steps) {
+    if (token.isCancellationRequested)
+      return { content: [{ type: 'text', text: 'Cancelled' }], isError: true }
+    await step()
+  }
+  return { content: [{ type: 'text', text: 'Done' }] }
+})
+```
+
+## Errors
+
+Host calls fail with an `ExtensionError` that has a `code`:
+
+| Code | Meaning |
+|---|---|
+| `E_PERMISSION` | The needed permission is not granted, or the URL is not covered by a `network:` grant. |
+| `E_INVALID_ARGS` | The arguments have the wrong shape, or an id is not declared in the manifest. |
+| `E_NOT_FOUND` | The thing does not exist or is not available here (for example `ctx.http` in a folder loaded unpacked). |
+| `E_TIMEOUT` | The call or request took too long. |
+| `E_CANCELLED` | The call was cancelled. |
+| `E_DISPOSED` | The extension or registration was already torn down. |
+| `E_TOO_LARGE` | Over a size or count limit (storage quota, message size, too many requests or listeners). |
+| `E_INTERNAL` | Anything else. |
+
+Branch on `error.code` rather than `instanceof`: the error class your bundle
+might include is not the one the runtime throws.
+
+`E_PERMISSION`, `E_INVALID_ARGS` and `E_TOO_LARGE` count as refused calls; a
+worker that collects too many is stopped (see
+[Limits](/docs/desktop/extensions/develop#limits)).
+
+## Helpers
+
+The package also exports pure functions tooling can use:
+`validateManifest`, `isApiCompatible(range, hostVersion)`,
+`isContributionId`, `isPermissionString`, `isNetworkHost`, `networkHostOf`,
+`networkHostMatches`, `isLocalHost`, and the constant `API_VERSION`.
+
+## Stable and proposed APIs
+
+- **Stable.** Everything in `ExtensionContext` except `proposed`. Covered by the
+  versioning policy below.
+- **Proposed.** `ctx.proposed` holds APIs under design. An extension opts in by
+  listing the group in `jan.proposals` (currently `chat`, which would offer
+  `ctx.proposed.chat.onWillSend` behind `chat:hooks`). Proposed APIs may change
+  in any minor release, so only folders loaded unpacked in a development build
+  may use them; an installed extension that lists proposals fails to start.
+
+<Callout type="warning">
+No proposed API is implemented in this release: `ctx.proposed` is an empty
+object even for development folders. Check for a member before using it.
+</Callout>
+
+## Versioning
+
+- `jan.apiVersion` must be a caret range such as `^1.0.0`. With npm caret
+  semantics, `^1.0.0` accepts any 1.x host API at or above 1.0.0, so an
+  extension built against 1.0 keeps working on later 1.x releases. An extension
+  whose range the host does not satisfy fails to install or start, with
+  "needs extension API ..., host provides ...".
+- Additions come in minor versions. A deprecated item stays for at least one
+  minor release and 90 days, and is removed only in a major version.
+- Every change to the public declarations shows up as a diff of the committed
+  `api-report.d.ts`, so API changes are reviewed explicitly.

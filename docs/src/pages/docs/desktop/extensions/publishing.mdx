@@ -1,0 +1,226 @@
+---
+title: Publishing an Index
+description: Host a signed catalog of Jan extensions that users can add as a source.
+keywords:
+  [
+    Jan,
+    extensions,
+    extension index,
+    ed25519,
+    signing,
+    catalog,
+  ]
+---
+import { Callout, Steps } from 'nextra/components'
+
+# Publishing an Index
+
+Jan has no central extension hub and no built-in index URL. Extensions are
+distributed through **indexes**: JSON files that anyone can host on any https
+server (a GitHub Pages site, a CDN, your own domain). Users add the index URL as
+a source in **Settings > Extensions > Catalog**, optionally with your public key.
+
+You can also hand out a `.tgz` directly; users install it with **Install from
+file...**, and it is labelled **Unverified**.
+
+## Index format (schema 1)
+
+```json
+{
+  "schema": 1,
+  "generatedAt": "2026-10-24T08:00:00Z",
+  "expires": "2026-11-24T08:00:00Z",
+  "extensions": [
+    {
+      "id": "acme.hello",
+      "displayName": "Hello",
+      "publisher": "Acme",
+      "description": "Says hello.",
+      "homepage": "https://example.com/hello",
+      "versions": [
+        {
+          "version": "0.1.0",
+          "tarball": "https://example.com/hello/acme-hello-0.1.0.tgz",
+          "integrity": "sha512-<base64 of the tarball's SHA-512>",
+          "apiVersion": "^1.0.0",
+          "engines": { "jan": ">=0.8.0" },
+          "permissions": ["ui:notify"],
+          "provenance": "https://example.com/hello/0.1.0.intoto.jsonl"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Unknown fields are errors at every level.
+
+### Top level
+
+| Field | Type | Rules |
+|---|---|---|
+| `schema` | number | Required, `1`. |
+| `generatedAt` | string | Required. When the index was generated. For a signed index it must be RFC 3339; Jan refuses a signed index older than one it already accepted from the same source. |
+| `expires` | string | Optional, RFC 3339. Jan refuses a signed index after this time. Ignored for unsigned sources. |
+| `nextPublicKey` | string | Optional. The base64 ed25519 key you will sign with next (see [Key rotation](#key-rotation)). |
+| `extensions` | array | Required. Ids must be unique. |
+
+### Extension
+
+| Field | Type | Rules |
+|---|---|---|
+| `id` | string | Required. The manifest `jan.id`. |
+| `displayName` | string | Required. |
+| `publisher` | string | Required. |
+| `description` | string | Optional. |
+| `homepage` | string | Optional, https. |
+| `versions` | array | Required. Versions must be unique semver. The catalog offers the highest. |
+
+### Version
+
+| Field | Type | Rules |
+|---|---|---|
+| `version` | string | Required. Equal to the tarball's `package.json` `version`. |
+| `tarball` | string | Required, https URL of the `.tgz`. |
+| `integrity` | string | Required. A `sha512-<base64>` subresource-integrity string of the tarball (the form `npm` prints). |
+| `apiVersion` | string | Required. The manifest's `jan.apiVersion` (a caret range). |
+| `engines` | object | Optional. `{ "jan": "<range>" }`, the manifest's `engines`. |
+| `permissions` | string[] | Required. **Exactly** the manifest's `jan.permissions` (order does not matter). |
+| `provenance` | string | Optional, https. A link to a provenance attestation you checked. Jan shows it as "Provenance reported by source" and does not verify it. |
+
+When a user installs from your index, Jan downloads the tarball, checks it
+against `integrity`, and refuses it if the package's id, version or
+permissions differ from the listing. That keeps the consent the user gives
+equal to what the catalog showed.
+
+Compute `integrity` with:
+
+```bash
+echo "sha512-$(openssl dgst -sha512 -binary acme-hello-0.1.0.tgz | base64 -w0)"
+```
+
+### Fetch rules
+
+| What | Rule |
+|---|---|
+| Index URL | https, no credentials in the URL, at most 2 MiB, 15 s timeout, **no redirects** (a 3xx fails) |
+| Signature | `<index URL>.sig`, at most 1 KiB, same client, no redirects |
+| Tarball | https, at most 50 MiB, 5 min timeout; up to 5 redirects, each to https and a DNS host name (not an IP address or `localhost`) |
+
+No cookies are sent. Requests honour the user's proxy settings.
+
+## Signing
+
+Signing lets users pin your key, so a compromised host or a man in the middle
+cannot change the listing. A source added with a key **must** serve a valid
+signature; otherwise its catalog and installs are refused.
+
+The format:
+
+- **Key:** ed25519. The public key you publish is the standard base64 (with
+  padding) of the raw 32-byte key.
+- **Signature file:** at the index URL with `.sig` appended to the path (query
+  kept): `https://example.com/index.json` is signed by
+  `https://example.com/index.json.sig`.
+- **Contents:** standard base64 (with padding) of the 64-byte ed25519 signature
+  over the **exact bytes** of the index file as served. Surrounding whitespace,
+  such as a trailing newline, is fine.
+
+Any change to the index bytes after signing (reformatting, a CDN rewriting line
+endings) breaks the signature, so sign the file you upload.
+
+### With OpenSSL
+
+```bash
+# Once: create the key pair and print the public key to give to users.
+openssl genpkey -algorithm ed25519 -out signing-key.pem
+openssl pkey -in signing-key.pem -pubout -outform DER | tail -c 32 | base64
+
+# Every release: sign the exact index bytes.
+openssl pkeyutl -sign -inkey signing-key.pem -rawin -in index.json | base64 -w0 > index.json.sig
+```
+
+`-rawin` needs OpenSSL 3.0 or newer. On macOS, use `base64 -b0` or plain
+`base64` instead of `base64 -w0`.
+
+### With Node.js
+
+```js
+// sign-index.mjs: node sign-index.mjs index.json
+import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+
+if (!existsSync('signing-key.pem')) {
+  const { privateKey } = generateKeyPairSync('ed25519')
+  writeFileSync('signing-key.pem', privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 })
+}
+const key = createPrivateKey(readFileSync('signing-key.pem'))
+const publicKey = createPublicKey(key).export({ type: 'spki', format: 'der' }).subarray(-32)
+console.log('public key:', publicKey.toString('base64'))
+
+const file = process.argv[2]
+writeFileSync(`${file}.sig`, sign(null, readFileSync(file), key).toString('base64') + '\n')
+```
+
+Keep `signing-key.pem` secret and out of the published site.
+
+### Freshness
+
+For signed sources Jan records the newest `generatedAt` it accepted and
+refuses an older index, so an attacker cannot serve an old, validly signed
+index with a vulnerable version. Set `generatedAt` to the current time on every
+publish, never backwards. Use `expires` to bound how long a captured index stays
+valid, and re-sign before it passes; an expired index is refused until you
+publish a fresh one.
+
+### Key rotation
+
+<Steps>
+### Announce the next key
+Add `"nextPublicKey": "<new base64 key>"` to the index and sign it with the
+**current** key.
+
+### Users confirm
+Jan shows **Review new key** on your source. When the user accepts, Jan
+re-fetches the index, checks it is still signed by the current key and still
+names that key, and pins the new key.
+
+### Switch
+Once your users have moved over, sign with the new key. Indexes signed with the
+old key are then refused by users who accepted the rotation.
+</Steps>
+
+There is no other way to change a pinned key: a user who did not accept the
+rotation must remove the source and add it again with the new key.
+
+## How users add your source
+
+Publish your index URL and your base64 public key on a page users trust, and
+tell them to:
+
+1. Open **Settings > Extensions > Catalog**.
+2. Enter the **Index URL**, a **Name**, and the **Public key**.
+3. Click **Add source**.
+
+Your extensions then show as **Verified by &lt;name&gt;**. Without a key they show as
+**Integrity checked (unsigned source)** and each install needs explicit trust.
+
+## API versioning and deprecation
+
+Extensions declare the API they need with `jan.apiVersion` (a caret range,
+such as `^1.0.0`), and the index repeats it per version.
+
+- The extension API follows semver. Minor releases only add; an extension
+  built for `^1.0.0` keeps working on every 1.x Jan.
+- A deprecated API item stays for at least one minor release and 90 days, and is
+  removed only in a major release.
+- Proposed APIs are outside this policy and are not available to installed
+  extensions.
+- Use `engines.jan` for a minimum Jan app version when you rely on behaviour
+  added in a specific release.
+
+<Callout type="info">
+The catalog offers the highest version listed for each extension and does not
+fall back to an older one on an older Jan. Raise `apiVersion` or `engines.jan`
+only when you have to.
+</Callout>
