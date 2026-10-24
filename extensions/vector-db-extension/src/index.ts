@@ -1,4 +1,4 @@
-import { VectorDBExtension, type SearchMode, type VectorDBStatus, type VectorChunkInput, type VectorSearchResult, type AttachmentFileInfo, type VectorDBFileInput, type VectorDBIngestOptions, type EmbeddingEngine, getEmbeddingEngine, embedTexts } from '@janhq/core'
+import { ServiceKeys, type InternalExtensionContext, type VectorDBService, type SearchMode, type VectorDBStatus, type VectorChunkInput, type VectorSearchResult, type AttachmentFileInfo, type VectorDBFileInput, type VectorDBIngestOptions, type EmbeddingEngine, getEmbeddingEngine, embedTexts } from '@janhq/core'
 import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
 import * as ragApi from '@janhq/tauri-plugin-rag-api'
 
@@ -11,13 +11,11 @@ const MIN_CHUNK_SIZE_CHARS = 64
 // Reserves room for BOS/special tokens the tokenizer adds beyond raw content.
 const EMBEDDING_CONTEXT_SAFETY_TOKENS = 8
 
-export default class VectorDBExt extends VectorDBExtension {
-  async onLoad(): Promise<void> {
-    // no-op
-  }
+export async function activate(ctx: InternalExtensionContext): Promise<void> {
+  ctx.subscriptions.add(ctx.internal.services.provide(ServiceKeys.VectorDB, new VectorDB()))
+}
 
-  onUnload(): void {}
-
+export class VectorDB implements VectorDBService {
   async getStatus(): Promise<VectorDBStatus> {
     return await vecdb.getStatus() as VectorDBStatus
   }
@@ -102,7 +100,7 @@ export default class VectorDBExt extends VectorDBExtension {
 
     // Now check for duplicates
     const existingFiles = await vecdb.listAttachments(this.collectionForProject(projectId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const duplicate = existingFiles.find((f) => f.name === file.name && f.path === file.path)
     if (duplicate) {
       throw new Error(`File '${file.name}' has already been attached to this project`)
     }
@@ -239,7 +237,7 @@ export default class VectorDBExt extends VectorDBExtension {
   async ingestFile(threadId: string, file: VectorDBFileInput, opts: VectorDBIngestOptions): Promise<AttachmentFileInfo> {
     // Check for duplicate file (same name + path)
     const existingFiles = await vecdb.listAttachments(this.collectionForThread(threadId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const duplicate = existingFiles.find((f) => f.name === file.name && f.path === file.path)
     if (duplicate) {
       throw new Error(`File '${file.name}' has already been attached to this thread`)
     }

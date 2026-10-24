@@ -20,6 +20,7 @@ import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
 import { Button } from '@/components/ui/button'
 import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
@@ -411,6 +412,21 @@ function ProviderDetail() {
       return
     }
 
+    // A contributed provider's keys go only through its extension's checked
+    // network path, the one inference uses.
+    let extensionFetch: typeof globalThis.fetch | undefined
+    try {
+      extensionFetch = extensionProviderFetch(
+        { provider: provider.provider, source: provider.source },
+        'whole'
+      )
+    } catch (error) {
+      toast.error(t('providers:models'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+
     const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
     const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
     if (nonEmptyKeyCount === 0) {
@@ -422,7 +438,7 @@ function ProviderDetail() {
 
     setIsTestingKeys(true)
     try {
-      const fetchImpl = serviceHub.providers().fetch()
+      const fetchImpl = extensionFetch ?? serviceHub.providers().fetch()
       const results: { index: number; masked: string; status: string; detail: string }[] = []
 
       for (let i = 0; i < keyDraftLines.length; i++) {
@@ -435,8 +451,9 @@ function ProviderDetail() {
           Authorization: `Bearer ${key}`,
         }
         if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
+          !extensionFetch &&
+          (provider.base_url.includes('localhost:') ||
+            provider.base_url.includes('127.0.0.1:'))
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
@@ -473,7 +490,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider?.base_url, provider?.source, provider?.provider, serviceHub, t])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately

@@ -7,7 +7,6 @@ import { providerModels } from '@/constants/models'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
-import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
@@ -18,6 +17,7 @@ import {
 } from '@/lib/provider-api-keys'
 import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 import { toProviderUnreachable } from '@/lib/provider-unreachable'
+import { extensionProviderFetch } from '@/lib/extensions/providers'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -151,6 +151,10 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
 
     try {
+      // A contributed provider is reached only on its extension's checked
+      // network path, and never presents itself as the app.
+      const extensionFetch = extensionProviderFetch(provider, 'whole')
+      const fetchImpl: typeof globalThis.fetch = extensionFetch ?? fetchTauri
       const keyChain = providerRemoteApiKeyChain(provider)
       const keyAttempts: (string | undefined)[] =
         keyChain.length > 0 ? keyChain : [undefined]
@@ -165,8 +169,9 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
 
         if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
+          !extensionFetch &&
+          (provider.base_url.includes('localhost:') ||
+            provider.base_url.includes('127.0.0.1:'))
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
@@ -184,7 +189,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
         ensureAnthropicHeaders(provider, headers)
 
-        const response = await fetchTauri(`${provider.base_url}/models`, {
+        const response = await fetchImpl(`${provider.base_url}/models`, {
           method: 'GET',
           headers,
         })
@@ -303,8 +308,8 @@ export class TauriProvidersService extends DefaultProvidersService {
       // Blank the key entries at this single chokepoint regardless of caller.
       const isSecretKey = (key: string) =>
         key === 'api-key' || key === API_KEY_FALLBACKS_SETTING_KEY
-      return ExtensionManager.getInstance()
-        .getEngine(providerName)
+      return EngineManager.instance()
+        .get(providerName)
         ?.updateSettings(
           settings.map((setting) => ({
             ...setting,

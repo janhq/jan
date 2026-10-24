@@ -4,8 +4,8 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
+import { ServiceKeys } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { cleanupThreadWorkspace } from '@/lib/agentTools'
@@ -45,12 +45,9 @@ type ThreadState = {
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
   try {
-    const vec = ExtensionManager.getInstance().get<VectorDBExtension>(
-      ExtensionTypeEnum.VectorDB
+    await getExtensionHost().services.get(ServiceKeys.VectorDB)?.deleteCollection(
+      `attachments_${threadId}`
     )
-    if (vec?.deleteCollection) {
-      await vec.deleteCollection(`attachments_${threadId}`)
-    }
   } catch (e) {
     console.warn(
       `[Threads] Failed to delete vector DB collection for thread ${threadId}:`,

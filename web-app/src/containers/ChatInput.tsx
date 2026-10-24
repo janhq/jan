@@ -78,14 +78,8 @@ import { TokenCounter } from '@/components/TokenCounter'
 import type { TokenUsageSource } from '@/hooks/useTokensCount'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
-import { McpExtensionToolLoader } from './McpExtensionToolLoader'
-import {
-  ExtensionTypeEnum,
-  MCPExtension,
-  fs,
-  VectorDBExtension,
-} from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import { ServiceKeys, fs } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { toast } from 'sonner'
@@ -127,6 +121,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useElementWidth } from '@/hooks/useElementWidth'
+import { ContributedMenuItems } from '@/containers/extensions/ContributedMenuItems'
 
 type ChatInputProps = {
   className?: string
@@ -626,11 +621,6 @@ const ChatInput = memo(function ChatInput({
   // Check if there are active MCP servers
   const hasActiveMCPServers =
     tools.filter((tool) => tool.server !== 'Jan Browser MCP').length > 0
-
-  // Get MCP extension and its custom component
-  const extensionManager = ExtensionManager.getInstance()
-  const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
-  const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
@@ -1204,16 +1194,9 @@ const ChatInput = memo(function ChatInput({
     if (attachmentToRemove?.id && currentThreadId) {
       try {
         if (attachmentToRemove.type === 'document') {
-          const vectorDBExtension = ExtensionManager.getInstance().get(
-            ExtensionTypeEnum.VectorDB
-          ) as VectorDBExtension | undefined
-
-          if (vectorDBExtension?.deleteFile) {
-            await vectorDBExtension.deleteFile(
-              currentThreadId,
-              attachmentToRemove.id
-            )
-          }
+          await getExtensionHost()
+            .services.get(ServiceKeys.VectorDB)
+            ?.deleteFile(currentThreadId, attachmentToRemove.id)
         }
       } catch (error) {
         console.error('Failed to delete attachment from backend:', error)
@@ -2405,6 +2388,17 @@ const ChatInput = memo(function ChatInput({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+                    {/* Only chat threads: a scoped surface (Cowork) has no thread id. */}
+                    {!scopeKey && currentThreadId && (
+                      <ContributedMenuItems
+                        location="chatInput/actions"
+                        context={{
+                          location: 'chatInput/actions',
+                          threadId: currentThreadId,
+                        }}
+                        separator
+                      />
+                    )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -2496,19 +2490,7 @@ const ChatInput = memo(function ChatInput({
                 )}
 
                 {showToolControls && selectedModel?.capabilities?.includes('tools') &&
-                  hasActiveMCPServers &&
-                  (MCPToolComponent ? (
-                    // Use custom MCP component
-                    <McpExtensionToolLoader
-                      tools={tools}
-                      hasActiveMCPServers={hasActiveMCPServers}
-                      selectedModelHasTools={
-                        selectedModel?.capabilities?.includes('tools') ?? false
-                      }
-                      MCPToolComponent={MCPToolComponent}
-                    />
-                  ) : (
-                    // Use default tools dropdown
+                  hasActiveMCPServers && (
                     <Tooltip
                       open={tooltipShown === 'tools'}
                       onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
@@ -2556,7 +2538,7 @@ const ChatInput = memo(function ChatInput({
                         <p>{t('tools')}</p>
                       </TooltipContent>
                     </Tooltip>
-                  ))}
+                  )}
 
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
                   <Tooltip>

@@ -71,6 +71,10 @@ pub async fn start_server<R: Runtime>(
     .await
     .map_err(|e| e.to_string())?;
 
+    // No extension request may reach this port on a local host.
+    #[cfg(feature = "extensions")]
+    tauri_plugin_extensions::set_local_api_port(&app_handle, Some(actual_port));
+
     #[cfg(feature = "desktop")]
     crate::core::setup::show_tray(&app_handle);
 
@@ -87,6 +91,9 @@ pub async fn stop_server<R: Runtime>(
     proxy::stop_server(server_handle)
         .await
         .map_err(|e| e.to_string())?;
+
+    #[cfg(feature = "extensions")]
+    tauri_plugin_extensions::set_local_api_port(&app_handle, None);
 
     #[cfg(feature = "desktop")]
     crate::core::setup::remove_tray(&app_handle);

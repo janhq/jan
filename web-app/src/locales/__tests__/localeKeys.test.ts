@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { isPermissionString } from '@janhq/extension-api'
 
 const SRC = resolve(__dirname, '../..')
 const LOCALES_ROOT = resolve(__dirname, '..')
 
 /** Namespaces whose keys are asserted to exist. */
-const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat', 'tools']
+const GUARDED_NAMESPACES = [
+  'setup',
+  'model-errors',
+  'common',
+  'chat',
+  'tools',
+  'extensions',
+]
 
 /**
  * Namespaces every shipped locale must translate in full. The runtime falls
@@ -57,6 +65,30 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'coworkEmpty.folder.first',
     'coworkEmpty.folder.second',
     'coworkEmpty.folder.third',
+  ],
+  // The settings page labels each host extension by its lifecycle state.
+  extensions: [
+    'state.inactive',
+    'state.activating',
+    'state.active',
+    'state.failed',
+    // Permission risk labels and dev-load error codes.
+    'risk.low',
+    'risk.medium',
+    'risk.high',
+    'devLoad.readFailed',
+    'devLoad.invalidJson',
+    'devLoad.invalidManifest',
+    'devLoad.invalidBundle',
+    'devLoad.alreadyLoaded',
+    // Settings > Extensions tabs and source form errors.
+    'tabs.installed',
+    'tabs.catalog',
+    'sources.errors.invalidUrl',
+    'sources.errors.notHttps',
+    'sources.errors.credentials',
+    'sources.errors.required',
+    'sources.errors.invalidKey',
   ],
   'model-errors': [
     'engine.unknown',
@@ -162,6 +194,8 @@ function referencedKeys(): Map<string, Set<string>> {
   for (const file of sourceFiles(SRC)) {
     const content = readFileSync(file, 'utf8')
     for (const match of content.matchAll(pattern)) {
+      // Extension permissions share the `<ns>:<key>` shape ('chat:hooks').
+      if (isPermissionString(`${match[1]}:${match[2]}`)) continue
       found.get(match[1])!.add(match[2])
     }
   }

@@ -102,9 +102,9 @@ import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
+import { getExtensionHost } from '@/lib/extensions/host'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import { ServiceKeys } from '@janhq/core'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
@@ -262,8 +262,19 @@ function rewriteStoredTurn(
 // The MCP server a tool belongs to, so an approval prompt can offer to trust
 // the whole server rather than this one tool.
 function serverForTool(toolName: string): string | undefined {
-  return useAppState.getState().tools.find((tool) => tool.name === toolName)
-    ?.server
+  const state = useAppState.getState()
+  return (
+    state.tools.find((tool) => tool.name === toolName)?.server ??
+    extensionToolOf(toolName)?.server
+  )
+}
+
+// The contributed tool a call names, by its wire name. Read per call, so a
+// tool whose extension stopped since the model was offered it is not found.
+function extensionToolOf(toolName: string) {
+  return useAppState
+    .getState()
+    .extensionTools.find((tool) => tool.wireName === toolName)
 }
 
 // The model a thread's turn runs on. A turn can finish in the background while
@@ -856,6 +867,7 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
+                const extensionTool = extensionToolOf(toolName)
                 if (WEB_TOOL_NAMES.has(toolName)) {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
@@ -888,6 +900,16 @@ function ThreadDetail() {
                     projectId: projectId,
                     scope: projectId ? 'project' : 'thread',
                   })
+                } else if (extensionTool) {
+                  // Contributed tools always prompt (they are never in
+                  // isAutoAllowedTool); Stop cancels the call in the
+                  // extension's worker, not only here.
+                  return await getExtensionHost().callTool(
+                    extensionTool.extensionId,
+                    extensionTool.name,
+                    toolCall.input,
+                    { signal: stopSignal, maxOutputChars }
+                  )
                 } else if (mcpToolNames.has(toolName)) {
                   // Give the backend the budget scaled to the window; it narrows
                   // that against the user's configured ceiling. Cancellable, so
@@ -1151,11 +1173,12 @@ function ThreadDetail() {
       const projectId = thread?.metadata?.project?.id
       if (projectId) {
         try {
-          const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-            ExtensionTypeEnum.VectorDB
+          const vectorDB = getExtensionHost().services.get(
+            ServiceKeys.VectorDB
           )
-          if (ext?.listAttachmentsForProject) {
-            const projectFiles = await ext.listAttachmentsForProject(projectId)
+          if (vectorDB) {
+            const projectFiles =
+              await vectorDB.listAttachmentsForProject(projectId)
             hasProjectDocuments = projectFiles.length > 0
           }
         } catch (error) {
@@ -2282,6 +2305,7 @@ function ThreadDetail() {
                     onSwitchVersion={handleSwitchVersion}
                     isAnimating={!pendingContinueMessage}
                     hideActions={!!pendingContinueMessage}
+                    threadId={threadId}
                   />
                 )
               })}

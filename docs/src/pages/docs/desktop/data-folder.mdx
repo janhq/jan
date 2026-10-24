@@ -68,14 +68,9 @@ Inside the data folder you will typically find:
     assistant.json
 /extensions/
   extensions.json
-  /@janhq/
-    /assistant-extension/
-    /conversational-extension/
-    /download-extension/
-    /llamacpp-extension/
-    /mlx-extension/
-    /rag-extension/
-    /vector-db-extension/
+  sources.json
+  /<extension_id>/<version>/
+  /.staging/
 /files/
 /logs/
   app.log
@@ -158,7 +153,20 @@ Parameters:
 | retrieval_template    | Response format template                                    | string  | None    |
 
 ### `extensions/`
-Add-on central. Organization extensions live in `@janhq/`, solo ones in root.
+Third-party [extensions](/docs/desktop/extensions) you installed. Built-in
+extensions are part of the app and are not stored here.
+
+- `extensions.json`: what is installed, from where, the active and previous
+  version, the permissions you granted, and whether safe mode is on. Manage it
+  from **Settings > Extensions** rather than by hand; an unreadable file is moved
+  aside to `extensions.json.corrupt-<timestamp>` and Jan starts with an empty list.
+- `sources.json`: the index sources you added, with their pinned public keys.
+- `<extension_id>/<version>/`: the unpacked package of the active version and,
+  after an update, the previous one kept for rollback.
+- `.staging/`: packages being checked or waiting for your consent.
+
+Settings of extensions are stored with Jan's other settings (secret ones in the
+OS keyring). A factory reset removes this folder.
 
 ### `logs/`
 Debugging headquarters (`/logs/app.log`):

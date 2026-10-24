@@ -131,6 +131,14 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:general')).toBeInTheDocument()
   })
 
+  it('links to the Extensions settings page', () => {
+    render(<SettingsMenu />)
+    expect(screen.getByText('common:extensions').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/extensions'
+    )
+  })
+
   it('renders integrations links', () => {
     render(<SettingsMenu />)
     expect(screen.getByText('common:mcp-servers')).toBeInTheDocument()

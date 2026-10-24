@@ -2,36 +2,40 @@
  * Tauri Hardware Service - Desktop implementation
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import {
+  getSystemInfo,
+  getSystemUsage,
+  refreshSystemInfo,
+} from '@janhq/tauri-plugin-hardware-api'
+import { ServiceKeys } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
 import type { HardwareData, SystemUsage, DeviceList } from './types'
 import { DefaultHardwareService } from './default'
 
 export class TauriHardwareService extends DefaultHardwareService {
   async getHardwareInfo(): Promise<HardwareData | null> {
-    return invoke('plugin:hardware|get_system_info') as Promise<HardwareData>
+    const info = await getSystemInfo()
+    // The plugin reports static facts only; `usage` is the app's live reading,
+    // filled in later from getSystemUsage().
+    return { ...info, cpu: { ...info.cpu, usage: 0 } }
   }
 
   async getSystemUsage(): Promise<SystemUsage | null> {
-    return invoke('plugin:hardware|get_system_usage') as Promise<SystemUsage>
+    return getSystemUsage()
   }
 
   async getLlamacppDevices(): Promise<DeviceList[]> {
-    const extensionManager = window.core.extensionManager
-    const llamacppExtension = extensionManager.getByName('@janhq/llamacpp-extension')
-
-    if (!llamacppExtension) {
+    const llamacpp = getExtensionHost().services.get(ServiceKeys.Llamacpp)
+    if (!llamacpp) {
       throw new Error('llamacpp extension not found')
     }
-
-    return llamacppExtension.getDevices()
+    return llamacpp.getDevices()
   }
 
   async reconcileLlamacppDevices(): Promise<'unchanged' | 'restarted' | 'busy'> {
-    const llamacppExtension = window.core.extensionManager.getByName(
-      '@janhq/llamacpp-extension'
-    )
-    if (!llamacppExtension?.reconcileEngineDevices) return 'unchanged'
-    return llamacppExtension.reconcileEngineDevices()
+    const llamacpp = getExtensionHost().services.get(ServiceKeys.Llamacpp)
+    if (!llamacpp) return 'unchanged'
+    return llamacpp.reconcileEngineDevices()
   }
 
   async setActiveGpus(data: { gpus: number[] }): Promise<void> {
@@ -40,6 +44,6 @@ export class TauriHardwareService extends DefaultHardwareService {
   }
 
   async refreshHardwareInfo(): Promise<void> {
-    await invoke('plugin:hardware|refresh_system_info')
+    await refreshSystemInfo()
   }
 }

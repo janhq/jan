@@ -2,16 +2,17 @@ import { useEffect } from 'react'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { SystemEvent } from '@/types/events'
 import { useAppState } from './useAppState'
-import { useToolAvailable } from './useToolAvailable'
-import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, MCPExtension } from '@janhq/core'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator/mcp-orchestrator'
+import { useContributions } from '@/lib/extensions/contributions'
+import { listExtensionTools } from '@/lib/extensions/tools'
 
 export const useTools = () => {
   const updateTools = useAppState((state) => state.updateTools)
   const updateRagToolNames = useAppState((state) => state.updateRagToolNames)
   const updateMcpToolNames = useAppState((state) => state.updateMcpToolNames)
-  const { isDefaultsInitialized, setDisabledTools, markDefaultsAsInitialized } = useToolAvailable()
+  const updateExtensionTools = useAppState(
+    (state) => state.updateExtensionTools
+  )
 
   useEffect(() => {
     async function setTools() {
@@ -21,11 +22,6 @@ export const useTools = () => {
         // notice via its own TTL, serving stale/reordered tools in the
         // meantime and destabilizing the KV-cache prefix Jan sends.
         mcpOrchestrator.invalidateCache()
-
-        // Get MCP extension first
-        const mcpExtension = ExtensionManager.getInstance().get<MCPExtension>(
-          ExtensionTypeEnum.MCP
-        )
 
         // Fetch tools and tool names in parallel
         const [mcpTools, ragToolNames] = await Promise.all([
@@ -47,15 +43,6 @@ export const useTools = () => {
         }
         updateMcpToolNames(mcpNames)
         updateRagToolNames(ragOnly)
-
-        // Initialize default disabled tools for new users (only once)
-        if (!isDefaultsInitialized() && mcpTools.length > 0 && mcpExtension?.getDefaultDisabledTools) {
-          const defaultDisabled = await mcpExtension.getDefaultDisabledTools()
-          if (defaultDisabled.length > 0) {
-            setDisabledTools(defaultDisabled)
-            markDefaultsAsInitialized()
-          }
-        }
       } catch (error) {
         console.error('Failed to fetch MCP tools:', error)
       }
@@ -72,4 +59,20 @@ export const useTools = () => {
     return unsubscribe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Contributed tools come and go as extensions bind and release handlers.
+  // Only the tool list is compared, so a status item update does not make
+  // the chat transport rebuild its tools.
+  useEffect(() => {
+    let previous = ''
+    const sync = (state: Parameters<typeof listExtensionTools>[0]) => {
+      const tools = listExtensionTools(state)
+      const key = JSON.stringify(tools)
+      if (key === previous) return
+      previous = key
+      updateExtensionTools(tools)
+    }
+    sync(useContributions.getState())
+    return useContributions.subscribe(sync)
+  }, [updateExtensionTools])
 }

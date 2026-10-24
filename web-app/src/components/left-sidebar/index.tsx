@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { DownloadManagement } from '@/containers/DownloadManegement'
+import { StatusItems } from '@/containers/extensions/StatusItems'
 import { NavChats } from './NavChats'
 import { NavCowork } from './NavCowork'
 import { NavMain } from './NavMain'
@@ -55,6 +56,7 @@ export function LeftSidebar() {
             </>
           )}
         </SidebarContent>
+        <StatusItems />
         <SidebarRail />
       </Sidebar>
     </div>

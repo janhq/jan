@@ -26,7 +26,7 @@ const KEY = createToolKey(SERVER, TOOL)
 describe('useToolAvailable (global tool availability)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useToolAvailable.setState({ disabledTools: [], defaultsInitialized: false })
+    useToolAvailable.setState({ disabledTools: [] })
   })
 
   it('initializes with an empty global disabled set', () => {
@@ -35,7 +35,6 @@ describe('useToolAvailable (global tool availability)', () => {
     expect(typeof result.current.setToolDisabled).toBe('function')
     expect(typeof result.current.isToolDisabled).toBe('function')
     expect(typeof result.current.getDisabledTools).toBe('function')
-    expect(typeof result.current.setDisabledTools).toBe('function')
   })
 
   it('createToolKey builds a server::tool composite key', () => {
@@ -94,27 +93,8 @@ describe('useToolAvailable (global tool availability)', () => {
 
     it('getDisabledTools returns the global array', () => {
       const { result } = renderHook(() => useToolAvailable())
-      act(() => result.current.setDisabledTools([KEY]))
+      act(() => result.current.setToolDisabled(SERVER, TOOL, false))
       expect(result.current.getDisabledTools()).toEqual([KEY])
-    })
-  })
-
-  describe('setDisabledTools (defaults seed)', () => {
-    it('replaces the whole set', () => {
-      const { result } = renderHook(() => useToolAvailable())
-      act(() => result.current.setDisabledTools(['a::1', 'b::2']))
-      expect(result.current.disabledTools).toEqual(['a::1', 'b::2'])
-      act(() => result.current.setDisabledTools([]))
-      expect(result.current.disabledTools).toEqual([])
-    })
-  })
-
-  describe('defaults-initialized flag', () => {
-    it('starts false and flips once marked', () => {
-      const { result } = renderHook(() => useToolAvailable())
-      expect(result.current.isDefaultsInitialized()).toBe(false)
-      act(() => result.current.markDefaultsAsInitialized())
-      expect(result.current.isDefaultsInitialized()).toBe(true)
     })
   })
 
