@@ -60,14 +60,6 @@ vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn(),
 }))
 
-// Mock Tauri path API
-vi.mock('@tauri-apps/api/path', () => ({
-  basename: vi.fn(),
-  dirname: vi.fn(),
-  join: vi.fn(),
-  resolve: vi.fn(),
-}))
-
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
   ServiceKeys: {

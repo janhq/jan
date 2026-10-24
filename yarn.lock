@@ -1806,6 +1806,12 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@janhq/tauri-plugin-hardware-api@link:../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-hardware-api@link:../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fweb-app%40workspace%3Aweb-app"
+  languageName: node
+  linkType: soft
+
 "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-llamacpp-api@link:../../src-tauri/plugins/tauri-plugin-llamacpp::locator=%40janhq%2Fllamacpp-extension%40workspace%3Aextensions%2Fllamacpp-extension"
@@ -1897,6 +1903,7 @@ __metadata:
     "@janhq/interfaces": "npm:0.0.2"
     "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools"
     "@janhq/tauri-plugin-extensions-api": "link:../src-tauri/plugins/tauri-plugin-extensions"
+    "@janhq/tauri-plugin-hardware-api": "link:../src-tauri/plugins/tauri-plugin-hardware"
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp"
     "@janhq/tauri-plugin-websearch-api": "link:../src-tauri/plugins/tauri-plugin-websearch"
     "@radix-ui/react-accordion": "npm:1.2.11"

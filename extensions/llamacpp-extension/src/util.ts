@@ -20,6 +20,14 @@ interface ProxyState {
   noProxy: string
 }
 
+/**
+ * The last segment of a host path. Pure string work: the paths come from the
+ * host on either platform, so both separators count.
+ */
+export function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path
+}
+
 const DEFAULT_EMBEDDING_MODEL_KEY = 'default-embedding-model'
 
 // The web-app's useDefaultEmbeddingModel store persists this key through

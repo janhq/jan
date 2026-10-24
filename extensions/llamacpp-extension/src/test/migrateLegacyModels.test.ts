@@ -91,7 +91,6 @@ describe('migrateLegacyModels', () => {
 
     it('should migrate legacy model with valid configuration', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { basename } = await import('@tauri-apps/api/path')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
 
@@ -115,7 +114,6 @@ describe('migrateLegacyModels', () => {
         .mockResolvedValueOnce({ isDirectory: false, size: 1000 }) // model file size for size_bytes
         .mockResolvedValueOnce({ isDirectory: false, size: 1000 }) // filename stat in directory traversal
 
-      vi.mocked(basename).mockResolvedValue('model')
 
       // Mock reading legacy config
       vi.mocked(fs.readYaml).mockResolvedValueOnce({
@@ -165,7 +163,6 @@ describe('migrateLegacyModels', () => {
 
     it('should skip migration if new model config already exists', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
-      const { basename } = await import('@tauri-apps/api/path')
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath)
@@ -186,7 +183,6 @@ describe('migrateLegacyModels', () => {
         isDirectory: false,
         size: 1000,
       })
-      vi.mocked(basename).mockResolvedValue('legacy-model')
 
       // Mock reading legacy config
       vi.mocked(fs.readYaml).mockResolvedValueOnce({
