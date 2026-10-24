@@ -1,15 +1,17 @@
 import { ExtensionManager } from '@/lib/extension'
 import { getHostBuiltins } from '@/lib/extensions/builtins'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { loadWithCrashLoopGuard } from '@/lib/extensions/watchdog'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform'
 import { APIs } from '@/lib/service'
 import { EventEmitter } from '@/services/events/EventEmitter'
-import { EngineManager, ModelManager } from '@janhq/core'
+import { EngineManager, ModelManager, appSettings } from '@janhq/core'
+import { toast } from 'sonner'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { emit } from '@tauri-apps/api/event'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
-import { useTranslation } from '@/i18n/react-i18next-compat'
+import { i18n, useTranslation } from '@/i18n/react-i18next-compat'
 
 // Secondary windows (logs, system monitor) reuse the same React bundle but
 // their Tauri capabilities do not grant hardware:*/llamacpp:*/etc. Loading
@@ -62,11 +64,19 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // Installed extensions run in workers after the built-ins, where there
     // is an install pipeline (the desktop app). Not awaited: each may take
     // up to its activation timeout, and llamacpp/mlx must not wait on that.
+    // The guard turns safe mode on when earlier starts never got them
+    // loaded, so one that takes the window down cannot do it every start.
     const installedFailed = (e: unknown) =>
       console.error('Loading installed extensions failed:', e)
     try {
-      if (getServiceHub().extensions().isSupported())
-        void getExtensionHost().loadInstalled().catch(installedFailed)
+      const service = getServiceHub().extensions()
+      if (service.isSupported())
+        void loadWithCrashLoopGuard({
+          settings: appSettings,
+          setSafeMode: (on) => service.setSafeMode(on),
+          onSafeMode: () => toast.warning(i18n.t('extensions:crashed.safeMode')),
+          load: () => getExtensionHost().loadInstalled(),
+        }).catch(installedFailed)
     } catch (e) {
       installedFailed(e)
     }

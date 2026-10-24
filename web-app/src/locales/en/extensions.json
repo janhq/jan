@@ -7,11 +7,17 @@
   "statusItemTooltip": "Extension: {{extension}} - {{text}}",
   "settingSaveFailed": "Could not save {{setting}}",
   "activationFailed": "Failed to start: {{error}}",
+  "crashed": {
+    "reason": "Stopped: {{error}}",
+    "disabled": "It crashed 3 times in 10 minutes and stays off until Jan restarts.",
+    "safeMode": "Installed extensions kept Jan from starting, so safe mode is now on."
+  },
   "state": {
     "inactive": "Inactive",
     "activating": "Starting",
     "active": "Active",
-    "failed": "Failed"
+    "failed": "Failed",
+    "crashed": "Crashed"
   },
   "development": "Development",
   "unload": "Unload",

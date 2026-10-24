@@ -35,7 +35,7 @@ export type Wire =
   | { v: 1; t: 'res'; id: number; ok: false; error: RpcError }
   | { v: 1; t: 'cancel'; id: number }
   | { v: 1; t: 'evt'; sub: number; value: unknown }
-  // The P4 watchdog pings; nothing answers yet.
+  // The host watchdog pings a running worker; the worker answers each one.
   | { v: 1; t: 'ping'; n: number }
   | { v: 1; t: 'pong'; n: number }
 
