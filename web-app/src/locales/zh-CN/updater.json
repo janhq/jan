@@ -6,5 +6,7 @@
   "hideReleaseNotes": "隐藏发行说明",
   "remindMeLater": "稍后提醒我",
   "downloading": "下载中...",
-  "updateNow": "立即更新"
+  "updateNow": "立即更新",
+  "retry": "重试",
+  "restartFailed": "重启失败"
 }

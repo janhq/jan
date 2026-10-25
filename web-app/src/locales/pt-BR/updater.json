@@ -6,5 +6,7 @@
   "hideReleaseNotes": "Ocultar Notas de Versão",
   "remindMeLater": "Lembre-me Mais Tarde",
   "downloading": "Baixando...",
-  "updateNow": "Atualizar Agora"
+  "updateNow": "Atualizar Agora",
+  "retry": "Tentar novamente",
+  "restartFailed": "Falha ao reiniciar"
 }
