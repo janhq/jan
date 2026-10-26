@@ -1058,14 +1058,15 @@ async fn execute_tool_inner(
 }
 
 /// Let the `preview://` scheme serve files under `root`, with `allow_network`
-/// as the page policy. Re-registering the same root replaces the flag.
+/// as the page policy. Re-registering the same root replaces the flag. Refused
+/// on Windows; see [`PreviewRoots::register_unsandboxed`].
 #[tauri::command]
 pub fn preview_register_root(
     roots: tauri::State<'_, PreviewRoots>,
     root: String,
     allow_network: bool,
 ) -> Result<(), AgentToolsError> {
-    roots.register(Path::new(&root), allow_network)?;
+    roots.register_unsandboxed(Path::new(&root), allow_network)?;
     Ok(())
 }
 

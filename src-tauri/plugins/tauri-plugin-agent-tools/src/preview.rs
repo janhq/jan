@@ -27,6 +27,18 @@ pub struct Served {
 }
 
 impl PreviewRoots {
+    /// [`register`](Self::register) for the pane, which only registers a root
+    /// for the unsandboxed mode (the sandboxed one is a `srcdoc` frame and never
+    /// touches the scheme). Refused on Windows, where WebView2 hands this
+    /// origin's frames the IPC key and the pane does not offer the mode, so
+    /// nothing can be served there.
+    pub fn register_unsandboxed(&self, root: &Path, allow_network: bool) -> Result<(), String> {
+        if cfg!(windows) {
+            return Err("ERROR: the unsandboxed preview is not available on Windows".to_string());
+        }
+        self.register(root, allow_network)
+    }
+
     pub fn register(&self, root: &Path, allow_network: bool) -> Result<(), String> {
         let canon = std::fs::canonicalize(root).map_err(|e| format!("ERROR: {e}"))?;
         if !canon.is_dir() {
@@ -227,6 +239,18 @@ mod tests {
         );
         roots.unregister(&root);
         assert!(roots.resolve(&url_path(&root.join("index.html"))).is_none());
+    }
+
+    #[test]
+    fn the_unsandboxed_registration_is_refused_on_windows_only() {
+        let root = temp_root("win");
+        let roots = PreviewRoots::default();
+        let registered = roots.register_unsandboxed(&root, false);
+        assert_eq!(registered.is_err(), cfg!(windows));
+        assert_eq!(
+            roots.resolve(&url_path(&root.join("index.html"))).is_none(),
+            cfg!(windows)
+        );
     }
 
     #[test]
