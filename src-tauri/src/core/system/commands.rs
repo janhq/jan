@@ -344,10 +344,19 @@ fn strip_jan_env_lines(content: &str) -> String {
             i += 1;
             continue;
         }
-        // Older versions appended the opening marker without first ending the
-        // file's last line, so it can trail one of the user's lines.
-        if let Some(prefix) = trimmed.strip_suffix(LEGACY_ENV_MARKER) {
-            if !prefix.is_empty() {
+        // The legacy marker opens a block only as a whole line, or in the one
+        // shape an older writer left behind: it appended the opening marker
+        // without first ending the file's last line, so the marker trails one
+        // of the user's lines, and it always wrote its exports on the next
+        // line. A user line that merely ends with the marker text is kept.
+        let legacy_open = trimmed.strip_suffix(LEGACY_ENV_MARKER).filter(|prefix| {
+            prefix.trim().is_empty()
+                || lines
+                    .get(i + 1)
+                    .is_some_and(|next| next.starts_with(LEGACY_ENV_PREFIX))
+        });
+        if let Some(prefix) = legacy_open {
+            if !prefix.trim().is_empty() {
                 kept.push(prefix);
             }
             match find_closing_line(&lines, i, |l| l.trim_end() == LEGACY_ENV_MARKER) {
@@ -1326,6 +1335,26 @@ mod tests {
             strip_jan_env_lines(&glued_close),
             "export B=2\nexport C=3\n"
         );
+    }
+
+    #[test]
+    fn env_cleanup_keeps_user_line_that_only_ends_with_the_legacy_marker() {
+        let m = LEGACY_ENV_MARKER;
+        let content = format!(
+            "alias x='y' {m}\nexport KEEP=1\nexport ALSO=2\n{m}\nexport AFTER=1\n"
+        );
+        // The trailing line is not Jan's opening marker, so the lines up to
+        // the next marker stay; only the whole-line marker is removed.
+        assert_eq!(
+            strip_jan_env_lines(&content),
+            format!("alias x='y' {m}\nexport KEEP=1\nexport ALSO=2\nexport AFTER=1\n")
+        );
+        // Last line of the file: nothing to start, nothing removed.
+        let last = format!("export A=1\necho done {m}\n");
+        assert_eq!(strip_jan_env_lines(&last), last);
+        // Indented whole-line marker still counts as the marker.
+        let indented = format!("export A=1\n  {m}\nexport ANTHROPIC_BASE_URL='u'\n{m}\n");
+        assert_eq!(strip_jan_env_lines(&indented), "export A=1\n");
     }
 
     #[test]
