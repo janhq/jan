@@ -89,10 +89,12 @@ fn temp_index() -> PathBuf {
 /// deleted after use). Reusing it lets `git add -A` compare against its own
 /// prior stat cache instead of a fresh empty one, so unchanged files are only
 /// stat'd (cheap) rather than re-hashed and re-inserted like every other file
-/// touched this turn.
+/// touched this turn. The id goes into a file name, so it must pass
+/// [`validate_thread_id`](crate::core::threads::utils::validate_thread_id).
 #[cfg(feature = "cli")]
-fn snapshot_index(thread_id: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("jan-agent-snap-idx-{thread_id}"))
+fn snapshot_index(thread_id: &str) -> Result<PathBuf, String> {
+    crate::core::threads::utils::validate_thread_id(thread_id)?;
+    Ok(std::env::temp_dir().join(format!("jan-agent-snap-idx-{thread_id}")))
 }
 
 /// Hidden ref that keeps a thread's snapshot chain reachable across GC. One ref
@@ -186,7 +188,7 @@ pub(crate) fn snapshot(
     thread_id: &str,
     changed: &[PathBuf],
 ) -> Result<String, String> {
-    let idx = snapshot_index(thread_id);
+    let idx = snapshot_index(thread_id)?;
     if !idx.exists() {
         let base_tree = run(repo, None, &["rev-parse", "--verify", "-q", "HEAD^{tree}"])
             .ok()
@@ -218,7 +220,9 @@ pub(crate) fn snapshot(
 /// never created.
 #[cfg(feature = "cli")]
 pub(crate) fn cleanup_snapshot_index(thread_id: &str) {
-    let _ = std::fs::remove_file(snapshot_index(thread_id));
+    if let Ok(idx) = snapshot_index(thread_id) {
+        let _ = std::fs::remove_file(idx);
+    }
 }
 
 /// Point the thread's snapshot ref at `sha` (create or update).
@@ -543,12 +547,23 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_index_rejects_ids_that_are_not_a_plain_name() {
+        for bad in ["", "../x", "a/b", r"a\b", "..", "C:x", "a.b"] {
+            assert!(snapshot_index(bad).is_err(), "{bad:?} should be rejected");
+        }
+        let idx = snapshot_index("fork-base-0f8c2a3e-1b2c-4d5e-8f90-123456789abc").unwrap();
+        assert_eq!(idx.parent(), Some(std::env::temp_dir().as_path()));
+        // A rejected id fails the snapshot instead of writing elsewhere.
+        assert!(snapshot(Path::new("."), None, "m", "../x", &[]).is_err());
+    }
+
+    #[test]
     fn checkpoint_only_stages_reported_paths() {
         let Some(root) = init_repo() else { return };
         let thread_id = "test-thread-3";
 
         let base = snapshot(&root, None, "base", thread_id, &[]).expect("base snapshot");
-        let idx = snapshot_index(thread_id);
+        let idx = snapshot_index(thread_id).unwrap();
         assert!(idx.exists(), "base snapshot should persist its index");
 
         // Two files change on disk, but only one is reported as touched; the
