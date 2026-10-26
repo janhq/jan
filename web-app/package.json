@@ -143,7 +143,6 @@
     "typescript-eslint": "8.31.0",
     "vite": "6.4.5",
     "vite-plugin-node-polyfills": "0.23.0",
-    "vite-plugin-pwa": "1.0.3",
     "vitest": "3.2.7"
   }
 }

@@ -72,9 +72,11 @@
     "hoistingLimits": "workspaces"
   },
   "resolutions": {
-    "yallist": "4.0.0",
+    "lru-cache/yallist": "4.0.0",
     "compression": "^1.8.2",
     "tinypool": "^2.1.2",
+    "lodash-es": "^4.18.1",
+    "serve-handler": "6.1.7",
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2"
   },
