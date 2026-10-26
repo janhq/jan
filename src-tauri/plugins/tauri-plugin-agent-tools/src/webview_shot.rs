@@ -11,7 +11,8 @@
 //!
 //! Everything that touches a GUI stack lives here, behind `feature = "tauri"` and
 //! the desktop targets, so the Tauri-free core and the headless CLI never pull it
-//! into their graph. The Chrome path stays the fallback everywhere.
+//! into their graph. Where this backend is injected its result is final; headless
+//! Chrome renders only where it is not (see `render_html_png`).
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
