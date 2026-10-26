@@ -444,8 +444,18 @@ pub fn validate_write_root(
 /// no mount, so it is reached by this real path and made writable by a policy
 /// rule and an ACE respectively. Either way `TMPDIR`/`TMP`/`TEMP` point at it
 /// (see `tools::jail::scratch_env_path`) and it is cleaned up with the session.
+///
+/// Pure path arithmetic: `session` is not checked here. Anything that reaches
+/// the filesystem with an id from outside goes through [`ensure_scratch_dir`] or
+/// [`remove_scratch_dir`], which accept only a valid [`thread_segment`].
 pub fn scratch_dir(session: &str) -> PathBuf {
     std::env::temp_dir().join(format!("jan-agent-{session}"))
+}
+
+/// [`scratch_dir`] for an id that must first pass [`thread_segment`], so a
+/// separator or `..` in it can never move the scratch out of `jan-agent-*`.
+fn checked_scratch_dir(session: &str) -> Result<PathBuf, String> {
+    Ok(scratch_dir(&thread_segment(session)?))
 }
 
 /// Create the session-scoped scratch directory (idempotent) and return it.
@@ -453,7 +463,7 @@ pub fn scratch_dir(session: &str) -> PathBuf {
 /// its teardown: thread deletion on the desktop, run end on the CLI, and
 /// session end in the TUI.
 pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    ensure_scratch_dir_path(&scratch_dir(session)).await
+    ensure_scratch_dir_path(&checked_scratch_dir(session)?).await
 }
 
 /// Create a scratch directory at an explicit path, hardening it against a
@@ -567,7 +577,7 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
 
 /// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
 pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
-    let dir = scratch_dir(session);
+    let dir = checked_scratch_dir(session)?;
     match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -689,7 +699,9 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if keep.contains(&name) {
+        // Only names a valid id could have produced: anything else was not made
+        // here, so it is left alone rather than swept.
+        if keep.contains(&name) || thread_segment(&name).is_err() {
             continue;
         }
         crate::tools::appcontainer::release(&entry.path());
@@ -717,17 +729,17 @@ fn is_windows_device_name(name: &str) -> bool {
 /// Sanitize a caller-supplied thread id into one safe path segment.
 ///
 /// Stricter than [`workspace_filename`] on purpose: a thread id is generated,
-/// never typed, so anything outside `[A-Za-z0-9._-]` is a bug or an attack. Dots
-/// are allowed inside the id but a dot-only segment is not, which is what would
-/// resolve to the threads directory itself or its parent.
+/// never typed, so anything outside `[A-Za-z0-9_-]` is a bug. No dots and no
+/// trimming, so `.`/`..` can never be produced. Kept identical to the desktop's
+/// `validate_thread_id` (`src-tauri/src/core/threads/utils.rs`): an id one side
+/// accepts the other must too.
 pub fn thread_segment(thread_id: &str) -> Result<String, String> {
-    let id = thread_id.trim();
+    let id = thread_id;
     let ok = !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        && !id.chars().all(|c| c == '.')
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
         && !is_windows_device_name(id);
     if !ok {
         return Err(format!("ERROR: invalid thread id '{thread_id}'"));
@@ -911,6 +923,7 @@ mod tests {
     fn thread_segment_rejects_traversal_and_separators() {
         for bad in [
             "", "  ", ".", "..", "...", "../x", "a/b", "a\\b", "a b", "a;b", "a$b", "évil",
+            "v1.2", "a.", " padded", "padded ", "C:x", "a\0b",
         ] {
             assert!(
                 thread_segment(bad).is_err(),
@@ -933,14 +946,21 @@ mod tests {
             "01H8XGJWBWBAQ",
             "3f2a9c1e-1234-4c9a-9b7e-000000000000",
             "thread_42",
-            "v1.2",
+            "temporary-chat",
             "CONSOLE",
             "COM10",
-            "con_1.x",
+            "con_1",
         ] {
             assert_eq!(thread_segment(ok).unwrap(), ok);
         }
-        assert_eq!(thread_segment("  padded  ").unwrap(), "padded");
+    }
+
+    #[tokio::test]
+    async fn scratch_dir_refuses_an_id_that_is_not_one_segment() {
+        for bad in ["../x", "..", "a/b", "a\\b", "", "nul"] {
+            assert!(ensure_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(remove_scratch_dir(bad).await.is_err(), "{bad:?}");
+        }
     }
 
     #[tokio::test]
