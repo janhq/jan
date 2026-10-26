@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateManifest } from '../manifest.js'
+import { RESERVED_PUBLISHER, validateManifest } from '../manifest.js'
 import { isContributionId } from '../index.js'
 
 type Pkg = {
@@ -189,6 +189,35 @@ describe('validateManifest', () => {
     pkg.jan.id = id
     expect(errorPaths(pkg)).toEqual(['jan.id'])
   })
+
+  it('reserves the jan publisher for built-ins', () => {
+    const pkg = minimal()
+    pkg.jan.id = `${RESERVED_PUBLISHER}.hello`
+    const result = validateManifest(pkg)
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          path: 'jan.id',
+          message:
+            "uses the publisher 'jan', which is reserved for Jan's built-in extensions",
+        },
+      ],
+    })
+    expect(validateManifest(pkg, { builtin: true })).toMatchObject({
+      ok: true,
+      manifest: { id: 'jan.hello' },
+    })
+  })
+
+  it.each(['jan-samples.hello', 'janx.hello', 'acme.jan'])(
+    'does not reserve the id %s',
+    (id) => {
+      const pkg = minimal()
+      pkg.jan.id = id
+      expect(errorPaths(pkg)).toEqual([])
+    }
+  )
 
   it.each(['0.1.0', '~0.1.0', '>=0.1.0', '^0.1', '^0.1.0 || ^0.2.0'])(
     'rejects the apiVersion %s',

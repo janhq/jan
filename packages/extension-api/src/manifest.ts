@@ -1,7 +1,7 @@
 import type { Contributions } from './contributions.js'
 import type { PermissionString } from './permissions.js'
 
-export { validateManifest } from './validate.js'
+export { RESERVED_PUBLISHER, validateManifest } from './validate.js'
 export { isApiCompatible } from './semver.js'
 export { API_VERSION } from './api-version.js'
 export type * from './contributions.js'
@@ -41,6 +41,14 @@ export interface ManifestError {
   /** Where the problem is, for example `jan.contributes.commands[1].id`. */
   path: string
   message: string
+}
+
+export interface ValidateOptions {
+  /**
+   * Accepts ids under the reserved `jan` publisher. Only the host sets it,
+   * for the built-ins it ships; installable extensions never may.
+   */
+  builtin?: boolean
 }
 
 export type ValidationResult =

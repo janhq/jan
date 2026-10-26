@@ -17,7 +17,7 @@ describe('host built-ins', () => {
       HOST_PACKAGES.map((p) => p.name)
     )
     for (const [i, pkg] of HOST_PACKAGES.entries()) {
-      const result = validateManifest(pkg)
+      const result = validateManifest(pkg, { builtin: true })
       expect(result).toMatchObject({ ok: true })
       if (result.ok) expect(HOST_BUILTINS[i].manifest).toEqual(result.manifest)
     }
@@ -32,7 +32,7 @@ describe('host built-ins', () => {
 
   // mlx is a host built-in only on macOS; its manifest must still be valid.
   it('ships a valid manifest for the macOS-only mlx built-in', () => {
-    expect(validateManifest(mlx)).toMatchObject({
+    expect(validateManifest(mlx, { builtin: true })).toMatchObject({
       ok: true,
       manifest: { id: 'jan.mlx' },
     })

@@ -100,6 +100,16 @@ pub fn is_extension_id(value: &str) -> bool {
     }
 }
 
+/// The publisher part of every built-in extension id (`jan.<name>`), as
+/// `RESERVED_PUBLISHER` in validate.ts. The host never runs a third-party
+/// extension under it, so nothing here may install one.
+pub const RESERVED_PUBLISHER: &str = "jan";
+
+/// True for an id whose publisher part is [`RESERVED_PUBLISHER`].
+pub fn is_reserved_id(value: &str) -> bool {
+    value.split_once('.').is_some_and(|(publisher, _)| publisher == RESERVED_PUBLISHER)
+}
+
 /// The grammar of a command, status item or provider id and of a tool name
 /// (`isContributionId`): 1-64 letters, digits, `.`, `_` and `-`, starting
 /// with a letter or digit.
@@ -725,10 +735,19 @@ pub fn validate(
         return Err(ManifestErrors(c.errors));
     };
     c.known(jan, MANIFEST_KEYS, "jan");
-    if !jan.get("id").and_then(Value::as_str).is_some_and(is_extension_id) {
+    let id = jan.get("id").and_then(Value::as_str);
+    if !id.is_some_and(is_extension_id) {
         c.fail(
             "jan.id",
             "must be '<publisher>.<name>' in lowercase letters, digits and dashes",
+        );
+    } else if id.is_some_and(is_reserved_id) {
+        c.fail(
+            "jan.id",
+            format!(
+                "uses the publisher '{RESERVED_PUBLISHER}', which is reserved for Jan's \
+                 built-in extensions"
+            ),
         );
     }
     c.string(jan, "displayName", "jan", false);
@@ -912,6 +931,24 @@ mod tests {
         }
         for good in ["cons.ab", "acme.com10", "acme.nul-x", "conx.hello"] {
             assert!(is_extension_id(good), "{good}");
+        }
+    }
+
+    #[test]
+    fn the_jan_publisher_is_reserved() {
+        for reserved in ["jan.hello", "jan.llamacpp"] {
+            assert!(is_reserved_id(reserved), "{reserved}");
+            let mut pkg = sample();
+            pkg["jan"]["id"] = json!(reserved);
+            let Err(ManifestErrors(errors)) = validate(&pkg, "0.8.5", HOST_API_VERSION) else {
+                panic!("{reserved} was accepted");
+            };
+            assert_eq!(errors.len(), 1);
+            assert_eq!(errors[0].path, "jan.id");
+            assert!(errors[0].message.contains("reserved"), "{}", errors[0].message);
+        }
+        for free in ["acme.hello", "jan-samples.hello", "janx.hello", "acme.jan"] {
+            assert!(!is_reserved_id(free), "{free}");
         }
     }
 
