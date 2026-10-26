@@ -258,7 +258,7 @@
     "apiKey": "API Key",
     "apiKeyDesc": "Authenticate requests with an API key.",
     "trustedHosts": "Trusted Hosts",
-    "trustedHostsDesc": "Hosts allowed to access the server, separated by commas.",
+    "trustedHostsDesc": "Hosts allowed to access the server, separated by commas. Listing null or file:// lets pages without a normal origin (sandboxed frames on any website, local files) call the API.",
     "advancedSettings": "Advanced Settings",
     "cors": "Cross-Origin Resource Sharing (CORS)",
     "corsDesc": "Allow cross-origin requests to the API server.",
