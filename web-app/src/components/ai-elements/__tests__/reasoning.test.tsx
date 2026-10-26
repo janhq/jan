@@ -10,8 +10,28 @@ import {
   useReasoning,
 } from '../reasoning'
 
+const streamdown = vi.hoisted(() => ({
+  components: undefined as
+    | Record<string, (props: Record<string, unknown>) => ReactNode>
+    | undefined,
+}))
 vi.mock('streamdown', () => ({
-  Streamdown: ({ children }: { children: string }) => <span>{children}</span>,
+  Streamdown: ({
+    children,
+    components,
+  }: {
+    children: string
+    components?: typeof streamdown.components
+  }) => {
+    streamdown.components = components
+    return <span>{children}</span>
+  },
+}))
+
+const openExternalUrl = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/externalLink', async (importActual) => ({
+  ...(await importActual<typeof import('@/lib/externalLink')>()),
+  openExternalUrl,
 }))
 
 vi.mock('../shimmer', () => ({
@@ -192,5 +212,35 @@ describe('useReasoning', () => {
     expect(result.current.duration).toBe(7)
     expect(result.current.isOpen).toBe(true)
     expect(typeof result.current.setIsOpen).toBe('function')
+  })
+})
+
+describe('ReasoningContent links', () => {
+  const renderLink = (href: string) => {
+    render(
+      <Reasoning>
+        <ReasoningContent>see the docs</ReasoningContent>
+      </Reasoning>
+    )
+    const A = streamdown.components!.a
+    render(<A href={href}>docs</A>)
+    return screen.getByText('docs')
+  }
+
+  it('opens a web link outside the app', () => {
+    openExternalUrl.mockClear()
+    const link = renderLink('https://jan.ai/docs')
+    expect(link).toHaveAttribute('href', 'https://jan.ai/docs')
+    expect(link).toHaveAttribute('target', '_blank')
+    act(() => link.click())
+    expect(openExternalUrl).toHaveBeenCalledWith('https://jan.ai/docs')
+  })
+
+  it('renders any other link as inert text', () => {
+    openExternalUrl.mockClear()
+    const link = renderLink('javascript:alert(1)')
+    expect(link).not.toHaveAttribute('href')
+    act(() => link.click())
+    expect(openExternalUrl).not.toHaveBeenCalled()
   })
 })
