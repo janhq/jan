@@ -65,7 +65,7 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/utils')>()),
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
-  getProviderTitle: (provider: string) => provider,
+  getProviderTitle: (provider: { provider: string }) => provider.provider,
   isLocalProvider: (provider: string) =>
     provider === 'llama.cpp' || provider === 'mlx',
 }))

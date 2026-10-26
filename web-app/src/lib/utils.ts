@@ -164,7 +164,16 @@ export function getProviderLogo(provider: string) {
   }
 }
 
-export const getProviderTitle = (provider: string) => {
+/**
+ * The name the UI shows for a provider: its display name when it has one
+ * (an extension's provider, whose id is namespaced), else a title derived
+ * from its id.
+ */
+export const getProviderTitle = (
+  provider: string | Pick<ProviderObject, 'provider' | 'display_name'>
+): string => {
+  if (typeof provider !== 'string')
+    return provider.display_name || getProviderTitle(provider.provider)
   switch (provider) {
     case 'jan':
       return 'Jan'

@@ -43,6 +43,8 @@ export function extensionProviderFetch(
 /** A contributed provider whose extension has activated it. */
 export interface ActiveExtensionProvider {
   extensionId: string
+  /** The manifest `displayName` of the extension. */
+  extensionName: string
   contribution: ProviderContribution
 }
 
@@ -53,9 +55,11 @@ export function listExtensionProviders(
   const result: ActiveExtensionProvider[] = []
   for (const extensionId of Object.keys(state.providers).sort()) {
     const providers = state.providers[extensionId]
+    const extensionName =
+      state.extensions[extensionId]?.displayName ?? extensionId
     for (const id of Object.keys(providers).sort()) {
       const { handler, ...contribution } = providers[id]
-      if (handler) result.push({ extensionId, contribution })
+      if (handler) result.push({ extensionId, extensionName, contribution })
     }
   }
   return result
@@ -78,6 +82,7 @@ export function toModelProvider(
       provider.extensionId,
       provider.contribution.id
     ),
+    display_name: provider.contribution.displayName,
     active: true,
     base_url: provider.contribution.baseUrl,
     api_key: apiKey || undefined,
@@ -88,6 +93,9 @@ export function toModelProvider(
       displayName: m.displayName,
       capabilities: ['completion'],
     })),
-    source: { extensionId: provider.extensionId },
+    source: {
+      extensionId: provider.extensionId,
+      extensionName: provider.extensionName,
+    },
   }
 }

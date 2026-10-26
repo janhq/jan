@@ -20,7 +20,6 @@ import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { extensionProviderFetch } from '@/lib/extensions/providers'
 import { Button } from '@/components/ui/button'
 import { SecretInput } from '@/components/ui/secret-input'
 import { Switch } from '@/components/ui/switch'
@@ -87,6 +86,9 @@ function ProviderDetail() {
   const { getProviderByName, setProviders, updateProvider, addDeletedModels } =
     useModelProvider()
   const provider = getProviderByName(providerName)
+  // An extension's provider takes its key, address and models from the
+  // extension, and leaves when the extension stops: nothing here edits it.
+  const extensionSource = provider?.source
   const isLlamacpp = provider?.provider === 'llamacpp'
   const isPredefinedProvider = useMemo(
     () => predefinedProviders.some((p) => p.provider === providerName),
@@ -412,21 +414,6 @@ function ProviderDetail() {
       return
     }
 
-    // A contributed provider's keys go only through its extension's checked
-    // network path, the one inference uses.
-    let extensionFetch: typeof globalThis.fetch | undefined
-    try {
-      extensionFetch = extensionProviderFetch(
-        { provider: provider.provider, source: provider.source },
-        'whole'
-      )
-    } catch (error) {
-      toast.error(t('providers:models'), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-      return
-    }
-
     const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
     const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
     if (nonEmptyKeyCount === 0) {
@@ -438,7 +425,7 @@ function ProviderDetail() {
 
     setIsTestingKeys(true)
     try {
-      const fetchImpl = extensionFetch ?? serviceHub.providers().fetch()
+      const fetchImpl = serviceHub.providers().fetch()
       const results: { index: number; masked: string; status: string; detail: string }[] = []
 
       for (let i = 0; i < keyDraftLines.length; i++) {
@@ -451,9 +438,8 @@ function ProviderDetail() {
           Authorization: `Bearer ${key}`,
         }
         if (
-          !extensionFetch &&
-          (provider.base_url.includes('localhost:') ||
-            provider.base_url.includes('127.0.0.1:'))
+          provider.base_url.includes('localhost:') ||
+          provider.base_url.includes('127.0.0.1:')
         ) {
           headers['Origin'] = 'tauri://localhost'
         }
@@ -490,7 +476,7 @@ function ProviderDetail() {
     } finally {
       setIsTestingKeys(false)
     }
-  }, [apiKeysDraft, maskApiKey, provider?.base_url, provider?.source, provider?.provider, serviceHub, t])
+  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
@@ -653,7 +639,7 @@ function ProviderDetail() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <div className="flex items-center justify-between">
               <h1 className="font-medium text-base">
-                {getProviderTitle(providerName)}
+                {getProviderTitle(provider ?? providerName)}
               </h1>
               <Switch
                 checked={provider?.active ?? false}
@@ -661,7 +647,26 @@ function ProviderDetail() {
               />
             </div>
 
+            {extensionSource && (
+              <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
+                <IconInfoCircle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {t('providers:extensionManaged', {
+                    extension: extensionSource.extensionName,
+                  })}{' '}
+                  <Link
+                    to={route.settings.extension}
+                    params={{ extensionId: extensionSource.extensionId }}
+                    className="underline"
+                  >
+                    {t('providers:openExtensionSettings')}
+                  </Link>
+                </span>
+              </div>
+            )}
+
             {provider &&
+              !extensionSource &&
               !isLocalProvider(provider.provider) &&
               !supportsRemoteCatalog(provider) && (
                 <div className="flex items-start gap-2 rounded-md border border-main-view-fg/10 bg-main-view-fg/5 px-3 py-2 text-xs text-muted-foreground">
@@ -700,7 +705,8 @@ function ProviderDetail() {
             >
               {/* Settings — hidden for predefined remote providers since
                   api-key + base-url are both surfaced elsewhere / hidden. */}
-              {!(
+              {!extensionSource &&
+                !(
                 isPredefinedProvider &&
                 provider?.provider !== 'llamacpp' &&
                 provider?.provider !== 'mlx'
@@ -817,6 +823,7 @@ function ProviderDetail() {
               )}
 
               {provider &&
+                !extensionSource &&
                 provider.provider !== 'llamacpp' &&
                 provider.provider !== 'mlx' && (
                   <Card>
@@ -1019,7 +1026,10 @@ function ProviderDetail() {
                       {t('providers:models')}
                     </h1>
                     <div className="flex items-center gap-2">
-                      {provider && provider.provider !== 'llamacpp' && provider.provider !== 'mlx' && (
+                      {provider &&
+                        !extensionSource &&
+                        provider.provider !== 'llamacpp' &&
+                        provider.provider !== 'mlx' && (
                         <>
                           <Button
                             variant="secondary"
@@ -1145,10 +1155,12 @@ function ProviderDetail() {
                                 providerHasRemoteApiKeys(provider))) && (
                               <FavoriteModelAction model={model} />
                             )}
-                            <DialogDeleteModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
+                            {!extensionSource && (
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                            )}
                             {provider &&
                               (provider.provider === 'llamacpp' ||
                                 provider.provider === 'mlx') && (
@@ -1199,7 +1211,9 @@ function ProviderDetail() {
                       </h6>
                     </div>
                     <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                      {provider && !isLocalProvider(provider.provider) ? (
+                      {extensionSource ? (
+                        t('providers:noModelFoundExtensionDesc')
+                      ) : provider && !isLocalProvider(provider.provider) ? (
                         t('providers:noModelFoundRemoteDesc')
                       ) : (
                         <>

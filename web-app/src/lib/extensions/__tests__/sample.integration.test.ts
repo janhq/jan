@@ -103,6 +103,7 @@ describe('hello-provider sample in a worker', () => {
     expect(listExtensionProviders(state)).toEqual([
       {
         extensionId: ID,
+        extensionName: 'Hello Provider',
         contribution: {
           id: 'hello-local',
           displayName: 'Hello Local',
