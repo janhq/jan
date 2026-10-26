@@ -212,59 +212,119 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
-/// Largest profile the macOS admin fallback will write. The content travels
-/// inline in the osascript argument, and shell profiles are small.
+/// Largest profile the macOS admin fallback will write. Shell profiles are
+/// small.
+#[cfg_attr(not(unix), allow(dead_code))]
 const MAX_ADMIN_PROFILE_BYTES: usize = 256 * 1024;
 
 /// Shell command the macOS admin fallback runs as root to replace `dst` with
-/// `content`. The content is passed inline as base64 (no file the user could
-/// swap first) and decoded into a fresh root-only directory under
-/// /private/tmp, given `dst`'s owner and mode, then renamed over `dst`. A
-/// rename replaces the directory entry and never writes through a symlink.
-/// `dst` must be a regular file that is not a symlink, or not exist yet (then
-/// it gets the owner of its directory and mode 600); anything else is
-/// refused. The temp directory must be on the same volume as `dst` so the
-/// move is a rename, not a copy.
-fn admin_write_shell_command(dst: &str, content: &str) -> Result<String, String> {
-    use base64::Engine as _;
-    if content.len() > MAX_ADMIN_PROFILE_BYTES {
-        return Err(format!(
-            "{} would be larger than {} KB; not writing it with administrator privileges.",
-            dst,
-            MAX_ADMIN_PROFILE_BYTES / 1024
-        ));
-    }
+/// the content of `src`, a file the user process staged (see
+/// `stage_admin_profile`). Only paths travel in the command, never the content.
+///
+/// `src` must be a regular file, not a symlink, owned by `uid` with mode 600
+/// and at most `MAX_ADMIN_PROFILE_BYTES`; it is checked on the descriptor that
+/// is then read, so swapping it after the check does not help. The content is
+/// copied into a fresh root-only directory under /private/tmp, given `dst`'s
+/// owner and mode, then renamed over `dst`. A rename replaces the directory
+/// entry and never writes through a symlink. `dst` must be a regular file that
+/// is not a symlink, or not exist yet (then it gets the owner of its directory
+/// and mode 600); anything else is refused. The temp directory must be on the
+/// same volume as `dst` so the move is a rename, not a copy.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn admin_write_shell_command(dst: &str, src: &str, uid: u32) -> Result<String, String> {
     let dir = std::path::Path::new(dst)
         .parent()
         .and_then(|d| d.to_str())
         .filter(|d| !d.is_empty())
         .ok_or_else(|| format!("{} has no parent directory", dst))?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(content);
+    if !src.starts_with('/') {
+        return Err(format!("{} is not an absolute path", src));
+    }
     Ok(format!(
-        "dst={dst}; dir={dir}; \
+        "dst={dst}; dir={dir}; src={src}; \
          if [ -L \"$dst\" ] || {{ [ -e \"$dst\" ] && [ ! -f \"$dst\" ]; }}; then \
          echo \"Refusing to replace $dst: not a regular file\" >&2; exit 1; fi; \
+         if [ -L \"$src\" ] || [ ! -f \"$src\" ]; then \
+         echo \"Refusing to read $src: not a regular file\" >&2; exit 1; fi; \
+         exec 3< \"$src\" || exit 1; \
+         if [ \"$(/usr/bin/stat -f '%HT:%u:%Lp' <&3)\" != 'Regular File:{uid}:600' ] \
+         || [ \"$(/usr/bin/stat -f %z <&3)\" -gt {max} ]; then \
+         echo \"Refusing to read $src: unexpected type, owner, mode or size\" >&2; exit 1; fi; \
          t=$(/usr/bin/mktemp -d /private/tmp/jan_env.XXXXXX) || exit 1; f=\"$t/profile\"; \
          if [ -f \"$dst\" ]; then o=$(/usr/bin/stat -f %u:%g \"$dst\") && m=$(/usr/bin/stat -f %Lp \"$dst\"); \
          else o=$(/usr/bin/stat -L -f %u:%g \"$dir\") && m=600; fi \
          && [ \"$(/usr/bin/stat -f %d \"$t\")\" = \"$(/usr/bin/stat -L -f %d \"$dir\")\" ] \
-         && printf %s '{b64}' | /usr/bin/base64 -D > \"$f\" \
+         && /bin/cat <&3 > \"$f\" \
          && /usr/sbin/chown \"$o\" \"$f\" && /bin/chmod \"$m\" \"$f\" && /bin/mv -f \"$f\" \"$dst\"; \
          r=$?; /bin/rm -rf \"$t\"; exit $r",
         dst = shell_single_quote(dst),
         dir = shell_single_quote(dir),
+        src = shell_single_quote(src),
+        max = MAX_ADMIN_PROFILE_BYTES,
     ))
 }
 
 /// AppleScript for the macOS admin fallback: run `admin_write_shell_command`
 /// with administrator privileges. The shell command is escaped for the
 /// AppleScript string literal it is embedded in (`\` and `"`).
-fn admin_write_applescript(dst: &str, content: &str) -> Result<String, String> {
-    let shell = admin_write_shell_command(dst, content)?;
+#[cfg_attr(not(unix), allow(dead_code))]
+fn admin_write_applescript(dst: &str, src: &str, uid: u32) -> Result<String, String> {
+    let shell = admin_write_shell_command(dst, src, uid)?;
     let escaped = shell.replace('\\', r"\\").replace('"', r#"\""#);
     Ok(format!(
         r#"do shell script "{escaped}" with administrator privileges"#
     ))
+}
+
+/// A private directory holding the profile content for the admin fallback,
+/// removed (with its content) when dropped.
+#[cfg(unix)]
+struct StagedProfile {
+    dir: PathBuf,
+    file: PathBuf,
+}
+
+#[cfg(unix)]
+impl Drop for StagedProfile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// Write `content` to a new mode-600 file in a fresh mode-700 directory under
+/// the user's temp dir (`$TMPDIR`, per-user on macOS), both created by this
+/// process and neither pre-existing.
+#[cfg(unix)]
+fn stage_admin_profile(content: &str) -> Result<StagedProfile, String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+    let base = std::env::temp_dir();
+    let mut last_err = None;
+    for _ in 0..8 {
+        let dir = base.join(format!("jan_env.{}", uuid::Uuid::new_v4().simple()));
+        match std::fs::DirBuilder::new().mode(0o700).create(&dir) {
+            Ok(()) => {
+                let staged = StagedProfile {
+                    file: dir.join("profile"),
+                    dir,
+                };
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&staged.file)
+                    .map_err(|e| e.to_string())?;
+                f.set_permissions(std::fs::Permissions::from_mode(0o600))
+                    .and_then(|()| f.write_all(content.as_bytes()))
+                    .and_then(|()| f.sync_all())
+                    .map_err(|e| e.to_string())?;
+                return Ok(staged);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(last_err.map_or_else(String::new, |e| e.to_string()))
 }
 
 fn is_valid_env_key(key: &str) -> bool {
@@ -460,15 +520,47 @@ fn read_shell_profile(env_file_path: &str) -> Result<String, String> {
 
 /// macOS fallback for a profile Jan cannot write directly: replace
 /// `env_file_path` with `content` with administrator privileges (see
-/// `admin_write_shell_command`). A cancelled password prompt is returned as an
-/// error.
+/// `admin_write_shell_command`). The content goes through a private temp file
+/// and the script through osascript's stdin, so neither shows in any process's
+/// arguments. A cancelled password prompt is returned as an error.
+#[cfg(unix)]
 fn admin_write_shell_profile(env_file_path: &str, content: &str) -> Result<(), String> {
-    let output = std::process::Command::new("/usr/bin/osascript")
-        .arg("-e")
-        .arg(admin_write_applescript(env_file_path, content)?)
-        .output()
+    use std::io::Write as _;
+    if content.len() > MAX_ADMIN_PROFILE_BYTES {
+        return Err(format!(
+            "{} would be larger than {} KB; not writing it with administrator privileges.",
+            env_file_path,
+            MAX_ADMIN_PROFILE_BYTES / 1024
+        ));
+    }
+    let staged = stage_admin_profile(content)?;
+    let src = staged
+        .file
+        .to_str()
+        .ok_or_else(|| format!("{} is not valid UTF-8", staged.file.display()))?;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let script = admin_write_applescript(env_file_path, src, uid)?;
+    let mut child = std::process::Command::new("/usr/bin/osascript")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| e.to_string())?;
+    let written = child
+        .stdin
+        .take()
+        .ok_or_else(|| "osascript has no stdin".to_string())
+        .and_then(|mut stdin| stdin.write_all(script.as_bytes()).map_err(|e| e.to_string()));
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    written?;
+    drop(staged);
     check_admin_copy(&output, env_file_path)
+}
+
+#[cfg(not(unix))]
+fn admin_write_shell_profile(env_file_path: &str, _content: &str) -> Result<(), String> {
+    Err(format!("Could not update {}", env_file_path))
 }
 
 /// Turn the osascript result of the admin copy into an error when it failed,
@@ -1089,8 +1181,10 @@ mod tests {
 
     #[test]
     fn admin_write_applescript_escapes_for_applescript() {
-        let script = admin_write_applescript(r#"/Users/o'b"c\d/.zshenv"#, "export A=1\n").unwrap();
-        assert!(script.starts_with(r#"do shell script "dst='/Users/o'\\''b\"c\\d/.zshenv'; dir='/Users/o'\\''b\"c\\d'; "#));
+        let script =
+            admin_write_applescript(r#"/Users/o'b"c\d/.zshenv"#, "/var/t/jan_env.x/profile", 501)
+                .unwrap();
+        assert!(script.starts_with(r#"do shell script "dst='/Users/o'\\''b\"c\\d/.zshenv'; dir='/Users/o'\\''b\"c\\d'; src='/var/t/jan_env.x/profile'; "#));
         assert!(script.ends_with(r#"exit $r" with administrator privileges"#));
         // Only the escaped quotes remain inside the AppleScript string.
         let inner = &script["do shell script \"".len()..script.len() - "\" with administrator privileges".len()];
@@ -1098,32 +1192,60 @@ mod tests {
     }
 
     #[test]
-    fn admin_write_passes_content_inline_as_base64() {
-        use base64::Engine as _;
-        let hostile = "export A='x'\\''; rm -rf /; #'\n\"$(id)\" `id` \\ \u{e9}\n";
-        let cmd = admin_write_shell_command("/Users/a/.zshenv", hostile).unwrap();
-        let b64 = base64::engine::general_purpose::STANDARD.encode(hostile);
-        assert!(cmd.contains(&format!("printf %s '{b64}' | /usr/bin/base64 -D")));
-        assert!(!cmd.contains("rm -rf /;"));
-        assert!(!cmd.contains("$(id)"));
-        let decoded = base64::engine::general_purpose::STANDARD.decode(&b64).unwrap();
-        assert_eq!(decoded, hostile.as_bytes());
-        // No temp file in a user-writable place.
-        assert!(!cmd.contains(".jan_env_update"));
+    fn admin_write_command_carries_paths_not_content() {
+        let cmd = admin_write_shell_command("/Users/a/.zshenv", "/var/t/jan_env.x/profile", 501)
+            .unwrap();
+        assert!(cmd.contains("src='/var/t/jan_env.x/profile';"));
+        assert!(cmd.contains("'Regular File:501:600'"));
+        assert!(cmd.contains(&format!("-gt {MAX_ADMIN_PROFILE_BYTES}")));
+        assert!(!cmd.contains("base64"));
+        // Staging stays root-only, under /private/tmp.
         assert!(cmd.contains("/usr/bin/mktemp -d /private/tmp/"));
+        assert!(admin_write_shell_command(".zshenv", "/t/p", 501).is_err());
+        assert!(admin_write_shell_command("/Users/a/.zshenv", "t/p", 501).is_err());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn admin_write_refuses_oversized_content_and_bare_names() {
+    fn admin_write_refuses_oversized_content() {
         let big = "#".repeat(MAX_ADMIN_PROFILE_BYTES + 1);
-        assert!(admin_write_shell_command("/Users/a/.zshenv", &big).is_err());
-        assert!(admin_write_shell_command(".zshenv", "x").is_err());
+        let err = admin_write_shell_profile("/Users/a/.zshenv", &big).unwrap_err();
+        assert!(err.contains("larger than"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_profile_is_private_and_removed_on_drop() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let staged = stage_admin_profile("export A=1\n").unwrap();
+        let dir = staged.dir.clone();
+        assert!(dir.starts_with(std::env::temp_dir()));
+        assert_eq!(fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        let meta = fs::symlink_metadata(&staged.file).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(meta.uid(), unsafe { libc::getuid() });
+        assert_eq!(fs::read_to_string(&staged.file).unwrap(), "export A=1\n");
+        drop(staged);
+        assert!(!dir.exists());
+    }
+
+    /// Writes `content` to a mode-600 source file in `dir`.
+    #[cfg(target_os = "macos")]
+    fn admin_source(dir: &std::path::Path, content: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let src = dir.join("staged-profile");
+        fs::write(&src, content).unwrap();
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o600)).unwrap();
+        src
     }
 
     /// Runs the privileged command as the current user against temp files.
     #[cfg(target_os = "macos")]
-    fn run_admin_write(dst: &std::path::Path, content: &str) -> std::process::Output {
-        let cmd = admin_write_shell_command(dst.to_str().unwrap(), content).unwrap();
+    fn run_admin_write(dst: &std::path::Path, src: &std::path::Path) -> std::process::Output {
+        let uid = unsafe { libc::getuid() };
+        let cmd = admin_write_shell_command(dst.to_str().unwrap(), src.to_str().unwrap(), uid)
+            .unwrap();
         std::process::Command::new("/bin/sh")
             .arg("-c")
             .arg(cmd)
@@ -1140,14 +1262,14 @@ mod tests {
         fs::write(&dst, "old\n").unwrap();
         fs::set_permissions(&dst, fs::Permissions::from_mode(0o640)).unwrap();
         let content = "export A='it'\\''s'\n$(touch /tmp/never)\n";
-        let out = run_admin_write(&dst, content);
+        let out = run_admin_write(&dst, &admin_source(dir.path(), content));
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         assert_eq!(fs::read_to_string(&dst).unwrap(), content);
         assert_eq!(fs::metadata(&dst).unwrap().permissions().mode() & 0o777, 0o640);
 
         // A profile that does not exist yet is created, private.
         let new = dir.path().join(".bash_profile");
-        let out = run_admin_write(&new, "export B=1\n");
+        let out = run_admin_write(&new, &admin_source(dir.path(), "export B=1\n"));
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         assert_eq!(fs::read_to_string(&new).unwrap(), "export B=1\n");
         assert_eq!(fs::metadata(&new).unwrap().permissions().mode() & 0o777, 0o600);
@@ -1157,11 +1279,12 @@ mod tests {
     #[test]
     fn admin_write_command_refuses_symlinks_and_non_files() {
         let dir = tempdir().unwrap();
+        let src = admin_source(dir.path(), "export EVIL=1\n");
         let target = dir.path().join("system-file");
         fs::write(&target, "original\n").unwrap();
         let link = dir.path().join(".zshenv");
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        let out = run_admin_write(&link, "export EVIL=1\n");
+        let out = run_admin_write(&link, &src);
         assert!(!out.status.success());
         assert!(String::from_utf8_lossy(&out.stderr).contains("Refusing"));
         assert_eq!(fs::read_to_string(&target).unwrap(), "original\n");
@@ -1171,13 +1294,53 @@ mod tests {
         let dangling = dir.path().join(".bashrc");
         let missing = dir.path().join("missing");
         std::os::unix::fs::symlink(&missing, &dangling).unwrap();
-        assert!(!run_admin_write(&dangling, "x\n").status.success());
+        assert!(!run_admin_write(&dangling, &src).status.success());
         assert!(!missing.exists());
 
         let sub = dir.path().join("adir");
         fs::create_dir(&sub).unwrap();
-        assert!(!run_admin_write(&sub, "x\n").status.success());
+        assert!(!run_admin_write(&sub, &src).status.success());
         assert_eq!(fs::read_dir(&sub).unwrap().count(), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_refuses_a_symlinked_or_loose_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let dst = dir.path().join(".zshenv");
+        fs::write(&dst, "old\n").unwrap();
+
+        // A symlink to an otherwise acceptable file is refused.
+        let real = admin_source(dir.path(), "export A=1\n");
+        let link = dir.path().join("linked-profile");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let out = run_admin_write(&dst, &link);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("Refusing to read"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // Readable by others: refused.
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o644)).unwrap();
+        let out = run_admin_write(&dst, &real);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // A directory, and a file that is not there: refused.
+        assert!(!run_admin_write(&dst, dir.path()).status.success());
+        assert!(!run_admin_write(&dst, &dir.path().join("gone")).status.success());
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // Owned by someone else: refused (the command expects another uid).
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
+        let other = unsafe { libc::getuid() } + 1;
+        let cmd = admin_write_shell_command(dst.to_str().unwrap(), real.to_str().unwrap(), other)
+            .unwrap();
+        let out = std::process::Command::new("/bin/sh").arg("-c").arg(cmd).output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
     }
 
     #[test]
