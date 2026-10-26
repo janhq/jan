@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime, Url};
+use tauri_plugin_agent_tools::screenshot_pages::ScreenshotPages;
 use tauri_plugin_opener::OpenerExt;
 
 /// Hosts the app's own content is served from on Windows and Android, where
@@ -79,11 +80,38 @@ fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: &[&str]) -> 
 
 /// Whether the webview labelled `label` may navigate to `url`: an app URL, or,
 /// for the hidden windows the `screenshot` tool renders into, the `file:` page
-/// it loads. Those windows match no capability, so the page gets no IPC.
+/// it loads and the files under that page's directory. Those windows match no
+/// capability, so the page gets no IPC.
+///
+/// The page is model-written, so a frame in it may name any other file; only
+/// what the renderer recorded for the window passes. On Windows, WebView2
+/// raises the hook for main-frame navigations alone, so there a subframe's
+/// `file:` load is not checked here.
 pub(crate) fn allows_navigation(label: &str, url: &Url, dev_url: Option<&Url>) -> bool {
+    allows_navigation_with(
+        label,
+        url,
+        dev_url,
+        &tauri_plugin_agent_tools::screenshot_pages::SCREENSHOT_PAGES,
+    )
+}
+
+fn allows_navigation_with(
+    label: &str,
+    url: &Url,
+    dev_url: Option<&Url>,
+    pages: &ScreenshotPages,
+) -> bool {
     is_app_url(url, dev_url)
         || (url.scheme() == "file"
-            && label.starts_with(tauri_plugin_agent_tools::SCREENSHOT_WINDOW_LABEL_PREFIX))
+            && is_screenshot_window(label)
+            && url
+                .to_file_path()
+                .is_ok_and(|path| pages.allows(label, &path)))
+}
+
+fn is_screenshot_window(label: &str) -> bool {
+    label.starts_with(tauri_plugin_agent_tools::SCREENSHOT_WINDOW_LABEL_PREFIX)
 }
 
 fn same_origin(a: &Url, b: &Url) -> bool {
@@ -95,6 +123,13 @@ fn same_origin(a: &Url, b: &Url) -> bool {
 /// Whether a refused navigation should open in the system browser.
 pub(crate) fn opens_externally(url: &Url) -> bool {
     matches!(url.scheme(), "http" | "https")
+}
+
+/// Whether a navigation the webview labelled `label` was refused should open
+/// in the system browser. Never from a screenshot window: nobody clicked
+/// anything there, the page is model-written and off-screen.
+fn hands_off(label: &str, url: &Url) -> bool {
+    opens_externally(url) && !is_screenshot_window(label)
 }
 
 /// At most one hand-off per this window. A refused navigation is normally a
@@ -131,7 +166,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 webview.label(),
                 url
             );
-            if opens_externally(url) && handoff_allowed(&LAST_HANDOFF, Instant::now()) {
+            if hands_off(webview.label(), url) && handoff_allowed(&LAST_HANDOFF, Instant::now()) {
                 if let Err(e) = webview.opener().open_url(url.as_str(), None::<&str>) {
                     log::error!("Failed to open {url} in the system browser: {e}");
                 }
@@ -257,14 +292,45 @@ mod tests {
         assert!(!is_app_url(&u("http://localhost:1420/"), None));
     }
 
-    #[test]
-    fn only_screenshot_windows_may_load_files() {
-        let file = u("file:///tmp/jan-agent-s1/chart.html");
-        let shot = format!(
+    /// A directory holding `chart.html` and `assets/style.css`, unique per call.
+    fn shot_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "jan-nav-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(dir.join("chart.html"), "<svg></svg>").unwrap();
+        std::fs::write(dir.join("assets/style.css"), "body{}").unwrap();
+        dir
+    }
+
+    fn file_url(p: &std::path::Path) -> Url {
+        Url::from_file_path(p).unwrap()
+    }
+
+    fn shot_label() -> String {
+        format!(
             "{}4242-1700000000",
             tauri_plugin_agent_tools::SCREENSHOT_WINDOW_LABEL_PREFIX
-        );
-        assert!(allows_navigation(&shot, &file, None));
+        )
+    }
+
+    #[test]
+    fn a_screenshot_window_may_load_its_target_and_files_beside_it() {
+        let dir = shot_dir("target");
+        let pages = ScreenshotPages::new();
+        let shot = shot_label();
+        let target = file_url(&dir.join("chart.html"));
+        // Nothing recorded for the window yet.
+        assert!(!allows_navigation_with(&shot, &target, None, &pages));
+        pages.register(&shot, &dir.join("chart.html")).unwrap();
+        assert!(allows_navigation_with(&shot, &target, None, &pages));
+        let sibling = file_url(&dir.join("assets/style.css"));
+        assert!(allows_navigation_with(&shot, &sibling, None, &pages));
         for label in [
             "main",
             "logs-app-window",
@@ -272,13 +338,71 @@ mod tests {
             "jan-shot",
             "x-jan-shot-1",
         ] {
-            assert!(!allows_navigation(label, &file, None), "{label}");
+            assert!(
+                !allows_navigation_with(label, &target, None, &pages),
+                "{label}"
+            );
         }
+    }
+
+    #[test]
+    fn a_screenshot_window_may_not_load_other_files() {
+        let dir = shot_dir("own");
+        let secret = shot_dir("ssh");
+        std::fs::write(secret.join("id_rsa"), "key").unwrap();
+        let pages = ScreenshotPages::new();
+        let shot = shot_label();
+        pages.register(&shot, &dir.join("chart.html")).unwrap();
+        assert!(!allows_navigation_with(
+            &shot,
+            &file_url(&secret.join("id_rsa")),
+            None,
+            &pages
+        ));
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+        if let Some(home) = home {
+            let key = file_url(&home.join(".ssh/id_rsa"));
+            assert!(!allows_navigation_with(&shot, &key, None, &pages));
+        }
+        assert!(!allows_navigation_with(
+            &shot,
+            &u("file:///etc/passwd"),
+            None,
+            &pages
+        ));
+        // `..` out of the target's directory, spelled in the URL.
+        let escape = Url::parse(&format!(
+            "{}/../{}/id_rsa",
+            file_url(&dir).as_str().trim_end_matches('/'),
+            secret.file_name().unwrap().to_string_lossy()
+        ))
+        .unwrap();
+        assert!(!allows_navigation_with(&shot, &escape, None, &pages));
         // The exception is `file:` alone: a screenshot window is otherwise
         // held to the app's origins like any other.
-        assert!(!allows_navigation(&shot, &u("https://evil.example/"), None));
-        assert!(!allows_navigation(&shot, &u("asset://localhost/x"), None));
+        assert!(!allows_navigation_with(
+            &shot,
+            &u("https://evil.example/"),
+            None,
+            &pages
+        ));
+        assert!(!allows_navigation_with(
+            &shot,
+            &u("asset://localhost/x"),
+            None,
+            &pages
+        ));
         assert!(allows_navigation("main", &u("tauri://localhost/"), None));
+    }
+
+    #[test]
+    fn a_screenshot_window_never_hands_off_to_the_browser() {
+        let shot = shot_label();
+        let web = u("https://evil.example/");
+        assert!(!allows_navigation(&shot, &web, None));
+        assert!(!hands_off(&shot, &web));
+        assert!(!hands_off(&shot, &u("http://example.com/")));
+        assert!(hands_off("main", &web));
     }
 
     #[test]

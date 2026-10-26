@@ -71,6 +71,11 @@ async fn capture<R: Runtime>(
         std::process::id()
     );
 
+    // Before the window exists, so its first navigation already finds it.
+    // Dropped after `destroy()`, and on every early return.
+    crate::screenshot_pages::SCREENSHOT_PAGES.register(&label, &target)?;
+    let _registered = Registered(label.clone());
+
     let (load_tx, load_rx) = oneshot::channel::<()>();
     let load_signal = Arc::new(Mutex::new(Some(load_tx)));
     let (win_tx, win_rx) = oneshot::channel::<Result<tauri::WebviewWindow<R>, String>>();
@@ -112,6 +117,15 @@ async fn capture<R: Runtime>(
     let result = capture_loaded(&window, load_rx, width, height).await;
     let _ = window.destroy();
     result
+}
+
+/// Removes a window's entry from the screenshot page registry when dropped.
+struct Registered(String);
+
+impl Drop for Registered {
+    fn drop(&mut self) {
+        crate::screenshot_pages::SCREENSHOT_PAGES.unregister(&self.0);
+    }
 }
 
 async fn capture_loaded<R: Runtime>(

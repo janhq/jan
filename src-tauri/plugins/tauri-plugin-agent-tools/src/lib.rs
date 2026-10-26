@@ -13,6 +13,7 @@ pub mod artifact;
 pub mod memory;
 pub mod permissions;
 pub mod preview;
+pub mod screenshot_pages;
 pub mod skills;
 pub mod tools;
 pub mod workspace;
@@ -30,7 +31,8 @@ mod webview_shot;
 
 /// Label prefix of the hidden windows the webview `screenshot` renderer opens.
 /// The app's navigation guard keys on it: those windows load their target as a
-/// `file:` URL, which no other webview may.
+/// `file:` URL, which no other webview may, and only the files
+/// [`screenshot_pages`] records for them.
 pub const SCREENSHOT_WINDOW_LABEL_PREFIX: &str = "jan-shot-";
 
 /// Runs the confined-spawn helper and exits, when this process was re-exec'd as
