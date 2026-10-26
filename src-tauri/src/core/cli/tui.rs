@@ -10146,6 +10146,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "dispatch_subagent" => dispatched_subagents_label("Dispatching", args),
         "message_subagent" => format!("Messaging subagent {}", s("name")),
         "stop_subagent" => format!("Stopping subagent {}", s("name")),
+        "message_main_agent" => "Messaging the main agent".to_string(),
         "await_subagent" => format!(
             "Awaiting subagent {}",
             subagent_name_from_run_id(s("run_id"))
@@ -10279,6 +10280,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "dispatch_subagent" => dispatched_subagents_label("Dispatched", args),
         "message_subagent" => format!("Messaged subagent {}", s("name")),
         "stop_subagent" => format!("Stopped subagent {}", s("name")),
+        "message_main_agent" => "Messaged the main agent".to_string(),
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
@@ -29250,6 +29252,10 @@ mod tests {
         assert_eq!(tool_finished("message_subagent", &msg), "Messaged subagent counter");
         let stop = json!({ "name": "waster" });
         assert_eq!(tool_activity("stop_subagent", &stop), "Stopping subagent waster");
+        assert_eq!(
+            tool_activity("message_main_agent", &json!({"message": "x"})),
+            "Messaging the main agent"
+        );
         assert_eq!(tool_finished("stop_subagent", &stop), "Stopped subagent waster");
     }
 
@@ -31509,6 +31515,7 @@ mod tests {
             monitors: Some(app.monitor_set.clone()),
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
+            parent_link: None,
             compaction: None,
             session_start: None,
         })

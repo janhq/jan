@@ -189,6 +189,11 @@ pub(crate) struct OrchestrationArgs {
     /// cancel and on session reset). Never inherited by a child run, which
     /// cannot dispatch grandchildren anyway.
     pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
+    /// Set only on a child run: its doorbell to the main agent that dispatched
+    /// it, rung through `message_main_agent`. The other direction (main agent
+    /// to child) rides the steering channel, since the child's loop already has
+    /// the safe boundary to apply it at.
+    pub parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -805,6 +810,10 @@ struct CompositeToolInvoker {
     /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
     /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
     subagent_bg_outlive_run: bool,
+    /// Set only when this run is itself a subagent: the doorbell its
+    /// `message_main_agent` calls ring. `None` for a top-level run, where the
+    /// tool is neither advertised nor executable.
+    parent_link: Option<crate::core::agent::subagent::ParentLink>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1590,6 +1599,33 @@ impl CompositeToolInvoker {
         decision
     }
 
+    /// Execute a child run's `message_main_agent` call. Synchronous by design:
+    /// the message is queued on the main agent's notice channel and the child
+    /// carries on -- nothing here waits for it to be read.
+    fn handle_message_main_agent(&self, args: &serde_json::Value) -> String {
+        let Some(link) = &self.parent_link else {
+            return "ERROR: only a subagent can message the main agent; this run is the main agent"
+                .to_string();
+        };
+        if self
+            .permissions
+            .is_denied(crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL)
+        {
+            return "ERROR: message_main_agent is denied by this project's tool policy".to_string();
+        }
+        let Some(message) = args
+            .get("message")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        else {
+            return "ERROR: missing required argument 'message'".to_string();
+        };
+        match crate::core::agent::subagent::message_main_agent(link, message) {
+            Ok(s) => s,
+            Err(e) => format!("ERROR: {e}"),
+        }
+    }
+
     /// Where a child's answer is spilled, or `None` when this run is
     /// unconfined: no scratch is in force, so there is nowhere sanctioned to
     /// write and the answer is delivered inline instead.
@@ -2231,6 +2267,21 @@ impl ToolInvoker for CompositeToolInvoker {
                     continue;
                 }
             }
+            if name == crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                out.push(ToolOutcome::plain(id, self.handle_message_main_agent(&args)));
+                continue;
+            }
             if name == "ask" {
                 let id = tc
                     .get("id")
@@ -2856,6 +2907,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // into, so background work must be settled before the run returns.
         bg_shells: None,
         subagent_bg: None,
+        // A server-side proxy run is top-level: nothing dispatched it.
+        parent_link: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -2993,6 +3046,7 @@ fn advertise_local_tools(
     ask_enabled: bool,
     todo_enabled: bool,
     #[cfg(feature = "cli")] host_tools: &crate::core::agent::host_tools::HostToolSet,
+    has_parent: bool,
 ) {
     let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
     if project_root.is_some() {
@@ -3139,6 +3193,17 @@ fn advertise_local_tools(
             }
             openai_tools.push(tool.schema());
         }
+    }
+    // A child run's doorbell to the main agent: offered exactly when a dispatch
+    // gave this run a parent, never to a top-level run. A narrowed child still
+    // gets it, because dispatch adds it to the child's allowlist like the skill
+    // tools (see `subagent::with_child_tools`).
+    let doorbell = crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL;
+    if has_parent
+        && !permissions.is_denied(doorbell)
+        && allowed_names.is_none_or(|allowed| allowed.contains(doorbell))
+    {
+        openai_tools.push(crate::core::agent::subagent::message_main_agent_tool_schema());
     }
     // Last, so the names a child may be given are drawn from the whole array.
     crate::core::agent::subagent::constrain_tool_names(
@@ -3378,6 +3443,9 @@ pub(crate) async fn context_advertised_tools(
         ask_enabled,
         todo_enabled,
         host_tools,
+        // The `/context` view sizes an interactive session's own run, which is
+        // top-level by construction and so has no main agent to message.
+        false,
     );
     tools
 }
@@ -3516,6 +3584,9 @@ async fn orchestrate_inner(
         monitors: session_monitors,
         bg_shells: session_bg_shells,
         subagent_bg: session_subagent_bg,
+        // Read through `args` where it is needed (tool advertisement, the
+        // invoker), so this stays a plain destructure of the rest.
+        parent_link: _,
         sandbox,
         allow_escalation,
         compaction,
@@ -3764,6 +3835,7 @@ async fn orchestrate_inner(
         todo_registry.is_some(),
         #[cfg(feature = "cli")]
         host_tools,
+        args.parent_link.is_some(),
     );
     // Resolved once per run, so the array is byte-identical across its turns.
     if settings.as_ref().is_some_and(|s| s.escalation.offered()) {
@@ -3931,6 +4003,7 @@ async fn orchestrate_inner(
             host_tool_route: host_tool_route.clone(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
+            parent_link: args.parent_link.clone(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -8784,6 +8857,7 @@ mod tests {
             bg_shells: std::sync::Arc::new(
                 crate::core::agent::bg_shell::BackgroundShells::default(),
             ),
+            parent_link: None,
         }
     }
 
@@ -9442,6 +9516,7 @@ mod tests {
             false,
             false,
             &set,
+            false,
         );
         let names: Vec<&str> = tools
             .iter()
@@ -11608,11 +11683,11 @@ mod tests {
 
     /// The names `advertise_local_tools` produces for a run with the given
     /// dispatch shape, in a throwaway project dir.
-    fn advertised_for(subagents_enabled: bool) -> Vec<String> {
+    fn advertised_for(subagents_enabled: bool, has_parent: bool) -> Vec<String> {
         let root = std::env::temp_dir().join(format!(
             "jan-advertise-{}-{}",
             std::process::id(),
-            subagents_enabled as u8
+            subagents_enabled as u8 * 2 + has_parent as u8
         ));
         std::fs::create_dir_all(&root).unwrap();
         let mut tools = Vec::new();
@@ -11628,6 +11703,7 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
+            has_parent,
         );
         let _ = std::fs::remove_dir_all(&root);
         tools
@@ -11636,21 +11712,82 @@ mod tests {
             .collect()
     }
 
-    /// A dispatching run is offered the steering tool beside dispatch.
+    /// `message_main_agent` is a child-only capability: a top-level run that
+    /// somehow names it is refused rather than panicking on the missing link.
+    #[test]
+    fn message_main_agent_from_the_main_agent_is_refused() {
+        let root = std::env::temp_dir().join(format!("jan-msg-main-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        let out = invoker.handle_message_main_agent(&serde_json::json!({ "message": "hi" }));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(out.starts_with("ERROR:"), "{out}");
+        assert!(out.contains("only a subagent"), "{out}");
+    }
+
+    /// A dispatching run is offered the steering tool beside dispatch, and
+    /// never the doorbell: it is the main agent, there is nobody above it.
     #[test]
     fn a_dispatching_run_is_offered_message_subagent() {
-        let names = advertised_for(true);
+        let names = advertised_for(true, false);
         assert!(names.iter().any(|n| n == "message_subagent"));
         assert!(names.iter().any(|n| n == "dispatch_subagent"));
+        assert!(!names
+            .iter()
+            .any(|n| n == crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL));
     }
 
     /// The scope boundary: messaging must not become a second level of fan-out.
-    /// A child gets nothing that dispatches or steers.
+    /// A child gets the doorbell and nothing that dispatches or steers.
     #[test]
-    fn a_child_run_cannot_dispatch_or_steer() {
-        let names = advertised_for(false);
+    fn a_child_run_is_offered_message_main_agent_but_cannot_dispatch_or_steer() {
+        let names = advertised_for(false, true);
+        assert!(names
+            .iter()
+            .any(|n| n == crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL));
         assert!(!names.iter().any(|n| n == "message_subagent"));
         assert!(!names.iter().any(|n| n == "dispatch_subagent"));
+    }
+
+    /// The doorbell honors the run's allowlist and the deny list like any other
+    /// tool; a narrowed child keeps it only because dispatch lists it.
+    #[test]
+    fn message_main_agent_honors_the_allowlist_and_the_deny_list() {
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+        let doorbell = crate::core::agent::subagent::MESSAGE_MAIN_AGENT_TOOL;
+        let advertise = |allowed: Option<&std::collections::HashSet<String>>,
+                         perms: &ToolPermissions| {
+            let mut tools = Vec::new();
+            advertise_local_tools(
+                &mut tools,
+                allowed,
+                perms,
+                None,
+                crate::core::agent::plan::RunMode::Normal,
+                false,
+                1,
+                false,
+                false,
+                #[cfg(feature = "cli")]
+                &crate::core::agent::host_tools::HostToolSet::new(),
+                true,
+            );
+            tool_names(&tools)
+        };
+        let only_read: std::collections::HashSet<String> = ["read".to_string()].into();
+        assert!(!advertise(Some(&only_read), &ToolPermissions::allow_all())
+            .iter()
+            .any(|n| n == doorbell));
+        let listed: std::collections::HashSet<String> = [doorbell.to_string()].into();
+        assert!(advertise(Some(&listed), &ToolPermissions::allow_all())
+            .iter()
+            .any(|n| n == doorbell));
+        assert!(advertise(None, &ToolPermissions::allow_all()).iter().any(|n| n == doorbell));
+        let denied =
+            ToolPermissions::new(PermissionDefault::Allow, &[], &[doorbell.to_string()], &[]);
+        assert!(!advertise(None, &denied).iter().any(|n| n == doorbell));
     }
 
     /// `ls`/`find`/`grep` are left out of the default array (the shell covers
@@ -11675,6 +11812,7 @@ mod tests {
                 false,
                 #[cfg(feature = "cli")]
                 &crate::core::agent::host_tools::HostToolSet::new(),
+                false,
             );
             tools
                 .iter()
@@ -11710,6 +11848,7 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
+            false,
         );
         let _ = std::fs::remove_dir_all(&root);
         assert!(!tools
@@ -11879,9 +12018,9 @@ mod tests {
     /// one is withheld.
     #[test]
     fn stop_subagent_is_advertised_with_dispatch_and_never_to_a_child() {
-        let parent = advertised_for(true);
+        let parent = advertised_for(true, false);
         assert!(parent.iter().any(|n| n == "stop_subagent"));
-        let child = advertised_for(false);
+        let child = advertised_for(false, true);
         assert!(!child.iter().any(|n| n == "stop_subagent"));
     }
 
@@ -11908,6 +12047,7 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
+            false,
         );
         let _ = std::fs::remove_dir_all(&root);
         let names = tool_names(&tools);
