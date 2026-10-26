@@ -275,6 +275,17 @@ describe('CoworkAskCard', () => {
     expect(onRespond).not.toHaveBeenCalled()
   })
 
+  it('Enter on a ticked checkbox reached by keyboard unticks it rather than submitting', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    const [first, second] = multi.questions[0].options.map((o) => o.label)
+    fireEvent.click(screen.getByText(second))
+    const row = screen.getByText(first).closest('button')!
+    fireEvent.click(row)
+    row.focus()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(onRespond).not.toHaveBeenCalled()
+  })
+
   it('submits multi-select picks in option order, not click order', () => {
     render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
     const [first, second] = multi.questions[0].options.map((o) => o.label)

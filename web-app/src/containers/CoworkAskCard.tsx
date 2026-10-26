@@ -274,19 +274,21 @@ export function CoworkAskCard({
     ) {
       return
     }
-    // Keyboard-only path: after a pick, Enter continues. Handled on the page or
-    // on the focused option row that is already picked (a mouse-clicked option
-    // keeps focus, and its native Enter would re-toggle it). Enter on any other
-    // row keeps its native meaning — pick that row — so it never submits a
-    // different answer than the one the user is looking at.
+    // Keyboard-only path: after a pick, Enter continues. Handled on the page,
+    // on a row the user clicked (a clicked row keeps focus, and its native
+    // Enter would re-toggle it), or on the ticked radio. Enter on any other row
+    // keeps its native meaning — pick or untick that row — so it never submits
+    // a different answer than the one the user is looking at.
     if (e.key === 'Enter') {
       const onPage =
         !el ||
         el === document.body ||
         el === cardRef.current ||
-        (/^(radio|checkbox)$/.test(el.getAttribute('role') ?? '') &&
-          (el.getAttribute('aria-checked') === 'true' ||
-            el === pointerRowRef.current))
+        el === pointerRowRef.current ||
+        // A ticked radio is the answer itself, so Enter on it continues. A
+        // ticked checkbox is not: Enter there must untick it as usual.
+        (el.getAttribute('role') === 'radio' &&
+          el.getAttribute('aria-checked') === 'true')
       if (onPage && isAnswered(question.id)) {
         e.preventDefault()
         advance()
