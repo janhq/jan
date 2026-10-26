@@ -310,6 +310,95 @@ pub fn validate_read_root(
     Ok(canonical)
 }
 
+/// Supplies the Jan data folder the host app is configured with.
+pub type DataFolderResolver = std::sync::Arc<dyn Fn() -> PathBuf + Send + Sync>;
+
+static DATA_FOLDER_RESOLVER: std::sync::OnceLock<DataFolderResolver> = std::sync::OnceLock::new();
+
+/// Install the process-wide data folder source. First call wins, like
+/// `hooks::set_resolver`, so nothing can swap it out later.
+pub fn set_data_folder_resolver(resolver: DataFolderResolver) {
+    let _ = DATA_FOLDER_RESOLVER.set(resolver);
+}
+
+/// The Jan data folder an IPC command works in.
+///
+/// The commands take a `data_folder` argument, but it only stands in for what
+/// the host already knows: everything containment rests on (the sandbox
+/// location, the mask over settings and keys, the store) is derived from it,
+/// so the host's value wins whenever one is installed. The argument is used
+/// as-is only without a host, as in this crate's tests.
+pub fn host_data_folder(requested: &str) -> PathBuf {
+    pick_data_folder(
+        DATA_FOLDER_RESOLVER.get().map(|resolve| resolve()),
+        requested,
+    )
+}
+
+fn pick_data_folder(host: Option<PathBuf>, requested: &str) -> PathBuf {
+    host.unwrap_or_else(|| PathBuf::from(requested))
+}
+
+/// Home-relative folders an agent must never be handed write access to:
+/// credentials, and the places that run code at login.
+const PROTECTED_HOME_DIRS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
+    ".docker",
+    ".config/autostart",
+    ".config/systemd",
+    "Library/LaunchAgents",
+    "Library/Keychains",
+    "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+];
+
+/// The user's home directory, or `None` when unset or degenerate.
+pub fn user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let raw = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let raw = std::env::var_os("HOME");
+    let home = PathBuf::from(raw?);
+    if home.parent().is_none() || home.as_os_str().is_empty() {
+        return None;
+    }
+    Some(home.canonicalize().unwrap_or(home))
+}
+
+/// Check that an attached folder (already through [`validate_read_root`]) may
+/// also be written.
+///
+/// Refused: the home directory itself or any folder above it, whose top level
+/// holds the shell rc files and profile scripts; and any folder inside, or
+/// containing, a [`PROTECTED_HOME_DIRS`] entry. A writable attach is the
+/// workspace root, writable by the file tools and the sandboxed shell alike, so
+/// these would hand the agent persistence or credentials.
+pub fn validate_write_root(root: &Path, home: Option<&Path>) -> Result<(), String> {
+    let Some(home) = home else {
+        return Ok(());
+    };
+    if is_within(home, root) {
+        return Err(format!(
+            "{} contains your home folder and cannot be attached writable; attach a project \
+             folder inside it instead",
+            root.display()
+        ));
+    }
+    for rel in PROTECTED_HOME_DIRS {
+        let protected = home.join(rel);
+        if is_within(root, &protected) || is_within(&protected, root) {
+            return Err(format!(
+                "{} overlaps {} and cannot be attached writable",
+                root.display(),
+                protected.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The session-scoped scratch directory: a subdirectory of the host temp dir
 /// (e.g. `/tmp/jan-agent-<session>` on Linux), where `bash` scratch files
 /// persist across calls for one session and the filesystem tools may write.
@@ -882,6 +971,66 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn host_data_folder_wins_over_the_requested_one() {
+        let host = PathBuf::from("/host/Jan/data");
+        assert_eq!(
+            pick_data_folder(Some(host.clone()), "/Users/x/Library/LaunchAgents"),
+            host
+        );
+        assert_eq!(pick_data_folder(Some(host.clone()), ""), host);
+        // No host installed (this crate's tests): the argument is all there is.
+        assert_eq!(
+            pick_data_folder(None, "/tmp/data"),
+            PathBuf::from("/tmp/data")
+        );
+    }
+
+    #[test]
+    fn validate_write_root_refuses_home_and_its_ancestors() {
+        let home = Path::new("/home/u");
+        assert!(validate_write_root(Path::new("/home/u"), Some(home)).is_err());
+        assert!(validate_write_root(Path::new("/home"), Some(home)).is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_protected_folders() {
+        let home = Path::new("/home/u");
+        for bad in [
+            "/home/u/.ssh",
+            "/home/u/.config",
+            "/home/u/.config/autostart",
+            "/home/u/.config/systemd/user",
+            "/home/u/Library",
+            "/home/u/Library/LaunchAgents",
+            "/home/u/Library/LaunchAgents/sub",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+        ] {
+            assert!(
+                validate_write_root(Path::new(bad), Some(home)).is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_write_root_accepts_a_project_folder() {
+        let home = Path::new("/home/u");
+        for ok in [
+            "/home/u/projects/site",
+            "/home/u/Documents/deck",
+            "/home/u/.configs-backup",
+            "/home/u/Library-notes",
+            "/srv/work",
+        ] {
+            assert!(
+                validate_write_root(Path::new(ok), Some(home)).is_ok(),
+                "{ok} should be accepted"
+            );
+        }
+        assert!(validate_write_root(Path::new("/home/u"), None).is_ok());
+    }
+
     // Every rejection here is a case where the mount would not mean what the UI
     // says it means, so each is refused rather than silently degraded.
     #[test]

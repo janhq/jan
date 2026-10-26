@@ -356,6 +356,16 @@ pub fn run() {
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
+            // The agent-tools commands take a data folder from the webview; the
+            // sandbox, the mask over settings and keys, and the store all hang
+            // off it, so they use the configured one instead. Installed here,
+            // before the event loop delivers any IPC.
+            {
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
+                    move || get_jan_data_folder_path(handle.clone()),
+                ));
+            }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)
