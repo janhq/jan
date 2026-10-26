@@ -344,7 +344,8 @@ pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
         .clamp(MIN_PARK_SECS, MAX_PARK_SECS)
 }
 
-/// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
+/// Renders a local HTML/SVG file (path, width, height, scale, and what else the
+/// page may load) to PNG bytes.
 ///
 /// Injected by the desktop so `screenshot` can capture through the app's own
 /// webview instead of shelling out to Chrome. A boxed closure so this module
@@ -356,6 +357,7 @@ pub type ScreenshotBackend = std::sync::Arc<
             u64,
             u64,
             f64,
+            crate::screenshot_pages::PageScope,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + Send>,
         > + Send

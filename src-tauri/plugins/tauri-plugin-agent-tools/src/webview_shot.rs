@@ -21,6 +21,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{Runtime, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
 
+use crate::screenshot_pages::PageScope;
 use crate::tools::ScreenshotBackend;
 
 const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -43,9 +44,9 @@ fn deliver(slot: &SnapshotSlot, value: Result<Vec<u8>, String>) {
 /// Build a [`ScreenshotBackend`] that captures through the app's webview.
 pub fn make_backend<R: Runtime>(app: &tauri::AppHandle<R>) -> ScreenshotBackend {
     let app = app.clone();
-    Arc::new(move |target, width, height, scale| {
+    Arc::new(move |target, width, height, scale, scope| {
         let app = app.clone();
-        Box::pin(capture(app, target, width, height, scale))
+        Box::pin(capture(app, target, width, height, scale, scope))
     })
 }
 
@@ -58,6 +59,7 @@ async fn capture<R: Runtime>(
     // viewport DPR knob to honor here, so `scale` is accepted for signature
     // parity and left unapplied. The tool only ever passes 1.0.
     _scale: f64,
+    scope: PageScope,
 ) -> Result<Vec<u8>, String> {
     let url = tauri::Url::from_file_path(&target)
         .map_err(|_| format!("cannot build file URL for {}", target.display()))?;
@@ -73,7 +75,7 @@ async fn capture<R: Runtime>(
 
     // Before the window exists, so its first navigation already finds it.
     // Dropped after `destroy()`, and on every early return.
-    crate::screenshot_pages::SCREENSHOT_PAGES.register(&label, &target)?;
+    crate::screenshot_pages::SCREENSHOT_PAGES.register(&label, &target, scope)?;
     let _registered = Registered(label.clone());
 
     let (load_tx, load_rx) = oneshot::channel::<()>();
@@ -528,7 +530,7 @@ mod tests {
 
         assert!(!frame_allowed(label, page_url.as_str()));
         crate::screenshot_pages::SCREENSHOT_PAGES
-            .register(label, &page)
+            .register(label, &page, PageScope::Directory)
             .unwrap();
         assert!(frame_allowed(label, page_url.as_str()));
         assert!(!frame_allowed(label, other_url.as_str()));

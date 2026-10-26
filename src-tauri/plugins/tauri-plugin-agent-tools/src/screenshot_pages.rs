@@ -5,7 +5,8 @@
 //! PNG would carry it back. The renderer records each window's target here
 //! before the window exists, and the app's navigation guard asks [`allows`]
 //! before a screenshot window loads a `file:` URL: only the target and files
-//! under its directory (its own css, images, scripts) pass.
+//! under its directory (its own css, images, scripts) pass, or the target alone
+//! when it lies outside the agent's trusted roots ([`PageScope`]).
 //!
 //! Tauri-free: the renderer registers, the guard in the app crate reads.
 //!
@@ -19,9 +20,21 @@ use std::sync::{Mutex, MutexGuard};
 /// guard.
 pub static SCREENSHOT_PAGES: ScreenshotPages = ScreenshotPages::new();
 
+/// What a screenshot window may load besides its target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageScope {
+    /// The files under the target's directory too: a page inside the agent's
+    /// workspace, scratch or attached folders.
+    Directory,
+    /// The target alone: a page the user approved outside those roots, whose
+    /// directory (`~/Desktop`, say) holds files nobody approved.
+    FileOnly,
+}
+
 struct Page {
     target: PathBuf,
-    dir: PathBuf,
+    /// `None` for [`PageScope::FileOnly`].
+    dir: Option<PathBuf>,
 }
 
 pub struct ScreenshotPages {
@@ -35,15 +48,21 @@ impl ScreenshotPages {
         }
     }
 
-    /// Lets the window labelled `label` load `target` and the files under its
-    /// directory, both as they resolve now.
-    pub fn register(&self, label: &str, target: &Path) -> Result<(), String> {
+    /// Lets the window labelled `label` load `target`, and with
+    /// [`PageScope::Directory`] the files under its directory, both as they
+    /// resolve now.
+    pub fn register(&self, label: &str, target: &Path, scope: PageScope) -> Result<(), String> {
         let target = std::fs::canonicalize(target)
             .map_err(|e| format!("cannot resolve {}: {e}", target.display()))?;
-        let dir = target
-            .parent()
-            .ok_or_else(|| format!("{} has no parent directory", target.display()))?
-            .to_path_buf();
+        let dir = match scope {
+            PageScope::Directory => Some(
+                target
+                    .parent()
+                    .ok_or_else(|| format!("{} has no parent directory", target.display()))?
+                    .to_path_buf(),
+            ),
+            PageScope::FileOnly => None,
+        };
         self.lock().insert(label.to_string(), Page { target, dir });
         Ok(())
     }
@@ -64,7 +83,9 @@ impl ScreenshotPages {
         }
         self.lock()
             .get(label)
-            .is_some_and(|page| canon == page.target || canon.starts_with(&page.dir))
+            .is_some_and(|page| {
+                canon == page.target || page.dir.as_ref().is_some_and(|dir| canon.starts_with(dir))
+            })
     }
 
     fn lock(&self) -> MutexGuard<'_, BTreeMap<String, Page>> {
@@ -102,7 +123,9 @@ mod tests {
         let dir = temp_dir("in");
         let pages = ScreenshotPages::new();
         assert!(!pages.allows("jan-shot-1", &dir.join("chart.html")));
-        pages.register("jan-shot-1", &dir.join("chart.html")).unwrap();
+        pages
+            .register("jan-shot-1", &dir.join("chart.html"), PageScope::Directory)
+            .unwrap();
         assert!(pages.allows("jan-shot-1", &dir.join("chart.html")));
         assert!(pages.allows("jan-shot-1", &dir.join("assets/style.css")));
         assert!(!pages.allows("jan-shot-2", &dir.join("chart.html")));
@@ -113,11 +136,26 @@ mod tests {
     }
 
     #[test]
+    fn a_file_only_page_allows_the_target_and_nothing_beside_it() {
+        let dir = temp_dir("file-only");
+        std::fs::write(dir.join("notes.txt"), "private").unwrap();
+        let pages = ScreenshotPages::new();
+        pages
+            .register("jan-shot-1", &dir.join("chart.html"), PageScope::FileOnly)
+            .unwrap();
+        assert!(pages.allows("jan-shot-1", &dir.join("chart.html")));
+        assert!(!pages.allows("jan-shot-1", &dir.join("notes.txt")));
+        assert!(!pages.allows("jan-shot-1", &dir.join("assets/style.css")));
+    }
+
+    #[test]
     fn files_outside_the_target_directory_are_refused_however_spelled() {
         let dir = temp_dir("out");
         let other = temp_dir("other");
         let pages = ScreenshotPages::new();
-        pages.register("jan-shot-1", &dir.join("chart.html")).unwrap();
+        pages
+            .register("jan-shot-1", &dir.join("chart.html"), PageScope::Directory)
+            .unwrap();
         assert!(!pages.allows("jan-shot-1", &other.join("chart.html")));
         let escape = dir
             .join("..")
@@ -133,7 +171,9 @@ mod tests {
         let other = temp_dir("secret");
         std::os::unix::fs::symlink(other.join("chart.html"), dir.join("leak.html")).unwrap();
         let pages = ScreenshotPages::new();
-        pages.register("jan-shot-1", &dir.join("chart.html")).unwrap();
+        pages
+            .register("jan-shot-1", &dir.join("chart.html"), PageScope::Directory)
+            .unwrap();
         assert!(!pages.allows("jan-shot-1", &dir.join("leak.html")));
     }
 
@@ -141,7 +181,11 @@ mod tests {
     fn registering_a_missing_target_errors() {
         let pages = ScreenshotPages::new();
         assert!(pages
-            .register("jan-shot-1", Path::new("/definitely/not/here.html"))
+            .register(
+                "jan-shot-1",
+                Path::new("/definitely/not/here.html"),
+                PageScope::Directory
+            )
             .is_err());
     }
 }

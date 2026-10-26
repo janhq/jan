@@ -179,6 +179,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri_plugin_agent_tools::screenshot_pages::PageScope;
 
     fn u(s: &str) -> Url {
         Url::parse(s).unwrap()
@@ -327,7 +328,9 @@ mod tests {
         let target = file_url(&dir.join("chart.html"));
         // Nothing recorded for the window yet.
         assert!(!allows_navigation_with(&shot, &target, None, &pages));
-        pages.register(&shot, &dir.join("chart.html")).unwrap();
+        pages
+            .register(&shot, &dir.join("chart.html"), PageScope::Directory)
+            .unwrap();
         assert!(allows_navigation_with(&shot, &target, None, &pages));
         let sibling = file_url(&dir.join("assets/style.css"));
         assert!(allows_navigation_with(&shot, &sibling, None, &pages));
@@ -352,7 +355,9 @@ mod tests {
         std::fs::write(secret.join("id_rsa"), "key").unwrap();
         let pages = ScreenshotPages::new();
         let shot = shot_label();
-        pages.register(&shot, &dir.join("chart.html")).unwrap();
+        pages
+            .register(&shot, &dir.join("chart.html"), PageScope::Directory)
+            .unwrap();
         assert!(!allows_navigation_with(
             &shot,
             &file_url(&secret.join("id_rsa")),
