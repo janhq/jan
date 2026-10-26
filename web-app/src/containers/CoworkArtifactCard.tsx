@@ -9,7 +9,11 @@ import {
 import { Card } from '@/components/ui/card'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { previewKindFor, resolveInRoots } from '@/lib/coworkPreview'
+import {
+  openOrReveal,
+  previewKindFor,
+  resolveInRoots,
+} from '@/lib/coworkPreview'
 import { ARTIFACT_ICON, type CoworkArtifact } from '@/lib/coworkArtifacts'
 import { cn } from '@/lib/utils'
 
@@ -124,7 +128,7 @@ export function CoworkArtifactCard({
         <div className="flex shrink-0 items-center overflow-hidden rounded-md border">
           <button
             type="button"
-            onClick={() => void serviceHub.opener().openPath(abs)}
+            onClick={() => void openOrReveal(serviceHub.opener(), abs)}
             title={t('common:artifactOpenExternal')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
           >
@@ -150,7 +154,7 @@ export function CoworkArtifactCard({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => void serviceHub.opener().openPath(abs)}
+                onClick={() => void openOrReveal(serviceHub.opener(), abs)}
               >
                 <SquareArrowOutUpRight size={14} />
                 {t('common:artifactOpenExternal')}

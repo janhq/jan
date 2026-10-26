@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   previewKindFor,
   extensionOf,
@@ -9,6 +9,8 @@ import {
   previewUrlFor,
   resolveInRoot,
   resolveInRoots,
+  opensInDefaultApp,
+  openOrReveal,
 } from '@/lib/coworkPreview'
 
 describe('previewKindFor', () => {
@@ -186,5 +188,69 @@ describe('resolveInRoots', () => {
   it('skips null roots and returns null when nothing contains the path', () => {
     expect(resolveInRoots([null, sandbox], '/etc/passwd')).toBeNull()
     expect(resolveInRoots([null, null], 'a.md')).toBeNull()
+  })
+})
+
+describe('opensInDefaultApp', () => {
+  it('opens documents, media and text', () => {
+    for (const p of [
+      '/w/report.pdf',
+      '/w/chart.PNG',
+      'C:\\w\\notes.md',
+      '/w/data.csv',
+      '/w/page.html',
+      '/w/deck.pptx',
+      '/w/clip.mp4',
+      '/w/song.mp3',
+      '/w/logo.svg',
+    ]) {
+      expect(opensInDefaultApp(p), p).toBe(true)
+    }
+  })
+
+  it('never opens anything the OS would run', () => {
+    for (const p of [
+      '/w/run.command',
+      '/w/Thing.app',
+      '/w/link.lnk',
+      '/w/x.desktop',
+      '/w/setup.exe',
+      '/w/a.bat',
+      '/w/a.cmd',
+      '/w/a.ps1',
+      '/w/a.sh',
+      '/w/a.terminal',
+      '/w/a.scpt',
+      '/w/a.jar',
+      '/w/a.js',
+      '/w/a.py',
+      '/w/a.vbs',
+      '/w/report.pdf.command',
+      '/w/noext',
+      '/w/.bashrc',
+    ]) {
+      expect(opensInDefaultApp(p), p).toBe(false)
+    }
+  })
+})
+
+describe('openOrReveal', () => {
+  const opener = () => ({
+    openPath: vi.fn().mockResolvedValue(undefined),
+    revealItemInDir: vi.fn().mockResolvedValue(undefined),
+  })
+
+  it('opens an allowed type', async () => {
+    const o = opener()
+    await openOrReveal(o, '/w/report.pdf')
+    expect(o.openPath).toHaveBeenCalledWith('/w/report.pdf')
+    expect(o.revealItemInDir).not.toHaveBeenCalled()
+  })
+
+  it('reveals anything else instead of opening it', async () => {
+    const o = opener()
+    await openOrReveal(o, '/w/run.command')
+    expect(o.revealItemInDir).toHaveBeenCalledWith('/w/run.command')
+    expect(o.openPath).not.toHaveBeenCalled()
   })
 })

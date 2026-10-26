@@ -29,6 +29,7 @@ import {
   basenameOf,
   externalRefs,
   isAssetKind,
+  openOrReveal,
   previewKindFor,
   resolveInRoots,
   unresolvedRefs,
@@ -204,7 +205,7 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
               {iconButton(
                 t('common:artifactOpenExternal'),
                 SquareArrowOutUpRight,
-                () => void serviceHub.opener().openPath(abs)
+                () => void openOrReveal(serviceHub.opener(), abs)
               )}
               {iconButton(
                 t('common:artifactShowInFolder'),
