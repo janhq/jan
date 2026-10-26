@@ -240,6 +240,20 @@ describe('CoworkPreviewPanel', () => {
     )
   })
 
+  // On Windows the unsandboxed frame would reach the app's IPC, so the
+  // toggle is not offered and the page stays in the srcdoc sandbox.
+  it('offers no unsandboxed mode on Windows', async () => {
+    vi.stubGlobal('IS_WINDOWS', true)
+    respondWith('<canvas></canvas><script>run()</script>')
+    view('game.html')
+
+    const frame = (await screen.findByTitle('game.html')) as HTMLIFrameElement
+    expect(screen.queryByLabelText('common:preview.unsandboxed')).toBeNull()
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.getAttribute('src')).toBeNull()
+    expect(previewRegisterRoot).not.toHaveBeenCalled()
+  })
+
   it('registers nothing while the sandbox is in use', async () => {
     respondWith('<p>ok</p>')
     view('page.html')

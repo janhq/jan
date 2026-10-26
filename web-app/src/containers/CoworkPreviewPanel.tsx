@@ -40,6 +40,12 @@ import {
  * whose identity changes on every render. */
 const TOO_LARGE = 'common:preview.tooLarge'
 
+/** Whether the unsandboxed `preview://` mode is offered. Not on Windows: Tauri
+ * treats the scheme's origin as the app's own, and on WebView2 wry injects the
+ * IPC init script into subframes too (elsewhere only the main frame gets it),
+ * so there only the opaque-origin srcdoc sandbox keeps the page off IPC. */
+const canUnsandbox = () => !IS_WINDOWS
+
 type Props = {
   /** Every place the session may have written the file: its sandbox and, when
    * attached, the writable project folder. The path must resolve inside one. */
@@ -140,7 +146,7 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
   // flag rides on the registration, so a toggle re-registers. Closing the
   // panel or leaving the mode withdraws the root. The registered root is the
   // one the file resolved inside -- sandbox or attached folder.
-  const live = unsandboxed && kind === 'html' && !!matchedRoot
+  const live = unsandboxed && canUnsandbox() && kind === 'html' && !!matchedRoot
   useEffect(() => {
     if (!live || !matchedRoot) return
     void registerPreviewRoot(matchedRoot, allowNetwork).catch(() => {
@@ -191,6 +197,7 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
                 allowNetwork
               )}
               {matchedRoot &&
+                canUnsandbox() &&
                 iconButton(
                   t('common:preview.unsandboxed'),
                   ShieldOff,
