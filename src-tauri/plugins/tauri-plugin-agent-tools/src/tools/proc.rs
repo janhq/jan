@@ -348,9 +348,9 @@ pub(crate) fn which(name: &str) -> Option<PathBuf> {
 /// Every match for `name` on PATH, in PATH order.
 fn which_all(name: &str) -> Vec<PathBuf> {
     #[cfg(unix)]
-    let finder = "which";
+    let finder = PathBuf::from("which");
     #[cfg(windows)]
-    let finder = "where";
+    let finder = system32_dir().join("where.exe");
     let Ok(out) = std::process::Command::new(finder).arg(name).output() else {
         return Vec::new();
     };

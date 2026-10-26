@@ -673,6 +673,10 @@ mod tests {
             system32_path(Some(OsString::from(r"D:\Win\")), "cmd.exe"),
             PathBuf::from(r"D:\Win\System32\cmd.exe")
         );
+        assert_eq!(
+            system32_path(Some(OsString::from(r"D:\Win")), r"wbem\wmic.exe"),
+            PathBuf::from(r"D:\Win\System32\wbem\wmic.exe")
+        );
     }
 
     #[test]
