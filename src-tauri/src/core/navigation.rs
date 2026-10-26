@@ -21,10 +21,23 @@ use tauri_plugin_opener::OpenerExt;
 /// custom schemes are spelled `http(s)://<scheme>.localhost`.
 const APP_HOSTS: &[&str] = &["tauri.localhost", "preview.localhost"];
 
-/// Whether this platform serves custom schemes from [`APP_HOSTS`]. Mirrors
-/// Tauri's own `tauri_protocol_url`; elsewhere those hosts are ordinary
-/// network names and not the app.
-const SCHEMES_ON_LOCALHOST_HOSTS: bool = cfg!(any(windows, target_os = "android"));
+/// [`APP_HOSTS`] minus `preview.localhost`, for Windows. WebView2's
+/// `NavigationStarting`, the only event wry hooks there, fires for main-frame
+/// navigations alone (subframes raise `FrameNavigationStarting`), so the preview
+/// iframes never reach this guard, and a window's main frame has no reason to
+/// show a preview document.
+const MAIN_FRAME_ONLY_APP_HOSTS: &[&str] = &["tauri.localhost"];
+
+/// The `*.localhost` hosts this platform serves the app from. Mirrors Tauri's
+/// own `tauri_protocol_url`: only Windows and Android use them, and elsewhere
+/// they are ordinary network names and not the app.
+const LOCALHOST_APP_HOSTS: &[&str] = if cfg!(windows) {
+    MAIN_FRAME_ONLY_APP_HOSTS
+} else if cfg!(target_os = "android") {
+    APP_HOSTS
+} else {
+    &[]
+};
 
 /// Custom schemes the app's frames may load on macOS, Linux and iOS. `asset:`
 /// and `ipc:` are deliberately absent: they serve files and IPC responses, and
@@ -39,12 +52,12 @@ const APP_SCHEMES: &[&str] = &["tauri", "preview"];
 /// The webview asks for subframe navigations too on macOS and Linux, so the
 /// HTML preview frames (`about:srcdoc`, the `preview:` scheme) must pass.
 pub(crate) fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
-    is_app_url_on(url, dev_url, SCHEMES_ON_LOCALHOST_HOSTS)
+    is_app_url_on(url, dev_url, LOCALHOST_APP_HOSTS)
 }
 
-/// [`is_app_url`] for a platform that does or does not serve custom schemes
-/// from [`APP_HOSTS`], so both cases can be tested on any host.
-fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: bool) -> bool {
+/// [`is_app_url`] for a platform that serves custom schemes from
+/// `localhost_hosts`, so every platform's case can be tested on any host.
+fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: &[&str]) -> bool {
     match url.scheme() {
         s if APP_SCHEMES.contains(&s) => url.host_str() == Some("localhost"),
         "about" => matches!(url.path(), "blank" | "srcdoc"),
@@ -57,7 +70,7 @@ fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: bool) -> boo
             })
             .unwrap_or(false),
         "http" | "https" => {
-            (localhost_hosts && url.host_str().is_some_and(|h| APP_HOSTS.contains(&h)))
+            url.host_str().is_some_and(|h| localhost_hosts.contains(&h))
                 || dev_url.is_some_and(|dev| same_origin(url, dev))
         }
         _ => false,
@@ -151,8 +164,14 @@ mod tests {
     #[test]
     fn localhost_hosts_are_the_app_only_where_tauri_serves_schemes_there() {
         for url in LOCALHOST_HOST_URLS {
-            assert!(is_app_url_on(&u(url), None, true), "{url} on Windows");
-            assert!(!is_app_url_on(&u(url), None, false), "{url} on macOS/Linux");
+            assert!(is_app_url_on(&u(url), None, APP_HOSTS), "{url} on Android");
+            assert!(!is_app_url_on(&u(url), None, &[]), "{url} on macOS/Linux");
+        }
+        for url in LOCALHOST_HOST_URLS.iter().filter(|u| !u.contains("preview.")) {
+            assert!(
+                is_app_url_on(&u(url), None, MAIN_FRAME_ONLY_APP_HOSTS),
+                "{url} on Windows"
+            );
             assert_eq!(
                 is_app_url(&u(url), None),
                 cfg!(any(windows, target_os = "android")),
@@ -161,9 +180,18 @@ mod tests {
         }
     }
 
+    /// Only main frames reach the guard on Windows, and none of them may show
+    /// a preview document.
+    #[test]
+    fn a_main_frame_cannot_load_a_preview_on_windows() {
+        let url = u("http://preview.localhost/C%3A%2Fdeck.html");
+        assert!(!is_app_url_on(&url, None, MAIN_FRAME_ONLY_APP_HOSTS));
+        assert_eq!(is_app_url(&url, None), cfg!(target_os = "android"));
+    }
+
     #[test]
     fn opaque_origin_blobs_are_refused() {
-        for localhost_hosts in [true, false] {
+        for localhost_hosts in [APP_HOSTS, MAIN_FRAME_ONLY_APP_HOSTS, &[]] {
             for bad in [
                 "blob:null/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
                 "blob:null",
