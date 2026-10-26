@@ -58,7 +58,10 @@ export function CoworkTasksChip({
           aria-pressed={open}
           aria-label={label}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           {active > 0 ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin" />
