@@ -1,4 +1,6 @@
 use crate::core::app::commands::get_jan_data_folder_path;
+#[cfg(windows)]
+use jan_utils::strip_verbatim_prefix;
 use jan_utils::{normalize_file_path, normalize_path};
 use std::path::{Path, PathBuf};
 use tauri::Runtime;
@@ -69,12 +71,15 @@ fn canonicalize_for_scope(path: &Path) -> PathBuf {
     normalize_path(&canonical_parent.join(suffix))
 }
 
+/// The form both sides of a containment check are compared in: `canonicalize`
+/// returns `\\?\C:\x` and `\\?\UNC\server\share\x` on Windows, which become
+/// `C:\x` and `\\server\share\x` (a data folder on a network drive stays
+/// absolute instead of turning into a relative `UNC\server\share\x`).
 fn normalize_scope_path(path: PathBuf) -> PathBuf {
     #[cfg(windows)]
     {
-        let path_str = path.to_string_lossy();
-        if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
-            return normalize_path(Path::new(stripped));
+        if let Some(plain) = path.to_str().map(strip_verbatim_prefix) {
+            return normalize_path(Path::new(&plain));
         }
     }
 
@@ -274,5 +279,46 @@ mod tests {
             .expect("resolves nonexistent child");
         assert!(resolved.starts_with(&root));
         assert!(resolved.ends_with("file.txt"));
+    }
+
+    #[test]
+    fn verbatim_data_folder_paths_compare_in_plain_form() {
+        // Windows-style strings, checked on every host.
+        for (data, child, plain_data) in [
+            (
+                r"\\?\UNC\server\share\Jan",
+                r"\\?\UNC\server\share\Jan\threads\t.json",
+                r"\\server\share\Jan",
+            ),
+            (
+                r"\\?\C:\Users\u\Jan",
+                r"\\?\C:\Users\u\Jan\threads\t.json",
+                r"C:\Users\u\Jan",
+            ),
+        ] {
+            let data = jan_utils::strip_verbatim_prefix(data);
+            let child = jan_utils::strip_verbatim_prefix(child);
+            assert_eq!(data, plain_data);
+            assert!(child.starts_with(&format!("{data}\\")), "{child}");
+        }
+        // A plain path typed by the user lands in the same form.
+        assert_eq!(
+            jan_utils::strip_verbatim_prefix(r"\\server\share\Jan"),
+            r"\\server\share\Jan"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unc_data_folder_stays_absolute() {
+        let plain = normalize_scope_path(PathBuf::from(r"\\?\UNC\server\share\Jan"));
+        assert_eq!(plain, PathBuf::from(r"\\server\share\Jan"));
+        assert!(plain.is_absolute());
+        let child = normalize_scope_path(PathBuf::from(r"\\?\UNC\server\share\Jan\threads"));
+        assert!(child.starts_with(&plain));
+        assert_eq!(
+            normalize_path(Path::new(r"\\?\UNC\server\share\Jan\x")),
+            PathBuf::from(r"\\server\share\Jan\x")
+        );
     }
 }

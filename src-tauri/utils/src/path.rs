@@ -27,7 +27,17 @@ pub fn normalize_path(path: &Path) -> PathBuf {
                 pb.push(format!("{}:", disk as char));
                 pb
             }
-            Prefix::Verbatim(_) | Prefix::VerbatimUNC(_, _) => {
+            Prefix::VerbatimUNC(server, share) => {
+                components.next(); // skip this prefix
+                // Re-add it as a plain UNC prefix (\\server\share), not a
+                // relative `UNC\server\share`.
+                PathBuf::from(format!(
+                    r"\\{}\{}",
+                    server.to_string_lossy(),
+                    share.to_string_lossy()
+                ))
+            }
+            Prefix::Verbatim(_) => {
                 components.next(); // skip this prefix
                 PathBuf::new()
             }
