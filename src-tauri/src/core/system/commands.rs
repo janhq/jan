@@ -212,6 +212,21 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
+/// AppleScript for the macOS admin fallback: copy `src` over `dst`, then remove
+/// `src`, with administrator privileges. Each path is shell-quoted, and the
+/// whole shell command is then escaped for the AppleScript string literal it is
+/// embedded in (`\` and `"`), so a path is only ever a path.
+fn admin_copy_applescript(src: &str, dst: &str) -> String {
+    let shell = format!(
+        "cp {} {} && rm {}",
+        shell_single_quote(src),
+        shell_single_quote(dst),
+        shell_single_quote(src)
+    );
+    let escaped = shell.replace('\\', r"\\").replace('"', r#"\""#);
+    format!(r#"do shell script "{escaped}" with administrator privileges"#)
+}
+
 fn is_valid_env_key(key: &str) -> bool {
     let mut chars = key.chars();
     match chars.next() {
@@ -580,10 +595,7 @@ fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), Strin
                 std::fs::write(&temp_script_path, &final_content).map_err(|e| e.to_string())?;
 
                 // Use admin privileges to move the temp file
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}' && echo 'Env vars written to {}'" with administrator privileges"#,
-                    temp_script_path, env_file_path, temp_script_path, env_file_path
-                );
+                let script = admin_copy_applescript(&temp_script_path, &env_file_path);
 
                 std::process::Command::new("osascript")
                     .arg("-e")
@@ -680,10 +692,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                 let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
                 std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
 
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}'" with administrator privileges"#,
-                    temp_path, env_file_path, temp_path
-                );
+                let script = admin_copy_applescript(&temp_path, &env_file_path);
 
                 std::process::Command::new("osascript")
                     .arg("-e")
@@ -950,6 +959,25 @@ mod tests {
         assert_eq!(shell_single_quote("plain"), "'plain'");
         assert_eq!(shell_single_quote("a'b"), r"'a'\''b'");
         assert_eq!(shell_single_quote(""), "''");
+    }
+
+    #[test]
+    fn admin_copy_applescript_quotes_plain_paths() {
+        assert_eq!(
+            admin_copy_applescript("/Users/a/.tmp", "/Users/a/.zshrc"),
+            r#"do shell script "cp '/Users/a/.tmp' '/Users/a/.zshrc' && rm '/Users/a/.tmp'" with administrator privileges"#
+        );
+    }
+
+    #[test]
+    fn admin_copy_applescript_escapes_quotes_and_backslashes() {
+        // A home path holding `'`, `"` and `\`: shell-quoted first, then escaped
+        // for the AppleScript string, so `'\''` becomes `'\\''` and `"` becomes `\"`.
+        let script = admin_copy_applescript(r#"/Users/o'b"c\d/.tmp"#, "/x");
+        assert_eq!(
+            script,
+            r#"do shell script "cp '/Users/o'\\''b\"c\\d/.tmp' '/x' && rm '/Users/o'\\''b\"c\\d/.tmp'" with administrator privileges"#
+        );
     }
 
     #[test]
