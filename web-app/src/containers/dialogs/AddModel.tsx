@@ -93,7 +93,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
           <DialogTitle>{t('providers:addModel.title')}</DialogTitle>
           <DialogDescription>
             {t('providers:addModel.description', {
-              provider: getProviderTitle(provider.provider),
+              provider: getProviderTitle(provider),
             })}
           </DialogDescription>
         </DialogHeader>
@@ -129,7 +129,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             >
               <span>
                 {t('providers:addModel.exploreModels', {
-                  provider: getProviderTitle(provider.provider),
+                  provider: getProviderTitle(provider),
                 })}
               </span>
             </ExternalAnchor>

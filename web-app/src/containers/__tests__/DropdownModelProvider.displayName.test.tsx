@@ -249,6 +249,42 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(mockSelectedModel.id).toBe('model1.gguf')
   })
 
+  it('titles an extension provider group by its display name, not its raw id', () => {
+    const extensionProvider = {
+      provider: 'jan-samples.hello-provider/hello-local',
+      display_name: 'Hello Local',
+      active: true,
+      api_key: 'sk-ext',
+      models: [{ id: 'hello-1', capabilities: ['completion'] }],
+      settings: [],
+      source: {
+        extensionId: 'jan-samples.hello-provider',
+        extensionName: 'Hello Provider',
+      },
+    }
+    const providers = [...mockProviders, extensionProvider]
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers,
+      selectedProvider: 'llamacpp',
+      selectedModel: mockSelectedModel,
+      getProviderByName: vi.fn((name: string) =>
+        providers.find((p: ModelProvider) => p.provider === name)
+      ),
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn((id: string) =>
+        mockProviders[0].models.find((m: Model) => m.id === id)
+      ),
+      updateProvider: vi.fn(),
+    } as MockHookReturn)
+
+    render(<DropdownModelProvider />)
+
+    expect(screen.getByText('Hello Local')).toBeInTheDocument()
+    expect(
+      screen.queryByText(/Jan-samples\.hello-provider/i)
+    ).not.toBeInTheDocument()
+  })
+
   it('should handle updating display model when selection changes', () => {
     // Set up mock for model2 selection
     vi.mocked(useModelProvider).mockReturnValue({
