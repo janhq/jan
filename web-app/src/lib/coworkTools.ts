@@ -79,7 +79,7 @@ const todoTool: Tool = {
 
 const askTool: Tool = {
   description:
-    'Ask the user one or more structured questions. Use only when the answer materially changes the work.',
+    'Ask the user one or more structured questions. Use only when the answer materially changes the work. To suggest an option, list it first and set `recommended` to its index rather than writing "(Recommended)" into the label.',
   inputSchema: jsonSchema({
     type: 'object',
     properties: {
