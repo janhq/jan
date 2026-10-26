@@ -284,6 +284,8 @@ pub fn run() {
     }));
 
     let mut app_builder = builder
+        // First, so no other plugin's hook sees a navigation it refuses.
+        .plugin(core::navigation::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
