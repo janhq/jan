@@ -1089,7 +1089,7 @@ mod server_tests {
                 hyper::Response::builder(),
                 "127.0.0.1:1337",
                 origin,
-                &vec![vec![entry.to_string()]],
+                &[vec![entry.to_string()]],
             )
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
             .unwrap();
@@ -1099,7 +1099,7 @@ mod server_tests {
                 hyper::Response::builder(),
                 "127.0.0.1:1337",
                 origin,
-                &vec![vec![]],
+                &[vec![]],
             )
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
             .unwrap();
