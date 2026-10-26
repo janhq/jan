@@ -319,3 +319,91 @@ fn normalize_test_path(path: &Path) -> PathBuf {
 
     normalize_path(path)
 }
+
+#[test]
+fn test_mutating_commands_refuse_paths_outside_data_folder() {
+    let app = mock_app();
+    fs::create_dir_all(get_jan_data_folder_path(app.handle().clone())).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let source = outside.path().join("source.txt");
+    fs::write(&source, "keep").unwrap();
+    let target = outside.path().join("written.txt");
+    let target_dir = outside.path().join("made");
+
+    let abs = |p: &Path| p.to_string_lossy().to_string();
+    assert!(write_file_sync(app.handle().clone(), vec![abs(&target), "x".into()]).is_err());
+    assert!(mkdir(app.handle().clone(), vec![abs(&target_dir)]).is_err());
+    assert!(mv(
+        app.handle().clone(),
+        vec![abs(&source), "file://moved.txt".into()]
+    )
+    .is_err());
+    assert!(mv(
+        app.handle().clone(),
+        vec!["file://does-not-matter".into(), abs(&target)]
+    )
+    .is_err());
+    for escape in ["file:/../../escaped.txt", "file://../escaped.txt", "../escaped.txt"] {
+        assert!(
+            write_file_sync(app.handle().clone(), vec![escape.into(), "x".into()]).is_err(),
+            "{escape} should be refused"
+        );
+        assert!(mkdir(app.handle().clone(), vec![escape.into()]).is_err());
+    }
+
+    assert!(!target.exists());
+    assert!(!target_dir.exists());
+    assert_eq!(fs::read_to_string(&source).unwrap(), "keep");
+}
+
+#[test]
+fn test_write_file_sync_and_mv_inside_data_folder() {
+    let app = mock_app();
+    let data = get_jan_data_folder_path(app.handle().clone());
+    fs::create_dir_all(&data).unwrap();
+    let tmp = data.join("test_write_mv.tmp");
+    let out = data.join("test_write_mv.json");
+
+    write_file_sync(
+        app.handle().clone(),
+        vec![tmp.to_string_lossy().to_string(), "{}".into()],
+    )
+    .unwrap();
+    mv(
+        app.handle().clone(),
+        vec![
+            tmp.to_string_lossy().to_string(),
+            "file://test_write_mv.json".into(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(fs::read_to_string(&out).unwrap(), "{}");
+    fs::remove_file(out).unwrap();
+}
+
+#[test]
+fn test_read_commands_scope() {
+    let app = mock_app();
+    fs::create_dir_all(get_jan_data_folder_path(app.handle().clone())).unwrap();
+
+    // file: URIs and relative paths may not leave the data folder.
+    for escape in ["file:/../..", "file://../outside", "../outside"] {
+        assert!(exists_sync(app.handle().clone(), vec![escape.into()]).is_err());
+        assert!(file_stat(app.handle().clone(), escape.into()).is_err());
+        assert!(read_file_sync(app.handle().clone(), vec![escape.into()]).is_err());
+        assert!(readdir_sync(app.handle().clone(), vec![escape.into()]).is_err());
+    }
+
+    // Absolute paths the user chose (an imported model folder) stay readable.
+    let model = tempfile::tempdir().unwrap();
+    fs::write(model.path().join("config.json"), "{\"a\":1}").unwrap();
+    let dir = model.path().to_string_lossy().to_string();
+    let config = model.path().join("config.json").to_string_lossy().to_string();
+    assert!(exists_sync(app.handle().clone(), vec![config.clone()]).unwrap());
+    assert!(file_stat(app.handle().clone(), dir.clone()).unwrap().is_directory);
+    assert_eq!(
+        read_file_sync(app.handle().clone(), vec![config]).unwrap(),
+        "{\"a\":1}"
+    );
+    assert_eq!(readdir_sync(app.handle().clone(), vec![dir]).unwrap().len(), 1);
+}

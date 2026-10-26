@@ -3,6 +3,9 @@ use jan_utils::{normalize_file_path, normalize_path};
 use std::path::{Path, PathBuf};
 use tauri::Runtime;
 
+/// Builds a path string for `join_path`. It does no scope checks: the result is
+/// only a string handed back to the caller, and every command that then touches
+/// the file system resolves it again through one of the scoped resolvers below.
 pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> PathBuf {
     let path = if path.starts_with("file:/") || path.starts_with("file:\\") {
         let normalized = normalize_file_path(path);
@@ -22,8 +25,12 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
     }
 }
 
+fn is_file_uri(path: &str) -> bool {
+    path.starts_with("file:/") || path.starts_with("file:\\")
+}
+
 fn resolve_path_input(path: &str, jan_data_folder: &Path) -> PathBuf {
-    if path.starts_with("file:/") || path.starts_with("file:\\") {
+    if is_file_uri(path) {
         let normalized = normalize_file_path(path);
         let relative_normalized = normalized
             .trim_start_matches(std::path::MAIN_SEPARATOR)
@@ -96,6 +103,38 @@ pub fn resolve_path_within_jan_data_folder(
     }
 
     Ok((canonical_data, canonical_path))
+}
+
+/// Scope for the read-only legacy file commands (`exists_sync`, `file_stat`,
+/// `read_file_sync`, `readdir_sync`).
+///
+/// `file:` URIs and relative paths are data-folder paths and must stay inside
+/// it. A plain absolute path is let through, read-only, because the app reads
+/// files the user chose wherever they live:
+/// - `@path` references in the chat input, resolved against the home folder
+///   or typed as absolute paths (web-app `lib/path-references.ts`);
+/// - attachments and project files picked in a dialog or dropped on the window
+///   (web-app `ChatInput.tsx`, `ProjectFiles.tsx`);
+/// - models imported in place, whose `model_path` stays absolute (MLX reads
+///   `config.json` and stats the folder; llama.cpp stats the weights).
+///
+/// The commands that create, move or write files never take this path; they
+/// use [`resolve_path_within_jan_data_folder`].
+pub fn resolve_read_path(jan_data_folder: &Path, path: &str) -> Result<PathBuf, String> {
+    if is_file_uri(path) || !Path::new(path).is_absolute() {
+        return resolve_path_within_jan_data_folder(jan_data_folder, path)
+            .map(|(_, resolved)| resolved);
+    }
+    let path = PathBuf::from(path);
+    Ok(path.canonicalize().unwrap_or(path))
+}
+
+pub fn resolve_app_read_path<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let jan_data_folder = get_jan_data_folder_path(app_handle);
+    resolve_read_path(&jan_data_folder, path)
 }
 
 pub fn resolve_app_path_within_jan_data_folder<R: Runtime>(
@@ -177,6 +216,50 @@ mod tests {
 
         let result = resolve_path_within_jan_data_folder(&data, &elsewhere.to_string_lossy());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn file_uri_parent_traversal_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        fs::create_dir_all(&data).unwrap();
+
+        for uri in ["file:/../..", "file://../outside", "file:/a/../../../outside"] {
+            assert!(
+                resolve_path_within_jan_data_folder(&data, uri).is_err(),
+                "{uri} should be rejected"
+            );
+            assert!(
+                resolve_read_path(&data, uri).is_err(),
+                "{uri} should be rejected for reads"
+            );
+        }
+    }
+
+    #[test]
+    fn read_path_keeps_relative_paths_inside_data_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        fs::create_dir_all(data.join("models")).unwrap();
+
+        let resolved = resolve_read_path(&data, "models").expect("resolves");
+        assert!(resolved.starts_with(data.canonicalize().unwrap()));
+        let resolved = resolve_read_path(&data, "file://models").expect("resolves");
+        assert!(resolved.ends_with("models"));
+        assert!(resolve_read_path(&data, "../elsewhere").is_err());
+    }
+
+    #[test]
+    fn read_path_allows_absolute_user_chosen_paths() {
+        // Imported models and attachments live outside the data folder.
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let model = tmp.path().join("imported-model");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&model).unwrap();
+
+        let resolved = resolve_read_path(&data, &model.to_string_lossy()).expect("resolves");
+        assert_eq!(resolved, model.canonicalize().unwrap());
     }
 
     #[test]

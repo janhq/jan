@@ -1,6 +1,8 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
-use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
+use super::helpers::{
+    resolve_app_path_within_jan_data_folder, resolve_app_read_path, resolve_path,
+};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
@@ -39,8 +41,7 @@ pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> 
         return Err("mkdir error: Invalid argument".to_string());
     }
 
-    let (_jan_data_folder, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])
-        .map_err(|_| format!("mkdir error: path {} is not under jan data folder", args[0]))?;
+    let (_, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])?;
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
@@ -50,15 +51,8 @@ pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("mv error: Invalid argument - source and destination required".to_string());
     }
 
-    let (_jan_data_folder, source) =
-        resolve_app_path_within_jan_data_folder(app_handle.clone(), &args[0]).map_err(|_| {
-            format!("mv error: source {} is not under jan data folder", args[0])
-        })?;
-    let (_jan_data_folder, destination) = resolve_app_path_within_jan_data_folder(
-        app_handle,
-        &args[1],
-    )
-    .map_err(|_| format!("mv error: destination {} is not under jan data folder", args[1]))?;
+    let (_, source) = resolve_app_path_within_jan_data_folder(app_handle.clone(), &args[0])?;
+    let (_, destination) = resolve_app_path_within_jan_data_folder(app_handle, &args[1])?;
 
     if !source.exists() {
         return Err("mv error: Source path does not exist".to_string());
@@ -90,7 +84,7 @@ pub fn exists_sync<R: Runtime>(
         return Err("exist_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_app_read_path(app_handle, &args[0])?;
     Ok(path.exists())
 }
 
@@ -103,7 +97,7 @@ pub fn file_stat<R: Runtime>(
         return Err("file_stat error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args);
+    let path = resolve_app_read_path(app_handle, &args)?;
     let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
     let is_directory = metadata.is_dir();
     let size = if is_directory { 0 } else { metadata.len() };
@@ -120,7 +114,7 @@ pub fn read_file_sync<R: Runtime>(
         return Err("read_file_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_app_read_path(app_handle, &args[0])?;
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -133,13 +127,7 @@ pub fn write_file_sync<R: Runtime>(
         return Err("write_file_sync error: Invalid argument".to_string());
     }
 
-    let (_jan_data_folder, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])
-        .map_err(|_| {
-            format!(
-                "write_file_sync error: path {} is not under jan data folder",
-                args[0]
-            )
-        })?;
+    let (_, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])?;
     let content = &args[1];
     fs::write(&path, content).map_err(|e| e.to_string())
 }
@@ -153,7 +141,7 @@ pub fn readdir_sync<R: Runtime>(
         return Err("read_dir_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_app_read_path(app_handle, &args[0])?;
     let entries = fs::read_dir(&path).map_err(|e| e.to_string())?;
     let paths: Vec<String> = entries
         .filter_map(|entry| entry.ok())
