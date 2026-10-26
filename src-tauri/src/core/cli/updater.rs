@@ -28,7 +28,7 @@ use crate::core::updater::hmac_client::SignedRequestHeaders;
 /// Silent startup check: must never hold up the CLI.
 const CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
 /// Explicit `jan update`: the user is waiting on it, so be patient.
-const MANUAL_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
+pub const MANUAL_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BINARY_NAME: &str = if cfg!(windows) { "jan.exe" } else { "jan" };
 

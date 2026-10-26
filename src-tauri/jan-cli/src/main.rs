@@ -936,7 +936,7 @@ async fn handle_update(check: bool, force: bool) {
     use app_lib::core::cli::updater::{self, UpdateOutcome};
 
     let result = if check {
-        updater::check_for_update(std::time::Duration::from_secs(10))
+        updater::check_for_update(updater::MANUAL_CHECK_TIMEOUT)
             .await
             .map(|u| {
                 if u.is_newer() {
