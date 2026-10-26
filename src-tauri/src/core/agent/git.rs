@@ -205,6 +205,9 @@ pub(crate) fn snapshot(
     thread_id: &str,
     changed: &[PathBuf],
 ) -> Result<String, String> {
+    if let Some(p) = parent {
+        require_object_id(p)?;
+    }
     let idx = snapshot_index(thread_id)?;
     if !idx.exists() {
         let base_tree = run(repo, None, &["rev-parse", "--verify", "-q", "HEAD^{tree}"])
@@ -242,9 +245,29 @@ pub(crate) fn cleanup_snapshot_index(thread_id: &str) {
     }
 }
 
+/// Whether `s` is a full git object id: 40 (SHA-1) or 64 (SHA-256) lowercase
+/// hex digits. Snapshot ids are read back from thread metadata on disk, so
+/// every one is checked before it reaches a git command line, where a value
+/// like `--index-output=<path>` would be taken as an option.
+#[cfg(feature = "cli")]
+pub(crate) fn is_object_id(s: &str) -> bool {
+    matches!(s.len(), 40 | 64) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// `Ok` when `sha` is a full object id (see [`is_object_id`]).
+#[cfg(feature = "cli")]
+fn require_object_id(sha: &str) -> Result<(), String> {
+    if is_object_id(sha) {
+        Ok(())
+    } else {
+        Err(format!("not a snapshot id: {sha:?}"))
+    }
+}
+
 /// Point the thread's snapshot ref at `sha` (create or update).
 #[cfg(feature = "cli")]
 pub(crate) fn update_ref(repo: &Path, thread_id: &str, sha: &str) -> Result<(), String> {
+    require_object_id(sha)?;
     run(repo, None, &["update-ref", &snapshot_ref(thread_id)?, sha]).map(|_| ())
 }
 
@@ -253,6 +276,8 @@ pub(crate) fn update_ref(repo: &Path, thread_id: &str, sha: &str) -> Result<(), 
 /// `target` so they can be removed. Files matching `.gitignore` are untouched.
 #[cfg(feature = "cli")]
 pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), String> {
+    require_object_id(target)?;
+    require_object_id(latest)?;
     let idx = temp_index();
     let result = (|| {
         run(repo, Some(&idx), &["read-tree", target])?;
@@ -261,7 +286,7 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
             let added = run(
                 repo,
                 None,
-                &["diff", "--name-only", "--diff-filter=A", target, latest],
+                &["diff", "--name-only", "--diff-filter=A", target, latest, "--"],
             )?;
             for rel in added.lines().filter(|l| !l.is_empty()) {
                 let _ = std::fs::remove_file(repo.join(rel));
@@ -282,7 +307,7 @@ pub(crate) fn head_sha(repo: &Path) -> Option<String> {
 }
 
 /// Create a worktree at `path`, checking out a new branch `branch` starting at
-/// `base` (any commit-ish). The parent directory is created first: `git
+/// `base` (a full commit id). The parent directory is created first: `git
 /// worktree add` requires the path's parent to exist but refuses the path
 /// itself to.
 #[cfg(feature = "cli")]
@@ -292,6 +317,7 @@ pub(crate) fn worktree_add(
     branch: &str,
     base: &str,
 ) -> Result<(), String> {
+    require_object_id(base)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -303,6 +329,7 @@ pub(crate) fn worktree_add(
             "add",
             "-b",
             branch,
+            "--",
             &path.to_string_lossy(),
             base,
         ],
@@ -464,6 +491,49 @@ mod tests {
             "the branch starts from the snapshot, not HEAD and not the live tree"
         );
         let _ = std::fs::remove_dir_all(&wt);
+    }
+
+    #[test]
+    fn object_ids_are_full_lowercase_hex() {
+        assert!(is_object_id(&"a".repeat(40)));
+        assert!(is_object_id(&"0123456789abcdef".repeat(4)));
+        assert!(is_object_id(EMPTY_TREE));
+        for bad in [
+            "",
+            "cafe",
+            "--index-output=/tmp/x",
+            "-q",
+            "HEAD",
+            "main",
+            &"A".repeat(40),
+            &"a".repeat(39),
+            &"a".repeat(41),
+            &"g".repeat(40),
+            &format!("{}^{{tree}}", "a".repeat(40)),
+        ] {
+            assert!(!is_object_id(bad), "{bad}");
+        }
+    }
+
+    /// An id read back from thread metadata never reaches git as an option.
+    #[test]
+    fn snapshot_ids_that_are_not_object_ids_are_refused() {
+        let Some(root) = init_repo() else { return };
+        let out = root.join("index-output");
+        let hostile = format!("--index-output={}", out.display());
+        let head = head_sha(&root).unwrap();
+        assert!(restore(&root, &hostile, &head).is_err());
+        assert!(restore(&root, &head, &hostile).is_err());
+        assert!(restore(&root, "HEAD", "HEAD").is_err());
+        assert!(snapshot(&root, Some(&hostile), "m", "t-bad", &[]).is_err());
+        assert!(update_ref(&root, "t-bad", &hostile).is_err());
+        let wt = root.join("wt");
+        assert!(worktree_add(&root, &wt, "jan/agent/bad", &hostile).is_err());
+        assert!(!out.exists());
+        assert!(!wt.exists());
+        // A real id still works for restore.
+        restore(&root, &head, &head).expect("restore to HEAD");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

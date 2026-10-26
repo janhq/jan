@@ -20533,17 +20533,24 @@ fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
     app.snap_queue.clear();
     app.base_requested = false;
     let Some(meta) = metadata else { return };
+    // The ids go to git on rewind, so only full object ids are taken back.
     let Some(base) = meta
         .get("base_snapshot")
         .and_then(|v| v.as_str())
+        .filter(|sha| git::is_object_id(sha))
         .map(str::to_string)
     else {
         return;
     };
-    app.checkpoints = meta
+    let checkpoints = meta
         .get("checkpoints")
         .and_then(|v| serde_json::from_value::<Vec<Checkpoint>>(v.clone()).ok())
         .unwrap_or_default();
+    // Dropping just a bad one would make a rewind restore the wrong turn.
+    if !checkpoints.iter().all(|c| git::is_object_id(&c.sha)) {
+        return;
+    }
+    app.checkpoints = checkpoints;
     app.base_snapshot = Some(base);
     // A resumed thread already has its base; don't re-snapshot on next submit.
     app.base_requested = true;
@@ -28486,6 +28493,34 @@ mod tests {
 
         let rendered: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
+    }
+
+    #[test]
+    fn resume_takes_back_only_full_object_ids_as_snapshots() {
+        let mut app = test_app();
+        let (base, s0) = ("b".repeat(40), "0".repeat(40));
+        let good = serde_json::json!({
+            "base_snapshot": base,
+            "checkpoints": [{ "user_index": 0, "preview": "one", "sha": s0 }],
+        });
+        super::restore_snapshots(&mut app, Some(&good));
+        assert_eq!(app.base_snapshot.as_deref(), Some(base.as_str()));
+        assert_eq!(app.checkpoints.len(), 1);
+
+        for meta in [
+            serde_json::json!({ "base_snapshot": "--index-output=/tmp/x" }),
+            serde_json::json!({
+                "base_snapshot": base,
+                "checkpoints": [
+                    { "user_index": 0, "preview": "one", "sha": s0 },
+                    { "user_index": 1, "preview": "two", "sha": "--output=/tmp/x" },
+                ],
+            }),
+        ] {
+            super::restore_snapshots(&mut app, Some(&meta));
+            assert!(app.base_snapshot.is_none(), "{meta}");
+            assert!(app.checkpoints.is_empty(), "{meta}");
+        }
     }
 
     #[test]

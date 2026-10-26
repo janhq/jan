@@ -1616,6 +1616,7 @@ fn latest_snapshot(thread: Option<&serde_json::Value>) -> Option<String> {
         .and_then(|c| c.get("sha"))
         .or_else(|| metadata.get("base_snapshot"))
         .and_then(|v| v.as_str())
+        .filter(|sha| crate::core::agent::git::is_object_id(sha))
         .map(str::to_string)
 }
 
@@ -4977,18 +4978,24 @@ mod tests {
     /// files match the transcript it inherited.
     #[test]
     fn latest_snapshot_prefers_the_newest_checkpoint() {
+        let (base, s0, s1) = ("b".repeat(40), "0".repeat(40), "1".repeat(64));
         let thread = serde_json::json!({ "metadata": {
-            "base_snapshot": "base",
+            "base_snapshot": base,
             "checkpoints": [
-                { "user_index": 0, "preview": "one", "sha": "s0" },
-                { "user_index": 1, "preview": "two", "sha": "s1" },
+                { "user_index": 0, "preview": "one", "sha": s0 },
+                { "user_index": 1, "preview": "two", "sha": s1 },
             ],
         }});
-        assert_eq!(latest_snapshot(Some(&thread)).as_deref(), Some("s1"));
+        assert_eq!(latest_snapshot(Some(&thread)), Some(s1));
 
         // No checkpoints yet: the base snapshot is still better than HEAD.
-        let fresh = serde_json::json!({ "metadata": { "base_snapshot": "base" } });
-        assert_eq!(latest_snapshot(Some(&fresh)).as_deref(), Some("base"));
+        let fresh = serde_json::json!({ "metadata": { "base_snapshot": base } });
+        assert_eq!(latest_snapshot(Some(&fresh)), Some(base));
+        // An id that is not a full object id is never handed to git.
+        for bad in ["base", "--index-output=/tmp/x", "HEAD"] {
+            let t = serde_json::json!({ "metadata": { "base_snapshot": bad } });
+            assert_eq!(latest_snapshot(Some(&t)), None, "{bad}");
+        }
         // Nothing recorded at all leaves the choice to the caller (HEAD).
         assert_eq!(latest_snapshot(None), None);
         assert_eq!(
@@ -5138,8 +5145,9 @@ mod tests {
         std::fs::remove_dir_all(&wt).unwrap();
         assert_eq!(fork_base(Some(&source)), None);
         // A source that recorded a snapshot uses it, no capture needed.
-        let snapped = serde_json::json!({ "id": "s", "metadata": { "base_snapshot": "cafe" } });
-        assert_eq!(fork_base(Some(&snapped)).as_deref(), Some("cafe"));
+        let cafe = "cafe".repeat(10);
+        let snapped = serde_json::json!({ "id": "s", "metadata": { "base_snapshot": cafe } });
+        assert_eq!(fork_base(Some(&snapped)), Some(cafe));
     }
 
     /// `--max-session-tokens` outranks `[budget].max_tokens`, which outranks
