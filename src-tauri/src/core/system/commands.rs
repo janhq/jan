@@ -276,6 +276,42 @@ fn is_valid_env_key(key: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// Variables that change how shells and other programs start, or where
+/// Windows resolves its system binaries. Jan writes custom variables into the
+/// user's shell profile or Windows user environment, so these are refused.
+const RESERVED_ENV_KEYS: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "COMSPEC",
+    "SYSTEMROOT",
+    "WINDIR",
+    "SYSTEMDRIVE",
+    "PROMPT_COMMAND",
+    "BASH_ENV",
+    "ENV",
+    "ZDOTDIR",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "IFS",
+    "PS4",
+    "NODE_OPTIONS",
+    "PYTHONSTARTUP",
+    "PERL5OPT",
+];
+
+/// Prefixes of reserved variable names: the dynamic loader's settings and
+/// Jan's own configuration.
+const RESERVED_ENV_PREFIXES: &[&str] = &["LD_", "DYLD_", "JAN_"];
+
+/// Whether `key` is one Jan refuses to set. Compared case-insensitively:
+/// Windows variable names are case-insensitive, and zsh ties lowercase
+/// `path` to `PATH`.
+fn is_reserved_env_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    RESERVED_ENV_KEYS.contains(&upper.as_str())
+        || RESERVED_ENV_PREFIXES.iter().any(|p| upper.starts_with(p))
+}
+
 /// Reject names and values that cannot be written as a single `export` line.
 fn validate_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
     for (key, value) in env_vars {
@@ -283,6 +319,13 @@ fn validate_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
             return Err(format!(
                 "Invalid environment variable name {:?}: use only letters, digits and \
                  underscores, and do not start with a digit.",
+                key
+            ));
+        }
+        if is_reserved_env_key(key) {
+            return Err(format!(
+                "Jan does not set {}: it changes how shells or programs start. Remove it \
+                 from the custom environment variables.",
                 key
             ));
         }
@@ -1181,6 +1224,58 @@ mod tests {
     }
 
     #[test]
+    fn env_rejects_reserved_keys() {
+        for bad in [
+            "PATH",
+            "path",
+            "PathExt",
+            "ComSpec",
+            "SystemRoot",
+            "windir",
+            "SystemDrive",
+            "PROMPT_COMMAND",
+            "BASH_ENV",
+            "ENV",
+            "ZDOTDIR",
+            "SHELLOPTS",
+            "BASHOPTS",
+            "IFS",
+            "PS4",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "LD_AUDIT",
+            "DYLD_INSERT_LIBRARIES",
+            "dyld_library_path",
+            "NODE_OPTIONS",
+            "PYTHONSTARTUP",
+            "PERL5OPT",
+            "JAN_DATA_FOLDER",
+            "jan_anything",
+        ] {
+            let err = validate_env_vars(&[kv(bad, "v")]).unwrap_err();
+            assert!(err.contains(bad), "{bad}: {err}");
+        }
+        for good in [
+            "PATHS",
+            "MY_PATH",
+            "ENVIRONMENT",
+            "OLD_LD_PRELOAD",
+            "JANET",
+            "ANTHROPIC_AUTH_TOKEN",
+            "LD",
+        ] {
+            assert!(
+                validate_env_vars(&[kv(good, "v")]).is_ok(),
+                "{good:?} rejected"
+            );
+        }
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        assert!(write_env_to_shell(path.to_str().unwrap(), &[kv("BASH_ENV", "/tmp/x")]).is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn env_write_with_invalid_input_leaves_file_untouched() {
         let dir = tempdir().unwrap();
         let path = dir.path().join(".zshenv");
@@ -1403,10 +1498,10 @@ mod tests {
             String::new(),
         ];
         for value in &hostile {
-            write_env_to_shell(path.to_str().unwrap(), &[kv("JAN_TEST_VAR", value)]).unwrap();
+            write_env_to_shell(path.to_str().unwrap(), &[kv("CC_TEST_VAR", value)]).unwrap();
             let out = std::process::Command::new("sh")
                 .arg("-c")
-                .arg(". \"$1\" && printf '%s' \"$JAN_TEST_VAR\"")
+                .arg(". \"$1\" && printf '%s' \"$CC_TEST_VAR\"")
                 .arg("sh")
                 .arg(&path)
                 .env_clear()
