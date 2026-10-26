@@ -103,6 +103,11 @@ export const APIs = {
                 'enable_server_tool_execution',
                 'enableServerToolExecution',
               ]),
+              cors_enabled: pickBoolean(raw, [
+                'cors_enabled',
+                'isCorsEnabled',
+                'corsEnabled',
+              ]),
             }
             return getServiceHub().core().invoke(command, { config })
           }

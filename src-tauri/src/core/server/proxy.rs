@@ -7,7 +7,9 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
+use jan_utils::{
+    is_cors_header, is_same_or_app_origin, is_trusted_origin, is_valid_host, remove_prefix,
+};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -561,6 +563,45 @@ pub struct ProxyConfig {
     pub host: String,
     pub port: u16,
     pub enable_server_tool_execution: bool,
+    /// "Allow cross-origin requests" setting. When off, only the server's own
+    /// pages and the app webview may call it from a browser context.
+    pub cors_enabled: bool,
+}
+
+/// Whether a request carrying this `Origin` may proceed. Requests without an
+/// Origin (curl, SDKs, CLI tools, LAN clients) always may; browser requests
+/// must come from a trusted origin (see `jan_utils::is_trusted_origin`).
+///
+/// Runs on every non-preflight request, before auth and body parsing, because
+/// a browser sends "simple" cross-origin POSTs (e.g. `text/plain`) without a
+/// preflight, so CORS headers alone do not stop the request from executing.
+pub(crate) fn origin_allowed(
+    origin: &str,
+    host_header: &str,
+    trusted_hosts: &[Vec<String>],
+    cors_enabled: bool,
+) -> bool {
+    if origin.is_empty() {
+        return true;
+    }
+    // Same-origin trust relies on the Host header naming this server, so only
+    // a Host that passes validation counts.
+    let host = if is_valid_host(host_header, trusted_hosts) {
+        host_header
+    } else {
+        ""
+    };
+    if cors_enabled {
+        is_trusted_origin(origin, host, trusted_hosts)
+    } else {
+        is_same_or_app_origin(origin, host)
+    }
+}
+
+/// `/orchestrations` runs MCP tools without per-call approval, so it is only
+/// served when the user opted in to server-side tool execution.
+pub(crate) fn orchestrations_allowed(config: &ProxyConfig) -> bool {
+    config.enable_server_tool_execution
 }
 
 /// Determines the final destination path based on the original request path
@@ -781,8 +822,7 @@ async fn proxy_request(
             );
 
         if !origin.is_empty() {
-            let origin_host = extract_host_from_origin(origin);
-            if is_valid_host(&origin_host, &config.trusted_hosts) {
+            if origin_allowed(origin, host, &config.trusted_hosts, config.cors_enabled) {
                 response = response
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Credentials", "true");
@@ -812,6 +852,20 @@ async fn proxy_request(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+
+    if !origin_allowed(
+        &origin_header,
+        &host_header,
+        &config.trusted_hosts,
+        config.cors_enabled,
+    ) {
+        log::warn!("Rejected request from untrusted origin '{origin_header}'");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Vary", "Origin")
+            .body(full("Origin not allowed"))
+            .unwrap());
+    }
 
     let original_path = parts.uri.path();
     let headers = parts.headers.clone();
@@ -1125,6 +1179,21 @@ async fn proxy_request(
             log::info!(
                 "Handling POST request to {destination_path} for assistant tool orchestration"
             );
+
+            if !orchestrations_allowed(&config) {
+                let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response
+                    .body(full(
+                        "/orchestrations requires server-side tool execution to be enabled in Settings > Local API Server",
+                    ))
+                    .unwrap());
+            }
 
             let body_bytes = match body.collect().await {
                 Ok(c) => c.to_bytes(),
@@ -2345,18 +2414,20 @@ fn map_bind_error(
 
 pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
-    _host: &str,
+    host: &str,
     origin: &str,
     trusted_hosts: &[Vec<String>],
 ) -> hyper::http::response::Builder {
     let mut builder = builder;
 
-    let origin_trusted = if !origin.is_empty() {
-        let origin_host = extract_host_from_origin(origin);
-        is_valid_host(&origin_host, trusted_hosts)
-    } else {
-        false
-    };
+    // Requests from an origin `origin_allowed` refuses never reach a handler,
+    // so this only decides whether to reflect an already-admitted origin.
+    let origin_trusted = !origin.is_empty()
+        && is_trusted_origin(
+            origin,
+            if is_valid_host(host, trusted_hosts) { host } else { "" },
+            trusted_hosts,
+        );
 
     builder = builder
         .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
@@ -2399,6 +2470,7 @@ pub async fn start_server(
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
     enable_server_tool_execution: bool,
+    cors_enabled: bool,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         server_handle,
@@ -2416,6 +2488,7 @@ pub async fn start_server(
         mcp_settings,
         jan_data_folder,
         enable_server_tool_execution,
+        cors_enabled,
     )
     .await
 }
@@ -2437,6 +2510,7 @@ async fn start_server_internal(
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
     enable_server_tool_execution: bool,
+    cors_enabled: bool,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -2463,6 +2537,7 @@ async fn start_server_internal(
         host: host.clone(),
         port,
         enable_server_tool_execution,
+        cors_enabled,
     };
 
     let client = Client::builder()

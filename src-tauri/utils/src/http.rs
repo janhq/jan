@@ -25,14 +25,7 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
         return false;
     }
 
-    let host_without_port = if host.starts_with('[') {
-        host.split(']')
-            .next()
-            .unwrap_or(host)
-            .trim_start_matches('[')
-    } else {
-        host.split(':').next().unwrap_or(host)
-    };
+    let host_without_port = host_without_port(host);
     let default_valid_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"];
 
     if default_valid_hosts
@@ -58,6 +51,25 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
         }
     }
 
+    host_in_trusted_list(host, trusted_hosts)
+}
+
+/// Strips the port (and IPv6 brackets) from a `host[:port]` authority.
+fn host_without_port(host: &str) -> &str {
+    if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .unwrap_or(host)
+            .trim_start_matches('[')
+    } else {
+        host.split(':').next().unwrap_or(host)
+    }
+}
+
+/// Whether `host` (with optional port) matches an entry the user put in the
+/// Trusted Hosts list. Entries match on hostname; ports are ignored.
+fn host_in_trusted_list(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
+    let host_without_port = host_without_port(host);
     trusted_hosts.iter().flatten().any(|valid| {
         let host_lower = host.to_lowercase();
         let valid_lower = valid.to_lowercase();
@@ -66,18 +78,71 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
             return true;
         }
 
-        let valid_without_port = if valid.starts_with('[') {
-            valid
-                .split(']')
-                .next()
-                .unwrap_or(valid)
-                .trim_start_matches('[')
-        } else {
-            valid.split(':').next().unwrap_or(valid)
-        };
+        let valid_without_port = self::host_without_port(valid);
 
-        host_without_port.to_lowercase() == valid_without_port.to_lowercase()
+        !valid_without_port.is_empty()
+            && host_without_port.to_lowercase() == valid_without_port.to_lowercase()
     })
+}
+
+/// Splits a serialized origin into lowercase `(scheme, authority)`. Returns
+/// None for `null`, anything with a path/query/userinfo, or garbage.
+fn parse_origin(origin: &str) -> Option<(String, String)> {
+    let (scheme, authority) = origin.trim().split_once("://")?;
+    if scheme.is_empty()
+        || authority.is_empty()
+        || authority.contains(['/', '?', '#', '@', ' ', '\\'])
+    {
+        return None;
+    }
+    Some((scheme.to_ascii_lowercase(), authority.to_ascii_lowercase()))
+}
+
+/// The origins that are trusted even with cross-origin requests turned off:
+/// the app's own webview (`tauri://localhost`, `http(s)://tauri.localhost`)
+/// and a page served by this server itself, i.e. an `http(s)` origin whose
+/// authority equals `host_header`. Callers must pass a `host_header` that has
+/// already been validated (or "" to skip the same-origin case), otherwise a
+/// rebinding hostname would match itself.
+pub fn is_same_or_app_origin(origin: &str, host_header: &str) -> bool {
+    let Some((scheme, authority)) = parse_origin(origin) else {
+        return false;
+    };
+    let is_http = scheme == "http" || scheme == "https";
+    if (scheme == "tauri" && authority == "localhost") || (is_http && authority == "tauri.localhost")
+    {
+        return true;
+    }
+    is_http && !host_header.is_empty() && authority == host_header.to_ascii_lowercase()
+}
+
+/// Decides whether a browser `Origin` may call the local API server.
+///
+/// Unlike `is_valid_host` (which validates the `Host` header and accepts any
+/// private-range IP so LAN clients can reach a 0.0.0.0 bind), an origin is
+/// the page that issued the request, so only these are trusted:
+/// - everything `is_same_or_app_origin` accepts;
+/// - loopback pages: `http(s)://localhost`, `127.0.0.1`, `[::1]` on any port;
+/// - a host the user listed in Trusted Hosts (any scheme, so a browser
+///   extension id can be listed), or `*` there.
+///
+/// A private-range IP origin (another machine on the LAN) is NOT trusted
+/// unless listed. `null` and anything malformed are untrusted.
+pub fn is_trusted_origin(origin: &str, host_header: &str, trusted_hosts: &[Vec<String>]) -> bool {
+    if trusted_hosts.iter().any(|hosts| hosts.iter().any(|h| h == "*")) {
+        return true;
+    }
+    if is_same_or_app_origin(origin, host_header) {
+        return true;
+    }
+    let Some((scheme, authority)) = parse_origin(origin) else {
+        return false;
+    };
+    let is_http = scheme == "http" || scheme == "https";
+    if is_http && matches!(host_without_port(&authority), "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+    host_in_trusted_list(&authority, trusted_hosts)
 }
 
 #[cfg(test)]
@@ -127,5 +192,89 @@ mod tests {
         assert!(is_valid_host("[::1]:1337", &trusted)); // IPv6 loopback
         // A public IP literal is NOT auto-trusted.
         assert!(!is_valid_host("8.8.8.8:1337", &trusted));
+    }
+
+    fn none() -> Vec<Vec<String>> {
+        vec![vec![]]
+    }
+
+    #[test]
+    fn origin_loopback_and_app_origins_trusted() {
+        let t = none();
+        for o in [
+            "http://localhost:3000",
+            "https://localhost",
+            "http://127.0.0.1:1337",
+            "http://[::1]:8080",
+            "HTTP://LOCALHOST:5173",
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ] {
+            assert!(is_trusted_origin(o, "127.0.0.1:1337", &t), "{o}");
+        }
+    }
+
+    #[test]
+    fn origin_foreign_sites_untrusted() {
+        let t = none();
+        for o in [
+            "https://evil.com",
+            "http://localhost.evil.com",
+            "http://127.0.0.1.evil.com",
+            "http://evil.com/localhost",
+            "http://user@localhost",
+            "null",
+            "file://",
+            "tauri://evil",
+            "ftp://localhost",
+            "chrome-extension://abcdef",
+            "",
+        ] {
+            assert!(!is_trusted_origin(o, "127.0.0.1:1337", &t), "{o}");
+        }
+    }
+
+    // A page on another LAN machine must not get credentialed CORS just because
+    // its address is private: the Host check accepts it, the origin check does not.
+    #[test]
+    fn origin_private_ip_untrusted_unless_listed() {
+        let t = none();
+        assert!(is_valid_host("192.168.1.20:3000", &t));
+        assert!(!is_trusted_origin("http://192.168.1.20:3000", "127.0.0.1:1337", &t));
+        assert!(!is_trusted_origin("http://10.0.0.5", "127.0.0.1:1337", &t));
+
+        let listed = vec![vec!["192.168.1.20".to_string()]];
+        assert!(is_trusted_origin("http://192.168.1.20:3000", "127.0.0.1:1337", &listed));
+        assert!(!is_trusted_origin("http://192.168.1.21:3000", "127.0.0.1:1337", &listed));
+    }
+
+    #[test]
+    fn origin_same_as_host_trusted() {
+        let t = none();
+        // API docs page opened over the LAN.
+        assert!(is_trusted_origin("http://192.168.1.10:1337", "192.168.1.10:1337", &t));
+        // Same IP, different port: a different site.
+        assert!(!is_trusted_origin("http://192.168.1.10:8080", "192.168.1.10:1337", &t));
+    }
+
+    #[test]
+    fn same_or_app_origin_only() {
+        assert!(is_same_or_app_origin("tauri://localhost", ""));
+        assert!(is_same_or_app_origin("http://tauri.localhost", ""));
+        assert!(is_same_or_app_origin("http://127.0.0.1:1337", "127.0.0.1:1337"));
+        assert!(!is_same_or_app_origin("http://localhost:3000", "127.0.0.1:1337"));
+        assert!(!is_same_or_app_origin("http://127.0.0.1:1337", ""));
+    }
+
+    #[test]
+    fn origin_listed_hosts_and_wildcard() {
+        let listed = vec![vec!["myapp.local".to_string(), "abcdef".to_string()]];
+        assert!(is_trusted_origin("https://myapp.local:8443", "127.0.0.1:1337", &listed));
+        assert!(is_trusted_origin("chrome-extension://abcdef", "127.0.0.1:1337", &listed));
+        assert!(!is_trusted_origin("https://other.local", "127.0.0.1:1337", &listed));
+
+        let wildcard = vec![vec!["*".to_string()]];
+        assert!(is_trusted_origin("https://evil.com", "127.0.0.1:1337", &wildcard));
     }
 }
