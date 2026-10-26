@@ -29,6 +29,84 @@ fn system32_path(root: Option<OsString>, exe: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// Program to spawn for `git`.
+///
+/// On Windows `Command::new("git")` looks in the application's own directory
+/// before `PATH`, and Jan installs per-user, so a `git.exe` placed next to
+/// Jan's executable would run instead of the user's git. There this finds
+/// `git.exe` on `PATH` itself, skipping Jan's own directory and the current
+/// directory, and returns its absolute path (looked up once, then cached).
+/// With no such git it fails with `NotFound`, as spawning a missing `git`
+/// does. Elsewhere it is plain `git`.
+pub fn git_program() -> std::io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        use std::sync::OnceLock;
+        static FOUND: OnceLock<PathBuf> = OnceLock::new();
+        if let Some(found) = FOUND.get() {
+            return Ok(found.clone());
+        }
+        let resolve = |p: &Path| std::fs::canonicalize(p).ok();
+        let mut excluded = Vec::new();
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().and_then(|d| resolve(d)))
+        {
+            excluded.push(dir);
+        }
+        if let Some(dir) = std::env::current_dir().ok().and_then(|d| resolve(&d)) {
+            excluded.push(dir);
+        }
+        let dirs: Vec<PathBuf> = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        match pick_git_exe(&dirs, &excluded, resolve, |p| p.is_file()) {
+            Some(found) => Ok(FOUND.get_or_init(|| found).clone()),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "git.exe not found on PATH",
+            )),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(PathBuf::from("git"))
+    }
+}
+
+/// Pure selection for [`git_program`] on Windows: the first `git.exe` in an
+/// absolute `PATH` entry whose resolved directory is not one of `excluded`
+/// (already resolved). Paths compare as Windows does, ignoring case, slash
+/// direction and trailing separators, so it can be tested on every host.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pick_git_exe(
+    path_dirs: &[PathBuf],
+    excluded: &[PathBuf],
+    resolve: impl Fn(&Path) -> Option<PathBuf>,
+    is_file: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    fn key(p: &Path) -> String {
+        p.to_string_lossy()
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_lowercase()
+    }
+    fn is_absolute(p: &Path) -> bool {
+        let s = p.to_string_lossy().replace('/', "\\");
+        let b = s.as_bytes();
+        s.starts_with("\\\\")
+            || (b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\')
+    }
+    let excluded: Vec<String> = excluded.iter().map(|p| key(p)).collect();
+    path_dirs
+        .iter()
+        .filter(|dir| is_absolute(dir))
+        .filter_map(|dir| resolve(dir))
+        .filter(|dir| !excluded.contains(&key(dir)))
+        .map(|dir| dir.join("git.exe"))
+        .find(|candidate| is_file(candidate))
+}
+
 /// Environment variable Jan sets on every `mlx-server` it starts. The startup
 /// sweep stops an orphaned `mlx-server` only when it carries this, because the
 /// server's name, path and flags can all belong to one someone runs themselves.
@@ -684,6 +762,61 @@ mod tests {
         let expected = PathBuf::from(r"C:\Windows\System32\reg.exe");
         assert_eq!(system32_path(None, "reg.exe"), expected);
         assert_eq!(system32_path(Some(OsString::new()), "reg.exe"), expected);
+    }
+
+    fn pick(dirs: &[&str], excluded: &[&str], present: &[&str]) -> Option<PathBuf> {
+        let dirs: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        let excluded: Vec<PathBuf> = excluded.iter().map(PathBuf::from).collect();
+        let present: Vec<PathBuf> = present
+            .iter()
+            .map(|d| PathBuf::from(d).join("git.exe"))
+            .collect();
+        pick_git_exe(
+            &dirs,
+            &excluded,
+            |p| Some(p.to_path_buf()),
+            |p| present.iter().any(|q| q == p),
+        )
+    }
+
+    #[test]
+    fn git_exe_is_the_first_on_path() {
+        assert_eq!(
+            pick(
+                &[r"C:\Tools", r"C:\Program Files\Git\cmd", r"D:\Other"],
+                &[],
+                &[r"C:\Program Files\Git\cmd", r"D:\Other"],
+            ),
+            Some(PathBuf::from(r"C:\Program Files\Git\cmd").join("git.exe"))
+        );
+        assert_eq!(pick(&[r"C:\Tools"], &[], &[]), None);
+    }
+
+    #[test]
+    fn git_exe_skips_the_app_and_current_directories() {
+        let app = r"C:\Users\u\AppData\Local\Jan";
+        let cwd = r"C:\Users\u\project";
+        let git = r"C:\Program Files\Git\cmd";
+        // Matched regardless of case, slash direction and trailing separator.
+        let path = [
+            r"c:\users\U\appdata\local\jan\",
+            "C:/Users/u/project",
+            git,
+        ];
+        assert_eq!(
+            pick(&path, &[app, cwd], &[path[0], path[1], git]),
+            Some(PathBuf::from(git).join("git.exe"))
+        );
+        assert_eq!(pick(&path[..2], &[app, cwd], &path[..2]), None);
+    }
+
+    #[test]
+    fn git_exe_ignores_relative_path_entries() {
+        assert_eq!(pick(&[".", r"bin", r"\bin"], &[], &[".", "bin", r"\bin"]), None);
+        assert_eq!(
+            pick(&[r"\\server\share\git"], &[], &[r"\\server\share\git"]),
+            Some(PathBuf::from(r"\\server\share\git").join("git.exe"))
+        );
     }
 
     #[test]

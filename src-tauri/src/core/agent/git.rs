@@ -28,11 +28,18 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// A `git` command, resolved by [`jan_utils::git_program`] so Windows never
+/// runs a `git.exe` from Jan's own folder.
+fn git_command() -> Result<Command, String> {
+    jan_utils::git_program()
+        .map(Command::new)
+        .map_err(|e| format!("failed to launch git: {e}"))
+}
 
 /// Run `git` with literal args (callers pass their own `-C`). Returns trimmed
 /// stdout on success, trimmed stderr (or a generic message) on failure.
 fn git(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    let out = git_command()?
         .args(args)
         .output()
         .map_err(|e| format!("failed to launch git: {e}"))?;
@@ -53,7 +60,7 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// never triggers commit signing.
 #[cfg(feature = "cli")]
 fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = git_command()?;
     cmd.arg("-C").arg(repo).args(args);
     cmd.env("GIT_AUTHOR_NAME", "Jan Agent")
         .env("GIT_AUTHOR_EMAIL", "agent@jan.ai")
