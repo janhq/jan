@@ -232,7 +232,7 @@ pub fn cli_read_messages_lenient(
 ) -> Result<(Vec<serde_json::Value>, usize), String> {
     use std::io::BufRead;
 
-    let path = get_messages_path(base, thread_id);
+    let path = get_messages_path(base, thread_id)?;
     if !path.exists() {
         return Ok((Vec::new(), 0));
     }
@@ -271,7 +271,7 @@ pub fn cli_delete_thread(thread_id: &str) -> Result<(), String> {
     use std::fs;
 
     let data_folder = resolve_jan_data_folder();
-    let thread_dir = get_thread_dir(&data_folder, thread_id);
+    let thread_dir = get_thread_dir(&data_folder, thread_id)?;
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|e| e.to_string())?;
     }
@@ -284,7 +284,7 @@ pub fn cli_get_thread_in(
     base: &std::path::Path,
     thread_id: &str,
 ) -> Result<serde_json::Value, String> {
-    let path = get_thread_metadata_path(base, thread_id);
+    let path = get_thread_metadata_path(base, thread_id)?;
     if !path.exists() {
         return Err(format!("Thread '{thread_id}' not found"));
     }
@@ -316,7 +316,7 @@ pub fn cli_save_thread(
     let id = thread_id
         .map(str::to_string)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(get_thread_dir(base, &id)).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(get_thread_dir(base, &id)?).map_err(|e| e.to_string())?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -351,19 +351,19 @@ pub fn cli_save_thread(
             Some(record)
         })
         .collect();
-    write_messages_to_file(&messages, &get_messages_path(base, &id))?;
+    write_messages_to_file(&messages, &get_messages_path(base, &id)?)?;
     // Best effort, like the display journal: the record is a convenience for a
     // reader, and failing to write it must not fail the save of the thread.
     let record = crate::core::agent::run_record::Transcript::from_history(&id, history);
     if let Err(e) = crate::core::agent::run_record::write_atomic(
-        &get_thread_dir(base, &id).join(THREAD_TRANSCRIPT_FILE),
+        &get_thread_dir(base, &id)?.join(THREAD_TRANSCRIPT_FILE),
         &record,
     ) {
         log::warn!("thread {id}: could not write {THREAD_TRANSCRIPT_FILE}: {e}");
     }
 
     let existing: Option<serde_json::Value> =
-        std::fs::read_to_string(get_thread_metadata_path(base, &id))
+        std::fs::read_to_string(get_thread_metadata_path(base, &id)?)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok());
     let created = existing
@@ -577,7 +577,7 @@ pub fn fork_thread(
     source_id: &str,
     at_user_turn: Option<usize>,
 ) -> Result<String, String> {
-    let source = std::fs::read_to_string(get_thread_metadata_path(base, source_id))
+    let source = std::fs::read_to_string(get_thread_metadata_path(base, source_id)?)
         .map_err(|e| format!("thread '{source_id}' not found: {e}"))?;
     let source: serde_json::Value = serde_json::from_str(&source).map_err(|e| e.to_string())?;
 
@@ -587,7 +587,7 @@ pub fn fork_thread(
     // before a user turn leaves that pairing intact because it closes every open
     // call at each turn boundary.
     let mut history = rebuild_wire_history(&messages);
-    let mut journal = journal::read_journal(&journal::journal_path(base, source_id));
+    let mut journal = journal::read_journal(&journal::journal_path(base, source_id)?);
     if let Some(turn) = at_user_turn {
         let cut = user_turn_index(&history, turn)
             .ok_or_else(|| format!("no message #{} to fork at", turn + 1))?;
@@ -609,7 +609,7 @@ pub fn fork_thread(
     // same number whether the cut was asked for or the whole thread was taken.
     let metadata = fork_metadata(source.get("metadata"), source_id, user_turn_count(&history));
     let id = cli_save_thread(base, None, model, &history, Some(metadata))?;
-    journal::write_journal(&journal::journal_path(base, &id), &journal)?;
+    journal::write_journal(&journal::journal_path(base, &id)?, &journal)?;
     Ok(id)
 }
 
@@ -3994,14 +3994,14 @@ mod tests {
 
     /// Write a thread with the given id/recency and a single user message.
     fn seed_thread(base: &std::path::Path, id: &str, updated: f64) {
-        std::fs::create_dir_all(get_thread_dir(base, id)).unwrap();
+        std::fs::create_dir_all(get_thread_dir(base, id).unwrap()).unwrap();
         std::fs::write(
-            get_thread_metadata_path(base, id),
+            get_thread_metadata_path(base, id).unwrap(),
             serde_json::json!({ "id": id, "title": id, "updated": updated }).to_string(),
         )
         .unwrap();
         std::fs::write(
-            get_messages_path(base, id),
+            get_messages_path(base, id).unwrap(),
             serde_json::json!({
                 "role": "user",
                 "content": [{ "type": "text", "text": { "value": id, "annotations": [] } }],
@@ -4022,7 +4022,7 @@ mod tests {
             serde_json::json!({ "role": "assistant", "content": "fixed" }),
         ];
         let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
-        let path = get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE);
+        let path = get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE);
         let doc: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).expect("transcript written")).unwrap();
         assert_eq!(doc["prompt"], "fix the bug");
@@ -4045,7 +4045,7 @@ mod tests {
         history.push(serde_json::json!({ "role": "assistant", "content": "b" }));
         cli_save_thread(&base, Some(&id), "m", &history, None).unwrap();
         let doc: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE)).unwrap(),
+            &std::fs::read(get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE)).unwrap(),
         )
         .unwrap();
         assert_eq!(doc["output"], "b");
@@ -4066,7 +4066,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("jan-save-blocked-{}", std::process::id()));
         let history = vec![serde_json::json!({ "role": "user", "content": "hi" })];
         let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
-        let blocked = get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE);
+        let blocked = get_thread_dir(&base, &id).unwrap().join(THREAD_TRANSCRIPT_FILE);
         std::fs::remove_file(&blocked).unwrap();
         std::fs::create_dir(&blocked).unwrap();
         let again = cli_save_thread(&base, Some(&id), "m", &history, None);
@@ -4098,7 +4098,7 @@ mod tests {
         .unwrap();
         let prompt = |id: &str| -> String {
             let doc: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(get_thread_dir(&base, id).join(THREAD_TRANSCRIPT_FILE)).unwrap(),
+                &std::fs::read(get_thread_dir(&base, id).unwrap().join(THREAD_TRANSCRIPT_FILE)).unwrap(),
             )
             .unwrap();
             doc["prompt"].as_str().unwrap().to_string()
@@ -4136,8 +4136,8 @@ mod tests {
             fork: false,
         };
         prune_threads(&base, &project, Some(&request), true);
-        assert!(get_thread_dir(&base, "resumed-old").exists());
-        assert!(!get_thread_dir(&base, "stale-old").exists());
+        assert!(get_thread_dir(&base, "resumed-old").unwrap().exists());
+        assert!(!get_thread_dir(&base, "stale-old").unwrap().exists());
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&project);
     }
@@ -4205,7 +4205,7 @@ mod tests {
         }
         prune_threads(&base, &project, None, true);
         for i in 0..housekeeping::MIN_KEEP {
-            assert!(get_thread_dir(&base, &format!("t{i}")).exists());
+            assert!(get_thread_dir(&base, &format!("t{i}")).unwrap().exists());
         }
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&project);
@@ -4244,8 +4244,8 @@ mod tests {
         let base = dir.path();
         seed_thread(base, "good1111", 100.0);
         let bad = "bad02222";
-        std::fs::create_dir_all(get_thread_dir(base, bad)).unwrap();
-        std::fs::write(get_thread_metadata_path(base, bad), "{not json").unwrap();
+        std::fs::create_dir_all(get_thread_dir(base, bad).unwrap()).unwrap();
+        std::fs::write(get_thread_metadata_path(base, bad).unwrap(), "{not json").unwrap();
 
         let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
         assert_eq!(latest["id"], "good1111");
@@ -4256,9 +4256,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         seed_thread(base, "aaaa1111", 100.0);
-        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111")).unwrap();
+        let mut raw = std::fs::read_to_string(get_messages_path(base, "aaaa1111").unwrap()).unwrap();
         raw.push_str("{\"role\":\"assist");
-        std::fs::write(get_messages_path(base, "aaaa1111"), raw).unwrap();
+        std::fs::write(get_messages_path(base, "aaaa1111").unwrap(), raw).unwrap();
 
         let (messages, skipped) = cli_read_messages_lenient(base, "aaaa1111").unwrap();
         assert_eq!(messages.len(), 1);
@@ -4511,14 +4511,14 @@ mod tests {
         )
         .expect("save");
 
-        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read");
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id).unwrap()).expect("read");
         let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(stored["metadata"]["base_snapshot"], "abc");
         assert_eq!(stored["metadata"]["checkpoints"][0]["sha"], "def");
 
         // A follow-up save with no metadata must preserve the prior snapshot block.
         cli_save_thread(&base, Some(&id), "m", history.as_array().unwrap(), None).expect("resave");
-        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id)).expect("read2");
+        let raw = std::fs::read_to_string(get_thread_metadata_path(&base, &id).unwrap()).expect("read2");
         let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(stored["metadata"]["base_snapshot"], "abc");
 
@@ -4688,7 +4688,7 @@ mod tests {
                 ]
             })
             .collect();
-        journal::write_journal(&journal::journal_path(base, &id), &entries).unwrap();
+        journal::write_journal(&journal::journal_path(base, &id).unwrap(), &entries).unwrap();
         id
     }
 
@@ -4697,8 +4697,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         let source = seed_forkable(base);
-        let before_messages = std::fs::read(get_messages_path(base, &source)).unwrap();
-        let before_journal = std::fs::read(journal::journal_path(base, &source)).unwrap();
+        let before_messages = std::fs::read(get_messages_path(base, &source).unwrap()).unwrap();
+        let before_journal = std::fs::read(journal::journal_path(base, &source).unwrap()).unwrap();
 
         let forked = fork_thread(base, &source, Some(2)).unwrap();
         assert_ne!(forked, source);
@@ -4724,7 +4724,7 @@ mod tests {
             "every carried call keeps its result"
         );
 
-        let journal = journal::read_journal(&journal::journal_path(base, &forked));
+        let journal = journal::read_journal(&journal::journal_path(base, &forked).unwrap());
         assert_eq!(
             journal.len(),
             8,
@@ -4735,12 +4735,12 @@ mod tests {
         );
 
         assert_eq!(
-            std::fs::read(get_messages_path(base, &source)).unwrap(),
+            std::fs::read(get_messages_path(base, &source).unwrap()).unwrap(),
             before_messages,
             "a fork must not touch the thread it came from"
         );
         assert_eq!(
-            std::fs::read(journal::journal_path(base, &source)).unwrap(),
+            std::fs::read(journal::journal_path(base, &source).unwrap()).unwrap(),
             before_journal
         );
     }
@@ -4777,7 +4777,7 @@ mod tests {
         let thread = cli_get_thread_in(base, &forked).unwrap();
         assert_eq!(thread["metadata"][FORKED_FROM_KEY]["user_turn"], 3);
         assert_eq!(
-            journal::read_journal(&journal::journal_path(base, &forked)).len(),
+            journal::read_journal(&journal::journal_path(base, &forked).unwrap()).len(),
             12
         );
     }

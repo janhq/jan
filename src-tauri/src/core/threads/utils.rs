@@ -3,20 +3,45 @@ use std::path::{Path, PathBuf};
 
 use super::constants::{MESSAGES_FILE, THREADS_DIR, THREADS_FILE};
 
+/// Longest thread id accepted. Real ids are UUIDs (36 chars) or ULIDs (26).
+const MAX_THREAD_ID_LEN: usize = 128;
+
 pub fn get_data_dir(data_folder: &Path) -> PathBuf {
     data_folder.join(THREADS_DIR)
 }
 
-pub fn get_thread_dir(data_folder: &Path, thread_id: &str) -> PathBuf {
-    get_data_dir(data_folder).join(thread_id)
+/// A thread id names a single directory under `threads/`, so it may only hold
+/// ASCII letters, digits, `-` and `_`. That covers every id Jan produces (UUIDs
+/// from the backend and the CLI, ULIDs from the web app, and fixed names such as
+/// `temporary-chat`) and rules out separators, `.`/`..`, drive prefixes and
+/// empty names, so the id can never resolve outside its own directory.
+pub fn validate_thread_id(thread_id: &str) -> Result<(), String> {
+    if thread_id.is_empty() {
+        return Err("Invalid thread id: empty".to_string());
+    }
+    if thread_id.len() > MAX_THREAD_ID_LEN {
+        return Err("Invalid thread id: too long".to_string());
+    }
+    if !thread_id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(format!("Invalid thread id: {thread_id:?}"));
+    }
+    Ok(())
 }
 
-pub fn get_thread_metadata_path(data_folder: &Path, thread_id: &str) -> PathBuf {
-    get_thread_dir(data_folder, thread_id).join(THREADS_FILE)
+pub fn get_thread_dir(data_folder: &Path, thread_id: &str) -> Result<PathBuf, String> {
+    validate_thread_id(thread_id)?;
+    Ok(get_data_dir(data_folder).join(thread_id))
 }
 
-pub fn get_messages_path(data_folder: &Path, thread_id: &str) -> PathBuf {
-    get_thread_dir(data_folder, thread_id).join(MESSAGES_FILE)
+pub fn get_thread_metadata_path(data_folder: &Path, thread_id: &str) -> Result<PathBuf, String> {
+    Ok(get_thread_dir(data_folder, thread_id)?.join(THREADS_FILE))
+}
+
+pub fn get_messages_path(data_folder: &Path, thread_id: &str) -> Result<PathBuf, String> {
+    Ok(get_thread_dir(data_folder, thread_id)?.join(MESSAGES_FILE))
 }
 
 pub fn ensure_data_dirs(data_folder: &Path) -> Result<(), String> {
@@ -28,8 +53,8 @@ pub fn ensure_data_dirs(data_folder: &Path) -> Result<(), String> {
 }
 
 pub fn ensure_thread_dir_exists(data_folder: &Path, thread_id: &str) -> Result<(), String> {
+    let thread_dir = get_thread_dir(data_folder, thread_id)?;
     ensure_data_dirs(data_folder)?;
-    let thread_dir = get_thread_dir(data_folder, thread_id);
     if !thread_dir.exists() {
         fs::create_dir_all(&thread_dir).map_err(|e| e.to_string())?;
     }

@@ -5,6 +5,7 @@ use super::helpers::{
     write_messages_to_file,
 };
 use super::utils::{
+    validate_thread_id,
     ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
     get_thread_metadata_path,
 };
@@ -530,21 +531,21 @@ fn test_get_data_dir_appends_threads_subdir() {
 #[test]
 fn test_get_thread_dir_includes_thread_id() {
     let base = PathBuf::from("/tmp/jandata");
-    let dir = get_thread_dir(&base, "abc-123");
+    let dir = get_thread_dir(&base, "abc-123").unwrap();
     assert_eq!(dir, base.join("threads").join("abc-123"));
 }
 
 #[test]
 fn test_get_thread_metadata_path_layout() {
     let base = PathBuf::from("/tmp/jandata");
-    let path = get_thread_metadata_path(&base, "tid");
+    let path = get_thread_metadata_path(&base, "tid").unwrap();
     assert!(path.ends_with("threads/tid/thread.json"));
 }
 
 #[test]
 fn test_get_messages_path_layout() {
     let base = PathBuf::from("/tmp/jandata");
-    let path = get_messages_path(&base, "tid");
+    let path = get_messages_path(&base, "tid").unwrap();
     assert!(path.ends_with("threads/tid/messages.jsonl"));
 }
 
@@ -566,7 +567,7 @@ fn test_ensure_thread_dir_exists_creates_nested_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "thread-xyz").unwrap();
-    let dir = get_thread_dir(base, "thread-xyz");
+    let dir = get_thread_dir(base, "thread-xyz").unwrap();
     assert!(dir.exists() && dir.is_dir());
     // Idempotent on second call
     ensure_thread_dir_exists(base, "thread-xyz").unwrap();
@@ -586,7 +587,7 @@ fn test_write_and_read_messages_round_trip() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "trip").unwrap();
-    let path = get_messages_path(base, "trip");
+    let path = get_messages_path(base, "trip").unwrap();
 
     let msgs = vec![
         json!({"id": "m1", "role": "user", "content": "hello"}),
@@ -614,7 +615,7 @@ fn test_write_messages_empty_creates_empty_file() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "empty").unwrap();
-    let path = get_messages_path(base, "empty");
+    let path = get_messages_path(base, "empty").unwrap();
     write_messages_to_file(&[], &path).unwrap();
     assert!(path.exists());
     let contents = fs::read_to_string(&path).unwrap();
@@ -626,7 +627,7 @@ fn test_write_messages_overwrites_existing() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "ow").unwrap();
-    let path = get_messages_path(base, "ow");
+    let path = get_messages_path(base, "ow").unwrap();
 
     write_messages_to_file(&[json!({"id": "first"})], &path).unwrap();
     write_messages_to_file(&[json!({"id": "second"})], &path).unwrap();
@@ -641,7 +642,7 @@ fn test_write_messages_jsonl_format_one_per_line() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "lines").unwrap();
-    let path = get_messages_path(base, "lines");
+    let path = get_messages_path(base, "lines").unwrap();
 
     let msgs = vec![json!({"id": "a"}), json!({"id": "b"}), json!({"id": "c"})];
     write_messages_to_file(&msgs, &path).unwrap();
@@ -659,7 +660,7 @@ fn test_read_messages_invalid_json_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path();
     ensure_thread_dir_exists(base, "bad").unwrap();
-    let path = get_messages_path(base, "bad");
+    let path = get_messages_path(base, "bad").unwrap();
     fs::write(&path, "this is not json\n").unwrap();
     assert!(read_messages_from_file(base, "bad").is_err());
 }
@@ -673,7 +674,7 @@ fn test_update_thread_metadata_writes_pretty_json() {
     let thread = json!({"id": "meta", "title": "Hello", "assistants": []});
     update_thread_metadata(base, "meta", &thread).unwrap();
 
-    let path = get_thread_metadata_path(base, "meta");
+    let path = get_thread_metadata_path(base, "meta").unwrap();
     assert!(path.exists());
     let contents = fs::read_to_string(&path).unwrap();
     // Pretty-printed JSON contains newlines
@@ -692,7 +693,7 @@ fn test_update_thread_metadata_overwrites() {
     update_thread_metadata(base, "ovr", &json!({"title": "v1"})).unwrap();
     update_thread_metadata(base, "ovr", &json!({"title": "v2"})).unwrap();
 
-    let contents = fs::read_to_string(get_thread_metadata_path(base, "ovr")).unwrap();
+    let contents = fs::read_to_string(get_thread_metadata_path(base, "ovr").unwrap()).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
     assert_eq!(parsed["title"], "v2");
 }
@@ -718,4 +719,97 @@ async fn test_get_lock_for_thread_provides_mutual_exclusion() {
     // try_lock on the same Arc should fail while we hold it
     let lock2 = get_lock_for_thread("mutex-test").await;
     assert!(lock2.try_lock().is_err());
+}
+
+// ---------- thread id validation ----------
+
+#[test]
+fn test_validate_thread_id_accepts_real_ids() {
+    for id in [
+        "784952d3-dc72-474e-ab24-0d78e7035280", // backend UUID
+        "01JABCDEFGHJKMNPQRSTVWXYZ0",           // web-app ULID
+        "temporary-chat",
+        "jan_1712345678",
+    ] {
+        assert!(validate_thread_id(id).is_ok(), "{id} should be accepted");
+    }
+}
+
+#[test]
+fn test_validate_thread_id_rejects_path_like_ids() {
+    for id in [
+        "",
+        ".",
+        "..",
+        "../x",
+        "a/../../x",
+        "/abs",
+        "..\\x",
+        "a\\b",
+        "C:\\x",
+        "C:x",
+        "x\0y",
+        "with space",
+        "dot.ted",
+    ] {
+        assert!(validate_thread_id(id).is_err(), "{id:?} should be rejected");
+        assert!(get_thread_dir(std::path::Path::new("/tmp/jandata"), id).is_err());
+    }
+    assert!(validate_thread_id(&"a".repeat(129)).is_err());
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::test]
+async fn test_thread_commands_refuse_ids_outside_threads_dir() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let victim = data_dir.join("victim");
+    fs::create_dir_all(&victim).unwrap();
+    fs::write(victim.join("keep.txt"), "x").unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("keep.txt"), "x").unwrap();
+    let abs = outside.path().to_string_lossy().to_string();
+
+    for id in ["../victim".to_string(), "..\\victim".to_string(), abs.clone()] {
+        assert!(delete_thread(app.handle().clone(), id.clone()).await.is_err());
+        assert!(list_messages(app.handle().clone(), id.clone()).await.is_err());
+        assert!(get_thread_assistant(app.handle().clone(), id.clone())
+            .await
+            .is_err());
+        assert!(
+            create_thread_assistant(app.handle().clone(), id.clone(), json!({"id": "a"}))
+                .await
+                .is_err()
+        );
+        assert!(
+            modify_thread_assistant(app.handle().clone(), id.clone(), json!({"id": "a"}))
+                .await
+                .is_err()
+        );
+        assert!(
+            delete_message(app.handle().clone(), id.clone(), "m".to_string())
+                .await
+                .is_err()
+        );
+        assert!(
+            modify_thread(app.handle().clone(), json!({"id": id, "title": "t"}))
+                .await
+                .is_err()
+        );
+        assert!(create_message(app.handle().clone(), create_test_message(&id, "hi"))
+            .await
+            .is_err());
+        assert!(modify_message(
+            app.handle().clone(),
+            json!({"id": "m", "thread_id": id, "role": "user"})
+        )
+        .await
+        .is_err());
+    }
+
+    assert!(victim.join("keep.txt").exists());
+    assert!(!victim.join("messages.jsonl").exists());
+    assert!(!victim.join("thread.json").exists());
+    assert!(outside.path().join("keep.txt").exists());
+    assert!(!outside.path().join("messages.jsonl").exists());
+    assert!(!outside.path().join("thread.json").exists());
 }

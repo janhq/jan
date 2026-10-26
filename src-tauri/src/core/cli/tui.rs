@@ -7126,7 +7126,9 @@ impl App {
         let Some(id) = self.thread_id.clone() else {
             return;
         };
-        let path = journal::journal_path(&self.agent_dir, &id);
+        let Ok(path) = journal::journal_path(&self.agent_dir, &id) else {
+            return;
+        };
         self.journal_writer
             .get_or_insert_with(journal::Writer::new)
             .dump(path, self.transcript.display_log.clone());
@@ -21191,7 +21193,9 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     // messages hold what the model is sent. Prefer the journal for the
     // transcript, and fall back to replaying the messages for a thread saved
     // before journaling (or whose journal was lost).
-    let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
+    let logged = journal::journal_path(&app.agent_dir, full_id)
+        .map(|path| journal::read_journal(&path))
+        .unwrap_or_default();
     app.history = super::rebuild_wire_history(&messages);
     // Only a conversation with something in it predates the snapshot.
     app.resume_notice_pending = !app.history.is_empty();
@@ -36736,7 +36740,7 @@ mod tests {
         let mut app = test_app();
         record_full_turn(&mut app);
         let id = app.thread_id.clone().expect("saved");
-        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id)).unwrap();
+        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id).unwrap()).unwrap();
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
