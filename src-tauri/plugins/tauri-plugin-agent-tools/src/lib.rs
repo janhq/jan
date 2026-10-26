@@ -27,6 +27,11 @@ mod commands;
 ))]
 mod webview_shot;
 
+/// Label prefix of the hidden windows the webview `screenshot` renderer opens.
+/// The app's navigation guard keys on it: those windows load their target as a
+/// `file:` URL, which no other webview may.
+pub const SCREENSHOT_WINDOW_LABEL_PREFIX: &str = "jan-shot-";
+
 /// Runs the confined-spawn helper and exits, when this process was re-exec'd as
 /// one by the Windows sandbox backend. A no-op on every other platform and on a
 /// normal launch, but it must be called before anything else in `main`: the

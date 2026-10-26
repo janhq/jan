@@ -77,6 +77,15 @@ fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: &[&str]) -> 
     }
 }
 
+/// Whether the webview labelled `label` may navigate to `url`: an app URL, or,
+/// for the hidden windows the `screenshot` tool renders into, the `file:` page
+/// it loads. Those windows match no capability, so the page gets no IPC.
+pub(crate) fn allows_navigation(label: &str, url: &Url, dev_url: Option<&Url>) -> bool {
+    is_app_url(url, dev_url)
+        || (url.scheme() == "file"
+            && label.starts_with(tauri_plugin_agent_tools::SCREENSHOT_WINDOW_LABEL_PREFIX))
+}
+
 fn same_origin(a: &Url, b: &Url) -> bool {
     a.scheme() == b.scheme()
         && a.host_str() == b.host_str()
@@ -114,7 +123,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             } else {
                 None
             };
-            if is_app_url(url, dev_url.as_ref()) {
+            if allows_navigation(webview.label(), url, dev_url.as_ref()) {
                 return true;
             }
             log::warn!(
@@ -246,6 +255,30 @@ mod tests {
         assert!(!is_app_url(&u("https://localhost:1420/"), Some(&dev)));
         assert!(!is_app_url(&u("http://127.0.0.1:1420/"), Some(&dev)));
         assert!(!is_app_url(&u("http://localhost:1420/"), None));
+    }
+
+    #[test]
+    fn only_screenshot_windows_may_load_files() {
+        let file = u("file:///tmp/jan-agent-s1/chart.html");
+        let shot = format!(
+            "{}4242-1700000000",
+            tauri_plugin_agent_tools::SCREENSHOT_WINDOW_LABEL_PREFIX
+        );
+        assert!(allows_navigation(&shot, &file, None));
+        for label in [
+            "main",
+            "logs-app-window",
+            "system-monitor-window",
+            "jan-shot",
+            "x-jan-shot-1",
+        ] {
+            assert!(!allows_navigation(label, &file, None), "{label}");
+        }
+        // The exception is `file:` alone: a screenshot window is otherwise
+        // held to the app's origins like any other.
+        assert!(!allows_navigation(&shot, &u("https://evil.example/"), None));
+        assert!(!allows_navigation(&shot, &u("asset://localhost/x"), None));
+        assert!(allows_navigation("main", &u("tauri://localhost/"), None));
     }
 
     #[test]

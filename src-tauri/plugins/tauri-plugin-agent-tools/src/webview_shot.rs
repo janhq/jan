@@ -65,7 +65,11 @@ async fn capture<R: Runtime>(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let label = format!("jan-shot-{}-{nanos}", std::process::id());
+    let label = format!(
+        "{}{}-{nanos}",
+        crate::SCREENSHOT_WINDOW_LABEL_PREFIX,
+        std::process::id()
+    );
 
     let (load_tx, load_rx) = oneshot::channel::<()>();
     let load_signal = Arc::new(Mutex::new(Some(load_tx)));
