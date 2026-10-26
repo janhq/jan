@@ -85,8 +85,8 @@ fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: &[&str]) -> 
 ///
 /// The page is model-written, so a frame in it may name any other file; only
 /// what the renderer recorded for the window passes. On Windows, WebView2
-/// raises the hook for main-frame navigations alone, so there a subframe's
-/// `file:` load is not checked here.
+/// raises the hook for main-frame navigations alone, so there the renderer
+/// checks a subframe's loads itself (`webview_shot::frame_allowed`).
 pub(crate) fn allows_navigation(label: &str, url: &Url, dev_url: Option<&Url>) -> bool {
     allows_navigation_with(
         label,

@@ -84,10 +84,22 @@ async fn capture<R: Runtime>(
     // GUI toolkit owns the widget). The window is built visible but far
     // off-screen: a webview that is never mapped can snapshot blank, so it must
     // be realized, and off-screen keeps it from flashing on the user's display.
+    //
+    // On Windows the app's navigation guard sees main-frame navigations alone
+    // (wry hooks WebView2's `NavigationStarting`, not `FrameNavigationStarting`),
+    // so there the window starts blank, gets its own frame check, and only then
+    // navigates to the page.
+    #[cfg(target_os = "windows")]
+    let (first_url, page_url) = (
+        tauri::Url::parse("about:blank").map_err(|e| e.to_string())?,
+        url,
+    );
+    #[cfg(not(target_os = "windows"))]
+    let first_url = url;
     let build_app = app.clone();
     let build = move || {
         let signal = load_signal.clone();
-        let res = WebviewWindowBuilder::new(&build_app, &label, WebviewUrl::External(url))
+        let res = WebviewWindowBuilder::new(&build_app, &label, WebviewUrl::External(first_url))
             .title("")
             .inner_size(width as f64, height as f64)
             .position(-10000.0, -10000.0)
@@ -95,7 +107,9 @@ async fn capture<R: Runtime>(
             .skip_taskbar(true)
             .visible(true)
             .on_page_load(move |_window, payload| {
-                if payload.event() == PageLoadEvent::Finished {
+                // Not the blank page the window starts on (Windows).
+                if payload.event() == PageLoadEvent::Finished && payload.url().scheme() != "about"
+                {
                     if let Ok(mut guard) = signal.lock() {
                         if let Some(tx) = guard.take() {
                             let _ = tx.send(());
@@ -105,6 +119,23 @@ async fn capture<R: Runtime>(
             })
             .build()
             .map_err(|e| format!("failed to create capture window: {e}"));
+        #[cfg(target_os = "windows")]
+        let res = res.and_then(|window| {
+            // Still on the main thread, so `with_webview` runs before this
+            // returns, and the handler is in place before the page can load.
+            let guarded = guard_frames(&window, &label).and_then(|()| {
+                window
+                    .navigate(page_url)
+                    .map_err(|e| format!("failed to load capture page: {e}"))
+            });
+            match guarded {
+                Ok(()) => Ok(window),
+                Err(e) => {
+                    let _ = window.destroy();
+                    Err(e)
+                }
+            }
+        });
         let _ = win_tx.send(res);
     };
     app.run_on_main_thread(build)
@@ -117,6 +148,64 @@ async fn capture<R: Runtime>(
     let result = capture_loaded(&window, load_rx, width, height).await;
     let _ = window.destroy();
     result
+}
+
+/// Whether a subframe of the screenshot window `label` may load `uri`: what the
+/// app's navigation guard lets that window's main frame load, minus the app's
+/// own pages, which a screenshot never shows. A blank or `srcdoc` frame has no
+/// file behind it; a `file:` one must be a file the window was registered for.
+#[cfg(any(target_os = "windows", test))]
+fn frame_allowed(label: &str, uri: &str) -> bool {
+    let Ok(url) = tauri::Url::parse(uri) else {
+        return false;
+    };
+    match url.scheme() {
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
+        "file" => url.to_file_path().is_ok_and(|path| {
+            crate::screenshot_pages::SCREENSHOT_PAGES.allows(label, &path)
+        }),
+        _ => false,
+    }
+}
+
+/// Cancels every subframe navigation of `window` that [`frame_allowed`]
+/// refuses. Must run on the main thread: there `with_webview` calls back before
+/// it returns, so a handler that is not in place by then is an error.
+#[cfg(target_os = "windows")]
+fn guard_frames<R: Runtime>(window: &tauri::WebviewWindow<R>, label: &str) -> Result<(), String> {
+    use webview2_com::{take_pwstr, NavigationStartingEventHandler};
+    use windows::core::PWSTR;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let label = label.to_string();
+    window
+        .with_webview(move |platform| {
+            let added = (|| -> Result<(), String> {
+                let webview = unsafe { platform.controller().CoreWebView2() }
+                    .map_err(|e| format!("cannot reach CoreWebView2: {e}"))?;
+                let handler = NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else {
+                        return Ok(());
+                    };
+                    let uri = {
+                        let mut uri = PWSTR::null();
+                        unsafe { args.Uri(&mut uri) }?;
+                        take_pwstr(uri)
+                    };
+                    if !frame_allowed(&label, &uri) {
+                        unsafe { args.SetCancel(true) }?;
+                    }
+                    Ok(())
+                }));
+                let mut token = 0i64;
+                unsafe { webview.add_FrameNavigationStarting(&handler, &mut token) }
+                    .map_err(|e| format!("cannot watch frame navigations: {e}"))
+            })();
+            let _ = tx.send(added);
+        })
+        .map_err(|e| format!("failed to reach platform webview: {e}"))?;
+    rx.try_recv()
+        .unwrap_or_else(|_| Err("frame navigation check was not installed".to_string()))
 }
 
 /// Removes a window's entry from the screenshot page registry when dropped.
@@ -419,4 +508,38 @@ unsafe fn read_stream(
     }
     buf.truncate(total);
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_frame_may_load_only_what_its_window_was_registered_for() {
+        let dir = std::env::temp_dir().join(format!("jan-shot-frames-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let page = dir.join("chart.html");
+        std::fs::write(&page, "<svg></svg>").unwrap();
+        let other = std::env::temp_dir().join(format!("jan-shot-frames-{}-key", std::process::id()));
+        std::fs::write(&other, "secret").unwrap();
+        let label = "jan-shot-frame-test";
+        let page_url = tauri::Url::from_file_path(page.canonicalize().unwrap()).unwrap();
+        let other_url = tauri::Url::from_file_path(other.canonicalize().unwrap()).unwrap();
+
+        assert!(!frame_allowed(label, page_url.as_str()));
+        crate::screenshot_pages::SCREENSHOT_PAGES
+            .register(label, &page)
+            .unwrap();
+        assert!(frame_allowed(label, page_url.as_str()));
+        assert!(!frame_allowed(label, other_url.as_str()));
+        assert!(!frame_allowed("jan-shot-elsewhere", page_url.as_str()));
+        assert!(frame_allowed(label, "about:srcdoc"));
+        assert!(frame_allowed(label, "about:blank"));
+        assert!(!frame_allowed(label, "https://example.com/"));
+        assert!(!frame_allowed(label, "data:text/html,hi"));
+        assert!(!frame_allowed(label, "not a url"));
+        crate::screenshot_pages::SCREENSHOT_PAGES.unregister(label);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_file(&other);
+    }
 }
