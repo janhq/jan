@@ -7,6 +7,7 @@ import {
 import { useWebCitationStore } from '@/stores/web-citation-store'
 import { cn } from '@/lib/utils'
 import { faviconForUrl, hostOf } from '@/lib/webUrl'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 
 export const WebCitationChip = memo(
   ({ messageId, url }: { messageId?: string; url: string }) => {
@@ -18,10 +19,8 @@ export const WebCitationChip = memo(
     return (
       <HoverCard openDelay={80} closeDelay={120}>
         <HoverCardTrigger asChild>
-          <a
+          <ExternalAnchor
             href={url}
-            target="_blank"
-            rel="noreferrer noopener"
             className="mx-0.5 inline-flex translate-y-[-0.15em] align-baseline no-underline"
             title={citation?.title || url}
           >
@@ -30,7 +29,7 @@ export const WebCitationChip = memo(
               alt=""
               className="inline-block size-3.5 rounded-full border border-border/60 bg-white object-contain hover:ring-2 hover:ring-primary/40"
             />
-          </a>
+          </ExternalAnchor>
         </HoverCardTrigger>
         <HoverCardContent
           align="start"
@@ -45,14 +44,12 @@ export const WebCitationChip = memo(
             />
             <span className="truncate text-muted-foreground">{host}</span>
           </div>
-          <a
+          <ExternalAnchor
             href={url}
-            target="_blank"
-            rel="noreferrer noopener"
             className={cn('block truncate font-medium hover:underline')}
           >
             {citation?.title || host}
-          </a>
+          </ExternalAnchor>
           {citation?.text && (
             <p className="line-clamp-4 whitespace-pre-wrap leading-relaxed text-muted-foreground">
               {citation.text}

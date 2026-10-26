@@ -300,9 +300,19 @@ describe('ChainOfThoughtSearchResult', () => {
       </ChainOfThoughtSearchResult>
     )
     const link = screen.getByRole('link', { name: /Example/ })
-    expect(link).toHaveAttribute('href', 'https://example.com')
+    expect(link).toHaveAttribute('href', 'https://example.com/')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('renders a non-web href as inert text', () => {
+    render(
+      <ChainOfThoughtSearchResult href="javascript:alert(1)">
+        Bad
+      </ChainOfThoughtSearchResult>
+    )
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.getByText('Bad').closest('a')).not.toHaveAttribute('href')
   })
 })
 

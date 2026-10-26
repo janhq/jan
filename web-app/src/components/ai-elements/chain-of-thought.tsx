@@ -31,6 +31,10 @@ import { Streamdown } from 'streamdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { formatCompactDuration } from '@/lib/duration'
 import { Shimmer } from './shimmer'
+import {
+  ExternalAnchor,
+  type ExternalAnchorProps,
+} from '@/components/ExternalAnchor'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -422,14 +426,12 @@ export const ChainOfThoughtSearchResults = memo(
 
 // ── ChainOfThoughtSearchResult ─────────────────────────────────────────────
 
-export type ChainOfThoughtSearchResultProps = ComponentProps<'a'>
+export type ChainOfThoughtSearchResultProps = ExternalAnchorProps
 
 export const ChainOfThoughtSearchResult = memo(
   ({ className, children, href, ...props }: ChainOfThoughtSearchResultProps) => (
-    <a
+    <ExternalAnchor
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground',
         className
@@ -439,7 +441,7 @@ export const ChainOfThoughtSearchResult = memo(
       <SearchIcon className="size-3 shrink-0" />
       <span className="truncate max-w-[200px]">{children}</span>
       <ExternalLinkIcon className="size-3 shrink-0 opacity-50" />
-    </a>
+    </ExternalAnchor>
   )
 )
 
