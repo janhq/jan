@@ -259,8 +259,33 @@ jobs:
   # runtime binary, and a client that only agreed with itself would pass. The
   # committed wire types are checked against protocol/rpc-schema.json in the
   # same job, since that document is what generates them.
+  adk-changes:
+    name: ADK paths
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      # A PR that touches nothing the ADKs build from skips the job's ~5 minute
+      # runtime build. Pushes, dispatches and an unreadable file list run it.
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ] || ! files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -qE '^(src-tauri/|adk/|packages/adk/|protocol/|package\.json$|yarn\.lock$|\.github/workflows/rust-check\.yml$)' <<< "$files"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   adk:
     name: ADKs
+    needs: adk-changes
+    if: needs.adk-changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
