@@ -917,6 +917,9 @@ Section Install
   File "${MAINBINARYSRCPATH}"
 
   ; Copy resources
+    ; Built-in extensions are part of the app now; drop the folder older
+    ; installers unpacked their bundles into, so an upgrade does not leave it.
+    RMDir /r "$INSTDIR\resources\pre-install"
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\bin"
     SetOutPath $INSTDIR

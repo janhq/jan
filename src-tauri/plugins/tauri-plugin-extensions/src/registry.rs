@@ -17,6 +17,10 @@ use crate::store::{unix_now, write_json_atomic};
 pub const REGISTRY_FILE: &str = "extensions.json";
 /// The only schema this build reads and writes.
 pub const SCHEMA: u32 = 1;
+/// Where Jan before runtime extensions unpacked its bundled `@janhq/*`
+/// extensions. No extension id can start with `@`, so nothing installed
+/// now lives there.
+pub const LEGACY_SCOPE_DIR: &str = "@janhq";
 
 /// Where an installed version came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +182,30 @@ pub fn load(root: &Path) -> Result<Loaded, StoreError> {
     }
 }
 
+/// Removes what Jan before runtime extensions left in `root`: a registry
+/// that is a JSON array (it only ever listed the bundled built-ins, which
+/// are now part of the app) and the `@janhq/` folders they were unpacked
+/// to. Run before [`load`], so an upgrade is not reported as a corrupt file.
+pub fn remove_legacy(root: &Path) {
+    let file = path(root);
+    let is_legacy = fs::read(&file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|value| value.is_array());
+    if is_legacy {
+        match fs::remove_file(&file) {
+            Ok(()) => log::info!("removed the pre-runtime extensions list {}", file.display()),
+            Err(e) => log::warn!("cannot remove {}: {e}", file.display()),
+        }
+    }
+    let scope = root.join(LEGACY_SCOPE_DIR);
+    match fs::remove_dir_all(&scope) {
+        Ok(()) => log::info!("removed the pre-runtime extensions folder {}", scope.display()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => log::warn!("cannot remove {}: {e}", scope.display()),
+    }
+}
+
 /// Renames a corrupt file to `<name>.corrupt-<ts>`, adding a counter if a
 /// file of that name already exists, and returns the new path.
 pub fn move_aside(file: &Path) -> Result<PathBuf, StoreError> {
@@ -286,10 +314,44 @@ mod tests {
         assert_eq!(fs::read(&aside).unwrap(), b"{ not json");
         assert!(!path(dir.path()).exists());
         // A second corrupt file does not clobber the first.
-        fs::write(path(dir.path()), b"[]").unwrap();
+        fs::write(path(dir.path()), b"{}").unwrap();
         let second = load(dir.path()).unwrap().recovered_from.unwrap();
         assert_ne!(second, aside);
         assert!(aside.exists());
+    }
+
+    #[test]
+    fn the_pre_runtime_layout_is_removed_silently() {
+        let dir = tempfile::tempdir().unwrap();
+        let legacy = json!([{ "name": "@janhq/assistant-extension", "active": true }]);
+        fs::write(path(dir.path()), serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let old = dir.path().join(LEGACY_SCOPE_DIR).join("assistant-extension").join("dist");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("index.js"), b"x").unwrap();
+        fs::create_dir_all(dir.path().join("acme.hello")).unwrap();
+
+        remove_legacy(dir.path());
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded.registry, Registry::default());
+        assert_eq!(loaded.recovered_from, None);
+        let mut names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["acme.hello".to_string()]);
+    }
+
+    #[test]
+    fn the_legacy_cleanup_leaves_a_current_registry_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        save(dir.path(), &sample()).unwrap();
+        remove_legacy(dir.path());
+        assert_eq!(load(dir.path()).unwrap().registry, sample());
+        // An unreadable object is still corrupt, not legacy.
+        fs::write(path(dir.path()), b"{ not json").unwrap();
+        remove_legacy(dir.path());
+        assert!(path(dir.path()).exists());
     }
 
     #[test]
