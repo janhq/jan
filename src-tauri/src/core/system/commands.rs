@@ -200,10 +200,10 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
 const ENV_BLOCK_BEGIN: &str = "# >>> jan claude-code >>>";
 /// Closing line of the block Jan writes into the user's shell profile.
 const ENV_BLOCK_END: &str = "# <<< jan claude-code <<<";
-/// Marker used by older Jan versions, which wrote it before and after the
-/// exported variables.
-const LEGACY_ENV_MARKER: &str = "# Jan Local API Server";
-/// Older Jan versions wrote these unmarked; strip them so upgrades are clean.
+/// The exact line older Jan versions wrote before and after the exported
+/// variables. Every version that wrote to the profile used this marker pair.
+const LEGACY_ENV_MARKER: &str = "# Jan Local API Server - Claude Code Config";
+/// Prefix of the variables older Jan versions wrote inside the marker pair.
 const LEGACY_ENV_PREFIX: &str = "export ANTHROPIC_";
 
 /// Quote a value for a POSIX shell: wrap it in single quotes and turn every
@@ -282,9 +282,10 @@ fn find_closing_line(lines: &[&str], start: usize, is_end: impl Fn(&str) -> bool
 }
 
 /// Remove everything Jan wrote to a shell profile and keep the user's own
-/// lines. Removes the marked block as a whole, legacy blocks between a pair
-/// of `# Jan Local API Server` markers as a whole, and any leftover legacy
-/// `export ANTHROPIC_` lines. Returns "" or content ending in one newline.
+/// lines. Removes the marked block as a whole and legacy blocks between a pair
+/// of `LEGACY_ENV_MARKER` lines as a whole. Lines outside those blocks are the
+/// user's, including their own `export ANTHROPIC_` lines. Returns "" or content
+/// ending in one newline.
 fn strip_jan_env_lines(content: &str) -> String {
     let lines: Vec<&str> = content.split('\n').collect();
     let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
@@ -303,15 +304,32 @@ fn strip_jan_env_lines(content: &str) -> String {
             i += 1;
             continue;
         }
-        if line.starts_with(LEGACY_ENV_MARKER) {
-            match find_closing_line(&lines, i, |l| l.starts_with(LEGACY_ENV_MARKER)) {
-                Some(end) => i = end + 1,
-                None => i += 1,
+        // Older versions appended the opening marker without first ending the
+        // file's last line, so it can trail one of the user's lines.
+        if let Some(prefix) = trimmed.strip_suffix(LEGACY_ENV_MARKER) {
+            if !prefix.is_empty() {
+                kept.push(prefix);
             }
-            continue;
-        }
-        if line.starts_with(LEGACY_ENV_PREFIX) {
-            i += 1;
+            match find_closing_line(&lines, i, |l| l.trim_end() == LEGACY_ENV_MARKER) {
+                Some(end) => i = end + 1,
+                None => {
+                    // No closing line: drop only the exports Jan wrote right
+                    // after the marker, and a closing marker that later text
+                    // was appended to (the admin path wrote it without a
+                    // trailing newline).
+                    i += 1;
+                    while i < lines.len() && lines[i].starts_with(LEGACY_ENV_PREFIX) {
+                        i += 1;
+                    }
+                    if let Some(rest) = lines.get(i).and_then(|l| l.strip_prefix(LEGACY_ENV_MARKER))
+                    {
+                        if !rest.trim().is_empty() {
+                            kept.push(rest);
+                        }
+                        i += 1;
+                    }
+                }
+            }
             continue;
         }
         kept.push(line);
@@ -1125,6 +1143,56 @@ mod tests {
             strip_jan_env_lines(content),
             "export A=1\nexport B=2\nexport C=3\n"
         );
+    }
+
+    #[test]
+    fn env_cleanup_keeps_user_comment_that_shares_the_legacy_prefix() {
+        let content = "# Jan Local API Server notes: port 1337\n\
+            export KEEP_ME=1\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='http://127.0.0.1:1337'\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export AFTER=1\n";
+        assert_eq!(
+            strip_jan_env_lines(content),
+            "# Jan Local API Server notes: port 1337\nexport KEEP_ME=1\nexport AFTER=1\n"
+        );
+    }
+
+    #[test]
+    fn env_write_and_reset_keep_the_users_own_anthropic_exports() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        let user = "export ANTHROPIC_API_KEY='mine'\nexport ANTHROPIC_MODEL=x\n";
+        fs::write(&path, user).unwrap();
+        let p = path.to_str().unwrap();
+
+        write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "http://h")]).unwrap();
+        assert!(fs::read_to_string(&path).unwrap().starts_with(user));
+
+        fs::write(&path, build_cleaned_env_content(p)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), user);
+    }
+
+    #[test]
+    fn env_cleanup_removes_each_historical_legacy_format() {
+        let m = LEGACY_ENV_MARKER;
+        // First release: the exports were joined without newlines.
+        let joined = format!(
+            "export A=1\n{m}\nexport ANTHROPIC_BASE_URL='u'export ANTHROPIC_API_KEY='k'\n{m}\n"
+        );
+        assert_eq!(strip_jan_env_lines(&joined), "export A=1\n");
+        // Admin fallback: closing marker written without a trailing newline.
+        let admin = format!("export A=1\n\n{m}\nexport ANTHROPIC_BASE_URL='u'\n{m}");
+        assert_eq!(strip_jan_env_lines(&admin), "export A=1\n");
+        // Profile that did not end in a newline: the opening marker trails the
+        // user's last line.
+        let glued_open = format!("export A=1{m}\nexport ANTHROPIC_BASE_URL='u'\n{m}\n");
+        assert_eq!(strip_jan_env_lines(&glued_open), "export A=1\n");
+        // Text appended after an admin-written block lands on the closing line.
+        let glued_close =
+            format!("{m}\nexport ANTHROPIC_AUTH_TOKEN='t'\n{m}export B=2\nexport C=3\n");
+        assert_eq!(strip_jan_env_lines(&glued_close), "export B=2\nexport C=3\n");
     }
 
     #[cfg(unix)]
