@@ -196,28 +196,136 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
     }
 }
 
+/// Opening line of the block Jan writes into the user's shell profile.
+const ENV_BLOCK_BEGIN: &str = "# >>> jan claude-code >>>";
+/// Closing line of the block Jan writes into the user's shell profile.
+const ENV_BLOCK_END: &str = "# <<< jan claude-code <<<";
+/// Marker used by older Jan versions, which wrote it before and after the
+/// exported variables.
+const LEGACY_ENV_MARKER: &str = "# Jan Local API Server";
+/// Older Jan versions wrote these unmarked; strip them so upgrades are clean.
+const LEGACY_ENV_PREFIX: &str = "export ANTHROPIC_";
+
+/// Quote a value for a POSIX shell: wrap it in single quotes and turn every
+/// embedded `'` into `'\''`. Nothing inside single quotes is expanded.
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Reject names and values that cannot be written as a single `export` line.
+fn validate_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
+    for (key, value) in env_vars {
+        if !is_valid_env_key(key) {
+            return Err(format!(
+                "Invalid environment variable name {:?}: use only letters, digits and \
+                 underscores, and do not start with a digit.",
+                key
+            ));
+        }
+        if value.contains(['\n', '\r', '\0']) {
+            return Err(format!(
+                "The value for {} contains a line break or NUL character, which cannot be \
+                 written to a shell profile.",
+                key
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Render the marked block of `export` lines Jan owns in the shell profile.
+fn render_env_block(env_vars: &[(String, String)]) -> Result<String, String> {
+    validate_env_vars(env_vars)?;
+    let mut block = String::new();
+    block.push_str(ENV_BLOCK_BEGIN);
+    block.push('\n');
+    for (key, value) in env_vars {
+        block.push_str(&format!("export {}={}\n", key, shell_single_quote(value)));
+    }
+    block.push_str(ENV_BLOCK_END);
+    block.push('\n');
+    Ok(block)
+}
+
+/// Index of the first line after `start` that satisfies `is_end`.
+fn find_closing_line(lines: &[&str], start: usize, is_end: impl Fn(&str) -> bool) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, l)| is_end(l))
+        .map(|(i, _)| i)
+}
+
+/// Remove everything Jan wrote to a shell profile and keep the user's own
+/// lines. Removes the marked block as a whole, legacy blocks between a pair
+/// of `# Jan Local API Server` markers as a whole, and any leftover legacy
+/// `export ANTHROPIC_` lines. Returns "" or content ending in one newline.
+fn strip_jan_env_lines(content: &str) -> String {
+    let lines: Vec<&str> = content.split('\n').collect();
+    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_end();
+        if trimmed == ENV_BLOCK_BEGIN {
+            match find_closing_line(&lines, i, |l| l.trim_end() == ENV_BLOCK_END) {
+                Some(end) => i = end + 1,
+                None => i += 1,
+            }
+            continue;
+        }
+        if trimmed == ENV_BLOCK_END {
+            i += 1;
+            continue;
+        }
+        if line.starts_with(LEGACY_ENV_MARKER) {
+            match find_closing_line(&lines, i, |l| l.starts_with(LEGACY_ENV_MARKER)) {
+                Some(end) => i = end + 1,
+                None => i += 1,
+            }
+            continue;
+        }
+        if line.starts_with(LEGACY_ENV_PREFIX) {
+            i += 1;
+            continue;
+        }
+        kept.push(line);
+        i += 1;
+    }
+    let joined = kept.join("\n");
+    let trimmed = joined.trim_end();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", trimmed)
+    }
+}
+
+/// Full new profile content: the user's lines plus Jan's block at the end.
+fn build_env_file_content(existing: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+    let block = render_env_block(env_vars)?;
+    let base = strip_jan_env_lines(existing);
+    if base.is_empty() {
+        Ok(block)
+    } else {
+        Ok(format!("{}\n{}", base, block))
+    }
+}
+
 // Helper function to write env vars to a shell config file
 fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    let marker = "# Jan Local API Server - Claude Code Config";
-    let new_entries: String = env_vars
-        .iter()
-        .map(|(k, v)| format!("export {}='{}'\n", k, v))
-        .collect();
-
     let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            // Remove Jan config markers and existing ANTHROPIC env vars to replace them
-            !line.starts_with(marker)
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-
-    let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
-
-    let final_content = cleaned.join("\n") + &new_content;
+    let final_content = build_env_file_content(&existing_content, env_vars)?;
     std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -441,6 +549,10 @@ fn build_claude_code_env_vars(
             env.get("key").and_then(|v| v.as_str()),
             env.get("value").and_then(|v| v.as_str()),
         ) {
+            // An unfilled row in the custom env list; nothing to export.
+            if key.is_empty() {
+                continue;
+            }
             env_vars.push((key.to_string(), value.to_string()));
         }
     }
@@ -450,11 +562,10 @@ fn build_claude_code_env_vars(
 
 /// Persist the Claude Code environment variables to the user's shell config
 /// (macOS/Linux) or the Windows registry, then return the result.
-fn write_claude_code_env_vars(
-    env_vars: &[(String, String)],
-) -> Result<(), String> {
-    // Build the command environment
-    // Export environment variables to the user's shell config file
+fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
+    // The shell profile and the Windows registry both take the values
+    // verbatim, so refuse names and values that cannot be stored safely.
+    validate_env_vars(env_vars)?;
 
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -478,25 +589,8 @@ fn write_claude_code_env_vars(
             }
             Err(_) => {
                 // Use admin privileges to write
-                let marker = "# Jan Local API Server - Claude Code Config";
                 let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
-                let cleaned: Vec<&str> = existing_content
-                    .split('\n')
-                    .filter(|line| {
-                        !line.starts_with(marker)
-                            && !line.starts_with("# Jan Local API Server")
-                            && !line.starts_with("export ANTHROPIC_")
-                    })
-                    .collect();
-
-                let env_content: String = env_vars
-                    .iter()
-                    .map(|(k, v)| format!("export {}='{}'\n", k, v))
-                    .collect();
-
-                let new_block = format!("{}\n{}", marker, env_content);
-
-                let final_content = cleaned.join("\n") + "\n" + &new_block + marker;
+                let final_content = build_env_file_content(&existing_content, env_vars)?;
 
                 // Write to a temp file first, then use osascript to move it
                 let temp_script_path = format!("{}/.jan_env_update.sh", home_dir);
@@ -570,16 +664,7 @@ fn write_claude_code_env_vars(
 /// Build the cleaned shell-file content with all Jan CC env vars stripped out.
 fn build_cleaned_env_content(env_file_path: &str) -> String {
     let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            !line.starts_with("# Jan Local API Server - Claude Code Config")
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-    // Trim trailing blank lines left behind by the removed block
-    cleaned.join("\n").trim_end().to_string() + "\n"
+    strip_jan_env_lines(&existing_content)
 }
 
 /// Clear all Jan-written Claude Code environment variables from the shell config.
@@ -871,5 +956,199 @@ mod tests {
             err.contains("API key"),
             "a whitespace-only key is not a real credential: {err}"
         );
+    }
+
+    fn kv(k: &str, v: &str) -> (String, String) {
+        (k.to_string(), v.to_string())
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_single_quote("plain"), "'plain'");
+        assert_eq!(shell_single_quote("a'b"), r"'a'\''b'");
+        assert_eq!(shell_single_quote(""), "''");
+    }
+
+    #[test]
+    fn env_block_quotes_a_value_that_closes_the_quote() {
+        let block =
+            render_env_block(&[kv("ANTHROPIC_DEFAULT_OPUS_MODEL", "x'; touch /tmp/x; #")]).unwrap();
+        assert!(block.contains(r"export ANTHROPIC_DEFAULT_OPUS_MODEL='x'\''; touch /tmp/x; #'"));
+        assert!(block.starts_with(ENV_BLOCK_BEGIN));
+        assert!(block.trim_end().ends_with(ENV_BLOCK_END));
+    }
+
+    #[test]
+    fn env_rejects_line_breaks_and_nul_in_values() {
+        for bad in ["a\nexport X=1", "a\rb", "a\0b"] {
+            let err = render_env_block(&[kv("ANTHROPIC_DEFAULT_OPUS_MODEL", bad)]).unwrap_err();
+            assert!(err.contains("ANTHROPIC_DEFAULT_OPUS_MODEL"), "{err}");
+            assert!(validate_env_vars(&[kv("K", bad)]).is_err());
+        }
+    }
+
+    #[test]
+    fn env_rejects_bad_keys() {
+        for bad in [
+            "",
+            "1ABC",
+            "A-B",
+            "A B",
+            "A;touch x",
+            "A=B",
+            "A\nB",
+            "\u{c9}",
+        ] {
+            assert!(
+                validate_env_vars(&[kv(bad, "v")]).is_err(),
+                "{bad:?} accepted"
+            );
+        }
+        for good in ["A", "_A", "a_b9", "ANTHROPIC_BASE_URL"] {
+            assert!(
+                validate_env_vars(&[kv(good, "v")]).is_ok(),
+                "{good:?} rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn env_write_with_invalid_input_leaves_file_untouched() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        fs::write(&path, "export PATH=\"$HOME/bin:$PATH\"\n").unwrap();
+        let p = path.to_str().unwrap();
+        assert!(write_env_to_shell(p, &[kv("BAD KEY", "v")]).is_err());
+        assert!(write_env_to_shell(p, &[kv("K", "a\nb")]).is_err());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "export PATH=\"$HOME/bin:$PATH\"\n"
+        );
+    }
+
+    #[test]
+    fn claude_code_env_skips_blank_custom_rows() {
+        let env = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("k".to_string()),
+            None,
+            None,
+            None,
+            vec![
+                serde_json::json!({"key": "", "value": ""}),
+                serde_json::json!({"key": "MY_VAR", "value": "1"}),
+            ],
+        )
+        .unwrap();
+        assert!(env.iter().all(|(k, _)| !k.is_empty()));
+        assert!(env.iter().any(|(k, v)| k == "MY_VAR" && v == "1"));
+    }
+
+    #[test]
+    fn env_write_then_reset_preserves_user_lines_and_removes_jan_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        let user = "# my settings\nexport PATH=\"$HOME/bin:$PATH\"\nalias ll='ls -l'\n";
+        fs::write(&path, user).unwrap();
+        let p = path.to_str().unwrap();
+
+        let vars = vec![
+            kv("ANTHROPIC_BASE_URL", "http://127.0.0.1:1337"),
+            kv("ANTHROPIC_AUTH_TOKEN", "sk-'quoted'"),
+            kv("MY_CUSTOM_VAR", "x'; echo hi; #"),
+        ];
+        write_env_to_shell(p, &vars).unwrap();
+        // Writing twice replaces the block instead of stacking it.
+        write_env_to_shell(p, &vars).unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with(user));
+        assert_eq!(written.matches(ENV_BLOCK_BEGIN).count(), 1);
+        assert_eq!(written.matches(ENV_BLOCK_END).count(), 1);
+        assert_eq!(written.matches("MY_CUSTOM_VAR").count(), 1);
+
+        fs::write(&path, build_cleaned_env_content(p)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), user);
+    }
+
+    #[test]
+    fn env_reset_on_file_with_only_jan_block_leaves_it_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".bashrc");
+        let p = path.to_str().unwrap();
+        write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "u")]).unwrap();
+        assert_eq!(build_cleaned_env_content(p), "");
+    }
+
+    #[test]
+    fn env_cleanup_removes_legacy_format_including_stray_lines() {
+        // What older Jan versions wrote: a marker pair around unescaped
+        // exports, where a newline in a value left an extra line behind and a
+        // custom variable did not carry the ANTHROPIC_ prefix.
+        let legacy = "export EDITOR=vim\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='http://127.0.0.1:1337'\n\
+            export ANTHROPIC_DEFAULT_OPUS_MODEL='m\n\
+            touch /tmp/leftover'\n\
+            export MY_CUSTOM_VAR='1'\n\
+            \n\
+            # Jan Local API Server - Claude Code Config\n\
+            export AFTER=1\n";
+        let cleaned = strip_jan_env_lines(legacy);
+        assert_eq!(cleaned, "export EDITOR=vim\nexport AFTER=1\n");
+
+        // Upgrading writes the new block and drops the legacy one.
+        let upgraded =
+            build_env_file_content(legacy, &[kv("ANTHROPIC_BASE_URL", "http://h")]).unwrap();
+        assert!(!upgraded.contains(LEGACY_ENV_MARKER));
+        assert!(!upgraded.contains("leftover"));
+        assert!(!upgraded.contains("MY_CUSTOM_VAR"));
+        assert!(upgraded.starts_with("export EDITOR=vim\nexport AFTER=1\n"));
+        assert_eq!(upgraded.matches("ANTHROPIC_BASE_URL").count(), 1);
+    }
+
+    #[test]
+    fn env_cleanup_handles_unpaired_markers_without_eating_user_lines() {
+        let content = "export A=1\n# Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='x'\nexport B=2\n# >>> jan claude-code >>>\nexport C=3\n";
+        assert_eq!(
+            strip_jan_env_lines(content),
+            "export A=1\nexport B=2\nexport C=3\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_file_sources_to_the_literal_values() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let path = home.join(".zshenv");
+        let canary = home.join("canary");
+        let hostile = [
+            format!("x'; touch '{}'; #", canary.display()),
+            format!("$(touch {})", canary.display()),
+            format!("`touch {}`", canary.display()),
+            "a\\b \"c\" $HOME ''' end".to_string(),
+            String::new(),
+        ];
+        for value in &hostile {
+            write_env_to_shell(path.to_str().unwrap(), &[kv("JAN_TEST_VAR", value)]).unwrap();
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(". \"$1\" && printf '%s' \"$JAN_TEST_VAR\"")
+                .arg("sh")
+                .arg(&path)
+                .env_clear()
+                .env("HOME", home)
+                .env("PATH", "/usr/bin:/bin")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(String::from_utf8(out.stdout).unwrap(), *value);
+            assert!(!canary.exists(), "value {value:?} ran a command");
+        }
     }
 }
