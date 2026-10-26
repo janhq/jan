@@ -25,7 +25,10 @@ use sha2::{Digest, Sha256};
 use crate::core::updater::custom_updater::SECRET_KEY;
 use crate::core::updater::hmac_client::SignedRequestHeaders;
 
+/// Silent startup check: must never hold up the CLI.
 const CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Explicit `jan update`: the user is waiting on it, so be patient.
+const MANUAL_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BINARY_NAME: &str = if cfg!(windows) { "jan.exe" } else { "jan" };
 
@@ -470,7 +473,7 @@ fn is_stale(entry: &fs::DirEntry) -> bool {
 /// Download the newest build for this channel and replace the running binary
 /// in place. `force` reinstalls even when the versions already match.
 pub async fn self_update(force: bool) -> Result<UpdateOutcome, String> {
-    let update = check_for_update(CHECK_TIMEOUT).await?;
+    let update = check_for_update(MANUAL_CHECK_TIMEOUT).await?;
     if !update.is_newer() && !force {
         return Ok(UpdateOutcome::UpToDate {
             version: update.current,
