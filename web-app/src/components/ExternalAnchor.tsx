@@ -14,7 +14,13 @@ export type ExternalAnchorProps = Omit<
 export const ExternalAnchor = forwardRef<
   HTMLAnchorElement,
   ExternalAnchorProps
->(({ href, onClick, children, ...rest }, ref) => {
+>(({ href, onClick, children, ...props }, ref) => {
+  // Markdown renderers pass their own target="_blank" through; drop it (see
+  // below).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { target: _target, ...rest } = props as typeof props & {
+    target?: string
+  }
   const external = externalHref(href)
   if (!external) {
     return (
@@ -23,12 +29,15 @@ export const ExternalAnchor = forwardRef<
       </a>
     )
   }
+  // No target="_blank": the click handler opens the URL itself, and WebKitGTK
+  // still raises a new-window request for a _blank link whose click was
+  // cancelled, which the navigation guard would hand to the browser a second
+  // time.
   return (
     <a
       ref={ref}
       {...rest}
       href={external}
-      target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => {
         onClick?.(e)

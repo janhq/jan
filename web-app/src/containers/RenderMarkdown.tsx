@@ -251,7 +251,7 @@ function RenderMarkdownComponent({
       // navigate the app window: web and mail links open outside the app,
       // in-page fragments stay, and anything else is inert text.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { node: _node, href: _href, ...rest } = props as typeof props & {
+      const { node: _node, href: _href, target: _target, ...rest } = props as typeof props & {
         node?: unknown
       }
       const external = externalHref(href)
@@ -260,7 +260,7 @@ function RenderMarkdownComponent({
           <a
             {...rest}
             href={external}
-            target="_blank"
+            // No target="_blank": see ExternalAnchor for why.
             rel="noopener noreferrer"
             onClick={(e) => {
               e.preventDefault()

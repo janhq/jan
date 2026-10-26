@@ -551,9 +551,11 @@ describe('RenderMarkdown', () => {
       )
       const link = container.querySelector('a[href="https://example.com/a?b=1"]')
       expect(link).toBeTruthy()
-      expect(link?.getAttribute('target')).toBe('_blank')
+      // No target: a _blank link would also raise a new-window request.
+      expect(link?.hasAttribute('target')).toBe(false)
       // fireEvent returns false when a handler called preventDefault.
       expect(fireEvent.click(link!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledTimes(1)
       expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/a?b=1')
     })
 

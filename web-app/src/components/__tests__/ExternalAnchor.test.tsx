@@ -19,10 +19,12 @@ describe('ExternalAnchor', () => {
     )
     const link = screen.getByRole('link', { name: 'Web' })
     expect(link).toHaveAttribute('href', 'https://example.com/a?b=1')
-    expect(link).toHaveAttribute('target', '_blank')
+    // No target: a _blank link would also raise a new-window request.
+    expect(link).not.toHaveAttribute('target')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     const notPrevented = fireEvent.click(link)
     expect(notPrevented).toBe(false)
+    expect(openExternalUrl).toHaveBeenCalledTimes(1)
     expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/a?b=1')
   })
 

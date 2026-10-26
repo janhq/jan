@@ -231,8 +231,9 @@ describe('ReasoningContent links', () => {
     openExternalUrl.mockClear()
     const link = renderLink('https://jan.ai/docs')
     expect(link).toHaveAttribute('href', 'https://jan.ai/docs')
-    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).not.toHaveAttribute('target')
     act(() => link.click())
+    expect(openExternalUrl).toHaveBeenCalledTimes(1)
     expect(openExternalUrl).toHaveBeenCalledWith('https://jan.ai/docs')
   })
 

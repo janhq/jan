@@ -293,7 +293,7 @@ describe('ChainOfThoughtSearchResults', () => {
 })
 
 describe('ChainOfThoughtSearchResult', () => {
-  it('renders as a link with href and target="_blank"', () => {
+  it('renders as an external link without a target', () => {
     render(
       <ChainOfThoughtSearchResult href="https://example.com">
         Example
@@ -301,7 +301,7 @@ describe('ChainOfThoughtSearchResult', () => {
     )
     const link = screen.getByRole('link', { name: /Example/ })
     expect(link).toHaveAttribute('href', 'https://example.com/')
-    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).not.toHaveAttribute('target')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
