@@ -159,6 +159,8 @@ extensions are part of the app and are not stored here.
   version, the permissions you granted, and whether safe mode is on. Manage it
   from **Settings > Extensions** rather than by hand; an unreadable file is moved
   aside to `extensions.json.corrupt-<timestamp>` and Jan starts with an empty list.
+  The list and the `@janhq/` folders that older versions of Jan kept here for
+  their built-in extensions are removed on the first launch after an upgrade.
 - `sources.json`: the index sources you added, with their pinned public keys.
 - `<extension_id>/<version>/`: the unpacked package of the active version and,
   after an update, the previous one kept for rollback.

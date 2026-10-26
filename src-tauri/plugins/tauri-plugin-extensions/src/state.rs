@@ -119,8 +119,9 @@ pub(crate) fn extension_client() -> Result<reqwest::Client> {
 
 impl ExtensionsState {
     /// Sets up the state over `root`: wipes `.staging` (a stage never
-    /// survives a restart) and reads the registry once, so a corrupt file is
-    /// moved aside and reported now rather than on first use.
+    /// survives a restart), removes what a pre-runtime-extensions Jan left
+    /// behind, and reads the registry once, so a corrupt file is moved aside
+    /// and reported now rather than on first use.
     pub fn new(root: impl Into<PathBuf>, options: Options) -> Result<Self> {
         let root = root.into();
         let staging = root.join(STAGING_DIR);
@@ -129,6 +130,7 @@ impl ExtensionsState {
                 log::warn!("cannot clear {}: {e}", staging.display());
             }
         }
+        registry::remove_legacy(&root);
         let state = ExtensionsState {
             root,
             options,
