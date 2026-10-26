@@ -774,10 +774,16 @@ pub fn thread_segment(thread_id: &str) -> Result<String, String> {
 
 /// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
 /// Rejects path separators and `..` so the result can never escape the
-/// store directory, and `:` (on Windows `C:x` is drive-relative and replaces
-/// the base it is joined to), NUL and Windows device names on every OS so a
-/// name means the same file everywhere. `.md` is appended if absent.
+/// store directory, NUL and Windows device names on every OS, and on Windows a
+/// `:` (`C:x` is drive-relative and replaces the base it is joined to, `a:b`
+/// names a data stream). `.md` is appended if absent.
 pub fn workspace_filename(name: &str) -> Result<String, String> {
+    workspace_filename_on(name, cfg!(windows))
+}
+
+/// [`workspace_filename`] with the Windows-only `:` rule as a flag, so both
+/// platforms' behaviour can be tested on any host.
+fn workspace_filename_on(name: &str, reject_colon: bool) -> Result<String, String> {
     let trimmed = name.trim();
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
     // Checked on the stem, not the input: otherwise a bare "." passes and the
@@ -786,7 +792,8 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
         || stem.contains('/')
         || stem.contains('\\')
         || stem.contains("..")
-        || stem.contains([':', '\0'])
+        || stem.contains('\0')
+        || (reject_colon && stem.contains(':'))
         || stem.chars().all(|c| c == '.')
         || is_windows_device_name(stem)
     {
@@ -1066,13 +1073,19 @@ mod tests {
     }
 
     #[test]
-    fn filename_rejects_drive_prefixes_nul_and_device_names() {
-        for bad in ["C:x", "c:", "a:b", "C:x.md", "a\0b", "nul", "CON.md", "com1", "aux.txt"] {
-            assert!(
-                workspace_filename(bad).is_err(),
-                "expected {bad:?} to be rejected"
-            );
+    fn filename_rejects_nul_device_names_and_windows_drive_prefixes() {
+        for bad in ["a\0b", "nul", "CON.md", "com1", "aux.txt"] {
+            for reject_colon in [true, false] {
+                assert!(workspace_filename_on(bad, reject_colon).is_err(), "{bad:?}");
+            }
             assert!(crate::skills::safe_stem(bad).is_err(), "{bad:?}");
+        }
+        // `:` is refused on Windows only: elsewhere it is an ordinary character
+        // that existing names may already use.
+        for colon in ["C:x", "c:", "a:b", "C:x.md"] {
+            assert!(workspace_filename_on(colon, true).is_err(), "{colon:?} on Windows");
+            assert!(workspace_filename_on(colon, false).is_ok(), "{colon:?} elsewhere");
+            assert_eq!(workspace_filename(colon).is_err(), cfg!(windows), "{colon:?}");
         }
         assert_eq!(workspace_filename("console").unwrap(), "console.md");
     }

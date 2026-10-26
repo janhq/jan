@@ -66,13 +66,22 @@ pub fn base_dir_in(data_root: &Path) -> PathBuf {
 }
 
 /// The database file for collection `name`, always a single file directly in
-/// `base`. Separators are folded to `_` as before; a `:` (a drive-relative path
-/// on Windows, which `push` would let replace `base`), a NUL, an empty name and
-/// a Windows device name are refused on every OS so a name means the same file
-/// everywhere.
+/// `base`. Separators are folded to `_` as before. An empty name, a NUL and a
+/// Windows device name are refused on every OS, and on Windows a `:` too
+/// (`C:x` is drive-relative, which `join` would let replace `base`).
 pub fn collection_path(base: &Path, name: &str) -> Result<PathBuf, VectorDBError> {
+    collection_path_on(base, name, cfg!(windows))
+}
+
+/// [`collection_path`] with the Windows-only `:` rule as a flag, so both
+/// platforms' behaviour can be tested on any host.
+fn collection_path_on(base: &Path, name: &str, reject_colon: bool) -> Result<PathBuf, VectorDBError> {
     let clean = name.replace(['/', '\\'], "_");
-    if clean.is_empty() || clean.contains([':', '\0']) || is_windows_device_name(&clean) {
+    if clean.is_empty()
+        || clean.contains('\0')
+        || (reject_colon && clean.contains(':'))
+        || is_windows_device_name(&clean)
+    {
         return Err(VectorDBError::InvalidInput(format!(
             "invalid collection name '{name}'"
         )));
@@ -795,8 +804,19 @@ mod tests {
             base.join("attachments_01H8X.db")
         );
         assert_eq!(collection_path(base, "a/b\\c").unwrap(), base.join("a_b_c.db"));
-        for bad in ["", "C:x", "c:", "a\0b", "nul", "CON.x", "com1"] {
-            assert!(collection_path(base, bad).is_err(), "{bad:?}");
+        for bad in ["", "a\0b", "nul", "CON.x", "com1"] {
+            for reject_colon in [true, false] {
+                assert!(collection_path_on(base, bad, reject_colon).is_err(), "{bad:?}");
+            }
+        }
+        // `:` is refused on Windows only.
+        for colon in ["C:x", "c:", "a:b"] {
+            assert!(collection_path_on(base, colon, true).is_err(), "{colon:?} on Windows");
+            assert_eq!(
+                collection_path_on(base, colon, false).unwrap(),
+                base.join(format!("{colon}.db"))
+            );
+            assert_eq!(collection_path(base, colon).is_err(), cfg!(windows), "{colon:?}");
         }
     }
 
