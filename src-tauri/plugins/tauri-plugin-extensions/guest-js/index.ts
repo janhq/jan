@@ -36,7 +36,14 @@ export interface StagedInstall {
   integrityChecked: boolean
   source: ExtensionSource
   /** The installed version this would update. */
-  existing: { version: string; granted: string[] } | null
+  existing: {
+    version: string
+    granted: string[]
+    /** Where the active version came from. */
+    source: ExtensionSource
+    /** The active version came from a keyed source whose signature verified. */
+    verified: boolean
+  } | null
   permissionDiff: PermissionDiff
 }
 

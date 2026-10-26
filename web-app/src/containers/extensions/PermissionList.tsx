@@ -45,7 +45,11 @@ function PermissionRow({
         </span>
         {reachesLocalApiServer(permission) && (
           <span className="text-xs text-amber-600 dark:text-amber-400">
-            {t('extensions:permissions.network.localServers')}
+            {t(
+              host === '*'
+                ? 'extensions:permissions.network.localServers'
+                : 'extensions:permissions.network.localPorts'
+            )}
           </span>
         )}
       </div>

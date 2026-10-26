@@ -96,6 +96,57 @@ function StagedOrigin({
   )
 }
 
+/**
+ * Warns when an update would replace the installed version with one from
+ * another place, or drop the signature the installed version had: the
+ * origin line alone says where the update is from, not that it changed.
+ * A file replacing a file says nothing new; both are unverified already.
+ */
+function SourceChange({ staged }: { staged: StagedInstall }) {
+  const { t } = useTranslation()
+  const from = staged.existing?.installedFrom
+  if (!from) return null
+  const name = staged.manifest.displayName
+  const next = staged.source
+  const previous = from.source
+  let warning: string | undefined
+  if (next.kind === 'bundle' && previous.kind === 'index')
+    warning = t('extensions:sourceChange.fileWasIndex', {
+      name,
+      previous: previous.sourceName,
+    })
+  else if (next.kind === 'index' && previous.kind === 'bundle')
+    warning = t('extensions:sourceChange.indexWasFile', {
+      name,
+      next: next.sourceName,
+      file: previous.fileName,
+    })
+  else if (next.kind === 'index' && previous.kind === 'index') {
+    // By URL: removing and re-adding an index gives it a new id.
+    if (next.url !== previous.url)
+      warning = t('extensions:sourceChange.indexWasIndex', {
+        name,
+        next: next.sourceName,
+        previous: previous.sourceName,
+      })
+    // Same index, but its key was dropped or the listing no longer verifies.
+    else if (from.verified && !staged.verified)
+      warning = t('extensions:sourceChange.unsigned', {
+        name,
+        previous: previous.sourceName,
+      })
+  }
+  if (!warning) return null
+  return (
+    <p
+      role="alert"
+      className="rounded-md border border-amber-500/40 p-2 text-xs text-amber-600 dark:text-amber-400"
+    >
+      {warning}
+    </p>
+  )
+}
+
 export interface StagedDialogProps {
   staged: StagedInstall
   /** The index the bundle came from, for index installs. */
@@ -138,6 +189,7 @@ export function StagedDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        <SourceChange staged={staged} />
         <StagedOrigin
           staged={staged}
           sourceName={sourceName}

@@ -1,5 +1,6 @@
 import { getHostBuiltins } from '@/lib/extensions/builtins'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { applySafeMode } from '@/lib/extensions/installed-loader'
 import { loadWithCrashLoopGuard } from '@/lib/extensions/watchdog'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform'
@@ -70,7 +71,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       if (service.isSupported())
         void loadWithCrashLoopGuard({
           settings: appSettings,
-          setSafeMode: (on) => service.setSafeMode(on),
+          setSafeMode: (on) => applySafeMode(getExtensionHost(), service, on),
           onSafeMode: () => toast.warning(i18n.t('extensions:crashed.safeMode')),
           onSafeModeFailed: (e) => {
             console.error('Turning on safe mode failed:', e)

@@ -21,24 +21,23 @@ interface Pending {
 export function useStagedInstall({ service, refresh }: InstalledRegistry): {
   /** Stages with `stage` and opens the matching consent dialog. */
   begin: (stage: () => Promise<StagedInstall>, sourceName?: string) => Promise<void>
-  /** Why the last staging failed, translated. */
-  error?: string
   dialog: ReactNode
 } {
   const { t } = useTranslation()
   const [pending, setPending] = useState<Pending>()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string>()
 
+  // A toast, like a failed confirm: staging starts from the Installed tab
+  // (a file) and the Catalog tab (an install or update), and an inline
+  // message in one of them is invisible from the other.
   const begin = async (
     stage: () => Promise<StagedInstall>,
     sourceName?: string
   ) => {
-    setError(undefined)
     try {
       setPending({ staged: await stage(), sourceName })
     } catch (e) {
-      setError(t('extensions:errors.stage', { error: errorMessage(e) }))
+      toast.error(t('extensions:errors.stage', { error: errorMessage(e) }))
     }
   }
 
@@ -95,5 +94,5 @@ export function useStagedInstall({ service, refresh }: InstalledRegistry): {
     )
   ) : null
 
-  return { begin, error, dialog }
+  return { begin, dialog }
 }

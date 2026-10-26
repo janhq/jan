@@ -220,7 +220,10 @@ fn an_index_update_of_a_bundle_install_diffs_against_its_grants() {
     let tarball = extension(ID, "0.1.0", &["ui:notify", "tools"]);
     let index = listing(&tarball, &["ui:notify", "tools"]);
     let staged = install::stage_index_tarball(&state, slot(&state), &source(), &index, ID, "0.1.0", &tarball).unwrap();
-    assert_eq!(staged.existing.unwrap().version, "0.0.9");
+    let existing = staged.existing.clone().unwrap();
+    assert_eq!(existing.version, "0.0.9");
+    assert!(matches!(existing.source, Source::Bundle { .. }), "{:?}", existing.source);
+    assert!(!existing.verified);
     assert_eq!(staged.permission_diff.added, strings(&["tools"]));
     let installed = install::confirm_install(&state, &staged.stage_id, &strings(&["ui:notify", "tools"])).unwrap();
     assert!(matches!(installed.source, Source::Index { .. }));
