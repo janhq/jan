@@ -1083,6 +1083,31 @@ mod server_tests {
     }
 
     #[test]
+    fn add_cors_headers_reflects_a_listed_opaque_origin() {
+        for (origin, entry) in [("null", "null"), ("file://", "file://")] {
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &vec![vec![entry.to_string()]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert_eq!(resp.headers().get("access-control-allow-origin").unwrap(), origin);
+
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &vec![vec![]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert!(!resp.headers().contains_key("access-control-allow-origin"));
+        }
+    }
+
+    #[test]
     fn add_cors_headers_with_empty_origin_omits_origin() {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
@@ -1267,6 +1292,12 @@ mod server_tests {
         assert!(proxy::origin_allowed("tauri://localhost", h, &t, true));
         assert!(!proxy::origin_allowed("https://evil.com", h, &t, true));
         assert!(!proxy::origin_allowed("null", h, &t, true));
+        assert!(!proxy::origin_allowed("file://", h, &t, true));
+        // Opaque origins only with an explicit entry, and only with CORS on.
+        assert!(proxy::origin_allowed("null", h, &trusted(&["null"]), true));
+        assert!(proxy::origin_allowed("file://", h, &trusted(&["file://"]), true));
+        assert!(!proxy::origin_allowed("file://", h, &trusted(&["null"]), true));
+        assert!(!proxy::origin_allowed("null", h, &trusted(&["null"]), false));
         // Private-IP pages on the LAN are not trusted unless listed.
         assert!(!proxy::origin_allowed("http://192.168.1.20:3000", h, &t, true));
         assert!(proxy::origin_allowed(

@@ -70,12 +70,13 @@ fn host_without_port(host: &str) -> &str {
 /// in the Trusted Hosts list. Entries match on hostname; ports are ignored.
 /// Scheme-qualified entries (e.g. "app://obsidian.md") are skipped: they only
 /// apply to Origins, where the scheme is known (see `scheme_entry_matches`).
+/// The `null` entry is skipped too: it opts in `Origin: null`, not a host.
 fn host_in_trusted_list(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     let host_without_port = host_without_port(host);
     trusted_hosts
         .iter()
         .flatten()
-        .filter(|valid| !valid.contains("://"))
+        .filter(|valid| !valid.contains("://") && !valid.trim().eq_ignore_ascii_case("null"))
         .any(|valid| {
             let host_lower = host.to_lowercase();
             let valid_lower = valid.to_lowercase();
@@ -167,6 +168,19 @@ fn parse_origin(origin: &str) -> Option<(String, String)> {
     Some((scheme.to_ascii_lowercase(), authority.to_ascii_lowercase()))
 }
 
+/// The Trusted Hosts entry that opts in an opaque origin: `null` for
+/// `Origin: null`, `file://` for a `file://` origin. None for anything else.
+fn opaque_origin_entry(origin: &str) -> Option<&'static str> {
+    let origin = origin.trim();
+    if origin.eq_ignore_ascii_case("null") {
+        Some("null")
+    } else if origin.eq_ignore_ascii_case("file://") {
+        Some("file://")
+    } else {
+        None
+    }
+}
+
 /// Whether the app's webview origin is `http(s)://tauri.localhost` on this
 /// platform. Mirrors Tauri's `tauri_protocol_url` (and `core::navigation`):
 /// only Windows and Android serve custom schemes from `<scheme>.localhost`;
@@ -208,10 +222,18 @@ fn is_same_or_app_origin_on(origin: &str, host_header: &str, tauri_localhost_is_
 ///   `app://obsidian.md` (that scheme and host only), or `*` there.
 ///
 /// A private-range IP origin (another machine on the LAN) is NOT trusted
-/// unless listed. `null` and anything malformed are untrusted.
+/// unless listed. The opaque origins `null` (sandboxed frames, some Electron
+/// apps, local HTML files) and `file://` are trusted only when that exact
+/// entry (`null` or `file://`) is listed. Anything malformed is untrusted.
 pub fn is_trusted_origin(origin: &str, host_header: &str, trusted_hosts: &[Vec<String>]) -> bool {
     if trusted_hosts.iter().any(|hosts| hosts.iter().any(|h| h == "*")) {
         return true;
+    }
+    if let Some(entry) = opaque_origin_entry(origin) {
+        return trusted_hosts
+            .iter()
+            .flatten()
+            .any(|listed| listed.trim().eq_ignore_ascii_case(entry));
     }
     if is_same_or_app_origin(origin, host_header) {
         return true;
@@ -417,6 +439,35 @@ mod tests {
         // The scheme name is not a host.
         assert!(!is_trusted_origin("http://app", h, &listed));
         assert!(!is_trusted_origin("app://app", h, &listed));
+    }
+
+    #[test]
+    fn opaque_origins_need_an_explicit_entry() {
+        let h = "127.0.0.1:1337";
+        assert!(!is_trusted_origin("null", h, &none()));
+        assert!(!is_trusted_origin("file://", h, &none()));
+
+        let null_listed = vec![vec!["null".to_string()]];
+        assert!(is_trusted_origin("null", h, &null_listed));
+        assert!(is_trusted_origin("NULL", h, &null_listed));
+        assert!(!is_trusted_origin("file://", h, &null_listed));
+
+        let file_listed = vec![vec![" file:// ".to_string()]];
+        assert!(is_trusted_origin("file://", h, &file_listed));
+        assert!(is_trusted_origin("FILE://", h, &file_listed));
+        assert!(!is_trusted_origin("null", h, &file_listed));
+        // Only the bare opaque origin; a host after file:// is not one.
+        assert!(!is_trusted_origin("file://evil.com", h, &file_listed));
+
+        // A web origin is never matched by these entries.
+        let both = vec![vec!["null".to_string(), "file://".to_string()]];
+        assert!(!is_trusted_origin("http://null", h, &both));
+        assert!(!is_trusted_origin("https://evil.com", h, &both));
+
+        // `*` still trusts everything.
+        let wildcard = vec![vec!["*".to_string()]];
+        assert!(is_trusted_origin("null", h, &wildcard));
+        assert!(is_trusted_origin("file://", h, &wildcard));
     }
 
     #[test]
