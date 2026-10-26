@@ -668,6 +668,18 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
     Ok(removed)
 }
 
+/// Names Windows maps to a device in every directory, in any case and also
+/// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
+/// works on all of them.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    match stem.as_bytes() {
+        [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
+        [a, b, c, d] => matches!(&[*a, *b, *c], b"COM" | b"LPT") && d.is_ascii_digit(),
+        _ => false,
+    }
+}
+
 /// Sanitize a caller-supplied thread id into one safe path segment.
 ///
 /// Stricter than [`workspace_filename`] on purpose: a thread id is generated,
@@ -681,7 +693,8 @@ pub fn thread_segment(thread_id: &str) -> Result<String, String> {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        && !id.chars().all(|c| c == '.');
+        && !id.chars().all(|c| c == '.')
+        && !is_windows_device_name(id);
     if !ok {
         return Err(format!("ERROR: invalid thread id '{thread_id}'"));
     }
@@ -870,6 +883,13 @@ mod tests {
                 "expected {bad:?} to be rejected"
             );
         }
+        // Windows device names, in any case and with an extension.
+        for bad in ["CON", "nul", "Aux", "com1", "LPT9", "nul.txt", "CON.tar.gz"] {
+            assert!(
+                thread_segment(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
         assert!(thread_segment(&"a".repeat(129)).is_err(), "over-long id");
     }
 
@@ -880,6 +900,9 @@ mod tests {
             "3f2a9c1e-1234-4c9a-9b7e-000000000000",
             "thread_42",
             "v1.2",
+            "CONSOLE",
+            "COM10",
+            "con_1.x",
         ] {
             assert_eq!(thread_segment(ok).unwrap(), ok);
         }

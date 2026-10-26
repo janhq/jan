@@ -1668,7 +1668,9 @@ fn fork_base(source: Option<&serde_json::Value>) -> Option<String> {
     }
     // Keyed per source thread and cleaned up: this index is a one-shot, unlike
     // the per-thread one a session keeps warm across its turns.
-    let key = format!("fork-base-{}", source.get("id")?.as_str()?);
+    let source_id = source.get("id")?.as_str()?;
+    crate::core::threads::utils::validate_thread_id(source_id).ok()?;
+    let key = format!("{}{source_id}", git::FORK_BASE_KEY_PREFIX);
     let changed: Vec<PathBuf> = git::changed_paths(&workspace.path)
         .into_iter()
         .map(PathBuf::from)
@@ -5121,6 +5123,16 @@ mod tests {
             Some("new"),
             "untracked files the agent created are carried too"
         );
+
+        // The source id names a temp file, so it must be a valid thread id; the
+        // `fork-base-` prefix does not count against the id's length limit.
+        let with_id = |id: &str| {
+            let mut s = source.clone();
+            s["id"] = serde_json::json!(id);
+            s
+        };
+        assert_eq!(fork_base(Some(&with_id("../escape"))), None);
+        assert!(fork_base(Some(&with_id(&"a".repeat(128)))).is_some());
 
         // A recorded checkout the user deleted leaves the choice to HEAD.
         std::fs::remove_dir_all(&wt).unwrap();

@@ -10,6 +10,18 @@ pub fn get_data_dir(data_folder: &Path) -> PathBuf {
     data_folder.join(THREADS_DIR)
 }
 
+/// Names Windows maps to a device in every directory, in any case and also
+/// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
+/// works on all of them.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    match stem.as_bytes() {
+        [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
+        [a, b, c, d] => matches!(&[*a, *b, *c], b"COM" | b"LPT") && d.is_ascii_digit(),
+        _ => false,
+    }
+}
+
 /// A thread id names a single directory under `threads/`, so it may only hold
 /// ASCII letters, digits, `-` and `_`. That covers every id Jan produces (UUIDs
 /// from the backend and the CLI, ULIDs from the web app, and fixed names such as
@@ -25,6 +37,7 @@ pub fn validate_thread_id(thread_id: &str) -> Result<(), String> {
     if !thread_id
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        || is_windows_device_name(thread_id)
     {
         return Err(format!("Invalid thread id: {thread_id:?}"));
     }

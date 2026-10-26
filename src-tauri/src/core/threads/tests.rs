@@ -730,6 +730,9 @@ fn test_validate_thread_id_accepts_real_ids() {
         "01JABCDEFGHJKMNPQRSTVWXYZ0",           // web-app ULID
         "temporary-chat",
         "jan_1712345678",
+        "CONSOLE",
+        "COM10",
+        "nul_thread",
     ] {
         assert!(validate_thread_id(id).is_ok(), "{id} should be accepted");
     }
@@ -751,6 +754,14 @@ fn test_validate_thread_id_rejects_path_like_ids() {
         "x\0y",
         "with space",
         "dot.ted",
+        "CON",
+        "nul",
+        "Aux",
+        "prn",
+        "COM1",
+        "com9",
+        "LPT1",
+        "lpt9",
     ] {
         assert!(validate_thread_id(id).is_err(), "{id:?} should be rejected");
         assert!(get_thread_dir(std::path::Path::new("/tmp/jandata"), id).is_err());

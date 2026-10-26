@@ -90,18 +90,35 @@ fn temp_index() -> PathBuf {
 /// prior stat cache instead of a fresh empty one, so unchanged files are only
 /// stat'd (cheap) rather than re-hashed and re-inserted like every other file
 /// touched this turn. The id goes into a file name, so it must pass
-/// [`validate_thread_id`](crate::core::threads::utils::validate_thread_id).
+/// [`validate_index_key`].
 #[cfg(feature = "cli")]
 fn snapshot_index(thread_id: &str) -> Result<PathBuf, String> {
-    crate::core::threads::utils::validate_thread_id(thread_id)?;
+    validate_index_key(thread_id)?;
     Ok(std::env::temp_dir().join(format!("jan-agent-snap-idx-{thread_id}")))
+}
+
+/// Prefix of the one-shot index key a fork uses for its source thread.
+#[cfg(feature = "cli")]
+pub(crate) const FORK_BASE_KEY_PREFIX: &str = "fork-base-";
+
+/// A snapshot index key is a thread id, or [`FORK_BASE_KEY_PREFIX`] followed
+/// by one. The id part must pass
+/// [`validate_thread_id`](crate::core::threads::utils::validate_thread_id), so
+/// the prefix does not count against its length limit.
+#[cfg(feature = "cli")]
+fn validate_index_key(key: &str) -> Result<(), String> {
+    let id = key.strip_prefix(FORK_BASE_KEY_PREFIX).unwrap_or(key);
+    crate::core::threads::utils::validate_thread_id(id)
 }
 
 /// Hidden ref that keeps a thread's snapshot chain reachable across GC. One ref
 /// per thread; each snapshot parents the previous, so the whole chain is live.
+/// The id goes into a ref name, so it must pass
+/// [`validate_thread_id`](crate::core::threads::utils::validate_thread_id).
 #[cfg(feature = "cli")]
-pub(crate) fn snapshot_ref(thread_id: &str) -> String {
-    format!("refs/jan/agent/snapshots/{thread_id}")
+pub(crate) fn snapshot_ref(thread_id: &str) -> Result<String, String> {
+    crate::core::threads::utils::validate_thread_id(thread_id)?;
+    Ok(format!("refs/jan/agent/snapshots/{thread_id}"))
 }
 
 /// True when git tracks any file under `path` (a directory in a work tree).
@@ -228,7 +245,7 @@ pub(crate) fn cleanup_snapshot_index(thread_id: &str) {
 /// Point the thread's snapshot ref at `sha` (create or update).
 #[cfg(feature = "cli")]
 pub(crate) fn update_ref(repo: &Path, thread_id: &str, sha: &str) -> Result<(), String> {
-    run(repo, None, &["update-ref", &snapshot_ref(thread_id), sha]).map(|_| ())
+    run(repo, None, &["update-ref", &snapshot_ref(thread_id)?, sha]).map(|_| ())
 }
 
 /// Restore the working tree to snapshot `target`, discarding changes made after
@@ -555,6 +572,26 @@ mod tests {
         assert_eq!(idx.parent(), Some(std::env::temp_dir().as_path()));
         // A rejected id fails the snapshot instead of writing elsewhere.
         assert!(snapshot(Path::new("."), None, "m", "../x", &[]).is_err());
+        // The fork-base prefix does not count against the id's length limit,
+        // but the id after it is still checked.
+        let long_id = "a".repeat(128);
+        assert!(snapshot_index(&format!("{FORK_BASE_KEY_PREFIX}{long_id}")).is_ok());
+        assert!(snapshot_index(&format!("{FORK_BASE_KEY_PREFIX}../x")).is_err());
+        assert!(snapshot_index(FORK_BASE_KEY_PREFIX).is_err());
+    }
+
+    #[test]
+    fn snapshot_ref_rejects_ids_that_are_not_a_plain_name() {
+        for bad in ["", "../x", "a/b", "a..b", "a b", "x^{tree}", "a:b", "nul"] {
+            assert!(snapshot_ref(bad).is_err(), "{bad:?} should be rejected");
+        }
+        assert_eq!(
+            snapshot_ref("0f8c2a3e-1b2c-4d5e-8f90-123456789abc").unwrap(),
+            "refs/jan/agent/snapshots/0f8c2a3e-1b2c-4d5e-8f90-123456789abc"
+        );
+        let Some(root) = init_repo() else { return };
+        assert!(update_ref(&root, "../../heads/main", "HEAD").is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
