@@ -294,23 +294,15 @@ pub async fn advertises_oauth(url: &str) -> bool {
 }
 
 /// Whether `url` may be an OAuth endpoint, or be opened in a browser during
-/// sign-in: `https`, or `http` to this computer (a local dev server). The
-/// server supplies these URLs, and the consent page is opened with the
-/// system's default handler for its scheme.
+/// sign-in: `http` or `https` to any host (a homelab server is often plain
+/// http on the LAN). The server supplies these URLs, and the consent page is
+/// opened with the system's default handler for its scheme, so anything else
+/// (`file:`, custom protocol handlers) is refused.
 pub(crate) fn is_allowed_oauth_url(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
     };
-    match parsed.scheme() {
-        "https" => true,
-        "http" => match parsed.host() {
-            Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-            None => false,
-        },
-        _ => false,
-    }
+    matches!(parsed.scheme(), "http" | "https") && parsed.host().is_some()
 }
 
 type CodeClient = oauth2::basic::BasicClient<
@@ -367,16 +359,16 @@ pub async fn begin(server: &str, url: &str) -> Result<PendingAuth, String> {
     let resolution = manager.resolve_metadata().await
         .map_err(|e| format!("'{server}' does not offer OAuth we can use: {e}"))?;
     let metadata = resolution.metadata;
-    for endpoint in [&metadata.authorization_endpoint, &metadata.token_endpoint] {
-        if !is_allowed_oauth_url(endpoint) {
+    let endpoint = metadata.registration_endpoint.as_deref()
+        .ok_or_else(|| format!("'{server}' requires a pre-registered OAuth client; no registration endpoint was advertised"))?;
+    for advertised in [&metadata.authorization_endpoint, &metadata.token_endpoint, endpoint] {
+        if !is_allowed_oauth_url(advertised) {
             return Err(format!(
-                "'{server}' advertised the OAuth endpoint '{endpoint}', which Jan will not use: \
-                 it must be https (or http on this computer)"
+                "'{server}' advertised the OAuth endpoint '{advertised}', which Jan will not use: \
+                 it must be an http or https address"
             ));
         }
     }
-    let endpoint = metadata.registration_endpoint.as_deref()
-        .ok_or_else(|| format!("'{server}' requires a pre-registered OAuth client; no registration endpoint was advertised"))?;
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
@@ -1064,25 +1056,26 @@ mod tests {
     }
 
     #[test]
-    fn oauth_urls_must_be_https_or_loopback_http() {
+    fn oauth_urls_must_be_http_or_https() {
         for ok in [
             "https://auth.example.com/authorize",
             "HTTPS://auth.example.com/token",
+            "http://auth.example.com/authorize",
+            "http://192.168.1.50:8080/authorize",
+            "http://10.0.0.1/token",
             "http://127.0.0.1:8080/authorize",
             "http://localhost:3000/token",
-            "http://LOCALHOST/token",
             "http://[::1]:9000/authorize",
         ] {
             assert!(is_allowed_oauth_url(ok), "{ok}");
         }
         for bad in [
-            "http://auth.example.com/authorize",
-            "http://localhost.example.com/authorize",
-            "http://10.0.0.1/token",
             "file:///Users/u/Downloads/payload.command",
             "javascript:alert(1)",
             "smb://host/share",
             "ftp://auth.example.com/",
+            "vscode://auth.example.com/authorize",
+            "my-app:open?x=1",
             "/authorize",
             "",
         ] {
@@ -1091,10 +1084,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn begin_refuses_a_non_https_authorization_endpoint() {
+    async fn begin_refuses_a_non_web_endpoint() {
         for (field, value) in [
             ("authorization_endpoint", "file:///tmp/payload.command"),
-            ("token_endpoint", "http://auth.example.com/token"),
+            ("token_endpoint", "smb://auth.example.com/token"),
+            ("registration_endpoint", "my-app://register"),
         ] {
             let (base, task) = metadata_server(field, value).await;
             let err = begin("bad", &format!("{base}/mcp")).await.err().unwrap();
@@ -1102,6 +1096,20 @@ mod tests {
             assert!(err.contains("will not use"), "{err}");
             assert!(err.contains(value), "{err}");
         }
+    }
+
+    #[tokio::test]
+    async fn begin_accepts_a_plain_http_lan_authorization_endpoint() {
+        let (base, task) =
+            metadata_server("authorization_endpoint", "http://192.168.1.50:8080/authorize").await;
+        let pending = begin("lan", &format!("{base}/mcp")).await;
+        task.abort();
+        let pending = pending.expect("http on the LAN is accepted");
+        assert!(
+            pending.authorization_url.starts_with("http://192.168.1.50:8080/authorize?"),
+            "{}",
+            pending.authorization_url
+        );
     }
 
     #[test]
