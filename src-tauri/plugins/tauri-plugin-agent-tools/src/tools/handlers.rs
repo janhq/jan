@@ -1495,9 +1495,11 @@ fn chrome_binary() -> Option<PathBuf> {
 /// Render a local HTML/SVG file to PNG bytes.
 ///
 /// `backend`, when present, renders through the desktop's own webview (no Chrome
-/// needed); on any backend failure this falls back to headless Chrome so nothing
-/// regresses. `None` goes straight to Chrome. Either way the viewport clamping
-/// and output cap are identical.
+/// needed), and its result is final: the webview checks every frame the page
+/// loads against the screenshot's own folder, and headless Chrome has no such
+/// check, so a page that makes the webview fail must not get a second render
+/// through Chrome. `None` (no desktop webview, e.g. the CLI) goes to Chrome.
+/// Either way the viewport clamping and output cap are identical.
 ///
 /// `width`/`height` are the viewport in CSS pixels; `scale` is the device pixel
 /// ratio, so the PNG comes out `width*scale` pixels wide with the layout
@@ -1532,14 +1534,11 @@ pub async fn render_html_png(
         1.0
     };
 
-    // Try the injected backend (the desktop's webview capture) first, so the tool
-    // works without Chrome; on any failure fall through to Chrome so nothing
-    // regresses.
+    // The desktop's webview capture, when injected, is the only renderer: see
+    // the doc comment for why a failure here does not fall through to Chrome.
     if let Some(backend) = backend {
-        match backend(target.to_path_buf(), width, height, scale, scope).await {
-            Ok(png) => return finalize_screenshot_png(png),
-            Err(_) => { /* fall through to Chrome */ }
-        }
+        let png = backend(target.to_path_buf(), width, height, scale, scope).await?;
+        return finalize_screenshot_png(png);
     }
 
     let Some(chrome) = chrome_binary() else {
@@ -4254,6 +4253,23 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A failing desktop renderer is the answer: the page is not rendered a
+    /// second time through Chrome, which would not check its frames.
+    #[tokio::test]
+    async fn a_failing_screenshot_backend_does_not_fall_back_to_chrome() {
+        let root = unique_root();
+        let page = root.join("page.html");
+        std::fs::write(&page, b"<h1>page</h1>").unwrap();
+        let backend: ScreenshotBackend = std::sync::Arc::new(|_, _, _, _, _| {
+            Box::pin(async { Err("webview capture timed out".to_string()) })
+        });
+
+        let result =
+            render_html_png(&page, 800, 600, 1.0, PageScope::Directory, Some(&backend)).await;
+        assert_eq!(result, Err("webview capture timed out".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Renders for real when a browser is present, and returns an image part

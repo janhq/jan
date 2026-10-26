@@ -188,8 +188,9 @@ pub struct ToolContext<'a> {
     /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
     /// the one way to inject a secret-named variable on purpose.
     pub env_set: &'a [(String, String)],
-    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` falls back to
-    /// headless Chrome; the desktop injects a webview-backed renderer. See
+    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` renders through
+    /// headless Chrome; the desktop injects a webview-backed renderer, whose
+    /// failures are returned as-is rather than retried in Chrome. See
     /// [`ScreenshotBackend`].
     pub screenshot_backend: Option<ScreenshotBackend>,
     /// The run's lifecycle hooks. Carried on the context rather than passed to

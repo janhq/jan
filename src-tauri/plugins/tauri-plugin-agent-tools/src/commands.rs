@@ -807,7 +807,7 @@ pub async fn execute_tool<R: tauri::Runtime>(
 }
 
 /// The webview-backed `screenshot` renderer on the desktop (Linux, macOS,
-/// Windows); `None` everywhere else, keeping the Chrome fallback.
+/// Windows); `None` everywhere else, which renders through headless Chrome.
 #[cfg(all(
     feature = "tauri",
     any(target_os = "linux", target_os = "macos", target_os = "windows")
