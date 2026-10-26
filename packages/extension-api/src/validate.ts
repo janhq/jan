@@ -8,6 +8,7 @@ import type {
   ManifestError,
   ProposalName,
   ValidatedManifest,
+  ValidateOptions,
   ValidationResult,
 } from './manifest.js'
 import {
@@ -22,6 +23,13 @@ import { isCaretRange, isSemver } from './semver.js'
 type Obj = Record<string, unknown>
 
 const ID = /^[a-z0-9][a-z0-9-]{1,38}\.[a-z0-9][a-z0-9-]{1,38}$/
+
+/**
+ * The publisher part of every built-in extension id (`jan.<name>`). The host
+ * refuses to run a third-party extension under it, so `validateManifest`
+ * refuses it too, before anyone is asked to consent to an install.
+ */
+export const RESERVED_PUBLISHER = 'jan'
 const L10N_REF = /^%([A-Za-z0-9_.-]+)%$/
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 const CONTRIBUTION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -496,8 +504,14 @@ function checkL10n(c: Checker, jan: Obj): void {
  * Validates a whole package.json and returns its `jan` manifest together
  * with the package name, version and `engines.jan`. The same rules run in the
  * host at install and load time, so authors can lint with this function.
+ *
+ * Ids under {@link RESERVED_PUBLISHER} are refused unless `options.builtin`
+ * is set, which only the host does for the built-ins it ships.
  */
-export function validateManifest(pkg: unknown): ValidationResult {
+export function validateManifest(
+  pkg: unknown,
+  options: ValidateOptions = {}
+): ValidationResult {
   const c = new Checker()
   if (!isObj(pkg)) {
     c.fail('', 'package.json must be an object')
@@ -521,6 +535,14 @@ export function validateManifest(pkg: unknown): ValidationResult {
     c.fail(
       'jan.id',
       "must be '<publisher>.<name>' in lowercase letters, digits and dashes"
+    )
+  else if (
+    !options.builtin &&
+    jan.id.slice(0, jan.id.indexOf('.')) === RESERVED_PUBLISHER
+  )
+    c.fail(
+      'jan.id',
+      `uses the publisher '${RESERVED_PUBLISHER}', which is reserved for Jan's built-in extensions`
     )
   c.string(jan, 'displayName', 'jan')
   c.string(jan, 'description', 'jan', { optional: true })

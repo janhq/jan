@@ -4,6 +4,7 @@ import {
   Emitter,
   ExtensionError,
   isApiCompatible,
+  RESERVED_PUBLISHER,
   toDisposable,
   type ConversationsApi,
   type Event,
@@ -121,7 +122,7 @@ export interface ExtensionHostOptions {
  * built-in of this host has, active or not. A worker extension with such
  * an id would otherwise take over the built-in's entry and settings.
  */
-const RESERVED_PREFIX = 'jan.'
+const RESERVED_PREFIX = `${RESERVED_PUBLISHER}.`
 
 interface Entry {
   hosted: HostedExtension

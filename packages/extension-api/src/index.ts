@@ -16,7 +16,11 @@ export {
   type PermissionString,
 } from './permissions.js'
 export { isApiCompatible } from './semver.js'
-export { isContributionId, validateManifest } from './validate.js'
+export {
+  isContributionId,
+  RESERVED_PUBLISHER,
+  validateManifest,
+} from './validate.js'
 export type * from './context.js'
 export type * from './contributions.js'
 export type {
@@ -24,5 +28,6 @@ export type {
   ManifestError,
   ProposalName,
   ValidatedManifest,
+  ValidateOptions,
   ValidationResult,
 } from './manifest.js'

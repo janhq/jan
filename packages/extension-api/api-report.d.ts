@@ -402,16 +402,16 @@ export { Emitter, type Event } from './event.js';
 export { ExtensionError, type ExtensionErrorCode } from './errors.js';
 export { isLocalHost, isNetworkHost, isPermissionString, networkHostMatches, networkHostOf, type PermissionKind, type PermissionString, } from './permissions.js';
 export { isApiCompatible } from './semver.js';
-export { isContributionId, validateManifest } from './validate.js';
+export { isContributionId, RESERVED_PUBLISHER, validateManifest, } from './validate.js';
 export type * from './context.js';
 export type * from './contributions.js';
-export type { JanManifest, ManifestError, ProposalName, ValidatedManifest, ValidationResult, } from './manifest.js';
+export type { JanManifest, ManifestError, ProposalName, ValidatedManifest, ValidateOptions, ValidationResult, } from './manifest.js';
 
 // ---- manifest.d.ts ----
 
 import type { Contributions } from './contributions.js';
 import type { PermissionString } from './permissions.js';
-export { validateManifest } from './validate.js';
+export { RESERVED_PUBLISHER, validateManifest } from './validate.js';
 export { isApiCompatible } from './semver.js';
 export { API_VERSION } from './api-version.js';
 export type * from './contributions.js';
@@ -449,6 +449,13 @@ export interface ManifestError {
     /** Where the problem is, for example `jan.contributes.commands[1].id`. */
     path: string;
     message: string;
+}
+export interface ValidateOptions {
+    /**
+     * Accepts ids under the reserved `jan` publisher. Only the host sets it,
+     * for the built-ins it ships; installable extensions never may.
+     */
+    builtin?: boolean;
 }
 export type ValidationResult = {
     ok: true;
@@ -503,7 +510,13 @@ export declare function isApiCompatible(range: string, host: string): boolean;
 
 // ---- validate.d.ts ----
 
-import type { ValidationResult } from './manifest.js';
+import type { ValidateOptions, ValidationResult } from './manifest.js';
+/**
+ * The publisher part of every built-in extension id (`jan.<name>`). The host
+ * refuses to run a third-party extension under it, so `validateManifest`
+ * refuses it too, before anyone is asked to consent to an install.
+ */
+export declare const RESERVED_PUBLISHER = "jan";
 /**
  * The grammar of a command, status item or provider id and of a tool name:
  * up to 64 letters, digits, `.`, `_` and `-`, starting with a letter or
@@ -516,5 +529,8 @@ export declare function isContributionId(value: unknown): value is string;
  * Validates a whole package.json and returns its `jan` manifest together
  * with the package name, version and `engines.jan`. The same rules run in the
  * host at install and load time, so authors can lint with this function.
+ *
+ * Ids under {@link RESERVED_PUBLISHER} are refused unless `options.builtin`
+ * is set, which only the host does for the built-ins it ships.
  */
-export declare function validateManifest(pkg: unknown): ValidationResult;
+export declare function validateManifest(pkg: unknown, options?: ValidateOptions): ValidationResult;

@@ -20,7 +20,7 @@ use url::Url;
 
 use crate::error::{Error, Result, SignatureError};
 use crate::integrity::{self, is_sri};
-use crate::manifest::{is_caret_range, is_extension_id, is_semver};
+use crate::manifest::{is_caret_range, is_extension_id, is_reserved_id, is_semver};
 use crate::permissions::is_permission_string;
 use crate::signature::{self, is_public_key, MAX_SIGNATURE_BYTES};
 use crate::store::parse_rfc3339;
@@ -153,6 +153,9 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
     for ext in &index.extensions {
         if !is_extension_id(&ext.id) {
             return bad(format!("an invalid extension id '{}'", ext.id));
+        }
+        if is_reserved_id(&ext.id) {
+            return bad(format!("'{}', an id reserved for Jan's built-in extensions", ext.id));
         }
         if !ids.insert(ext.id.as_str()) {
             return bad(format!("{} twice", ext.id));
@@ -488,6 +491,7 @@ mod tests {
     fn rejects_malformed_entries() {
         let cases: Vec<(&str, serde_json::Value)> = vec![
             ("/extensions/0/id", json!("Acme.Hello")),
+            ("/extensions/0/id", json!("jan.hello")),
             ("/extensions/0/homepage", json!("http://acme.example.com")),
             ("/extensions/0/versions/0/version", json!("1.0")),
             ("/extensions/0/versions/1/version", json!("0.1.0")),
