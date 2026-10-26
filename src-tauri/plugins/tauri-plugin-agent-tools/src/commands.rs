@@ -1229,7 +1229,7 @@ mod tests {
 
     #[test]
     fn default_store_is_permanent_and_outside_any_sandbox() {
-        let store = resolve_store("/data", None);
+        let store = resolve_store(Path::new("/data"), None);
         assert_eq!(store, Path::new("/data/agent-workspace"));
         // The sandbox lives under threads/, so no relative path from inside one
         // reaches the store without escaping it.
@@ -1240,12 +1240,12 @@ mod tests {
     #[test]
     fn explicit_project_uses_its_project_store() {
         assert_eq!(
-            resolve_store("/data", Some("/repo")),
+            resolve_store(Path::new("/data"), Some("/repo")),
             workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
-            resolve_store("/data", Some("   ")),
+            resolve_store(Path::new("/data"), Some("   ")),
             Path::new("/data/agent-workspace")
         );
     }
