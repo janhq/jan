@@ -5,7 +5,7 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
     default_data_folder_path, get_configuration_file_path, get_jan_data_folder_path,
-    update_app_configuration,
+    write_app_configuration,
 };
 use crate::core::app::constants::{
     JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
@@ -509,7 +509,7 @@ pub fn factory_reset<R: Runtime>(
             let default_config = AppConfiguration {
                 data_folder: default_data_folder_path(app_handle.clone()),
             };
-            let _ = update_app_configuration(app_handle.clone(), default_config);
+            let _ = write_app_configuration(app_handle.clone(), default_config);
         }
 
         // Persisted UI state (model-provider, setup flag) lives in webview
