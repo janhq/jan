@@ -1235,6 +1235,25 @@ mod server_tests {
     }
 
     #[test]
+    fn request_origin_refuses_a_non_ascii_origin_header() {
+        let mut headers = hyper::HeaderMap::new();
+        assert_eq!(proxy::request_origin(&headers), Some(""));
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_static("http://localhost:3000"),
+        );
+        assert_eq!(
+            proxy::request_origin(&headers),
+            Some("http://localhost:3000")
+        );
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_bytes(b"http://\xffevil.com").unwrap(),
+        );
+        assert_eq!(proxy::request_origin(&headers), None);
+    }
+
+    #[test]
     fn origin_allowed_absent_origin_always_passes() {
         assert!(proxy::origin_allowed("", "127.0.0.1:1337", &trusted(&[]), true));
         assert!(proxy::origin_allowed("", "192.168.1.10:1337", &trusted(&[]), false));

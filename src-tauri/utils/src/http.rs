@@ -85,13 +85,49 @@ fn host_in_trusted_list(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     })
 }
 
+/// Whether `port` is a decimal port number in 1-65535.
+fn is_valid_port(port: &str) -> bool {
+    !port.is_empty()
+        && port.bytes().all(|b| b.is_ascii_digit())
+        && matches!(port.parse::<u32>(), Ok(1..=65535))
+}
+
+/// Whether `authority` is a host with an optional valid port: `host`,
+/// `host:port`, `[v6]` or `[v6]:port`.
+fn is_valid_authority(authority: &str) -> bool {
+    let port = if let Some(rest) = authority.strip_prefix('[') {
+        let Some((addr, after)) = rest.split_once(']') else {
+            return false;
+        };
+        if addr.is_empty() {
+            return false;
+        }
+        if after.is_empty() {
+            return true;
+        }
+        match after.strip_prefix(':') {
+            Some(port) => port,
+            None => return false,
+        }
+    } else {
+        match authority.split_once(':') {
+            None => return !authority.is_empty(),
+            Some((host, port)) if !host.is_empty() => port,
+            Some(_) => return false,
+        }
+    };
+    is_valid_port(port)
+}
+
 /// Splits a serialized origin into lowercase `(scheme, authority)`. Returns
-/// None for `null`, anything with a path/query/userinfo, or garbage.
+/// None for `null`, anything with a path/query/userinfo, a port that is not a
+/// number in 1-65535, or garbage.
 fn parse_origin(origin: &str) -> Option<(String, String)> {
     let (scheme, authority) = origin.trim().split_once("://")?;
     if scheme.is_empty()
         || authority.is_empty()
         || authority.contains(['/', '?', '#', '@', ' ', '\\'])
+        || !is_valid_authority(authority)
     {
         return None;
     }
@@ -230,9 +266,34 @@ mod tests {
             "ftp://localhost",
             "chrome-extension://abcdef",
             "",
+            "http://localhost:evil",
+            "http://localhost:",
+            "http://localhost:0",
+            "http://localhost:65536",
+            "http://localhost:+80",
+            "http://localhost:80:80",
+            "http://[::1]:evil",
+            "http://[::1]x",
+            "http://[::1",
+            "http://:1337",
         ] {
             assert!(!is_trusted_origin(o, "127.0.0.1:1337", &t), "{o}");
         }
+    }
+
+    #[test]
+    fn origin_port_must_be_a_valid_number() {
+        let t = none();
+        assert!(is_trusted_origin("http://localhost:65535", "127.0.0.1:1337", &t));
+        assert!(is_trusted_origin("http://[::1]", "127.0.0.1:1337", &t));
+        // The same-origin case cannot be met with a non-numeric port either.
+        assert!(!is_same_or_app_origin("http://evil:x", "evil:x"));
+        let listed = vec![vec!["myapp.local".to_string()]];
+        assert!(!is_trusted_origin(
+            "https://myapp.local:evil",
+            "127.0.0.1:1337",
+            &listed
+        ));
     }
 
     // A page on another LAN machine must not get credentialed CORS just because

@@ -598,6 +598,16 @@ pub(crate) fn origin_allowed(
     }
 }
 
+/// The request's `Origin` header, or "" when there is none. None when the
+/// header is present but not visible ASCII: such a request must be refused,
+/// not treated as one without an origin.
+pub(crate) fn request_origin(headers: &hyper::HeaderMap) -> Option<&str> {
+    match headers.get(hyper::header::ORIGIN) {
+        None => Some(""),
+        Some(value) => value.to_str().ok(),
+    }
+}
+
 /// `/orchestrations` runs MCP tools without per-call approval, so it is only
 /// served when the user opted in to server-side tool execution.
 pub(crate) fn orchestrations_allowed(config: &ProxyConfig) -> bool {
@@ -839,12 +849,14 @@ async fn proxy_request(
 
     let (parts, body) = req.into_parts();
 
-    let origin_header = parts
-        .headers
-        .get(hyper::header::ORIGIN)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let Some(origin_header) = request_origin(&parts.headers).map(str::to_string) else {
+        log::warn!("Rejected request with an Origin header that is not visible ASCII");
+        return Ok(Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .header("Vary", "Origin")
+            .body(full("Origin not allowed"))
+            .unwrap());
+    };
 
     let host_header = parts
         .headers
