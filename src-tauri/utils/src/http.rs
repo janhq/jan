@@ -167,18 +167,29 @@ fn parse_origin(origin: &str) -> Option<(String, String)> {
     Some((scheme.to_ascii_lowercase(), authority.to_ascii_lowercase()))
 }
 
+/// Whether the app's webview origin is `http(s)://tauri.localhost` on this
+/// platform. Mirrors Tauri's `tauri_protocol_url` (and `core::navigation`):
+/// only Windows and Android serve custom schemes from `<scheme>.localhost`;
+/// elsewhere `tauri.localhost` is an ordinary hostname and not the app.
+const TAURI_LOCALHOST_IS_APP: bool = cfg!(any(windows, target_os = "android"));
+
 /// The origins that are trusted even with cross-origin requests turned off:
-/// the app's own webview (`tauri://localhost`, `http(s)://tauri.localhost`)
-/// and a page served by this server itself, i.e. an `http(s)` origin whose
-/// authority equals `host_header`. Callers must pass a `host_header` that has
-/// already been validated (or "" to skip the same-origin case), otherwise a
-/// rebinding hostname would match itself.
+/// the app's own webview (`tauri://localhost`, or `http(s)://tauri.localhost`
+/// on Windows and Android) and a page served by this server itself, i.e. an
+/// `http(s)` origin whose authority equals `host_header`. Callers must pass a
+/// `host_header` that has already been validated (or "" to skip the
+/// same-origin case), otherwise a rebinding hostname would match itself.
 pub fn is_same_or_app_origin(origin: &str, host_header: &str) -> bool {
+    is_same_or_app_origin_on(origin, host_header, TAURI_LOCALHOST_IS_APP)
+}
+
+fn is_same_or_app_origin_on(origin: &str, host_header: &str, tauri_localhost_is_app: bool) -> bool {
     let Some((scheme, authority)) = parse_origin(origin) else {
         return false;
     };
     let is_http = scheme == "http" || scheme == "https";
-    if (scheme == "tauri" && authority == "localhost") || (is_http && authority == "tauri.localhost")
+    if (scheme == "tauri" && authority == "localhost")
+        || (tauri_localhost_is_app && is_http && authority == "tauri.localhost")
     {
         return true;
     }
@@ -282,8 +293,6 @@ mod tests {
             "http://[::1]:8080",
             "HTTP://LOCALHOST:5173",
             "tauri://localhost",
-            "http://tauri.localhost",
-            "https://tauri.localhost",
         ] {
             assert!(is_trusted_origin(o, "127.0.0.1:1337", &t), "{o}");
         }
@@ -360,7 +369,19 @@ mod tests {
     #[test]
     fn same_or_app_origin_only() {
         assert!(is_same_or_app_origin("tauri://localhost", ""));
-        assert!(is_same_or_app_origin("http://tauri.localhost", ""));
+        assert!(is_same_or_app_origin_on("http://tauri.localhost", "", true));
+        assert!(is_same_or_app_origin_on("https://tauri.localhost", "", true));
+        assert!(!is_same_or_app_origin_on("http://tauri.localhost", "", false));
+        assert!(!is_same_or_app_origin_on("https://tauri.localhost", "", false));
+        assert!(!is_same_or_app_origin_on("tauri://tauri.localhost", "", true));
+        assert_eq!(
+            is_same_or_app_origin("http://tauri.localhost", ""),
+            cfg!(any(windows, target_os = "android"))
+        );
+        assert_eq!(
+            is_trusted_origin("http://tauri.localhost", "127.0.0.1:1337", &none()),
+            cfg!(any(windows, target_os = "android"))
+        );
         assert!(is_same_or_app_origin("http://127.0.0.1:1337", "127.0.0.1:1337"));
         assert!(!is_same_or_app_origin("http://localhost:3000", "127.0.0.1:1337"));
         assert!(!is_same_or_app_origin("http://127.0.0.1:1337", ""));
