@@ -161,7 +161,7 @@ describe('Load unpacked', () => {
     expect(dialog).toHaveTextContent('High risk')
     // network:* also covers local servers; the consent says so.
     expect(dialog).toHaveTextContent(
-      "Includes servers on this computer. Jan's own local API server is always blocked."
+      "Includes servers on this computer on any port: localhost and 127.0.0.1 over http or https, other local addresses such as ::1 over https only. Jan's own local API server is always blocked."
     )
     expect(host.spawnWorkerExtension).not.toHaveBeenCalled()
 

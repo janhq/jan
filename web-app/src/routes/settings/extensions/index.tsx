@@ -22,7 +22,8 @@ import { useStagedInstall } from '@/containers/extensions/useStagedInstall'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { HostedExtension } from '@/lib/extensions/host'
+import { getExtensionHost, type HostedExtension } from '@/lib/extensions/host'
+import { applySafeMode } from '@/lib/extensions/installed-loader'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { InstalledExtension } from '@/services/extensions/types'
 
@@ -105,12 +106,10 @@ function InstalledTab({
   hosted,
   registry,
   begin,
-  stageError,
 }: {
   hosted: HostedExtension[]
   registry: InstalledRegistry
   begin: ReturnType<typeof useStagedInstall>['begin']
-  stageError?: string
 }) {
   const { t } = useTranslation()
   const dialog = useServiceHub().dialog()
@@ -137,7 +136,8 @@ function InstalledTab({
     if (path) await begin(() => service.stageBundle(path))
   }
 
-  const setSafeMode = (on: boolean) => change(() => service.setSafeMode(on))
+  const setSafeMode = (on: boolean) =>
+    change(() => applySafeMode(getExtensionHost(), service, on))
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -146,16 +146,9 @@ function InstalledTab({
         {/* Folder loading is a developer tool; release builds never show it. */}
         {isDevBuild() && <LoadUnpacked />}
         {supported && (
-          <div className="flex flex-col items-end gap-1">
-            <Button size="sm" onClick={installFromFile}>
-              {t('extensions:install.fromFile')}
-            </Button>
-            {stageError && (
-              <span role="alert" className="text-xs text-destructive">
-                {stageError}
-              </span>
-            )}
-          </div>
+          <Button size="sm" onClick={installFromFile}>
+            {t('extensions:install.fromFile')}
+          </Button>
         )}
       </div>
       {supported && (
@@ -228,7 +221,6 @@ function ExtensionsContent() {
       hosted={hosted}
       registry={registry}
       begin={install.begin}
-      stageError={install.error}
     />
   )
   return (

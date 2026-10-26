@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { staged } from '@/services/extensions/__tests__/mock'
+import type { StagedInstall } from '@/services/extensions/types'
 import { ConsentDialog } from '../ConsentDialog'
 import { PermissionDiffDialog } from '../PermissionDiffDialog'
 
@@ -89,6 +90,34 @@ describe('ConsentDialog', () => {
     expect(onConfirm).toHaveBeenCalledWith(['ui:notify'])
   })
 
+  it('says network:* includes every loopback host except the local API server', () => {
+    render(
+      <ConsentDialog
+        staged={staged('acme.hello', ['network:*'])}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      "Includes servers on this computer on any port: localhost and 127.0.0.1 over http or https, other local addresses such as ::1 over https only. Jan's own local API server is always blocked."
+    )
+  })
+
+  it('says a local host grant covers any port except the local API server', () => {
+    render(
+      <ConsentDialog
+        staged={staged('acme.hello', ['network:localhost'])}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent(
+      "Covers every port of this host, over http or https, except Jan's own local API server, which is always blocked."
+    )
+    expect(dialog).not.toHaveTextContent('::1')
+  })
+
   it('cancels without confirming', async () => {
     const onConfirm = vi.fn()
     const onCancel = vi.fn()
@@ -170,6 +199,106 @@ describe('PermissionDiffDialog', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'This update asks for no new permissions.'
     )
+  })
+
+  const indexSource = (sourceId: string, sourceName: string) => ({
+    kind: 'index' as const,
+    sourceId,
+    sourceName,
+    url: `https://${sourceId}.dev/index.json`,
+    tarball: `https://${sourceId}.dev/hello.tgz`,
+    integrity: 'sha512-c3RhZ2Vk',
+  })
+  const fromSource = (
+    next: StagedInstall['source'],
+    previous: StagedInstall['source'],
+    flags: { verified?: boolean; wasVerified?: boolean } = {}
+  ): StagedInstall => ({
+    ...update,
+    verified: flags.verified ?? false,
+    integrityChecked: next.kind === 'index',
+    source: next,
+    existing: {
+      ...update.existing!,
+      installedFrom: { source: previous, verified: flags.wasVerified ?? false },
+    },
+  })
+  const renderUpdate = (s: StagedInstall) =>
+    render(
+      <PermissionDiffDialog staged={s} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    )
+
+  it('warns when an update comes from another index than the installed version', () => {
+    renderUpdate(
+      fromSource(indexSource('b', 'Other Index'), indexSource('a', 'Acme Index'), {
+        verified: true,
+        wasVerified: true,
+      })
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Verified by Other Index')
+    expect(dialog).toHaveTextContent(
+      'This update comes from Other Index, but Ext acme.hello was installed from Acme Index.'
+    )
+  })
+
+  it('warns when a file replaces a version installed from an index', () => {
+    renderUpdate(
+      fromSource(
+        { kind: 'bundle', fileName: 'hello.tgz', sha512: 'sha512-c3RhZ2Vk' },
+        indexSource('a', 'Acme Index'),
+        { wasVerified: true }
+      )
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'This update is a file from disk, but Ext acme.hello was installed from Acme Index.'
+    )
+  })
+
+  it('warns when an index update replaces a version installed from a file', () => {
+    renderUpdate(
+      fromSource(indexSource('a', 'Acme Index'), {
+        kind: 'bundle',
+        fileName: 'old.tgz',
+        sha512: 'sha512-old',
+      })
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'This update comes from Acme Index, but Ext acme.hello was installed from the file old.tgz.'
+    )
+  })
+
+  it('warns when an update of a signed install is not signed', () => {
+    const acme = indexSource('a', 'Acme Index')
+    renderUpdate(fromSource(acme, acme, { verified: false, wasVerified: true }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent(
+      'Ext acme.hello was verified by the signing key of Acme Index, but this update is not signed.'
+    )
+    expect(dialog).not.toHaveTextContent('This update comes from')
+  })
+
+  it('does not warn for an update from the same source', () => {
+    const acme = indexSource('a', 'Acme Index')
+    renderUpdate(
+      fromSource(acme, { ...acme, sourceId: 're-added' }, {
+        verified: true,
+        wasVerified: true,
+      })
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).not.toHaveTextContent('This update')
+    expect(dialog).not.toHaveTextContent('not signed')
+  })
+
+  it('does not warn for a file replacing a file', () => {
+    renderUpdate(
+      fromSource(
+        { kind: 'bundle', fileName: 'hello.tgz', sha512: 'sha512-c3RhZ2Vk' },
+        { kind: 'bundle', fileName: 'hello-old.tgz', sha512: 'sha512-old' }
+      )
+    )
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('This update is')
   })
 
   it('still requires trusting the author of an unverified update', async () => {

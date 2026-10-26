@@ -54,7 +54,7 @@ A call without the needed grant fails with the error code `E_PERMISSION`.
 | `network:api.example.com` | exactly `api.example.com` |
 | `network:*.example.com` | any subdomain, such as `api.example.com` or `a.b.example.com`, but **not** `example.com` itself |
 | `network:localhost`, `network:127.0.0.1` | that local host, on any port |
-| `network:*` | any host (shown as high risk) |
+| `network:*` | any host (shown as high risk), **including the hosts on your own computer**: `localhost` and `127.0.0.1` on any port (http or https), and other local addresses such as `[::1]` on any port over https |
 
 Host names are lowercase. Rules that apply to every request:
 
@@ -64,7 +64,10 @@ Host names are lowercase. Rules that apply to every request:
 - Ports are not checked: a grant for a host covers every port on it.
 - **Jan's own Local API Server is always blocked.** Its port on `localhost` and
   `127.0.0.1` is refused whatever the grant, because it serves requests with
-  your provider keys. The consent dialog notes this next to a local grant.
+  your provider keys. The consent dialog notes this next to `network:*` and a
+  local grant, and says that every other local port is reachable. `[::1]` and
+  other loopback addresses are reachable only over https, which Jan's server
+  does not speak.
 - Redirects are not followed automatically. Jan checks every hop against the
   grants (at most 5 redirects) and drops non-safelisted headers once a redirect
   leaves the original origin.

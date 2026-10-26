@@ -43,6 +43,11 @@ pub struct Existing {
     pub version: String,
     /// What the user granted it.
     pub granted: Vec<String>,
+    /// Where the active version came from, so an update from another source
+    /// can say so.
+    pub source: Source,
+    /// The active version came from a keyed source whose signature verified.
+    pub verified: bool,
 }
 
 /// A staged package, shown in the consent dialog.
@@ -290,6 +295,8 @@ pub fn stage_tarball(
         existing: existing.map(|e| Existing {
             version: e.active,
             granted: e.granted,
+            source: e.current.source,
+            verified: e.current.verified,
         }),
         permission_diff,
     };

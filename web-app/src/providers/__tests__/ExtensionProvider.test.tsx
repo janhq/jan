@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
     activateBuiltins: vi.fn().mockResolvedValue(undefined),
     loadInstalled: vi.fn().mockResolvedValue(undefined),
     deactivateAll: vi.fn().mockResolvedValue(undefined),
+    list: vi.fn(() => [] as { id: string; source: string }[]),
+    reload: vi.fn().mockResolvedValue(undefined),
   },
   installSupported: true,
   settings: new Map<string, string>(),
@@ -36,6 +38,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
     extensions: () => ({
       isSupported: () => h.installSupported,
       setSafeMode: h.setSafeMode,
+      list: async () => ({ extensions: [{ id: 'acme.one' }] }),
     }),
   }),
 }))
@@ -151,6 +154,18 @@ describe('ExtensionProvider', () => {
       h.host.loadInstalled.mock.invocationCallOrder[0]
     )
     expect(h.toastWarning).toHaveBeenCalledWith('extensions:crashed.safeMode')
+  })
+
+  it('applies the safe mode the guard turns on to the installed extensions live', async () => {
+    h.settings.set('extension-host:failedStarts', '2')
+    renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() => expect(h.host.loadInstalled).toHaveBeenCalled())
+    // Stopped through the same reload path an enable or disable takes.
+    expect(h.host.reload).toHaveBeenCalledWith('acme.one')
+    expect(h.host.reload.mock.invocationCallOrder[0]).toBeLessThan(
+      h.host.loadInstalled.mock.invocationCallOrder[0]
+    )
   })
 
   it('skips the installed extensions and says so when safe mode cannot be turned on', async () => {

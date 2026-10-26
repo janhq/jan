@@ -52,7 +52,8 @@
     "network": {
       "title": "Connect to {{host}}",
       "description": "Send requests to this host and read the replies.",
-      "localServers": "Includes servers on this computer. Jan's own local API server is always blocked."
+      "localServers": "Includes servers on this computer on any port: localhost and 127.0.0.1 over http or https, other local addresses such as ::1 over https only. Jan's own local API server is always blocked.",
+      "localPorts": "Covers every port of this host, over http or https, except Jan's own local API server, which is always blocked."
     },
     "providers": {
       "title": "Add model providers",
@@ -130,6 +131,12 @@
     "added": "New permissions",
     "removed": "No longer needed",
     "nothingAdded": "This update asks for no new permissions."
+  },
+  "sourceChange": {
+    "indexWasIndex": "This update comes from {{next}}, but {{name}} was installed from {{previous}}.",
+    "indexWasFile": "This update comes from {{next}}, but {{name}} was installed from the file {{file}}.",
+    "fileWasIndex": "This update is a file from disk, but {{name}} was installed from {{previous}}.",
+    "unsigned": "{{name}} was verified by the signing key of {{previous}}, but this update is not signed."
   },
   "safeMode": {
     "title": "Safe mode",

@@ -81,9 +81,20 @@ export function createMockExtensionsService(initial: Partial<MockState> = {}) {
     if (!entry) throw new Error(`not installed: ${id}`)
     return entry
   }
-  const takeStage = async () => {
-    if (!state.stage) throw new Error('nothing to stage')
-    return state.stage
+  // Like the Rust stage: an update carries where the installed version came
+  // from. A test that sets it explicitly keeps its own value.
+  const takeStage = async (): Promise<StagedInstall> => {
+    const stage = state.stage
+    if (!stage) throw new Error('nothing to stage')
+    const entry = state.extensions.find((e) => e.id === stage.manifest.id)
+    if (!stage.existing || stage.existing.installedFrom || !entry) return stage
+    return {
+      ...stage,
+      existing: {
+        ...stage.existing,
+        installedFrom: { source: entry.source, verified: entry.verified },
+      },
+    }
   }
   const service = {
     isSupported: vi.fn(() => true),

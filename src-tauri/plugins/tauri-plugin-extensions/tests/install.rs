@@ -119,6 +119,8 @@ fn an_update_computes_the_permission_diff_and_keeps_one_previous() {
     let existing = staged.existing.clone().unwrap();
     assert_eq!(existing.version, "0.1.0");
     assert_eq!(existing.granted, strings(&["ui:notify", "tools"]));
+    assert!(matches!(existing.source, Source::Bundle { .. }), "{:?}", existing.source);
+    assert!(!existing.verified);
     assert_eq!(
         staged.permission_diff,
         PermissionDiff { added: strings(&["network:api.acme.dev"]), removed: strings(&["tools"]) }

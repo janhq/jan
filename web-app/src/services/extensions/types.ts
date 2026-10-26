@@ -15,6 +15,7 @@ import type {
 import type * as Plugin from '@janhq/tauri-plugin-extensions-api'
 import type {
   Catalog,
+  ExtensionSource,
   IndexSourceEntry as IndexSource,
   SourceList,
 } from '@janhq/tauri-plugin-extensions-api'
@@ -41,6 +42,14 @@ export interface PermissionDiff {
 export interface ExistingInstall {
   version: string
   granted: PermissionString[]
+  /**
+   * Where the installed version came from, so an update from another
+   * source (or an unsigned one) can say so.
+   */
+  installedFrom: {
+    source: ExtensionSource
+    verified: boolean
+  }
 }
 
 /**

@@ -42,6 +42,10 @@ async function toStaged(staged: plugin.StagedInstall): Promise<StagedInstall> {
           existing: {
             version: existing.version,
             granted: toPermissions(existing.granted),
+            installedFrom: {
+              source: existing.source,
+              verified: existing.verified,
+            },
           },
         }
       : {}),

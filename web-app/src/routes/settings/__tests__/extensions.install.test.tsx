@@ -18,7 +18,13 @@ const h = vi.hoisted(() => ({
   open: vi.fn(),
   reload: vi.fn(async (_id: string) => undefined),
   unload: vi.fn(async (_id: string) => undefined),
+  loadInstalled: vi.fn(async () => undefined),
   service: undefined as unknown,
+  toastError: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({
+  toast: { error: h.toastError, success: vi.fn() },
 }))
 
 vi.mock('@/lib/extensions/host', () => ({
@@ -26,6 +32,8 @@ vi.mock('@/lib/extensions/host', () => ({
     list: () => h.hosted,
     onDidChange: () => ({ dispose: () => undefined }),
     unload: h.unload,
+    reload: h.reload,
+    loadInstalled: h.loadInstalled,
   }),
 }))
 vi.mock('@/lib/extensions/installed-reload', () => ({
@@ -63,6 +71,8 @@ beforeEach(() => {
   h.hosted = []
   h.open.mockReset()
   h.reload.mockClear()
+  h.loadInstalled.mockClear()
+  h.toastError.mockClear()
   mock = createMockExtensionsService()
   h.service = mock.service
 })
@@ -224,15 +234,18 @@ describe('install from file', () => {
     expect(mock.service.discardStage).toHaveBeenCalledWith('stage-acme.hello')
   })
 
-  it('shows a translated error when staging fails', async () => {
+  it('shows a translated error toast when staging fails', async () => {
     h.open.mockResolvedValue('/downloads/bad.tgz')
     render(<Page />)
     await userEvent.click(
       screen.getByRole('button', { name: 'Install from file...' })
     )
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not open the extension: nothing to stage'
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        'Could not open the extension: nothing to stage'
+      )
     )
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
 
@@ -249,6 +262,8 @@ describe('safe mode', () => {
     )
     expect(mock.service.setSafeMode).toHaveBeenCalledWith(false)
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+    // Loaded now, not at the next start.
+    expect(h.loadInstalled).toHaveBeenCalled()
   })
 
   it('turns safe mode on from its switch', async () => {
@@ -258,6 +273,15 @@ describe('safe mode', () => {
     )
     expect(mock.service.setSafeMode).toHaveBeenCalledWith(true)
     expect(await screen.findByRole('status')).toBeInTheDocument()
+  })
+
+  it('stops the running installed extensions when it turns on', async () => {
+    mock.state.extensions = [installed('acme.hello')]
+    render(<Page />)
+    await userEvent.click(
+      await screen.findByRole('switch', { name: 'Safe mode' })
+    )
+    await waitFor(() => expect(h.reload).toHaveBeenCalledWith('acme.hello'))
   })
 })
 
@@ -566,6 +590,69 @@ describe('catalog', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
     const current = await screen.findByRole('button', { name: 'Installed' })
     expect(current).toBeDisabled()
+  })
+
+  it('shows why staging a catalog install failed', async () => {
+    mock.state.sources = [source]
+    mock.state.catalogs = { 'src-1': catalog }
+    mock.service.stageFromIndex.mockRejectedValueOnce(
+      new Error('the tarball does not match the integrity the index pinned')
+    )
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Install' }))
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        'Could not open the extension: the tarball does not match the integrity the index pinned'
+      )
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows why staging a catalog update failed', async () => {
+    mock.state.sources = [source]
+    mock.state.catalogs = { 'src-1': catalog }
+    mock.state.extensions = [installed('acme.hello', { version: '0.1.0' })]
+    mock.service.stageFromIndex.mockRejectedValueOnce(
+      new Error("requests permissions the index did not list: tools")
+    )
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Update to 0.2.0' })
+    )
+    await waitFor(() =>
+      expect(h.toastError).toHaveBeenCalledWith(
+        'Could not open the extension: requests permissions the index did not list: tools'
+      )
+    )
+  })
+
+  it('warns when an update comes from another source than the installed version', async () => {
+    mock.state.sources = [source]
+    mock.state.catalogs = { 'src-1': catalog }
+    mock.state.extensions = [
+      installed('acme.hello', {
+        version: '0.1.0',
+        granted: ['ui:notify'],
+        source: { kind: 'bundle', fileName: 'hello.tgz', sha512: 'sha512-a' },
+      }),
+    ]
+    mock.state.stage = {
+      ...indexStage(true),
+      existing: { version: '0.1.0', granted: ['ui:notify'] },
+      permissionDiff: { added: [], removed: [] },
+    }
+    render(<Page />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Catalog' }))
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Update to 0.2.0' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Verified by Acme Index')
+    expect(dialog).toHaveTextContent(
+      'This update comes from Acme Index, but Ext acme.hello was installed from the file hello.tgz.'
+    )
   })
 
   it('shows an unreachable index as an error', async () => {

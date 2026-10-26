@@ -11,8 +11,8 @@ import type {
   ListResult,
 } from '@janhq/tauri-plugin-extensions-api'
 import { ExtensionHost } from '../host'
-import type { InstalledRegistry } from '../installed-loader'
-import { manifest } from './fixtures'
+import { applySafeMode, type InstalledRegistry } from '../installed-loader'
+import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
 // Registers a command, so the test can see it ran.
@@ -322,5 +322,125 @@ describe('ExtensionHost.reload', () => {
     state.extensions[0] = entry('acme.one')
     await host.reload('acme.one')
     expect(states(host)).toEqual({ 'acme.one': ['installed', 'active'] })
+  })
+})
+
+describe('applySafeMode', () => {
+  // The service the settings page and the crash-loop guard hand in: it
+  // persists the flag the registry then reports.
+  const service = (state: { safeMode: boolean }, registry: InstalledRegistry) => ({
+    setSafeMode: vi.fn(async (on: boolean) => {
+      state.safeMode = on
+    }),
+    list: () => registry.list(),
+  })
+
+  it('turning it on stops every running installed extension and drops its contributions', async () => {
+    const { state, registry } = fakeRegistry([entry('acme.one'), entry('acme.two')])
+    const host = newHost(registry)
+    await host.loadInstalled()
+    expect(host.contributions.getState().commands['acme.one']).toBeDefined()
+
+    const svc = service(state, registry)
+    await applySafeMode(host, svc, true)
+
+    expect(svc.setSafeMode).toHaveBeenCalledWith(true)
+    expect(workers.every((w) => w.terminated)).toBe(true)
+    expect(host.list()).toEqual([])
+    expect(host.contributions.getState().commands['acme.one']).toBeUndefined()
+    expect(host.dispatcher.has('acme.one', 'ui:notify')).toBe(false)
+  })
+
+  it('turning it off starts the enabled installed extensions as at startup', async () => {
+    const { state, registry } = fakeRegistry(
+      [entry('acme.one'), entry('acme.off', { enabled: false })],
+      true
+    )
+    const host = newHost(registry)
+    await host.loadInstalled()
+    expect(host.list()).toEqual([])
+
+    await applySafeMode(host, service(state, registry), false)
+
+    expect(states(host)).toEqual({ 'acme.one': ['installed', 'active'] })
+    await expect(
+      host.contributions.executeCommand('acme.one', 'hello', {
+        location: 'commandPalette',
+      })
+    ).resolves.toBe('hi')
+  })
+
+  it('changes nothing that runs when the flag cannot be saved', async () => {
+    const { state, registry } = fakeRegistry([entry('acme.one')])
+    const host = newHost(registry)
+    await host.loadInstalled()
+    const svc = service(state, registry)
+    svc.setSafeMode.mockRejectedValue(new Error('registry I/O'))
+
+    await expect(applySafeMode(host, svc, true)).rejects.toThrow('registry I/O')
+    expect(states(host)).toEqual({ 'acme.one': ['installed', 'active'] })
+  })
+
+  it('leaves built-ins and development copies running', async () => {
+    const { state, registry } = fakeRegistry([entry('acme.one')])
+    const host = newHost(registry)
+    await host.activateBuiltins([
+      builtin(manifest('jan.core'), { activate: () => undefined }),
+    ])
+    await host.spawnWorkerExtension({
+      manifest: manifest('acme.dev', {
+        contributes: { commands: [{ id: 'hello', title: 'Hello' }] },
+      }),
+      bundle: BUNDLE,
+      grants: [],
+      source: 'dev',
+    })
+    await host.loadInstalled()
+
+    await applySafeMode(host, service(state, registry), true)
+
+    expect(states(host)).toEqual({
+      'jan.core': ['builtin', 'active'],
+      'acme.dev': ['dev', 'active'],
+    })
+  })
+
+  it('still stops what runs when the registry cannot be read', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { state, registry } = fakeRegistry([entry('acme.one')])
+    const host = newHost(registry)
+    await host.loadInstalled()
+    registry.list.mockRejectedValue(new Error('registry gone'))
+    const svc = service(state, registry)
+
+    await applySafeMode(host, svc, true)
+
+    expect(host.list()).toEqual([])
+  })
+
+  it('also stops an extension whose start was still in flight', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { state, registry } = fakeRegistry([entry('acme.one')])
+    const host = newHost(registry)
+    // The start has read the registry before safe mode went on, and is
+    // still reading the entry, so the host does not hold it yet.
+    let open = () => {}
+    const gate = new Promise<void>((resolve) => (open = resolve))
+    const read = registry.readEntry.getMockImplementation()!
+    let reads = 0
+    registry.readEntry.mockImplementation(async (id) => {
+      reads += 1
+      await gate
+      return read(id)
+    })
+    const loading = host.loadInstalled()
+    await vi.waitFor(() => expect(reads).toBe(1))
+
+    const applied = applySafeMode(host, service(state, registry), true)
+    open()
+    await Promise.all([loading, applied])
+
+    expect(host.list()).toEqual([])
+    expect(workers.every((w) => w.terminated)).toBe(true)
   })
 })

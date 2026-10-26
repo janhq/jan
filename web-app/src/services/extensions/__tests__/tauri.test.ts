@@ -94,13 +94,34 @@ describe('TauriExtensionsService', () => {
     expect(result.permissionDiff).toEqual({ added: ['ui:notify'], removed: [] })
   })
 
-  it('keeps what an update replaces', async () => {
+  it('keeps what an update replaces and where it came from', async () => {
+    const from = {
+      kind: 'index' as const,
+      sourceId: 'old',
+      sourceName: 'Old Index',
+      url: 'https://old.dev/index.json',
+      tarball: 'https://old.dev/hello.tgz',
+      integrity: 'sha512-o',
+    }
     plugin.stageFromIndex.mockResolvedValue(
-      staged({ existing: { version: '0.9.0', granted: ['ui:notify'] } })
+      staged({
+        existing: {
+          version: '0.9.0',
+          granted: ['ui:notify'],
+          source: from,
+          verified: true,
+        },
+      })
     )
     const result = await service.stageFromIndex('src', ID, '1.0.0')
     expect(plugin.stageFromIndex).toHaveBeenCalledWith('src', ID, '1.0.0')
-    expect(result.existing).toEqual({ version: '0.9.0', granted: ['ui:notify'] })
+    expect(result.existing).toEqual({
+      version: '0.9.0',
+      granted: ['ui:notify'],
+      installedFrom: { source: from, verified: true },
+    })
+    // The stage carries the source; staging never reads the registry.
+    expect(plugin.list).not.toHaveBeenCalled()
   })
 
   it('discards a stage whose manifest the host refuses', async () => {

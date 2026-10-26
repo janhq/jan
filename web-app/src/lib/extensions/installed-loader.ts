@@ -115,3 +115,43 @@ export async function startInstalled(
   const entry = (await enabledInstalled(registry)).find((e) => e.id === id)
   if (entry) await loadOne(host, registry, entry)
 }
+
+/** What turning safe mode on or off needs of the extensions service. */
+export interface SafeModeService {
+  setSafeMode(on: boolean): Promise<void>
+  list(): Promise<{ extensions: readonly { id: string }[] }>
+}
+
+/**
+ * Turns safe mode on or off and applies it to what runs now, so it does not
+ * wait for a restart. The flag is saved first; if that fails nothing
+ * running changes. On stops every installed extension, releasing its
+ * contributions; off starts the enabled ones as at startup. Built-ins and
+ * development copies are left alone.
+ *
+ * Both go through `host.reload`, which re-reads the registry after any
+ * reload of the same id already running. So a start that read the registry
+ * before the flag changed is followed by one that sees it, and ends
+ * stopped. The ids come from the registry as well as the host, because
+ * such a start may not have reached the host yet.
+ */
+export async function applySafeMode(
+  host: Pick<ExtensionHost, 'list' | 'reload' | 'loadInstalled'>,
+  service: SafeModeService,
+  on: boolean
+): Promise<void> {
+  await service.setSafeMode(on)
+  if (!on) return host.loadInstalled()
+  const ids = new Set(
+    host
+      .list()
+      .filter((e) => e.source === 'installed')
+      .map((e) => e.id)
+  )
+  try {
+    for (const e of (await service.list()).extensions) ids.add(e.id)
+  } catch (error) {
+    console.error('Could not read the installed extensions:', errorText(error))
+  }
+  await Promise.allSettled([...ids].map((id) => host.reload(id)))
+}
