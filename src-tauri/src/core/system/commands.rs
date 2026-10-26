@@ -353,11 +353,21 @@ const RESERVED_ENV_KEYS: &[&str] = &[
     "SYSTEMROOT",
     "WINDIR",
     "SYSTEMDRIVE",
+    // Where Jan looks for installed programs and GPU runtimes on Windows.
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "CUDA_PATH",
+    "CUDA_HOME",
+    "HIP_PATH",
+    "ROCM_PATH",
+    "ROCM_HOME",
 ];
 
-/// Prefixes of reserved variable names: the dynamic loader's settings and
-/// Jan's own configuration.
-const RESERVED_ENV_PREFIXES: &[&str] = &["LD_", "DYLD_", "JAN_"];
+/// Prefixes of reserved variable names: the dynamic loader's settings, Jan's
+/// own configuration, the versioned CUDA install paths Jan scans, and the
+/// WebView2 runtime's settings.
+const RESERVED_ENV_PREFIXES: &[&str] = &["LD_", "DYLD_", "JAN_", "CUDA_PATH_V", "WEBVIEW2_"];
 
 /// Whether `key` is one Jan refuses to set. Compared case-insensitively:
 /// Windows variable names are case-insensitive, and zsh ties lowercase
@@ -1424,10 +1434,22 @@ mod tests {
             "dyld_library_path",
             "JAN_DATA_FOLDER",
             "jan_anything",
+            "ProgramFiles",
+            "PROGRAMW6432",
+            "cuda_path",
+            "CUDA_HOME",
+            "CUDA_PATH_V12_4",
+            "HIP_PATH",
+            "ROCM_PATH",
+            "rocm_home",
+            "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+            "webview2_additional_browser_arguments",
         ] {
             let err = validate_env_vars(&[kv(bad, "v")]).unwrap_err();
             assert!(err.contains(bad), "{bad}: {err}");
         }
+        // Not a valid name to write either, but reserved in its own right.
+        assert!(is_reserved_env_key("ProgramFiles(x86)"));
         for good in [
             "PATHS",
             "MY_PATH",
@@ -1437,6 +1459,9 @@ mod tests {
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_BASE_URL",
             "LD",
+            "CUDA_VISIBLE_DEVICES",
+            "HIP_VISIBLE_DEVICES",
+            "WEBVIEW2",
             // Typed by the user on purpose (e.g. a Claude Code tweak), so allowed.
             "NODE_OPTIONS",
             "node_options",
