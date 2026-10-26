@@ -19,6 +19,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { buildSrcDoc } from '@/lib/htmlSandbox'
 import { previewShimError } from '@/lib/previewShim'
 import {
+  artifactOpener,
   previewUrl,
   registerPreviewRoot,
   unregisterPreviewRoot,
@@ -212,7 +213,7 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
               {iconButton(
                 t('common:artifactOpenExternal'),
                 SquareArrowOutUpRight,
-                () => void openOrReveal(serviceHub.opener(), abs)
+                () => void openOrReveal(artifactOpener(), roots, abs)
               )}
               {iconButton(
                 t('common:artifactShowInFolder'),

@@ -1,4 +1,5 @@
 import {
+  openArtifact,
   previewRegisterRoot,
   previewUnregisterRoot,
 } from '@janhq/tauri-plugin-agent-tools-api'
@@ -20,4 +21,17 @@ export const unregisterPreviewRoot = (root: string) =>
 /** The `preview://` URL for an absolute file path, on this platform. */
 export function previewUrl(abs: string): string {
   return previewUrlFor(abs, getServiceHub().core().convertFileSrc('/', 'preview'))
+}
+
+/** What `openOrReveal` opens and reveals with: "Open" goes through the host,
+ * which checks the file itself rather than its name (`open_artifact`). */
+export function artifactOpener() {
+  return {
+    openArtifact: async (roots: string[], abs: string) => {
+      const dataFolder = await getServiceHub().app().getJanDataFolder()
+      await openArtifact(dataFolder ?? '', roots, abs)
+    },
+    revealItemInDir: (abs: string) =>
+      getServiceHub().opener().revealItemInDir(abs),
+  }
 }

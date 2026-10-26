@@ -34,4 +34,5 @@ permissions = [
     "allow-cancel-thread-bash",
     "allow-preview-register-root",
     "allow-preview-unregister-root",
+    "allow-open-artifact",
 ]

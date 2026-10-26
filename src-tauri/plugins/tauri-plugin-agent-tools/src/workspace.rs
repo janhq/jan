@@ -269,7 +269,7 @@ fn strip_data_volume_prefix(key: &str) -> &str {
     }
 }
 
-fn is_within(inner: &Path, outer: &Path) -> bool {
+pub(crate) fn is_within(inner: &Path, outer: &Path) -> bool {
     let (inner, outer) = (containment_key(inner), containment_key(outer));
     inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
 }

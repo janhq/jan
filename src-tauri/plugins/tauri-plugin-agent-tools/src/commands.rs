@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::artifact;
 use crate::memory;
 use crate::permissions::ToolPermissions;
 use crate::preview::{self, PreviewRoots};
@@ -1071,6 +1072,29 @@ pub fn preview_register_root(
 #[tauri::command]
 pub fn preview_unregister_root(roots: tauri::State<'_, PreviewRoots>, root: String) {
     roots.unregister(Path::new(&root));
+}
+
+/// Cowork's "Open": hand an agent-written file to its OS default app, once
+/// [`artifact::checked_artifact`] has checked the file itself, not just its
+/// name, against the session's folders in `roots`. A refusal is an error the
+/// frontend answers by revealing the file instead.
+#[tauri::command]
+pub async fn open_artifact<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    data_folder: String,
+    roots: Vec<String>,
+    path: String,
+) -> Result<(), AgentToolsError> {
+    use tauri_plugin_opener::OpenerExt;
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let roots = artifact::open_roots(&data_folder, &roots);
+    let file = artifact::checked_artifact(Path::new(&path), &roots)?;
+    // The canonical path, so what opens is what was checked; without the
+    // `\\?\` prefix `canonicalize` adds on Windows, which not every handler accepts.
+    let file = crate::tools::proc::without_verbatim_prefix(&file);
+    app.opener()
+        .open_path(file.to_string_lossy(), None::<&str>)
+        .map_err(|e| AgentToolsError::from(e.to_string()))
 }
 
 /// One `preview://` request. Anything not resolvable to a file under a

@@ -112,17 +112,29 @@ export function opensInDefaultApp(path: string): boolean {
 }
 
 /** "Open" for an agent-written file: the default app for a document or media
- * type, the file manager (file selected) for anything else. */
-export function openOrReveal(
+ * type, the file manager (file selected) for anything else. The name is only a
+ * first cut: `openArtifact` checks the file itself (a `report.pdf` can be a
+ * link to a program), and whatever it refuses is revealed instead. */
+export async function openOrReveal(
   opener: {
-    openPath(path: string): Promise<void>
+    openArtifact(roots: string[], path: string): Promise<void>
     revealItemInDir(path: string): Promise<void>
   },
+  roots: Array<string | null>,
   abs: string
 ): Promise<void> {
-  return opensInDefaultApp(abs)
-    ? opener.openPath(abs)
-    : opener.revealItemInDir(abs)
+  if (opensInDefaultApp(abs)) {
+    try {
+      await opener.openArtifact(
+        roots.filter((r): r is string => !!r),
+        abs
+      )
+      return
+    } catch {
+      // Refused or failed: fall through to showing it in its folder.
+    }
+  }
+  await opener.revealItemInDir(abs)
 }
 
 export function basenameOf(path: string): string {

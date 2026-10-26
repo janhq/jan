@@ -9,6 +9,7 @@
 //! available in both configurations; only `init()` and the IPC shims in
 //! `commands` are gated.
 
+pub mod artifact;
 pub mod memory;
 pub mod permissions;
 pub mod preview;
@@ -79,7 +80,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::stop_session_monitors,
             commands::cancel_thread_bash,
             commands::preview_register_root,
-            commands::preview_unregister_root
+            commands::preview_unregister_root,
+            commands::open_artifact
         ])
         .setup(|app, _api| {
             use tauri::Manager;

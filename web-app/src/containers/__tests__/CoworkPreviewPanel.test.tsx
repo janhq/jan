@@ -13,13 +13,16 @@ const convertFileSrc = vi.fn((p: string, protocol?: string) =>
 )
 const previewRegisterRoot = vi.fn(async () => {})
 const previewUnregisterRoot = vi.fn(async () => {})
+const openArtifact = vi.fn(async () => {})
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   previewRegisterRoot: (...a: unknown[]) => previewRegisterRoot(...a),
   previewUnregisterRoot: (...a: unknown[]) => previewUnregisterRoot(...a),
+  openArtifact: (...a: unknown[]) => openArtifact(...a),
 }))
 const openPath = vi.fn()
 const revealItemInDir = vi.fn()
 const hub = {
+  app: () => ({ getJanDataFolder: async () => '/data' }),
   core: () => ({ convertFileSrc }),
   opener: () => ({ openPath, revealItemInDir }),
 }
@@ -252,6 +255,28 @@ describe('CoworkPreviewPanel', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
     expect(frame.getAttribute('src')).toBeNull()
     expect(previewRegisterRoot).not.toHaveBeenCalled()
+  })
+
+  // "Open" goes through the host, which checks the file and not just its
+  // name; a refusal shows the file in its folder instead.
+  it('opens through the host check and reveals what it refuses', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+    await screen.findByTitle('page.html')
+
+    fireEvent.click(screen.getByLabelText('common:artifactOpenExternal'))
+    await waitFor(() =>
+      expect(openArtifact).toHaveBeenCalledWith('/data', [ROOT], `${ROOT}/page.html`)
+    )
+    expect(openPath).not.toHaveBeenCalled()
+    expect(revealItemInDir).not.toHaveBeenCalled()
+
+    openArtifact.mockRejectedValueOnce(new Error('is a link'))
+    fireEvent.click(screen.getByLabelText('common:artifactOpenExternal'))
+    await waitFor(() =>
+      expect(revealItemInDir).toHaveBeenCalledWith(`${ROOT}/page.html`)
+    )
+    expect(openPath).not.toHaveBeenCalled()
   })
 
   it('registers nothing while the sandbox is in use', async () => {

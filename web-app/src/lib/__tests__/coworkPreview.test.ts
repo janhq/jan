@@ -236,21 +236,29 @@ describe('opensInDefaultApp', () => {
 
 describe('openOrReveal', () => {
   const opener = () => ({
-    openPath: vi.fn().mockResolvedValue(undefined),
+    openArtifact: vi.fn().mockResolvedValue(undefined),
     revealItemInDir: vi.fn().mockResolvedValue(undefined),
   })
 
-  it('opens an allowed type', async () => {
+  it('opens an allowed type through the host check, with the session roots', async () => {
     const o = opener()
-    await openOrReveal(o, '/w/report.pdf')
-    expect(o.openPath).toHaveBeenCalledWith('/w/report.pdf')
+    await openOrReveal(o, [null, '/w'], '/w/report.pdf')
+    expect(o.openArtifact).toHaveBeenCalledWith(['/w'], '/w/report.pdf')
     expect(o.revealItemInDir).not.toHaveBeenCalled()
+  })
+
+  // The name passed, but the file did not (e.g. a link to a program).
+  it('reveals a file the host refuses to open', async () => {
+    const o = opener()
+    o.openArtifact.mockRejectedValueOnce(new Error('is a link'))
+    await openOrReveal(o, ['/w'], '/w/report.pdf')
+    expect(o.revealItemInDir).toHaveBeenCalledWith('/w/report.pdf')
   })
 
   it('reveals anything else instead of opening it', async () => {
     const o = opener()
-    await openOrReveal(o, '/w/run.command')
+    await openOrReveal(o, ['/w'], '/w/run.command')
     expect(o.revealItemInDir).toHaveBeenCalledWith('/w/run.command')
-    expect(o.openPath).not.toHaveBeenCalled()
+    expect(o.openArtifact).not.toHaveBeenCalled()
   })
 })

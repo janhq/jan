@@ -15,6 +15,7 @@ import {
   resolveInRoots,
 } from '@/lib/coworkPreview'
 import { ARTIFACT_ICON, type CoworkArtifact } from '@/lib/coworkArtifacts'
+import { artifactOpener } from '@/lib/previewProtocol'
 import { cn } from '@/lib/utils'
 
 /** One accent per artifact family, so a transcript full of cards scans by
@@ -128,7 +129,7 @@ export function CoworkArtifactCard({
         <div className="flex shrink-0 items-center overflow-hidden rounded-md border">
           <button
             type="button"
-            onClick={() => void openOrReveal(serviceHub.opener(), abs)}
+            onClick={() => void openOrReveal(artifactOpener(), roots, abs)}
             title={t('common:artifactOpenExternal')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
           >
@@ -154,7 +155,7 @@ export function CoworkArtifactCard({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => void openOrReveal(serviceHub.opener(), abs)}
+                onClick={() => void openOrReveal(artifactOpener(), roots, abs)}
               >
                 <SquareArrowOutUpRight size={14} />
                 {t('common:artifactOpenExternal')}

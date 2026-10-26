@@ -100,6 +100,19 @@ export async function previewUnregisterRoot(root: string): Promise<void> {
   await invoke('plugin:agent-tools|preview_unregister_root', { root })
 }
 
+/**
+ * Open an agent-written file in its OS default app. The host checks the file
+ * itself and rejects a link, a file outside `roots` (the session's sandbox and
+ * attached folder), a type the OS would run, or an executable.
+ */
+export async function openArtifact(
+  dataFolder: string,
+  roots: string[],
+  path: string
+): Promise<void> {
+  await invoke('plugin:agent-tools|open_artifact', { dataFolder, roots, path })
+}
+
 export async function sessionWorkspacePath(
   dataFolder: string,
   sessionId: string
