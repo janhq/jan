@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -19776,18 +19775,7 @@ fn open_account_login_with_begin(
 }
 
 fn open_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut command = Command::new("open");
-    #[cfg(target_os = "linux")]
-    let mut command = Command::new("xdg-open");
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = Command::new(jan_utils::windows_system_tool("cmd.exe"));
-        command.args(["/C", "start"]);
-        command
-    };
-    command
-        .arg(url)
+    super::browser::opener_command(url)?
         .spawn()
         .map(|_| ())
         .map_err(|_| "could not open the browser".to_string())
