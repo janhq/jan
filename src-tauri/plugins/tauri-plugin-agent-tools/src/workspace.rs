@@ -749,7 +749,9 @@ pub fn thread_segment(thread_id: &str) -> Result<String, String> {
 
 /// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
 /// Rejects path separators and `..` so the result can never escape the
-/// store directory. `.md` is appended if absent.
+/// store directory, and `:` (on Windows `C:x` is drive-relative and replaces
+/// the base it is joined to), NUL and Windows device names on every OS so a
+/// name means the same file everywhere. `.md` is appended if absent.
 pub fn workspace_filename(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
@@ -759,7 +761,9 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
         || stem.contains('/')
         || stem.contains('\\')
         || stem.contains("..")
+        || stem.contains([':', '\0'])
         || stem.chars().all(|c| c == '.')
+        || is_windows_device_name(stem)
     {
         return Err(format!("ERROR: invalid name '{name}'"));
     }
@@ -1034,6 +1038,18 @@ mod tests {
                 "expected {bad:?} to be rejected"
             );
         }
+    }
+
+    #[test]
+    fn filename_rejects_drive_prefixes_nul_and_device_names() {
+        for bad in ["C:x", "c:", "a:b", "C:x.md", "a\0b", "nul", "CON.md", "com1", "aux.txt"] {
+            assert!(
+                workspace_filename(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+            assert!(crate::skills::safe_stem(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(workspace_filename("console").unwrap(), "console.md");
     }
 
     /// Dot-only and empty-stem names are rejected rather than turned into a
