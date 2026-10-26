@@ -11,6 +11,7 @@ const NETWORK_GLOBALS = [
   'fetch',
   'XMLHttpRequest',
   'WebSocket',
+  'WebSocketStream',
   'WebTransport',
   'EventSource',
   'importScripts',

@@ -118,9 +118,9 @@ export default defineConfig({
 ### What the worker does not have
 
 Before your bundle runs, Jan removes these globals from the worker: `fetch`,
-`XMLHttpRequest`, `WebSocket`, `WebTransport`, `EventSource`, `importScripts`,
-`Worker`, `SharedWorker`, `BroadcastChannel`, `Notification`, `indexedDB`,
-`caches`, the Tauri globals, and `navigator.storage`, `navigator.locks` and
+`XMLHttpRequest`, `WebSocket`, `WebSocketStream`, `WebTransport`, `EventSource`,
+`importScripts`, `Worker`, `SharedWorker`, `BroadcastChannel`, `Notification`,
+`indexedDB`, `caches`, the Tauri globals, and `navigator.storage`, `navigator.locks` and
 `navigator.serviceWorker`. Use `ctx.http.fetch` for network access and
 `ctx.storage` for persistence. There is no DOM: extensions describe their UI in
 the manifest.

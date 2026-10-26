@@ -14,6 +14,7 @@ export const STRIPPED_GLOBALS = [
   'fetch',
   'XMLHttpRequest',
   'WebSocket',
+  'WebSocketStream',
   'WebTransport',
   'EventSource',
   'importScripts',
