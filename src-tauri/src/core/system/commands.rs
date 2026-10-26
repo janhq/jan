@@ -228,8 +228,10 @@ const MAX_ADMIN_PROFILE_BYTES: usize = 256 * 1024;
 /// owner and mode, then renamed over `dst`. A rename replaces the directory
 /// entry and never writes through a symlink. `dst` must be a regular file that
 /// is not a symlink, or not exist yet (then it gets the owner of its directory
-/// and mode 600); anything else is refused. The temp directory must be on the
-/// same volume as `dst` so the move is a rename, not a copy.
+/// and mode 600); anything else is refused, with a message saying why (a
+/// symlink is named as such). The temp directory must be on the same volume
+/// as `dst` so the move is a rename, not a copy; otherwise it fails with a
+/// message naming the volume problem, which osascript passes on as the error.
 #[cfg_attr(not(unix), allow(dead_code))]
 fn admin_write_shell_command(dst: &str, src: &str, uid: u32) -> Result<String, String> {
     let dir = std::path::Path::new(dst)
@@ -242,7 +244,10 @@ fn admin_write_shell_command(dst: &str, src: &str, uid: u32) -> Result<String, S
     }
     Ok(format!(
         "dst={dst}; dir={dir}; src={src}; \
-         if [ -L \"$dst\" ] || {{ [ -e \"$dst\" ] && [ ! -f \"$dst\" ]; }}; then \
+         if [ -L \"$dst\" ]; then \
+         echo \"$dst is a symbolic link (e.g. managed by a dotfile manager); Jan won't replace it. \
+         Update the file it points to or make it writable.\" >&2; exit 1; fi; \
+         if [ -e \"$dst\" ] && [ ! -f \"$dst\" ]; then \
          echo \"Refusing to replace $dst: not a regular file\" >&2; exit 1; fi; \
          if [ -L \"$src\" ] || [ ! -f \"$src\" ]; then \
          echo \"Refusing to read $src: not a regular file\" >&2; exit 1; fi; \
@@ -253,7 +258,9 @@ fn admin_write_shell_command(dst: &str, src: &str, uid: u32) -> Result<String, S
          t=$(/usr/bin/mktemp -d /private/tmp/jan_env.XXXXXX) || exit 1; f=\"$t/profile\"; \
          if [ -f \"$dst\" ]; then o=$(/usr/bin/stat -f %u:%g \"$dst\") && m=$(/usr/bin/stat -f %Lp \"$dst\"); \
          else o=$(/usr/bin/stat -L -f %u:%g \"$dir\") && m=600; fi \
-         && [ \"$(/usr/bin/stat -f %d \"$t\")\" = \"$(/usr/bin/stat -L -f %d \"$dir\")\" ] \
+         && {{ [ \"$(/usr/bin/stat -f %d \"$t\")\" = \"$(/usr/bin/stat -L -f %d \"$dir\")\" ] \
+         || {{ echo \"$dst is on a different volume than /private/tmp; \
+         Jan can't update it with administrator rights.\" >&2; false; }}; }} \
          && /bin/cat <&3 > \"$f\" \
          && /usr/sbin/chown \"$o\" \"$f\" && /bin/chmod \"$m\" \"$f\" && /bin/mv -f \"$f\" \"$dst\"; \
          r=$?; /bin/rm -rf \"$t\"; exit $r",
@@ -1275,7 +1282,9 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         let out = run_admin_write(&link, &src);
         assert!(!out.status.success());
-        assert!(String::from_utf8_lossy(&out.stderr).contains("Refusing"));
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("is a symbolic link"), "{err}");
+        assert!(err.contains("Jan won't replace it"), "{err}");
         assert_eq!(fs::read_to_string(&target).unwrap(), "original\n");
         assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
 
@@ -1288,8 +1297,31 @@ mod tests {
 
         let sub = dir.path().join("adir");
         fs::create_dir(&sub).unwrap();
-        assert!(!run_admin_write(&sub, &src).status.success());
+        let out = run_admin_write(&sub, &src);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("not a regular file"));
         assert_eq!(fs::read_dir(&sub).unwrap().count(), 0);
+    }
+
+    /// `/dev` is its own file system, so a profile there is on a different
+    /// volume than /private/tmp. Nothing can be written there by this user;
+    /// the volume check fails first and says so.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_explains_a_different_volume() {
+        let dir = tempdir().unwrap();
+        let src = admin_source(dir.path(), "export A=1\n");
+        let dst = std::path::Path::new("/dev/jan-test-profile-that-does-not-exist");
+        let out = run_admin_write(dst, &src);
+        assert!(!out.status.success());
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("is on a different volume"), "{err}");
+        assert!(err.contains("Jan can't update it with administrator rights"), "{err}");
+        assert!(!dst.exists());
+
+        // osascript hands the script's stderr back; it reaches the error text.
+        let err = check_admin_copy(&out, dst.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("is on a different volume"), "{err}");
     }
 
     #[cfg(target_os = "macos")]
