@@ -1,4 +1,33 @@
-use std::path::Path;
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
+
+/// Absolute path of a Windows system tool, `<SystemRoot>\System32\<exe>`.
+///
+/// `Command::new("tasklist")` on Windows looks in the application's own
+/// directory before System32, so system tools are spawned by full path.
+/// `exe` includes the extension, e.g. `"taskkill.exe"`.
+pub fn windows_system_tool(exe: &str) -> PathBuf {
+    system32_path(
+        std::env::var_os("SystemRoot").or_else(|| std::env::var_os("windir")),
+        exe,
+    )
+}
+
+/// Pure path building for [`windows_system_tool`]: joins with `\` explicitly
+/// so it gives the same result (and can be tested) on every host. An unset or
+/// empty root falls back to `C:\Windows`.
+fn system32_path(root: Option<OsString>, exe: &str) -> PathBuf {
+    let root = root
+        .filter(|r| !r.is_empty())
+        .unwrap_or_else(|| OsString::from(r"C:\Windows"));
+    let mut path = match root.to_str() {
+        Some(s) => OsString::from(s.trim_end_matches(['\\', '/'])),
+        None => root,
+    };
+    path.push(OsStr::new(r"\System32\"));
+    path.push(exe);
+    PathBuf::from(path)
+}
 
 /// Environment variable Jan sets on every `mlx-server` it starts. The startup
 /// sweep stops an orphaned `mlx-server` only when it carries this, because the
@@ -632,6 +661,25 @@ mod tests {
         return tokio::process::Command::new("cmd");
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         return tokio::process::Command::new("sh");
+    }
+
+    #[test]
+    fn system32_path_uses_root() {
+        assert_eq!(
+            system32_path(Some(OsString::from(r"D:\Win")), "tasklist.exe"),
+            PathBuf::from(r"D:\Win\System32\tasklist.exe")
+        );
+        assert_eq!(
+            system32_path(Some(OsString::from(r"D:\Win\")), "cmd.exe"),
+            PathBuf::from(r"D:\Win\System32\cmd.exe")
+        );
+    }
+
+    #[test]
+    fn system32_path_falls_back_when_root_missing() {
+        let expected = PathBuf::from(r"C:\Windows\System32\reg.exe");
+        assert_eq!(system32_path(None, "reg.exe"), expected);
+        assert_eq!(system32_path(Some(OsString::new()), "reg.exe"), expected);
     }
 
     #[test]

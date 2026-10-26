@@ -633,7 +633,7 @@ fn kill_process_tree(pid: u32) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("taskkill")
+        let _ = std::process::Command::new(jan_utils::windows_system_tool("taskkill.exe"))
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output();

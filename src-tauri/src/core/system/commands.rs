@@ -441,23 +441,6 @@ pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
 }
 
 #[tauri::command]
-pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let app_path = get_jan_data_folder_path(app.clone());
-    let program = if cfg!(target_os = "windows") {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(program)
-        .arg(app_path)
-        .status()
-        .map_err(|e| format!("Failed to open app directory: {e}"))?;
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let log_path = get_jan_data_folder_path(app).join("logs").join("app.log");
     if log_path.exists() {
@@ -644,7 +627,7 @@ fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), Strin
     } else {
         // On Windows, set persistent user environment variables using setx
         for (key, value) in env_vars {
-            let output = std::process::Command::new("setx")
+            let output = std::process::Command::new(jan_utils::windows_system_tool("setx.exe"))
                 .arg(key)
                 .arg(value)
                 .output()
@@ -748,7 +731,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             "ANTHROPIC_DEFAULT_HAIKU_MODEL",
         ];
         for key in &keys {
-            let _ = std::process::Command::new("reg")
+            let _ = std::process::Command::new(jan_utils::windows_system_tool("reg.exe"))
                 .args(["delete", "HKCU\\Environment", "/v", key, "/f"])
                 .output();
         }

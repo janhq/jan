@@ -19782,7 +19782,7 @@ fn open_browser(url: &str) -> Result<(), String> {
     let mut command = Command::new("xdg-open");
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut command = Command::new("cmd");
+        let mut command = Command::new(jan_utils::windows_system_tool("cmd.exe"));
         command.args(["/C", "start"]);
         command
     };

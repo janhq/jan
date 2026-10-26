@@ -17,18 +17,19 @@ pub fn open(url: &str) -> Result<(), String> {
 
 fn launch(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let (program, args): (&str, &[&str]) = ("open", &[]);
+    let (program, args): (std::path::PathBuf, &[&str]) = ("open".into(), &[]);
     #[cfg(target_os = "windows")]
-    let (program, args): (&str, &[&str]) = ("cmd", &["/C", "start", ""]);
+    let (program, args): (std::path::PathBuf, &[&str]) =
+        (jan_utils::windows_system_tool("cmd.exe"), &["/C", "start", ""]);
     #[cfg(all(unix, not(target_os = "macos")))]
-    let (program, args): (&str, &[&str]) = ("xdg-open", &[]);
+    let (program, args): (std::path::PathBuf, &[&str]) = ("xdg-open".into(), &[]);
 
     #[cfg(all(unix, not(target_os = "macos")))]
     if !has_display() {
         return Err("no graphical session detected".to_string());
     }
 
-    std::process::Command::new(program)
+    std::process::Command::new(&program)
         .args(args)
         .arg(url)
         .stdin(std::process::Stdio::null())
@@ -36,7 +37,7 @@ fn launch(url: &str) -> Result<(), String> {
         .stderr(std::process::Stdio::null())
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("could not launch {program}: {e}"))
+        .map_err(|e| format!("could not launch {}: {e}", program.display()))
 }
 
 /// Whether a Linux/BSD session has a display server to open a browser on. Over

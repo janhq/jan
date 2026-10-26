@@ -241,7 +241,7 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("netstat");
+    let mut cmd = Command::new(crate::windows_system_tool("netstat.exe"));
     cmd.args(&["-ano"]);
 
     #[cfg(windows)]
@@ -256,7 +256,7 @@ fn find_process_using_port_windows(port: u16) -> Option<ProcessUsingPort> {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if let Some(pid_str) = parts.last() {
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    let mut tasklist_cmd = Command::new("tasklist");
+                    let mut tasklist_cmd = Command::new(crate::windows_system_tool("tasklist.exe"));
                     tasklist_cmd.args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"]);
 
                     #[cfg(windows)]
