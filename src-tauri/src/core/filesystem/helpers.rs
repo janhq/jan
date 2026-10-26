@@ -243,7 +243,9 @@ mod tests {
         fs::create_dir_all(data.join("models")).unwrap();
 
         let resolved = resolve_read_path(&data, "models").expect("resolves");
-        assert!(resolved.starts_with(data.canonicalize().unwrap()));
+        // Compare in the resolver's own form: on Windows `canonicalize` adds a
+        // `\\?\` prefix that the resolver strips.
+        assert!(resolved.starts_with(normalize_scope_path(canonicalize_for_scope(&data))));
         let resolved = resolve_read_path(&data, "file://models").expect("resolves");
         assert!(resolved.ends_with("models"));
         assert!(resolve_read_path(&data, "../elsewhere").is_err());
