@@ -90,6 +90,58 @@ var JanExtension = (function () {
 })();
 `
 
+// Spelled out rather than read from STRIPPED_GLOBALS: tests that iterate the
+// list cannot notice a primitive missing from it.
+const KNOWN_NETWORK_AND_LOADER_GLOBALS = [
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'WebSocketStream',
+  'WebTransport',
+  'EventSource',
+  'importScripts',
+  'Worker',
+  'SharedWorker',
+  'BroadcastChannel',
+]
+
+describe('stripped globals', () => {
+  it('covers every known network and code-loading primitive', () => {
+    expect([...STRIPPED_GLOBALS]).toEqual(
+      expect.arrayContaining(KNOWN_NETWORK_AND_LOADER_GLOBALS)
+    )
+  })
+
+  it('leaves none of them reachable once the prelude has run', async () => {
+    // Without the prelude the sandbox must carry a fake for each, or the
+    // stripped check below would pass vacuously.
+    const bare = runInSandbox('')
+    for (const name of KNOWN_NETWORK_AND_LOADER_GLOBALS)
+      expect(typeof bare.scope[name], name).toBe('function')
+    bare.terminate()
+
+    const logs: unknown[][] = []
+    const bundle = `
+      var JanExtension = { activate: function (ctx) {
+        var names = ${JSON.stringify(KNOWN_NETWORK_AND_LOADER_GLOBALS)};
+        var seen = {};
+        for (var i = 0; i < names.length; i++) seen[names[i]] = typeof self[names[i]];
+        ctx.log.info(JSON.stringify(seen));
+      } };`
+    const { worker, outcome } = boot(bundle, (method, args) => {
+      if (method === 'log') logs.push(args)
+    })
+    await vi.waitFor(() => expect(outcome()?.t).toBe('ready'))
+    await vi.waitFor(() => expect(logs).toHaveLength(1))
+    expect(JSON.parse(String(logs[0][1]))).toEqual(
+      Object.fromEntries(
+        KNOWN_NETWORK_AND_LOADER_GLOBALS.map((n) => [n, 'undefined'])
+      )
+    )
+    expect(worker.leaks).toEqual([])
+  })
+})
+
 describe('worker prelude', () => {
   it('strips every network and Tauri global before user code runs', async () => {
     const logs: unknown[][] = []
