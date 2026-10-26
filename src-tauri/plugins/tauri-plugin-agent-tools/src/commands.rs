@@ -729,7 +729,7 @@ fn attach_folder(
     };
     let root = workspace::validate_read_root(Path::new(folder), sandbox, Some(data_folder))?;
     if writable {
-        workspace::validate_write_root(&root, workspace::user_home().as_deref())?;
+        workspace::validate_write_root(&root, workspace::user_home().as_deref(), data_folder)?;
     }
     Ok(vec![root])
 }

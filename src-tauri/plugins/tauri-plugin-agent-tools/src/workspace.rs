@@ -242,11 +242,13 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
     Ok(threads_dir(jan_data_folder).join(thread_segment(thread_id)?))
 }
 
-/// Case-folded on Windows, where two spellings of one path are the same path
-/// and a raw `starts_with` would let a rename past the check.
+/// Case-folded on Windows and macOS, whose default filesystems treat two
+/// spellings of one path as the same path, so a raw `starts_with` would let a
+/// different spelling past the check (`canonicalize` keeps the caller's case
+/// on macOS).
 fn containment_key(path: &Path) -> String {
     let raw = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
+    if cfg!(any(windows, target_os = "macos")) {
         raw.to_lowercase()
     } else {
         raw
@@ -340,18 +342,28 @@ fn pick_data_folder(host: Option<PathBuf>, requested: &str) -> PathBuf {
 }
 
 /// Home-relative folders an agent must never be handed write access to:
-/// credentials, and the places that run code at login.
+/// credentials, folders on `PATH`, shell and tool configuration, and the
+/// places that run code at login. The shell rc files themselves sit directly in
+/// the home folder, which is refused as a whole.
 const PROTECTED_HOME_DIRS: &[&str] = &[
     ".ssh",
     ".gnupg",
     ".aws",
     ".kube",
     ".docker",
-    ".config/autostart",
-    ".config/systemd",
+    // fish, git, autostart and systemd user units all live here.
+    ".config",
+    // .local/bin is on PATH; .local/share/applications holds launchers.
+    ".local",
+    "bin",
+    ".cargo",
+    ".oh-my-zsh",
     "Library/LaunchAgents",
     "Library/Keychains",
-    "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+    "Library/Services",
+    "Library/Application Scripts",
+    "AppData/Local/Microsoft/WindowsApps",
+    "AppData/Roaming/Microsoft/Windows/Start Menu",
 ];
 
 /// The user's home directory, or `None` when unset or degenerate.
@@ -371,14 +383,32 @@ pub fn user_home() -> Option<PathBuf> {
 /// also be written.
 ///
 /// Refused: the home directory itself or any folder above it, whose top level
-/// holds the shell rc files and profile scripts; and any folder inside, or
-/// containing, a [`PROTECTED_HOME_DIRS`] entry. A writable attach is the
-/// workspace root, writable by the file tools and the sandboxed shell alike, so
-/// these would hand the agent persistence or credentials.
-pub fn validate_write_root(root: &Path, home: Option<&Path>) -> Result<(), String> {
+/// holds the shell rc files and profile scripts; any folder inside, or
+/// containing, a [`PROTECTED_HOME_DIRS`] entry (also where that entry is a
+/// symlink); and the Jan data folder or any folder inside it. A writable attach
+/// is the workspace root, writable by the file tools and the sandboxed shell
+/// alike, so these would hand the agent persistence or credentials. Without a
+/// home folder none of this can be checked, so the attach is refused.
+pub fn validate_write_root(
+    root: &Path,
+    home: Option<&Path>,
+    data_folder: &Path,
+) -> Result<(), String> {
     let Some(home) = home else {
-        return Ok(());
+        return Err(
+            "your home folder could not be determined, so no folder can be attached writable"
+                .to_string(),
+        );
     };
+    let data = data_folder
+        .canonicalize()
+        .unwrap_or_else(|_| data_folder.to_path_buf());
+    if is_within(root, &data) || is_within(root, data_folder) {
+        return Err(format!(
+            "{} is inside the Jan data folder and cannot be attached writable",
+            root.display()
+        ));
+    }
     if is_within(home, root) {
         return Err(format!(
             "{} contains your home folder and cannot be attached writable; attach a project \
@@ -388,7 +418,11 @@ pub fn validate_write_root(root: &Path, home: Option<&Path>) -> Result<(), Strin
     }
     for rel in PROTECTED_HOME_DIRS {
         let protected = home.join(rel);
-        if is_within(root, &protected) || is_within(&protected, root) {
+        // `root` is canonical, so also compare against where a symlinked
+        // entry really points.
+        let resolved = protected.canonicalize().ok();
+        let overlaps = |p: &Path| is_within(root, p) || is_within(p, root);
+        if overlaps(&protected) || resolved.as_deref().is_some_and(overlaps) {
             return Err(format!(
                 "{} overlaps {} and cannot be attached writable",
                 root.display(),
@@ -1009,28 +1043,43 @@ mod tests {
         );
     }
 
+    const DATA: &str = "/srv/jan-data";
+
+    fn write_root(root: &str, home: &str) -> Result<(), String> {
+        validate_write_root(Path::new(root), Some(Path::new(home)), Path::new(DATA))
+    }
+
     #[test]
     fn validate_write_root_refuses_home_and_its_ancestors() {
-        let home = Path::new("/home/u");
-        assert!(validate_write_root(Path::new("/home/u"), Some(home)).is_err());
-        assert!(validate_write_root(Path::new("/home"), Some(home)).is_err());
+        assert!(write_root("/home/u", "/home/u").is_err());
+        assert!(write_root("/home", "/home/u").is_err());
     }
 
     #[test]
     fn validate_write_root_refuses_protected_folders() {
-        let home = Path::new("/home/u");
         for bad in [
             "/home/u/.ssh",
             "/home/u/.config",
             "/home/u/.config/autostart",
             "/home/u/.config/systemd/user",
+            "/home/u/.config/fish",
+            "/home/u/.local",
+            "/home/u/.local/bin",
+            "/home/u/.local/share/applications",
+            "/home/u/bin",
+            "/home/u/.cargo/bin",
+            "/home/u/.oh-my-zsh/custom",
             "/home/u/Library",
             "/home/u/Library/LaunchAgents",
             "/home/u/Library/LaunchAgents/sub",
+            "/home/u/Library/Services",
+            "/home/u/Library/Application Scripts/com.example",
+            "/home/u/AppData/Local/Microsoft/WindowsApps",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu",
             "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
         ] {
             assert!(
-                validate_write_root(Path::new(bad), Some(home)).is_err(),
+                write_root(bad, "/home/u").is_err(),
                 "{bad} should be refused"
             );
         }
@@ -1038,20 +1087,74 @@ mod tests {
 
     #[test]
     fn validate_write_root_accepts_a_project_folder() {
-        let home = Path::new("/home/u");
         for ok in [
             "/home/u/projects/site",
             "/home/u/Documents/deck",
             "/home/u/.configs-backup",
             "/home/u/Library-notes",
+            "/home/u/binaries",
             "/srv/work",
+            "/srv/jan-data-export",
+        ] {
+            assert!(write_root(ok, "/home/u").is_ok(), "{ok} should be accepted");
+        }
+    }
+
+    #[test]
+    fn validate_write_root_refuses_when_home_is_unknown() {
+        let data = Path::new(DATA);
+        assert!(validate_write_root(Path::new("/srv/work"), None, data).is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_the_data_folder_and_inside_it() {
+        assert!(write_root(DATA, "/home/u").is_err());
+        assert!(write_root("/srv/jan-data/threads", "/home/u").is_err());
+    }
+
+    // APFS and NTFS are case-insensitive by default, and `canonicalize` keeps
+    // the spelling the caller used.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn validate_write_root_ignores_case_where_the_filesystem_does() {
+        for bad in [
+            "/home/u/.SSH",
+            "/home/u/library/launchagents",
+            "/HOME/U",
+            "/SRV/JAN-DATA/x",
         ] {
             assert!(
-                validate_write_root(Path::new(ok), Some(home)).is_ok(),
-                "{ok} should be accepted"
+                write_root(bad, "/home/u").is_err(),
+                "{bad} should be refused"
             );
         }
-        assert!(validate_write_root(Path::new("/home/u"), None).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_write_root_follows_a_symlinked_protected_folder() {
+        let base = tmp_root("write_root_symlink");
+        let home = base.join("home");
+        let real = base.join("dotfiles").join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(real.join("fish")).unwrap();
+        std::os::unix::fs::symlink(&real, home.join(".config")).unwrap();
+        let (home, real) = (home.canonicalize().unwrap(), real.canonicalize().unwrap());
+        let data = base.join("data");
+        for bad in [
+            real.clone(),
+            real.join("fish"),
+            real.parent().unwrap().to_path_buf(),
+        ] {
+            assert!(
+                validate_write_root(&bad, Some(&home), &data).is_err(),
+                "{} should be refused",
+                bad.display()
+            );
+        }
+        let project = base.join("project");
+        assert!(validate_write_root(&project, Some(&home), &data).is_ok());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // Every rejection here is a case where the mount would not mean what the UI
