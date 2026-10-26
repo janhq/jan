@@ -245,13 +245,27 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
 /// Case-folded on Windows and macOS, whose default filesystems treat two
 /// spellings of one path as the same path, so a raw `starts_with` would let a
 /// different spelling past the check (`canonicalize` keeps the caller's case
-/// on macOS).
+/// on macOS). On macOS the `/System/Volumes/Data` firmlink prefix is dropped
+/// too: `/System/Volumes/Data/Users/u` is `/Users/u`, and `canonicalize`
+/// leaves it as spelled.
 fn containment_key(path: &Path) -> String {
     let raw = path.to_string_lossy().replace('\\', "/");
-    if cfg!(any(windows, target_os = "macos")) {
+    if cfg!(target_os = "macos") {
+        strip_data_volume_prefix(&raw.to_lowercase()).to_string()
+    } else if cfg!(windows) {
         raw.to_lowercase()
     } else {
         raw
+    }
+}
+
+/// `key` (already lower-cased) without a leading `/system/volumes/data`.
+fn strip_data_volume_prefix(key: &str) -> &str {
+    const DATA_VOLUME: &str = "/system/volumes/data";
+    match key.strip_prefix(DATA_VOLUME) {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => key,
     }
 }
 
@@ -358,11 +372,22 @@ const PROTECTED_HOME_DIRS: &[&str] = &[
     "bin",
     ".cargo",
     ".oh-my-zsh",
+    // Tool shims and global installs on PATH, and editor configuration.
+    ".npm",
+    ".nvm",
+    ".bun",
+    ".deno",
+    ".vscode",
+    "Applications",
     "Library/LaunchAgents",
     "Library/Keychains",
     "Library/Services",
     "Library/Application Scripts",
+    // Every app's own data and configuration, Jan's included.
+    "Library/Application Support",
     "AppData/Local/Microsoft/WindowsApps",
+    // Per-user installs, Jan's own on Windows.
+    "AppData/Local/Programs",
     "AppData/Roaming/Microsoft/Windows/Start Menu",
 ];
 
@@ -1113,6 +1138,18 @@ mod tests {
             "/home/u/AppData/Local/Microsoft/WindowsApps",
             "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu",
             "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+            "/home/u/Applications",
+            "/home/u/Applications/Tool.app",
+            "/home/u/Library/Application Support",
+            "/home/u/Library/Application Support/Jan/data",
+            "/home/u/Library/Application Support/Code/User",
+            "/home/u/AppData/Local/Programs",
+            "/home/u/AppData/Local/Programs/Jan",
+            "/home/u/.vscode/extensions",
+            "/home/u/.npm",
+            "/home/u/.nvm/versions",
+            "/home/u/.bun/bin",
+            "/home/u/.deno",
         ] {
             assert!(
                 write_root(bad, "/home/u").is_err(),
@@ -1164,6 +1201,34 @@ mod tests {
                 "{bad} should be refused"
             );
         }
+    }
+
+    /// `/System/Volumes/Data/...` is the same folder as `/...` on macOS.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn validate_write_root_sees_through_the_data_volume_firmlink() {
+        for bad in [
+            "/System/Volumes/Data/Users/u",
+            "/System/Volumes/Data/Users",
+            "/System/Volumes/Data",
+            "/system/volumes/data/Users/u/.ssh",
+            "/System/Volumes/Data/Users/u/Library/LaunchAgents",
+            "/System/Volumes/Data/srv/jan-data/threads",
+        ] {
+            assert!(write_root(bad, "/Users/u").is_err(), "{bad} should be refused");
+        }
+        // And the other way round: a home spelled through the firmlink.
+        assert!(write_root("/Users/u/.ssh", "/System/Volumes/Data/Users/u").is_err());
+        assert!(write_root("/System/Volumes/Data/Users/u/projects/site", "/Users/u").is_ok());
+        assert!(write_root("/System/Volumes/DataX/u", "/Users/u").is_ok());
+    }
+
+    #[test]
+    fn data_volume_prefix_is_dropped_only_as_a_whole_component() {
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data/users/u"), "/users/u");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data"), "/");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/datax"), "/system/volumes/datax");
+        assert_eq!(strip_data_volume_prefix("/users/u"), "/users/u");
     }
 
     #[cfg(unix)]
