@@ -376,4 +376,38 @@ mod tests {
         let wildcard = vec![vec!["*".to_string()]];
         assert!(is_trusted_origin("https://evil.com", "127.0.0.1:1337", &wildcard));
     }
+
+    #[test]
+    fn scheme_qualified_entries() {
+        let listed = vec![vec![
+            "app://obsidian.md".to_string(),
+            "http://myapp.local:3000".to_string(),
+            "http://127.0.0.1:1337/v1".to_string(),
+        ]];
+        let h = "127.0.0.1:1337";
+        assert!(is_trusted_origin("app://obsidian.md", h, &listed));
+        assert!(is_trusted_origin("APP://Obsidian.MD:8080", h, &listed));
+        assert!(!is_trusted_origin("https://obsidian.md", h, &listed));
+        // A port in the entry must match.
+        assert!(is_trusted_origin("http://myapp.local:3000", h, &listed));
+        assert!(!is_trusted_origin("http://myapp.local:4000", h, &listed));
+        assert!(!is_trusted_origin("http://myapp.local", h, &listed));
+        assert!(!is_trusted_origin("https://myapp.local:3000", h, &listed));
+        // The scheme name is not a host.
+        assert!(!is_trusted_origin("http://app", h, &listed));
+        assert!(!is_trusted_origin("app://app", h, &listed));
+    }
+
+    #[test]
+    fn scheme_qualified_entries_do_not_widen_host_check() {
+        let listed = vec![vec![
+            "app://obsidian.md".to_string(),
+            "http://myapp.local:3000".to_string(),
+        ]];
+        assert!(!is_valid_host("app", &listed));
+        assert!(!is_valid_host("http", &listed));
+        assert!(!is_valid_host("http:3000", &listed));
+        assert!(!is_valid_host("obsidian.md", &listed));
+        assert!(!is_valid_host("myapp.local:3000", &listed));
+    }
 }
