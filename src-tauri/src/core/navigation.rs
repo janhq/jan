@@ -21,6 +21,11 @@ use tauri_plugin_opener::OpenerExt;
 /// custom schemes are spelled `http(s)://<scheme>.localhost`.
 const APP_HOSTS: &[&str] = &["tauri.localhost", "preview.localhost"];
 
+/// Whether this platform serves custom schemes from [`APP_HOSTS`]. Mirrors
+/// Tauri's own `tauri_protocol_url`; elsewhere those hosts are ordinary
+/// network names and not the app.
+const SCHEMES_ON_LOCALHOST_HOSTS: bool = cfg!(any(windows, target_os = "android"));
+
 /// Custom schemes the app's frames may load on macOS, Linux and iOS. `asset:`
 /// and `ipc:` are deliberately absent: they serve files and IPC responses, and
 /// no window or frame is ever meant to *navigate* to them.
@@ -34,21 +39,25 @@ const APP_SCHEMES: &[&str] = &["tauri", "preview"];
 /// The webview asks for subframe navigations too on macOS and Linux, so the
 /// HTML preview frames (`about:srcdoc`, the `preview:` scheme) must pass.
 pub(crate) fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
+    is_app_url_on(url, dev_url, SCHEMES_ON_LOCALHOST_HOSTS)
+}
+
+/// [`is_app_url`] for a platform that does or does not serve custom schemes
+/// from [`APP_HOSTS`], so both cases can be tested on any host.
+fn is_app_url_on(url: &Url, dev_url: Option<&Url>, localhost_hosts: bool) -> bool {
     match url.scheme() {
         s if APP_SCHEMES.contains(&s) => url.host_str() == Some("localhost"),
         "about" => matches!(url.path(), "blank" | "srcdoc"),
         // A blob the app itself minted (e.g. a CSV export) carries the
-        // creator's origin inside; one from an opaque-origin preview frame says
-        // `null`, and only that frame can navigate to it.
-        "blob" => {
-            let inner = url.path();
-            inner.starts_with("null/")
-                || Url::parse(inner)
-                    .map(|inner| inner.scheme() != "blob" && is_app_url(&inner, dev_url))
-                    .unwrap_or(false)
-        }
+        // creator's origin inside. One from an opaque-origin frame says `null`,
+        // which names no origin at all, so it is refused.
+        "blob" => Url::parse(url.path())
+            .map(|inner| {
+                inner.scheme() != "blob" && is_app_url_on(&inner, dev_url, localhost_hosts)
+            })
+            .unwrap_or(false),
         "http" | "https" => {
-            url.host_str().is_some_and(|h| APP_HOSTS.contains(&h))
+            (localhost_hosts && url.host_str().is_some_and(|h| APP_HOSTS.contains(&h)))
                 || dev_url.is_some_and(|dev| same_origin(url, dev))
         }
         _ => false,
@@ -123,17 +132,48 @@ mod tests {
         for ok in [
             "tauri://localhost/",
             "tauri://localhost/threads/abc?x=1#y",
-            "http://tauri.localhost/",
-            "https://tauri.localhost/settings",
             "preview://localhost/%2FUsers%2Fme%2Fdeck.html",
-            "http://preview.localhost/C%3A%2Fdeck.html",
             "about:blank",
             "about:srcdoc",
             "blob:tauri://localhost/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
-            "blob:http://tauri.localhost/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
-            "blob:null/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
         ] {
             assert!(is_app_url(&u(ok), None), "{ok} should be allowed");
+        }
+    }
+
+    const LOCALHOST_HOST_URLS: &[&str] = &[
+        "http://tauri.localhost/",
+        "https://tauri.localhost/settings",
+        "http://preview.localhost/C%3A%2Fdeck.html",
+        "blob:http://tauri.localhost/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
+    ];
+
+    #[test]
+    fn localhost_hosts_are_the_app_only_where_tauri_serves_schemes_there() {
+        for url in LOCALHOST_HOST_URLS {
+            assert!(is_app_url_on(&u(url), None, true), "{url} on Windows");
+            assert!(!is_app_url_on(&u(url), None, false), "{url} on macOS/Linux");
+            assert_eq!(
+                is_app_url(&u(url), None),
+                cfg!(any(windows, target_os = "android")),
+                "{url} on this platform"
+            );
+        }
+    }
+
+    #[test]
+    fn opaque_origin_blobs_are_refused() {
+        for localhost_hosts in [true, false] {
+            for bad in [
+                "blob:null/2b6f0cc9-1f0a-4c55-a0b8-6e4f1a0b5a4e",
+                "blob:null",
+                "blob:",
+            ] {
+                assert!(
+                    !is_app_url_on(&u(bad), None, localhost_hosts),
+                    "{bad} should be refused"
+                );
+            }
         }
     }
 

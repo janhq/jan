@@ -248,6 +248,37 @@ mod tests {
         assert!(open.contains("script-src 'self' 'unsafe-inline' blob: https:"));
     }
 
+    /// The preview origin is app-local, so on WebView2 its frames are handed
+    /// the IPC key; this policy is what keeps a page from reaching IPC or any
+    /// other local endpoint. Pin each network-facing directive exactly.
+    #[test]
+    fn csp_connect_src_is_pinned() {
+        let directive = |policy: &str, name: &str| {
+            policy
+                .split(';')
+                .map(str::trim)
+                .find_map(|d| d.strip_prefix(name)?.strip_prefix(' ').map(str::to_string))
+                .unwrap_or_else(|| panic!("{name} missing from {policy}"))
+        };
+        let closed = csp(false);
+        assert_eq!(directive(&closed, "default-src"), "'none'");
+        assert_eq!(directive(&closed, "connect-src"), "'self'");
+        assert_eq!(directive(&closed, "worker-src"), "'self' blob:");
+        let open = csp(true);
+        assert_eq!(directive(&open, "default-src"), "'none'");
+        assert_eq!(directive(&open, "connect-src"), "'self' https:");
+        // No directive may name IPC, the app, plain http or a wildcard.
+        for policy in [&closed, &open] {
+            for token in policy.split([' ', ';']) {
+                assert!(
+                    !matches!(token, "*" | "http:" | "ws:" | "wss:" | "ipc:" | "tauri:")
+                        && !token.contains("localhost"),
+                    "{token} in {policy}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn mime_by_extension() {
         assert_eq!(
