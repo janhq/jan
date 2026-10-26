@@ -355,9 +355,77 @@ fn build_env_file_content(existing: &str, env_vars: &[(String, String)]) -> Resu
     }
 }
 
+/// Current content of a shell profile, or "" when it does not exist yet. Any
+/// other read error is returned: rewriting a profile Jan could not read would
+/// replace the user's lines with Jan's block alone.
+fn read_shell_profile(env_file_path: &str) -> Result<String, String> {
+    match std::fs::read_to_string(env_file_path) {
+        Ok(content) => Ok(content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("Could not read {}: {}", env_file_path, e)),
+    }
+}
+
+/// macOS fallback for a profile Jan cannot write directly: copy `content`
+/// over `env_file_path` with administrator privileges, via `temp_path`. A
+/// cancelled password prompt is returned as an error.
+fn admin_write_shell_profile(
+    temp_path: &str,
+    env_file_path: &str,
+    content: &str,
+) -> Result<(), String> {
+    write_via_temp_file(temp_path, content, || {
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(admin_copy_applescript(temp_path, env_file_path))
+            .output()
+            .map_err(|e| e.to_string())?;
+        check_admin_copy(&output, env_file_path)
+    })
+}
+
+/// Turn the osascript result of the admin copy into an error when it failed,
+/// e.g. because the user cancelled the password prompt.
+fn check_admin_copy(output: &std::process::Output, env_file_path: &str) -> Result<(), String> {
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Could not update {} with administrator privileges: {}",
+            env_file_path,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+/// Write `content` to `temp_path`, readable by the user only (it can hold the
+/// API token), run `copy`, and remove `temp_path` whether or not it worked.
+fn write_via_temp_file(
+    temp_path: &str,
+    content: &str,
+    copy: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    // A leftover file may have other permissions; start from a fresh one.
+    let _ = std::fs::remove_file(temp_path);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = options
+        .open(temp_path)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, content.as_bytes()))
+        .map_err(|e| e.to_string())
+        .and_then(|()| copy());
+    let _ = std::fs::remove_file(temp_path);
+    result
+}
+
 // Helper function to write env vars to a shell config file
 fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+    let existing_content = read_shell_profile(env_file_path)?;
     let final_content = build_env_file_content(&existing_content, env_vars)?;
     std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
     Ok(())
@@ -605,21 +673,10 @@ fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), Strin
             }
             Err(_) => {
                 // Use admin privileges to write
-                let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
+                let existing_content = read_shell_profile(&env_file_path)?;
                 let final_content = build_env_file_content(&existing_content, env_vars)?;
-
-                // Write to a temp file first, then use osascript to move it
                 let temp_script_path = format!("{}/.jan_env_update.sh", home_dir);
-                std::fs::write(&temp_script_path, &final_content).map_err(|e| e.to_string())?;
-
-                // Use admin privileges to move the temp file
-                let script = admin_copy_applescript(&temp_script_path, &env_file_path);
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
+                admin_write_shell_profile(&temp_script_path, &env_file_path, &final_content)?;
 
                 log::info!(
                     "Env vars written to {} with admin privileges",
@@ -675,9 +732,9 @@ fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), Strin
 }
 
 /// Build the cleaned shell-file content with all Jan CC env vars stripped out.
-fn build_cleaned_env_content(env_file_path: &str) -> String {
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    strip_jan_env_lines(&existing_content)
+fn build_cleaned_env_content(env_file_path: &str) -> Result<String, String> {
+    let existing_content = read_shell_profile(env_file_path)?;
+    Ok(strip_jan_env_lines(&existing_content))
 }
 
 /// Clear all Jan-written Claude Code environment variables from the shell config.
@@ -693,7 +750,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             env_file_path
         );
 
-        let cleaned = build_cleaned_env_content(&env_file_path);
+        let cleaned = build_cleaned_env_content(&env_file_path)?;
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -706,17 +763,8 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                 Ok(())
             }
             Err(_) => {
-                // Write cleaned content to a temp file, then use osascript to move it
                 let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
-                std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
-
-                let script = admin_copy_applescript(&temp_path, &env_file_path);
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
+                admin_write_shell_profile(&temp_path, &env_file_path, &cleaned)?;
 
                 log::info!(
                     "CC env cleared from {} with admin privileges",
@@ -734,7 +782,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             env_file_path
         );
 
-        let cleaned = build_cleaned_env_content(&env_file_path);
+        let cleaned = build_cleaned_env_content(&env_file_path)?;
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -1095,7 +1143,7 @@ mod tests {
         assert_eq!(written.matches(ENV_BLOCK_END).count(), 1);
         assert_eq!(written.matches("MY_CUSTOM_VAR").count(), 1);
 
-        fs::write(&path, build_cleaned_env_content(p)).unwrap();
+        fs::write(&path, build_cleaned_env_content(p).unwrap()).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), user);
     }
 
@@ -1105,7 +1153,7 @@ mod tests {
         let path = dir.path().join(".bashrc");
         let p = path.to_str().unwrap();
         write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "u")]).unwrap();
-        assert_eq!(build_cleaned_env_content(p), "");
+        assert_eq!(build_cleaned_env_content(p).unwrap(), "");
     }
 
     #[test]
@@ -1170,7 +1218,7 @@ mod tests {
         write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "http://h")]).unwrap();
         assert!(fs::read_to_string(&path).unwrap().starts_with(user));
 
-        fs::write(&path, build_cleaned_env_content(p)).unwrap();
+        fs::write(&path, build_cleaned_env_content(p).unwrap()).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), user);
     }
 
@@ -1192,7 +1240,70 @@ mod tests {
         // Text appended after an admin-written block lands on the closing line.
         let glued_close =
             format!("{m}\nexport ANTHROPIC_AUTH_TOKEN='t'\n{m}export B=2\nexport C=3\n");
-        assert_eq!(strip_jan_env_lines(&glued_close), "export B=2\nexport C=3\n");
+        assert_eq!(
+            strip_jan_env_lines(&glued_close),
+            "export B=2\nexport C=3\n"
+        );
+    }
+
+    #[test]
+    fn env_profile_read_errors_are_returned_except_not_found() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join(".zshenv");
+        assert_eq!(read_shell_profile(missing.to_str().unwrap()).unwrap(), "");
+
+        // Not valid UTF-8: refuse instead of replacing it with Jan's block.
+        let binary = dir.path().join(".bashrc");
+        fs::write(&binary, b"export A=1 # caf\xe9\n").unwrap();
+        let p = binary.to_str().unwrap();
+        assert!(write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "u")]).is_err());
+        assert!(build_cleaned_env_content(p).is_err());
+        assert_eq!(fs::read(&binary).unwrap(), b"export A=1 # caf\xe9\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_temp_file_is_private_and_always_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let temp = dir.path().join(".jan_env_update.sh");
+        let t = temp.to_str().unwrap();
+        for copy_ok in [true, false] {
+            // A stale file from an earlier run is replaced, not reused.
+            fs::write(&temp, "stale").unwrap();
+            fs::set_permissions(&temp, fs::Permissions::from_mode(0o644)).unwrap();
+            let result = write_via_temp_file(t, "export ANTHROPIC_AUTH_TOKEN='s'\n", || {
+                let meta = fs::metadata(&temp).unwrap();
+                assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+                assert_eq!(
+                    fs::read_to_string(&temp).unwrap(),
+                    "export ANTHROPIC_AUTH_TOKEN='s'\n"
+                );
+                if copy_ok {
+                    Ok(())
+                } else {
+                    Err("cancelled".to_string())
+                }
+            });
+            assert_eq!(result.is_ok(), copy_ok);
+            assert!(!temp.exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_admin_copy_failure_is_an_error() {
+        let run = |script: &str| {
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg(script)
+                .output()
+                .unwrap()
+        };
+        assert!(check_admin_copy(&run("exit 0"), "/p").is_ok());
+        let err =
+            check_admin_copy(&run("echo 'User canceled. (-128)' >&2; exit 1"), "/p").unwrap_err();
+        assert!(err.contains("User canceled"), "{err}");
     }
 
     #[cfg(unix)]
