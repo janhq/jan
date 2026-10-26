@@ -286,6 +286,18 @@ describe('CoworkAskCard', () => {
     expect(onRespond).not.toHaveBeenCalled()
   })
 
+  it('a clicked row reached again by Tab gets its native Enter back', () => {
+    render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
+    const row = screen.getByText(multi.questions[0].options[0].label).closest('button')!
+    fireEvent.pointerDown(row)
+    fireEvent.click(row)
+    row.focus()
+    row.blur()
+    row.focus()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(onRespond).not.toHaveBeenCalled()
+  })
+
   it('submits multi-select picks in option order, not click order', () => {
     render(<CoworkAskCard requestId="ask-1" request={multi} onRespond={onRespond} />)
     const [first, second] = multi.questions[0].options.map((o) => o.label)

@@ -447,6 +447,12 @@ export function CoworkAskCard({
                   onPointerDown={(e) =>
                     (pointerRowRef.current = e.currentTarget)
                   }
+                  // Leaving the row ends "clicked": coming back by Tab is a
+                  // keyboard visit, where Enter must act on the row itself.
+                  onBlur={(e) => {
+                    if (pointerRowRef.current === e.currentTarget)
+                      pointerRowRef.current = null
+                  }}
                   onClick={() => {
                     if (
                       performance.now() - jumpedAtRef.current <
