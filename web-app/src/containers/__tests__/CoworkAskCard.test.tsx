@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
 import type { AskRequestPayload } from '@/hooks/useCoworkRun'
@@ -295,6 +295,89 @@ describe('CoworkAskCard', () => {
     expect(screen.getByText('First?')).toBeInTheDocument()
   })
 
+  it('moves to the next question after a single-select pick, but not past the last', () => {
+    vi.useFakeTimers()
+    try {
+      render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+      fireEvent.keyDown(window, { key: '1' })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByText('Second?')).toBeInTheDocument()
+
+      fireEvent.keyDown(window, { key: '2' })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByText('Second?')).toBeInTheDocument()
+      expect(onRespond).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a click that lands right after an automatic jump (double-click tail)', () => {
+    vi.useFakeTimers()
+    try {
+      render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+      act(() => vi.advanceTimersByTime(400))
+      fireEvent.click(screen.getByText('A1'))
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByText('Second?')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('B1'))
+      expect(screen.getByText('B1').closest('button')).toHaveAttribute('aria-checked', 'false')
+      act(() => vi.advanceTimersByTime(400))
+      fireEvent.click(screen.getByText('B1'))
+      expect(screen.getByText('B1').closest('button')).toHaveAttribute('aria-checked', 'true')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never auto-advances a multi-select pick', () => {
+    vi.useFakeTimers()
+    try {
+      const request: AskRequestPayload = {
+        questions: [
+          { ...multi.questions[0], id: 'm' },
+          { id: 'b', question: 'Second?', options: [{ label: 'B1' }, { label: 'B2' }] },
+        ],
+      }
+      render(<CoworkAskCard requestId="ask-1" request={request} onRespond={onRespond} />)
+      act(() => vi.advanceTimersByTime(400))
+      fireEvent.click(screen.getByText(multi.questions[0].options[0].label))
+      act(() => vi.advanceTimersByTime(400))
+      expect(screen.getByText(multi.questions[0].question)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops the pending jump when the user heads for the free-text row', () => {
+    vi.useFakeTimers()
+    try {
+      render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+      fireEvent.keyDown(window, { key: '1' })
+      const input = screen.getByPlaceholderText('common:askSomethingElse')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'my own' } })
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByText('First?')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops the pending jump if the user pages away first', () => {
+    vi.useFakeTimers()
+    try {
+      render(<CoworkAskCard requestId="ask-1" request={twoQuestions} onRespond={onRespond} />)
+      fireEvent.click(screen.getByText('A1'))
+      fireEvent.click(screen.getByLabelText('common:askNext'))
+      fireEvent.click(screen.getByLabelText('common:askPrev'))
+      act(() => vi.advanceTimersByTime(250))
+      expect(screen.getByText('First?')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ignores digits when focus is on a control outside the card', () => {
     render(
       <>
@@ -315,7 +398,7 @@ describe('CoworkAskCard', () => {
         <CoworkAskCard requestId="ask-1" request={single} onRespond={onRespond} />
       </>
     )
-    const card = screen.getByRole('radiogroup').parentElement!
+    const card = screen.getByRole('radiogroup').closest<HTMLElement>('[tabindex="-1"]')!
     expect(card).toHaveFocus()
     fireEvent.keyDown(card, { key: '2' })
     fireEvent.keyDown(card, { key: 'Enter' })

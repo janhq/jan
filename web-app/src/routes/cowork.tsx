@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { Bot, Command, Sparkles } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
@@ -1408,6 +1409,9 @@ function CoworkPage() {
     }
   }, [session?.id])
 
+  // With reduced motion the ask card only fades: no rise, no height fold.
+  const reduceMotion = useReducedMotion()
+
   const respondAsk = useCallback(
     (requestId: string, answers: AskAnswer[] | null) => {
       if (session?.id) answerAsk(session.id, requestId, answers)
@@ -1632,18 +1636,35 @@ function CoworkPage() {
 
           <div className="py-4 shrink-0">
             <div className={cn('mx-auto w-full', !rail && 'md:w-4/5 xl:w-4/6')}>
-              {ask && typeof ask.request !== 'string' && (
-                <div className="px-1 pb-2">
-                  <CoworkAskCard
+              {/* The card rises in when a question arrives and folds away once
+                  answered, so the chat box glides instead of jumping. A card
+                  already pending when the view mounts just appears. */}
+              <AnimatePresence initial={false}>
+                {ask && typeof ask.request !== 'string' && (
+                  <motion.div
                     // A fresh card per request, so a new ask never renders a
                     // frame with the previous one's page or picks.
                     key={ask.requestId}
-                    requestId={ask.requestId}
-                    request={ask.request}
-                    onRespond={respondAsk}
-                  />
-                </div>
-              )}
+                    className="overflow-hidden px-1"
+                    initial={
+                      reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }
+                    }
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={
+                      reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }
+                    }
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <div className="pb-2">
+                      <CoworkAskCard
+                        requestId={ask.requestId}
+                        request={ask.request}
+                        onRespond={respondAsk}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="relative" onKeyDownCapture={onMenuKeyDown}>
                 {menuItems.length > 0 && (
                   <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
