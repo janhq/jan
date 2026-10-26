@@ -2,6 +2,7 @@ import { CoreRoutes, APIRoutes } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
+import { openExternalUrl } from '@/lib/externalLink'
 
 export const AppRoutes = [
   'installExtensions',
@@ -32,10 +33,8 @@ export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
   route: r,
 }))
 
-// Function to open an external URL in a new browser window
-export function openExternalUrl(url: string) {
-  window?.open(url, '_blank')
-}
+// Re-exported: extensions reach it as `window.core.api.openExternalUrl`.
+export { openExternalUrl }
 
 export const APIs = {
   ...Object.values(Routes).reduce((acc, proxy) => {

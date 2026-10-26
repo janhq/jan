@@ -1,7 +1,19 @@
-import { render, waitFor, act, cleanup } from '@testing-library/react'
+import {
+  render,
+  waitFor,
+  act,
+  cleanup,
+  fireEvent,
+} from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RenderMarkdown } from '../RenderMarkdown'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { openExternalUrl } from '@/lib/externalLink'
+
+vi.mock('@/lib/externalLink', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/externalLink')>()),
+  openExternalUrl: vi.fn(),
+}))
 
 vi.mock('@i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -527,6 +539,58 @@ describe('RenderMarkdown', () => {
       )
       expect(container.querySelector('img')).toBeNull()
       expect(container.textContent).toContain('No citations here.')
+    })
+  })
+
+  describe('links in rendered output', () => {
+    afterEach(() => vi.mocked(openExternalUrl).mockClear())
+
+    it('opens a web link outside the app instead of navigating in place', () => {
+      const { container } = render(
+        <RenderMarkdown content={'See [the docs](https://example.com/a?b=1).'} />
+      )
+      const link = container.querySelector('a[href="https://example.com/a?b=1"]')
+      expect(link).toBeTruthy()
+      expect(link?.getAttribute('target')).toBe('_blank')
+      // fireEvent returns false when a handler called preventDefault.
+      expect(fireEvent.click(link!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/a?b=1')
+    })
+
+    it('opens a mailto link outside the app', () => {
+      const { container } = render(
+        <RenderMarkdown content={'[mail](mailto:team@example.com)'} />
+      )
+      const link = container.querySelector('a[href^="mailto:"]')
+      expect(link).toBeTruthy()
+      expect(fireEvent.click(link!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledWith('mailto:team@example.com')
+    })
+
+    it.each([
+      'file:///etc/passwd',
+      'asset://localhost/%2Ftmp%2Fx.html',
+      '/settings/providers',
+      'tauri://localhost/',
+    ])('renders a %s link without a navigable href', (href) => {
+      const { container } = render(
+        <RenderMarkdown content={`[click me](${href})`} />
+      )
+      expect(container.textContent).toContain('click me')
+      const anchors = Array.from(container.querySelectorAll('a'))
+      for (const a of anchors) {
+        const target = a.getAttribute('href')
+        expect(target === null || target.startsWith('#')).toBe(true)
+      }
+      for (const a of anchors) fireEvent.click(a)
+      expect(openExternalUrl).not.toHaveBeenCalled()
+    })
+
+    it('keeps an in-page fragment link', () => {
+      const { container } = render(
+        <RenderMarkdown content={'[jump](#section-2)'} />
+      )
+      expect(container.querySelector('a[href="#section-2"]')).toBeTruthy()
     })
   })
 })

@@ -26,6 +26,7 @@ import { MermaidError } from '@/components/MermaidError'
 import { CitationLink } from '@/components/CitationLink'
 import { WebCitationChip } from '@/components/WebCitationChip'
 import { MarkdownTable } from '@/components/MarkdownTable'
+import { externalHref, openExternalUrl } from '@/lib/externalLink'
 
 const WEB_CITE_MARKER = /\[\[cite:\s*([^\]\s]+?)\s*\]\]/g
 
@@ -246,7 +247,38 @@ function RenderMarkdownComponent({
         const url = decodeURIComponent(href.slice('#webcite-'.length))
         return <WebCitationChip messageId={messageId} url={url} />
       }
-      return <a {...props}>{children}</a>
+      // Model and tool output decides these hrefs, so a click must never
+      // navigate the app window: web and mail links open outside the app,
+      // in-page fragments stay, and anything else is inert text.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { node: _node, href: _href, ...rest } = props as typeof props & {
+        node?: unknown
+      }
+      const external = externalHref(href)
+      if (external) {
+        return (
+          <a
+            {...rest}
+            href={external}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.preventDefault()
+              openExternalUrl(external)
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+      if (typeof href === 'string' && href.startsWith('#')) {
+        return (
+          <a {...rest} href={href}>
+            {children}
+          </a>
+        )
+      }
+      return <a {...rest}>{children}</a>
     }
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components, messageId])
