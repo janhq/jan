@@ -61,7 +61,14 @@ pub fn git_program() -> std::io::Result<PathBuf> {
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
         match pick_git_exe(&dirs, &excluded, resolve, |p| p.is_file()) {
-            Some(found) => Ok(FOUND.get_or_init(|| found).clone()),
+            Some(found) => {
+                // `canonicalize` returns `\\?\C:\...`; hand out the plain form.
+                let found = match found.to_str() {
+                    Some(s) => PathBuf::from(crate::path::strip_verbatim_prefix(s)),
+                    None => found,
+                };
+                Ok(FOUND.get_or_init(|| found).clone())
+            }
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "git.exe not found on PATH",

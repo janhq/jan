@@ -63,6 +63,26 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     ret
 }
 
+/// Rewrites a Windows verbatim path as the plain form other tools expect:
+/// `\\?\C:\x` becomes `C:\x` and `\\?\UNC\server\share\x` becomes
+/// `\\server\share\x`. Anything else (including other `\\?\` forms such as
+/// volume GUID paths) is returned unchanged. Pure string logic, so it behaves
+/// the same on every host.
+pub fn strip_verbatim_prefix(path: &str) -> String {
+    let Some(rest) = path.strip_prefix(r"\\?\") else {
+        return path.to_string();
+    };
+    if rest.get(..4).is_some_and(|p| p.eq_ignore_ascii_case(r"UNC\")) {
+        return format!(r"\\{}", &rest[4..]);
+    }
+    let b = rest.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b.len() == 2 || b[2] == b'\\')
+    {
+        return rest.to_string();
+    }
+    path.to_string()
+}
+
 /// Removes file:/ and file:\ prefixes from file paths
 pub fn normalize_file_path(path: &str) -> String {
     path.replace("file:/", "").replace("file:\\", "")
@@ -104,8 +124,37 @@ pub fn get_short_path<P: AsRef<std::path::Path>>(path: P) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(windows)]
     use super::*;
+
+    #[test]
+    fn strip_verbatim_prefix_handles_drive_and_unc_paths() {
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\C:\Program Files\Git\cmd\git.exe"),
+            r"C:\Program Files\Git\cmd\git.exe"
+        );
+        assert_eq!(strip_verbatim_prefix(r"\\?\d:\"), r"d:\");
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:"), r"C:");
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\Jan"),
+            r"\\server\share\Jan"
+        );
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\unc\server\share"),
+            r"\\server\share"
+        );
+        // Already plain, or a verbatim form with no plain equivalent: unchanged.
+        for same in [
+            r"C:\Users\u\Jan",
+            r"\\server\share\Jan",
+            r"\\?\Volume{0b1c2d3e-0000-0000-0000-100000000000}\Jan",
+            r"\\?\GLOBALROOT\Device\x",
+            r"/Users/u/Jan",
+            r"UNC\server\share",
+            "",
+        ] {
+            assert_eq!(strip_verbatim_prefix(same), same);
+        }
+    }
 
     #[cfg(windows)]
     #[test]
