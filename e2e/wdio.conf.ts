@@ -14,6 +14,12 @@ import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service
 import { SevereServiceError } from 'webdriverio'
 import { janUserDataDir } from './helpers/paths.js'
 import { isolationEnv } from './isolation.js'
+import { selectScenario } from './migration.js'
+
+const scenario = selectScenario(process.env.JAN_E2E_SCENARIO)
+if (scenario === 'migration' && (!process.env.JAN_E2E_HOME || !['1', '2'].includes(process.env.JAN_E2E_MIGRATION_PHASE ?? ''))) {
+  throw new Error('Use yarn test:migration for the owned, two-launch migration profile')
+}
 import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, containsPath, launchContext } from './launch-guard.js'
 
 // The app resolves its data folder through `core::app::paths::data_dir()`, and
@@ -186,7 +192,7 @@ if (process.platform === 'win32') {
 // NOTE this is the backend settings store, at janUserDataDir() -- NOT the app
 // config `settings.json` one directory up at janDataDir(), which is the file
 // smoke.e2e.ts asserts on. Same filename, different file, different owner.
-if (!process.env.JAN_E2E_EMBEDDER_DOWNLOAD) {
+if (scenario !== 'migration' && !process.env.JAN_E2E_EMBEDDER_DOWNLOAD) {
   const backendSettingsDir = janUserDataDir(testHome)
   const backendSettingsFile = join(backendSettingsDir, 'settings.json')
   // A fresh mkdtemp profile cannot have one yet, but an inherited profile can,
@@ -272,7 +278,7 @@ export const config: WebdriverIO.Config = {
   // nothing and reads only the sidebar, the settings menu and where a URL
   // lands, so it would pass anywhere; last keeps the three calibrated specs in
   // the order they were tuned in.
-  specs: [
+  specs: scenario === 'migration' ? ['./specs/migration.e2e.ts'] : [
     './specs/smoke.e2e.ts',
     './specs/chat.e2e.ts',
     './specs/message-actions.e2e.ts',
@@ -287,7 +293,10 @@ export const config: WebdriverIO.Config = {
       'wdio:tauriServiceOptions': tauriServiceOptions,
     } as TauriCapabilities,
   ],
-  services: [['@wdio/tauri-service', tauriServiceOptions]],
+  // Migration runner owns the app from spawn through awaited teardown, even
+  // during startup. No service launcher may spawn a second app.
+  services: scenario === 'migration' ? [] : [['@wdio/tauri-service', tauriServiceOptions]],
+  ...(scenario === 'migration' ? { hostname: '127.0.0.1', port: driverPort } : {}),
   framework: 'mocha',
   reporters: ['spec'],
   logLevel: 'info',
@@ -298,7 +307,9 @@ export const config: WebdriverIO.Config = {
   // says which selector a polling helper gave up on -- survives as a file CI
   // can upload after the runner is gone. A local run of the two specs writes
   // ~630 webdriver lines here and none to the terminal.
-  outputDir: join(import.meta.dirname, 'logs'),
+  outputDir: scenario === 'migration'
+    ? join(testHome, 'runner-logs', `wdio-phase-${process.env.JAN_E2E_MIGRATION_PHASE}`)
+    : join(import.meta.dirname, 'logs'),
   waitforTimeout: 20_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
@@ -359,7 +370,7 @@ export const config: WebdriverIO.Config = {
   // plain Error here is printed and then ignored, and the run continues into the
   // collision this is meant to prevent -- which is exactly what it did.
   onPrepare: async () => {
-    if (!(await somethingIsListening(driverPort))) return
+    if (scenario === 'migration' || !(await somethingIsListening(driverPort))) return
     throw new SevereServiceError(
       `something is already listening on 127.0.0.1:${driverPort}, the port the ` +
         'embedded WebDriver server uses. This run would drive that process ' +
