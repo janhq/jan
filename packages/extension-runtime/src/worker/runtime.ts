@@ -13,6 +13,7 @@ import {
   type ControlMessage,
 } from '../protocol.js'
 import { createWorkerContext, type WorkerCallback } from './context.js'
+import type { Harden } from './lockdown.js'
 import type { Realm } from './realm.js'
 import { stripGlobals } from './strip.js'
 
@@ -56,14 +57,24 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   })
 }
 
+/** What the prelude finishes once the realm is locked down. */
+export interface Runtime {
+  /**
+   * Hands over `harden` and defines `__janBoot`. Until it is called the
+   * boot function does not exist, so a composed script whose prelude did
+   * not lock down fails at the boot call instead of starting unlocked.
+   */
+  seal(harden: Harden): void
+}
+
 /**
  * Sets up the worker side before any extension code runs: captures the
- * messaging primitives, strips the network and Tauri globals, opens the RPC
- * endpoint and defines `__janBoot`. If stripping fails it reports and
- * throws, which aborts the rest of the composed script, so extension code
- * never runs with the globals still in place.
+ * messaging primitives, strips the network and Tauri globals and opens the
+ * RPC endpoint. If stripping fails it reports and throws, which aborts the
+ * rest of the composed script, so extension code never runs with the
+ * globals still in place.
  */
-export function installRuntime(realm: Realm): void {
+export function installRuntime(realm: Realm): Runtime {
   const scope = realm.global
   if (!isScope(scope)) throw realm.replaced('postMessage')
   // Captured first; a forged message from extension code could only reach
@@ -81,6 +92,7 @@ export function installRuntime(realm: Realm): void {
   }
 
   const callbacks = new HandleTable<WorkerCallback>()
+  let harden: Harden | undefined
   let manifest: ValidatedManifest | undefined
   let module: ExtensionModule | null | undefined
   let ctx: ExtensionContext | undefined
@@ -132,7 +144,7 @@ export function installRuntime(realm: Realm): void {
 
   // Runs once both the host's init and the bundle's module are in.
   const start = async () => {
-    if (!manifest || module === undefined || booted) return
+    if (!manifest || !harden || module === undefined || booted) return
     booted = true
     const mod = module
     if (!mod || typeof mod.activate !== 'function') {
@@ -145,7 +157,9 @@ export function installRuntime(realm: Realm): void {
       return
     }
     const worker = createWorkerContext(manifest, endpoint, callbacks)
-    ctx = worker.ctx
+    // Frozen so code sharing the worker (a dependency of the extension)
+    // cannot swap a ctx method for one that records or alters its calls.
+    ctx = harden(worker.ctx)
     try {
       await withTimeout(
         (async () => {
@@ -161,17 +175,23 @@ export function installRuntime(realm: Realm): void {
     }
   }
 
-  realm.defineProperty(scope, BOOT_FUNCTION, {
-    value: (mod: unknown) => {
-      if (module !== undefined) return
-      module =
-        typeof mod === 'object' || typeof mod === 'function'
-          ? (mod as ExtensionModule | null)
-          : null
-      void start()
+  return {
+    seal: (hardenFn) => {
+      if (harden) return
+      harden = hardenFn
+      realm.defineProperty(scope, BOOT_FUNCTION, {
+        value: (mod: unknown) => {
+          if (module !== undefined) return
+          module =
+            typeof mod === 'object' || typeof mod === 'function'
+              ? (mod as ExtensionModule | null)
+              : null
+          void start()
+        },
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      })
     },
-    writable: false,
-    enumerable: false,
-    configurable: false,
-  })
+  }
 }

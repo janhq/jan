@@ -243,7 +243,8 @@ export function createWorkerContext(
 }
 
 function safeStringify(value: unknown): string {
-  if (value instanceof Error) return value.stack ?? value.message
+  // SES error taming leaves `stack` an empty string, hence `||`.
+  if (value instanceof Error) return value.stack || String(value)
   try {
     return JSON.stringify(value) ?? String(value)
   } catch {

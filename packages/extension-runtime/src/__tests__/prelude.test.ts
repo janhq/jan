@@ -479,6 +479,113 @@ describe('prelude intrinsics', () => {
   })
 })
 
+// Runs as the bundle, after lockdown: tries what a poisoned dependency
+// would, and reports which attempts took.
+const TAMPER = `
+var JanExtension = (function () {
+  'use strict';
+  var took = [];
+  function attempt(name, fn) { try { fn(); took.push(name) } catch (e) {} }
+  attempt('Object.prototype assign', function () { Object.prototype.polluted = 1 });
+  attempt('Object.prototype define', function () { Object.defineProperty(Object.prototype, 'polluted', { value: 1 }) });
+  attempt('Array.prototype.push', function () { Array.prototype.push = function () { return 0 } });
+  attempt('Promise.prototype.then', function () { Promise.prototype.then = function () {} });
+  attempt('JSON.stringify', function () { JSON.stringify = function () { return '' } });
+  attempt('Function.prototype.call', function () { Function.prototype.call = function () {} });
+  attempt('eval', function () { eval('1') });
+  attempt('Function', function () { Function('return 1')() });
+  var frozen = {
+    ObjectPrototype: Object.isFrozen(Object.prototype),
+    ArrayPrototype: Object.isFrozen(Array.prototype),
+    FunctionPrototype: Object.isFrozen(Function.prototype),
+    Promise: Object.isFrozen(Promise)
+  };
+  return {
+    activate: function (ctx) {
+      attempt('ctx.http.fetch', function () { ctx.http.fetch = function () {} });
+      attempt('ctx.log', function () { ctx.log = {} });
+      attempt('ctx.subscriptions.dispose', function () { ctx.subscriptions.dispose = function () {} });
+      frozen.ctx = Object.isFrozen(ctx) && Object.isFrozen(ctx.http) && Object.isFrozen(ctx.subscriptions);
+      ctx.log.info(JSON.stringify({ took: took, frozen: frozen }));
+    }
+  };
+})();
+`
+
+describe('SES lockdown', () => {
+  it('freezes the primordials and the ctx after the realm checks passed', async () => {
+    const logs: unknown[][] = []
+    const { worker, outcome } = boot(TAMPER, (method, args) => {
+      if (method === 'log') logs.push(args)
+    })
+    await vi.waitFor(() => expect(outcome()?.t).toBe('ready'))
+    await vi.waitFor(() => expect(logs).toHaveLength(1))
+    expect(JSON.parse(String(logs[0][1]))).toEqual({
+      took: [],
+      frozen: {
+        ObjectPrototype: true,
+        ArrayPrototype: true,
+        FunctionPrototype: true,
+        Promise: true,
+        ctx: true,
+      },
+    })
+    const realmObject = worker.scope.Object as ObjectConstructor
+    expect(Object.isFrozen(realmObject.prototype)).toBe(true)
+    expect(worker.leaks).toEqual([])
+  })
+
+  it('still strips the network globals and keeps subscriptions working', async () => {
+    const disposed: number[] = []
+    const { host, outcome } = boot(
+      `var JanExtension = { activate: function (ctx) {
+        if (typeof fetch !== 'undefined') throw new Error('fetch survived');
+        ctx.subscriptions.add(ctx.commands.registerCommand('a', function () {}));
+      } };`,
+      (method, args) => {
+        if (method === 'commands.register') return { disposable: 7 }
+        if (method === '$dispose') disposed.push(args[0] as number)
+      }
+    )
+    await vi.waitFor(() => expect(outcome()?.t).toBe('ready'))
+    await host.request(DEACTIVATE_METHOD, [])
+    await vi.waitFor(() => expect(disposed).toEqual([7]))
+  })
+
+  it('logs an error by its message, though lockdown hides the stack', async () => {
+    const logs: unknown[][] = []
+    const { outcome } = boot(
+      "var JanExtension = { activate: function (ctx) { ctx.log.error(new TypeError('bad input')) } }",
+      (method, args) => {
+        if (method === 'log') logs.push(args)
+      }
+    )
+    await vi.waitFor(() => expect(outcome()?.t).toBe('ready'))
+    await vi.waitFor(() => expect(logs).toHaveLength(1))
+    expect(logs[0]).toEqual(['error', 'TypeError: bad input'])
+  })
+
+  it('locks down even when a hoisted declaration took the name lockdown', async () => {
+    const { worker, controls } = bootUnchecked(`
+      function lockdown() { self.__fake = true }
+      var JanExtension = { activate: function () {} };`)
+    await vi.waitFor(() => expect(controls.at(-1)?.t).toBe('ready'))
+    expect(worker.scope.__fake).toBeUndefined()
+    const realmObject = worker.scope.Object as ObjectConstructor
+    expect(Object.isFrozen(realmObject.prototype)).toBe(true)
+  })
+
+  it('fails closed when a hoisted declaration took the name harden', async () => {
+    const { worker, controls, errors } = bootUnchecked(`
+      function harden(v) { self.__fake = true; return v }
+      var JanExtension = (self.__userRan = true, { activate: function () {} });`)
+    await vi.waitFor(() => expect(errors).toHaveLength(1))
+    expect(controls.some((m) => m.t === 'ready')).toBe(false)
+    expect(worker.scope.__userRan).toBeUndefined()
+    expect(worker.scope.__fake).toBeUndefined()
+  })
+})
+
 describe('composeWorkerSource', () => {
   it('survives a bundle without a trailing semicolon or ending in a comment', async () => {
     const { outcome } = boot('var JanExtension = { activate: function () {} } // done')

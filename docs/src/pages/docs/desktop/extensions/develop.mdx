@@ -125,6 +125,19 @@ Before your bundle runs, Jan removes these globals from the worker: `fetch`,
 `ctx.storage` for persistence. There is no DOM: extensions describe their UI in
 the manifest.
 
+### Frozen built-ins
+
+Your bundle runs after Jan has locked the worker down with
+[SES](https://github.com/endojs/endo/tree/master/packages/ses): every built-in
+(`Object.prototype`, `Array.prototype`, `Promise`, `JSON`, ...) is frozen,
+`eval` and `new Function` throw, and the `ctx` passed to `activate` is frozen.
+
+- A dependency that patches a built-in prototype when it loads (some
+  polyfills do) makes activation fail. Leave such polyfills out; the worker
+  runs a current JavaScript engine.
+- `error.stack` is empty in extension code. Log errors with `ctx.log.error`.
+- `harden(value)` is a global that deep-freezes your own objects.
+
 ## Load unpacked (development builds)
 
 **Load unpacked** appears only in development builds (`yarn dev:tauri`); release

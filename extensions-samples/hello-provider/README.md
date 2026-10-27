@@ -39,6 +39,18 @@ bound before the runtime prelude runs. Keep everything inside the IIFE: a
 rolldown or esbuild `banner`/`footer`/`intro` that adds top-level code makes
 the bundle fail to load ("is not a valid extension bundle").
 
+The bundle runs in a realm the prelude has locked down with
+[SES](https://github.com/endojs/endo/tree/master/packages/ses)
+(`lockdown({ errorTaming: 'safe', evalTaming: 'no-eval', consoleTaming:
+'unsafe' })`): every built-in (`Object.prototype`, `Array.prototype`,
+`Promise`, `JSON`, ...) is frozen, `eval` and `new Function` throw, and the
+`ctx` passed to `activate` is frozen too. A dependency that patches a
+built-in prototype at load time (some polyfills do) makes activation fail;
+leave such polyfills out, the worker already has a current engine. Stack
+traces of errors are hidden from extension code (`error.stack` is empty);
+`ctx.log.error(error)` still logs the message. `harden` is available as a
+global if you want to freeze your own objects.
+
 Once the worker is running, the host pings it every 5 s and stops it after
 3 unanswered pings in a row. The prelude answers each ping from the
 worker's event loop, so **no synchronous task may run for more than about
