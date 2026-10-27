@@ -507,12 +507,25 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = &event {
+            if core::system::commands::factory_reset_in_progress() {
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
+            // Quitting mid-wipe would leave a half-deleted data folder; the
+            // reset ends in its own restart.
+            if core::system::commands::exit_blocked_by_reset(
+                core::system::commands::factory_reset_in_progress(),
+                *code,
+            ) {
+                log::warn!("Ignoring exit request while a factory reset is running");
+                api.prevent_exit();
+                return;
+            }
             if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;
             }

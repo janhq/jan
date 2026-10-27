@@ -228,6 +228,19 @@ fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Res
 static FACTORY_RESET_STARTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Whether a factory reset is wiping data. The event loop stays live during
+/// the wipe, so the app lifecycle handlers use this to keep the hidden
+/// windows hidden and the process alive until the reset restarts it.
+pub fn factory_reset_in_progress() -> bool {
+    FACTORY_RESET_STARTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Whether an exit request must be refused because a reset is running. The
+/// reset's own `restart()` arrives as `RESTART_EXIT_CODE` and must go through.
+pub fn exit_blocked_by_reset(reset_in_progress: bool, code: Option<i32>) -> bool {
+    reset_in_progress && code != Some(tauri::RESTART_EXIT_CODE)
+}
+
 /// Wipe the selected data categories and restart the app.
 ///
 /// Async so it runs on the async runtime: as a sync command it ran on the main
@@ -715,6 +728,15 @@ mod tests {
     use crate::core::app::constants::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn a_running_reset_blocks_exits_but_not_its_own_restart() {
+        assert!(exit_blocked_by_reset(true, Some(0)));
+        assert!(exit_blocked_by_reset(true, None));
+        assert!(!exit_blocked_by_reset(true, Some(tauri::RESTART_EXIT_CODE)));
+        assert!(!exit_blocked_by_reset(false, Some(0)));
+        assert!(!exit_blocked_by_reset(false, None));
+    }
 
     fn create_all_data(dir: &std::path::Path) {
         for subdir in JAN_DATA_SUBDIRS {
