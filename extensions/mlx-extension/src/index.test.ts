@@ -26,9 +26,11 @@ const mockReadGguf = vi.mocked(readGgufMetadata)
 
 // The host service registry the engine reaches the Downloads service through.
 const hostServices = { get: vi.fn() }
+// The host's proxy-bypassing client (`ctx.internal.loopbackFetch`).
+const loopbackFetch = vi.fn()
 
 function newExt(): any {
-  const ext = new mlx_extension(hostServices) as any
+  const ext = new mlx_extension(hostServices, loopbackFetch) as any
   ext.providerPath = '/data/mlx'
   return ext
 }
@@ -40,7 +42,7 @@ beforeEach(() => {
 
 describe('getProviderPath', () => {
   it('joins the jan data folder with the mlx dir and caches it', async () => {
-    const ext = new mlx_extension(hostServices) as any
+    const ext = new mlx_extension(hostServices, loopbackFetch) as any
     const path = await ext.getProviderPath()
     expect(path).toBe('/data/mlx')
 
@@ -87,7 +89,7 @@ describe('getModelProps', () => {
 
 describe('getModelContextLimit', () => {
   it('uses the text model limit from a multimodal config', async () => {
-    const ext = new mlx_extension(hostServices)
+    const ext = new mlx_extension(hostServices, loopbackFetch)
     mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
     mockReadFileSync.mockResolvedValueOnce(JSON.stringify({
@@ -100,7 +102,7 @@ describe('getModelContextLimit', () => {
   })
 
   it('does not assume a context limit when the config omits it', async () => {
-    const ext = new mlx_extension(hostServices)
+    const ext = new mlx_extension(hostServices, loopbackFetch)
     mockReadYaml.mockResolvedValueOnce({ model_path: '/external/model' })
     mockFileStat.mockResolvedValue({ isDirectory: true } as never)
     mockReadFileSync.mockResolvedValueOnce('{}')
@@ -274,6 +276,30 @@ describe('chat', () => {
       'MLX model has crashed! Please reload!'
     )
     expect(mockIsRunning).toHaveBeenCalledWith(5)
+  })
+
+  // The MLX server is on loopback: the host client keeps a proxy from
+  // capturing the health check and the completion alike.
+  it('sends the health check and the completion through the loopback fetch', async () => {
+    const ext = newExt()
+    mockFindSession.mockResolvedValue({
+      pid: 5,
+      port: 4321,
+      model_id: 'foo',
+      api_key: 'k',
+    } as never)
+    mockIsRunning.mockResolvedValue(true)
+    const reply = { choices: [{ finish_reason: 'stop' }] }
+    loopbackFetch.mockResolvedValue({ ok: true, json: async () => reply })
+
+    await expect(
+      ext.chat({ model: 'foo', messages: [], stream: false })
+    ).resolves.toEqual(reply)
+
+    expect(loopbackFetch.mock.calls.map(([url]) => url)).toEqual([
+      'http://localhost:4321/health',
+      'http://localhost:4321/v1/chat/completions',
+    ])
   })
 })
 

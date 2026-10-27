@@ -2,6 +2,7 @@ import { getHostBuiltins } from '@/lib/extensions/builtins'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { applySafeMode } from '@/lib/extensions/installed-loader'
 import { loadWithCrashLoopGuard } from '@/lib/extensions/watchdog'
+import { bridgeModelValidationStarted } from '@/lib/modelValidationBridge'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform'
 import { APIs } from '@/lib/service'
@@ -99,11 +100,20 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
 
     setupExtensions().finally(() => clearTimeout(watchdog))
 
+    // Main window only, like the built-in that used to relay it: every window
+    // receives the backend event, and the toast belongs to the window that
+    // started the download. Per effect run so a StrictMode remount does not
+    // leave a second relay behind.
+    const validationBridge = isMainWindow()
+      ? bridgeModelValidationStarted(getServiceHub().events())
+      : undefined
+
     return () => {
       clearTimeout(watchdog)
       if (isMainWindow()) {
         getExtensionHost().deactivateAll()
       }
+      void validationBridge?.then((stop) => stop())
     }
   }, [setupExtensions])
 

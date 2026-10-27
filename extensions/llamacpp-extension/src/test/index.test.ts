@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
-import { hostServices, newExtension } from './host'
+import { hostServices, loopbackFetch, newExtension } from './host'
 import { fs, getJanDataFolderPath, joinPath } from '@janhq/core'
 import {
   readGgufMetadata,
@@ -22,10 +22,6 @@ vi.mock('../backend-settings')
 // Mock fetch globally
 global.fetch = vi.fn()
 
-// The engine requests go through the Tauri HTTP plugin (reqwest), not the
-// webview's fetch.
-const httpFetch = vi.hoisted(() => vi.fn())
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
 vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
@@ -503,7 +499,7 @@ describe('llamacpp_extension', () => {
         }]
       }
 
-      httpFetch.mockResolvedValue({
+      loopbackFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve(mockResponse)
       })
@@ -517,7 +513,7 @@ describe('llamacpp_extension', () => {
       const result = await extension.chat(request)
 
       expect(result).toEqual(mockResponse)
-      expect(httpFetch).toHaveBeenCalledWith(
+      expect(loopbackFetch).toHaveBeenCalledWith(
         'http://localhost:3000/v1/chat/completions',
         expect.objectContaining({
           method: 'POST',
@@ -1821,15 +1817,15 @@ describe('reconcileEngineDevices', () => {
     }
 
     // Chat and embeddings go out through the no-proxy client, not global fetch.
-    beforeEach(() => httpFetch.mockReset())
+    beforeEach(() => loopbackFetch.mockReset())
 
     it('are not cut off by a restart while one is in flight, even if the worker looks idle', async () => {
       const { spawn } = await armChat()
       const reply = Promise.withResolvers<Response>()
-      httpFetch.mockReturnValue(reply.promise)
+      loopbackFetch.mockReturnValue(reply.promise)
 
       const chat = extension.chat(request)
-      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+      await vi.waitFor(() => expect(loopbackFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
       expect(api.stopEngine).not.toHaveBeenCalled()
@@ -1843,7 +1839,7 @@ describe('reconcileEngineDevices', () => {
 
     it('wait for a restart under way and then use the new engine', async () => {
       const { spawn, ensureSession } = await armChat()
-      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      loopbackFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const stopped = Promise.withResolvers<void>()
       vi.mocked(api.stopEngine).mockReturnValue(stopped.promise)
 
@@ -1940,7 +1936,7 @@ describe('reconcileEngineDevices', () => {
     // way out while the first is still deciding.
     it('are not admitted while an earlier restart is still deciding, however many ask', async () => {
       const { spawn, ensureSession } = await armChat()
-      httpFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
+      loopbackFetch.mockResolvedValue({ ok: true, json: async () => ({}) })
       const idle = Promise.withResolvers<boolean>()
       vi.mocked(api.beginEngineRestart)
         .mockReturnValueOnce(idle.promise)
@@ -1974,10 +1970,10 @@ describe('reconcileEngineDevices', () => {
         512 as never
       )
       const reply = Promise.withResolvers<Response>()
-      httpFetch.mockReturnValue(reply.promise)
+      loopbackFetch.mockReturnValue(reply.promise)
 
       const embedding = extension.embed(['a'])
-      await vi.waitFor(() => expect(httpFetch).toHaveBeenCalled())
+      await vi.waitFor(() => expect(loopbackFetch).toHaveBeenCalled())
 
       expect(await extension.reconcileEngineDevices()).toBe('busy')
 
@@ -2007,21 +2003,22 @@ describe('engine requests bypass a configured proxy', () => {
 
   const okJson = (body: unknown) => ({ ok: true, json: async () => body })
 
+  // The host's loopback fetch is what bypasses the proxy (tested in the web
+  // app); here it is enough that the request went through it.
   const expectDirect = (urlPart: string) => {
-    const call = httpFetch.mock.calls.find(([url]) =>
+    const call = loopbackFetch.mock.calls.find(([url]) =>
       String(url).includes(urlPart)
     )
-    expect(call, `no plugin-http request to ${urlPart}`).toBeDefined()
-    const noProxy = (call![1] as { proxy?: { all?: { noProxy?: string } } })
-      .proxy?.all?.noProxy
-    expect(noProxy?.split(',')).toEqual(
-      expect.arrayContaining(['localhost', '127.0.0.1', '::1'])
+    expect(call, `no loopback request to ${urlPart}`).toBeDefined()
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining(urlPart),
+      expect.anything()
     )
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    httpFetch.mockReset()
+    loopbackFetch.mockReset()
     extension = newExtension()
   })
 
@@ -2033,7 +2030,7 @@ describe('engine requests bypass a configured proxy', () => {
     vi.spyOn(extension as never, 'embedBatchBudget' as never).mockResolvedValue(
       512 as never
     )
-    httpFetch.mockResolvedValue(
+    loopbackFetch.mockResolvedValue(
       okJson({ data: [{ embedding: [0.1], index: 0 }], usage: {} })
     )
 
@@ -2047,7 +2044,7 @@ describe('engine requests bypass a configured proxy', () => {
       extension as never,
       'ensureEmbeddingModelLoaded' as never
     ).mockResolvedValue(session as never)
-    httpFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
+    loopbackFetch.mockResolvedValue(okJson({ tokens: [1, 2, 3] }))
 
     await expect(extension.countEmbeddingTokens(['hello'])).resolves.toEqual([3])
 
@@ -2062,7 +2059,7 @@ describe('engine requests bypass a configured proxy', () => {
     vi.spyOn(extension as never, 'getLoadedModels' as never).mockResolvedValue([
       'test-model',
     ] as never)
-    httpFetch.mockResolvedValue(
+    loopbackFetch.mockResolvedValue(
       okJson({ default_generation_settings: { n_ctx: 4096 } })
     )
 
@@ -2078,7 +2075,7 @@ describe('engine requests bypass a configured proxy', () => {
       extension as never,
       'ensureHealthySession' as never
     ).mockResolvedValue(session as never)
-    httpFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
+    loopbackFetch.mockResolvedValue({ ok: false, status: 500, json: async () => null })
 
     const request = {
       model: 'test-model',
@@ -2087,7 +2084,7 @@ describe('engine requests bypass a configured proxy', () => {
     await extension.chat({ ...request, stream: false }).catch(() => { })
     expectDirect('/v1/chat/completions')
 
-    httpFetch.mockClear()
+    loopbackFetch.mockClear()
     const stream = (await extension.chat({
       ...request,
       stream: true,

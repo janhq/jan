@@ -13,7 +13,9 @@ const PLUGINS_DIR = join(REPO_ROOT, 'src-tauri', 'plugins')
 const PLUGIN_CRATE_PREFIX = 'tauri-plugin-'
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'test', '__tests__'])
 const TEST_FILE = /\.(test|spec)\.tsx?$/
-const TAURI_CORE_IMPORT = /['"]@tauri-apps\/api\/core['"]/
+// Any `@tauri-apps/*` package, not just api/core: events, plugin-http and the
+// rest are host facilities a built-in reaches through `ctx.internal`.
+const TAURI_IMPORT = /['"]@tauri-apps\//
 
 interface Plugin {
   name: string
@@ -88,8 +90,19 @@ describe('built-in extensions do not invoke Tauri directly', () => {
     expect(mismatched, JSON.stringify(mismatched)).toEqual([])
   })
 
-  it('has no @tauri-apps/api/core import under extensions/*/src', () => {
-    const offenders = offendingLines(extensionSources(), TAURI_CORE_IMPORT)
+  it('has no @tauri-apps/* import under extensions/*/src', () => {
+    const offenders = offendingLines(extensionSources(), TAURI_IMPORT)
+    expect(offenders, offenders.join('\n')).toEqual([])
+  })
+
+  // A bundler `inject` is an import by another name: it rewrites every bare
+  // `fetch` in the bundle to a Tauri plugin the source never mentions.
+  it('has no @tauri-apps/* module injected by an extension bundle config', () => {
+    const configs = readdirSync(EXTENSIONS_DIR)
+      .map((entry) => join(EXTENSIONS_DIR, entry, 'rolldown.config.mjs'))
+      .filter((config) => existsSync(config))
+    expect(configs.length).toBeGreaterThan(0)
+    const offenders = offendingLines(configs, TAURI_IMPORT)
     expect(offenders, offenders.join('\n')).toEqual([])
   })
 
