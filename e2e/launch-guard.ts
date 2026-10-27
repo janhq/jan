@@ -109,7 +109,6 @@ export function assertSafeE2eHome(home: string, context: LaunchContext): string 
   ]) {
     if (env[key] && isAbsolute(env[key]!)) addRoot(env[key]!)
   }
-  if (env.JAN_DATA_FOLDER && isAbsolute(env.JAN_DATA_FOLDER)) protectedPaths.push(env.JAN_DATA_FOLDER)
   for (const path of protectedPaths) {
     const protectedPath = canonicalPath(path)
     if (containsPath(candidate, protectedPath) || containsPath(protectedPath, candidate)) {
