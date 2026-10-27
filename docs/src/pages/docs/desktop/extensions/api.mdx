@@ -99,7 +99,7 @@ interface StorageApi {
 interface CommandsApi {
   /** Binds a handler to a command declared in contributes.commands. */
   registerCommand(id: string, handler: CommandHandler): Disposable
-  /** Runs one of the extension's own commands, or (with commands:execute) another one. */
+  /** Runs one of the extension's own commands. */
   execute<T = unknown>(id: string, ...args: JsonValue[]): Promise<T>
 }
 type CommandHandler = (context: CommandContext, ...args: JsonValue[]) => unknown
@@ -117,9 +117,9 @@ The context carries only ids; reading thread content needs
 `conversations:read`.
 
 <Callout type="info">
-In this release `execute` runs only the extension's own commands. Host commands
-and other extensions' commands are not exposed yet and fail with `E_NOT_FOUND`
-even with `commands:execute`.
+`execute` runs only the extension's own commands and needs no permission. Host
+commands and other extensions' commands are not reachable; an id the extension
+did not declare fails with `E_NOT_FOUND`.
 </Callout>
 
 ## `ctx.ui`

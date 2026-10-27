@@ -76,8 +76,8 @@ export interface CommandsApi {
     /** Binds a handler to a command declared in `contributes.commands`. */
     registerCommand(id: string, handler: CommandHandler): Disposable;
     /**
-     * Runs one of the extension's own commands, or (with `commands:execute`)
-     * an allowlisted host command or another extension's command.
+     * Runs one of the extension's own commands. Host commands and other
+     * extensions' commands are not reachable.
      */
     execute<T = unknown>(id: string, ...args: JsonValue[]): Promise<T>;
 }
@@ -471,7 +471,7 @@ export type ValidationResult = {
  * What an extension may ask for in `jan.permissions`. Everything not listed
  * here (own settings, own contributions, logging, own storage) is implicit.
  */
-export type PermissionString = 'ui:notify' | 'commands:execute' | 'providers' | 'tools' | 'conversations:read' | 'conversations:write' | 'chat:hooks' | `network:${string}`;
+export type PermissionString = 'ui:notify' | 'providers' | 'tools' | 'conversations:read' | 'conversations:write' | 'chat:hooks' | `network:${string}`;
 /** A permission with any `network:<host>` collapsed to `network`. */
 export type PermissionKind = Exclude<PermissionString, `network:${string}`> | 'network';
 /**

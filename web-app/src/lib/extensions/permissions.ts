@@ -23,11 +23,6 @@ export const PERMISSIONS: Record<PermissionKind, PermissionInfo> = {
     titleKey: 'extensions:permissions.uiNotify.title',
     descriptionKey: 'extensions:permissions.uiNotify.description',
   },
-  'commands:execute': {
-    risk: 'medium',
-    titleKey: 'extensions:permissions.commandsExecute.title',
-    descriptionKey: 'extensions:permissions.commandsExecute.description',
-  },
   'network': {
     risk: 'medium',
     titleKey: 'extensions:permissions.network.title',

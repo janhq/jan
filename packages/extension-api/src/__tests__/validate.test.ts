@@ -248,6 +248,12 @@ describe('validateManifest', () => {
     expect(errorPaths(pkg)).toEqual(['jan.permissions[1]'])
   })
 
+  it('rejects commands:execute, which API 1.0 does not have', () => {
+    const pkg = minimal()
+    pkg.jan.permissions = ['commands:execute']
+    expect(errorPaths(pkg)).toEqual(['jan.permissions[0]'])
+  })
+
   it.each([
     'network:',
     'network:https://acme.dev',

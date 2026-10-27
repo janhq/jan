@@ -314,7 +314,7 @@ export function createHostApi(
         }
         return contributions.executeCommand(id, commandId, context, ...args)
       }
-      // The allowlist of host commands arrives with the first host command.
+      // API 1.0 reaches no host command and no other extension's command.
       throw new ExtensionError(
         'E_NOT_FOUND',
         `Command '${commandId}' is not available`

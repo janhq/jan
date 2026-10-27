@@ -5,7 +5,6 @@ use url::Url;
 
 const FIXED_PERMISSIONS: &[&str] = &[
     "ui:notify",
-    "commands:execute",
     "providers",
     "tools",
     "conversations:read",

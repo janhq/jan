@@ -150,15 +150,11 @@ describe('createContext', () => {
     )
   })
 
-  it('needs commands:execute for a command it does not own', async () => {
-    const denied = setup([])
-    await expect(denied.ctx.commands.execute('other.cmd')).rejects.toEqual(
-      permission
-    )
-    const allowed = setup(['commands:execute'])
-    await expect(
-      allowed.ctx.commands.execute('other.cmd')
-    ).rejects.toMatchObject({ code: 'E_NOT_FOUND' })
+  it('cannot run a command it does not own', async () => {
+    const { ctx } = setup([])
+    await expect(ctx.commands.execute('other.cmd')).rejects.toMatchObject({
+      code: 'E_NOT_FOUND',
+    })
   })
 
   it('needs tools and providers for those registrations', () => {

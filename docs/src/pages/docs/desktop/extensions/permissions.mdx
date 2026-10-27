@@ -35,7 +35,6 @@ These need no permission:
 | Permission | Shown as | Risk | What it allows |
 |---|---|---|---|
 | `ui:notify` | Show notifications | Low | Show short messages in the app, labelled with the extension's name (`ctx.ui.notify`). |
-| `commands:execute` | Run commands | Medium | Run commands that belong to Jan or to other extensions (`ctx.commands.execute` with an id the extension did not declare). Not available yet: no such command is exposed in this release. |
 | `network:<host>` | Connect to &lt;host&gt; | Medium (High for `network:*`) | Send requests to this host and read the replies (`ctx.http.fetch`), and serve a contributed provider whose `baseUrl` is on it. |
 | `providers` | Add model providers | Medium | Add model providers that appear in the model picker. Each provider also needs `network:` for its `baseUrl` host. |
 | `tools` | Add tools for models | High | Add tools that models can call during a chat. Each call still asks for your approval. |

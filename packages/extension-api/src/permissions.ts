@@ -4,7 +4,6 @@
  */
 export type PermissionString =
   | 'ui:notify'
-  | 'commands:execute'
   | 'providers'
   | 'tools'
   | 'conversations:read'
@@ -21,7 +20,6 @@ const FIXED_PERMISSIONS: ReadonlySet<string> = new Set<
   Exclude<PermissionKind, 'network'>
 >([
   'ui:notify',
-  'commands:execute',
   'providers',
   'tools',
   'conversations:read',

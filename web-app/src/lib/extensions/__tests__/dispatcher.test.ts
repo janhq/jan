@@ -121,14 +121,15 @@ describe('PermissionDispatcher.dispatch', () => {
     ).not.toThrow()
   })
 
-  it('needs commands:execute only for a command the extension does not declare', async () => {
-    const denied = setup([])
-    await expect(
-      Promise.resolve().then(() => denied.call('commands.execute', ['other']))
-    ).rejects.toEqual(permission)
+  it('runs only its own commands, with no grant', async () => {
+    const { call } = setup([])
     // Its own declared command needs nothing (it has no handler yet).
     await expect(
-      Promise.resolve().then(() => denied.call('commands.execute', ['hello']))
+      Promise.resolve().then(() => call('commands.execute', ['hello']))
+    ).rejects.toMatchObject({ code: 'E_NOT_FOUND' })
+    // Anyone else's is simply not there; no grant could reach it.
+    await expect(
+      Promise.resolve().then(() => call('commands.execute', ['other']))
     ).rejects.toMatchObject({ code: 'E_NOT_FOUND' })
   })
 
