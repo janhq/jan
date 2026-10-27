@@ -251,4 +251,26 @@ describe('useToolApprovalRequests', () => {
     })
     await expect(again!).resolves.toBe(true)
   })
+
+  it('keeps an allow-always approval to the one extension tool that got it', async () => {
+    const { result } = renderHook(() => useToolApprovalRequests())
+    let p: Promise<boolean>
+    act(() => {
+      p = result.current.requestApproval('tc1', 'x_tool', 'thread-1', 'ext:acme.one')
+    })
+    act(() => result.current.resolveApproval('tc1', 'allow-always'))
+    await expect(p!).resolves.toBe(true)
+    expect(useToolApproval.getState().approvedServers).toEqual([])
+    // Another tool of the same extension (one an update added, say) asks.
+    act(() => {
+      result.current.requestApproval('tc2', 'y_tool', 'thread-1', 'ext:acme.one')
+    })
+    expect(Object.keys(result.current.pending)).toEqual(['tc2'])
+    // The approved tool runs without asking, in any thread.
+    let again: Promise<boolean>
+    act(() => {
+      again = result.current.requestApproval('tc3', 'x_tool', 'thread-2', 'ext:acme.one')
+    })
+    await expect(again!).resolves.toBe(true)
+  })
 })
