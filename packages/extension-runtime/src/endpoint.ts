@@ -75,7 +75,7 @@ export interface EndpointOptions {
   onRejected?: (error: ExtensionError) => void
   /**
    * Asked for every well-formed message except a reply to a request this
-   * side is waiting on and a `pong`, before it is sized or served; `false` refuses it (a request
+   * side is waiting on and a `pong` to an outstanding `ping`, before it is sized or served; `false` refuses it (a request
    * gets an error reply) and reports it to `onRejected`. The host rate
    * limits a worker with it, so a flood costs no more than the parse.
    */
@@ -124,6 +124,10 @@ export class Endpoint {
   private readonly subscriptions: Disposable[] = []
   private readonly closed = new Emitter<void>()
   private isClosed = false
+  // The newest ping sent and the newest one answered: only a pong between
+  // them is owed, so only that one is exempt from `admit`.
+  private lastPing = 0
+  private lastPong = 0
   private readonly maxBytes: number
   private readonly maxInFlight: number
   private readonly defaultTimeout: number
@@ -235,6 +239,7 @@ export class Endpoint {
   sendControl(message: ControlMessage): void {
     const failure = this.trySend(message)
     if (failure) throw failure
+    if (message.t === 'ping') this.lastPing = Math.max(this.lastPing, message.n)
   }
 
   /**
@@ -295,10 +300,15 @@ export class Endpoint {
       return
     }
     const awaited = message.t === 'res' && this.pending.has(message.id)
-    // A pong is exempt too: it answers the host's own ping, at most one per
-    // ping interval (an unasked one is ignored), and a worker sending at the
-    // rate limit must not lose its heartbeat to its own traffic.
-    const exempt = awaited || message.t === 'pong'
+    // A pong answering an outstanding ping is exempt too, so a worker
+    // sending at the rate limit keeps its heartbeat. Any other pong is
+    // charged like any message, or a worker could flood with them unchecked.
+    const owed =
+      message.t === 'pong' &&
+      message.n > this.lastPong &&
+      message.n <= this.lastPing
+    if (owed) this.lastPong = message.n
+    const exempt = awaited || owed
     if (!exempt && this.options.admit?.() === false) {
       const error = new ExtensionError('E_TOO_LARGE', 'Too many messages')
       this.options.onRejected?.(error)
