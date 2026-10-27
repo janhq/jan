@@ -12,7 +12,7 @@ import 'ses'
  * - `consoleTaming: 'unsafe'` keeps the worker's own console, so an
  *   extension's console output still reaches the devtools as is.
  */
-export const LOCKDOWN_OPTIONS = {
+const LOCKDOWN_OPTIONS = {
   errorTaming: 'safe',
   evalTaming: 'no-eval',
   consoleTaming: 'unsafe',
@@ -22,6 +22,8 @@ export const LOCKDOWN_OPTIONS = {
 export type Harden = <T>(value: T) => T
 
 // Taken while the module evaluates, before any bundle code has run.
+// `harden` cannot be taken the same way: SES only installs it when
+// lockdown runs, which is still before the bundle, so reading it then is safe.
 const lock = lockdown
 
 /**

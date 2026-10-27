@@ -14,13 +14,32 @@ import type { LoopbackFetch } from '@janhq/core'
  * off, and the no-proxy list covers every loopback host, so the placeholder
  * address is never dialled: these requests always go direct.
  *
- * Only for loopback servers. Remote providers keep the runtime fetch, which
- * must go on honouring the user's proxy. Built-in engines get this as
- * `ctx.internal.loopbackFetch`.
+ * Only for loopback servers: any URL whose host is not localhost, 127.0.0.1
+ * or [::1] is rejected before it is sent, since the bypass would otherwise
+ * route a remote request around the user's proxy. 0.0.0.0 is refused too:
+ * it is a listen address, and no caller dials it. Remote providers keep the
+ * runtime fetch. Built-in engines get this as `ctx.internal.loopbackFetch`.
  */
 export const LOOPBACK_DIRECT_PROXY = {
   all: { url: 'http://127.0.0.1:9', noProxy: 'localhost,127.0.0.1,::1' },
 }
 
-export const loopbackFetch: LoopbackFetch = (input, init) =>
-  httpFetch(input, { ...init, proxy: LOOPBACK_DIRECT_PROXY })
+// URL.hostname keeps the brackets on an IPv6 literal.
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+const isLoopback = (href: string): boolean => {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(href).hostname)
+  } catch {
+    return false
+  }
+}
+
+export const loopbackFetch: LoopbackFetch = async (input, init) => {
+  const href = input instanceof Request ? input.url : String(input)
+  if (!isLoopback(href))
+    throw new Error(
+      `loopbackFetch only reaches localhost, 127.0.0.1 or [::1], not ${href}`
+    )
+  return httpFetch(input, { ...init, proxy: LOOPBACK_DIRECT_PROXY })
+}

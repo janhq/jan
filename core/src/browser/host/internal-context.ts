@@ -24,7 +24,8 @@ export interface HostSecretsReader {
  * host sends it from the native HTTP client with every proxy bypassed, so a
  * system, environment or VPN proxy never captures a local request; the body
  * streams as it arrives. `connectTimeout` is in milliseconds. Never for a
- * remote provider, which must keep honouring the user's proxy.
+ * remote provider, which must keep honouring the user's proxy: it rejects
+ * any URL whose host is not localhost, 127.0.0.1 or [::1] without sending it.
  */
 export type LoopbackFetch = (
   input: string | URL | Request,

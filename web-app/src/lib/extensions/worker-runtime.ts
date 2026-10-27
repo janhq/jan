@@ -73,7 +73,9 @@ export interface WorkerRealm {
   URL: Pick<typeof URL, 'createObjectURL' | 'revokeObjectURL'>
 }
 
-let realmFrame: HTMLIFrameElement | undefined
+// Keyed by document so a caller passing another document gets a frame that
+// lives in it, not one cached from a different document.
+const realmFrames = new WeakMap<Document, HTMLIFrameElement>()
 
 /**
  * The window of a hidden about:blank frame whose only content is a meta
@@ -83,11 +85,17 @@ let realmFrame: HTMLIFrameElement | undefined
  * A meta CSP can only add restrictions, and the frame also inherits the
  * app's policy, so the workers get the intersection of the two: still no
  * eval, and now no network.
+ *
+ * The frame is never removed on purpose: workers belong to the realm that
+ * created them, so taking the frame out of the document terminates every
+ * extension worker running in it. If something else removes it, the
+ * workers already in it are gone and only new ones get the fresh frame.
  */
 export function workerRealm(doc: Document = document): WorkerRealm {
-  if (realmFrame?.isConnected && realmFrame.contentWindow)
-    return realmFrame.contentWindow as unknown as WorkerRealm
-  realmFrame?.remove()
+  const cached = realmFrames.get(doc)
+  if (cached?.isConnected && cached.contentWindow)
+    return cached.contentWindow as unknown as WorkerRealm
+  cached?.remove()
   const frame = doc.createElement('iframe')
   frame.hidden = true
   frame.setAttribute('aria-hidden', 'true')
@@ -100,7 +108,7 @@ export function workerRealm(doc: Document = document): WorkerRealm {
   meta.httpEquiv = 'Content-Security-Policy'
   meta.content = WORKER_CSP
   inner.head.appendChild(meta)
-  realmFrame = frame
+  realmFrames.set(doc, frame)
   return frame.contentWindow as unknown as WorkerRealm
 }
 

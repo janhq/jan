@@ -1745,7 +1745,6 @@ __metadata:
     "@tauri-apps/api": "npm:2.8.0"
     "@vitest/ui": "npm:3.2.7"
     cpx: "npm:1.5.0"
-    fetch-retry: "npm:^5.0.6"
     jsdom: "npm:26.1.0"
     rimraf: "npm:3.0.2"
     rolldown: "npm:1.0.0-beta.1"
@@ -8930,13 +8929,6 @@ __metadata:
     picomatch:
       optional: true
   checksum: 10c0/e345083c4306b3aed6cb8ec551e26c36bab5c511e99ea4576a16750ddc8d3240e63826cc624f5ae17ad4dc82e68a253213b60d556c11bfad064b7607847ed07f
-  languageName: node
-  linkType: hard
-
-"fetch-retry@npm:^5.0.6":
-  version: 5.0.6
-  resolution: "fetch-retry@npm:5.0.6"
-  checksum: 10c0/349f50db631039630e915f70c763469cb696f3ac92ca6f63823109334a2bc62f63670b8c5a5c7e0195c39df517e60ef385cc5264f4c4904d0c6707d371fa8999
   languageName: node
   linkType: hard
 

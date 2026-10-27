@@ -249,7 +249,7 @@ describe('model-factory deep coverage', () => {
         auto_compact: true,
       })
       const opts = getOpts()
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({ messages: [] }) })
+      await opts.fetch('http://localhost:8080/v1/chat/completions', { method: 'POST', body: JSON.stringify({ messages: [] }) })
       const body = JSON.parse(vi.mocked(httpFetch).mock.calls[0][1]!.body as string)
       expect(body.temperature).toBe(0.5)
       expect(body.max_tokens).toBe(1024)
@@ -312,7 +312,7 @@ describe('model-factory deep coverage', () => {
       expect(opts.url({ path: '/chat/completions' })).toBe('http://localhost:9090/v1/chat/completions')
       expect(opts.headers().Authorization).toBe('Bearer mlx-key')
 
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({ messages: [] }) })
+      await opts.fetch('http://localhost:9090/v1/chat/completions', { method: 'POST', body: JSON.stringify({ messages: [] }) })
       const body = JSON.parse(vi.mocked(httpFetch).mock.calls[0][1]!.body as string)
       expect(body.temperature).toBe(0.3)
     })
@@ -322,7 +322,7 @@ describe('model-factory deep coverage', () => {
       await ModelFactory.createModel('m', mkProvider('mlx'), {})
       const opts = getOpts()
       const ctrl = new AbortController()
-      await opts.fetch('http://x', { method: 'POST', body: JSON.stringify({}), signal: ctrl.signal })
+      await opts.fetch('http://localhost:9090/v1/chat/completions', { method: 'POST', body: JSON.stringify({}), signal: ctrl.signal })
       ctrl.abort()
       await new Promise((r) => setTimeout(r, 20))
       expect(vi.mocked(httpFetch)).toHaveBeenCalledTimes(2)
