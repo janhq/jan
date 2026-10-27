@@ -507,13 +507,7 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = &event {
-            if core::system::commands::factory_reset_in_progress() {
-                return;
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            core::system::commands::show_main_window(app);
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
             // Quitting mid-wipe would leave a half-deleted data folder; the

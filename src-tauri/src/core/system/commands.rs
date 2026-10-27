@@ -235,6 +235,22 @@ pub fn factory_reset_in_progress() -> bool {
     FACTORY_RESET_STARTED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+/// Bring the main window back, unless a factory reset hid it to wipe data.
+/// Every user-facing "show Jan" path (tray click, tray menu, macOS dock
+/// reopen) goes through here so none of them hands back a live webview over a
+/// half-deleted data folder.
+pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    if factory_reset_in_progress() {
+        log::info!("Not showing the window while a factory reset is running");
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Whether an exit request must be refused because a reset is running. The
 /// reset's own `restart()` arrives as `RESTART_EXIT_CODE` and must go through.
 pub fn exit_blocked_by_reset(reset_in_progress: bool, code: Option<i32>) -> bool {
