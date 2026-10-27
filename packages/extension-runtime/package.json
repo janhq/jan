@@ -31,7 +31,8 @@
   },
   "dependencies": {
     "@janhq/extension-api": "workspace:*",
-    "acorn": "^8.15.0"
+    "acorn": "^8.15.0",
+    "ses": "^2.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

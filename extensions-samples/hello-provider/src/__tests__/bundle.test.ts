@@ -1,6 +1,7 @@
 // The built dist/index.js (vitest.global-setup.mjs rebuilds it) against the
 // bundle contract: one IIFE assigning `JanExtension`, nothing imported at
-// runtime, and it boots behind the real prelude in the worker sandbox.
+// runtime, and it boots behind the real prelude (SES lockdown included) in
+// the worker sandbox.
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { validateManifest, type ValidatedManifest } from '@janhq/extension-api'
@@ -72,5 +73,9 @@ describe('hello-provider bundle', () => {
       'ui.setStatusItem',
     ])
     expect(worker.leaks).toEqual([])
+    // It ran in the realm the prelude locked down with SES.
+    const realmObject = worker.scope.Object as ObjectConstructor
+    expect(Object.isFrozen(realmObject.prototype)).toBe(true)
+    expect(typeof worker.scope.harden).toBe('function')
   })
 })

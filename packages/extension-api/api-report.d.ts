@@ -370,10 +370,12 @@ export declare function toDisposable(fn: () => void): Disposable;
  * A set of disposables released together. Members are disposed in reverse
  * order of addition, so a registration made on top of an earlier one is torn
  * down first.
+ *
+ * The state lives in private fields, which stay writable when the store is
+ * frozen: an extension worker hardens its `ctx`, `subscriptions` included.
  */
 export declare class DisposableStore implements Disposable {
-    private items;
-    private disposed;
+    #private;
     /**
      * Adds a member. Adding to a disposed store disposes the member at once, so
      * a registration that races with teardown cannot leak.

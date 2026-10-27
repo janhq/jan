@@ -75,7 +75,10 @@ export function runInSandbox(
   const errorListeners = new Set<ErrorListener>()
   let terminated = false
 
-  const context = createContext({})
+  // The app's CSP has no 'unsafe-eval', and a worker inherits it: eval and
+  // Function throw an EvalError there, which the prelude's SES lockdown
+  // has to cope with.
+  const context = createContext({}, { codeGeneration: { strings: false } })
   const realm = runInContext(SCOPE_SETUP, context) as Record<string, object>
   const scope = runInContext('globalThis', context) as Record<string, unknown>
 

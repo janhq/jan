@@ -12,6 +12,14 @@ describe('DisposableStore', () => {
     expect(order).toEqual(['b', 'a'])
   })
 
+  it('keeps working when frozen, as a worker hardens its ctx', () => {
+    const fn = vi.fn()
+    const store = Object.freeze(new DisposableStore())
+    store.add(toDisposable(fn))
+    store.dispose()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
   it('disposes a member added after the store was disposed', () => {
     const store = new DisposableStore()
     store.dispose()

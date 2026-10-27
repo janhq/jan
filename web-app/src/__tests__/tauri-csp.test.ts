@@ -16,6 +16,9 @@
  *   built from one blob: script (runtime prelude plus its bundle); the worker
  *   inherits this policy, so it can neither eval nor import more code. blob:
  *   is never added to script-src, which would let any page script load one.
+ *   The prelude's SES lockdown needs no 'unsafe-eval' either: it runs with
+ *   evalTaming 'no-eval', only probes eval/Function (and tolerates the CSP
+ *   refusing them), and makes both throw in the worker afterwards.
  * - assetProtocol.scope is not `**` / `**`-slash-`*`. The static list is empty and
  *   the backend grants at runtime only what the window streams from disk: the
  *   Cowork session sandboxes at startup, files the user picks in the open

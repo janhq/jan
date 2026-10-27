@@ -19,20 +19,23 @@ export function toDisposable(fn: () => void): Disposable {
  * A set of disposables released together. Members are disposed in reverse
  * order of addition, so a registration made on top of an earlier one is torn
  * down first.
+ *
+ * The state lives in private fields, which stay writable when the store is
+ * frozen: an extension worker hardens its `ctx`, `subscriptions` included.
  */
 export class DisposableStore implements Disposable {
-  private items: Disposable[] = []
-  private disposed = false
+  #items: Disposable[] = []
+  #disposed = false
 
   /**
    * Adds a member. Adding to a disposed store disposes the member at once, so
    * a registration that races with teardown cannot leak.
    */
   add<T extends Disposable>(d: T): T {
-    if (this.disposed) {
+    if (this.#disposed) {
       d.dispose()
     } else {
-      this.items.push(d)
+      this.#items.push(d)
     }
     return d
   }
@@ -42,10 +45,10 @@ export class DisposableStore implements Disposable {
    * the first error is rethrown after all members ran.
    */
   dispose(): void {
-    if (this.disposed) return
-    this.disposed = true
-    const items = this.items.reverse()
-    this.items = []
+    if (this.#disposed) return
+    this.#disposed = true
+    const items = this.#items.reverse()
+    this.#items = []
     let failure: { error: unknown } | undefined
     for (const item of items) {
       try {

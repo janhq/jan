@@ -53,6 +53,7 @@ Every extension you install runs in its own sandboxed Web Worker:
 - It has no access to the page, the file system, Jan's internal APIs or the
   browser's network primitives (`fetch`, `XMLHttpRequest`, `WebSocket` and the
   like are removed before its code runs).
+- Its built-in JavaScript objects are frozen, so it cannot tamper with them.
 - It can only call the [extension API](/docs/desktop/extensions/api). Every call
   is checked against the permissions you granted.
 - It has no UI of its own. It describes commands, settings and status items in
