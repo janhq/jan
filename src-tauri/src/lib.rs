@@ -373,6 +373,15 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
+            // A factory reset only moves data aside and restarts; deleting it,
+            // which can take a while for a big models folder, happens here.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    core::system::commands::sweep_reset_trash(&handle);
+                });
+            }
+
             // Reap engines a previous Jan left running: the llama-server router of
             // a 0.8.4 that was updated in place, or an mlx-server whose app was
             // killed. Neither can be stopped by the version that started it.
@@ -510,8 +519,9 @@ pub fn run() {
             core::system::commands::show_main_window(app);
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
-            // Quitting mid-wipe would leave a half-deleted data folder; the
-            // reset ends in its own restart.
+            // Quitting mid-reset would drop the reset and its restart; it ends
+            // in its own restart. A native macOS quit never gets here, which
+            // is why the reset stages its deletion atomically.
             if core::system::commands::exit_blocked_by_reset(
                 core::system::commands::factory_reset_in_progress(),
                 *code,

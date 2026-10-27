@@ -20,60 +20,111 @@ fn is_safe_to_delete(path: &std::path::Path) -> bool {
     count >= 3
 }
 
-fn remove_dir(data_folder: &std::path::Path, name: &str) {
-    let path = data_folder.join(name);
-    if path.is_dir() {
-        log::info!("Removing directory: {}", path.display());
-        if let Err(e) = fs::remove_dir_all(&path) {
-            log::warn!("Failed to remove {}: {e}", path.display());
+/// Name prefix of the folder a reset moves its targets into. The sweep only
+/// ever deletes a recorded path whose name carries it.
+const RESET_TRASH_PREFIX: &str = ".reset-trash-";
+
+/// Records the trash folder awaiting deletion. Lives in the app config dir,
+/// which survives the reset, so a trash folder under a custom data folder is
+/// still found after the reset points the config back at the default.
+const PENDING_TRASH_FILE: &str = ".pending-reset-trash";
+
+/// Data-folder entries a reset with these choices removes.
+fn reset_targets(keep_app_data: bool, keep_models_and_configs: bool) -> Vec<&'static str> {
+    // Extensions, logs and caches go on every reset.
+    let mut targets = JAN_DATA_DIRS_COMMON.to_vec();
+    if !keep_app_data {
+        targets.extend(JAN_DATA_DIRS_CONVERSATIONS);
+    }
+    if !keep_models_and_configs {
+        targets.extend(JAN_DATA_DIRS_MODELS);
+        targets.extend(JAN_DATA_FILES_CONFIGS);
+    }
+    // The settings files span every category; only a full wipe drops them.
+    if !keep_app_data && !keep_models_and_configs {
+        targets.extend(JAN_DATA_FILES_SETTINGS);
+    }
+    targets
+}
+
+/// Move each target out of the data folder into `trash`.
+///
+/// A rename within one folder is atomic and instant, so the reset is decided
+/// in milliseconds and an exit that cannot be refused (a native macOS quit
+/// skips `ExitRequested`) leaves the data either untouched or fully staged,
+/// never half-deleted. The slow deletion of `trash` happens later.
+fn stage_for_deletion(data_folder: &std::path::Path, targets: &[&str], trash: &std::path::Path) {
+    for name in targets {
+        let path = data_folder.join(name);
+        if fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        if let Err(e) = fs::create_dir_all(trash) {
+            log::warn!("Failed to create {}: {e}", trash.display());
+        }
+        log::info!("Staging for deletion: {}", path.display());
+        if let Err(e) = fs::rename(&path, trash.join(name)) {
+            // Windows refuses to move a folder with a file still open in it;
+            // deleting in place is slower but still removes it.
+            log::warn!("Failed to move {}: {e}; deleting in place", path.display());
+            remove_path(&path);
         }
     }
 }
 
-fn remove_file(data_folder: &std::path::Path, name: &str) {
-    let path = data_folder.join(name);
-    if path.is_file() {
-        log::info!("Removing file: {}", path.display());
-        if let Err(e) = fs::remove_file(&path) {
-            log::warn!("Failed to remove {}: {e}", path.display());
+fn remove_path(path: &std::path::Path) {
+    let removed = if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    if let Err(e) = removed {
+        log::warn!("Failed to remove {}: {e}", path.display());
+    }
+}
+
+fn pending_trash_record<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    get_configuration_file_path(app_handle.clone())
+        .parent()
+        .map(|dir| dir.join(PENDING_TRASH_FILE))
+}
+
+fn record_pending_trash(record: &std::path::Path, trash: &std::path::Path) -> std::io::Result<()> {
+    fs::write(record, trash.to_string_lossy().as_bytes())
+}
+
+/// Delete the trash folder a factory reset left behind, then forget it.
+fn sweep_pending_trash(record: &std::path::Path) {
+    let Ok(recorded) = fs::read_to_string(record) else {
+        return;
+    };
+    let trash = PathBuf::from(recorded.trim());
+    let is_reset_trash = trash
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(RESET_TRASH_PREFIX));
+    if is_reset_trash && is_safe_to_delete(&trash) {
+        if trash.exists() {
+            log::info!("Deleting factory reset leftovers: {}", trash.display());
+            remove_path(&trash);
         }
+    } else {
+        log::warn!("Ignoring unexpected reset trash path: {}", trash.display());
+    }
+    // A reset during the sweep records its own trash; leave that record.
+    if fs::read_to_string(record).ok().as_deref() != Some(recorded.as_str()) {
+        return;
+    }
+    if let Err(e) = fs::remove_file(record) {
+        log::warn!("Failed to remove {}: {e}", record.display());
     }
 }
 
-/// Delete conversations and user data (threads, assistants).
-fn delete_conversations(data_folder: &std::path::Path) {
-    log::info!("Deleting conversations (threads, assistants)");
-    for dir in JAN_DATA_DIRS_CONVERSATIONS {
-        remove_dir(data_folder, dir);
-    }
-}
-
-/// Delete downloaded models, engine binaries, and configuration files
-/// (engine settings, MCP config, etc.).
-fn delete_models_and_configs(data_folder: &std::path::Path) {
-    log::info!("Deleting models, engines, and configurations");
-    for dir in JAN_DATA_DIRS_MODELS {
-        remove_dir(data_folder, dir);
-    }
-    for file in JAN_DATA_FILES_CONFIGS {
-        remove_file(data_folder, file);
-    }
-}
-
-/// Delete extensions, logs, caches — always cleaned during any reset.
-fn delete_common_data(data_folder: &std::path::Path) {
-    log::info!("Deleting common data (extensions, logs, caches)");
-    for dir in JAN_DATA_DIRS_COMMON {
-        remove_dir(data_folder, dir);
-    }
-}
-
-/// Delete cross-category settings (store.json) — only during a full wipe
-/// when the user is not keeping any data.
-fn delete_settings(data_folder: &std::path::Path) {
-    log::info!("Deleting cross-category settings (store.json)");
-    for file in JAN_DATA_FILES_SETTINGS {
-        remove_file(data_folder, file);
+/// Finish a factory reset's deletion on the first start after it. Blocking:
+/// run it off the main thread.
+pub fn sweep_reset_trash<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
+    if let Some(record) = pending_trash_record(app_handle) {
+        sweep_pending_trash(&record);
     }
 }
 
@@ -251,8 +302,11 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Whether an exit request must be refused because a reset is running. The
-/// reset's own `restart()` arrives as `RESTART_EXIT_CODE` and must go through.
+/// Whether an exit request must be refused because a reset is running, so a
+/// quit during the teardown cannot cut the reset short. The reset's own
+/// `restart()` arrives as `RESTART_EXIT_CODE` and must go through. Not every
+/// exit reaches this check (a native macOS quit does not); the staged
+/// deletion is what keeps those from leaving a half-wiped folder.
 pub fn exit_blocked_by_reset(reset_in_progress: bool, code: Option<i32>) -> bool {
     reset_in_progress && code != Some(tauri::RESTART_EXIT_CODE)
 }
@@ -327,17 +381,35 @@ pub async fn factory_reset<R: Runtime>(
 
     let full_wipe = !keep_app_data && !keep_models_and_configs;
     if data_folder.exists() {
-        // Discard before deleting: the in-memory copy would otherwise be
+        // Discard before moving: the in-memory copy would otherwise be
         // flushed back by a pending debounced write or the exit-time flush.
         if full_wipe {
             crate::core::app::settings_store::discard_settings();
         }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let trash = data_folder.join(format!("{RESET_TRASH_PREFIX}{stamp}"));
+        // Record first, so a trash folder is never left that no sweep knows of.
+        let recorded = pending_trash_record(&app_handle)
+            .map(|record| record_pending_trash(&record, &trash))
+            .transpose();
+        let targets = reset_targets(keep_app_data, keep_models_and_configs);
         let folder = data_folder.clone();
-        let wiped = tauri::async_runtime::spawn_blocking(move || {
-            delete_data(&folder, keep_app_data, keep_models_and_configs)
+        let staged = tauri::async_runtime::spawn_blocking(move || {
+            stage_for_deletion(&folder, &targets, &trash);
+            // Without a record the next start cannot find the trash, so it
+            // has to go now, slow as that is.
+            if !matches!(recorded, Ok(Some(()))) {
+                log::warn!("Could not record reset trash; deleting it now");
+                if trash.exists() {
+                    remove_path(&trash);
+                }
+            }
         })
         .await;
-        if let Err(e) = wiped {
+        if let Err(e) = staged {
             log::error!("Factory reset data deletion failed: {e}");
         }
     }
@@ -369,28 +441,8 @@ pub async fn factory_reset<R: Runtime>(
         clear_webview_profile(&app_handle, &data_folder);
     }
 
+    // The staged data is deleted by the next start (`sweep_reset_trash`).
     app_handle.restart();
-}
-
-/// Delete the data categories the user did not choose to keep.
-fn delete_data(data_folder: &std::path::Path, keep_app_data: bool, keep_models_and_configs: bool) {
-    // Always clean common data (extensions, logs, caches)
-    delete_common_data(data_folder);
-
-    // Delete conversations (threads, assistants) unless user chose to keep it
-    if !keep_app_data {
-        delete_conversations(data_folder);
-    }
-
-    // Delete models and configs unless user chose to keep them
-    if !keep_models_and_configs {
-        delete_models_and_configs(data_folder);
-    }
-
-    // store.json spans all categories; only wipe it when nothing is kept
-    if !keep_app_data && !keep_models_and_configs {
-        delete_settings(data_folder);
-    }
 }
 
 #[tauri::command]
@@ -772,114 +824,112 @@ mod tests {
         names.iter().all(|n| dir.join(n).exists())
     }
 
-    #[test]
-    fn test_delete_conversations_only_removes_conversation_dirs() {
-        let tmp = tempdir().unwrap();
-        let d = tmp.path();
-        create_all_data(d);
-
-        delete_conversations(d);
-
-        assert!(!exists_any(d, JAN_DATA_DIRS_CONVERSATIONS));
-        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
-        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
-        assert!(d.join("settings.json").exists());
-        assert!(d.join("mcp_config.json").exists());
+    /// Stage a reset with these choices into a trash folder under `d`.
+    fn stage(d: &std::path::Path, keep_app_data: bool, keep_models: bool) -> PathBuf {
+        let trash = d.join(format!("{RESET_TRASH_PREFIX}test"));
+        stage_for_deletion(d, &reset_targets(keep_app_data, keep_models), &trash);
+        trash
     }
 
     #[test]
-    fn test_delete_models_and_configs_only_removes_model_dirs_and_config_files() {
+    fn keeping_both_categories_stages_only_common_data() {
         let tmp = tempdir().unwrap();
         let d = tmp.path();
         create_all_data(d);
 
-        delete_models_and_configs(d);
+        let trash = stage(d, true, true);
+
+        assert!(!exists_any(d, JAN_DATA_DIRS_COMMON));
+        assert!(exists_all(&trash, JAN_DATA_DIRS_COMMON));
+        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
+        assert!(exists_all(d, JAN_DATA_FILES));
+    }
+
+    #[test]
+    fn keeping_models_stages_conversations_but_not_settings() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        stage(d, false, true);
+
+        assert!(!exists_any(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
+        assert!(exists_all(d, JAN_DATA_FILES_CONFIGS));
+        assert!(exists_all(d, JAN_DATA_FILES_SETTINGS));
+    }
+
+    #[test]
+    fn keeping_app_data_stages_models_and_configs_but_not_settings() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        stage(d, true, false);
 
         assert!(!exists_any(d, JAN_DATA_DIRS_MODELS));
         assert!(!exists_any(d, JAN_DATA_FILES_CONFIGS));
         assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
-        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
-        assert!(d.join("settings.json").exists());
+        assert!(exists_all(d, JAN_DATA_FILES_SETTINGS));
     }
 
     #[test]
-    fn test_delete_common_data_only_removes_common_dirs() {
+    fn full_wipe_stages_every_known_entry() {
         let tmp = tempdir().unwrap();
         let d = tmp.path();
         create_all_data(d);
 
-        delete_common_data(d);
+        let trash = stage(d, false, false);
 
-        assert!(!exists_any(d, JAN_DATA_DIRS_COMMON));
-        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
-        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
-        assert!(d.join("settings.json").exists());
-        assert!(d.join("mcp_config.json").exists());
-    }
-
-    #[test]
-    fn test_delete_settings_only_removes_settings_json() {
-        let tmp = tempdir().unwrap();
-        let d = tmp.path();
-        create_all_data(d);
-
-        delete_settings(d);
-
-        assert!(!d.join("settings.json").exists());
-        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
-        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
-        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
-        assert!(d.join("mcp_config.json").exists());
-    }
-
-    #[test]
-    fn test_settings_json_survives_when_keeping_any_category() {
-        // Simulate: keep_app_data=true, keep_models_and_configs=false
-        let tmp = tempdir().unwrap();
-        let d = tmp.path();
-        create_all_data(d);
-
-        delete_common_data(d);
-        delete_models_and_configs(d);
-        // settings.json should NOT be deleted because keep_app_data=true
-        assert!(d.join("settings.json").exists());
-
-        // Simulate: keep_app_data=false, keep_models_and_configs=true
-        let tmp2 = tempdir().unwrap();
-        let d2 = tmp2.path();
-        create_all_data(d2);
-
-        delete_common_data(d2);
-        delete_conversations(d2);
-        // settings.json should NOT be deleted because keep_models_and_configs=true
-        assert!(d2.join("settings.json").exists());
-    }
-
-    #[test]
-    fn test_full_wipe_deletes_settings_json() {
-        let tmp = tempdir().unwrap();
-        let d = tmp.path();
-        create_all_data(d);
-
-        delete_common_data(d);
-        delete_conversations(d);
-        delete_models_and_configs(d);
-        delete_settings(d);
-
-        assert!(!d.join("settings.json").exists());
         assert!(!exists_any(d, JAN_DATA_SUBDIRS));
         assert!(!exists_any(d, JAN_DATA_FILES));
+        assert!(exists_all(&trash, JAN_DATA_SUBDIRS));
+        assert!(exists_all(&trash, JAN_DATA_FILES));
     }
 
     #[test]
-    fn test_delete_on_nonexistent_dirs_does_not_panic() {
+    fn staging_with_nothing_to_move_creates_no_trash() {
         let tmp = tempdir().unwrap();
-        let d = tmp.path();
-        // Nothing created — should not panic
-        delete_conversations(d);
-        delete_models_and_configs(d);
-        delete_common_data(d);
-        delete_settings(d);
+        let trash = stage(tmp.path(), false, false);
+        assert!(!trash.exists());
+    }
+
+    #[test]
+    fn sweep_deletes_recorded_trash_and_clears_the_record() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path().join("data");
+        fs::create_dir_all(&d).unwrap();
+        create_all_data(&d);
+        let record = tmp.path().join(PENDING_TRASH_FILE);
+        let trash = d.join(format!("{RESET_TRASH_PREFIX}1"));
+        record_pending_trash(&record, &trash).unwrap();
+        stage_for_deletion(&d, &reset_targets(false, false), &trash);
+
+        sweep_pending_trash(&record);
+
+        assert!(!trash.exists());
+        assert!(!record.exists());
+    }
+
+    #[test]
+    fn sweep_never_deletes_a_path_that_is_not_reset_trash() {
+        let tmp = tempdir().unwrap();
+        let keep = tmp.path().join("data").join("threads");
+        fs::create_dir_all(&keep).unwrap();
+        let record = tmp.path().join(PENDING_TRASH_FILE);
+        record_pending_trash(&record, &keep).unwrap();
+
+        sweep_pending_trash(&record);
+
+        assert!(keep.exists());
+        assert!(!record.exists());
+    }
+
+    #[test]
+    fn sweep_without_a_record_is_a_no_op() {
+        let tmp = tempdir().unwrap();
+        sweep_pending_trash(&tmp.path().join(PENDING_TRASH_FILE));
     }
 
     #[test]
