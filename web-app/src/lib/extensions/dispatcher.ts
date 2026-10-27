@@ -88,13 +88,8 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
     args: z.tuple([contributionId, fn<HostArgs<'commands.register'>[1]>()]),
   },
   'commands.execute': {
-    // Its own declared commands are implicit; anyone else's needs the grant.
-    permission: (args, manifest, dispatcher) => {
-      const declared = manifest.contributes?.commands?.some(
-        (c) => c.id === args[0]
-      )
-      if (!declared) dispatcher.check(manifest.id, 'commands:execute')
-    },
+    // Only the extension's own commands are reachable (see host-api).
+    permission: 'implicit',
     args: z.tuple([contributionId], json),
   },
   'ui.notify': {

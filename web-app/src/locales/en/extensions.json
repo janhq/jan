@@ -45,10 +45,6 @@
       "title": "Show notifications",
       "description": "Show short messages in the app, labelled with the extension's name."
     },
-    "commandsExecute": {
-      "title": "Run commands",
-      "description": "Run commands that belong to Jan or to other extensions."
-    },
     "network": {
       "title": "Connect to {{host}}",
       "description": "Send requests to this host and read the replies.",

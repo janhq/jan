@@ -1031,6 +1031,13 @@ mod tests {
     }
 
     #[test]
+    fn commands_execute_is_not_a_permission() {
+        let mut pkg = sample();
+        pkg["jan"]["permissions"] = json!(["ui:notify", "tools", "providers", "network:127.0.0.1", "commands:execute"]);
+        assert_eq!(paths(&pkg), vec!["jan.permissions[4]"]);
+    }
+
+    #[test]
     fn contribution_rules() {
         let mut pkg = sample();
         pkg["jan"]["contributes"]["commands"] = json!([
