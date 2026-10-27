@@ -58,7 +58,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
-  const { pausePolling } = useHardware()
+  const { pausePolling, resumePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -81,7 +81,15 @@ function General() {
       return
     }
     pausePolling()
-    await serviceHub.app().factoryReset(options)
+    try {
+      await serviceHub.app().factoryReset(options)
+    } catch (error) {
+      // The backend refuses a data folder too close to the filesystem root,
+      // which covers paths the isRootDir check above does not list.
+      console.error('Factory reset refused:', error)
+      resumePolling()
+      toast.error(t('settings:general.couldNotResetRootDirectory'))
+    }
   }
 
   const handleOpenLogs = async () => {

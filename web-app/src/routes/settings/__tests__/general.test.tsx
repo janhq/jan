@@ -183,10 +183,12 @@ vi.mock('@/services/models/default', () => ({
   })),
 }))
 
+const mockFactoryReset = vi.hoisted(() => vi.fn())
+
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
     app: () => ({
-      factoryReset: vi.fn(),
+      factoryReset: mockFactoryReset,
       getJanDataFolder: vi.fn().mockResolvedValue('/test/data/folder'),
       relocateJanDataFolder: vi.fn(),
     }),
@@ -437,6 +439,25 @@ describe('General Settings Route', () => {
     expect(screen.getByTestId('dialog')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-trigger')).toBeInTheDocument()
     expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
+  })
+
+  it('reports a refused factory reset and resumes hardware polling', async () => {
+    const { toast } = await import('sonner')
+    const { useHardware } = await import('@/hooks/useHardware')
+    mockFactoryReset.mockRejectedValueOnce('Refusing to reset /home/jan')
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('settings:general.reset'))
+    })
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'settings:general.couldNotResetRootDirectory'
+    )
+    expect(useHardware.getState().pollingPaused).toBe(false)
   })
 
   it('should render external links', async () => {
