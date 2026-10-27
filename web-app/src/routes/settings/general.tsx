@@ -84,11 +84,14 @@ function General() {
     try {
       await serviceHub.app().factoryReset(options)
     } catch (error) {
-      // The backend refuses a data folder too close to the filesystem root,
-      // which covers paths the isRootDir check above does not list.
-      console.error('Factory reset refused:', error)
+      // Model unloads and the backend can both fail here; the backend also
+      // refuses data folders the isRootDir check above does not list. Its
+      // message says why, so show that rather than guessing a cause.
+      console.error('Factory reset failed:', error)
       resumePolling()
-      toast.error(t('settings:general.couldNotResetRootDirectory'))
+      toast.error(t('settings:general.factoryResetFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 

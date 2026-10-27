@@ -441,7 +441,7 @@ describe('General Settings Route', () => {
     expect(screen.getByTestId('dialog-content')).toBeInTheDocument()
   })
 
-  it('reports a refused factory reset and resumes hardware polling', async () => {
+  it('reports a failed factory reset with its reason and resumes polling', async () => {
     const { toast } = await import('sonner')
     const { useHardware } = await import('@/hooks/useHardware')
     mockFactoryReset.mockRejectedValueOnce('Refusing to reset /home/jan')
@@ -455,7 +455,8 @@ describe('General Settings Route', () => {
     })
 
     expect(toast.error).toHaveBeenCalledWith(
-      'settings:general.couldNotResetRootDirectory'
+      'settings:general.factoryResetFailed',
+      { description: 'Refusing to reset /home/jan' }
     )
     expect(useHardware.getState().pollingPaused).toBe(false)
   })
