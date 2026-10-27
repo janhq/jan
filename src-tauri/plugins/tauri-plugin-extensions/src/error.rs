@@ -123,6 +123,11 @@ pub enum SignatureError {
     /// A validly signed index past its signed `expires` time.
     #[error("the signed index expired at {0}; the source must publish a fresh one")]
     Expired(String),
+    /// A validly signed index generated further ahead of this clock than
+    /// skew explains. Accepted, it would become the rollback mark and lock
+    /// the source out of every honest index after it.
+    #[error("the signed index claims to be generated at {0}, in the future; check this computer's clock or the source's")]
+    FromTheFuture(String),
     /// A signed index whose `generatedAt` or `expires` is not an RFC 3339
     /// time, so its freshness cannot be checked.
     #[error("the signed index has no valid RFC 3339 {0}")]

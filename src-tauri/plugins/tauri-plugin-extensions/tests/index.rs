@@ -598,6 +598,31 @@ fn an_expired_or_undated_signed_index_is_refused() {
 }
 
 #[test]
+fn a_future_dated_signed_index_is_refused_and_leaves_the_mark() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path());
+    let key = signing_key(7);
+    let added = catalog::add_source(&state, "https://index.example.com/index.json", "Acme", Some(&public_key(&key))).unwrap();
+    let signed = |doc: &[u8]| index::verify_and_parse(doc, Some(Ok(sign(&key, doc))), Some(&public_key(&key))).unwrap();
+
+    // Accepted, it would refuse every later index as a replay.
+    for generated in ["9999-12-31T23:59:59Z", "2026-10-25T12:00:01Z"] {
+        let future = signed(&dated_index(generated, None));
+        let err = catalog::accept_index(&state, &added, &future, NOON).unwrap_err();
+        assert!(matches!(err, Error::Signature(SignatureError::FromTheFuture(_))), "{err}");
+        assert_eq!(err.kind(), "signature");
+        assert_eq!(stored(&state).last_generated_at, None);
+    }
+    // A clock running a little behind the publisher's is tolerated.
+    let skewed = signed(&dated_index("2026-10-25T12:00:00Z", None));
+    catalog::accept_index(&state, &added, &skewed, NOON).unwrap();
+    // And the source keeps taking normal newer indexes once time catches up.
+    let later = signed(&dated_index("2026-10-26T00:00:00Z", None));
+    catalog::accept_index(&state, &stored(&state), &later, NOON + 2 * 86_400).unwrap();
+    assert_eq!(stored(&state).last_generated_at.as_deref(), Some("2026-10-26T00:00:00Z"));
+}
+
+#[test]
 fn an_unsigned_index_is_not_dated_or_recorded() {
     let root = tempfile::tempdir().unwrap();
     let state = state(root.path());

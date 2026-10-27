@@ -195,16 +195,23 @@ pub fn parse(bytes: &[u8]) -> Result<CuratedIndex> {
     Ok(index)
 }
 
+/// How far a signed index's `generatedAt` may run ahead of this clock.
+const MAX_CLOCK_SKEW_SECS: i64 = 24 * 60 * 60;
+
 /// Checks the freshness of a signed index: `generatedAt` must not be older
 /// than `last`, the newest one accepted from the source before (equal is
-/// the same index fetched again), and a signed `expires` must not have
-/// passed at `now` (seconds since the epoch). Returns whether
-/// `generatedAt` is newer than `last`, so the caller records it.
+/// the same index fetched again), nor more than [`MAX_CLOCK_SKEW_SECS`]
+/// after `now` (seconds since the epoch), and a signed `expires` must not
+/// have passed at `now`. Returns whether `generatedAt` is newer than
+/// `last`, so the caller records it.
 pub fn check_freshness(index: &CuratedIndex, last: Option<&str>, now: u64) -> Result<bool> {
     let generated = parse_rfc3339(&index.generated_at).ok_or(SignatureError::BadTimestamp("generatedAt"))?;
+    let now = i64::try_from(now).unwrap_or(i64::MAX);
+    if generated > (now.saturating_add(MAX_CLOCK_SKEW_SECS), 0) {
+        return Err(SignatureError::FromTheFuture(index.generated_at.clone()).into());
+    }
     if let Some(expires) = &index.expires {
         let (at, nanos) = parse_rfc3339(expires).ok_or(SignatureError::BadTimestamp("expires"))?;
-        let now = i64::try_from(now).unwrap_or(i64::MAX);
         if now > at || (now == at && nanos == 0) {
             return Err(SignatureError::Expired(expires.clone()).into());
         }
