@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isolationEnv } from './isolation.js'
 import { exited, ownedPhase } from './owned-process.js'
+import { deadlineCancellation, withCleanup } from './phase-lifecycle.js'
 import { setTimeout as delay } from 'node:timers/promises'
 import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, launchContext } from './launch-guard.js'
 import { janUserDataDir } from './helpers/paths.js'
@@ -62,12 +63,10 @@ try {
     const output = openSync(join(logs, `phase-${phase}.log`), 'w')
     console.log(`Migration phase ${phase}: ${home} (logs: ${logs})`)
     let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const cancellation = new Promise<never>((_resolve, reject) => {
-      cancelPhase = error => { cancelled = true; reject(error) }
-      timer = setTimeout(() => cancelPhase?.(new Error(`Migration phase ${phase} timed out`)), 600_000)
-    })
-    try {
+    const deadline = deadlineCancellation(600_000,
+      new Error(`Migration phase ${phase} timed out`), () => { cancelled = true })
+    cancelPhase = deadline.cancel
+    await withCleanup(async () => {
       await ownedPhase(async own => {
         mkdirSync(join(home, 'tmp'), { recursive: true })
         if (process.platform === 'win32') {
@@ -108,16 +107,15 @@ try {
           await exited(wdio)
         }
         await Promise.race([run(), appExit])
-      }, cancellation)
-    } finally {
+      }, deadline.promise)
+    }, () => [() => {
       cancelled = true
-      clearTimeout(timer)
+      deadline.dispose()
       cancelPhase = undefined
       closeSync(output)
       // A closed port is necessary, not sufficient: ownedPhase also awaited
       // each tracked root's exit. Failure of either barrier retains the profile.
-      await closed()
-    }
+    }, closed], 'Migration phase cleanup failed')
     assertMigrated(home)
   }, closed)
   success = true

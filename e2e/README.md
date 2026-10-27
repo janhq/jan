@@ -726,7 +726,9 @@ exited: Unix app/worker descendants are not independently enumerated. SIGKILL of
 the runner, machine shutdown, or already-orphaned Windows descendants cannot be
 reliably cleaned up by this harness. Retained profiles are evidence, not a claim
 that every possible orphan was terminated. Injectable lifecycle tests cover
-startup/run cancellation, deadline cancellation, escalation, and cleanup failure.
+startup/run cancellation, real short-deadline automatic cancellation, escalation,
+and cleanup failure. Work and teardown failures are retained together (including
+the driver-port closure barrier), rather than cleanup masking the original error.
 
 This covers startup migrations and persistence across a second process start,
 not an installer upgrade, old binary execution, browser localStorage migration,

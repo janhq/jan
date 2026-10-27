@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { withCleanup } from './phase-lifecycle.js'
 
 export interface OwnedChild {
   pid?: number
@@ -60,15 +61,11 @@ export function exited(child: ChildProcess): Promise<void> {
 export async function ownedPhase(work: (own: (child: OwnedChild) => void) => Promise<void>, cancel: Promise<never>,
   stop: (child: OwnedChild) => Promise<void> = stopOwned): Promise<void> {
   const children: OwnedChild[] = []
-  try {
-    await Promise.race([work(child => children.push(child)), cancel])
-  } finally {
-    const failures: unknown[] = []
+  await withCleanup(
+    () => Promise.race([work(child => children.push(child)), cancel]),
     // App is registered first: stop it before WDIO so Windows can traverse its
-    // live tree. Never rely on WDIO's signal handler to stop an app it doesn't own.
-    for (const child of children) {
-      try { await stop(child) } catch (error) { failures.push(error) }
-    }
-    if (failures.length) throw new AggregateError(failures, 'Owned process teardown failed')
-  }
+    // live tree. Attempt every root even if an earlier teardown fails.
+    () => children.map(child => () => stop(child)),
+    'Owned process teardown failed',
+  )
 }
