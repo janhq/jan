@@ -889,7 +889,16 @@ impl TurnMap {
     /// stands on its own request id, which a client renders as a fresh card.
     fn permission(&mut self, event: StreamEvent, match_calls: bool) -> Option<PermissionAsk> {
         let StreamEvent::PermissionRequest {
-            request_id, tool_name, capability, path, command, diff, offers_always, ..
+            request_id,
+            tool_name,
+            capability,
+            path,
+            command,
+            diff,
+            offers_always,
+            justification,
+            prompt_kind,
+            ..
         } = event
         else {
             return None;
@@ -910,7 +919,13 @@ impl TurnMap {
                 call.prompted = true;
             }
         }
+        // An escalation is not the ordinary exec card: the client must see that
+        // approving it runs the command outside the sandbox.
+        let escalate = prompt_kind == "escalate";
         let title = match (&command, &path) {
+            (Some(command), _) if escalate => {
+                format!("{tool_name} (outside the sandbox): {command}")
+            }
             (Some(command), _) => format!("{tool_name}: {command}"),
             (None, Some(path)) => format!("{tool_name} ({capability}) {path}"),
             (None, None) => format!("{tool_name} ({capability})"),
@@ -921,6 +936,10 @@ impl TurnMap {
         }
         if let Some(diff) = diff {
             fields = fields.content(vec![diff_block(&diff)]);
+        } else if let Some(why) = justification.filter(|_| escalate) {
+            fields = fields.content(vec![ToolCallContent::from(format!(
+                "Run outside the sandbox: {why}"
+            ))]);
         }
         Some(PermissionAsk {
             tool_call: ToolCallUpdate::new(matched.unwrap_or_else(|| request_id.clone()), fields),
@@ -1094,6 +1113,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: false,
+                justification: None,
             }),
         });
         let wire: Vec<Value> = out.iter().map(wire).collect();
@@ -1102,6 +1122,31 @@ mod tests {
         assert_eq!(wire[0]["always"], false);
         // No announced call to match, so it stands on its own id.
         assert_eq!(wire[0]["toolCall"]["toolCallId"], "perm-7");
+    }
+
+    /// An escalation card says it runs outside the sandbox, carries the
+    /// model's reason, and offers no "always allow".
+    #[test]
+    fn an_escalation_prompt_says_where_it_runs_and_why() {
+        let mut map = map();
+        let out = map.map(StreamEvent::PermissionRequest {
+            request_id: "perm-9".into(),
+            tool_name: "shell".into(),
+            capability: "exec outside the sandbox".into(),
+            path: None,
+            command: Some("cargo build".into()),
+            diff: None,
+            prompt_kind: "escalate".into(),
+            offers_always: false,
+            justification: Some("fetch crates".into()),
+        });
+        let wire = wire(&out[0]);
+        assert_eq!(wire["always"], false);
+        assert_eq!(wire["toolCall"]["title"], "shell (outside the sandbox): cargo build");
+        assert_eq!(
+            wire["toolCall"]["content"][0]["content"]["text"],
+            "Run outside the sandbox: fetch crates"
+        );
     }
 
     #[test]
@@ -1120,6 +1165,7 @@ mod tests {
                 diff: Some("-a\n+b".into()),
                 prompt_kind: "write".into(),
                 offers_always: true,
+                justification: None,
             });
             wire(&out[0])
         };
@@ -1312,6 +1358,7 @@ mod tests {
                 diff: None,
                 prompt_kind: "exec".into(),
                 offers_always: false,
+                justification: None,
             }),
         });
         let w = wire(&out[0]);

@@ -8,11 +8,9 @@ type AttachmentIngestionState = {
   currentAttachment: AttachmentSummary | null
   currentIndex: number
   totalCount: number
-  sizeThreshold: number
   resolver: ((choice: 'inline' | 'embeddings' | undefined) => void) | null
   showPrompt: (
     attachment: AttachmentSummary,
-    sizeThreshold: number,
     currentIndex: number,
     totalCount: number
   ) => Promise<'inline' | 'embeddings' | undefined>
@@ -26,16 +24,14 @@ export const useAttachmentIngestionPrompt = create<AttachmentIngestionState>()(
     currentAttachment: null,
     currentIndex: 0,
     totalCount: 0,
-    sizeThreshold: 0,
     resolver: null,
-    showPrompt: async (attachment, sizeThreshold, currentIndex, totalCount) => {
+    showPrompt: async (attachment, currentIndex, totalCount) => {
       return new Promise<'inline' | 'embeddings' | undefined>((resolve) => {
         set({
           isModalOpen: true,
           currentAttachment: attachment,
           currentIndex,
           totalCount,
-          sizeThreshold,
           resolver: resolve,
         })
       })

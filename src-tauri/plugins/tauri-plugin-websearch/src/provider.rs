@@ -75,6 +75,95 @@ pub trait SearchProvider: Send + Sync {
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String>;
 }
 
+/// Static description of one selectable backend: what settings surfaces need to
+/// render its form (does it need a key, an instance URL) and where its API key
+/// lives in the secret store. The desktop's `WEB_SEARCH_PROVIDERS` uses the
+/// same ids and secret keys, so a key saved on one surface is found by the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderMeta {
+    /// Id accepted by [`create_provider`].
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Works with no API key (a key only upgrades it).
+    pub keyless: bool,
+    /// Secret-store record holding the API key; `None` for key-less backends.
+    pub secret_key: Option<&'static str>,
+    /// Needs a user-supplied instance URL (`endpoint`).
+    pub requires_endpoint: bool,
+}
+
+/// Every backend [`create_provider`] accepts, default first.
+pub const PROVIDERS: &[ProviderMeta] = &[
+    ProviderMeta {
+        id: "exa",
+        label: "Exa",
+        keyless: true,
+        secret_key: Some("exa-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "tavily",
+        label: "Tavily",
+        keyless: false,
+        secret_key: Some("tavily-api-key"),
+        requires_endpoint: false,
+    },
+    ProviderMeta {
+        id: "searxng",
+        label: "SearXNG",
+        keyless: true,
+        secret_key: None,
+        requires_endpoint: true,
+    },
+    ProviderMeta {
+        id: "you",
+        label: "You.com",
+        keyless: true,
+        secret_key: Some("you-api-key"),
+        requires_endpoint: false,
+    },
+];
+
+/// Look up a backend by id (case-insensitive; empty/absent is the default).
+pub fn provider_meta(provider: Option<&str>) -> Option<&'static ProviderMeta> {
+    match provider.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        None | Some("") => PROVIDERS.first(),
+        Some(id) => PROVIDERS.iter().find(|p| p.id == id),
+    }
+}
+
+/// A resolved backend selection: what [`create_provider`] is called with. Built
+/// by the host from its own settings store; `Default` is the keyless default.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct WebSearchConfig {
+    pub provider: Option<String>,
+    pub api_key: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+impl std::fmt::Debug for WebSearchConfig {
+    /// Hand-written so the API key never reaches a log: hosts embed this in
+    /// structs that derive `Debug`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebSearchConfig")
+            .field("provider", &self.provider)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("endpoint", &self.endpoint)
+            .finish()
+    }
+}
+
+impl WebSearchConfig {
+    /// Build the backend this selection names.
+    pub fn create(&self) -> Result<Box<dyn SearchProvider>, String> {
+        create_provider(
+            self.provider.as_deref(),
+            self.api_key.clone(),
+            self.endpoint.clone(),
+        )
+    }
+}
+
 /// Build the backend for `provider` (case-insensitive; empty/absent selects the
 /// default). `api_key` is used by keyed backends; `endpoint` by self-hosted ones
 /// (e.g. a SearXNG instance URL).
@@ -705,7 +794,7 @@ impl SearchProvider for YouComProvider {
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
         match &self.mode {
             // No keyless content endpoint, so read the page directly.
-            YouComMode::Hosted => fetch_url_direct(&self.client, url, "You.com").await,
+            YouComMode::Hosted => fetch_url_direct(url, "You.com").await,
             YouComMode::Rest(key) => {
                 let parsed = self
                     .post_rest(
@@ -853,7 +942,7 @@ impl SearchProvider for SearxngProvider {
     }
 
     async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
-        fetch_url_direct(&self.client, url, "SearXNG").await
+        fetch_url_direct(url, "SearXNG").await
     }
 }
 
@@ -890,16 +979,138 @@ fn normalize_searxng_search(body: &Value, count: u32) -> Vec<SearchResult> {
 /// Fetch a URL directly and return its bounded body, titled from its `<title>`.
 /// Used by backends that have no content-extraction endpoint on the active
 /// transport, so `web_fetch` still answers instead of erroring.
-async fn fetch_url_direct(
-    client: &reqwest::Client,
-    url: &str,
-    provider: &str,
-) -> Result<FetchedPage, String> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("{provider} fetch request failed: {e}"))?;
+/// Redirect hops a direct fetch follows, each re-vetted.
+const DIRECT_FETCH_MAX_REDIRECTS: usize = 5;
+
+/// Whether `ip` is an address on the public internet. A direct fetch runs
+/// from the user's machine on a URL the model chose, so loopback, private,
+/// link-local (cloud metadata), CGNAT, multicast and unspecified targets are
+/// refused: otherwise a prompt-injected page could make the agent read local
+/// services and LAN hosts through an auto-allowed tool.
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || o[0] == 0
+                // 100.64.0.0/10, carrier-grade NAT.
+                || (o[0] == 100 && (o[1] & 0xc0) == 64))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let s = v6.segments();
+            let embedded = |hi: u16, lo: u16| {
+                std::net::Ipv4Addr::new((hi >> 8) as u8, hi as u8, (lo >> 8) as u8, lo as u8)
+            };
+            // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address
+            // a translating network delivers to; judge them by it.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(IpAddr::V4(embedded(s[6], s[7])));
+            }
+            if s[0] == 0x2002 {
+                return is_public_ip(IpAddr::V4(embedded(s[1], s[2])));
+            }
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                // fc00::/7 unique local, fe80::/10 link-local, fec0::/10
+                // deprecated site-local.
+                || (s[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfec0)
+        }
+    }
+}
+
+/// Resolve `url`'s host and return the address to connect to, refusing any
+/// target that is not public. Every resolved address must pass, so a name with
+/// one public and one private record cannot be used to reach the private one.
+async fn vet_direct_target(url: &reqwest::Url) -> Result<std::net::SocketAddr, String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("only http(s) URLs can be fetched, got: {url}"));
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| format!("no port for {url}"))?;
+    let host = url
+        .host_str()
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| format!("no host in {url}"))?;
+    // An IPv6 literal comes back bracketed; a literal is used as-is so it is
+    // vetted without a lookup.
+    let literal = host.trim_start_matches('[').trim_end_matches(']');
+    let addrs: Vec<std::net::SocketAddr> = match literal.parse::<std::net::IpAddr>() {
+        Ok(ip) => vec![(ip, port).into()],
+        Err(_) => tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|e| format!("could not resolve {host}: {e}"))?
+            .collect(),
+    };
+    let first = *addrs
+        .first()
+        .ok_or_else(|| format!("no address for {url}"))?;
+    if let Some(bad) = addrs.iter().find(|a| !is_public_ip(a.ip())) {
+        return Err(format!(
+            "refusing to fetch {url}: it resolves to a local or private address ({})",
+            bad.ip()
+        ));
+    }
+    Ok(first)
+}
+
+/// GET a URL straight from this machine. Each hop (the URL and every
+/// redirect) is vetted by [`vet_direct_target`], and the connection is pinned
+/// to the vetted address so a second DNS answer cannot swap in a private one.
+///
+/// Proxies from the environment are ignored on purpose: a proxy resolves the
+/// name itself, so the pin would no longer decide what is fetched, and a name
+/// that is only private inside the proxy's network would pass the vetting.
+async fn fetch_url_direct(url: &str, provider: &str) -> Result<FetchedPage, String> {
+    let mut current =
+        reqwest::Url::parse(url).map_err(|e| format!("{provider} fetch: invalid URL {url}: {e}"))?;
+    let mut hops = 0;
+    let resp = loop {
+        let addr = vet_direct_target(&current).await?;
+        let mut builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy();
+        if let Some(domain) = current.domain() {
+            builder = builder.resolve(domain, addr);
+        }
+        let client = builder
+            .build()
+            .map_err(|e| format!("failed to build HTTP client for {provider}: {e}"))?;
+        let resp = client
+            .get(current.clone())
+            .send()
+            .await
+            .map_err(|e| format!("{provider} fetch request failed: {e}"))?;
+        if !resp.status().is_redirection() {
+            break resp;
+        }
+        hops += 1;
+        if hops > DIRECT_FETCH_MAX_REDIRECTS {
+            return Err(format!("{provider} fetch: too many redirects for {url}"));
+        }
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| format!("{provider} fetch: redirect without a Location header"))?;
+        current = current
+            .join(location)
+            .map_err(|e| format!("{provider} fetch: bad redirect target {location}: {e}"))?;
+    };
     let status = resp.status();
     let body = resp
         .text()
@@ -990,6 +1201,81 @@ mod tests {
         assert!(create_provider(None, None, None).is_ok());
         assert!(create_provider(Some(""), None, None).is_ok());
         assert!(create_provider(Some("Exa"), None, None).is_ok());
+    }
+
+    #[test]
+    fn public_ip_check_refuses_local_and_private_ranges() {
+        for ip in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:1",
+            "2002:c0a8:101::1",
+            "2002:7f00:1::1",
+            "fec0::1",
+        ] {
+            assert!(!is_public_ip(ip.parse().unwrap()), "{ip} must be refused");
+        }
+        for ip in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+            "64:ff9b::101:101",
+            "2002:101:101::1",
+        ] {
+            assert!(is_public_ip(ip.parse().unwrap()), "{ip} must be allowed");
+        }
+    }
+
+    /// Literal and named local targets are refused before any request is made.
+    #[tokio::test]
+    async fn direct_fetch_refuses_local_targets() {
+        for url in [
+            "http://127.0.0.1:9/",
+            "http://localhost:9/",
+            "http://[::1]:9/",
+            "http://169.254.169.254/latest/meta-data/",
+        ] {
+            let err = fetch_url_direct(url, "SearXNG").await.unwrap_err();
+            assert!(err.contains("local or private"), "{url}: {err}");
+        }
+    }
+
+    #[test]
+    fn web_search_config_debug_redacts_the_key() {
+        let config = WebSearchConfig {
+            provider: Some("tavily".into()),
+            api_key: Some("tvly-secret".into()),
+            endpoint: None,
+        };
+        let printed = format!("{config:?}");
+        assert!(!printed.contains("tvly-secret"), "{printed}");
+        assert!(printed.contains("redacted"), "{printed}");
+    }
+
+    #[test]
+    fn every_listed_provider_is_constructible() {
+        for meta in PROVIDERS {
+            let key = (!meta.keyless).then(|| "k".to_string());
+            let endpoint = meta.requires_endpoint.then(|| "https://x.example".to_string());
+            assert!(
+                create_provider(Some(meta.id), key, endpoint).is_ok(),
+                "{} must be accepted by create_provider",
+                meta.id
+            );
+        }
+        assert_eq!(provider_meta(None).map(|m| m.id), Some("exa"));
+        assert_eq!(provider_meta(Some("Tavily")).map(|m| m.id), Some("tavily"));
+        assert!(provider_meta(Some("brave")).is_none());
     }
 
     #[test]

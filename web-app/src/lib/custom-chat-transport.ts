@@ -10,21 +10,26 @@ import {
   type LanguageModelUsage,
   jsonSchema,
   InvalidToolInputError,
+  lastAssistantMessageIsCompleteWithToolCalls,
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
 import {
+  encodeMcpToolImages,
   hasToolImageSentinel,
   stripToolImageSentinels,
+  toContentToolOutputs,
 } from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
+import { buildsOwnToolImageRequest } from './providerCaps'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useChatShell } from '@/hooks/useChatShell'
 import {
   WEB_SEARCH_DESCRIPTION,
   WEB_SEARCH_INPUT_SCHEMA,
@@ -38,6 +43,7 @@ import {
   refreshMemoryDigest,
   sandboxEnforces,
 } from '@/lib/agentTools'
+import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
@@ -89,6 +95,11 @@ export type OnFinishCallback = (params: {
   message: UIMessage
   isAbort?: boolean
 }) => void
+/** The provider and model a request runs on. */
+export type ModelSelection = {
+  selectedProvider: string
+  selectedModel: Model | null
+}
 /** Partial assistant output replayed as a prefill to resume a stopped turn. */
 export type ContinuationContent = { text?: string; reasoning?: string }
 export type ServiceHub = {
@@ -875,6 +886,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * clear loading/stream state that the newer request has already set.
    */
   private streamGeneration = 0
+  /**
+   * The model the current turn started on. A tool loop's follow-up requests
+   * reuse it rather than the global selection, which follows the open thread:
+   * a turn that carries on after the user opens another thread must not be
+   * sent to that thread's model or provider (#9311).
+   */
+  private turnModelSelection: ModelSelection | null = null
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -883,8 +901,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
   }
 
-  protected getModelSelection(): { selectedProvider: string; selectedModel: Model | null } {
+  protected getModelSelection(): ModelSelection {
     return useModelProvider.getState()
+  }
+
+  /** The model of this transport's current (or last) turn, if one has run. */
+  getTurnModelSelection(): ModelSelection | null {
+    return this.turnModelSelection
+  }
+
+  /**
+   * The model a request runs on. The SDK's automatic follow-up, sent once the
+   * turn's tool calls all have outcomes, continues that turn on its model.
+   * Anything else starts a turn on the current selection, including a
+   * regenerate, whose history can end on the same completed tool calls.
+   */
+  private resolveTurnModelSelection(
+    messages: UIMessage[],
+    trigger: 'submit-message' | 'regenerate-message'
+  ): ModelSelection {
+    const continuesTurn =
+      this.turnModelSelection !== null &&
+      trigger === 'submit-message' &&
+      lastAssistantMessageIsCompleteWithToolCalls({ messages })
+    if (!continuesTurn) {
+      const { selectedProvider, selectedModel } = this.getModelSelection()
+      this.turnModelSelection = { selectedProvider, selectedModel }
+    }
+    return this.turnModelSelection!
   }
 
   setLastUserMessage(message: string): void {
@@ -1009,7 +1053,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
-  async refreshTools(abortSignal?: AbortSignal) {
+  /**
+   * @param modelSelection The model the tools are built for: the request's own
+   * when called from sendMessages, else the current selection.
+   */
+  async refreshTools(
+    abortSignal?: AbortSignal,
+    modelSelection: ModelSelection = this.getModelSelection()
+  ) {
     // Resolve the memory digest before the prompt is built: the builder is
     // sync, so it reads the snapshot this await guarantees. Error-safe and
     // cached inside agentTools, so this is one IPC round-trip per store change.
@@ -1028,7 +1079,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = this.getModelSelection().selectedModel
+    const selectedModel = modelSelection.selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -1176,9 +1227,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it.
+      // already withholds shell when no sandbox backend can confine it. A user
+      // who switched it off (#9222) gets none of it.
       try {
-        for (const schema of await getAgentToolSchemas()) {
+        const shellOn = useChatShell.getState().shellEnabled
+        for (const schema of shellOn ? await getAgentToolSchemas() : []) {
           if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
           toolsRecord[schema.function.name] = {
             description: schema.function.description,
@@ -1334,7 +1387,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const { selectedModel, selectedProvider: providerId } = this.getModelSelection()
+    const turnModelSelection = this.resolveTurnModelSelection(
+      options.messages,
+      options.trigger
+    )
+    const { selectedModel, selectedProvider: providerId } = turnModelSelection
     const modelId = selectedModel?.id
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
@@ -1394,6 +1451,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ...(inferenceParams ?? {}),
         ...reasoningParams,
       }
+      // This only strips the raw-body injection. The output cap still reaches
+      // these providers through streamText's maxOutputTokens, which lets each
+      // SDK map it (Anthropic adds the thinking budget, OpenAI reasoning
+      // models need max_completion_tokens); a body max_tokens would clobber
+      // that. The context budget params are read client-side only.
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
@@ -1427,7 +1489,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       throw engineFailure('model-errors:createModelFailed', error)
     }
 
-    await this.refreshTools(options.abortSignal)
+    await this.refreshTools(options.abortSignal, turnModelSelection)
 
     // Split assistant turns that place text after tool calls into separate
     // messages. Required by the Claude API (tool_use / tool_result pairing) and
@@ -1526,13 +1588,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const modelSupportsVision =
       selectedModel?.capabilities?.includes('vision') ?? false
-    const baseMessages = await convertToModelMessages(
+    const convertedMessages = await convertToModelMessages(
       coalesceMessagesForAlternation(
         resolveOrphanToolCalls(
           this.encodeVideoAttachments(
             this.encodeAudioAttachments(
               stripUnsupportedImageParts(
-                this.mapUserInlineAttachments(effectiveMessages),
+                encodeMcpToolImages(
+                  this.mapUserInlineAttachments(effectiveMessages)
+                ),
                 modelSupportsVision
               )
             )
@@ -1540,6 +1604,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         )
       )
     )
+    // Anthropic, Gemini and OpenAI Responses build their own request, so a tool
+    // image sentinel would reach them as text; the others decode it in the fetch.
+    const baseMessages = buildsOwnToolImageRequest(provider)
+      ? toContentToolOutputs(convertedMessages)
+      : convertedMessages
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.
@@ -1594,7 +1663,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystem,
-      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      // 0 means "no cap" in assistant params; the SDK rejects anything below 1.
+      ...(maxOutputTokens !== undefined && maxOutputTokens >= 1
+        ? { maxOutputTokens }
+        : {}),
       ...(reasoningProviderOptions
         ? { providerOptions: reasoningProviderOptions }
         : {}),
@@ -1670,11 +1742,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the
     // user sees a seamless continuation rather than an empty box.
-    const finalStream = continueContent
+    const continuedStream = continueContent
       ? prependContinuationToUIStream(uiStream, continueContent)
       : uiStream
 
-    return finalStream
+    // A call to the built-in shell while the user has it switched off is not in
+    // `this.tools`, so the SDK would reject it and end the turn. Hand it to the
+    // tool loop instead, which answers it with the "turned off" refusal.
+    return routeRefusedToolCalls(
+      continuedStream,
+      (toolName) =>
+        CHAT_AGENT_TOOL_NAMES.has(toolName) &&
+        !(toolName in this.tools) &&
+        !useChatShell.getState().shellEnabled
+    )
   }
 
   async reconnectToStream(
@@ -1793,12 +1874,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces, because shell is then
-   * withheld too — stating limits for a tool that is not offered would only
-   * confuse the model, and an empty string keeps the prompt prefix stable.
-   */
-  /**
    * A self-contained digest of the newest memory notes. Chat advertises no
    * memory tools, so a catalog it cannot dereference would be useless; whole
    * notes under a strict budget are what fit a conversation surface. Empty when
@@ -1816,8 +1891,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     ].join('\n')
   }
 
+  /**
+   * Static instruction for the one built-in tool chat offers: the sandboxed
+   * shell. Empty when no sandbox backend enforces or when the user has turned
+   * the shell off, because shell is then withheld too — stating limits for a
+   * tool that is not offered would only confuse the model, and an empty string
+   * keeps the prompt prefix stable.
+   */
   buildAgentToolsSystemInstruction(): string {
-    if (!sandboxEnforces()) return ''
+    // Describing a tool the model was not given only invites it to ask for it.
+    if (!useChatShell.getState().shellEnabled || !sandboxEnforces()) return ''
     // Stating the limits up front is cheaper than letting the model discover
     // them by having a command refused.
     return [
@@ -1862,7 +1945,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               }
               return part
             })
-            message.parts = parts
+            return { ...message, parts }
           }
         }
       }

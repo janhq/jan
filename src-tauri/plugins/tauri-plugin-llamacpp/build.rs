@@ -13,10 +13,10 @@
 // vendor/llama.cpp and with engine::PINNED_* on the Rust side; the shim
 // re-exports llama_version()/llama_build_number() so a mismatch is caught at
 // runtime instead of producing a silently wrong engine.
-pub const LLAMA_CPP_TAG: &str = "b11146";
-pub const LLAMA_CPP_BUILD_NUMBER: u32 = 11146;
-pub const LLAMA_CPP_COMMIT: &str = "7fe450e19305b828c199d602c23a8337aaa1f03b";
-pub const LLAMA_CPP_VERSION: &str = "0.5.0";
+pub const LLAMA_CPP_TAG: &str = "b11669";
+pub const LLAMA_CPP_BUILD_NUMBER: u32 = 11669;
+pub const LLAMA_CPP_COMMIT: &str = "620d2225cc436ab0b001e3200e590e3b286ef9ab";
+pub const LLAMA_CPP_VERSION: &str = "0.7.0";
 
 const COMMANDS: &[&str] = &[
     // Cleanup command
@@ -38,6 +38,8 @@ const COMMANDS: &[&str] = &[
     "engine_devices",
     "force_stop_engine",
     "engine_slots_idle",
+    "begin_engine_restart",
+    "end_engine_restart",
     "erase_thread_slot_state",
     // GGUF commands
     "read_gguf_metadata",
@@ -57,7 +59,33 @@ fn main() {
     // `#[cfg(feature = ...)]` here would silently never fire.
     if std::env::var_os("CARGO_FEATURE_ENGINE").is_some() {
         engine::build();
+        embed_utf8_manifest();
     }
+}
+
+/// Makes the worker's narrow-string file APIs read UTF-8 instead of the ANSI
+/// code page. Upstream llama.cpp opens paths from the preset (the ini, the
+/// model, `slot-save-path`, templates) with `std::filesystem` and `ifstream`
+/// taking a `std::string`; on Windows that decodes with the ANSI code page, so
+/// any path holding a character outside it -- a Cyrillic user name is enough --
+/// reads as a file that does not exist. With this manifest the same calls
+/// decode UTF-8, which is what Jan writes. Only the worker needs it: the engine
+/// runs nowhere else. Windows before 1903 ignores the setting, which is what
+/// the shim's ini fallback is for.
+fn embed_utf8_manifest() {
+    let target_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    if !target_msvc {
+        return;
+    }
+    let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("jan-llama-worker.manifest");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    println!("cargo:rustc-link-arg-bin=jan-llama-worker=/MANIFEST:EMBED");
+    println!(
+        "cargo:rustc-link-arg-bin=jan-llama-worker=/MANIFESTINPUT:{}",
+        manifest.display()
+    );
 }
 
 mod engine {
@@ -245,9 +273,22 @@ mod engine {
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_PREBUILT_DIR");
         println!("cargo:rerun-if-env-changed=JAN_LLAMA_CPP_DIR");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
+        for var in ["CUDACXX", "CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
+            println!("cargo:rerun-if-env-changed={var}");
+        }
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_HIP_TARGETS");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_LOG");
         println!("cargo:rerun-if-env-changed=JAN_ENGINE_BUILD_DIR");
+
+        // The worker reports this in its handshake so the app can set it against
+        // the NVIDIA driver (#9189). Read on the prebuilt path too: the prebuilt
+        // key includes the full nvcc version, so a cache hit is built with the
+        // toolkit that is on this host.
+        if feature_enabled("engine-cuda") {
+            if let Some((_, v)) = nvcc_version() {
+                println!("cargo:rustc-env=JAN_ENGINE_CUDA_TOOLKIT={}.{}", v.0, v.1);
+            }
+        }
 
         // Headers are always needed: the shim is our code and is compiled
         // here even when the archives come prebuilt, so it cannot drift from
@@ -385,7 +426,7 @@ mod engine {
     ///
     /// Separate from stage 2 because `GGML_CPU_ALL_VARIANTS` requires
     /// `GGML_BACKEND_DL`, which requires `BUILD_SHARED_LIBS`
-    /// (ggml/src/CMakeLists.txt:188-190 and :485-487, both hard errors) --
+    /// (ggml/src/CMakeLists.txt:188-190 and :490-492, both hard errors) --
     /// while we still want a *static* libllama/libcommon/server-context. Two
     /// configures is the only way to have both.
     ///
@@ -521,12 +562,77 @@ mod engine {
         // arch is 75, which cannot JIT down to 72. So an ARM/Jetson build needs
         // to say what it targets -- and trimming to a single known arch is also
         // how you cut a CUDA worker's size for a fixed fleet.
-        if let Ok(archs) = env::var("JAN_ENGINE_CUDA_ARCHS") {
-            let archs = archs.trim();
-            if !archs.is_empty() {
-                println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
-                cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
+        //
+        // Unset, an x86_64 build passes upstream's list with Turing promoted
+        // from 75-virtual to 75-real (#9185). A PTX-only arch is compiled by
+        // the driver on first load, and CUDA's minor-version compatibility
+        // does not cover that JIT: the driver must be at least as new as the
+        // toolkit, so CUDA 13.2 PTX on an older driver fails with "the
+        // provided PTX was compiled with an unsupported toolchain". RTX 30/40/50
+        // have SASS and never JIT; Turing (GTX 16xx, RTX 20xx, T4) is a large
+        // share of users and had only the PTX. 80 and 90 stay PTX-only, as
+        // upstream ships them: datacenter parts, on datacenter drivers.
+        // Mirrored per toolkit version rather than hardcoded, because a cuda12
+        // build must keep 50/61/70 and cannot emit 121a before 12.9. arm64
+        // keeps upstream's default: no arm64 leg Jan ships runs on Turing.
+        let archs = env::var("JAN_ENGINE_CUDA_ARCHS").unwrap_or_default();
+        let archs = archs.trim();
+        if !archs.is_empty() {
+            cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
+        } else if feature_enabled("engine-cuda")
+            && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
+        {
+            // A foreign JAN_LLAMA_CPP_DIR tree is not the b11669 the list was
+            // copied from, so only the vendored pin is held to it.
+            if env::var_os("JAN_LLAMA_CPP_DIR").is_none() {
+                check_upstream_cuda_archs(src);
             }
+            let (nvcc, v) = nvcc_version().unwrap_or_else(|| {
+                let tried = match env::var("CUDACXX") {
+                    Ok(cxx) if !cxx.trim().is_empty() => {
+                        let on_path = |name: &Path| -> Vec<PathBuf> {
+                            env::var_os("PATH")
+                                .map(|p| env::split_paths(&p).map(|d| d.join(name)).collect())
+                                .unwrap_or_default()
+                        };
+                        let probed: Vec<String> = cudacxx_candidates(&cxx, &on_path)
+                            .iter()
+                            .filter(|c| c.is_file())
+                            .map(|c| c.display().to_string())
+                            .collect();
+                        format!(
+                            "CUDACXX='{cxx}', which CMake will compile with, so nothing \
+                             else is tried; existing files it resolved to: {}",
+                            if probed.is_empty() { "none".to_string() } else { probed.join(", ") }
+                        )
+                    }
+                    _ => "nvcc on PATH, then $CUDA_PATH, $CUDA_HOME, \
+                          $CUDAToolkit_ROOT and /usr/local/cuda"
+                        .to_string(),
+                };
+                panic!(
+                    "could not read the CUDA version from `nvcc --version` (tried \
+                     {tried}). Without it the engine would fall back to upstream's \
+                     arch list, which has no Turing SASS (#9185). Point CUDACXX or \
+                     PATH at a working nvcc, or set JAN_ENGINE_CUDA_ARCHS explicitly."
+                )
+            });
+            let archs = default_cuda_archs(v);
+            println!(
+                "cargo:warning=CUDA {}.{} ({}): CMAKE_CUDA_ARCHITECTURES={archs}",
+                v.0,
+                v.1,
+                nvcc.display()
+            );
+            // Hand CMake the compiler the list was derived from, so a second
+            // toolkit elsewhere on the machine cannot be paired with it. A set
+            // CUDACXX is left to CMake: it may carry a launcher or flags
+            // ("ccache nvcc", "nvcc -allow-unsupported-compiler") that a bare
+            // path here would drop, and CMake already prefers it.
+            if env::var_os("CUDACXX").map_or(true, |v| v.is_empty()) {
+                cfg.arg(format!("-DCMAKE_CUDA_COMPILER={}", cmake_path(&nvcc)));
+            }
+            cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
         }
         if feature_enabled("engine-hip") {
             let targets = env::var("JAN_ENGINE_HIP_TARGETS").unwrap_or_default();
@@ -544,7 +650,7 @@ mod engine {
         if feature_enabled("engine-cuda") {
             // NCCL is multi-GPU collective communication for distributed
             // inference. It is found opportunistically and defaults ON
-            // (ggml/CMakeLists.txt:210), which would make the shipped
+            // (ggml/CMakeLists.txt:211), which would make the shipped
             // ggml-cuda module depend on whatever libnccl the build host
             // happened to have.
             cfg.arg("-DGGML_CUDA_NCCL=OFF");
@@ -587,7 +693,7 @@ mod engine {
             // follow this flag.
             "-DBUILD_SHARED_LIBS=OFF",
             // Use stage 1's ggml instead of building a second, static one
-            // (CMakeLists.txt:204-208 -> find_package(ggml REQUIRED)).
+            // (CMakeLists.txt:214-216 -> find_package(ggml REQUIRED)).
             "-DLLAMA_USE_SYSTEM_GGML=ON",
             "-DLLAMA_BUILD_TESTS=OFF",
             "-DLLAMA_BUILD_EXAMPLES=OFF",
@@ -730,6 +836,190 @@ mod engine {
         }
     }
 
+    /// The nvcc to build with and its (major, minor), looked up the way CMake
+    /// picks its CUDA compiler: $CUDACXX if set (its compiler word, without
+    /// any launcher or flags), else nvcc on PATH, then the usual toolkit roots.
+    /// A set CUDACXX is final: CMake compiles with it, so falling back to
+    /// another nvcc here would take the arch list from a different toolkit.
+    fn nvcc_version() -> Option<(PathBuf, (u32, u32))> {
+        let exe = if cfg!(windows) { "nvcc.exe" } else { "nvcc" };
+        let on_path = |name: &Path| -> Vec<PathBuf> {
+            env::var_os("PATH")
+                .map(|p| env::split_paths(&p).map(|d| d.join(name)).collect())
+                .unwrap_or_default()
+        };
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Some(cxx) = env::var("CUDACXX").ok().filter(|v| !v.trim().is_empty()) {
+            candidates = cudacxx_candidates(&cxx, &on_path);
+        } else {
+            candidates.extend(on_path(Path::new(exe)));
+            for var in ["CUDA_PATH", "CUDA_HOME", "CUDAToolkit_ROOT"] {
+                if let Some(root) = env::var_os(var).filter(|v| !v.is_empty()) {
+                    let root = PathBuf::from(root);
+                    candidates.push(root.join("bin").join(exe));
+                    candidates.push(root.join("bin").join("x64").join(exe));
+                }
+            }
+            if !cfg!(windows) {
+                candidates.push(PathBuf::from("/usr/local/cuda/bin/nvcc"));
+            }
+        }
+        candidates.into_iter().filter(|c| c.is_file()).find_map(|nvcc| {
+            let out = Command::new(&nvcc).arg("--version").output().ok()?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            let rest = text.split("release ").nth(1)?;
+            let (major, rest) = rest.split_once('.')?;
+            let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            Some((nvcc, (major.trim().parse().ok()?, minor.parse().ok()?)))
+        })
+    }
+
+    /// The nvcc paths a set CUDACXX can mean, in CMake's order: the whole
+    /// value as one program first (so an unquoted "C:\Program Files\...\nvcc.exe"
+    /// works), then, split like a command line, the word naming nvcc (past
+    /// any launcher such as ccache), else the first word. Each is taken as a
+    /// path when it has a directory part, else looked up on PATH; on Windows
+    /// the name without .exe is accepted, as CMake accepts it.
+    fn cudacxx_candidates(cxx: &str, on_path: &dyn Fn(&Path) -> Vec<PathBuf>) -> Vec<PathBuf> {
+        let whole = cxx.trim().trim_matches(|c| c == '"' || c == '\'');
+        let words = split_command_line(cxx);
+        let is_nvcc = |w: &&String| {
+            let p = Path::new(w.as_str());
+            !w.starts_with('-')
+                && p.file_stem().and_then(|s| s.to_str()) == Some("nvcc")
+                && p.extension().map_or(true, |e| e.eq_ignore_ascii_case("exe"))
+        };
+        let word = words.iter().find(is_nvcc).or_else(|| words.first());
+        let mut names: Vec<String> = vec![whole.to_string()];
+        if let Some(w) = word {
+            if w != whole {
+                names.push(w.clone());
+            }
+        }
+        let mut out = Vec::new();
+        for name in names {
+            let mut forms = vec![PathBuf::from(&name)];
+            if cfg!(windows) && Path::new(&name).extension().is_none() {
+                forms.push(PathBuf::from(format!("{name}.exe")));
+            }
+            for f in forms {
+                if f.components().count() > 1 {
+                    out.push(f);
+                } else {
+                    out.extend(on_path(&f));
+                }
+            }
+        }
+        out
+    }
+
+    /// A command line split the way CMake splits CUDACXX: whitespace
+    /// separates words, "..." and '...' group them, and a backslash escapes
+    /// the next character except on Windows, where it is a path separator.
+    fn split_command_line(s: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut cur = String::new();
+        let mut in_word = false;
+        let mut quote: Option<char> = None;
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            match (quote, c) {
+                (Some(q), c) if c == q => quote = None,
+                (Some(_), c) => cur.push(c),
+                (None, '"' | '\'') => {
+                    quote = Some(c);
+                    in_word = true;
+                }
+                (None, '\\') if !cfg!(windows) => {
+                    if let Some(n) = chars.next() {
+                        cur.push(n);
+                    }
+                    in_word = true;
+                }
+                (None, c) if c.is_whitespace() => {
+                    if in_word {
+                        words.push(std::mem::take(&mut cur));
+                        in_word = false;
+                    }
+                }
+                (None, c) => {
+                    cur.push(c);
+                    in_word = true;
+                }
+            }
+        }
+        if in_word {
+            words.push(cur);
+        }
+        words
+    }
+
+    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default as of b11669,
+    /// with 75-virtual changed to 75-real (see the call site).
+    /// check_upstream_cuda_archs fails the build if a tag bump changes it.
+    fn default_cuda_archs(v: (u32, u32)) -> String {
+        let mut a = Vec::new();
+        if v < (13, 0) {
+            a.extend(["50-virtual", "61-virtual", "70-virtual"]);
+        }
+        a.extend(["75-real", "80-virtual", "86-real"]);
+        if v >= (11, 8) {
+            a.extend(["89-real", "90-virtual"]);
+        }
+        if v >= (12, 8) {
+            a.push("120a-real");
+        }
+        if v >= (12, 9) {
+            a.push("121a-real");
+        }
+        a.join(";")
+    }
+
+    /// default_cuda_archs is a copy, so compare it with the source being
+    /// built: every arch upstream's default block can name, against every
+    /// arch the copy can produce (75-real read back as 75-virtual). A tag bump
+    /// that adds an arch or flips a -real/-virtual then stops the build here
+    /// instead of silently shipping the old list.
+    fn check_upstream_cuda_archs(src: &Path) {
+        let cml = src.join("ggml/src/ggml-cuda/CMakeLists.txt");
+        let text = fs::read_to_string(&cml)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", cml.display()));
+        let start = text
+            .find("if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)")
+            .unwrap_or_else(|| panic!("{}: default arch block not found", cml.display()));
+        let block = &text[start..];
+        let block = &block[..block.find("enable_language(CUDA)").unwrap_or(block.len())];
+        let mut upstream: Vec<&str> = block
+            .lines()
+            .map(|l| l.split('#').next().unwrap_or(""))
+            .flat_map(|l| l.split(|c: char| c.is_whitespace() || c == '(' || c == ')'))
+            .filter(|t| {
+                t.starts_with(|c: char| c.is_ascii_digit())
+                    && (t.ends_with("-virtual") || t.ends_with("-real"))
+            })
+            .collect();
+        upstream.sort_unstable();
+        upstream.dedup();
+        let mut ours: Vec<String> = [(11, 0), (11, 8), (12, 8), (12, 9), (13, 0)]
+            .into_iter()
+            .flat_map(|v| {
+                default_cuda_archs(v)
+                    .split(';')
+                    .map(|a| if a == "75-real" { "75-virtual" } else { a }.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        ours.sort_unstable();
+        ours.dedup();
+        assert!(
+            upstream == ours,
+            "{} names CUDA archs {upstream:?}, but default_cuda_archs (copied from \
+             b11669) covers {ours:?}. Update default_cuda_archs to the new list, \
+             keeping 75 as -real (#9185), or set JAN_ENGINE_CUDA_ARCHS.",
+            cml.display()
+        );
+    }
+
     fn feature_enabled(feature: &str) -> bool {
         env::var_os(format!(
             "CARGO_FEATURE_{}",
@@ -739,7 +1029,7 @@ mod engine {
     }
 
     /// `GGML_CPU_ALL_VARIANTS` hard-errors on architectures it has no variant
-    /// table for (ggml/src/CMakeLists.txt:581), so it is opt-in per arch rather
+    /// table for (ggml/src/CMakeLists.txt:593), so it is opt-in per arch rather
     /// than unconditional.
     ///
     /// The table is keyed on (arch, OS), not arch alone: the ARM branch covers

@@ -74,6 +74,12 @@ runs:
     # templates default to the vulkan variant on one. Guarded on glslc rather
     # than on the runner label so a self-hosted image that carries the SDK does
     # no apt or installer work at all.
+    #
+    # Pinned, not `latest`: glslc's version is in the engine-prebuilt.sh key,
+    # so each LunarG release would silently send every desktop build back to a
+    # full CUDA compile. To bump, change both versions below and the ARM64 one
+    # in template-tauri-build-windows-arm64.yml and engine-build.yml; the push
+    # of this file to main re-warms the prebuilts (engine-build.yml).
     - name: Provision the Vulkan SDK
       if: contains(format('-{0}-', inputs.variant), '-vulkan-')
       shell: bash
@@ -89,8 +95,9 @@ runs:
           codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
             | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          # The per-version repo; LunarG's last Ubuntu packages are 1.4.313.
           sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" \
-            "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+            "https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-$codename.list"
           sudo apt-get update
           sudo apt-get install -y vulkan-sdk
           ;;
@@ -101,7 +108,7 @@ runs:
             echo "engine toolchain: reusing the Vulkan SDK in C:\VulkanSDK"
           else
             curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-              https://sdk.lunarg.com/sdk/download/latest/windows/vulkan_sdk.exe
+              https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/vulkan_sdk.exe
             "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
               --accept-licenses --default-answer --confirm-command install
           fi

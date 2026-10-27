@@ -1,0 +1,124 @@
+# Comment on PRs that contain unsigned commits. The rulesets on main and
+# release/* require verified signatures, and GitHub only says so in the merge
+# box, so contributors otherwise find out late.
+#
+# pull_request_target so it can comment on PRs from forks. It must never check
+# out or run PR code: it only reads the PR's commit list through the API.
+name: Signed Commits
+on:
+  pull_request_target:
+    # edited: a PR retargeted to another base has a different commit list.
+    types: [opened, synchronize, reopened, edited]
+    branches:
+      - main
+      - release
+      - 'release/**'
+
+jobs:
+  check_signatures:
+    # Title and body edits also fire edited; only a base change matters.
+    if: github.event.action != 'edited' || github.event.changes.base
+    # Job-level so a skipped title edit can't cancel a real check.
+    concurrency:
+      group: signed-commits-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check commit signatures
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const MARKER = '<!-- signed-commits-check -->';
+            const DOCS = 'https://github.com/janhq/jan/blob/main/CONTRIBUTING.md#signed-commits';
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+
+            // The API returns at most 250 commits for a PR.
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+            const unsigned = commits.filter((c) => !c.commit.verification?.verified);
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pr.number, per_page: 100,
+            });
+            const sticky = comments.find(
+              (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(MARKER),
+            );
+
+            // Past the cap the rest can't be seen, so a clean subset isn't a pass.
+            // A full page counts as capped too: a re-run carries the old payload,
+            // whose commit count may predate later pushes.
+            const truncated = commits.length >= 250 || pr.commits > commits.length;
+            const total = Math.max(pr.commits, commits.length);
+            if (unsigned.length === 0 && !truncated) {
+              core.info(`All ${commits.length} commits are verified.`);
+              if (sticky) {
+                await github.rest.issues.deleteComment({ owner, repo, comment_id: sticky.id });
+              }
+              return;
+            }
+
+            // Code spans keep commit messages from rendering markdown or @-mentions.
+            const code = (s) => '`' + s.replace(/`/g, "'") + '`';
+            const firstLine = (m) => {
+              const line = m.split('\n', 1)[0];
+              return line.length > 72 ? line.slice(0, 71) + '…' : line;
+            };
+            const hints = {
+              unsigned: 'no signature',
+              unknown_key: 'key not on GitHub as a signing key',
+              unverified_email: 'commit email not verified on GitHub',
+              bad_email: 'commit email isn\'t one of the GPG key\'s identities (gpg --list-keys)',
+              no_user: 'commit email not on any GitHub account',
+              gpgverify_unavailable: 'GitHub couldn\'t verify it just now; re-run this check',
+              gpgverify_error: 'GitHub couldn\'t verify it just now; re-run this check',
+            };
+            const reason = (v) => hints[v?.reason] ?? v?.reason ?? 'unknown';
+            const rows = unsigned.map((c) =>
+              `- ${c.sha.slice(0, 7)} ${code(firstLine(c.commit.message))}: ${reason(c.commit.verification)}`,
+            );
+            const unchecked = truncated
+              ? [``, `Only the first ${commits.length} commits could be checked; GitHub's API lists no more. Collapsing the branch into one commit (below) makes the rest checkable.`]
+              : [];
+            const headline = unsigned.length === 0
+              ? `Thanks for the PR! This PR has at least ${total} commits, more than this check can read, and \`${pr.base.ref}\` only accepts verified commits.`
+              : `Thanks for the PR! ${unsigned.length === 1 ? 'One commit doesn\'t' : `${unsigned.length} commits don't`} have a verified signature, and \`${pr.base.ref}\` only accepts verified commits, so this can't be merged yet:`;
+
+            const body = [
+              MARKER,
+              headline,
+              ``,
+              ...rows,
+              ...unchecked,
+              ``,
+              `If the reason is about a key or an email, fix that on GitHub first (add the key as a **signing key**, verify the email). Then replace the branch's commits with one signed commit with the same content and force-push (\`upstream\` is your remote for janhq/jan, \`origin\` your fork; PRs are squash-merged, so nothing is lost):`,
+              ``,
+              '```bash',
+              `git status --short   # must print nothing: commit or stash your changes first`,
+              `git fetch upstream`,
+              `git branch -f unsigned-backup   # replaces any older backup with this branch`,
+              `git reset --soft "$(git merge-base HEAD upstream/${pr.base.ref})"`,
+              `git commit -S -m "<your PR title>"`,
+              `git diff unsigned-backup HEAD   # must print nothing`,
+              `git push --force-with-lease origin HEAD`,
+              '```',
+              ``,
+              `How to set up signing: [CONTRIBUTING.md#signed-commits](${DOCS}). This comment goes away once every commit is verified.`,
+            ].join('\n');
+
+            if (sticky) {
+              if (sticky.body !== body) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: sticky.id, body });
+              }
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            }
+
+            core.setFailed(unsigned.length === 0
+              ? `Only the first ${commits.length} commits could be checked`
+              : `${unsigned.length} of ${commits.length} commits are not verified: ${unsigned.map((c) => c.sha.slice(0, 7)).join(', ')}`);

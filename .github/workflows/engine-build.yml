@@ -1,9 +1,21 @@
 name: Engine Build
 on:
   workflow_dispatch:
+  # On main, only what engine-prebuilt.sh hashes into its key or what
+  # provisions the toolchain it reads, so the prebuilt is re-saved as soon as
+  # its key moves. Paths are not evaluated for tags, which still always run.
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+    paths:
+      - .github/workflows/engine-build.yml
+      - .github/actions/setup-engine-toolchain/action.yml
+      - Makefile
+      - src-tauri/build-utils/*engine*.sh
+      - src-tauri/plugins/tauri-plugin-llamacpp/build.rs
+      - src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
   pull_request:
     branches:
       - dev
@@ -19,9 +31,11 @@ on:
       - src-tauri/plugins/tauri-plugin-llamacpp/shim/**
       - src-tauri/plugins/tauri-plugin-llamacpp/src/bin/**
 
+# Not cancelled on main: a newer push waits for a two-hour CUDA build to save
+# its prebuilt, then hits it if the key did not move, instead of starting over.
 concurrency:
   group: engine-build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -32,8 +46,12 @@ jobs:
   # would first surface in a nightly desktop build. A PR gets the one cheapest
   # variant that still links the shim; the full per-vendor matrix is for a tag or
   # a manual run, where the wall clock of a CUDA plus HIP build is affordable.
+  # A push to main builds only the variants the desktop builds restore from
+  # engine-prebuilt.sh, and only if that prebuilt is missing (see `prebuilt`).
   variants:
     name: Select variants
+    # A fork's main has no S3 credentials, so it could only compile, never save
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main' || !github.event.repository.fork
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.select.outputs.include }}
@@ -44,12 +62,17 @@ jobs:
           pr='[
             {"name":"linux-x64-vulkan","variant":"vulkan","runs-on":"ubuntu-22.04"}
           ]'
+          # The desktop templates' runner and variant, which the key depends on;
+          # windows-arm64 has its own toolchain and job below.
+          main='[
+            {"name":"linux-x64-cuda13","variant":"cuda13-vulkan","runs-on":"ubuntu-22.04","prebuilt":true},
+            {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-2025","prebuilt":true}
+          ]'
           full='[
             {"name":"linux-x64-cuda13","variant":"cuda13-vulkan","runs-on":"ubuntu-22.04"},
             {"name":"linux-x64-cuda12","variant":"cuda12-vulkan","runs-on":"ubuntu-22.04"},
             {"name":"linux-x64-rocm","variant":"rocm-vulkan","runs-on":"ubuntu-22.04","rocm":true},
             {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-2025"},
-            {"name":"windows-x64-cuda12","variant":"cuda12-vulkan","runs-on":"windows-2025"},
             {"name":"macos-arm64-metal","variant":"metal","runs-on":"macos-latest"}
           ]'
           # Not in `full`, and each for a reason rather than an oversight:
@@ -57,10 +80,16 @@ jobs:
           #                        aarch64 Vulkan SDK are untried here
           #   linux-arm64-vulkan   same, untried rather than blocked
           #   windows-arm64-vulkan see jan-tauri-build-windows-arm64.yml
+          #   windows-x64-cuda12   windows-2025 is the VS 2026 image, and no CUDA 12
+          #                        host_config.h accepts its _MSC_VER; nothing ships
+          #                        it either -- Windows bundles are cuda13-vulkan.
+          #                        windows-2022 (VS 2022) could build it if needed
           #   windows-x64-rocm     no Windows HIP SDK image; ROCm on Windows is
           #                        an installer run, not an apt line
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "include=$(echo "$pr" | jq -c .)" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "include=$(echo "$main" | jq -c .)" >> "$GITHUB_OUTPUT"
           else
             echo "include=$(echo "$full" | jq -c .)" >> "$GITHUB_OUTPUT"
           fi
@@ -160,8 +189,40 @@ jobs:
         with:
           variant: ${{ matrix.variant }}
 
+      # Main only. A hit means PR and release builds already link this key, so
+      # the job ends here; a miss falls through to the full build and the save
+      # below. Same steps and S3 layout as the desktop templates.
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        if: matrix.prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Build and stage the engine
+        if: steps.engine_prebuilt.outputs.hit != 'true'
         run: make build-engine
+
+      # Before the checks below, so a failing test suite does not throw away
+      # two hours of CUDA; the script refuses unless every output is present.
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && matrix.prebuilt && github.ref == 'refs/heads/main' && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       # The only place the engine-gated code is type-checked at all. Every
       # suite under tests/ is `#![cfg(feature = "engine")]`, and both
@@ -173,6 +234,7 @@ jobs:
       # of passing vacuously. Cheap because `make build-engine` above already
       # built llama.cpp into the same target dir with the same features.
       - name: Compile the engine-gated test suites
+        if: steps.engine_prebuilt.outputs.hit != 'true'
         run: make check-engine-tests
 
       - name: Report ccache statistics
@@ -186,6 +248,7 @@ jobs:
       # llama.cpp assert. Device enumeration is best-effort because a headless
       # runner has no ICD to report, and a CUDA runner may have no GPU at all.
       - name: Smoke-test the worker
+        if: steps.engine_prebuilt.outputs.hit != 'true'
         shell: bash
         run: |
           bin=src-tauri/resources/bin/jan-llama-worker
@@ -212,6 +275,7 @@ jobs:
           done
 
       - name: Upload the engine
+        if: steps.engine_prebuilt.outputs.hit != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: jan-llama-worker-${{ matrix.name }}
@@ -223,5 +287,202 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: engine-build-log-${{ matrix.name }}
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
+  # The windows-arm64 desktop build provisions its own toolchain rather than
+  # setup-engine-toolchain, whose msvc-dev-cmd and linker pin are x64-only, so
+  # its prebuilt gets its own job. The provisioning steps are copied from
+  # template-tauri-build-windows-arm64.yml and must stay in step with it: a
+  # drifted copy computes a key the desktop build never asks for, and the
+  # ARM64 leg of PR builds goes back to compiling the engine.
+  prebuilt-windows-arm64:
+    name: jan-llama-worker prebuilt (windows-arm64-cuda13)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.fork
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+    env:
+      JAN_ENGINE_VARIANT: cuda13-vulkan
+      JAN_ENGINE_VULKAN_FALLBACK: '1'
+      CUDA_SHORT: '13.4'
+      CUDA_POOL: 'https://packages.nvidia.com/bin-archive/pool/windows-arm64/5B515474-7E78-11F1-8656-C51E4F4B317F'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # build.rs reads VCToolsInstallDir to find bin/Host*/arm64/cl.exe; the
+      # image only exports it inside a developer prompt.
+      - name: Resolve the MSVC ARM64 toolset
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -products * -latest -property installationPath | Select-Object -First 1
+          if (-not $vsRoot) { throw 'vswhere found no Visual Studio installation' }
+          $ver = (Get-Content "$vsRoot\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt" -Raw).Trim()
+          $vcTools = "$vsRoot\VC\Tools\MSVC\$ver"
+          $found = $false
+          foreach ($host_ in 'Hostarm64', 'Hostx64') {
+            $cl = "$vcTools\bin\$host_\arm64\cl.exe"
+            if (Test-Path $cl) { Write-Host "ARM64 host compiler: $cl"; $found = $true; break }
+          }
+          if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
+          "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          # mt: cmake shells out to it from vs_link_exe to embed the manifest.
+          # It looks for that exact name, so LLVM's llvm-mt.exe does not count;
+          # without it CMAKE_MT is empty and every executable link fails. The
+          # ARM64 bin ships a subset of the SDK tools, hence the arch search.
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $versions = @()
+          if (Test-Path $kits) {
+            $versions = Get-ChildItem $kits -Directory |
+              Where-Object { $_.Name -as [version] } |
+              Sort-Object { [version]$_.Name } -Descending
+          }
+          # arm64 first: native beats emulated x64.
+          function Find-SdkTool([string]$exe) {
+            foreach ($ver in $versions) {
+              foreach ($a in 'arm64', 'x64', 'x86') {
+                $p = Join-Path (Join-Path $ver.FullName $a) $exe
+                if (Test-Path $p) { return $p }
+              }
+            }
+            return $null
+          }
+
+          $mt = Find-SdkTool 'mt.exe'
+          if (-not $mt) { throw "no mt.exe under $kits\<version>\{arm64,x64,x86}" }
+          Write-Host "mt:       $mt"
+          Split-Path $mt -Parent | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+      # All arm64: this is a native build, so nvcc is an ARM64 binary too.
+      # Upstream instead cross-compiles, pairing x86_64 host tools with arm64
+      # target libs -- the fallback if a native nvcc misbehaves, though it would
+      # also mean cross-compiling the app and relocating every output path.
+      #
+      # Pinned because this prerelease pool has no "latest" alias: an unpinned
+      # URL does not just drift, it 404s.
+      - name: Install the CUDA toolkit (ARM64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_SHORT"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          $archives = @(
+            'cuda_nvcc-windows-arm64-13.4.46-archive',
+            'cuda_crt-windows-arm64-13.4.46-archive',
+            'libnvvm-windows-arm64-13.4.46-archive',
+            'cuda_cudart-windows-arm64-13.4.46-archive',
+            'libcublas-windows-arm64-13.7.0.10-archive',
+            'cccl-windows-arm64-13.3.4.1.2-archive',
+            'cuda_nvtx-windows-arm64-13.4.46-archive',
+            'cuda_profiler_api-windows-arm64-13.4.46-archive'
+          )
+
+          # curl.exe over Invoke-WebRequest, which has no retry or resume: the pool
+          # throttles concurrent pulls and drops the connection mid-body, killing a
+          # 3h job at minute 3. curl is in System32; checked anyway so a missing one
+          # fails legibly.
+          if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+            throw 'curl.exe not found; it is expected in System32 on this image'
+          }
+
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $tmp = Join-Path $env:RUNNER_TEMP 'cuda'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $total = 0
+          foreach ($a in $archives) {
+            $zip = Join-Path $tmp "$a.zip"
+            # --retry-all-errors: plain --retry ignores a mid-body drop.
+            curl.exe -sS --fail --location --retry 5 --retry-all-errors `
+                     --retry-delay 5 --connect-timeout 30 --max-time 900 `
+                     -o $zip "$env:CUDA_POOL/$a.zip"
+            # Native exes do not trip $ErrorActionPreference; check by hand.
+            if ($LASTEXITCODE -ne 0) {
+              throw "$a.zip failed after 5 retries (curl exit $LASTEXITCODE)"
+            }
+            $total += (Get-Item $zip).Length
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            # Each unpacks to <name>/{bin,lib,include}; merge into one root,
+            # which is what CUDA_PATH must point at.
+            Copy-Item -Path (Join-Path $tmp "$a\*") -Destination $root -Recurse -Force
+          }
+          Write-Host ("Fetched {0:N0} MB and unpacked in {1:N1} min" -f ($total / 1MB), $sw.Elapsed.TotalMinutes)
+
+          "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+          # Layout differs from the installer's and by arch, so print it.
+          foreach ($d in 'bin', 'lib', 'lib\arm64', 'lib\x64') {
+            $path = Join-Path $root $d
+            Write-Host "--- $path"
+            if (Test-Path $path) {
+              Get-ChildItem $path | Select-Object -ExpandProperty Name
+            } else { Write-Host '   (absent)' }
+          }
+
+          $nvcc = Get-ChildItem $root -Recurse -Filter 'nvcc.exe' | Select-Object -First 1
+          if (-not $nvcc) { throw 'nvcc.exe not found under the toolkit root' }
+          Write-Host "nvcc: $($nvcc.FullName)"
+          & $nvcc.FullName --version
+
+          foreach ($need in 'cudart.lib', 'cublas.lib', 'cublasLt.lib') {
+            if (-not (Get-ChildItem $root -Recurse -Filter $need -ErrorAction SilentlyContinue)) {
+              throw "missing $need -- the archive list is incomplete"
+            }
+          }
+
+      # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      # Pinned because glslc's version is in the engine-prebuilt.sh key; bump it
+      # with the x64 one in setup-engine-toolchain and the template's.
+      - name: Provision the Vulkan SDK
+        if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
+        shell: bash
+        run: |
+          curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 900 \
+            -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+            https://sdk.lunarg.com/sdk/download/1.4.363.0/warm/vulkan_sdk.exe
+          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+            --accept-licenses --default-answer --confirm-command install
+          echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
+          echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
+
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Build and stage the engine
+        if: steps.engine_prebuilt.outputs.hit != 'true'
+        shell: bash
+        run: make build-engine
+
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-windows-arm64-cuda13
           path: src-tauri/target/engine-build.log
           if-no-files-found: ignore

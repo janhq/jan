@@ -63,6 +63,7 @@ mod imp {
         fn jan_llama_response_free(res: ResponseHandle);
         fn jan_llama_load_backends(dir: *const c_char);
         fn jan_llama_devices_json() -> *mut c_char;
+        fn jan_llama_device_identities_json() -> *mut c_char;
         fn jan_llama_string_free(s: *mut c_char);
         fn jan_llama_version() -> *const c_char;
         fn jan_llama_build_number() -> c_int;
@@ -256,6 +257,22 @@ mod imp {
             Ok(json)
         }
 
+        /// The offloadable devices as `[{"id","name"}]`, without their memory.
+        ///
+        /// For a worker that stays up: `devices_json` asks each device how much
+        /// memory it has, and for a CUDA device that call creates a context the
+        /// process then holds for as long as it runs. Names need no such call.
+        pub fn device_identities_json() -> Result<String, EngineError> {
+            // SAFETY: as `devices_json`.
+            let raw = unsafe { jan_llama_device_identities_json() };
+            if raw.is_null() {
+                return Err(EngineError::Unavailable);
+            }
+            let json = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+            unsafe { jan_llama_string_free(raw) };
+            Ok(json)
+        }
+
         pub fn linked_version() -> Result<String, EngineError> {
             // SAFETY: returns a pointer to a static string in the shim.
             Ok(unsafe { CStr::from_ptr(jan_llama_version()) }
@@ -428,6 +445,9 @@ mod imp {
         }
         pub fn load_backends(_dir: Option<&str>) {}
         pub fn devices_json() -> Result<String, EngineError> {
+            Err(EngineError::Unavailable)
+        }
+        pub fn device_identities_json() -> Result<String, EngineError> {
             Err(EngineError::Unavailable)
         }
         pub fn linked_version() -> Result<String, EngineError> {

@@ -1,9 +1,9 @@
 [package]
 name = "tauri-plugin-llamacpp"
-version = "0.5.0"
+version = "0.7.0"
 authors = ["Jan <service@jan.ai>"]
 description = "Tauri plugin for managing Jan LlamaCpp server processes and model loading"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"

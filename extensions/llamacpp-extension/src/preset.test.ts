@@ -275,6 +275,194 @@ describe('generatePreset 0.4.0 keys', () => {
   })
 })
 
+describe('generatePreset 0.7.0 keys', () => {
+  // b11669 throws "MoE cache requires a MoE model" for any model without
+  // experts, so an engine-wide key would break every dense and embedding model
+  // the moment it was set. It is per-model only.
+  it('never emits moe-cache-mib engine-wide', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { moe_cache_mib: 4096 } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
+
+  it('emits moe-cache-mib only in the section of the model that set it', async () => {
+    setupModel('dense', {})
+    setupModel('moe', { moe_cache_mib: 4096, expert_count: 128 })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    const section = (id: string) =>
+      ini.split(`[${id}]`)[1].split('load-on-startup')[0]
+    expect(section('moe')).toContain('moe-cache-mib = 4096')
+    expect(section('dense')).not.toContain('moe-cache-mib')
+  })
+
+  // The other two load-time throws in llama-moe-cache.cpp depend on engine-wide
+  // settings the preset can see: tensor split mode, and no GPU at all.
+  it('drops moe-cache-mib under configurations llama.cpp refuses it in', async () => {
+    setupModel('moe', { moe_cache_mib: 4096, expert_count: 128 })
+    await generatePreset('/p', '/jan', { split_mode: 'tensor' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+
+    await generatePreset('/p', '/jan', { device: 'none' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+
+    await generatePreset('/p', '/jan', { split_mode: 'row', device: 'CUDA0' } as any)
+    expect(writtenFiles['/p/router.preset.ini']).toContain('moe-cache-mib = 4096')
+  })
+
+  // A per-model value can still be set on a dense model by mistake, and
+  // llama.cpp then refuses to load it. Only a model whose GGUF declares
+  // experts gets the key; an unknown count (not yet detected) is treated as
+  // dense, since a false negative only loses the cache.
+  it('omits moe-cache-mib for a model without experts, or with an unknown count', async () => {
+    setupModel('dense', { moe_cache_mib: 4096, expert_count: 0 })
+    setupModel('unknown', { moe_cache_mib: 4096 })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
+
+  it('omits a per-model moe-cache-mib of 0 or below', async () => {
+    setupModel('moe', { moe_cache_mib: 0, expert_count: 128 })
+    setupModel('moe2', { moe_cache_mib: -5, expert_count: 128 })
+    await generatePreset('/p', '/jan', CONFIG)
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('moe-cache-mib')
+  })
+
+  it('emits the draft sampling mode and ubatch with speculative decoding', async () => {
+    setupModel('glm', {
+      mtp: true,
+      mtp_layers: 1,
+      spec_draft_sampling: 'probabilistic',
+      spec_draft_n_ubatch: 128,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).toContain('spec-draft-sampling = probabilistic')
+    expect(ini).toContain('spec-draft-n-ubatch = 128')
+  })
+
+  // greedy and 0 (follow ubatch-size) are upstream's defaults.
+  it('omits the draft keys at their defaults or when an unknown mode is recorded', async () => {
+    setupModel('glm', {
+      mtp: true,
+      mtp_layers: 1,
+      spec_draft_sampling: 'greedy',
+      spec_draft_n_ubatch: 0,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    let ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+    expect(ini).not.toContain('spec-draft-n-ubatch')
+
+    setupModel('glm', { mtp: true, mtp_layers: 1, spec_draft_sampling: 'bogus' })
+    await generatePreset('/p', '/jan', CONFIG)
+    ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+  })
+
+  it('omits the draft keys when speculative decoding is off', async () => {
+    setupModel('glm', {
+      mtp: false,
+      mtp_layers: 1,
+      spec_draft_sampling: 'probabilistic',
+      spec_draft_n_ubatch: 128,
+    })
+    await generatePreset('/p', '/jan', CONFIG)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('spec-draft-sampling')
+    expect(ini).not.toContain('spec-draft-n-ubatch')
+  })
+})
+
+// A slot of a hybrid model with speculative decoding holds (1 + n_max) rows
+// of recurrent state, so auto's 4 slots overflowed a 12 GB card in 0.8.5.
+describe('generatePreset parallel with speculative decoding', () => {
+  const section = (ini: string, id: string) =>
+    ini.split(`[${id}]`)[1].split('load-on-startup')[0]
+
+  it('pins an embedded-MTP model to one slot when parallel is auto', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: 0 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(section(ini, 'qwen')).toContain('parallel = 1')
+    expect(section(ini, 'qwen')).toContain('kv-unified = true')
+    expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
+  })
+
+  it('pins a draft-companion model to one slot when parallel is unset', async () => {
+    setupModel('qwen', {
+      mtp: true,
+      mtp_layers: 0,
+      mtp_model_path: 'models/qwen/mtp.gguf',
+    })
+    await generatePreset('/p', '/jan', {} as any)
+    expect(section(writtenFiles['/p/router.preset.ini'], 'qwen')).toContain(
+      'parallel = 1'
+    )
+  })
+
+  it('leaves models without speculative decoding on auto', async () => {
+    setupModel('off', { mtp: false, mtp_layers: 1 })
+    setupModel('plain', {})
+    await generatePreset('/p', '/jan', { parallel: 0 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini).not.toContain('parallel =')
+    expect(ini).not.toContain('kv-unified')
+  })
+
+  it('keeps an explicit global parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: 2 } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
+    expect(section(ini, 'qwen')).not.toContain('parallel =')
+  })
+
+  // The gate and the [*] emission must read the string the same way: if only
+  // the gate accepted it, nothing would be emitted and auto's 4 slots return.
+  it('emits a legacy string parallel and does not pin the MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { parallel: '2' } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(ini.split('[qwen]')[0]).toContain('parallel = 2')
+    expect(section(ini, 'qwen')).not.toContain('parallel =')
+  })
+
+  it('treats a zero or non-numeric string parallel as auto and pins', async () => {
+    for (const parallel of ['0', '', 'auto']) {
+      setupModel('qwen', { mtp: true, mtp_layers: 1 })
+      await generatePreset('/p', '/jan', { parallel } as any)
+      const ini = writtenFiles['/p/router.preset.ini']
+      expect(ini.split('[qwen]')[0]).not.toContain('parallel =')
+      expect(section(ini, 'qwen')).toContain('parallel = 1')
+    }
+  })
+
+  it('keeps a legacy string per-model parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: '2' })
+    await generatePreset('/p', '/jan', {} as any)
+    const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
+    expect(qwen).toContain('parallel = 2')
+    expect(qwen).not.toContain('parallel = 1')
+  })
+
+  it('keeps an explicit per-model parallel for an MTP model', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1, parallel: 2 })
+    await generatePreset('/p', '/jan', {} as any)
+    const qwen = section(writtenFiles['/p/router.preset.ini'], 'qwen')
+    expect(qwen).toContain('parallel = 2')
+    expect(qwen).not.toContain('parallel = 1')
+  })
+
+  it('respects an explicit kv-unified off', async () => {
+    setupModel('qwen', { mtp: true, mtp_layers: 1 })
+    await generatePreset('/p', '/jan', { kv_unified: 'off' } as any)
+    const ini = writtenFiles['/p/router.preset.ini']
+    expect(section(ini, 'qwen')).toContain('parallel = 1')
+    expect(section(ini, 'qwen')).not.toContain('kv-unified')
+  })
+})
+
 describe('generatePreset kv-unified', () => {
   it('enables unified KV on auto when an explicit parallel is emitted', async () => {
     setupModel('llama', {})

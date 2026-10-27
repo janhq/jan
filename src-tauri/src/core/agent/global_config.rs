@@ -16,8 +16,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
 #
 # default_model = "my-model"        # used when no --model / agent.toml model is set
-# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
-#                                     # defaults to `default_model` when unset
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation,
+#                                     # compaction summaries and subagents with
+#                                     # model = "smol"); defaults to the session's model
 # mouse = false                      # disable TUI mouse tracking (scroll wheel,
 #                                     # click-to-expand); on by default
 # sandbox = true                      # run `shell` under OS confinement (same as
@@ -26,10 +27,14 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # worktree = true                     # run each session in its own git worktree
 #                                     # (same as passing --worktree); off by
 #                                     # default, so the agent edits your checkout
-# think_tags = false                  # stop treating <think> tags in model
-#                                     # content as reasoning; they render and
-#                                     # are resent as ordinary prose. On by
-#                                     # default
+# think_tags = true                   # treat <think> tags in model content as
+#                                     # reasoning (folded, resent), for every
+#                                     # provider. Unset: on only for a custom
+#                                     # OpenAI-compatible provider; off for
+#                                     # openai, anthropic and tokamak, which
+#                                     # send reasoning in its own field. A
+#                                     # provider overrides it with
+#                                     # parse_think_tags in its own table
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
@@ -56,15 +61,16 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # memory_cross_project = false        # hide other projects' memory from the
 #                                     # agent (the root ~/.jan/MEMORY.md lists
 #                                     # them by default)
-# wave = "👋"                          # sweep this glyph along the working row
-#                                     # instead of the static throbber. Up to
-#                                     # 3 characters ("🍌", "~", "👁️👄👁️").
-#                                     # Defaults to 👋; set "" for the plain
-#                                     # throbber if your terminal draws tofu
 # prune_threads = true                # delete old saved threads at TUI start,
 #                                     # under each project's agent.toml
 #                                     # thread_retention_days / max_threads.
 #                                     # Off by default: nothing is deleted
+#
+# [tui]
+# animations = false                  # hold the TUI still: no shimmer and
+#                                     # static throbbers. On by default; the
+#                                     # OS reduce-motion setting also turns
+#                                     # it off
 #
 # [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
 # enabled = true                      # usage metrics and events to YOUR
@@ -79,6 +85,15 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # Default ["AGENTS.md"]; add "CLAUDE.md"
 #                                     # to opt in; [] reads JAN.md only. A
 #                                     # project's agent.toml [context] wins
+#
+# [web_search]                        # backend for the web_search/web_fetch
+# provider = "tavily"                 # tools: "exa" (default, keyless),
+#                                     # "tavily" (needs a key), "searxng"
+#                                     # (needs endpoint) or "you". Keys are
+#                                     # kept in the secret store: set them
+#                                     # with /settings or `jan config
+#                                     # web-search --api-key`, not here
+# endpoint = "https://searx.example.com"
 #
 # [experimental]                      # features that may change or go away
 # acp = true                          # allow `jan acp`, the Agent Client
@@ -99,8 +114,8 @@ struct GlobalConfigToml {
     /// flag nor `agent.toml` names one. Takes precedence over any derived guess.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     default_model: Option<String>,
-    /// Fast, cheap model for the `smol` role: goal evaluation and other
-    /// lightweight side calls. Falls back to `default_model` when unset.
+    /// Fast, cheap model for the `smol` role: goal evaluation, compaction
+    /// summaries and other lightweight side calls. Falls back to `default_model` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     smol_model: Option<String>,
     /// TUI mouse tracking (wheel scrolling, click-to-expand). `None` = the
@@ -116,9 +131,10 @@ struct GlobalConfigToml {
     /// default, off. The "permanently on" answer to `--worktree`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     worktree: Option<bool>,
-    /// Parse `<think>` tags in model *content* as reasoning. `None` = the
-    /// default, on. Native `reasoning_content` streaming is a separate
-    /// mechanism and is unaffected.
+    /// Parse `<think>` tags in model *content* as reasoning, for every
+    /// provider. `None` = each provider's default (see
+    /// `think_tags_enabled_for`). Native `reasoning_content` streaming is a
+    /// separate mechanism and is unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     think_tags: Option<bool>,
     /// Stream reasoning into the TUI live tail while it is still folded. `None`
@@ -157,16 +173,6 @@ struct GlobalConfigToml {
     /// memory to itself (user-wide `user:` notes still apply everywhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memory_cross_project: Option<bool>,
-    /// Glyph swept along the working row while a turn runs, in place of the
-    /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
-    /// throbber. See `wave_glyph` for why those are two different things.
-    ///
-    /// Any string up to `WAVE_MAX_GRAPHEMES` clusters is accepted -- `"🍌"`,
-    /// `"~"`, `"<o>"` -- because what reads as a wave is a matter of taste,
-    /// and the renderer measures whatever it is given rather than assuming
-    /// one cell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    wave: Option<String>,
     /// Prune old saved threads at TUI start. `None` = the default, off: a
     /// deleted thread is not recoverable, so removing the user's history is
     /// something they turn on, not something they find out about.
@@ -193,6 +199,10 @@ struct GlobalConfigToml {
     /// but a human appending to the file would not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[tui]` -- terminal UI display preferences that are not worth a root
+    /// key each. A table, so declared after the plain values.
+    #[serde(default, skip_serializing_if = "TuiSection::is_empty")]
+    tui: TuiSection,
     /// `[telemetry]` -- opt-in OTLP export (`core::agent::otel`). A table, so
     /// declared after the plain values and before `providers`.
     #[serde(default, skip_serializing_if = "TelemetrySection::is_empty")]
@@ -207,8 +217,44 @@ struct GlobalConfigToml {
     /// graduating a feature is deleting its key rather than migrating it.
     #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
     experimental: ExperimentalSection,
+    /// `[web_search]` -- which backend answers the native `web_search` and
+    /// `web_fetch` tools. The API key is not here: it lives in the secret
+    /// store, under the record the desktop's Web Search settings use.
+    #[serde(default, skip_serializing_if = "WebSearchSection::is_empty")]
+    web_search: WebSearchSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[web_search]` in `~/.jan/config.toml`. Each key is `None` when unset.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct WebSearchSection {
+    /// Backend id (`exa`, `tavily`, `searxng`, `you`). `None` = Exa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Instance URL for a self-hosted backend (SearXNG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+impl WebSearchSection {
+    fn is_empty(&self) -> bool {
+        self.provider.is_none() && self.endpoint.is_none()
+    }
+}
+
+/// `[tui]` in `~/.jan/config.toml`. Each key is `None` when unset.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+struct TuiSection {
+    /// Animate the TUI (shimmer, throbbers). `None` = on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    animations: Option<bool>,
+}
+
+impl TuiSection {
+    fn is_empty(&self) -> bool {
+        self.animations.is_none()
+    }
 }
 
 /// `[experimental]` in `~/.jan/config.toml`. Each key is `None` when unset,
@@ -275,6 +321,13 @@ struct GlobalProviderEntry {
     /// session's `JAN_CUSTOM_HEADERS` beats a header of the same name here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     headers: BTreeMap<String, String>,
+    /// Parse `<think>` tags in this provider's content as reasoning. `None`
+    /// inherits the root `think_tags`, then the provider default. Named apart
+    /// from the root key on purpose: a root `think_tags` appended to the end of
+    /// the file lands in the last provider table, and must not silently become
+    /// that provider's setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parse_think_tags: Option<bool>,
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
@@ -414,6 +467,18 @@ pub(crate) fn mouse_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// Whether the TUI animates (`[tui] animations` in `~/.jan/config.toml`),
+/// defaulting to on. Off holds every animated element on its static fallback.
+/// A display preference must never block startup, so an unreadable config
+/// yields the default. CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn animations_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.tui.animations)
+        .unwrap_or(true)
+}
+
 /// Whether the TUI may offer `/terminal-setup` at startup (`terminal_hint` in
 /// `~/.jan/config.toml`), defaulting to on. Declining the offer leaves no trace
 /// on disk -- the check reads the terminal's own config -- so this key is what
@@ -478,6 +543,76 @@ pub(crate) fn prune_threads_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// `[web_search]` in `~/.jan/config.toml`. Unset on an unreadable or malformed
+/// config: the default backend still works, and a preference file must never
+/// stop a session from starting.
+pub(crate) fn web_search_setting() -> WebSearchSection {
+    load_raw().map(|config| config.web_search).unwrap_or_default()
+}
+
+/// The web tools' backend for a CLI run: `[web_search]` plus the provider's API
+/// key from the secret store. The key is read only when the index says one is
+/// stored, so a run never opens a keychain prompt for a key that is not there.
+///
+/// With no provider chosen the secret store is not touched at all: the default
+/// stays keyless Exa upgraded by `EXA_API_KEY`, exactly as before this setting
+/// existed, rather than silently picking up a key the desktop stored. Once a
+/// provider is chosen its stored key wins over the env var.
+/// An unknown provider id is passed through as-is: building it then fails with
+/// a clear tool error instead of silently searching with a different backend.
+#[cfg(feature = "cli")]
+pub(crate) fn resolve_web_search() -> tauri_plugin_websearch::provider::WebSearchConfig {
+    use crate::core::server::provider_secrets::{has_stored_key, load_provider_keys};
+    let section = web_search_setting();
+    if section.provider.as_deref().is_none_or(|p| p.trim().is_empty()) {
+        return tauri_plugin_websearch::provider::WebSearchConfig::default();
+    }
+    let api_key = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref())
+        .and_then(|meta| meta.secret_key)
+        .filter(|record| has_stored_key(record))
+        .and_then(|record| load_provider_keys(record).into_iter().next());
+    tauri_plugin_websearch::provider::WebSearchConfig {
+        provider: section.provider,
+        api_key,
+        endpoint: section.endpoint,
+    }
+}
+
+/// Persist `[web_search]` into `~/.jan/config.toml`, format-preserving like
+/// [`set_global_key`]. A `None` field removes that key; the table goes too once
+/// it is empty, so resetting leaves no stray header behind.
+#[cfg(feature = "cli")]
+pub(crate) fn set_web_search(section: &WebSearchSection) -> Result<PathBuf, String> {
+    let path = ensure_global_config()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
+
+    let table = doc["web_search"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    if let Some(table) = table.as_table_like_mut() {
+        for (key, value) in [("provider", &section.provider), ("endpoint", &section.endpoint)] {
+            match value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                Some(v) => {
+                    table.insert(key, toml_edit::value(v));
+                }
+                None => {
+                    table.remove(key);
+                }
+            }
+        }
+    }
+    if doc["web_search"].as_table_like().is_some_and(|t| t.is_empty()) {
+        doc.remove("web_search");
+    }
+
+    std::fs::write(&path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
+}
+
 /// Host env-var names the sandboxed `bash` may inherit beyond the base
 /// allowlist (`env_passthrough` in `~/.jan/config.toml`), merged under a
 /// project's `[tools].env_passthrough`. Empty on an unreadable or malformed
@@ -505,18 +640,67 @@ pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::Hook
     load_raw().map(|config| config.hooks).unwrap_or_default()
 }
 
-/// Whether inline `<think>` tags in model content are parsed as reasoning
-/// (`think_tags` in `~/.jan/config.toml`), defaulting to on. `false` makes the
-/// tags ordinary prose: rendered verbatim, kept in the answer sent back as
-/// history, and never folded into a reasoning block.
+/// Providers known to send reasoning in its own `reasoning_content` field, with
+/// the host that is really theirs, so tag parsing is off for them unless the
+/// user opts in. Anything else on the OpenAI wire (a custom endpoint, a local
+/// server) may inline its reasoning. The host matters as much as the name: an
+/// `openai` entry pointed at vLLM or OpenRouter is a compatible server, not
+/// OpenAI.
+const SEPARATE_REASONING_PROVIDERS: &[(&str, &str)] = &[
+    ("openai", "api.openai.com"),
+    ("anthropic", "api.anthropic.com"),
+    ("tokamak", "api.tokamak.sh"),
+];
+
+/// Whether `provider` is one of the known providers talking to its own
+/// endpoint. No `base_url` means the built-in one.
+fn sends_reasoning_separately(provider: &str, base_url: Option<&str>) -> bool {
+    let Some((_, host)) = SEPARATE_REASONING_PROVIDERS
+        .iter()
+        .find(|(name, _)| *name == provider)
+    else {
+        return false;
+    };
+    match base_url.map(str::trim).filter(|u| !u.is_empty()) {
+        None => true,
+        Some(url) => url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.eq_ignore_ascii_case(host)))
+            .unwrap_or(false),
+    }
+}
+
+/// Whether inline `<think>` tags in the content `provider` serves are parsed as
+/// reasoning. `provider` is the one serving the active model, `api_type` its
+/// wire API and `base_url` its endpoint; `None` when nothing serves it.
+///
+/// Answered in this order: the provider's own `parse_think_tags`, the root
+/// `think_tags` (every provider), then the default. The default is on only for
+/// a custom OpenAI-compatible provider: the known providers send reasoning
+/// separately, and a non-chat-completions wire API (`anthropic`, `google`,
+/// `openai-responses`) carries it in typed blocks, so a tag in their content is
+/// the model writing about tags.
 ///
 /// A display preference must never block startup, so an unreadable or malformed
 /// config yields the default rather than an error.
-pub(crate) fn think_tags_enabled() -> bool {
-    load_raw()
-        .ok()
-        .and_then(|config| config.think_tags)
-        .unwrap_or(true)
+pub(crate) fn think_tags_enabled_for(
+    provider: Option<&str>,
+    api_type: Option<&str>,
+    base_url: Option<&str>,
+) -> bool {
+    let Some(provider) = provider else {
+        return false;
+    };
+    let config = load_raw().ok();
+    config
+        .as_ref()
+        .and_then(|c| c.providers.get(provider))
+        .and_then(|entry| entry.parse_think_tags)
+        .or_else(|| config.as_ref().and_then(|c| c.think_tags))
+        .unwrap_or_else(|| {
+            !sends_reasoning_separately(provider, base_url)
+                && matches!(api_type, None | Some("openai"))
+        })
 }
 
 /// Whether other projects' memory is listed and readable
@@ -568,61 +752,6 @@ pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
         .map(std::time::Duration::from_secs)
 }
 
-/// The default glyph swept along the working row when `wave` is absent.
-pub(crate) const WAVE_DEFAULT: &str = "👋";
-
-/// The most grapheme clusters a `wave` may hold. Three is the width of the
-/// small ASCII-art faces the feature is for (`👁️👄👁️`); past that the glyph
-/// stops reading as a traveller and starts overwriting the word it sweeps.
-pub(crate) const WAVE_MAX_GRAPHEMES: usize = 3;
-
-/// Grapheme-cluster count, which is what "characters" means to the person
-/// typing: `👁️👄👁️` is 3 to them and 5 `char`s to Rust, and an emoji with a
-/// skin-tone or ZWJ sequence is worse. Counting `char`s would reject glyphs
-/// that visibly fit.
-pub(crate) fn wave_len(glyph: &str) -> usize {
-    use unicode_segmentation::UnicodeSegmentation;
-    glyph.graphemes(true).count()
-}
-
-/// Validate a candidate `wave`, returning the reason it is unusable. Empty is
-/// valid and means "no sweep" -- the deliberate off switch, distinct from the
-/// key being absent, which takes the default.
-pub(crate) fn wave_error(glyph: &str) -> Option<String> {
-    let len = wave_len(glyph);
-    (len > WAVE_MAX_GRAPHEMES)
-        .then(|| format!("at most {WAVE_MAX_GRAPHEMES} characters (got {len})"))
-}
-
-/// The glyph to sweep along the working row (`wave` in `~/.jan/config.toml`).
-///
-/// Three states, because the key has to distinguish "never touched it" from
-/// "turned it off":
-///
-/// - absent -> `WAVE_DEFAULT`, the wave is on out of the box
-/// - `""` -> `None`, the static Braille throbber, chosen deliberately
-/// - a glyph -> that glyph
-///
-/// An all-whitespace glyph is `None` too: an invisible traveller reads as
-/// letters going missing, which is the bug this feature had the first time
-/// round.
-///
-/// A value past the length cap falls back to the default rather than
-/// erroring. `/settings` rejects an over-long glyph at the point of entry, so
-/// this only fires for a hand-edited file, and a display preference must never
-/// block startup.
-pub(crate) fn wave_glyph() -> Option<String> {
-    let Ok(config) = load_raw() else {
-        return Some(WAVE_DEFAULT.to_string());
-    };
-    match config.wave {
-        None => Some(WAVE_DEFAULT.to_string()),
-        Some(glyph) if glyph.trim().is_empty() => None,
-        Some(glyph) if wave_error(&glyph).is_some() => Some(WAVE_DEFAULT.to_string()),
-        Some(glyph) => Some(glyph),
-    }
-}
-
 /// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
 /// the one mistake this file invites: appending a top-level key to the end of
 /// the file, where it silently lands inside whichever `[providers.*]` table
@@ -637,7 +766,6 @@ const ROOT_KEYS: &[&str] = &[
     "theme",
     "ask_timeout_secs",
     "terminal_hint",
-    "wave",
     "hooks",
 ];
 
@@ -985,6 +1113,30 @@ mod tests {
         });
     }
 
+    #[cfg(feature = "cli")]
+    #[test]
+    fn animations_default_on_and_read_the_tui_table() {
+        with_temp_home(|_| {
+            assert!(animations_enabled(), "missing file -> animated");
+            let path = ensure_global_config().expect("ensure");
+            assert!(animations_enabled(), "scaffolded file -> animated");
+
+            std::fs::write(&path, "[tui]\nanimations = false\n").unwrap();
+            assert!(!animations_enabled());
+            // A provider write keeps the table.
+            set_provider("p", ProviderUpdate::default()).unwrap();
+            assert!(!animations_enabled(), "survives a rewrite");
+            std::fs::write(&path, "[tui]\nanimations = true\n").unwrap();
+            assert!(animations_enabled());
+            // A root key of the same name is not the switch.
+            std::fs::write(&path, "animations = false\n").unwrap();
+            assert!(animations_enabled(), "only [tui] animations counts");
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(animations_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
     #[test]
     fn mouse_defaults_on_and_reads_the_toml_key() {
         with_temp_home(|_| {
@@ -1060,102 +1212,86 @@ mod tests {
     }
 
     #[test]
-    fn think_tags_default_on_and_read_from_the_toml_key() {
+    fn think_tags_default_follows_who_serves_the_model() {
         with_temp_home(|_| {
-            assert!(think_tags_enabled(), "missing file -> parsing on");
-            let path = ensure_global_config().expect("ensure");
-            assert!(think_tags_enabled(), "scaffolded file -> parsing on");
+            // Providers known to send reasoning in its own field, and any
+            // non-chat-completions wire API, never need tag parsing.
+            for known in ["openai", "anthropic", "tokamak"] {
+                assert!(!think_tags_enabled_for(Some(known), None, None), "{known}");
+            }
+            assert!(!think_tags_enabled_for(Some("mine"), Some("anthropic"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("google"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("openai-responses"), None));
+            // A custom OpenAI-compatible endpoint may inline its reasoning.
+            assert!(think_tags_enabled_for(Some("mine"), None, None));
+            assert!(think_tags_enabled_for(Some("mine"), Some("openai"), None));
+            // Nothing serves the model: nothing to parse for.
+            assert!(!think_tags_enabled_for(None, None, None));
+        });
+    }
 
+    #[test]
+    fn a_known_provider_name_on_a_foreign_endpoint_keeps_tag_parsing_on() {
+        with_temp_home(|_| {
+            let own = [
+                ("openai", "https://api.openai.com/v1"),
+                ("anthropic", "https://API.Anthropic.com/v1/"),
+                ("tokamak", "https://api.tokamak.sh/v1"),
+            ];
+            for (name, url) in own {
+                assert!(!think_tags_enabled_for(Some(name), None, Some(url)), "{name}");
+            }
+            // No base_url (or an empty one) is the built-in endpoint.
+            assert!(!think_tags_enabled_for(Some("openai"), None, Some("  ")));
+            // The same name pointed at a compatible server may inline reasoning.
+            for url in [
+                "http://localhost:8000/v1",
+                "https://openrouter.ai/api/v1",
+                "https://api.openai.com.evil.example/v1",
+                "not a url",
+            ] {
+                assert!(think_tags_enabled_for(Some("openai"), None, Some(url)), "{url}");
+            }
+            // The wire API still wins over the endpoint.
+            assert!(!think_tags_enabled_for(
+                Some("openai"),
+                Some("anthropic"),
+                Some("http://localhost:8000/v1"),
+            ));
+        });
+    }
+
+    #[test]
+    fn think_tags_overrides_beat_the_default_provider_first() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            assert!(think_tags_enabled_for(Some("mine"), None, None), "scaffold is neutral");
+
+            // The root key is the user-wide answer for every provider.
             std::fs::write(&path, "think_tags = false\n").unwrap();
-            assert!(!think_tags_enabled());
+            assert!(!think_tags_enabled_for(Some("mine"), None, None));
             std::fs::write(&path, "think_tags = true\n").unwrap();
-            assert!(think_tags_enabled());
+            assert!(think_tags_enabled_for(Some("openai"), None, None));
+
+            // A provider's own key beats the root key, both ways.
+            std::fs::write(
+                &path,
+                "think_tags = true\n[providers.openai]\nparse_think_tags = false\n\
+                 [providers.mine]\nparse_think_tags = false\n",
+            )
+            .unwrap();
+            assert!(!think_tags_enabled_for(Some("openai"), None, None));
+            assert!(!think_tags_enabled_for(Some("mine"), None, None));
+            std::fs::write(&path, "[providers.openai]\nparse_think_tags = true\n").unwrap();
+            assert!(think_tags_enabled_for(Some("openai"), None, None));
+            assert!(!think_tags_enabled_for(Some("anthropic"), None, None));
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(
-                think_tags_enabled(),
+                think_tags_enabled_for(Some("mine"), None, None),
                 "an unreadable config keeps the default"
             );
         });
-    }
-
-    #[test]
-    fn wave_defaults_to_the_hand_and_reads_the_toml_key() {
-        with_temp_home(|_| {
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "missing file -> the default sweep, not off"
-            );
-            let path = ensure_global_config().expect("ensure");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "scaffolded file only comments the key, so the default still applies"
-            );
-
-            // Any string within the cap, not a fixed set: the point of the key
-            // is the user's own glyph.
-            std::fs::write(&path, "wave = \"🍌\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("🍌"));
-            std::fs::write(&path, "wave = \"<o>\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("<o>"));
-            // Three clusters that are five `char`s: the cap counts what the
-            // eye counts, so this fits.
-            std::fs::write(&path, "wave = \"👁️👄👁️\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("👁️👄👁️"));
-
-            // An explicit empty string is the off switch, and the one case
-            // that must not fall back to the default.
-            std::fs::write(&path, "wave = \"\"\n").unwrap();
-            assert_eq!(wave_glyph(), None, "empty is a deliberate off");
-
-            // A blank glyph would sweep an invisible traveller along the row,
-            // which reads as characters going missing.
-            std::fs::write(&path, "wave = \"   \"\n").unwrap();
-            assert_eq!(wave_glyph(), None, "whitespace is off too");
-
-            // Hand-edited past the cap: a display preference must not break
-            // the console, so it reverts rather than erroring.
-            std::fs::write(&path, "wave = \"abcd\"\n").unwrap();
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "over the cap falls back to the default"
-            );
-
-            std::fs::write(&path, "not valid toml [[[").unwrap();
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "an unreadable config keeps the default"
-            );
-        });
-    }
-
-    #[test]
-    fn wave_length_counts_grapheme_clusters() {
-        // The whole reason the cap is not `chars().count()`: each of these is
-        // one thing to the person typing it.
-        assert_eq!(wave_len(""), 0);
-        assert_eq!(wave_len("~"), 1);
-        assert_eq!(wave_len("👋"), 1);
-        assert_eq!(wave_len("👋🏽"), 1, "skin-tone modifier joins the cluster");
-        assert_eq!(wave_len("👁️"), 1, "variation selector joins the cluster");
-        assert_eq!(wave_len("👨‍👩‍👧"), 1, "ZWJ family is one cluster");
-        assert_eq!(wave_len("👁️👄👁️"), 3, "5 chars, 3 clusters");
-
-        assert!(
-            wave_error("").is_none(),
-            "empty is the off switch, not an error"
-        );
-        assert!(wave_error("👁️👄👁️").is_none(), "exactly at the cap");
-        assert!(wave_error("<o>").is_none());
-        let err = wave_error("abcd").expect("over the cap");
-        assert!(
-            err.contains('3') && err.contains('4'),
-            "names cap and actual: {err}"
-        );
     }
 
     /// A root key appended to the end of the file lands inside the last
@@ -1205,29 +1341,55 @@ mod tests {
             let path = ensure_global_config().expect("ensure");
             std::fs::write(&path, "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n").unwrap();
 
-            set_global_key("wave", Some(toml_edit::value("🍌"))).expect("set");
+            set_global_key("stream_reasoning", Some(toml_edit::value(false))).expect("set");
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(
                 raw.contains("# keep me"),
                 "comment survives the write: {raw}"
             );
             assert!(raw.contains("sk-x"), "provider survives the write: {raw}");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some("🍌"),
+            assert!(
+                !stream_reasoning_enabled(),
                 "key must parse as a document key, not a provider field: {raw}"
             );
-            assert_eq!(global_value("wave").as_deref(), Some("🍌"));
+            assert_eq!(global_value("stream_reasoning").as_deref(), Some("false"));
 
-            set_global_key("wave", None).expect("unset");
-            assert_eq!(global_value("wave"), None, "None removes the key");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "a removed key falls back to the default, not to off"
+            set_global_key("stream_reasoning", None).expect("unset");
+            assert_eq!(global_value("stream_reasoning"), None, "None removes the key");
+            assert!(
+                stream_reasoning_enabled(),
+                "a removed key falls back to the default"
             );
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
+        });
+    }
+
+    /// `[web_search]` round-trips format-preserving, never lands inside a
+    /// provider table, and an emptied section removes its header.
+    #[test]
+    fn set_web_search_round_trips_and_clears_the_table() {
+        with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "# keep me\n[providers.p]\nbase_url = \"https://x\"\n")
+                .unwrap();
+            set_web_search(&WebSearchSection {
+                provider: Some("searxng".into()),
+                endpoint: Some("https://searx.example".into()),
+            })
+            .expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("# keep me"), "{raw}");
+            let section = web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("searxng"));
+            assert_eq!(section.endpoint.as_deref(), Some("https://searx.example"));
+            assert!(load_global_config().unwrap().contains_key("p"));
+
+            set_web_search(&WebSearchSection::default()).expect("reset");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(!raw.contains("[web_search]"), "{raw}");
+            assert_eq!(web_search_setting(), WebSearchSection::default());
         });
     }
 
@@ -1239,10 +1401,10 @@ mod tests {
             let path = home.join(".jan").join("config.toml");
             assert!(!path.exists(), "starting from no config");
 
-            set_global_key("wave", Some(toml_edit::value("~"))).expect("set");
+            set_global_key("stream_reasoning", Some(toml_edit::value(false))).expect("set");
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("Jan Agent global provider config"), "{raw}");
-            assert_eq!(wave_glyph().as_deref(), Some("~"));
+            assert!(!stream_reasoning_enabled());
         });
     }
 

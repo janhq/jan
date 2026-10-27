@@ -5,7 +5,6 @@
 //! Build with: cd src-tauri/jan-cli && cargo build --no-default-features --features cli
 
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use console::Style;
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
@@ -19,7 +18,8 @@ use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
-    cli_plugin_remove, cli_plugin_search, ResumeRequest, SessionFlags,
+    cli_plugin_remove, cli_plugin_search, cli_web_search_reset, cli_web_search_set,
+    cli_web_search_status, ResumeRequest, SessionFlags,
 };
 use std::fmt::Write as _;
 
@@ -102,6 +102,10 @@ struct SandboxArgs {
     /// Run shell commands unconfined, overriding a persistent sandbox setting
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
+    /// Let a sandboxed shell command that asks to escalate run outside the
+    /// sandbox without an escalation prompt (--safe still asks once)
+    #[arg(long)]
+    allow_escalation: bool,
 }
 
 /// Whether this invocation works in its own git worktree.
@@ -138,6 +142,12 @@ impl SandboxArgs {
             (_, true) => Some(false),
             _ => None,
         }
+    }
+
+    /// `None` when not passed, so `[tools].allow_escalation` decides. There is
+    /// no `--no-allow-escalation`: off is already the default.
+    fn escalation_flag(self) -> Option<bool> {
+        self.allow_escalation.then_some(true)
     }
 }
 
@@ -601,6 +611,22 @@ enum AgentConfigCommands {
     List,
     /// Print the config file path (scaffolding a template if absent)
     Path,
+    /// Choose the backend for the web_search/web_fetch tools (no flags: show it)
+    WebSearch {
+        /// Backend: exa (default, keyless), tavily (needs a key), searxng (needs
+        /// --endpoint) or you
+        #[arg(long, conflicts_with = "reset")]
+        provider: Option<String>,
+        /// API key for the backend, kept in the secret store ("" clears it)
+        #[arg(long, requires = "provider")]
+        api_key: Option<String>,
+        /// Instance URL for a self-hosted backend such as SearXNG ("" clears it)
+        #[arg(long, value_name = "URL", requires = "provider")]
+        endpoint: Option<String>,
+        /// Go back to the default backend
+        #[arg(long)]
+        reset: bool,
+    },
 }
 
 // ── Threads subcommands ────────────────────────────────────────────────────
@@ -713,12 +739,20 @@ enum McpCommands {
 
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
-/// Build a left-aligned, bright-yellow ASCII logo for the help header.
+/// Build a left-aligned ASCII logo in the brand yellow for the help header.
+/// console 0.15 has no truecolor `Color`, so the SGR is written by hand and
+/// gated on the same `colors_enabled` check `console::Style` uses.
 fn make_logo() -> String {
-    let yellow = Style::new().yellow().bold();
+    use app_lib::core::cli::brand;
+    let sgr = brand::logo_sgr();
+    let color = console::colors_enabled();
     let mut out = vec![String::new(), String::new()];
-    for l in app_lib::core::cli::brand::LOGO {
-        out.push(format!("  {}", yellow.apply_to(l)));
+    for l in brand::LOGO {
+        if color {
+            out.push(format!("  \x1b[1;{sgr}m{l}\x1b[0m"));
+        } else {
+            out.push(format!("  {l}"));
+        }
     }
     out.join("\n")
 }
@@ -774,6 +808,7 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                allow_escalation: cli.sandbox.escalation_flag(),
                 worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
@@ -901,7 +936,7 @@ async fn handle_update(check: bool, force: bool) {
     use app_lib::core::cli::updater::{self, UpdateOutcome};
 
     let result = if check {
-        updater::check_for_update(std::time::Duration::from_secs(10))
+        updater::check_for_update(updater::MANUAL_CHECK_TIMEOUT)
             .await
             .map(|u| {
                 if u.is_newer() {
@@ -1092,6 +1127,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     worktree: worktree.into_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
@@ -1122,6 +1158,7 @@ async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    allow_escalation: sandbox.escalation_flag(),
                     ..Default::default()
                 },
             )
@@ -1310,6 +1347,24 @@ fn handle_agent_config(cmd: AgentConfigCommands) -> Result<(), String> {
         AgentConfigCommands::Path => {
             let path = cli_agent_config_path()?;
             println!("{}", path.display());
+            Ok(())
+        }
+        AgentConfigCommands::WebSearch {
+            provider,
+            api_key,
+            endpoint,
+            reset,
+        } => {
+            if reset {
+                let path = cli_web_search_reset()?;
+                println!("Web search reset to the default backend in {}", path.display());
+            } else if let Some(provider) = provider {
+                let path = cli_web_search_set(&provider, api_key, endpoint)?;
+                println!("Web search now uses '{provider}' ({})", path.display());
+            } else {
+                let status = cli_web_search_status();
+                println!("{}", serde_json::to_string_pretty(&status).unwrap());
+            }
             Ok(())
         }
     }

@@ -39,7 +39,10 @@ export function CoworkModelChip({
           aria-pressed={open}
           aria-label={t('common:modelPanel.a11y')}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           <SlidersHorizontal className="size-3.5 shrink-0" />
           {context && (

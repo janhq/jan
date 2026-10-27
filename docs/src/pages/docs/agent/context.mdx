@@ -26,10 +26,11 @@ only when a turn ends.
 At the end of a turn you get a receipt:
 
 ```
-2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+  Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ```
 
-`↑` is context sent, `↓` tokens produced, then elapsed time and throughput. The two differ on
+First how long the turn took and when it finished, then `↑` context sent, `↓` tokens produced, and
+throughput. The two differ on
 purpose: context is the size of the request, output is what came back.
 
 ### The `/context` overlay
@@ -170,6 +171,12 @@ across providers, so one number cannot suit them all:
 name = "small-window"
 compaction_ratio = 0.6
 ```
+
+The summary is written by `smol_model` from `~/.jan/config.toml` when one is set, so the session's
+own model is not spent on condensing its history. If the smol model fails (its smaller window
+overflows, it is unreachable, or it returns nothing), the session's model writes the summary
+instead. A run under a `[budget]` money limit always summarizes on its own model, so every request
+is charged at the rates the limit was priced against.
 
 The check runs on the request itself, before it is dispatched, so the break lands at a point the
 session chose rather than after a provider rejects an oversized prompt and the run retries. When it

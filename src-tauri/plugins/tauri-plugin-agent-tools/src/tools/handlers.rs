@@ -13,9 +13,10 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
+use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_scratch, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_any_root,
+    escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
+    refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
@@ -244,8 +245,8 @@ async fn execute_text(
         "skill_read" => skill_read(args, ctx),
         "skill_write" => skill_write(args, ctx),
         // Native web tools: compiled into the agent core, not an MCP server.
-        "web_search" => crate::tools::web::web_search(args).await,
-        "web_fetch" => crate::tools::web::web_fetch(args).await,
+        "web_search" => crate::tools::web::web_search(args, ctx.web_search).await,
+        "web_fetch" => crate::tools::web::web_fetch(args, ctx.web_search).await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
@@ -357,15 +358,16 @@ fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
         if n > 1 {
             out.push_str(&format!("@@ edit {}/{} @@\n", i + 1, n));
         }
-        match working.find(old) {
+        let (old, new) = line_endings_of_file(&working, old, new);
+        match working.find(&*old) {
             Some(pos) => {
-                let (old_block, new_block, start) = expand_hunk(&working, pos, old, new);
+                let (old_block, new_block, start) = expand_hunk(&working, pos, &old, &new);
                 out.push_str(&render_hunk_diff(&old_block, &new_block, start));
-                working.replace_range(pos..pos + old.len(), new);
+                working.replace_range(pos..pos + old.len(), &new);
             }
             // `edit()` will reject this call, but the arguments are still worth
             // showing; there is no file position to number them against.
-            None => out.push_str(&render_hunk_diff(old, new, 1)),
+            None => out.push_str(&render_hunk_diff(&old, &new, 1)),
         }
     }
     out.trim_end().to_string()
@@ -725,6 +727,9 @@ async fn write(
     let Some(content) = arg_str(args, "content") else {
         return "ERROR: missing required argument 'content'".to_string();
     };
+    if let Some((name, why)) = refuse_windows_name(path) {
+        return format!("ERROR: refused to write '{name}' in {path}: the name {why}");
+    }
     // Defense in depth: when the caller confines writes, re-canonicalize on the
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
@@ -736,31 +741,80 @@ async fn write(
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
     let shown = display_path(root, scratch, &target);
-    // Re-validate before `create_dir_all`, not just before the write: a
-    // concurrent sandboxed process can swap a path component between the gate
-    // decision and this call, and creating the parents first would already have
-    // made directories through the swapped link. Fail closed.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
-        return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
-    }
-    if let Some(parent) = target.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return format!("ERROR: {shown}: {e}");
+    // Resolve once, before any directory is created, and open only what that
+    // resolution approved: a concurrent sandboxed process can swap a path
+    // component for a link at any point, and both `create_dir_all` and a
+    // by-name write would follow it.
+    let real = match write_landing(root, scratch, write_roots, &target) {
+        Ok(real) => real,
+        Err(()) => {
+            return format!("ERROR: refused to write through a symlink out of the workspace: {path}")
         }
-    }
-    // Existence decides created/overwrote; a non-UTF8 file still exists, so it
-    // must not be read_to_string's error path that answers that question.
-    let existed = tokio::fs::try_exists(&target).await.unwrap_or(false);
-    let unchanged = existed
-        && tokio::fs::read_to_string(&target)
-            .await
-            .is_ok_and(|prior| prior == content);
-    let bytes = content.len();
-    match tokio::fs::write(&target, content).await {
-        Ok(()) if unchanged => format!("No change: {shown} already had these {bytes} bytes"),
-        Ok(()) if existed => format!("Overwrote {shown} ({bytes} bytes)"),
-        Ok(()) => format!("Created {shown} ({bytes} bytes)"),
+    };
+    let content = content.to_string();
+    let outcome = tokio::task::spawn_blocking(move || {
+        // Existence decides created/overwrote; a non-UTF8 file still exists, so
+        // it must not be a failed UTF-8 decode that answers that question.
+        let prior = nofollow::read(&real);
+        let existed = !matches!(&prior, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+        let unchanged = prior.is_ok_and(|p| p == content.as_bytes());
+        nofollow::write(&real, content.as_bytes()).map(|()| (existed, unchanged, content.len()))
+    })
+    .await;
+    match outcome {
+        Ok(Ok((_, true, bytes))) => format!("No change: {shown} already had these {bytes} bytes"),
+        Ok(Ok((true, _, bytes))) => format!("Overwrote {shown} ({bytes} bytes)"),
+        Ok(Ok((false, _, bytes))) => format!("Created {shown} ({bytes} bytes)"),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to write through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
+    }
+}
+
+/// The link-free path a `write`/`edit` must open, or `Err` to refuse.
+///
+/// A target under a trusted root must resolve inside one. A target outside
+/// every root was already put to the user by the gate as an escape, so it is
+/// written where it really lands; one that cannot be resolved at all is
+/// refused rather than handed to a by-name open.
+fn write_landing(
+    root: &Path,
+    scratch: Option<&Path>,
+    write_roots: &[PathBuf],
+    target: &Path,
+) -> Result<PathBuf, ()> {
+    match landing(root, scratch, write_roots, target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => Ok(real),
+        Landing::Escapes | Landing::Outside(None) => Err(()),
+    }
+}
+
+/// Make an edit's line endings agree with the file it targets.
+///
+/// `read` hands the model a CRLF file verbatim, but a model writes a plain `\n`
+/// between the lines of a multi-line `old_string`, so on a Windows project the
+/// edit never matched (#9262). An exact match always wins; only when it fails,
+/// the file has CRLF, and the CRLF spelling of `old_string` does match is that
+/// spelling used -- for `new_string` as well, so the replaced lines keep the
+/// file's own endings. Text the edit does not touch is never rewritten, so a
+/// file with mixed endings stays mixed.
+fn line_endings_of_file<'a>(
+    content: &str,
+    old: &'a str,
+    new: &'a str,
+) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>) {
+    use std::borrow::Cow;
+    let crlf = |s: &str| Cow::Owned::<str>(s.replace("\r\n", "\n").replace('\n', "\r\n"));
+    if !old.contains('\n') || content.contains(old) || !content.contains("\r\n") {
+        return (Cow::Borrowed(old), Cow::Borrowed(new));
+    }
+    let old_crlf = crlf(old);
+    if content.contains(&*old_crlf) {
+        (old_crlf, crlf(new))
+    } else {
+        (Cow::Borrowed(old), Cow::Borrowed(new))
     }
 }
 
@@ -780,18 +834,30 @@ async fn edit(
     if edits.is_empty() {
         return "ERROR: edits must contain at least one replacement".to_string();
     }
+    if let Some((name, why)) = refuse_windows_name(path) {
+        return format!("ERROR: refused to edit '{name}' in {path}: the name {why}");
+    }
     let target = resolve_path(root, scratch, path);
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
-    // Re-validate before the final read+write pair so a swapped symlink cannot
-    // redirect either the read or the later write.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
+    // Resolve once and use that path for both the read and the write, each
+    // opened without following links, so a swapped component redirects neither.
+    let Ok(real) = write_landing(root, scratch, write_roots, &target) else {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
-    }
-    let mut content = match tokio::fs::read_to_string(&target).await {
-        Ok(c) => c,
+    };
+    let read_path = real.clone();
+    let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;
+    let mut content = match read {
+        Ok(Ok(bytes)) => match String::from_utf8(bytes) {
+            Ok(c) => c,
+            Err(_) => return format!("ERROR: {shown}: stream did not contain valid UTF-8"),
+        },
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            return format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => return format!("ERROR: {shown}: {e}"),
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };
 
@@ -802,7 +868,8 @@ async fn edit(
         let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
             return format!("ERROR: {shown}: edit {}: missing 'new_string'", i + 1);
         };
-        let count = content.matches(old_string).count();
+        let (old_string, new_string) = line_endings_of_file(&content, old_string, new_string);
+        let count = content.matches(&*old_string).count();
         if count == 0 {
             return format!("ERROR: {shown}: edit {}: old_string not found", i + 1);
         }
@@ -812,11 +879,16 @@ async fn edit(
                 i + 1
             );
         }
-        content = content.replacen(old_string, new_string, 1);
+        content = content.replacen(&*old_string, &new_string, 1);
     }
 
-    match tokio::fs::write(&target, content).await {
-        Ok(()) => format!("Applied {} edit(s) to {shown}", edits.len()),
+    let written = tokio::task::spawn_blocking(move || nofollow::write(&real, content.as_bytes()));
+    match written.await {
+        Ok(Ok(())) => format!("Applied {} edit(s) to {shown}", edits.len()),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
     }
 }
@@ -926,15 +998,12 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
+    let escalation = ctx.escalation;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
-        // `Permission denied` on its own tells the model nothing about *why*;
-        // without this it retries the same command until it gives up. Only when
-        // confined: unsandboxed, a denial is an ordinary filesystem permission
-        // and the hint would name limits that are not in force.
-        if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
-            out.push_str(&jail::denial_hint(&policy));
+        if sandboxed {
+            out.push_str(&sandbox_denial_note(&out, &policy, escalation));
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -965,17 +1034,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                 .as_ref()
                 .map(|p| crate::tools::sandbox::scratch_display_path(ctx.scratch_root, p));
             // Raised before this call returns, so the caller is already owed a
-            // result by the time the turn that made the call can end. It
-            // carries the path too, so a caller that stops waiting can still
-            // say where the output will land.
+            // result by the time the turn that made the call can end.
             if let Some(sink) = &done_sink {
                 sink(crate::tools::ShellEvent::Backgrounded(
-                    crate::tools::ShellBackgrounded {
-                        id,
-                        command: command_owned.clone(),
-                        timeout_secs,
-                        output_path: display.clone(),
-                    },
+                    crate::tools::ShellBackgrounded { id, timeout_secs },
                 ));
             }
             match (temp, display) {
@@ -1002,21 +1064,11 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         }
                     });
                     let ping = if ctx.shell_done_sink.is_some() {
-                        // The bound is quoted alongside the promise: the model
-                        // needs to know both when it will be told and when the
-                        // run stops holding itself open for a command that may
-                        // never end.
-                        format!(
-                            " You do not have to wait or poll for it: you are notified \
-                             automatically when it finishes, so carry on with other work \
-                             or end your turn. \
-                             If it is still running after about {}s you are told that \
-                             instead, and the run is free to end -- the file still appears \
-                             when the command eventually finishes.",
-                            crate::tools::shell_park_budget_secs(timeout_secs)
-                        )
+                        " You do not have to wait or poll for it: you are notified \
+                         automatically when it finishes, so carry on with other work \
+                         or end your turn."
                     } else {
-                        String::new()
+                        ""
                     };
                     format!(
                         "Command exceeded {timeout_secs}s and is still running in the \
@@ -1265,6 +1317,27 @@ pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
     content.starts_with("ERROR")
         || (tool.capability == super::Capability::Exec && bash_result_failed(content))
 }
+
+/// What a confined command's output gets appended when it failed on the
+/// sandbox, empty otherwise. `Permission denied` on its own tells the model
+/// nothing about *why*; without this it retries the same command until it
+/// gives up. Only for a confined run: unsandboxed, a denial is an ordinary
+/// filesystem permission and the note would name limits that are not in force.
+/// With `escalation` the note also names the way out, so the model reaches for
+/// it exactly when it applies rather than from the tool description alone.
+fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> String {
+    if !(bash_result_failed(out) && jail::looks_denied(out)) {
+        return String::new();
+    }
+    let mut note = jail::denial_hint(policy);
+    if escalation {
+        note.push_str(ESCALATION_HINT);
+    }
+    note
+}
+
+/// The escalation half of [`sandbox_denial_note`].
+const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun it with `escalate: true` and a `justification` to ask the user to run it outside the sandbox.]";
 
 /// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
@@ -2087,6 +2160,132 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    async fn edit_file(root: &Path, file: &str, old: &str, new: &str) -> String {
+        execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": file, "edits": [{"old_string": old, "new_string": new}]}),
+            root,
+        )
+        .await
+    }
+
+    /// #9262: `read` shows a CRLF file with its `\r\n`, a model writes `\n`.
+    #[tokio::test]
+    async fn edit_matches_a_multi_line_old_string_in_a_crlf_file() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"one\r\ntwo\r\nthree\r\n").unwrap();
+        let out = edit_file(&root, "a.txt", "one\ntwo", "ONE\nTWO").await;
+        assert_eq!(out, "Applied 1 edit(s) to a.txt");
+        // The replacement carries the file's own endings, and the rest is untouched.
+        assert_eq!(
+            std::fs::read(root.join("a.txt")).unwrap(),
+            b"ONE\r\nTWO\r\nthree\r\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn edit_keeps_working_when_the_model_already_sends_crlf() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"one\r\ntwo\r\nthree\r\n").unwrap();
+        let out = edit_file(&root, "a.txt", "one\r\ntwo", "X").await;
+        assert_eq!(out, "Applied 1 edit(s) to a.txt");
+        assert_eq!(std::fs::read(root.join("a.txt")).unwrap(), b"X\r\nthree\r\n");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A file with mixed endings: an exact match wins, so the model's own
+    /// spelling is never rewritten when it already fits.
+    #[tokio::test]
+    async fn edit_prefers_an_exact_match_in_a_mixed_ending_file() {
+        let root = unique_root();
+        std::fs::write(root.join("m.txt"), b"a\nb\r\nc\r\n").unwrap();
+        let out = edit_file(&root, "m.txt", "a\nb", "A\nB").await;
+        assert_eq!(out, "Applied 1 edit(s) to m.txt");
+        assert_eq!(std::fs::read(root.join("m.txt")).unwrap(), b"A\nB\r\nc\r\n");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An LF file is not touched by the CRLF fallback.
+    #[tokio::test]
+    async fn edit_does_not_introduce_crlf_into_an_lf_file() {
+        let root = unique_root();
+        std::fs::write(root.join("l.txt"), b"one\ntwo\nthree\n").unwrap();
+        let out = edit_file(&root, "l.txt", "one\ntwo", "ONE\nTWO").await;
+        assert_eq!(out, "Applied 1 edit(s) to l.txt");
+        assert_eq!(std::fs::read(root.join("l.txt")).unwrap(), b"ONE\nTWO\nthree\n");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A genuine miss in a CRLF file is still a miss, and a repeated block is
+    /// still ambiguous after the endings are reconciled.
+    #[tokio::test]
+    async fn edit_crlf_fallback_still_reports_a_miss_and_ambiguity() {
+        let root = unique_root();
+        std::fs::write(root.join("d.txt"), b"x\r\ny\r\nx\r\ny\r\n").unwrap();
+        let miss = edit_file(&root, "d.txt", "x\nz", "q").await;
+        assert_eq!(miss, "ERROR: d.txt: edit 1: old_string not found");
+        let dup = edit_file(&root, "d.txt", "x\ny", "q").await;
+        assert!(dup.contains("old_string not unique (2 matches)"), "got: {dup}");
+        assert_eq!(
+            std::fs::read(root.join("d.txt")).unwrap(),
+            b"x\r\ny\r\nx\r\ny\r\n"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The approval preview must locate the edit the way `edit` will, or the
+    /// user is shown a different change from the one that is applied.
+    #[tokio::test]
+    async fn crlf_edit_preview_matches_the_applied_change() {
+        let root = unique_root();
+        std::fs::write(root.join("p.txt"), b"zero\r\none\r\ntwo\r\nthree\r\n").unwrap();
+        let args = json!({"path": "p.txt", "edits": [{"old_string": "one\ntwo", "new_string": "ONE\nTWO"}]});
+        let diff = preview_diff(lookup("edit").unwrap(), &args, &root)
+            .await
+            .expect("a diff");
+        assert!(diff.contains("ONE") && diff.contains("TWO"), "got: {diff}");
+        // A miss is numbered from line 1; a located edit is numbered where it is.
+        assert!(diff.contains("-    2 | one"), "numbered against the real file: {diff}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// #9263: Windows-only, because a name is only a problem where Win32 rewrites it.
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn write_and_edit_refuse_names_windows_cannot_address() {
+        let root = unique_root();
+        for name in ["aux", "con.txt", "NUL", "com1.log", "name.", "name ", "a.txt:stream", "sub/prn.c"] {
+            let w = execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": name, "content": "x"}),
+                &root,
+            )
+            .await;
+            assert!(w.starts_with("ERROR: refused to write"), "{name}: {w}");
+            let e = edit_file(&root, name, "a", "b").await;
+            assert!(e.starts_with("ERROR: refused to edit"), "{name}: {e}");
+        }
+        // Nothing was created, not even the parent of a refused nested path.
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn write_still_accepts_ordinary_names_that_resemble_reserved_ones() {
+        let root = unique_root();
+        for name in ["auxiliary.txt", "console.log", "com10.txt", "lpt.txt", "a.b.c", ".gitignore", "x y.txt"] {
+            let w = execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": name, "content": "x"}),
+                &root,
+            )
+            .await;
+            assert!(w.starts_with("Created "), "{name}: {w}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn edit_diff_single_hunk_has_no_header() {
         let d = render_edit_diff(&[json!({"old_string": "foo", "new_string": "bar"})], "foo");
@@ -2431,6 +2630,59 @@ mod tests {
             "must name the real destination, got: {out}"
         );
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A write through a dangling link out of the project must not create the
+    /// link's target, confined or not: the handler's symlink re-check is what
+    /// stands between an approved in-project name and the host file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_through_dangling_symlink_is_refused() {
+        let root = unique_root();
+        let outside = unique_root();
+        let target = outside.join("authorized_keys");
+        std::os::unix::fs::symlink(&target, root.join("notes.md")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        for confine in [false, true] {
+            let ctx = ToolContext::new(&root, &store, &[]).with_confined_writes(confine);
+            let out = super::execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": "notes.md", "content": "ATTACKER"}),
+                &ctx,
+            )
+            .await
+            .0;
+            assert!(out.starts_with("ERROR: refused to write"), "confine={confine}: {out}");
+            assert!(!target.exists(), "confine={confine}: target was created");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Links that stay inside the project (a yarn workspace's shape) keep
+    /// working for both `write` and `edit`, landing on the real file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_and_edit_follow_an_in_project_link() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::os::unix::fs::symlink(root.join("pkg"), root.join("linked")).unwrap();
+        let w = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "linked/new/a.txt", "content": "one"}),
+            &root,
+        )
+        .await;
+        assert_eq!(w, "Created linked/new/a.txt (3 bytes)");
+        let e = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "linked/new/a.txt", "edits": [{"old_string": "one", "new_string": "two"}]}),
+            &root,
+        )
+        .await;
+        assert_eq!(e, "Applied 1 edit(s) to linked/new/a.txt");
+        assert_eq!(std::fs::read_to_string(root.join("pkg/new/a.txt")).unwrap(), "two");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3123,10 +3375,6 @@ mod tests {
             handoff.timeout_secs, 0,
             "the park budget is sized from this"
         );
-        assert!(
-            handoff.output_path.is_some(),
-            "the hand-off names the file, so a caller that gives up can still say where"
-        );
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
         let got = events.lock().unwrap().clone();
         let Some(crate::tools::ShellEvent::Finished(done)) = got.get(1) else {
@@ -3230,6 +3478,22 @@ mod tests {
         let out = execute_builtin(lookup("shell").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A sandbox denial names the way out only when the run offers it, and an
+    /// ordinary failure (or a success) gets no note at all.
+    #[test]
+    fn sandbox_denial_note_mentions_escalation_only_when_offered() {
+        let policy = jail::Policy::new(Path::new("/w"), true);
+        let denied = "touch: cannot touch '/x': Read-only file system\n[exit 1]";
+        let plain = sandbox_denial_note(denied, &policy, false);
+        assert!(plain.contains("[sandbox:"), "got: {plain}");
+        assert!(!plain.contains("escalate"));
+        let offered = sandbox_denial_note(denied, &policy, true);
+        assert!(offered.starts_with(&plain));
+        assert!(offered.contains("escalate: true"));
+        assert!(sandbox_denial_note("no such file\n[exit 1]", &policy, true).is_empty());
+        assert!(sandbox_denial_note("Read-only file system\n[exit 0]", &policy, true).is_empty());
     }
 
     #[test]

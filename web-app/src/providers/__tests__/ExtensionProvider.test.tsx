@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import '@testing-library/jest-dom'
 
@@ -61,6 +61,11 @@ describe('ExtensionProvider', () => {
   })
 
   afterEach(() => {
+    // Unmount first: restoreAllMocks strips h.emit's resolved value, and on a
+    // slow runner the app-ready effect can still be pending at this point, so
+    // emit('app-ready').catch would hit undefined. The global cleanup runs
+    // only after this hook.
+    cleanup()
     vi.restoreAllMocks()
   })
 

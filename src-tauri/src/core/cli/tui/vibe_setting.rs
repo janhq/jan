@@ -14,13 +14,12 @@
 //! tool permissions needs a typed `yes` rather than a single key.
 
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use serde_json::{json, Value};
 
 use super::{
-    apply_live_setting, apply_live_unset, current_setting_value, parse_setting_input,
-    setting_path, wrap_spans_hard, write_setting, AgentSettingDef, AgentSettingKind, App, KeyCode,
-    KeyEvent, SettingScope, AGENT_SETTINGS,
+    current_setting_value, parse_setting_input, setting_path, wrap_spans_hard, write_setting,
+    AgentSettingDef, AgentSettingKind, App, KeyCode, KeyEvent, SettingScope, AGENT_SETTINGS,
 };
 
 /// `/settings` keys `/vibe-setting` may not propose. `claude_code_alias` decides
@@ -120,10 +119,6 @@ fn kind_text(def: &AgentSettingDef) -> (String, String) {
         AgentSettingKind::Float { default, min, max } => (
             format!("number {min}-{max}"),
             opt(default.map(|d| d.to_string())),
-        ),
-        AgentSettingKind::Glyph { default, max } => (
-            format!("string of up to {max} characters, \"\" = off"),
-            default.to_string(),
         ),
         AgentSettingKind::Text { default } => ("string".to_string(), default.to_string()),
         AgentSettingKind::Enum { options, default } => {
@@ -446,29 +441,22 @@ pub(super) fn handle_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     }
 }
 
-/// Write every change through the `/settings` writer, then report which took
-/// effect now, which `/reload config` applies, and which wait for a restart.
+/// Write every change through the `/settings` writer, then report which
+/// `/reload config` applies and which wait for a restart.
 fn apply(app: &mut App) {
     let Some(proposal) = app.vibe_confirm.take() else {
         return;
     };
     let toml_path = app.agent_dir.join("agent.toml");
     let mut written: Vec<String> = Vec::new();
-    let mut live: Vec<String> = Vec::new();
     let mut reloadable: Vec<String> = Vec::new();
     let mut restart: Vec<String> = Vec::new();
     let mut failed: Vec<String> = Vec::new();
     for change in &proposal.changes {
         match write_setting(change.def, &toml_path, change.item.clone()) {
             Ok(()) => {
-                let now_live = match &change.new_value {
-                    Some(value) => apply_live_setting(change.def, value),
-                    None => apply_live_unset(change.def),
-                };
                 let key = change.def.key.to_string();
-                if now_live {
-                    live.push(key);
-                } else if RELOAD_CONFIG_KEYS.contains(&change.def.key) {
+                if RELOAD_CONFIG_KEYS.contains(&change.def.key) {
                     reloadable.push(key);
                 } else {
                     restart.push(key);
@@ -485,7 +473,7 @@ fn apply(app: &mut App) {
             )),
         }
     }
-    let when = apply_when(&live, &reloadable, &restart);
+    let when = apply_when(&reloadable, &restart);
     if !written.is_empty() {
         app.note(&format!(
             "◈ vibe-setting · wrote {} setting(s); {when}",
@@ -501,11 +489,8 @@ fn apply(app: &mut App) {
 }
 
 /// The "when does it apply" half of the result note, one clause per bucket.
-fn apply_when(live: &[String], reloadable: &[String], restart: &[String]) -> String {
+fn apply_when(reloadable: &[String], restart: &[String]) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if !live.is_empty() {
-        parts.push(format!("{} in effect now", live.join(", ")));
-    }
     if !reloadable.is_empty() {
         parts.push(format!("run /reload config to apply {}", reloadable.join(", ")));
     }
@@ -518,7 +503,6 @@ fn apply_when(live: &[String], reloadable: &[String], restart: &[String]) -> Str
 
 fn shown(def: &AgentSettingDef, value: Option<&str>) -> String {
     match value {
-        Some("") if matches!(def.kind, AgentSettingKind::Glyph { .. }) => "\"\" (off)".to_string(),
         Some(v) => v.to_string(),
         None => format!("default ({})", kind_text(def).1),
     }
@@ -527,7 +511,7 @@ fn shown(def: &AgentSettingDef, value: Option<&str>) -> String {
 /// The dock's contents at `width`: the diff grouped by file, what was refused,
 /// the permission warning, and the confirmation line.
 pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(super::theme::muted());
     let max = width.max(1) as usize;
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut push = |spans: Vec<Span<'static>>| {
@@ -556,7 +540,7 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
                 Span::raw(" -> "),
                 Span::styled(
                     shown(change.def, change.new_value.as_deref()),
-                    Style::new().cyan(),
+                    Style::new().fg(super::theme::accent()),
                 ),
             ];
             if !change.reason.is_empty() {
@@ -568,7 +552,7 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
     for line in &proposal.refused {
         push(vec![Span::styled(
             format!("refused: {line}"),
-            Style::new().yellow(),
+            Style::new().fg(super::theme::warning()),
         )]);
     }
     if let Some(note) = &proposal.note {
@@ -600,12 +584,10 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
 
 pub(super) fn draw(f: &mut Frame, area: Rect, proposal: &VibeProposal) {
     use ratatui::widgets::Clear;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = super::panel_block(super::theme::border_active())
         .title(Span::styled(
             " vibe-setting: proposed changes ",
-            Style::new().on_cyan().black().bold(),
+            super::title_style(super::theme::border_active()),
         ));
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -620,18 +602,17 @@ mod tests {
     #[test]
     fn apply_when_names_each_bucket() {
         let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(apply_when(&v(&["wave"]), &[], &[]), "wave in effect now");
         assert_eq!(
-            apply_when(&[], &v(&["context_window", "max_tokens"]), &[]),
+            apply_when(&v(&["context_window", "max_tokens"]), &[]),
             "run /reload config to apply context_window, max_tokens"
         );
         assert_eq!(
-            apply_when(&[], &[], &v(&["show_reasoning", "tools.default"])),
+            apply_when(&[], &v(&["show_reasoning", "tools.default"])),
             "show_reasoning, tools.default apply when jan restarts"
         );
         assert_eq!(
-            apply_when(&v(&["wave"]), &v(&["max_tokens"]), &v(&["show_reasoning"])),
-            "wave in effect now; run /reload config to apply max_tokens; show_reasoning applies when jan restarts"
+            apply_when(&v(&["max_tokens"]), &v(&["show_reasoning"])),
+            "run /reload config to apply max_tokens; show_reasoning applies when jan restarts"
         );
     }
 
@@ -656,7 +637,7 @@ mod tests {
         });
         let system = body["messages"][0]["content"].as_str().unwrap();
         assert!(system.contains("- context_window | project | integer >= 1 | 128000 | 200000 |"));
-        assert!(system.contains("- wave | global |"));
+        assert!(system.contains("- ask_timeout_secs | global |"));
         assert!(!system.contains("claude_code_alias"), "{system}");
         assert_eq!(body["messages"][1]["content"], "show me its thinking");
         assert_eq!(body["messages"].as_array().unwrap().len(), 2);

@@ -31,7 +31,11 @@ its absence means you have everything. A command's `[exit N]` line is the author
 dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
 notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \
 stopping. Do not idle, poll a file in a loop, or narrate waiting: say what you started, then either \
-get on with unrelated work or finish the turn.";
+get on with unrelated work or finish the turn.\n\
+- Never detach a shell command yourself with `nohup`, a trailing `&`, `setsid` or `disown`. For a \
+long-running command (a server, a build, a watcher), run it normally with a smaller `timeout`: when \
+the timeout passes the command keeps running in the background, its output is captured, and you are \
+notified when it exits. A command you detach yourself is invisible to that: no output, no notice.";
 
 /// The instructions file Jan reads first in every directory of the walk from
 /// the project root up to the filesystem root. When a directory has a
@@ -236,11 +240,26 @@ user what's wrong.";
 const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited. For open-ended exploration \
 that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
-in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
+in its own window and returns only the distilled answer. For read-only codebase questions set `agent: \"explore\"` \
+and for web lookups `agent: \"research\"`: both run on a cheaper model; use `agent: \"general\"` when no \
+other agent fits. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
 yourself for small, targeted tasks where delegating would cost more than it saves.";
+
+/// The `# Subagents` block: the guide, then the predefined agents the
+/// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
+/// Read from the registry when the prompt is composed, so it is fixed for the
+/// session like the rest of the prefix; a definition added mid-session shows up
+/// in the next session's prompt (the enum, rebuilt per run, already takes it).
+fn subagent_guide(project_root: &Path) -> String {
+    let registry = crate::core::agent::subagent::SubagentRegistry::load(project_root);
+    match crate::core::agent::subagent::agent_catalog(&registry) {
+        Some(catalog) => format!("{SUBAGENT_GUIDE}\n\nPredefined agents (`agent` field):\n{catalog}"),
+        None => SUBAGENT_GUIDE.to_string(),
+    }
+}
 
 /// System-prompt addendum for a `/goal` run with no staged plan: an unattended
 /// loop that keeps firing turns until a condition is met needs the phased list
@@ -433,7 +452,7 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
             Some(runtime_environment_block(inputs.project_root, inputs.scratch))
         }
         Composer::SessionStart => inputs.session_start.map(SessionStart::block),
-        Composer::SubagentGuide => inputs.subagents_enabled.then(|| SUBAGENT_GUIDE.to_string()),
+        Composer::SubagentGuide => inputs.subagents_enabled.then(|| subagent_guide(inputs.project_root)),
         Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
         Composer::ProjectContext => load_context_files(inputs.project_root),
@@ -720,6 +739,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A command detached by hand (`nohup`, `&`, `setsid`) escapes the shell
+    /// tool's own backgrounding, so no completion notice ever comes back and
+    /// the agent is left polling. The guideline steers it to a short `timeout`
+    /// instead, which backgrounds the command and keeps the doorbell.
+    #[test]
+    fn guidelines_steer_long_commands_to_the_timeout_not_nohup() {
+        let root = scratch_project("nohup");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
+        assert!(out.contains("`nohup`"), "names nohup: {out}");
+        assert!(out.contains("smaller `timeout`"), "points at the timeout: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn context_files_ingested_nearest_last() {
         let root = scratch_project("ctxfiles");
@@ -922,6 +954,10 @@ mod tests {
         let root = scratch_project("subagent-handoff");
         let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("belongs to that subagent"));
+        assert!(with.contains("agent: \"explore\""), "points cheap work at explore");
+        // The names the `agent` enum accepts are spelled out with their purpose.
+        assert!(with.contains("Predefined agents (`agent` field):"), "{with}");
+        assert!(with.contains("- `research` (model: smol): "), "{with}");
         assert!(with.contains("do not do the same work yourself"));
         assert!(!with.contains("keep working rather than waiting"));
         let _ = std::fs::remove_dir_all(&root);

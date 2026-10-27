@@ -3,7 +3,7 @@ name = "tauri-plugin-agent-tools"
 version = "0.8.3"
 authors = ["Jan <service@jan.ai>"]
 description = "Built-in agent toolset (filesystem, shell, skills, memory, web) shared by the Jan desktop app and the headless jan CLI"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"
@@ -68,7 +68,7 @@ tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features 
 tauri-plugin = { version = "2.3.1", features = ["build"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "=0.30.1", features = ["signal", "process"] }
+nix = { version = "=0.30.1", features = ["signal", "process", "fs"] }
 
 # Webview `screenshot` backend (see `webview_shot.rs`). All optional and enabled
 # by the `tauri` feature, so the headless CLI never pulls a GUI stack in.

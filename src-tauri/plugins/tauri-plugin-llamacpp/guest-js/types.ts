@@ -12,6 +12,12 @@ export interface UnloadResult {
   error?: string
 }
 
+/** Mirrors `engine::worker::DeviceIdentity`: a device without its memory. */
+export interface DeviceIdentity {
+  id: string
+  name: string
+}
+
 /** Mirrors `engine::commands::EngineInfo`. */
 export interface EngineInfo {
   port: number
@@ -19,13 +25,20 @@ export interface EngineInfo {
   pid: number
   /** Model ids the worker registered from the preset. */
   models: string[]
+  /**
+   * The devices the running worker itself initialised, or null when it did not
+   * say. `[]` means the machine has no GPU, which is a real answer. The worker
+   * lists its devices once, at start, so this is what a later enumeration is
+   * compared against to notice a GPU that appeared or vanished.
+   */
+  devices: DeviceIdentity[] | null
 }
 
 /** Mirrors `engine::commands::EngineVersion`. */
 export interface EngineVersion {
-  /** llama.cpp's own version, e.g. "0.5.0". */
+  /** llama.cpp's own version, e.g. "0.7.0". */
   version: string
-  /** Upstream build tag the source was taken from, e.g. "b11146". */
+  /** Upstream build tag the source was taken from, e.g. "b11669". */
   tag: string
   /** The tag's build number, as a string. */
   build_number: string

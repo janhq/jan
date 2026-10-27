@@ -966,6 +966,15 @@ async fn execute_tool_inner(
             }
             .into());
         }
+        // The chat sandbox is throwaway by design and never lifted: escalation
+        // is a CLI capability, so say so rather than "not available yet".
+        Decision::Prompt(PromptKind::Escalate) => {
+            return Err(format!(
+                "tool '{name}' cannot run outside the sandbox here; the command was not run. \
+                 Run it without `escalate`."
+            )
+            .into());
+        }
         Decision::Prompt(kind) => {
             return Err(format!(
                 "tool '{name}' needs user approval ({kind:?}) and is not available yet"

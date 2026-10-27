@@ -140,6 +140,16 @@ vi.mock('@/hooks/useAttachments', () => ({
     }),
 }))
 
+// The real image-limit store runs against an in-memory backend so tests can
+// set the configured limit the same way the settings page does.
+vi.mock('@/lib/backendStorage', () => ({
+  backendStorage: {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+  },
+}))
+
 let attachmentsList: any[] = []
 /** Attachments stored under a specific scope key, for the scopeKey tests. */
 let attachmentsByKey: Record<string, any[]> = {}
@@ -315,6 +325,7 @@ vi.mock('@/lib/platform/utils', () => ({
 
 // Import component AFTER all mocks
 import ChatInput from '../ChatInput'
+import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 
 // Helpers -------------------------------------------------------------------
 
@@ -338,6 +349,7 @@ const resetAll = () => {
   clearQueueMock.mockClear()
   for (const k of Object.keys(queueState)) delete queueState[k]
   getCurrentThreadMock.mockReturnValue(undefined)
+  useImageAttachmentConfig.setState({ maxImageSizeMB: 10 })
 }
 
 const getTextarea = () =>
@@ -398,7 +410,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('hello world', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'hello world',
+        undefined,
+        undefined,
+        'hello world'
+      )
     )
     expect(addToHistoryMock).toHaveBeenCalledWith('hello world')
     expect(setPromptMock).toHaveBeenCalledWith('')
@@ -432,7 +449,12 @@ describe('ChatInput', () => {
     ) as HTMLButtonElement
     fireEvent.click(btn)
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('button submit', undefined, undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        'button submit',
+        undefined,
+        undefined,
+        'button submit'
+      )
     )
   })
 
@@ -483,6 +505,22 @@ describe('ChatInput', () => {
     // onSubmit should NOT fire when queued
     expect(onSubmit).not.toHaveBeenCalled()
     expect(setPromptMock).toHaveBeenCalledWith('')
+  })
+
+  // Tools running means the stream is over (`ready`), but the turn is not: a new
+  // message must wait for it like one sent mid-stream.
+  it('queues the message while the turn\'s tools are still running', async () => {
+    promptState = 'queued msg'
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, chatStatus: 'ready', toolsRunning: true })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() =>
+      expect(enqueueMock).toHaveBeenCalledWith(
+        'thread-1',
+        expect.objectContaining({ text: 'queued msg' })
+      )
+    )
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('shows "please select a model" inline message when no model selected', () => {
@@ -547,7 +585,8 @@ describe('ChatInput', () => {
             url: 'data:image/png;base64,xxx',
           }),
         ]),
-        undefined
+        undefined,
+        'with image'
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
@@ -562,9 +601,12 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter' })
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith('read this', undefined, [
-        expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' }),
-      ])
+      expect(onSubmit).toHaveBeenCalledWith(
+        'read this',
+        undefined,
+        [expect.objectContaining({ name: 'spec.pdf', path: '/docs/spec.pdf' })],
+        'read this'
+      )
     )
   })
 
@@ -703,6 +745,129 @@ describe('ChatInput', () => {
       const dimmed = document.querySelector('.pointer-events-none')
       expect(dimmed).toBeTruthy()
       expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
+    })
+  })
+
+  describe('image size limit', () => {
+    const MB = 1024 * 1024
+    const imageFile = (name: string, bytes: number, type = 'image/png') => {
+      const file = new File(['x'], name, { type })
+      Object.defineProperty(file, 'size', { value: bytes })
+      return file
+    }
+    const renderVision = () => {
+      selectedModelOverride = {
+        id: 'vision-model',
+        capabilities: ['tools', 'vision'],
+        provider: 'llamacpp',
+      }
+      return renderInput()
+    }
+    const pickFiles = (files: File[]) => {
+      const input = document.querySelector(
+        'input[type="file"]:not([accept])'
+      ) as HTMLInputElement
+      fireEvent.change(input, { target: { files } })
+    }
+    // ChatInput always calls setAttachments with an updater; run it against an
+    // empty list to see which images (if any) it would add.
+    const attachedImages = () =>
+      setAttachmentsMock.mock.calls.flatMap(([, updater]) =>
+        typeof updater === 'function' ? updater([]) : updater
+      )
+    const attachedNames = () => (attachedImages().length > 0 ? 'attached' : 'none')
+
+    beforeEach(() => {
+      setAttachmentsMock.mockClear()
+    })
+
+    it('accepts an image under the default 10MB limit via the picker', async () => {
+      renderVision()
+      pickFiles([imageFile('ok.png', 9 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('rejects an image over the default limit and reports 10MB', async () => {
+      renderVision()
+      pickFiles([imageFile('big.png', 11 * MB)])
+      expect(
+        await screen.findByText('File too large (max 10MB): big.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('honors a raised limit and accepts a 20MB image', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 25 })
+      renderVision()
+      pickFiles([imageFile('large.png', 20 * MB)])
+      await waitFor(() => expect(attachedNames()).toBe('attached'))
+      expect(screen.queryByText(/too large/)).not.toBeInTheDocument()
+    })
+
+    it('honors a lowered limit and builds the message from it', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 2 })
+      renderVision()
+      pickFiles([imageFile('a.png', 3 * MB), imageFile('b.png', 4 * MB)])
+      expect(
+        await screen.findByText('Files too large (max 2MB): a.png, b.png')
+      ).toBeInTheDocument()
+      expect(attachedNames()).toBe('none')
+    })
+
+    it('applies the same limit to pasted images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      renderVision()
+      const file = imageFile('pasted.png', 5 * MB)
+      fireEvent.paste(getTextarea(), {
+        clipboardData: {
+          items: [{ type: 'image/png', getAsFile: () => file }],
+        },
+      })
+      expect(
+        await screen.findByText('File too large (max 3MB): pasted.png')
+      ).toBeInTheDocument()
+    })
+
+    it('applies the same limit to dropped images', async () => {
+      useImageAttachmentConfig.setState({ maxImageSizeMB: 3 })
+      // jsdom has no DataTransfer constructor; handleDrop builds one.
+      class FakeDataTransfer {
+        files: File[] = []
+        items = { add: (f: File) => this.files.push(f) }
+      }
+      vi.stubGlobal('DataTransfer', FakeDataTransfer)
+      try {
+        renderVision()
+        const dropZone = document.querySelector(
+          '[data-drop-zone="true"]'
+        ) as HTMLElement
+        const file = imageFile('dropped.png', 5 * MB)
+        fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+        expect(
+          await screen.findByText('File too large (max 3MB): dropped.png')
+        ).toBeInTheDocument()
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+  })
+
+  // #9363: the option was greyed out, with no reason given, for any model
+  // without the `tools` capability, so such a model could take no document at
+  // all. A document can still go into the prompt as text.
+  describe('document attachments', () => {
+    const attachDocs = () =>
+      screen.getByText('Add documents or files').closest('button')!
+
+    it('stay available for a model that cannot call tools', () => {
+      selectedModelOverride = {
+        id: 'no-tools-model',
+        capabilities: ['completion'],
+        provider: 'llamacpp',
+      }
+      renderInput()
+      expect(attachDocs()).not.toBeDisabled()
     })
   })
  })

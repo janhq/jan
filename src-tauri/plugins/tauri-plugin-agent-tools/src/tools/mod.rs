@@ -20,6 +20,9 @@ pub mod jail;
 /// The `monitor` tool's core: file watching + condition-script evaluation.
 /// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
 pub mod monitor;
+/// Opens a resolved path refusing every link on the way, so a write lands on
+/// exactly the path the containment check approved.
+pub mod nofollow;
 /// Tools an installed plugin declares in its `plugin.toml`. Loop-dispatched
 /// like the monitor tool, so they are not in `BUILTIN_TOOLS`.
 pub mod plugin_tools;
@@ -135,6 +138,12 @@ pub struct ToolContext<'a> {
     /// gate is then the only thing between the model and the machine, which is
     /// why nothing else about the gate changes when this is off.
     pub sandbox: bool,
+    /// Whether this run offers `shell` escalation (see
+    /// [`gate::requests_escalation`]). Only tells a sandbox denial to mention
+    /// it: the handler never reads `escalate` itself, so a call reaches the
+    /// unconfined shell only through a caller that got the user's approval and
+    /// cleared [`Self::sandbox`] for it.
+    pub escalation: bool,
     /// Where a tool sends output as it is produced, when the caller wants to
     /// show it live. `None` means "collect and return only", which is what every
     /// non-interactive caller wants.
@@ -200,6 +209,10 @@ pub struct ToolContext<'a> {
     /// `None` keeps the pull-only behaviour, which is right for a surface with
     /// no conversation to deliver into.
     pub shell_done_sink: Option<ShellDoneSink>,
+    /// The backend `web_search`/`web_fetch` use, as the host's settings chose
+    /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
+    /// in the environment.
+    pub web_search: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -222,6 +235,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
             .field("sandbox", &self.sandbox)
+            .field("escalation", &self.escalation)
             .field("on_output", &self.on_output.is_some())
             .field("read_roots", &self.read_roots)
             .field("write_roots", &self.write_roots)
@@ -234,6 +248,11 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("plan_mode", &self.plan_mode)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
+            // The config can hold an API key, so only the backend id is shown.
+            .field(
+                "web_search",
+                &self.web_search.map(|c| c.provider.as_deref().unwrap_or("default")),
+            )
             .finish()
     }
 }
@@ -269,16 +288,10 @@ pub struct ShellBackgrounded {
     /// tracking several commands needs the pairing to be exact: matching on the
     /// command line would confuse two runs of the same build.
     pub id: u64,
-    /// The command line, for the ping the user and model read.
-    pub command: String,
     /// The timeout the call was given, which is what the caller sizes its park
     /// budget from (see [`shell_park_budget_secs`]): a command handed 600s is
     /// expected to be slow, one handed 5s is not.
     pub timeout_secs: u64,
-    /// Where the output will be published, if a file could be created. Known
-    /// here as well as in [`ShellDone`] so a caller that gives up waiting can
-    /// still tell the model where to collect the result later.
-    pub output_path: Option<String>,
 }
 
 /// A backgrounded `bash` command that has finished: what the caller needs to
@@ -328,8 +341,9 @@ pub type ShellDoneSink = std::sync::Arc<dyn Fn(ShellEvent) + Send + Sync>;
 /// unbounded would park the run forever. The budget is sized from the call's
 /// own timeout (a command given a long one is expected to be slow) and clamped
 /// at both ends: never less than a minute, never more than the ceiling a
-/// monitor gets. Quoted to the model by `bash` and enforced by the caller, so
-/// both describe the same bound.
+/// monitor gets. Enforced by the caller, which stops waiting silently: the
+/// model already knows the command runs in the background, and a late
+/// completion still reaches it.
 pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
     const MIN_PARK_SECS: u64 = 60;
     /// The same ceiling `monitor::DEFAULT_TIMEOUT_SECS` gives a watcher.
@@ -375,6 +389,7 @@ impl<'a> ToolContext<'a> {
             home_readonly: false,
             scratch_root: None,
             sandbox: true,
+            escalation: false,
             on_output: None,
             read_roots: &[],
             write_roots: &[],
@@ -387,7 +402,18 @@ impl<'a> ToolContext<'a> {
             plan_mode: false,
             hook_sink: None,
             shell_done_sink: None,
+            web_search: None,
         }
+    }
+
+    /// Route the web tools to the host's chosen backend. See
+    /// [`Self::web_search`].
+    pub fn with_web_search(
+        mut self,
+        config: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
+    ) -> Self {
+        self.web_search = config;
+        self
     }
 
     /// Report finished background shells to `sink`. See
@@ -553,6 +579,12 @@ impl<'a> ToolContext<'a> {
         if self.sandbox {
             self.scratch_root = Some(scratch_root);
         }
+        self
+    }
+
+    /// Mention escalation in sandbox denials. See [`Self::escalation`].
+    pub fn with_escalation(mut self, escalation: bool) -> Self {
+        self.escalation = escalation;
         self
     }
 

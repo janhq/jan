@@ -7,8 +7,11 @@ use std::sync::Arc;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
+use tauri_plugin_hardware::vendor::nvidia::{nvidia_driver, CudaVersion, NvidiaDriver};
 
+use super::driver;
 use super::worker::{self, WorkerHandle};
+use crate::error::{ErrorCode, LlamacppError};
 use crate::state::LlamacppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +21,11 @@ pub struct EngineInfo {
     pub pid: u32,
     /// Registered model ids, from the preset the worker read.
     pub models: Vec<String>,
+    /// The devices this worker initialised, `None` when it did not say. Both
+    /// `start_engine` and `get_engine_info` read it off the running worker, so
+    /// a caller that attaches to an existing worker gets that worker's own
+    /// baseline rather than whatever the machine offers now.
+    pub devices: Option<Vec<worker::DeviceIdentity>>,
 }
 
 impl From<&WorkerHandle> for EngineInfo {
@@ -27,6 +35,7 @@ impl From<&WorkerHandle> for EngineInfo {
             api_key: h.api_key.clone(),
             pid: h.pid,
             models: h.models.clone(),
+            devices: h.devices.clone(),
         }
     }
 }
@@ -127,14 +136,71 @@ fn worker_missing_message(tried: &[PathBuf]) -> String {
 /// Forwards a worker fault to the frontend, which turns it into the OOM or
 /// backend-error dialog. A mid-generation `GGML_ASSERT` kills the worker
 /// outright, so its log line is the only account of what happened.
-fn fault_emitter<R: tauri::Runtime>(app_handle: tauri::AppHandle<R>) -> worker::FaultCallback {
+///
+/// A driver too old for the engine's CUDA code is told apart from a generic
+/// backend crash, and the banner (which shows this text verbatim) says to
+/// update the driver instead of leaving the user with a bare ggml abort.
+fn fault_emitter<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    versions: Arc<EngineVersions>,
+) -> worker::FaultCallback {
     use tauri::Emitter;
     Arc::new(move |fault: worker::RuntimeFault, line: String| {
         log::error!("jan-llama-worker fault ({fault:?}): {line}");
-        if let Err(e) = app_handle.emit(fault.event_name(), line) {
+        let payload = driver::fault_payload(
+            &line,
+            versions.driver.get(),
+            versions.toolkit.get().copied(),
+        );
+        if let Err(e) = app_handle.emit(fault.event_name(), payload) {
             log::warn!("emit {} failed: {e}", fault.event_name());
         }
     })
+}
+
+/// What the fault callback needs to word a driver error. Filled once, off the
+/// callback's path: it runs on the task draining the worker's stderr, where an
+/// NVML load must not block. A fault before the fill is worded without them.
+#[derive(Default)]
+struct EngineVersions {
+    toolkit: std::sync::OnceLock<CudaVersion>,
+    driver: std::sync::OnceLock<NvidiaDriver>,
+}
+
+/// Reads the NVIDIA driver, writes it and the engine's CUDA toolkit to
+/// `app.log`, and warns when the driver is older than the engine. Without this a
+/// CUDA failure on an old driver cannot be told from any other (#9185).
+async fn record_nvidia_driver(versions: Arc<EngineVersions>) {
+    // NVML loads a shared library and may take a moment on first use.
+    let Ok(Some(driver)) = tokio::task::spawn_blocking(nvidia_driver).await else {
+        return;
+    };
+    let toolkit = versions.toolkit.get().copied();
+    log::info!("{}", driver::startup_line(&driver, toolkit));
+    if let Some(warning) = driver::startup_warning(&driver, toolkit) {
+        log::warn!("{warning}");
+    }
+    let _ = versions.driver.set(driver);
+}
+
+/// A start failure as the `String` this command returns. A wrong-processor
+/// worker crosses as the structured error, which `parseEngineError` on the web
+/// side recovers from the message, so it is shown from its code. Every other
+/// failure keeps its plain text.
+fn worker_error_string(err: worker::WorkerError) -> String {
+    match err {
+        worker::WorkerError::WrongArchitecture(detail) => {
+            let structured = LlamacppError::new(
+                ErrorCode::UnsupportedCpu,
+                "The llama.cpp engine in this Jan build does not support this computer's \
+                 processor."
+                    .into(),
+                Some(detail),
+            );
+            serde_json::to_string(&structured).unwrap_or(structured.message)
+        }
+        other => other.to_string(),
+    }
 }
 
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
@@ -157,6 +223,9 @@ pub async fn start_engine<R: tauri::Runtime>(
 
     let exe = resolve_worker_exe(&app_handle)?;
     let api_key = generate_worker_key();
+    // Filled from the handshake, after the worker is up; a fault before then
+    // is worded without it.
+    let versions = Arc::new(EngineVersions::default());
     let handle = worker::spawn(
         &exe,
         &PathBuf::from(preset_path),
@@ -165,10 +234,15 @@ pub async fn start_engine<R: tauri::Runtime>(
         models_max,
         slot_cache_mib,
         envs,
-        Some(fault_emitter(app_handle.clone())),
+        Some(fault_emitter(app_handle.clone(), versions.clone())),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(worker_error_string)?;
+    if let Some(v) = handle.cuda_toolkit {
+        let _ = versions.toolkit.set(v);
+    }
+    // Detached: NVML can be slow to load, and start_engine holds the engine lock.
+    tokio::spawn(record_nvidia_driver(versions));
 
     let info = EngineInfo::from(&handle);
     // Subscribed here rather than lazily: an eviction can happen on the very
@@ -234,7 +308,7 @@ async fn abort_unload_watcher(state: &Arc<LlamacppState>) {
 /// Models with a request in flight, from the worker's own `/models` listing.
 /// An unreachable worker reports none -- it cannot be generating.
 async fn busy_models(port: u16, api_key: &str) -> Vec<String> {
-    let Ok(resp) = reqwest::Client::new()
+    let Ok(resp) = worker::loopback_client()
         .get(format!("http://127.0.0.1:{port}/models"))
         .bearer_auth(api_key)
         .send()
@@ -354,7 +428,7 @@ pub async fn reload_engine_models(
         body["slot_cache_mib"] = serde_json::json!(m);
     }
 
-    let resp = reqwest::Client::new()
+    let resp = worker::loopback_client()
         .post(format!("http://127.0.0.1:{port}/models/reload"))
         .bearer_auth(&api_key)
         .json(&body)
@@ -410,6 +484,43 @@ pub async fn engine_slots_idle(
         Some(id) => !busy.contains(&id),
         None => busy.is_empty(),
     })
+}
+
+/// Claims the engine for a restart, or says it cannot.
+///
+/// `false` means a request holds the worker (a native proxy or agent request
+/// that resolved its address and has not finished) or a generation is in
+/// flight: restarting now would cut it off. On `true` every new request waits
+/// until `end_engine_restart`, so none resolves the old worker's address after
+/// the caller's idle check, which is the gap the extension's own lease cannot
+/// close from JavaScript.
+#[tauri::command]
+pub async fn begin_engine_restart(
+    state: State<'_, Arc<LlamacppState>>,
+) -> Result<bool, String> {
+    if !state.begin_restart().await {
+        return Ok(false);
+    }
+    // Checked after the claim: nothing new can start from here, so what the
+    // worker reports is everything there will be.
+    let running = {
+        let guard = state.engine.lock().await;
+        guard.as_ref().map(|h| (h.port, h.api_key.clone()))
+    };
+    if let Some((port, api_key)) = running {
+        if !busy_models(port, &api_key).await.is_empty() {
+            state.end_restart().await;
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Lets requests through again. Safe to call without a restart in progress.
+#[tauri::command]
+pub async fn end_engine_restart(state: State<'_, Arc<LlamacppState>>) -> Result<(), String> {
+    state.end_restart().await;
+    Ok(())
 }
 
 /// Drops saved state without a worker, by editing the directory in this
@@ -473,7 +584,7 @@ pub async fn erase_thread_slot_state(
         body.insert("model".into(), serde_json::Value::String(m));
     }
     let body = serde_json::Value::Object(body);
-    let client = reqwest::Client::new();
+    let client = worker::loopback_client();
     let resp = client
         .post(format!("http://127.0.0.1:{port}/slots/state/erase"))
         .bearer_auth(&api_key)
@@ -529,9 +640,9 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.5.0`.
+    /// llama.cpp's own version, e.g. `0.7.0`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b11146`.
+    /// The upstream build tag the source was taken from, e.g. `b11669`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.
@@ -574,6 +685,22 @@ mod tests {
         assert_eq!(a.len(), 64, "32 bytes hex-encoded");
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b, "two keys must not collide");
+    }
+
+    // The UI shows an engine error from its code, and recovers the code from the
+    // message text, so the wrong-processor failure has to cross as that JSON.
+    // Any other spawn failure keeps its plain text.
+    #[test]
+    fn a_wrong_processor_reaches_the_ui_as_its_own_code() {
+        let text = worker_error_string(worker::WorkerError::WrongArchitecture(
+            "Bad CPU type in executable (os error 86)".into(),
+        ));
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["code"], "UNSUPPORTED_CPU");
+        assert_eq!(json["details"], "Bad CPU type in executable (os error 86)");
+
+        let plain = worker_error_string(worker::WorkerError::Spawn("no such file".into()));
+        assert_eq!(plain, "could not start jan-llama-worker: no such file");
     }
 
     // resolve_worker_exe now needs an AppHandle for the bundle lookup, so the

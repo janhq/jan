@@ -2,6 +2,8 @@
   "limitedSupport": "This provider may not be fully supported. Capabilities (tools, vision, audio) are not auto-detected - add models manually and configure capabilities per model.",
   "mlxExperimental": "MLX support is experimental. Embeddings are unavailable, the reasoning toggle is not yet wired through, and some newer model architectures may fail to load. Report issues on GitHub so we can prioritize them.",
   "engineBundled": "The inference engine is built into Jan, so there is nothing to download or update separately. Quote this version when reporting a model that fails to load.",
+  "engineOtherVersion": "Need a different llama.cpp version? Run your own llama-server and add it as a custom OpenAI-compatible provider.",
+  "engineOtherVersionLink": "How to",
   "engineReleaseNotes": "Release notes",
   "engineBuild": "Build",
   "engineCommit": "Commit",

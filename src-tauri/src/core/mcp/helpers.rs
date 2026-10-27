@@ -444,8 +444,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                  connecting over Streamable HTTP instead"
             );
         }
-        let handler =
-            JanClientHandler::new(client_info("Jan Streamable Client"), name.clone(), app.clone());
+        let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
 
         let client = match authorized {
             Some(c) => serve_http(c, &url, handler).await,
@@ -585,10 +584,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 pids.insert(name.clone(), pid);
             }
 
-            // ClientInfo::default() is exactly what the previous `()` handler
-            // sent on initialize, so the handshake is unchanged.
-            let handler =
-                JanClientHandler::new(ClientInfo::default(), name.clone(), app.clone());
+            let handler = JanClientHandler::new(jan_client_info(), name.clone(), app.clone());
             match handler.serve(process).await {
                 Ok(server) => break (server, stderr),
                 Err(e) => {
@@ -784,10 +780,14 @@ fn header_map(headers: &serde_json::Map<String, Value>) -> reqwest13::header::He
     map
 }
 
-fn client_info(label: &str) -> ClientInfo {
+/// What every MCP server sees in `initialize.clientInfo`: Jan and its app
+/// version. Servers use it for logs, audit and per-client policy, so leaving
+/// the `rmcp` crate default would make Jan indistinguishable from any other
+/// client built on it.
+pub(crate) fn jan_client_info() -> ClientInfo {
     ClientInfo::new(
         ClientCapabilities::default(),
-        Implementation::new(label, "0.0.1"),
+        Implementation::new("Jan", env!("CARGO_PKG_VERSION")),
     )
 }
 

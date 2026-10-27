@@ -155,6 +155,58 @@ pub fn resolve_path(project_root: &Path, scratch: Option<&Path>, raw: &str) -> P
     }
 }
 
+/// Why `name` cannot safely be a file name on Windows, or `None` if it can.
+///
+/// The tools address files through a `\\?\` path (the project root is one), and
+/// Windows skips its name normalisation for those. A name Win32 would have
+/// rewritten is then created exactly as given: `aux` and `con.txt` are
+/// reserved device names and `name.` loses its dot, so every ordinary Windows
+/// tool (PowerShell, Explorer, `del`) reports the path as not found, and a
+/// `:` addresses an NTFS alternate data stream that no directory listing shows.
+/// The tool would still report success, so the model believes the file exists.
+///
+/// Platform-independent on purpose, so it is testable anywhere; callers gate it
+/// with [`refuse_windows_name`].
+pub fn windows_name_problem(name: &str) -> Option<&'static str> {
+    if name.contains(':') {
+        return Some("contains ':' (an NTFS alternate data stream, not a file)");
+    }
+    if name.ends_with('.') || name.ends_with(' ') {
+        return Some("ends with a dot or a space, which Windows silently strips");
+    }
+    // Reserved with or without an extension: `con.txt` is as reserved as `con`.
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    // COM1-9 and LPT1-9; Windows also reserves the superscript digits.
+    let numbered = ["COM", "LPT"].iter().any(|prefix| {
+        let mut digit = upper.strip_prefix(prefix).into_iter().flat_map(str::chars);
+        matches!(
+            (digit.next(), digit.next()),
+            (Some('1'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+        )
+    });
+    let reserved =
+        numbered || matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$");
+    reserved.then_some("is a reserved Windows device name")
+}
+
+/// On Windows, the first component of `raw` that is not a valid file name, with
+/// the reason; `None` elsewhere and for a path that is fine. Drive and root
+/// components are not names, and `.`/`..` are resolved before they reach disk.
+pub fn refuse_windows_name(raw: &str) -> Option<(String, &'static str)> {
+    if !cfg!(windows) {
+        return None;
+    }
+    use std::path::Component;
+    Path::new(raw).components().find_map(|c| match c {
+        Component::Normal(name) => {
+            let name = name.to_string_lossy();
+            windows_name_problem(&name).map(|why| (name.into_owned(), why))
+        }
+        _ => None,
+    })
+}
+
 /// The spelling to hand a tool-facing path back to the model: the inverse of
 /// [`resolve_path`]. On Linux a file inside the scratch is named `/tmp/...`, the
 /// one name that works from both the filesystem tools (which remap it back) and
@@ -329,8 +381,8 @@ pub fn hidden_under(base: &Path, hidden: &Path) -> Option<PathBuf> {
 /// override their approval. An unresolvable path fails closed.
 ///
 /// Still a re-check, not a guarantee: a swap landing between this call and the
-/// open is not covered. That needs descriptor-relative no-follow opens
-/// (`openat2` with `RESOLVE_BENEATH`, reparse-point handling on Windows).
+/// open is not covered. A handler that writes resolves once with [`landing`]
+/// and opens the result through [`super::nofollow`], which closes that window.
 pub fn symlink_escapes_root(project_root: &Path, scratch: Option<&Path>, target: &Path) -> bool {
     symlink_escapes_any_root(project_root, scratch, &[], target)
 }
@@ -347,64 +399,166 @@ pub fn symlink_escapes_any_root(
     read_roots: &[PathBuf],
     target: &Path,
 ) -> bool {
-    let mut roots = vec![project_root];
+    matches!(landing(project_root, scratch, read_roots, target), Landing::Escapes)
+}
+
+/// Where a handler's target really lands, see [`landing`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum Landing {
+    /// Under a trusted root, and resolves (every link followed) inside one.
+    Inside(PathBuf),
+    /// Claims a trusted root but resolves outside all of them, or cannot be
+    /// resolved at all: refuse.
+    Escapes,
+    /// Not lexically under any root: an escape the gate already put to the
+    /// user. Carries the real path when it resolves.
+    Outside(Option<PathBuf>),
+}
+
+/// Resolve `target` once and classify it against the trusted roots.
+///
+/// A writer must open exactly the path this returns rather than re-resolving
+/// `target`: two resolutions leave room for a link swapped in between to send
+/// the second one somewhere the first was never checked against.
+pub fn landing(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    roots: &[PathBuf],
+    target: &Path,
+) -> Landing {
+    let mut all = vec![project_root];
     if let Some(s) = scratch {
-        roots.push(s);
+        all.push(s);
     }
-    for r in read_roots {
-        roots.push(r.as_path());
+    for r in roots {
+        all.push(r.as_path());
     }
     let normalized = lexical_normalize(target);
-    if !roots
+    if !all
         .iter()
         .any(|r| normalized.starts_with(lexical_normalize(r)))
     {
-        return false;
+        return Landing::Outside(canonicalize_lenient(&normalized).ok());
     }
     let Ok(resolved) = canonicalize_lenient(&normalized) else {
-        return true;
+        return Landing::Escapes;
     };
-    !roots
+    if all
         .iter()
         .filter_map(|r| r.canonicalize().ok())
         .any(|r| resolved.starts_with(r))
+    {
+        Landing::Inside(resolved)
+    } else {
+        Landing::Escapes
+    }
 }
 
-/// Canonicalize a path that may not fully exist: canonicalize the deepest
-/// existing ancestor, then re-append the non-existing tail (resolving `.`/`..`
-/// lexically). Errors only if no ancestor up to root exists.
+/// Canonicalize a path that may not fully exist, resolving `.`/`..` lexically
+/// past the point where the path stops existing.
+///
+/// Walked one component at a time so every symlink on the way is followed,
+/// including a dangling one: `canonicalize` fails on a link whose target does
+/// not exist, yet a write through it creates that target. Re-appending such a
+/// link by name would keep `notes.md -> ~/.ssh/authorized_keys` inside the
+/// project. A link's target is spliced in place of its name instead, relative
+/// targets against the link's own directory, as the kernel does. Too many hops
+/// (a cycle) is an error, so callers fail closed.
 fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+    // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
+    const MAX_HOPS: usize = 40;
     if let Ok(p) = path.canonicalize() {
         return Ok(p);
     }
-    let mut existing = path;
-    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
-    loop {
-        match existing.parent() {
-            Some(parent) => {
-                if let Some(name) = existing.file_name() {
-                    tail.push(name);
-                }
-                existing = parent;
-                if let Ok(base) = existing.canonicalize() {
-                    let mut result = base;
-                    for comp in tail.iter().rev() {
-                        if *comp == std::ffi::OsStr::new(".") {
-                            continue;
-                        }
-                        if *comp == std::ffi::OsStr::new("..") {
-                            result.pop();
-                        } else {
-                            result.push(comp);
-                        }
-                    }
-                    return Ok(result);
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("current dir: {e}"))?
+            .join(path)
+    };
+    // Components still to resolve, next one last so a link splices onto the end.
+    let mut pending: Vec<std::ffi::OsString> =
+        abs.components().rev().map(|c| c.as_os_str().to_owned()).collect();
+    let mut resolved = PathBuf::new();
+    let mut hops = 0;
+    while let Some(raw) = pending.pop() {
+        match Path::new(&raw).components().next() {
+            Some(Component::Prefix(_) | Component::RootDir) => {
+                resolved.push(&raw);
+                if let Ok(root) = resolved.canonicalize() {
+                    resolved = root;
                 }
             }
-            None => {
-                return Err(format!("no existing ancestor for {:?}", path));
+            Some(Component::ParentDir) => {
+                resolved.pop();
             }
+            Some(Component::Normal(name)) => {
+                let candidate = resolved.join(name);
+                if let Ok(real) = candidate.canonicalize() {
+                    resolved = real;
+                    continue;
+                }
+                let is_link = std::fs::symlink_metadata(&candidate)
+                    .is_ok_and(|m| m.file_type().is_symlink());
+                if !is_link {
+                    // Does not exist: nothing below it can be a link either way.
+                    resolved = candidate;
+                    continue;
+                }
+                hops += 1;
+                if hops > MAX_HOPS {
+                    return Err(format!("too many levels of symbolic links in {:?}", path));
+                }
+                let target = std::fs::read_link(&candidate)
+                    .map_err(|e| format!("read link {:?}: {e}", candidate))?;
+                // An absolute target restarts from its own root when its
+                // RootDir component is popped; a relative one stays here.
+                pending.extend(target.components().rev().map(|c| c.as_os_str().to_owned()));
+            }
+            Some(Component::CurDir) | None => {}
         }
+    }
+    Ok(resolved)
+}
+
+#[cfg(test)]
+mod windows_name_tests {
+    use super::windows_name_problem as problem;
+
+    #[test]
+    fn reserved_device_names_are_refused_with_or_without_an_extension() {
+        for n in [
+            "con", "CON", "Prn", "aux", "NUL", "con.txt", "aux.tar.gz", "nul.", "CONIN$", "CONOUT$",
+            "com1", "COM9", "lpt1", "LPT9", "com1.log", "com\u{b9}", "lpt\u{b2}.txt", "aux .txt",
+        ] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn names_that_only_resemble_reserved_ones_are_fine() {
+        for n in [
+            "auxiliary", "console.log", "com0", "com10", "lpt0", "com", "lpt", "conf", "nulls.txt",
+            "a.con", "my.aux", ".aux", "x.nul.y", "readme.md", ".gitignore", "a.b.c", "x y.txt",
+        ] {
+            assert_eq!(problem(n), None, "{n:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn trailing_dot_or_space_and_colon_are_refused() {
+        for n in ["name.", "name ", "name.txt.", "a.txt:stream", "a.txt::$DATA", "C:x"] {
+            assert!(problem(n).is_some(), "{n:?} should be refused");
+        }
+    }
+
+    #[test]
+    fn the_refusal_gives_a_reason_the_model_can_act_on() {
+        assert!(problem("aux").unwrap().contains("reserved"));
+        assert!(problem("a:b").unwrap().contains("stream"));
+        assert!(problem("a.").unwrap().contains("dot or a space"));
     }
 }
 
@@ -617,6 +771,59 @@ mod tests {
         assert_eq!(escapes_project(&root, None, "link/secret.txt"), Ok(true));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A dangling link (its target does not exist yet) is still a link: a write
+    /// through it creates the target. Resolving only the deepest existing
+    /// ancestor and re-appending the rest lexically kept the in-project name,
+    /// so `notes.md -> ~/.ssh/authorized_keys` passed as an in-project write.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_out_of_the_project_escapes() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::os::unix::fs::symlink(outside.join("authorized_keys"), root.join("notes.md"))
+            .unwrap();
+        // A dangling directory link: the tail hangs off a link that resolves nowhere.
+        std::os::unix::fs::symlink(outside.join("no-such-dir"), root.join("d")).unwrap();
+        // Relative targets resolve against the link's own directory.
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        let rel = Path::new("../..").join(outside.file_name().unwrap()).join("rel.txt");
+        std::os::unix::fs::symlink(&rel, root.join("sub/rel.md")).unwrap();
+
+        assert_eq!(escapes_project(&root, None, "notes.md"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "d/x.txt"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "sub/rel.md"), Ok(true));
+        assert_eq!(escapes_project(&root, None, "missing/../notes.md"), Ok(true));
+        assert_eq!(escapes_write_roots(&root, None, &[], "notes.md"), Ok(true));
+        assert!(symlink_escapes_root(&root, None, &root.join("notes.md")));
+        assert!(symlink_escapes_root(&root, None, &root.join("d/x.txt")));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A dangling link that stays inside the project is an ordinary write.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_inside_the_project_does_not_escape() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::os::unix::fs::symlink("docs/README.md", root.join("README.md")).unwrap();
+        assert_eq!(escapes_project(&root, None, "README.md"), Ok(false));
+        assert!(!symlink_escapes_root(&root, None, &root.join("README.md")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A link cycle resolves to nothing: fail closed rather than loop.
+    #[cfg(unix)]
+    #[test]
+    fn symlink_cycle_fails_closed() {
+        let root = unique_root();
+        std::os::unix::fs::symlink("b", root.join("a")).unwrap();
+        std::os::unix::fs::symlink("a", root.join("b")).unwrap();
+        assert!(escapes_project(&root, None, "a").is_err());
+        assert!(symlink_escapes_root(&root, None, &root.join("a")));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The re-check flags only symlinks that *leave* the trusted roots. An

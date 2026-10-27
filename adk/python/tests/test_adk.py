@@ -24,7 +24,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jan_adk import PROTOCOL_VERSION, HostTool, JanRpcError, JanRuntime, JanRuntimeError  # noqa: E402
-from tests.harness import Provider, Scratch, holding, prose, streamed, tool_call  # noqa: E402
+from tests.harness import Provider, Scratch, holding, prose, settle, streamed, tool_call  # noqa: E402
 
 BIN = os.environ.get("JAN_BIN")
 
@@ -101,6 +101,7 @@ class AdkTest(unittest.TestCase):
             self.assertTrue(any(e["type"] == "step" for e in events))
             # The session hears what the turn hears, so a host can observe a run
             # it is not the one iterating.
+            settle(runtime)
             self.assertIn("token", seen)
 
             self.assertEqual(session.get_tools()["tools"], [])
@@ -269,6 +270,7 @@ class AdkTest(unittest.TestCase):
             turn = session.prompt("what is on the desk?")
             list(turn)
             self.assertEqual(turn.result().stop_reason, "completed")
+            settle(runtime)
 
             # The host is told the name it declared, not the `host__` name the
             # model calls, and a read never asks permission.
@@ -462,6 +464,352 @@ class AdkTest(unittest.TestCase):
         self.assertEqual(code, 0)
         with self.assertRaises(JanRuntimeError):
             turn.result(timeout=5)
+
+    # -- host tools, inputs, forks and resumes --------------------------------
+
+    def _echo(self, calls: list, label: str) -> HostTool:
+        def handler(args: Any, call: Any) -> Dict[str, str]:
+            calls.append(label)
+            return {"text": f"echoed by {label}: {args['text']}"}
+
+        return HostTool(name="echo", capability="read", handler=handler)
+
+    def _last_user(self, body: str) -> Dict[str, Any]:
+        return [message for message in json.loads(body)["messages"] if message["role"] == "user"][-1]
+
+    def test_a_host_tool_declared_with_a_padded_name_is_still_called(self) -> None:
+        scratch = self.prepare([tool_call("host__camera", {}), prose("seen")])
+        calls: list[str] = []
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[HostTool(name=" camera ", capability="read", handler=lambda args, call: (calls.append("camera") or {"text": "CAMERA_RESULT"}))],
+            )
+            self.assertEqual(session.tools, ["host__camera"])
+
+            turn = session.prompt("look")
+            turn.result(timeout=4)
+            # Advertised means callable: the handler ran, and the model got its
+            # answer rather than "no host tool named".
+            self.assertEqual(calls, ["camera"])
+            self.assertIn("CAMERA_RESULT", self.provider.bodies[1])
+            self.assertNotIn("no host tool named", self.provider.bodies[1])
+
+            with self.assertRaises(TypeError):
+                session.set_tools([HostTool(name="   ", handler=lambda args, call: "")])
+
+    def test_a_host_result_that_cannot_be_shaped_is_answered_as_an_error_and_the_turn_goes_on(self) -> None:
+        scratch = self.prepare([tool_call("host__camera_observe", {}), prose("no frame")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[
+                    HostTool(
+                        name="camera_observe",
+                        capability="read",
+                        # The handler succeeds; formatting its result is what fails.
+                        handler=lambda args, call: {"text": "a frame", "images": [{"path": str(scratch.root / "missing-image.png")}]},
+                    )
+                ],
+            )
+            turn = session.prompt("look")
+            self.assertEqual(turn.result(timeout=4).stop_reason, "completed")
+            self.assertEqual(len(self.provider.bodies), 2, "the model was told, so it was asked again")
+            self.assertRegex(self.provider.bodies[1], r"(?i)no such file")
+
+            # The session is still usable afterwards.
+            again = session.prompt("and now?")
+            self.assertEqual(again.result(timeout=4).stop_reason, "completed")
+
+    def test_structured_prompt_inputs_reach_the_model_as_content_parts(self) -> None:
+        scratch = self.prepare([prose("seen")])
+        png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AARAAB/wDcH1jPAAAAAElFTkSuQmCC"
+        with scratch.start() as runtime:
+            session = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+
+            session.prompt([{"type": "text", "text": "hello parts"}]).result(timeout=4)
+            self.assertIn("hello parts", json.dumps(self._last_user(self.provider.bodies[0])["content"]))
+
+            image = {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png}"}}
+            session.prompt([{"type": "text", "text": "what is this?"}, image]).result(timeout=4)
+            mixed = self._last_user(self.provider.bodies[1])["content"]
+            self.assertIsInstance(mixed, list)
+            self.assertIn("what is this?", next(p for p in mixed if p["type"] == "text")["text"])
+            self.assertEqual(next(p for p in mixed if p["type"] == "image_url")["image_url"]["url"], image["image_url"]["url"])
+
+            # The documented record form is the same parts.
+            session.prompt({"content": [{"type": "text", "text": "record form"}]}).result(timeout=4)
+            self.assertIn("record form", json.dumps(self._last_user(self.provider.bodies[2])["content"]))
+
+            # A refusal from the runtime stays an answer the caller can read.
+            with self.assertRaises(JanRpcError):
+                session.prompt([{"type": "audio", "data": "x"}])
+
+    def test_a_fork_answers_for_its_sources_host_tools(self) -> None:
+        scratch = self.prepare([tool_call("host__echo", {"text": "hi"}), prose("done")])
+        calls: list[str] = []
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[self._echo(calls, "source")],
+            )
+            fork = session.fork()
+            self.assertEqual(fork.tools, ["host__echo"])
+
+            fork.prompt("echo hi").result(timeout=4)
+            self.assertEqual(calls, ["source"])
+            self.assertIn("echoed by source: hi", self.provider.bodies[1])
+            self.assertNotIn("no host tool named", self.provider.bodies[1])
+
+    def test_a_fork_given_its_own_tools_answers_with_those_and_one_given_none_has_none(self) -> None:
+        scratch = self.prepare([tool_call("host__echo", {"text": "hi"}), prose("done")])
+        calls: list[str] = []
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[self._echo(calls, "source")],
+            )
+            bare = session.fork(tools=[])
+            self.assertEqual(bare.tools, [], "nothing is advertised that nothing can run")
+
+            own = session.fork(tools=[self._echo(calls, "fork")])
+            own.prompt("echo hi").result(timeout=4)
+            self.assertEqual(calls, ["fork"], "the source's handler is not used by a fork that replaced it")
+            self.assertIn("echoed by fork: hi", self.provider.bodies[1])
+
+    def test_resuming_an_open_session_returns_it_and_its_turn_settles(self) -> None:
+        scratch = self.prepare([holding("still here")])
+        with scratch.start() as runtime:
+            original = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+            turn = original.prompt("hold")
+            for event in turn:
+                if event["type"] == "token":
+                    break
+
+            resumed = runtime.resume_session(original.id)
+            self.assertIs(resumed, original, "the session this client already holds, not a second object for the id")
+
+            resumed.interrupt()
+            self.assertEqual(turn.result(timeout=4).stop_reason, "interrupted")
+
+    def test_resuming_an_open_session_does_not_orphan_its_turn_when_the_runtime_closes(self) -> None:
+        scratch = self.prepare([holding("still here")])
+        runtime = scratch.start()
+        original = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+        turn = original.prompt("hold")
+        for event in turn:
+            if event["type"] == "token":
+                break
+        runtime.resume_session(original.id)
+
+        runtime.close()
+        # The runtime's own failure, not `result()` giving up on a turn that was
+        # never settled: that is also a JanRuntimeError, so the message tells
+        # the two apart.
+        with self.assertRaises(JanRuntimeError) as failed:
+            turn.result(timeout=4)
+        self.assertNotIn("did not finish", str(failed.exception))
+
+    def test_a_resumed_session_keeps_the_handlers_of_its_host_tools(self) -> None:
+        scratch = self.prepare([tool_call("host__echo", {"text": "hi"}), prose("done")])
+        calls: list[str] = []
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[self._echo(calls, "source")],
+            )
+            resumed = runtime.resume_session(session.id)
+            resumed.prompt("echo hi").result(timeout=4)
+            self.assertEqual(calls, ["source"])
+            self.assertIn("echoed by source: hi", self.provider.bodies[1])
+
+    def test_a_tool_result_the_runtime_refuses_is_answered_as_an_error_and_the_turn_goes_on(self) -> None:
+        scratch = self.prepare([tool_call("host__camera", {}), prose("no frame")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                # Shapes cleanly here, and the runtime refuses the part: the
+                # request is still pending on its side, so a swallowed refusal
+                # parks the turn.
+                tools=[HostTool(name="camera", capability="read", handler=lambda args, call: {"parts": [{"type": "audio", "data": "x"}]})],
+            )
+            turn = session.prompt("look")
+            self.assertEqual(turn.result(timeout=4).stop_reason, "completed")
+            self.assertEqual(len(self.provider.bodies), 2, "the model was told, so it was asked again")
+            self.assertIn("refused this tool result", self.provider.bodies[1])
+
+    def _fork_with_a_tools_change(self, change_first: bool) -> None:
+        import threading
+
+        scratch = self.prepare([tool_call("host__echo", {"text": "hi"}), prose("done")])
+        calls: list[str] = []
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[self._echo(calls, "a")],
+            )
+            made: list = []
+            request = runtime.request
+
+            # The first call holds on after the runtime has answered it, so the
+            # second starts inside the window between the runtime's read and the
+            # SDK's: the order is the test's, not the scheduler's.
+            held = "session/tools/set" if change_first else "session/fork"
+
+            def slow(method, params=None, timeout=None):
+                answer = request(method, params, timeout)
+                if method == held:
+                    time.sleep(0.4)
+                return answer
+
+            runtime.request = slow
+            change = threading.Thread(target=lambda: session.set_tools([self._echo(calls, "b")]))
+            fork = threading.Thread(target=lambda: made.append(session.fork()))
+            first, second = (change, fork) if change_first else (fork, change)
+            first.start()
+            time.sleep(0.1)
+            second.start()
+            first.join(10)
+            second.join(10)
+            expected = "b" if change_first else "a"
+            self.assertEqual(made[0].tools, ["host__echo"])
+            made[0].prompt("echo hi").result(timeout=4)
+            self.assertEqual(calls, [expected], "the fork ran the handler for the tools the runtime gave it")
+            self.assertIn(f"echoed by {expected}: hi", self.provider.bodies[1])
+
+    def test_a_fork_made_with_a_tools_change_keeps_matching_handlers_fork_first(self) -> None:
+        self._fork_with_a_tools_change(change_first=False)
+
+    def test_a_fork_made_with_a_tools_change_keeps_matching_handlers_change_first(self) -> None:
+        self._fork_with_a_tools_change(change_first=True)
+
+    def test_a_turn_started_as_the_runtime_fails_is_failed_not_left_pending(self) -> None:
+        scratch = self.prepare([prose("hi")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+            request = runtime.request
+
+            # The runtime fails between the `turn/start` reply and `prompt()`
+            # resuming with it.
+            def request_then_fail(method, params=None, timeout=None):
+                answer = request(method, params, timeout)
+                if method == "turn/start":
+                    runtime._fail(JanRuntimeError("QA_FAILS_FIRST"))
+                return answer
+
+            runtime.request = request_then_fail
+            turn = session.prompt("hi")
+            with self.assertRaises(JanRuntimeError) as failed:
+                turn.result(timeout=4)
+            self.assertIn("QA_FAILS_FIRST", str(failed.exception))
+
+    def test_a_terminal_record_already_received_wins_over_a_runtime_failure(self) -> None:
+        scratch = self.prepare([prose("hi")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+            request = runtime.request
+
+            # The runtime sent the turn's terminal record, and then failed, before
+            # `prompt()` resumed with the reply.
+            def answered_then_closed(method, params=None, timeout=None):
+                answer = request(method, params, timeout)
+                if method == "turn/start":
+                    session._complete({"turnId": answer["turnId"], "stopReason": "interrupted"})
+                    runtime._fail(JanRuntimeError("QA_CLOSED_AFTER"))
+                return answer
+
+            runtime.request = answered_then_closed
+            self.assertEqual(session.prompt("hi").result(timeout=4).stop_reason, "interrupted")
+
+    def test_a_handler_that_raises_an_unprintable_error_is_still_answered(self) -> None:
+        class Unprintable(Exception):
+            def __str__(self) -> str:
+                raise ValueError("no text for this")
+
+        def handler(args: Any, call: Any) -> None:
+            raise Unprintable()
+
+        scratch = self.prepare([tool_call("host__camera", {}), prose("no frame")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[HostTool(name="camera", capability="read", handler=handler)],
+            )
+            self.assertEqual(session.prompt("look").result(timeout=4).stop_reason, "completed")
+            self.assertIn("Unprintable", self.provider.bodies[1])
+
+    def test_a_tool_result_that_cannot_be_encoded_is_answered_as_an_error_and_the_turn_goes_on(self) -> None:
+        from pathlib import Path
+
+        scratch = self.prepare([tool_call("host__camera", {}), prose("no frame")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                # Shapes cleanly, and cannot be written as JSON: nothing reaches
+                # the runtime, which is still waiting on the request.
+                tools=[HostTool(name="camera", capability="read", handler=lambda args, call: {"text": "ok", "details": {"path": Path("/tmp/frame.png")}})],
+            )
+            turn = session.prompt("look")
+            self.assertEqual(turn.result(timeout=4).stop_reason, "completed")
+            self.assertEqual(len(self.provider.bodies), 2, "the model was told, so it was asked again")
+            self.assertIn("could not be encoded", self.provider.bodies[1])
+
+    def test_a_tool_result_whose_encoding_raises_another_error_is_answered_as_an_error(self) -> None:
+        class Unencodable(dict):
+            def items(self):  # the JSON encoder reads a dict subclass through this
+                raise RuntimeError("no items for you")
+
+        scratch = self.prepare([tool_call("host__camera", {}), prose("no frame")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                # Encoding this raises a RuntimeError, which is neither a TypeError
+                # nor a ValueError, on every Python version: any failure to send the
+                # answer is itself answered.
+                tools=[HostTool(name="camera", capability="read", handler=lambda args, call: {"text": "ok", "details": {"value": Unencodable(a=1)}})],
+            )
+            self.assertEqual(session.prompt("look").result(timeout=4).stop_reason, "completed")
+            self.assertIn("could not be encoded: no items for you", self.provider.bodies[1])
 
     def _tmp(self) -> str:
         import tempfile

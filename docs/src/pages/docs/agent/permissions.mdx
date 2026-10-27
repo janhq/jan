@@ -155,6 +155,54 @@ permanently would leave no way to run a single command without it.
 `backend` is the confinement that *would* be used. `none` means none is available on this machine -
 with `enabled: true` that combination is what withholds `shell` entirely.
 
+### Running a command outside the sandbox
+
+Some everyday commands write outside the project: `cargo build` fills `~/.cargo/registry`, and
+`pip`, `npm` and `go` write their caches under your home directory. Inside the sandbox these fail
+with a read-only file system error. When that happens to a command the task needs, the agent can
+ask to rerun it **outside** the sandbox. It sets `escalate` on the shell call and gives a one-line
+reason, and you are asked:
+
+```
+shell wants exec outside the sandbox
+$ cargo build
+why cargo needs to write ~/.cargo/registry to fetch crates
+> Allow once
+  Deny
+```
+
+An approved command runs with your own access, like a command you typed. The minimal environment
+(below) still applies. Escalation is deliberately stricter than every other prompt:
+
+- **It is never auto-approved.** Running without `--safe` approves tools that run *inside* the
+  sandbox, not a request to leave it, so the prompt still appears.
+- **There is no "allow always".** Each escalation is answered on its own.
+- **Where nobody can answer, it is refused.** That covers a headless `jan cli agent run` reading
+  from a pipe or CI, and a subagent whose parent cannot be asked. The command does not run at all,
+  and the model is told how you could enable it.
+- **The desktop never escalates.** Its chat sandbox is throwaway by design.
+- An escalated command runs outside the sandbox, so `~/.jan` is **not** hidden from it. A command
+  that names `~/.jan` outright is refused before anyone is asked, but that check only reads the
+  command text: a command that reaches the folder indirectly (`cd ~ && cat .jan/config.toml`)
+  gets past it, and could read your provider keys. Read the command before you approve it.
+
+For unattended runs that accept the risk, allow escalation without a prompt. Nobody then reads
+the command, so any escalated command can reach everything you can, `~/.jan` included:
+
+```bash
+jan cli agent run --sandbox --allow-escalation "..."
+```
+
+```toml
+# ~/.jan/projects/<slug>/agent.toml
+[tools]
+allow_escalation = true
+```
+
+This drops only the escalation prompt. With `--safe`, a shell command still needs your approval
+whether or not it escalates, so you are asked once (about running it outside the sandbox) rather
+than not at all. Adding `escalate` never gets a command past an approval it would otherwise need.
+
 ### Which shell runs commands
 
 On macOS and Linux the `shell` tool runs `bash` (or `sh` where there is none). On Windows it runs

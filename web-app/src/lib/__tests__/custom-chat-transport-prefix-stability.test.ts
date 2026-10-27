@@ -1,5 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import type { UIMessage } from '@ai-sdk/react'
+import type * as ProviderCaps from '@/lib/providerCaps'
 
 // Capture every streamText({...}) call so we can compare the prompt prefix
 // (system + tools + prior model messages) across consecutive turns.
@@ -13,6 +14,7 @@ const h = vi.hoisted(() => ({
   assistantParameters: null as Record<string, unknown> | null,
   providerId: 'openai',
   serviceHub: null as unknown,
+  predefinedRemote: false,
 }))
 
 const mcpService = {
@@ -122,8 +124,9 @@ vi.mock('@/lib/mcp-router-model-filter', () => ({
 vi.mock('@/lib/reasoningProviderOptions', () => ({
   buildReasoningProviderOptions: () => undefined,
 }))
-vi.mock('@/lib/providerCaps', () => ({
-  isPredefinedRemoteProvider: () => false,
+vi.mock('@/lib/providerCaps', async (importOriginal) => ({
+  ...(await importOriginal<typeof ProviderCaps>()),
+  isPredefinedRemoteProvider: () => h.predefinedRemote,
   getProviderApiType: () => 'openai',
 }))
 vi.mock('../model-factory', () => ({
@@ -378,6 +381,42 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
   })
 })
 
+// Anthropic falls back to the model's maximum max_tokens when no cap reaches
+// the SDK, and counts it against the context window (janhq/jan#9227).
+describe('CustomChatTransport output-token cap', () => {
+  beforeEach(() => {
+    streamTextCalls.length = 0
+    h.providerId = 'anthropic'
+    h.predefinedRemote = true
+    provider.provider = 'anthropic'
+    provider.settings = []
+    selectedModel.id = 'gpt'
+    h.getRelevantTools.mockReset()
+    h.getRelevantTools.mockResolvedValue([])
+  })
+
+  it('passes the assistant cap to streamText as maxOutputTokens for a predefined remote provider', async () => {
+    h.assistantParameters = { max_output_tokens: '4096' }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0].maxOutputTokens).toBe(4096)
+    expect(streamTextCalls[0]).not.toHaveProperty('maxTokens')
+  })
+
+  it('omits maxOutputTokens when the cap is 0 ("no cap") so the SDK does not reject it', async () => {
+    h.assistantParameters = { max_output_tokens: 0 }
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, [user('u1', 'hello')]))
+
+    expect(streamTextCalls[0]).not.toHaveProperty('maxOutputTokens')
+  })
+
+  afterAll(() => {
+    h.predefinedRemote = false
+  })
+})
+
 it('keeps a Cowork run on its chosen model when the viewed model changes between steps', async () => {
   provider.provider = 'openai'
   h.providerId = 'openai'
@@ -397,3 +436,58 @@ it('keeps a Cowork run on its chosen model when the viewed model changes between
   await drain(await send(transport, [user('next', 'Next step')]))
   expect(vi.mocked(ModelFactory.createModel).mock.calls.map(([id]) => id)).toEqual(['gpt', 'gpt'])
 })
+
+// The filesystem server's `read_media_file` result, stored as its MCP content
+// array. Sent as-is, the SDK stringifies it and the model gets the base64 as
+// text; the transport must turn it into a tool image first.
+const mcpImageTurn = (): UIMessage[] => [
+  user('u1', 'look at the frame'),
+  {
+    id: 'a1',
+    role: 'assistant',
+    parts: [
+      {
+        type: 'tool-read_media_file',
+        toolCallId: 'c1',
+        state: 'output-available',
+        input: { path: '/frames/a.png' },
+        output: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }],
+      },
+    ],
+  } as unknown as UIMessage,
+]
+
+// OpenAI-compatible providers get a sentinel, which the request fetch decodes
+// into an `image_url` part on the `role: tool` message.
+it('sends an MCP image result to an OpenAI-compatible provider as a sentinel', async () => {
+  streamTextCalls.length = 0
+  provider.provider = 'groq'
+  h.providerId = 'groq'
+  selectedModel.id = 'gpt'
+  selectedModel.capabilities = ['tools', 'vision']
+  const transport = new CustomChatTransport('you are jan', 'thread-1')
+  await drain(await send(transport, mcpImageTurn()))
+  const sent = JSON.stringify(streamTextCalls[0].messages)
+  expect(sent).toContain('__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=')
+  expect(sent).not.toContain('mimeType')
+})
+
+// Anthropic, Gemini and OpenAI Responses build their own request, so the
+// image must reach the SDK as structured tool output.
+it.each(['anthropic', 'google', 'openai'])(
+  'sends an MCP image result to %s as an image-data tool output',
+  async (name) => {
+    streamTextCalls.length = 0
+    provider.provider = name
+    h.providerId = name
+    selectedModel.id = 'gpt'
+    selectedModel.capabilities = ['tools', 'vision']
+    const transport = new CustomChatTransport('you are jan', 'thread-1')
+    await drain(await send(transport, mcpImageTurn()))
+    const sent = JSON.stringify(streamTextCalls[0].messages)
+    expect(sent).toContain(
+      '"type":"image-data","mediaType":"image/png","data":"iVBORw0KGgo="'
+    )
+    expect(sent).not.toContain('__JAN_TOOL_IMAGE__')
+  }
+)

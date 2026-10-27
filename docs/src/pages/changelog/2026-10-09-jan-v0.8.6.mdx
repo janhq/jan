@@ -1,0 +1,45 @@
+---
+title: "Jan v0.8.6: AppImage, Turing GPU, MTP Speed & MCP Image Fixes"
+version: 0.8.6
+description: "Jan v0.8.6 is a hotfix for v0.8.5: the Linux AppImage no longer crashes on model load, NVIDIA Turing GPUs (GTX 16xx, RTX 20xx) run the CUDA engine again on older drivers, Qwen3.8 with MTP is fast again when Parallel Sequences is auto, and images returned by MCP tools reach the model as images."
+date: 2026-10-09
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.6: AppImage, Turing GPU, MTP Speed & MCP Image Fixes"
+  date="2026-10-09"
+/>
+
+# A hotfix for v0.8.5
+
+v0.8.6 fixes regressions reported after v0.8.5. Updating is recommended, especially on Linux with the AppImage and on older NVIDIA GPUs. Nothing changes in your data or settings.
+
+---
+
+# Fixes
+
+**The Linux AppImage crashed on every model load on some distributions.**
+
+The v0.8.5 AppImage bundled the build machine's Vulkan loader, which crashed on hosts with a different driver stack (reported on Arch). The AppImage now uses your system's Vulkan loader, and the build fails if a GPU loader is ever bundled again. ([#9173](https://github.com/janhq/jan/issues/9173))
+
+**NVIDIA Turing GPUs could not run the CUDA engine on older drivers.**
+
+On a GTX 16xx or RTX 20xx with a driver older than the R595 branch, loading a model on Windows or Linux failed with "the provided PTX was compiled with an unsupported toolchain". The bundled CUDA engine now carries native code for Turing, as the v0.8.4 backend did, so these cards no longer depend on the driver compiling it. RTX 30, 40 and 50 cards are unchanged. ([#9185](https://github.com/janhq/jan/issues/9185))
+
+**Qwen3.8 with MTP slowed down sharply after updating to v0.8.5.**
+
+With **Parallel Sequences** on auto (the v0.8.5 default), llama.cpp reserved four slots, and with MTP each slot holds extra state for draft rollback, about 600 MiB on a 27B model. On cards with around 12 GB that pushed the model into shared system memory and cut generation speed by up to 4x. A model with MTP now uses one slot when Parallel Sequences is auto; a value you set yourself is kept. ([#9183](https://github.com/janhq/jan/issues/9183))
+
+**Images returned by MCP tools now reach the model as images.**
+
+A tool that returns an image, such as the filesystem server's `read_media_file`, sent it to the model as base64 text that the model could not read and that could exceed a provider's input limit. It is now sent as an image to vision-capable models on local llama.cpp, OpenAI-compatible providers, Anthropic, Gemini and OpenAI Responses, and models without vision get a short note instead. Trimming a long conversation also counts an image as a fixed cost, so your question is no longer dropped. Thanks to [@cpius](https://github.com/cpius) for the original fix. ([#9188](https://github.com/janhq/jan/pull/9188))
+
+---
+
+# Also
+
+**A documented way to use a different llama.cpp version.**
+
+**Settings > Model Providers > Llama.cpp** now links to [using a different llama.cpp version](https://jan.ai/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version): run your own `llama-server` and add it as a custom provider. It is a workaround when the bundled engine misbehaves with a particular model.
