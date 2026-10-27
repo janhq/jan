@@ -27,25 +27,12 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 }
 
 /// The user-wide skill store root: `~/.jan` (skills live in its `skills/`,
-/// beside the user memory scope `~/.jan/memory`). Resolved through
-/// [`crate::core::agent::project::jan_home`] in production; test builds use a
-/// per-thread scratch home. `None` when there is no usable home directory.
+/// beside the user memory scope `~/.jan/memory`). Resolve through
+/// [`crate::core::agent::project::jan_home`] in every build so sandbox hiding
+/// and plugin install workers agree on the root. Unit tests use that resolver's
+/// shared process scratch home and must run serially when mutating user skills.
 pub(crate) fn user_store_root() -> Option<PathBuf> {
-    #[cfg(test)]
-    {
-        TEST_USER_STORE.with(|root| Some(root.path().to_path_buf()))
-    }
-    #[cfg(not(test))]
-    {
-        crate::core::agent::project::jan_home()
-    }
-}
-
-// Separate user fixtures even when cargo runs skill tests concurrently. Owned
-// scratch directories also prevent stale per-process fixtures after PID reuse.
-#[cfg(test)]
-thread_local! {
-    static TEST_USER_STORE: tempfile::TempDir = tempfile::tempdir().expect("test user skills");
+    crate::core::agent::project::jan_home()
 }
 
 /// `~/.jan/skills`, the user scope: skills visible from every project.
@@ -1009,18 +996,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn user_skill_fixtures_are_thread_local() {
-        let mut user = UserSkills::new();
-        user.folder("isolation-probe", "fixture body");
-        let here = user_skills_dir().unwrap();
-        let other = std::thread::spawn(|| {
-            let dir = user_skills_dir().unwrap();
-            assert!(!dir.join("isolation-probe").exists());
-            dir
-        }).join().unwrap();
-        assert_ne!(here, other);
-        assert!(here.join("isolation-probe/SKILL.md").exists());
-        assert!(!other.exists(), "scratch root is removed when its thread exits");
+    fn user_skill_store_matches_sandbox_hidden_root() {
+        let home = crate::core::agent::project::jan_home().unwrap();
+        assert_eq!(user_store_root(), Some(home.clone()));
+        assert_eq!(user_skills_dir(), Some(home.join("skills")));
+        assert_eq!(crate::core::agent::project::hidden_root(true), Some(home));
+        assert_eq!(crate::core::agent::project::hidden_root(false), None);
     }
 
     #[test]

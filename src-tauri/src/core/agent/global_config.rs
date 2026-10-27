@@ -1056,6 +1056,12 @@ thread_local! {
 /// redirected for existing callers that also exercise HOME-based code. That
 /// environment variable is process-wide, so all such callers share this lock.
 /// Both overrides are restored on unwind; the scratch directory is RAII-owned.
+///
+/// All fixture config access must run on the calling OS thread: `TEST_HOME` is
+/// thread-local and is not inherited by spawned threads or runtime workers.
+/// A runtime's root `block_on` future stays on the caller and is safe; do not
+/// move fixture-dependent work into `std::thread::spawn`, `spawn_blocking`, or
+/// `tokio::spawn` tasks that may run on another OS thread.
 #[cfg(test)]
 pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     use std::sync::Mutex;
