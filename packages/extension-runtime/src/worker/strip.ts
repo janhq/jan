@@ -7,8 +7,10 @@ import type { Realm } from './realm.js'
  * wide img-src and so works as a beacon. Network goes through
  * `ctx.http.fetch`, which the host checks against the grants.
  *
- * Not stripped, and limited by the CSP instead: `import()` (script-src,
- * which still allows the posthog hosts) and `FontFace` (font-src).
+ * This list is the second layer. The app creates every worker under its
+ * own CSP (`default-src 'none'`, web-app worker-runtime.ts WORKER_CSP), so
+ * the engine refuses network access through any primitive, listed here or
+ * not; `import()` and `FontFace` are left to that policy alone.
  */
 export const STRIPPED_GLOBALS = [
   'fetch',

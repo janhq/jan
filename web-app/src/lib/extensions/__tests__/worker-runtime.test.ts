@@ -17,8 +17,10 @@ import { ExtensionSettingsStore } from '../settings-store'
 import {
   MAX_REJECTED_MESSAGES,
   MESSAGE_BURST,
+  WORKER_CSP,
   createBlobWorker,
   startWorker,
+  workerRealm,
 } from '../worker-runtime'
 import { fakeHttp } from './fake-http'
 import { builtin, manifest } from './fixtures'
@@ -549,29 +551,84 @@ describe('startWorker', () => {
 })
 
 describe('createBlobWorker', () => {
-  it('revokes the blob URL on terminate even if the script never ran', () => {
+  afterEach(() => {
+    for (const frame of document.querySelectorAll('iframe')) frame.remove()
+  })
+
+  /** Fakes the realm the workers are built in; jsdom has no Worker. */
+  function fakeRealm() {
+    const realm = workerRealm(document)
+    const created: { url: string; name?: string; terminate: () => void }[] =
+      []
     const revoke = vi.fn()
-    vi.stubGlobal(
-      'URL',
-      Object.assign(class extends URL {}, {
-        createObjectURL: () => 'blob:test',
-        revokeObjectURL: revoke,
-      })
-    )
-    const terminate = vi.fn()
+    const blobs: Blob[] = []
     class FakeWorker {
+      terminate = vi.fn()
+      constructor(url: string, options?: { name?: string }) {
+        created.push({ url, name: options?.name, terminate: this.terminate })
+      }
       addEventListener() {}
       removeEventListener() {}
       postMessage() {}
-      terminate = terminate
     }
-    vi.stubGlobal('Worker', FakeWorker)
-    try {
-      createBlobWorker('while (true) {}', 'ext:acme.loop').terminate()
-      expect(terminate).toHaveBeenCalled()
-      expect(revoke).toHaveBeenCalledWith('blob:test')
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    Object.assign(realm, {
+      Worker: FakeWorker,
+      URL: {
+        createObjectURL: (blob: Blob) => {
+          blobs.push(blob)
+          return `blob:test/${blobs.length}`
+        },
+        revokeObjectURL: revoke,
+      },
+    })
+    return { realm, created, revoke, blobs }
+  }
+
+  it('blocks every network primitive by CSP, not only by stripping globals', () => {
+    const directives = WORKER_CSP.split(';').map((d) => d.trim())
+    expect(directives).toContain("default-src 'none'")
+    // Nothing may reopen connect-src (or the other fetch directives).
+    expect(
+      directives.filter((d) => /^(connect|font|img|media|script)-src\b/.test(d))
+    ).toEqual(["script-src 'wasm-unsafe-eval'"])
+    expect(directives).toContain('worker-src blob:')
+  })
+
+  it('builds the worker in a hidden frame whose document carries the worker CSP', () => {
+    const { realm, created, blobs } = fakeRealm()
+    createBlobWorker('self.x = 1', 'ext:acme.one')
+    expect(created).toEqual([
+      expect.objectContaining({ url: 'blob:test/1', name: 'ext:acme.one' }),
+    ])
+    expect(blobs[0].type).toBe('text/javascript')
+    const frames = document.querySelectorAll('iframe')
+    expect(frames).toHaveLength(1)
+    const [frame] = frames
+    expect(frame.contentWindow === realm).toBe(true)
+    expect(frame.hidden).toBe(true)
+    expect(frame.getAttribute('aria-hidden')).toBe('true')
+    const meta = frame.contentDocument?.head.querySelector('meta')
+    expect(meta?.httpEquiv).toBe('Content-Security-Policy')
+    expect(meta?.content).toBe(WORKER_CSP)
+  })
+
+  it('reuses the frame, and replaces it once it left the document', () => {
+    const first = workerRealm(document)
+    expect(workerRealm(document) === first).toBe(true)
+    document.querySelector('iframe')?.remove()
+    const second = workerRealm(document)
+    // Compared by identity: jsdom cannot print a detached frame's window.
+    expect(second === first).toBe(false)
+    expect(second === document.querySelector('iframe')?.contentWindow).toBe(
+      true
+    )
+    expect(document.querySelectorAll('iframe')).toHaveLength(1)
+  })
+
+  it('revokes the blob URL on terminate even if the script never ran', () => {
+    const { created, revoke } = fakeRealm()
+    createBlobWorker('while (true) {}', 'ext:acme.loop').terminate()
+    expect(created[0].terminate).toHaveBeenCalled()
+    expect(revoke).toHaveBeenCalledWith('blob:test/1')
   })
 })

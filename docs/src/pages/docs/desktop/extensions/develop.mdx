@@ -121,7 +121,10 @@ Before your bundle runs, Jan removes these globals from the worker: `fetch`,
 `XMLHttpRequest`, `WebSocket`, `WebSocketStream`, `WebTransport`, `EventSource`,
 `importScripts`, `Worker`, `SharedWorker`, `BroadcastChannel`, `Notification`,
 `indexedDB`, `caches`, the Tauri globals, and `navigator.storage`, `navigator.locks` and
-`navigator.serviceWorker`. Use `ctx.http.fetch` for network access and
+`navigator.serviceWorker`. The worker also runs under its own Content Security
+Policy, `default-src 'none'`, so the engine refuses any direct network request
+(including `import()` and `FontFace`) and `eval`; WebAssembly still compiles.
+Use `ctx.http.fetch` for network access and
 `ctx.storage` for persistence. There is no DOM: extensions describe their UI in
 the manifest.
 

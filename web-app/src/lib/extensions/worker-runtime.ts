@@ -47,17 +47,76 @@ const DEACTIVATE_TIMEOUT_MS = 5_000
 export const TOOL_CALL_TIMEOUT_MS = 120_000
 
 /**
+ * The policy every extension worker runs under. A blob: worker inherits the
+ * CSP of the document that creates it, so the workers are created from a
+ * hidden same-origin frame carrying this policy instead of from the app
+ * window, whose connect-src must allow https: and loopback. The engine then
+ * refuses every network primitive (fetch, XHR, WebSocket, WebSocketStream,
+ * EventSource, WebTransport, import(), FontFace, ...), including ones a
+ * future engine adds, whatever globals the prelude failed to strip. The
+ * stripping stays as a second layer.
+ *
+ * - default-src 'none': no fetch directive allows any URL.
+ * - script-src 'wasm-unsafe-eval': WebAssembly compiles, eval does not.
+ * - worker-src blob:: what lets the frame start the worker at all.
+ */
+export const WORKER_CSP = [
+  "default-src 'none'",
+  "script-src 'wasm-unsafe-eval'",
+  'worker-src blob:',
+].join('; ')
+
+/** What createBlobWorker needs from the realm it builds workers in. */
+export interface WorkerRealm {
+  Worker: new (url: string, options: { name: string }) => Worker
+  Blob: typeof Blob
+  URL: Pick<typeof URL, 'createObjectURL' | 'revokeObjectURL'>
+}
+
+let realmFrame: HTMLIFrameElement | undefined
+
+/**
+ * The window of a hidden about:blank frame whose only content is a meta
+ * CSP of WORKER_CSP; created on first use and again if it left the
+ * document. about:blank shares the app's origin, so the blob: URLs it
+ * mints are same-origin and messages carry no origin checks of their own.
+ * A meta CSP can only add restrictions, and the frame also inherits the
+ * app's policy, so the workers get the intersection of the two: still no
+ * eval, and now no network.
+ */
+export function workerRealm(doc: Document = document): WorkerRealm {
+  if (realmFrame?.isConnected && realmFrame.contentWindow)
+    return realmFrame.contentWindow as unknown as WorkerRealm
+  realmFrame?.remove()
+  const frame = doc.createElement('iframe')
+  frame.hidden = true
+  frame.setAttribute('aria-hidden', 'true')
+  frame.tabIndex = -1
+  doc.body.appendChild(frame)
+  const inner = frame.contentDocument
+  if (!inner || !frame.contentWindow)
+    throw new ExtensionError('E_INTERNAL', 'The worker frame did not load')
+  const meta = inner.createElement('meta')
+  meta.httpEquiv = 'Content-Security-Policy'
+  meta.content = WORKER_CSP
+  inner.head.appendChild(meta)
+  realmFrame = frame
+  return frame.contentWindow as unknown as WorkerRealm
+}
+
+/**
  * The app's factory: one classic Worker per extension from a blob URL, so
- * the composed script is the worker's own script (the CSP allows blob: for
- * workers but no eval). The URL is revoked once the worker has spoken,
- * which proves it loaded the script.
+ * the composed script is the worker's own script, created in workerRealm
+ * so that it runs under WORKER_CSP. The URL is revoked once the worker has
+ * spoken, which proves it loaded the script.
  */
 export const createBlobWorker: CreateWorker = (source, name) => {
-  const url = URL.createObjectURL(
-    new Blob([source], { type: 'text/javascript' })
+  const realm = workerRealm()
+  const url = realm.URL.createObjectURL(
+    new realm.Blob([source], { type: 'text/javascript' })
   )
-  const worker = new Worker(url, { name })
-  const revoke = () => URL.revokeObjectURL(url)
+  const worker = new realm.Worker(url, { name })
+  const revoke = () => realm.URL.revokeObjectURL(url)
   worker.addEventListener('message', revoke, { once: true })
   worker.addEventListener('error', revoke, { once: true })
   // A script that never posts nor throws (a top-level endless loop) would

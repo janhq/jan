@@ -16,6 +16,12 @@
  *   built from one blob: script (runtime prelude plus its bundle); the worker
  *   inherits this policy, so it can neither eval nor import more code. blob:
  *   is never added to script-src, which would let any page script load one.
+ *   The window's connect-src must stay open (https:, loopback), so the worker
+ *   is created from a hidden frame that adds its own meta CSP
+ *   (`default-src 'none'`, WORKER_CSP in lib/extensions/worker-runtime.ts):
+ *   a blob: worker inherits its creator's policy, and a meta CSP only ever
+ *   narrows the inherited one. frame-src needs nothing for it: the frame is
+ *   about:blank, which inherits the window's origin and policy.
  *   The prelude's SES lockdown needs no 'unsafe-eval' either: it runs with
  *   evalTaming 'no-eval', only probes eval/Function (and tolerates the CSP
  *   refusing them), and makes both throw in the worker afterwards.
