@@ -202,8 +202,15 @@ from GitHub’s `runner.temp`). Real homes and
 ancestors/descendants of known user Jan paths are rejected, including inherited
 XDG/AppData locations. Existing prefixes are canonicalized (also for not-yet-created
 paths) so symlink aliases cannot disguise overlap; sibling names are accepted.
-Redirected seed/scratch roots and an existing desktop config's `data_folder`
-outside the profile are rejected. Inherited profiles are never recursively deleted.
+Redirected seed/scratch roots, desktop configuration paths, and their
+`data_folder` values outside the profile are rejected. This includes legacy
+migration sources: Rust checks canonical `Jan/settings.json` first, then (only
+if absent) copies and removes the first file found among bundle-id
+`settings.json` and then, on Linux, `.config/Jan/settings.json`. The guard conservatively
+validates all these sources even when shadowed by a higher-priority config,
+including known nightly/beta bundle IDs (Rust's current migration constant is
+`jan.ai.app`), and checks their directory/file symlinks before reading them.
+Inherited profiles are never recursively deleted.
 
 Unset nonempty `JAN_DATA_ROOT` on Unix: the WDIO service merges
 `{ ...process.env, ...options.env }`, so omitting it from the Unix overrides

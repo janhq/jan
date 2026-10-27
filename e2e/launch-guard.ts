@@ -126,18 +126,31 @@ export function assertSafeE2eHome(home: string, context: LaunchContext): string 
   const dataRoot = context.platform === 'win32'
     ? 'AppData/Roaming/Jan'
     : context.platform === 'darwin' ? 'Library/Application Support/Jan' : '.local/share/Jan'
-  const configFile = join(candidate, dataRoot, 'settings.json')
-  if (!containsPath(candidate, canonicalPath(configFile))) {
-    throw new Error(`Unsafe settings path: ${configFile}`)
-  }
-  try {
-    const config = JSON.parse(readFileSync(configFile, 'utf8'))
-    if (config.data_folder !== undefined && (
-      typeof config.data_folder !== 'string' || !isAbsolute(config.data_folder) ||
-      !containsPath(candidate, canonicalPath(config.data_folder))
-    )) throw new Error(`Unsafe data_folder in ${configFile}`)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  // Rust commands.rs checks canonical Jan/settings.json first; only if absent
+  // does it migrate the first file from bundle-id settings, then (Linux only)
+  // .config/Jan/settings.json. Migration copies AND removes its source. Validate
+  // every candidate, even those shadowed by an existing/higher-priority file,
+  // rather than depending on files remaining unchanged until the app starts.
+  // The Rust constant is currently jan.ai.app; include known channel IDs too
+  // conservatively, although a build may never consult those candidates.
+  const configFiles = [
+    join(candidate, dataRoot, 'settings.json'),
+    ...bundleIds.map(id => join(candidate, dirname(dataRoot), id, 'settings.json')),
+    ...(context.platform === 'linux' ? [join(candidate, '.config/Jan/settings.json')] : []),
+  ]
+  for (const configFile of configFiles) {
+    if (!containsPath(candidate, canonicalPath(configFile))) {
+      throw new Error(`Unsafe settings path: ${configFile}`)
+    }
+    try {
+      const config = JSON.parse(readFileSync(configFile, 'utf8'))
+      if (config.data_folder !== undefined && (
+        typeof config.data_folder !== 'string' || !isAbsolute(config.data_folder) ||
+        !containsPath(candidate, canonicalPath(config.data_folder))
+      )) throw new Error(`Unsafe data_folder in ${configFile}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
   return candidate
 }

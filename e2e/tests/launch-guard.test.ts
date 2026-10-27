@@ -108,6 +108,76 @@ test('rejects existing desktop data_folder escape before changing settings', (t)
   assertSafeE2eHome(profile, { ...context, platform: 'linux' })
 })
 
+// Platform resolution is simulated, but all filesystem paths are native paths
+// under the fixture's temp root -- never a developer's real Jan directories.
+const migrationCases = (['linux', 'darwin', 'win32'] as const).flatMap(platform => {
+  const dataRoot = platform === 'win32' ? 'AppData/Roaming'
+    : platform === 'darwin' ? 'Library/Application Support' : '.local/share'
+  return [
+    ...['jan.ai.app', 'jan-nightly.ai.app', 'jan-beta.ai.app'].map(id => join(dataRoot, id, 'settings.json')),
+    ...(platform === 'linux' ? [join('.config/Jan/settings.json')] : []),
+  ].map(suffix => ({ platform, suffix, dataRoot }))
+})
+
+for (const { platform, suffix, dataRoot } of migrationCases) {
+  test(`validates migration data_folder read-only: ${platform}/${suffix}`, (t) => {
+    const { root, realHome, context } = fixture(t)
+    const profile = join(root, 'profile')
+    const file = join(profile, suffix)
+    mkdirSync(join(file, '..'), { recursive: true })
+    const launch = () => assertSafeE2eHome(profile, { ...context, platform })
+    for (const value of [realHome, 'relative', '', null, 123]) {
+      const unsafe = JSON.stringify({ data_folder: value })
+      writeFileSync(file, unsafe)
+      const before = readdirSync(root, { recursive: true })
+      assert.throws(launch, /data_folder/)
+      assert.deepEqual(readdirSync(root, { recursive: true }), before)
+      assert.equal(readFileSync(file, 'utf8'), unsafe)
+    }
+    // Deliberately conservative: canonical config shadows this source in Rust,
+    // but must not hide unsafe legacy settings from the launch guard.
+    const canonicalDir = join(profile, dataRoot, 'Jan')
+    mkdirSync(canonicalDir, { recursive: true })
+    writeFileSync(join(canonicalDir, 'settings.json'), '{}')
+    assert.throws(launch, /data_folder/)
+    for (const config of [{}, { data_folder: join(profile, 'data') }]) {
+      writeFileSync(file, JSON.stringify(config))
+      assert.equal(launch(), profile)
+    }
+  })
+
+  for (const kind of ['directory', 'file', 'dangling file', 'data_folder'] as const) {
+    test(`rejects migration ${kind} symlink: ${platform}/${suffix}`, (t) => {
+      const { root, realHome, context } = fixture(t)
+      const profile = join(root, 'profile')
+      const file = join(profile, suffix)
+      const outside = join(realHome, 'settings.json')
+      writeFileSync(outside, '{}')
+      mkdirSync(join(file, '..'), { recursive: true })
+      const link = kind === 'directory' ? join(file, '..')
+        : kind === 'data_folder' ? join(profile, 'data') : file
+      if (kind === 'directory') rmSync(link, { recursive: true })
+      const target = kind === 'directory' || kind === 'data_folder' ? realHome
+        : kind === 'dangling file' ? join(realHome, 'missing.json') : outside
+      try {
+        symlinkSync(target, link, kind === 'directory' || kind === 'data_folder'
+          ? process.platform === 'win32' ? 'junction' : 'dir' : 'file')
+      } catch (error) {
+        if (process.platform === 'win32' && ['EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code!)) {
+          t.skip('Windows symlink privilege unavailable')
+          return
+        }
+        throw error
+      }
+      if (kind === 'data_folder') writeFileSync(file, JSON.stringify({ data_folder: link }))
+      const before = readdirSync(root, { recursive: true })
+      assert.throws(() => assertSafeE2eHome(profile, { ...context, platform }), /Unsafe/)
+      assert.deepEqual(readdirSync(root, { recursive: true }), before)
+      assert.equal(readFileSync(outside, 'utf8'), '{}')
+    })
+  }
+}
+
 test('isolation env overrides inherited path variables; Unix retains native resolution', (t) => {
   const { root } = fixture(t)
   const home = join(root, 'profile')
