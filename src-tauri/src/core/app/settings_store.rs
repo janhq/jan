@@ -37,12 +37,16 @@ struct SettingsMap {
     /// Keys changed since the last flush, for the dev-build write log. Only
     /// populated under `debug_assertions`.
     pending_keys: BTreeSet<String>,
+    /// Set once a factory reset has deleted `settings.json`. From then on the
+    /// store refuses writes, so neither the webview nor the exit flush can
+    /// recreate the file before the app restarts.
+    discarded: bool,
 }
 
 impl SettingsMap {
     /// Returns true if the value changed (i.e. a flush is warranted).
     fn set(&mut self, key: String, value: String) -> bool {
-        if self.map.get(&key).is_some_and(|v| *v == value) {
+        if self.discarded || self.map.get(&key).is_some_and(|v| *v == value) {
             return false;
         }
         #[cfg(debug_assertions)]
@@ -53,12 +57,21 @@ impl SettingsMap {
 
     /// Returns true if a key was actually removed.
     fn remove(&mut self, key: &str) -> bool {
-        if self.map.remove(key).is_none() {
+        if self.discarded || self.map.remove(key).is_none() {
             return false;
         }
         #[cfg(debug_assertions)]
         self.pending_keys.insert(key.to_string());
         true
+    }
+
+    /// Drop everything, pending writes included, and refuse further changes.
+    fn discard(&mut self) {
+        self.map.clear();
+        self.pending_keys.clear();
+        self.dirty = false;
+        self.flush_at = None;
+        self.discarded = true;
     }
 
     fn mark_dirty(&mut self) {
@@ -125,6 +138,7 @@ fn store() -> &'static Store {
             dirty: false,
             flush_at: None,
             pending_keys: BTreeSet::new(),
+            discarded: false,
         };
         std::thread::Builder::new()
             .name("settings-flush".into())
@@ -191,6 +205,14 @@ pub fn flush_settings() {
     }
 }
 
+/// Forget the in-memory settings and stop persisting them for the rest of
+/// this process. Factory reset calls this after deleting `settings.json`;
+/// without it a pending debounced write or the exit flush would write the
+/// pre-reset settings straight back.
+pub fn discard_settings() {
+    lock(store()).discard();
+}
+
 #[tauri::command]
 pub fn settings_get(key: String) -> Option<String> {
     let store = store();
@@ -229,6 +251,7 @@ mod tests {
             dirty: false,
             flush_at: None,
             pending_keys: BTreeSet::new(),
+            discarded: false,
         }
     }
 
@@ -273,6 +296,23 @@ mod tests {
         assert!(m.pending_keys.is_empty());
         // pending_keys only tracked under debug_assertions (tests run debug).
         assert_eq!(keys, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn discard_empties_the_map_and_ignores_later_writes() {
+        let mut m = new_map();
+        m.set("a".into(), "1".into());
+        m.mark_dirty();
+        m.discard();
+        assert!(m.map.is_empty());
+        assert!(!m.dirty);
+        assert!(m.flush_at.is_none());
+        assert!(m.pending_keys.is_empty());
+        // A webview write racing the factory-reset restart must not bring a
+        // wiped settings.json back.
+        assert!(!m.set("b".into(), "2".into()));
+        assert!(!m.remove("a"));
+        assert!(m.map.is_empty());
     }
 
     #[test]

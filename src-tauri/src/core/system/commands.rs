@@ -222,24 +222,32 @@ fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Res
     Ok(())
 }
 
+/// Wipe the selected data categories and restart the app.
+///
+/// Async so it runs on the async runtime: as a sync command it ran on the main
+/// thread, and the teardown below (MCP servers, engine worker, `remove_dir_all`
+/// of the models folder) froze the event loop for up to ~30s with the window
+/// stuck on screen.
 #[tauri::command]
-pub fn factory_reset<R: Runtime>(
+pub async fn factory_reset<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: State<'_, AppState>,
     keep_app_data: Option<bool>,
     keep_models_and_configs: Option<bool>,
     clear_web_data: Option<bool>,
-) {
+) -> Result<(), String> {
     let keep_app_data = keep_app_data.unwrap_or(false);
     let keep_models_and_configs = keep_models_and_configs.unwrap_or(false);
     let clear_web_data = clear_web_data.unwrap_or(false);
 
+    // Hide rather than close: now that the event loop keeps running, closing
+    // the last window would start a normal app exit in the middle of the wipe.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         let windows = app_handle.webview_windows();
         for (label, window) in windows.iter() {
-            window.close().unwrap_or_else(|_| {
-                log::warn!("Failed to close window: {label:?}");
+            window.hide().unwrap_or_else(|_| {
+                log::warn!("Failed to hide window: {label:?}");
             });
         }
     }
@@ -252,79 +260,93 @@ pub fn factory_reset<R: Runtime>(
         data_folder
     );
 
-    tauri::async_runtime::block_on(async {
-        let _ =
-            stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+    let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
 
-        {
-            let mut active_servers = state.mcp_active_servers.lock().await;
-            active_servers.clear();
-        }
+    {
+        let mut active_servers = state.mcp_active_servers.lock().await;
+        active_servers.clear();
+    }
 
-        use crate::core::mcp::lockfile::cleanup_own_locks;
-        if let Err(e) = cleanup_own_locks(&app_handle) {
-            log::warn!("Failed to cleanup lock files: {}", e);
-        }
-        let _ = cleanup_llama_processes(app_handle.clone()).await;
+    use crate::core::mcp::lockfile::cleanup_own_locks;
+    if let Err(e) = cleanup_own_locks(&app_handle) {
+        log::warn!("Failed to cleanup lock files: {}", e);
+    }
+    let _ = cleanup_llama_processes(app_handle.clone()).await;
 
-        if data_folder.exists() {
-            if !is_safe_to_delete(&data_folder) {
-                log::error!(
-                    "Refusing factory reset: path is too close to filesystem root: {}",
-                    data_folder.display()
-                );
-                return;
-            }
-
-            // Always clean common data (extensions, logs, caches)
-            delete_common_data(&data_folder);
-
-            // Delete conversations (threads, assistants) unless user chose to keep it
-            if !keep_app_data {
-                delete_conversations(&data_folder);
-            }
-
-            // Delete models and configs unless user chose to keep them
-            if !keep_models_and_configs {
-                delete_models_and_configs(&data_folder);
-            }
-
-            // store.json spans all categories; only wipe it when nothing is kept
-            if !keep_app_data && !keep_models_and_configs {
-                delete_settings(&data_folder);
-            }
-        }
-
-        // Reset app configuration to defaults unless user chose to keep configs
-        if !keep_models_and_configs {
-            let default_config = AppConfiguration {
-                data_folder: default_data_folder_path(app_handle.clone()),
-            };
-            let _ = update_app_configuration(app_handle.clone(), default_config);
-        }
-
-        // Persisted UI state (model-provider, setup flag) lives in webview
-        // localStorage, not the data folder. Renderer-side removal races the
-        // restart flush, and the on-disk localStorage location is
-        // platform-specific (esp. macOS WKWebView), so instead drop a sentinel
-        // that the frontend consumes on next startup to clear localStorage via
-        // the webview API before stores hydrate. File-level profile deletion
-        // (Linux cookies/cache) stays as a best-effort supplement.
-        let full_wipe = !keep_app_data && !keep_models_and_configs;
-        if !keep_app_data || !keep_models_and_configs || clear_web_data {
-            write_webdata_reset_sentinel(
-                &app_handle,
-                keep_app_data,
-                keep_models_and_configs,
-                clear_web_data,
+    let full_wipe = !keep_app_data && !keep_models_and_configs;
+    if data_folder.exists() {
+        if !is_safe_to_delete(&data_folder) {
+            log::error!(
+                "Refusing factory reset: path is too close to filesystem root: {}",
+                data_folder.display()
             );
-        }
-        if clear_web_data || full_wipe {
-            clear_webview_profile(&app_handle, &data_folder);
+            return Ok(());
         }
 
-        app_handle.restart();
-    });
+        // Discard before deleting: the in-memory copy would otherwise be
+        // flushed back by a pending debounced write or the exit-time flush.
+        if full_wipe {
+            crate::core::app::settings_store::discard_settings();
+        }
+        let folder = data_folder.clone();
+        let wiped = tauri::async_runtime::spawn_blocking(move || {
+            delete_data(&folder, keep_app_data, keep_models_and_configs)
+        })
+        .await;
+        if let Err(e) = wiped {
+            log::error!("Factory reset data deletion failed: {e}");
+        }
+    }
+
+    // Reset app configuration to defaults unless user chose to keep configs
+    if !keep_models_and_configs {
+        let default_config = AppConfiguration {
+            data_folder: default_data_folder_path(app_handle.clone()),
+        };
+        let _ = update_app_configuration(app_handle.clone(), default_config);
+    }
+
+    // Persisted UI state (model-provider, setup flag) lives in webview
+    // localStorage, not the data folder. Renderer-side removal races the
+    // restart flush, and the on-disk localStorage location is
+    // platform-specific (esp. macOS WKWebView), so instead drop a sentinel
+    // that the frontend consumes on next startup to clear localStorage via
+    // the webview API before stores hydrate. File-level profile deletion
+    // (Linux cookies/cache) stays as a best-effort supplement.
+    if !keep_app_data || !keep_models_and_configs || clear_web_data {
+        write_webdata_reset_sentinel(
+            &app_handle,
+            keep_app_data,
+            keep_models_and_configs,
+            clear_web_data,
+        );
+    }
+    if clear_web_data || full_wipe {
+        clear_webview_profile(&app_handle, &data_folder);
+    }
+
+    app_handle.restart();
+}
+
+/// Delete the data categories the user did not choose to keep.
+fn delete_data(data_folder: &std::path::Path, keep_app_data: bool, keep_models_and_configs: bool) {
+    // Always clean common data (extensions, logs, caches)
+    delete_common_data(data_folder);
+
+    // Delete conversations (threads, assistants) unless user chose to keep it
+    if !keep_app_data {
+        delete_conversations(data_folder);
+    }
+
+    // Delete models and configs unless user chose to keep them
+    if !keep_models_and_configs {
+        delete_models_and_configs(data_folder);
+    }
+
+    // store.json spans all categories; only wipe it when nothing is kept
+    if !keep_app_data && !keep_models_and_configs {
+        delete_settings(data_folder);
+    }
 }
 
 #[tauri::command]
