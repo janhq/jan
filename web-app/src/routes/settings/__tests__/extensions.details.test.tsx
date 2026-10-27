@@ -5,6 +5,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentType, ReactNode } from 'react'
 import type { HostedExtension } from '@/lib/extensions/host'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { manifest } from '@/lib/extensions/__tests__/fixtures'
 import {
   createMockExtensionsService,
@@ -173,6 +174,28 @@ describe('installed extension details', () => {
     ]
     render(<Page />)
     expect(await screen.findByTestId('settings-form-acme.hello')).toBeInTheDocument()
+  })
+
+  it('shows the name and description in the app language', async () => {
+    useGeneralSetting.setState({ currentLanguage: 'ja' })
+    mock.state.extensions[0].manifest = {
+      ...mock.state.extensions[0].manifest,
+      displayName: '%name%',
+      description: '%about%',
+      l10n: {
+        en: { name: 'Hello', about: 'Says hello' },
+        ja: { name: 'Konnichiwa' },
+      },
+    }
+    render(<Page />)
+    expect(
+      await screen.findByRole('heading', { name: 'Konnichiwa' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Says hello')).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: 'Enable Konnichiwa' })
+    ).toBeInTheDocument()
+    useGeneralSetting.setState({ currentLanguage: 'en' })
   })
 
   it('says when the id is not installed', async () => {

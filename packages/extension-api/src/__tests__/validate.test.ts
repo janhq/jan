@@ -467,6 +467,25 @@ describe('validateManifest', () => {
     expect(errorPaths(pkg)).toEqual(['jan.contributes.commands[0].title'])
   })
 
+  it('checks %key% in setting placeholders and dropdown labels', () => {
+    const pkg = full()
+    const settings = contributes(pkg).settings as Record<string, unknown>[]
+    settings[0].control = {
+      type: 'input',
+      placeholder: '%hint%',
+      default: 'Hello',
+    }
+    settings[3].control = {
+      type: 'dropdown',
+      options: [{ value: 'a', label: '%greet%' }, { value: 'b', label: '%b%' }],
+      default: 'a',
+    }
+    expect(errorPaths(pkg)).toEqual([
+      'jan.contributes.settings[0].control.placeholder',
+      'jan.contributes.settings[3].control.options[1].label',
+    ])
+  })
+
   it('rejects a %key% when there is no l10n at all', () => {
     const pkg = minimal()
     pkg.jan.displayName = '%name%'

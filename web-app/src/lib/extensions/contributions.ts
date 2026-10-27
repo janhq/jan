@@ -17,6 +17,7 @@ import {
   type ToolHandler,
   type ValidatedManifest,
 } from '@janhq/extension-api'
+import type { L10nTables } from './l10n'
 
 export type RegisteredCommand = CommandContribution & {
   handler?: CommandHandler
@@ -32,7 +33,12 @@ export type RegisteredProvider = ProviderContribution & {
  * lets two extensions both declare a command `hello`.
  */
 export interface ContributionState {
-  extensions: Record<string, { displayName: string }>
+  /**
+   * Text fields across the slices are kept as the manifest wrote them;
+   * renderers resolve `%key%` through `l10n` (see `./l10n`) so a language
+   * switch needs no write here.
+   */
+  extensions: Record<string, { displayName: string; l10n?: L10nTables }>
   commands: Record<string, Record<string, RegisteredCommand>>
   menus: Record<string, Partial<Record<MenuLocation, MenuItemContribution[]>>>
   statusItems: Record<string, Record<string, StatusItemContribution>>
@@ -141,7 +147,7 @@ export class ContributionStore {
     this.store.setState((s) => ({
       extensions: {
         ...s.extensions,
-        [id]: { displayName: manifest.displayName },
+        [id]: { displayName: manifest.displayName, l10n: manifest.l10n },
       },
       commands: { ...s.commands, [id]: byId(contributes.commands, 'id') },
       menus: { ...s.menus, [id]: contributes.menus ?? {} },

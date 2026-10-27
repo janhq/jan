@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import type { StagedInstall } from '@/services/extensions/types'
 import { UnsignedSourceBadge, UnverifiedBadge } from './TrustBadge'
 
@@ -104,9 +105,10 @@ function StagedOrigin({
  */
 function SourceChange({ staged }: { staged: StagedInstall }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const from = staged.existing?.installedFrom
   if (!from) return null
-  const name = staged.manifest.displayName
+  const name = localize(staged.manifest, staged.manifest.displayName)
   const next = staged.source
   const previous = from.source
   let warning: string | undefined

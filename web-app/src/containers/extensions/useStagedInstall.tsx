@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import type { PermissionString } from '@janhq/extension-api'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { localize } from '@/lib/extensions/l10n'
 import { reloadInstalled } from '@/lib/extensions/installed-reload'
 import type { StagedInstall } from '@/services/extensions/types'
 import { ConsentDialog } from './ConsentDialog'
@@ -55,7 +56,7 @@ export function useStagedInstall({ service, refresh }: InstalledRegistry): {
       const entry = await service.confirmInstall(stageId, granted)
       toast.success(
         t('extensions:install.done', {
-          name: entry.manifest.displayName,
+          name: localize(entry.manifest, entry.manifest.displayName),
           version: entry.version,
         })
       )
@@ -68,7 +69,7 @@ export function useStagedInstall({ service, refresh }: InstalledRegistry): {
       await reloadInstalled(manifest.id).catch(() => undefined)
       toast.error(
         t('extensions:errors.install', {
-          name: manifest.displayName,
+          name: localize(manifest, manifest.displayName),
           error: errorMessage(e),
         })
       )

@@ -1,4 +1,5 @@
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import { PermissionList } from './PermissionList'
 import { StagedDialog, type StagedDialogProps } from './StagedDialog'
 
@@ -9,6 +10,7 @@ import { StagedDialog, type StagedDialogProps } from './StagedDialog'
  */
 export function PermissionDiffDialog(props: StagedDialogProps) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const { manifest, permissionDiff } = props.staged
   const addedLabel = t('extensions:update.added')
   const removedLabel = t('extensions:update.removed')
@@ -16,7 +18,7 @@ export function PermissionDiffDialog(props: StagedDialogProps) {
     <StagedDialog
       {...props}
       title={t('extensions:update.title', {
-        name: manifest.displayName,
+        name: localize(manifest, manifest.displayName),
         version: manifest.version,
       })}
       description={t('extensions:update.description', {

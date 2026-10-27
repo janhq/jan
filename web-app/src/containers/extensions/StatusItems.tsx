@@ -8,6 +8,7 @@ import {
 import { SidebarFooter } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useContributions } from '@/lib/extensions/contributions'
+import { useLocalize } from '@/lib/extensions/l10n'
 import { cn } from '@/lib/utils'
 import { useExecuteCommand } from './useExecuteCommand'
 
@@ -27,6 +28,7 @@ export function StatusItems({ className }: { className?: string }) {
   const execute = useExecuteCommand()
   const extensions = useContributions((s) => s.extensions)
   const statusItems = useContributions((s) => s.statusItems)
+  const localize = useLocalize()
 
   const entries = useMemo(
     () =>
@@ -36,12 +38,19 @@ export function StatusItems({ className }: { className?: string }) {
           if (!extension) return []
           return Object.values(items).map((item) => ({
             extensionId,
-            extensionName: extension.displayName,
-            item,
+            extensionName: localize(extension, extension.displayName),
+            item: {
+              ...item,
+              text: localize(extension, item.text),
+              tooltip:
+                item.tooltip === undefined
+                  ? undefined
+                  : localize(extension, item.tooltip),
+            },
           }))
         })
         .sort((a, b) => (b.item.priority ?? 0) - (a.item.priority ?? 0)),
-    [extensions, statusItems]
+    [extensions, statusItems, localize]
   )
 
   if (entries.length === 0) return null

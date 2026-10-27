@@ -2,6 +2,7 @@ import type {
   CommandHandler,
   Contributions,
   ExtensionModule,
+  JanManifest,
 } from '@janhq/extension-api'
 import {
   ContributionStore,
@@ -33,7 +34,8 @@ export function createTestHost() {
     id: string,
     displayName: string,
     contributes: Contributions,
-    handlers: Record<string, CommandHandler> = {}
+    handlers: Record<string, CommandHandler> = {},
+    l10n?: JanManifest['l10n']
   ) => {
     const mod: ExtensionModule = {
       activate: (ctx) => {
@@ -42,7 +44,7 @@ export function createTestHost() {
       },
     }
     await host.activateBuiltin(
-      builtin(manifest(id, { displayName, contributes }), mod)
+      builtin(manifest(id, { displayName, contributes, l10n }), mod)
     )
   }
 

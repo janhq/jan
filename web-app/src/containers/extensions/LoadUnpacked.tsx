@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import {
   DevLoadError,
   loadUnpacked,
@@ -34,6 +35,7 @@ function errorText(
  */
 export function LoadUnpacked() {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const serviceHub = useServiceHub()
   const [pending, setPending] = useState<UnpackedExtension>()
   const [error, setError] = useState<string>()
@@ -85,7 +87,7 @@ export function LoadUnpacked() {
           <DialogHeader>
             <DialogTitle>
               {t('extensions:devLoad.title', {
-                name: manifest?.displayName,
+                name: manifest && localize(manifest, manifest.displayName),
               })}
             </DialogTitle>
             <DialogDescription>

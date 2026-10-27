@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import type { HostedExtension } from '@/lib/extensions/host'
 import type { InstalledExtension } from '@/services/extensions/types'
 
@@ -41,6 +42,7 @@ function UninstallButton({
   registry: InstalledRegistry
 }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const confirm = async () => {
@@ -63,7 +65,7 @@ function UninstallButton({
           <DialogHeader>
             <DialogTitle>
               {t('extensions:details.uninstallTitle', {
-                name: entry.manifest.displayName,
+                name: localize(entry.manifest, entry.manifest.displayName),
               })}
             </DialogTitle>
             <DialogDescription>
@@ -94,6 +96,7 @@ function InstalledDetails({
   registry: InstalledRegistry
 }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const { service, change, busy } = registry
   const revoke = (permission: PermissionString) =>
     change(
@@ -117,7 +120,7 @@ function InstalledDetails({
             <UninstallButton entry={entry} registry={registry} />
             <Switch
               aria-label={t('extensions:enable', {
-                name: entry.manifest.displayName,
+                name: localize(entry.manifest, entry.manifest.displayName),
               })}
               checked={entry.enabled}
               disabled={busy}

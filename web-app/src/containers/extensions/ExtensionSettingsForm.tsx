@@ -4,7 +4,9 @@ import type { SettingContribution, SettingValue } from '@janhq/extension-api'
 import { CardItem } from '@/containers/Card'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { own, useContributions } from '@/lib/extensions/contributions'
 import { getExtensionHost } from '@/lib/extensions/host'
+import { useLocalize } from '@/lib/extensions/l10n'
 
 type ControllerProps = Parameters<
   typeof DynamicControllerSetting
@@ -12,14 +14,18 @@ type ControllerProps = Parameters<
 
 function controllerProps(
   setting: SettingContribution,
-  value: SettingValue
+  value: SettingValue,
+  text: (s: string) => string
 ): ControllerProps {
   const { control } = setting
   switch (control.type) {
     case 'input':
       return {
         value: value as string,
-        placeholder: control.placeholder,
+        placeholder:
+          control.placeholder === undefined
+            ? undefined
+            : text(control.placeholder),
         type: setting.secret ? 'password' : control.inputType,
         input_actions: setting.secret ? ['unobscure'] : [],
       }
@@ -30,7 +36,7 @@ function controllerProps(
         value,
         options: control.options.map((o) => ({
           value: o.value,
-          name: o.label,
+          name: text(o.label),
         })),
       }
     case 'slider':
@@ -60,6 +66,10 @@ function SettingRow({
   setting: SettingContribution
 }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
+  const extension = useContributions((s) => own(s.extensions, extensionId))
+  const text = (s: string) => localize(extension, s)
+  const title = text(setting.title)
   const [value, setValue] = useState<SettingValue>(setting.control.default)
 
   useEffect(() => {
@@ -85,7 +95,7 @@ function SettingRow({
       .catch((error) => {
         console.error(`Failed to save setting '${setting.key}':`, error)
         toast.error(
-          t('extensions:settingSaveFailed', { setting: setting.title }),
+          t('extensions:settingSaveFailed', { setting: title }),
           {
             description: error instanceof Error ? error.message : String(error),
           }
@@ -97,13 +107,17 @@ function SettingRow({
     setting.control.type === 'textarea' || setting.control.type === 'slider'
   return (
     <CardItem
-      title={setting.title}
-      description={setting.description}
+      title={title}
+      description={
+        setting.description === undefined
+          ? undefined
+          : text(setting.description)
+      }
       column={column}
       actions={
         <DynamicControllerSetting
           controllerType={setting.control.type}
-          controllerProps={controllerProps(setting, value)}
+          controllerProps={controllerProps(setting, value, text)}
           onChange={onChange}
         />
       }

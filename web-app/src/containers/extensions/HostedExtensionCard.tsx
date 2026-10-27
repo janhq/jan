@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import { getExtensionHost, type HostedExtension } from '@/lib/extensions/host'
 import type { ValidatedManifest } from '@janhq/extension-api'
 import { ExtensionSettingsForm } from './ExtensionSettingsForm'
@@ -50,6 +51,7 @@ export function ExtensionCard({
   showSettings?: boolean
 }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const settings = manifest.contributes?.settings ?? []
   return (
     <Card
@@ -57,7 +59,7 @@ export function ExtensionCard({
         <div className="flex flex-col gap-1 mb-4">
           <div className="flex items-center gap-x-2">
             <h1 className="text-foreground font-studio font-medium text-base">
-              {manifest.displayName}
+              {localize(manifest, manifest.displayName)}
             </h1>
             <Version version={version} />
             {badges}
@@ -71,7 +73,7 @@ export function ExtensionCard({
             )}
           </div>
           {manifest.description && (
-            <Description content={manifest.description} />
+            <Description content={localize(manifest, manifest.description)} />
           )}
           {hosted?.state === 'failed' && hosted.error && (
             <span className="text-xs text-destructive">
@@ -97,13 +99,17 @@ export function ExtensionCard({
 /** A folder loaded with "Load unpacked": labelled, and unloadable. */
 export function DevExtensionCard({ extension }: { extension: HostedExtension }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const unload = () =>
     getExtensionHost()
       .unload(extension.id)
       .catch((e: unknown) =>
         toast.error(
           t('extensions:unloadFailed', {
-            extension: extension.manifest.displayName,
+            extension: localize(
+              extension.manifest,
+              extension.manifest.displayName
+            ),
             error: errorMessage(e),
           })
         )

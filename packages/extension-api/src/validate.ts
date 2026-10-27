@@ -484,8 +484,15 @@ function* localizableStrings(jan: Obj): Generator<[string, unknown]> {
     : {}
   const base = 'jan.contributes'
   for (const [i, s] of (contributes.settings ?? []).entries()) {
-    yield [`${base}.settings[${i}].title`, s?.title]
-    yield [`${base}.settings[${i}].description`, s?.description]
+    const path = `${base}.settings[${i}]`
+    yield [`${path}.title`, s?.title]
+    yield [`${path}.description`, s?.description]
+    const control = s?.control
+    if (control?.type === 'input')
+      yield [`${path}.control.placeholder`, control.placeholder]
+    if (control?.type === 'dropdown' && Array.isArray(control.options))
+      for (const [j, option] of control.options.entries())
+        yield [`${path}.control.options[${j}].label`, option?.label]
   }
   for (const [i, cmd] of (contributes.commands ?? []).entries()) {
     yield [`${base}.commands[${i}].title`, cmd?.title]
