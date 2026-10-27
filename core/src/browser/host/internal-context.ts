@@ -20,6 +20,18 @@ export interface HostSecretsReader {
 }
 
 /**
+ * `fetch` for Jan's own servers on loopback (the llama.cpp engine, MLX). The
+ * host sends it from the native HTTP client with every proxy bypassed, so a
+ * system, environment or VPN proxy never captures a local request; the body
+ * streams as it arrives. `connectTimeout` is in milliseconds. Never for a
+ * remote provider, which must keep honouring the user's proxy.
+ */
+export type LoopbackFetch = (
+  input: string | URL | Request,
+  init?: RequestInit & { connectTimeout?: number }
+) => Promise<Response>
+
+/**
  * The context in-process built-ins receive. `internal` reaches host
  * facilities that third-party extensions never get; it carries no stability
  * guarantee and lives here rather than in `@janhq/extension-api` for that
@@ -36,5 +48,6 @@ export interface InternalExtensionContext extends ExtensionContext {
     readonly engines: Pick<EngineManager, 'register'>
     /** Tools offered under their plain names and never prompted for. */
     readonly tools: InternalToolRegistry
+    readonly loopbackFetch: LoopbackFetch
   }
 }

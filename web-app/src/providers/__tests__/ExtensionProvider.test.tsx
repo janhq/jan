@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   setSafeMode: vi.fn().mockResolvedValue(undefined),
   toastWarning: vi.fn(),
   toastError: vi.fn(),
+  bridge: vi.fn(),
+  stopBridge: vi.fn(),
+  listen: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -40,7 +43,11 @@ vi.mock('@/hooks/useServiceHub', () => ({
       setSafeMode: h.setSafeMode,
       list: async () => ({ extensions: [{ id: 'acme.one' }] }),
     }),
+    events: () => ({ listen: h.listen }),
   }),
+}))
+vi.mock('@/lib/modelValidationBridge', () => ({
+  bridgeModelValidationStarted: h.bridge,
 }))
 
 vi.mock('@/lib/service', () => ({ APIs: {} }))
@@ -85,6 +92,7 @@ describe('ExtensionProvider', () => {
       async () => void h.calls.push('installed')
     )
     h.host.deactivateAll.mockResolvedValue(undefined)
+    h.bridge.mockResolvedValue(h.stopBridge)
     document.body.className = ''
     document.body.innerHTML =
       '<div id="initial-loader"><p id="initial-loader-caption"></p></div>'
@@ -254,5 +262,24 @@ describe('ExtensionProvider', () => {
     expect(await screen.findByTestId('child')).toBeInTheDocument()
     expect(h.host.activateBuiltins).not.toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalledWith('app-ready')
+  })
+
+  // The download manager's validation event reaches the core bus once, in the
+  // main window, as it did when the llamacpp built-in relayed it: a second
+  // window relaying it too would toast a validation that is not its own.
+  it('relays model validation onto the core bus in the main window only', async () => {
+    const { unmount } = renderProvider()
+    await screen.findByTestId('child')
+    expect(h.bridge).toHaveBeenCalledTimes(1)
+    expect(h.bridge).toHaveBeenCalledWith({ listen: h.listen })
+    unmount()
+    await waitFor(() => expect(h.stopBridge).toHaveBeenCalled())
+  })
+
+  it('does not relay model validation in a secondary window', async () => {
+    h.windowLabel = 'logs'
+    renderProvider()
+    await screen.findByTestId('child')
+    expect(h.bridge).not.toHaveBeenCalled()
   })
 })

@@ -27,6 +27,7 @@ import {
   type DownloadService,
   type InternalExtensionContext,
   type MlxService,
+  type LoopbackFetch,
   type ServiceRegistry,
   type SettingComponentProps,
   logger,
@@ -72,7 +73,10 @@ const SETTINGS_KEY = '@janhq/mlx-extension'
  * manager and publishes the runtime queries the app makes of it.
  */
 export async function activate(ctx: InternalExtensionContext): Promise<void> {
-  const engine = new mlx_extension(ctx.internal.services)
+  const engine = new mlx_extension(
+    ctx.internal.services,
+    ctx.internal.loopbackFetch
+  )
   ctx.subscriptions.add(ctx.internal.engines.register(engine))
   const service: MlxService = {
     getModelProps: (modelId) => engine.getModelProps(modelId),
@@ -102,7 +106,11 @@ export default class mlx_extension extends AIEngine {
   // only describes models loaded without an override.
   private loadedCtxSize = new Map<string, number>()
 
-  constructor(private readonly services: Pick<ServiceRegistry, 'get'>) {
+  constructor(
+    private readonly services: Pick<ServiceRegistry, 'get'>,
+    // The MLX server is on loopback; the host's client bypasses every proxy.
+    private readonly loopbackFetch: LoopbackFetch
+  ) {
     super()
   }
 
@@ -487,7 +495,7 @@ export default class mlx_extension extends AIEngine {
 
     if (isAlive) {
       try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
+        await this.loopbackFetch(`http://localhost:${sessionInfo.port}/health`)
       } catch (e) {
         this.unload(sessionInfo.model_id)
         throw new Error('MLX model appears to have crashed! Please reload!')
@@ -509,7 +517,7 @@ export default class mlx_extension extends AIEngine {
       return this.handleStreamingResponse(url, headers, body, abortController)
     }
 
-    const response = await fetch(url, {
+    const response = await this.loopbackFetch(url, {
       method: 'POST',
       headers,
       body,
@@ -556,7 +564,7 @@ export default class mlx_extension extends AIEngine {
         )
       }
     }
-    const response = await fetch(url, {
+    const response = await this.loopbackFetch(url, {
       method: 'POST',
       headers,
       body,

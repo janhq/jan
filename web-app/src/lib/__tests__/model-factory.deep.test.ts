@@ -93,7 +93,8 @@ vi.mock('@/lib/provider-api-keys', () => ({
   }),
 }))
 
-import { ModelFactory, LOOPBACK_DIRECT_PROXY } from '../model-factory'
+import { ModelFactory } from '../model-factory'
+import { LOOPBACK_DIRECT_PROXY } from '../loopback-fetch'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 

@@ -31,9 +31,7 @@
   "dependencies": {
     "@janhq/core": "workspace:*",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
-    "@janhq/tauri-plugin-mlx-api": "link:../../src-tauri/plugins/tauri-plugin-mlx",
-    "@tauri-apps/api": "2.8.0",
-    "@tauri-apps/plugin-http": "2.5.9"
+    "@janhq/tauri-plugin-mlx-api": "link:../../src-tauri/plugins/tauri-plugin-mlx"
   },
   "engines": {
     "node": ">=18.0.0"

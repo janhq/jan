@@ -25,6 +25,7 @@ import {
  type DownloadService,
  type InternalExtensionContext,
  type LlamacppService,
+ type LoopbackFetch,
  type ServiceRegistry,
  chatCompletionRequestMessage,
  SettingComponentProps,
@@ -39,7 +40,6 @@ import {
 import { applyPlatformFitDefault } from './fit-default'
 import { findModelEntries } from './model-tree'
 
-import { listen } from '@tauri-apps/api/event'
 import {
  getProxyConfig,
  buildEmbedBatches,
@@ -54,7 +54,6 @@ import {
  fileName,
  type EmbedBatchResult,
 } from './util'
-import { loopbackFetch } from './loopback-fetch'
 import {
  generatePreset,
  threadCacheDir,
@@ -402,7 +401,10 @@ const PACKAGE_NAME = '@janhq/llamacpp-extension'
  * manager and publishes the runtime queries the app makes of it.
  */
 export async function activate(ctx: InternalExtensionContext): Promise<void> {
- const engine = new llamacpp_extension(ctx.internal.services)
+ const engine = new llamacpp_extension(
+  ctx.internal.services,
+  ctx.internal.loopbackFetch
+ )
  ctx.subscriptions.add(ctx.internal.engines.register(engine))
  ctx.subscriptions.add({ dispose: () => engine.dispose() })
  const service: LlamacppService = {
@@ -442,7 +444,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   */
  private embedderBootstrapping = false
  private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
- private unlistenValidationStarted?: () => void
 
  private enginePort?: number
  private engineApiKey?: string
@@ -465,7 +466,12 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  /** Single-flight provisioning run; see ensureProvisioned(). */
  private provisioning?: Promise<void>
 
- constructor(private readonly services: Pick<ServiceRegistry, 'get'>) {
+ constructor(
+  private readonly services: Pick<ServiceRegistry, 'get'>,
+  // Requests to the engine on loopback go through the host's proxy-bypassing
+  // client; see LoopbackFetch.
+  private readonly loopbackFetch: LoopbackFetch
+ ) {
   super()
  }
 
@@ -511,14 +517,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   // After the backfill, which is what copied the seed into model.yml.
   await this.migrateSeededCtxSize()
-
-  // Set up validation event listeners to bridge Tauri events to frontend
-  this.unlistenValidationStarted = await listen<{
-   modelId: string
-   downloadType: string
-  }>('onModelValidationStarted', (event) => {
-   events.emit(DownloadEvent.onModelValidationStarted, event.payload)
-  })
 
   // Deferred off onLoad so the UI unblocks; performLoad awaits it via
   // ensureEngineReady(). The engine is bundled with the app now, so there is
@@ -1084,7 +1082,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
   try {
    const url = `http://127.0.0.1:${engine.port}/props?model=${encodeURIComponent(modelId)}`
-   const res = await loopbackFetch(url, {
+   const res = await this.loopbackFetch(url, {
     headers: { Authorization: `Bearer ${engine.apiKey}` },
    })
    if (!res.ok) return undefined
@@ -1336,11 +1334,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  }
 
  dispose(): void {
-  // Clean up validation event listeners
-  if (this.unlistenValidationStarted) {
-   this.unlistenValidationStarted()
-  }
-
   // Deliberately does NOT stop the engine worker. It outlives any single
   // extension instance: the app owns its lifetime and stops it on
   // ExitRequested/Exit. An extension teardown is not an app exit -- React
@@ -2436,7 +2429,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     )
    }
   }
-  const response = await loopbackFetch(url, {
+  const response = await this.loopbackFetch(url, {
    method: 'POST',
    headers,
    body,
@@ -2577,7 +2570,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    return this.handleStreamingResponse(url, headers, body, abortController)
   }
   // Handle non-streaming response
-  const response = await loopbackFetch(url, {
+  const response = await this.loopbackFetch(url, {
    method: 'POST',
    headers,
    body,
@@ -3074,7 +3067,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const sInfo = await this.ensureEmbeddingModelLoaded()
   const counts: number[] = []
   for (const text of texts) {
-   const res = await loopbackFetch(`http://localhost:${sInfo.port}/tokenize`, {
+   const res = await this.loopbackFetch(`http://localhost:${sInfo.port}/tokenize`, {
     method: 'POST',
     headers: {
      'Content-Type': 'application/json',
@@ -3141,7 +3134,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     model: session.model_id,
     encoding_format: 'float',
    })
-   const response = await loopbackFetch(baseUrl, {
+   const response = await this.loopbackFetch(baseUrl, {
     method: 'POST',
     headers,
     body,

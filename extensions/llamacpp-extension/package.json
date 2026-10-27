@@ -24,6 +24,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@tauri-apps/api": "2.8.0",
     "@vitest/ui": "3.2.7",
     "cpx": "1.5.0",
     "jsdom": "26.1.0",
@@ -36,8 +37,6 @@
     "@janhq/core": "workspace:*",
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
-    "@tauri-apps/api": "2.8.0",
-    "@tauri-apps/plugin-http": "2.5.9",
     "fetch-retry": "^5.0.6",
     "ulidx": "2.4.1"
   },

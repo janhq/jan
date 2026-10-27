@@ -55,11 +55,6 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => undefined),
-  emit: vi.fn(),
-}))
-
 // Mock @janhq/core
 vi.mock('@janhq/core', () => ({
   ServiceKeys: {
@@ -100,7 +95,6 @@ vi.mock('@janhq/core', () => ({
   DownloadEvent: {
     onFileDownloadUpdate: 'onFileDownloadUpdate',
     onFileDownloadStopped: 'onFileDownloadStopped',
-    onModelValidationStarted: 'onModelValidationStarted',
     onModelValidationFailed: 'onModelValidationFailed',
   },
   AIEngine: class {},

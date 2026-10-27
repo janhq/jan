@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { i18n } from '@/i18n/react-i18next-compat'
+import { loopbackFetch } from '@/lib/loopback-fetch'
 import * as extensionsPlugin from '@janhq/tauri-plugin-extensions-api'
 import type { BuiltinExtension } from './builtins'
 import { createContext } from './context'
@@ -589,6 +590,7 @@ export class ExtensionHost {
           secrets: { get: (key) => this.options.secrets.get(key) },
           engines: { register: (engine) => EngineManager.instance().register(engine) },
           tools: this.internalTools,
+          loopbackFetch,
         }
       )
       await entry.module.activate(entry.ctx)

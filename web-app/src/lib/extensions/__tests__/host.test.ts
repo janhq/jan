@@ -7,6 +7,7 @@ import {
   type InternalExtensionContext,
 } from '@janhq/core'
 import { ExtensionHost, toastTitle } from '../host'
+import { loopbackFetch } from '@/lib/loopback-fetch'
 import { builtin, manifest } from './fixtures'
 import { memoryAppSettings, memorySecrets } from './memory'
 
@@ -176,6 +177,19 @@ describe('ExtensionHost', () => {
       })
     )
     expect(seen).toEqual(['hf_abc', null])
+  })
+
+  it('gives built-ins the host loopback fetch, which bypasses every proxy', async () => {
+    let received: InternalExtensionContext['internal']['loopbackFetch'] | undefined
+    const host = newHost()
+    await host.activateBuiltin(
+      builtin(manifest('jan.engine'), {
+        activate: (ctx: ExtensionContext) => {
+          received = (ctx as InternalExtensionContext).internal.loopbackFetch
+        },
+      })
+    )
+    expect(received).toBe(loopbackFetch)
   })
 
   it('grants a built-in exactly the permissions its manifest requests', async () => {
