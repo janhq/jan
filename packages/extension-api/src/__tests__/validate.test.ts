@@ -486,6 +486,14 @@ describe('validateManifest', () => {
     ])
   })
 
+  it('does not resolve a %key% through the object prototype', () => {
+    const pkg = minimal()
+    pkg.jan.l10n = { en: {} }
+    pkg.jan.displayName = '%constructor%'
+    pkg.jan.description = '%toString%'
+    expect(errorPaths(pkg)).toEqual(['jan.displayName', 'jan.description'])
+  })
+
   it('rejects a %key% when there is no l10n at all', () => {
     const pkg = minimal()
     pkg.jan.displayName = '%name%'

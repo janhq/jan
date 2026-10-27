@@ -204,7 +204,7 @@ describe('ExtensionHost', () => {
     expect(host.dispatcher.has('jan.notifier', 'tools')).toBe(false)
   })
 
-  it('passes model capabilities through listModels and rejects unknown ones', async () => {
+  it('passes model capabilities through listModels and rejects unknown or duplicate ones', async () => {
     const host = newHost()
     const models = vi.fn()
     await host.activateBuiltin(
@@ -229,6 +229,10 @@ describe('ExtensionHost', () => {
       { id: 'm1', capabilities: ['tools'] },
     ])
     models.mockResolvedValueOnce([{ id: 'm1', capabilities: ['teleport'] }])
+    await expect(
+      host.listProviderModels('acme.llm', 'local')
+    ).rejects.toMatchObject({ code: 'E_INVALID_ARGS' })
+    models.mockResolvedValueOnce([{ id: 'm1', capabilities: ['tools', 'tools'] }])
     await expect(
       host.listProviderModels('acme.llm', 'local')
     ).rejects.toMatchObject({ code: 'E_INVALID_ARGS' })

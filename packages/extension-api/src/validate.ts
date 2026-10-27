@@ -527,7 +527,9 @@ function checkL10n(c: Checker, jan: Obj): void {
   // above do not also produce l10n noise.
   for (const [path, value] of localizableStrings(jan)) {
     const ref = typeof value === 'string' ? L10N_REF.exec(value) : null
-    if (ref && !(ref[1] in en))
+    // Own keys only: `in` would resolve %constructor% and friends through
+    // Object.prototype, which the host's lookup does not.
+    if (ref && !Object.hasOwn(en, ref[1]))
       c.fail(path, `references '${ref[1]}', which l10n.en does not define`)
   }
 }

@@ -104,8 +104,15 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // receives the backend event, and the toast belongs to the window that
     // started the download. Per effect run so a StrictMode remount does not
     // leave a second relay behind.
+    // A failed listen is logged here and settles to undefined, so the
+    // cleanup below has nothing to stop and no rejection goes unhandled.
     const validationBridge = isMainWindow()
-      ? bridgeModelValidationStarted(getServiceHub().events())
+      ? bridgeModelValidationStarted(getServiceHub().events()).catch(
+          (error: unknown) => {
+            console.error('Relaying model validation failed:', error)
+            return undefined
+          }
+        )
       : undefined
 
     return () => {
@@ -113,7 +120,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       if (isMainWindow()) {
         getExtensionHost().deactivateAll()
       }
-      void validationBridge?.then((stop) => stop())
+      void validationBridge?.then((stop) => stop?.())
     }
   }, [setupExtensions])
 

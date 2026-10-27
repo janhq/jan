@@ -276,6 +276,24 @@ describe('ExtensionProvider', () => {
     await waitFor(() => expect(h.stopBridge).toHaveBeenCalled())
   })
 
+  it('logs a validation relay that failed to start and still unmounts cleanly', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failure = new Error('listen failed')
+    h.bridge.mockRejectedValue(failure)
+    const { unmount } = renderProvider()
+    await screen.findByTestId('child')
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith(
+        'Relaying model validation failed:',
+        failure
+      )
+    )
+    // An unhandled rejection here would fail the run.
+    unmount()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(h.stopBridge).not.toHaveBeenCalled()
+  })
+
   it('does not relay model validation in a secondary window', async () => {
     h.windowLabel = 'logs'
     renderProvider()

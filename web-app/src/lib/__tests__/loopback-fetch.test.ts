@@ -46,6 +46,29 @@ describe('loopbackFetch', () => {
     expect(httpFetch.mock.calls[0][1].proxy).toEqual(LOOPBACK_DIRECT_PROXY)
   })
 
+  it('accepts every loopback spelling, as a string, URL or Request', async () => {
+    httpFetch.mockResolvedValue(new Response('{}'))
+    await loopbackFetch('http://localhost:1/x')
+    await loopbackFetch(new URL('http://127.0.0.1:1/x'))
+    await loopbackFetch(new Request('http://[::1]:1/x'))
+    expect(httpFetch).toHaveBeenCalledTimes(3)
+  })
+
+  // The proxy bypass would otherwise send a remote request around the
+  // user's proxy. 0.0.0.0 is a listen address, not a loopback host.
+  it.each([
+    'https://api.openai.com/v1/chat/completions',
+    'http://0.0.0.0:1/x',
+    'http://127.0.0.2:1/x',
+    'http://localhost.evil.com/x',
+    'not a url',
+  ])('refuses %s without sending it', async (url) => {
+    await expect(loopbackFetch(url)).rejects.toThrow(
+      /loopbackFetch only reaches localhost, 127\.0\.0\.1 or \[::1\]/
+    )
+    expect(httpFetch).not.toHaveBeenCalled()
+  })
+
   // A chat stream is consumed while the engine is still writing it.
   it('hands back the body as a stream before it has ended', async () => {
     const encoder = new TextEncoder()

@@ -679,8 +679,34 @@ fn localizable_strings(jan: &Map<String, Value>) -> Vec<(String, Option<&Value>)
         return out;
     };
     let base = "jan.contributes";
+    if let Some(Value::Array(settings)) = contributes.get("settings") {
+        for (i, setting) in settings.iter().enumerate() {
+            let path = format!("{base}.settings[{i}]");
+            out.push((format!("{path}.title"), setting.get("title")));
+            out.push((format!("{path}.description"), setting.get("description")));
+            let Some(control) = setting.get("control") else {
+                continue;
+            };
+            match control.get("type").and_then(Value::as_str) {
+                Some("input") => {
+                    out.push((format!("{path}.control.placeholder"), control.get("placeholder")));
+                }
+                Some("dropdown") => {
+                    let Some(Value::Array(options)) = control.get("options") else {
+                        continue;
+                    };
+                    for (j, option) in options.iter().enumerate() {
+                        out.push((
+                            format!("{path}.control.options[{j}].label"),
+                            option.get("label"),
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     let lists: &[(&str, &[&str])] = &[
-        ("settings", &["title", "description"]),
         ("commands", &["title", "category"]),
         ("statusItems", &["text", "tooltip"]),
         ("providers", &["displayName"]),
@@ -1168,6 +1194,26 @@ mod tests {
         assert_eq!(paths(&pkg), vec!["jan.displayName"]);
         pkg["jan"]["l10n"] = json!({ "en": { "name": 1 } });
         assert_eq!(paths(&pkg), vec!["jan.l10n"]);
+    }
+
+    #[test]
+    fn l10n_checks_setting_placeholders_and_dropdown_labels() {
+        let mut pkg = sample();
+        pkg["jan"]["l10n"] = json!({ "en": { "name": "Hello", "greet": "Hi" } });
+        let settings = &mut pkg["jan"]["contributes"]["settings"];
+        settings[0]["control"] = json!({ "type": "input", "placeholder": "%hint%", "default": "" });
+        settings[2]["control"] = json!({
+            "type": "dropdown",
+            "options": [{ "value": "a", "label": "%greet%" }, { "value": "b", "label": "%b%" }],
+            "default": "a"
+        });
+        assert_eq!(
+            paths(&pkg),
+            vec![
+                "jan.contributes.settings[0].control.placeholder",
+                "jan.contributes.settings[2].control.options[1].label",
+            ]
+        );
     }
 
     #[test]

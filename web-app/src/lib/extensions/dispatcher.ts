@@ -88,7 +88,8 @@ export const METHOD_POLICY: { [M in HostMethod]: MethodPolicy<M> } = {
     args: z.tuple([contributionId, fn<HostArgs<'commands.register'>[1]>()]),
   },
   'commands.execute': {
-    // Only the extension's own commands are reachable (see host-api).
+    // Only the extension's own commands are reachable (see createHostApi's
+    // 'commands.execute' handler).
     permission: 'implicit',
     args: z.tuple([contributionId], json),
   },

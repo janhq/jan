@@ -72,6 +72,26 @@ vi.mock('../model-factory', () => ({
 }))
 
 import { CustomChatTransport } from '../custom-chat-transport'
+import { toModelProvider } from '../extensions/providers'
+import type { ModelCapability } from '@janhq/extension-api'
+
+// A model as an extension provider lists it, through the same mapping the
+// model picker uses, so the chat sees exactly what an extension declared.
+const extensionModel = (capabilities?: ModelCapability[]) =>
+  toModelProvider(
+    {
+      extensionId: 'acme.llm',
+      extensionName: 'Acme LLM',
+      contribution: {
+        id: 'local',
+        displayName: 'Local',
+        baseUrl: 'http://127.0.0.1:11999/v1',
+        capabilities,
+      },
+    },
+    [{ id: 'm1' }],
+    undefined
+  ).models[0]
 
 describe('extension tools in the chat transport', () => {
   beforeEach(() => {
@@ -94,6 +114,24 @@ describe('extension tools in the chat transport', () => {
     const tools = transport.getTools()
     expect(Object.keys(tools)).toEqual(['x_acme_one__echo'])
     expect(tools.x_acme_one__echo.description).toBe('Echo the input')
+  })
+
+  it('offers tools to an extension provider model that declares them', async () => {
+    const transport = new CustomChatTransport('', 'thread-1')
+    await transport.refreshTools(undefined, {
+      selectedProvider: 'acme.llm/local',
+      selectedModel: extensionModel(['completion', 'tools']),
+    })
+    expect(Object.keys(transport.getTools())).toEqual(['x_acme_one__echo'])
+  })
+
+  it('offers no tools to an extension provider model without them', async () => {
+    const transport = new CustomChatTransport('', 'thread-1')
+    await transport.refreshTools(undefined, {
+      selectedProvider: 'acme.llm/local',
+      selectedModel: extensionModel(),
+    })
+    expect(transport.getTools()).toEqual({})
   })
 
   it('leaves out a tool the user switched off', async () => {

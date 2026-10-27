@@ -147,6 +147,9 @@ const providerModels = z.array(
     capabilities: z
       .array(z.custom<ModelCapability>(isModelCapability))
       .nonempty()
+      .refine((caps) => new Set(caps).size === caps.length, {
+        message: 'capabilities must not repeat',
+      })
       .optional(),
   })
 )

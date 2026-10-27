@@ -37,7 +37,6 @@
     "@janhq/core": "workspace:*",
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
-    "fetch-retry": "^5.0.6",
     "ulidx": "2.4.1"
   },
   "engines": {
@@ -46,9 +45,6 @@
   "files": [
     "dist/*",
     "package.json"
-  ],
-  "bundleDependencies": [
-    "fetch-retry"
   ],
   "installConfig": {
     "hoistingLimits": "workspaces"

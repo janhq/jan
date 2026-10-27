@@ -625,6 +625,19 @@ describe('createBlobWorker', () => {
     expect(document.querySelectorAll('iframe')).toHaveLength(1)
   })
 
+  it('keeps one frame per document', () => {
+    const first = workerRealm(document)
+    const other = document.createElement('iframe')
+    document.body.appendChild(other)
+    const otherDoc = other.contentDocument as Document
+    const inOther = workerRealm(otherDoc)
+    expect(inOther === first).toBe(false)
+    expect(otherDoc.querySelectorAll('iframe')).toHaveLength(1)
+    // Asking for the other document's frame left this one alone.
+    expect(workerRealm(document) === first).toBe(true)
+    other.remove()
+  })
+
   it('revokes the blob URL on terminate even if the script never ran', () => {
     const { created, revoke } = fakeRealm()
     createBlobWorker('while (true) {}', 'ext:acme.loop').terminate()
