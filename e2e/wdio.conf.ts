@@ -15,12 +15,12 @@ import { SevereServiceError } from 'webdriverio'
 import { janUserDataDir } from './helpers/paths.js'
 import { isolationEnv } from './isolation.js'
 import { selectScenario } from './migration.js'
+import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, containsPath, launchContext } from './launch-guard.js'
 
 const scenario = selectScenario(process.env.JAN_E2E_SCENARIO)
 if (scenario === 'migration' && (!process.env.JAN_E2E_HOME || !['1', '2'].includes(process.env.JAN_E2E_MIGRATION_PHASE ?? ''))) {
   throw new Error('Use yarn test:migration for the owned, two-launch migration profile')
 }
-import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, containsPath, launchContext } from './launch-guard.js'
 
 // The app resolves its data folder through `core::app::paths::data_dir()`, and
 // isolation is only sound where that call can be redirected by environment:
