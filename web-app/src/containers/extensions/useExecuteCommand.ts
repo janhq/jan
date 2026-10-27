@@ -4,6 +4,7 @@ import type { CommandContext } from '@janhq/extension-api'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getExtensionHost } from '@/lib/extensions/host'
 import { own, useContributions } from '@/lib/extensions/contributions'
+import { localize } from '@/lib/extensions/l10n'
 
 /**
  * Runs a contributed command from host UI. A failure never reaches the
@@ -30,13 +31,14 @@ export function useExecuteCommand() {
           error
         )
         const state = useContributions.getState()
+        const extension = own(state.extensions, extensionId)
+        const title = own(own(state.commands, extensionId), commandId)?.title
         toast.error(
           t('extensions:commandFailed', {
-            command:
-              own(own(state.commands, extensionId), commandId)?.title ??
-              commandId,
-            extension:
-              state.extensions[extensionId]?.displayName ?? extensionId,
+            command: title === undefined ? commandId : localize(extension, title),
+            extension: extension
+              ? localize(extension, extension.displayName)
+              : extensionId,
           }),
           {
             description: error instanceof Error ? error.message : String(error),

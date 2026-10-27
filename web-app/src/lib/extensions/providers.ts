@@ -4,9 +4,10 @@ import {
   type ProviderModel,
 } from '@janhq/extension-api'
 import { i18n } from '@/i18n/react-i18next-compat'
-import type { ContributionState } from './contributions'
+import { own, type ContributionState } from './contributions'
 import { getExtensionHost } from './host'
 import type { ProviderFetchMode } from './http'
+import { localize } from './l10n'
 
 /**
  * The provider name a contributed provider gets in `useModelProvider`.
@@ -47,23 +48,33 @@ export function extensionProviderFetch(
 /** A contributed provider whose extension has activated it. */
 export interface ActiveExtensionProvider {
   extensionId: string
-  /** The manifest `displayName` of the extension. */
+  /** The manifest `displayName` of the extension, in the app language. */
   extensionName: string
   contribution: ProviderContribution
 }
 
-/** Every provider an extension declared and bound, in a stable order. */
+/**
+ * Every provider an extension declared and bound, in a stable order, its
+ * names resolved in the current app language.
+ */
 export function listExtensionProviders(
   state: ContributionState
 ): ActiveExtensionProvider[] {
   const result: ActiveExtensionProvider[] = []
   for (const extensionId of Object.keys(state.providers).sort()) {
     const providers = state.providers[extensionId]
-    const extensionName =
-      state.extensions[extensionId]?.displayName ?? extensionId
+    const extension = own(state.extensions, extensionId)
+    const extensionName = extension
+      ? localize(extension, extension.displayName)
+      : extensionId
     for (const id of Object.keys(providers).sort()) {
-      const { handler, ...contribution } = providers[id]
-      if (handler) result.push({ extensionId, extensionName, contribution })
+      const { handler, ...declared } = providers[id]
+      if (!handler) continue
+      const contribution = {
+        ...declared,
+        displayName: localize(extension, declared.displayName),
+      }
+      result.push({ extensionId, extensionName, contribution })
     }
   }
   return result

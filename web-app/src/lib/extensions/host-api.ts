@@ -30,6 +30,7 @@ import type {
   AppSettingsBackend,
   ExtensionSettingsStore,
 } from './settings-store'
+import { localize } from './l10n'
 import { createExtensionStorage } from './storage'
 
 export type Notify = (notification: {
@@ -322,7 +323,11 @@ export function createHostApi(
     },
     'ui.notify': (_call, { level, message }) => {
       if (limits.notifyRate && !notifyAllowed()) throw tooMany('notifications')
-      deps.notify({ extensionName: manifest.displayName, level, message })
+      deps.notify({
+        extensionName: localize(manifest, manifest.displayName),
+        level,
+        message,
+      })
     },
     'ui.setStatusItem': (_call, itemId, update) =>
       contributions.setStatusItem(id, itemId, update),

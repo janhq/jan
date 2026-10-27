@@ -14,6 +14,7 @@ vi.mock('@/lib/extensions/host', async (importOriginal) => ({
   getExtensionHost: () => h.host,
 }))
 
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useExtensionProviders } from '../useExtensionProviders'
 
@@ -161,5 +162,49 @@ describe('useExtensionProviders', () => {
       ).toBeUndefined()
     )
   })
-})
 
+  it('renames the provider when the app language changes', async () => {
+    renderHook(() => useExtensionProviders())
+    const localized = manifest('acme.llm', {
+      ...providerManifest,
+      displayName: '%name%',
+      contributes: {
+        ...providerManifest.contributes,
+        providers: [
+          {
+            id: 'local',
+            displayName: '%local%',
+            baseUrl: 'http://127.0.0.1:11999/v1',
+          },
+        ],
+      },
+      l10n: {
+        en: { name: 'Acme', local: 'Acme Local' },
+        ja: { name: 'Akume', local: 'Akume Rokaru' },
+      },
+    })
+    await host.activateBuiltin(
+      builtin(localized, {
+        activate: (ctx) => {
+          ctx.subscriptions.add(ctx.providers.registerProvider('local', {}))
+        },
+      })
+    )
+    const current = () =>
+      useModelProvider.getState().getProviderByName('acme.llm/local')
+    await waitFor(() =>
+      expect(current()).toMatchObject({
+        display_name: 'Acme Local',
+        source: { extensionName: 'Acme' },
+      })
+    )
+    act(() => useGeneralSetting.getState().setCurrentLanguage('ja'))
+    await waitFor(() =>
+      expect(current()).toMatchObject({
+        display_name: 'Akume Rokaru',
+        source: { extensionName: 'Akume' },
+      })
+    )
+    act(() => useGeneralSetting.getState().setCurrentLanguage('en'))
+  })
+})

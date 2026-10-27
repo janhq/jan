@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useContributions } from '@/lib/extensions/contributions'
 import { getExtensionHost } from '@/lib/extensions/host'
@@ -35,7 +36,7 @@ async function resolve(provider: ActiveExtensionProvider): Promise<ModelProvider
  * they show up in the model picker; inference with them runs on their
  * extension's network path (`extensionProviderFetch`). A provider leaves
  * the list when its extension releases it or stops; a change of its API
- * key setting refreshes it.
+ * key setting refreshes it, and a language change renames it.
  */
 export function useExtensionProviders() {
   useEffect(() => {
@@ -59,6 +60,10 @@ export function useExtensionProviders() {
     }
     void sync()
     const unsubscribe = useContributions.subscribe(() => void sync())
+    // Names are resolved in `sync`; the comparison key skips a no-op.
+    const language = useGeneralSetting.subscribe(
+      (s, prev) => s.currentLanguage !== prev.currentLanguage && void sync()
+    )
     const settings = getExtensionHost().settings.onDidChange((change) => {
       const isKey = listExtensionProviders(useContributions.getState()).some(
         (p) =>
@@ -71,6 +76,7 @@ export function useExtensionProviders() {
     })
     return () => {
       unsubscribe()
+      language()
       settings.dispose()
       generation++
     }

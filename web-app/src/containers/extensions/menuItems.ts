@@ -5,6 +5,7 @@ import type {
   WhenClause,
 } from '@janhq/extension-api'
 import { own, useContributions } from '@/lib/extensions/contributions'
+import { useLocalize } from '@/lib/extensions/l10n'
 import { useMessages } from '@/hooks/useMessages'
 
 /** One contributed menu entry, resolved against its command and extension. */
@@ -66,6 +67,7 @@ export function useContributedMenuItems<L extends MenuLocation>(
   const extensions = useContributions((s) => s.extensions)
   const menus = useContributions((s) => s.menus)
   const commands = useContributions((s) => s.commands)
+  const localize = useLocalize()
   const threadId = threadIdOf(context)
   const threadHasMessages = useMessages((s) =>
     threadId ? (s.messages[threadId]?.length ?? 0) > 0 : false
@@ -87,10 +89,13 @@ export function useContributedMenuItems<L extends MenuLocation>(
                 when: item.when,
                 item: {
                   extensionId,
-                  extensionName: extension.displayName,
+                  extensionName: localize(extension, extension.displayName),
                   commandId: command.id,
-                  title: command.title,
-                  category: command.category,
+                  title: localize(extension, command.title),
+                  category:
+                    command.category === undefined
+                      ? undefined
+                      : localize(extension, command.category),
                   group: item.group,
                   order: item.order,
                 },
@@ -99,7 +104,7 @@ export function useContributedMenuItems<L extends MenuLocation>(
           })
         )
         .sort((a, b) => compare(a.item, b.item)),
-    [menus, commands, extensions, location]
+    [menus, commands, extensions, location, localize]
   )
 
   return resolved

@@ -6,6 +6,7 @@ import {
   type AIEngine,
   type InternalExtensionContext,
 } from '@janhq/core'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ExtensionHost, toastTitle } from '../host'
 import { loopbackFetch } from '@/lib/loopback-fetch'
 import { builtin, manifest } from './fixtures'
@@ -331,5 +332,34 @@ describe('ExtensionHost', () => {
       message: 'Update now',
     })
     expect(toastTitle('Jan')).toBe('Extension: Jan')
+  })
+
+  it('names the extension of a notification in the app language', async () => {
+    const notify = vi.fn()
+    const host = new ExtensionHost({
+      appSettings: memoryAppSettings(),
+      secrets: memorySecrets(),
+      notify,
+    })
+    useGeneralSetting.setState({ currentLanguage: 'ja' })
+    await host.activateBuiltin(
+      builtin(
+        manifest('jan.notifier', {
+          displayName: '%name%',
+          permissions: ['ui:notify'],
+          l10n: { en: { name: 'Notifier' }, ja: { name: 'Tsuchi' } },
+        }),
+        {
+          activate: (ctx) =>
+            ctx.ui.notify({ level: 'info', message: 'Hi' }),
+        }
+      )
+    )
+    useGeneralSetting.setState({ currentLanguage: 'en' })
+    expect(notify).toHaveBeenCalledWith({
+      extensionName: 'Tsuchi',
+      level: 'info',
+      message: 'Hi',
+    })
   })
 })

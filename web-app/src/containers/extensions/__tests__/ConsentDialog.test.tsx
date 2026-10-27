@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { staged } from '@/services/extensions/__tests__/mock'
 import type { StagedInstall } from '@/services/extensions/types'
 import { ConsentDialog } from '../ConsentDialog'
@@ -134,6 +135,24 @@ describe('ConsentDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalled()
     expect(onConfirm).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConsentDialog l10n', () => {
+  afterEach(() => useGeneralSetting.setState({ currentLanguage: 'en' }))
+
+  it('names the extension in the app language', () => {
+    useGeneralSetting.setState({ currentLanguage: 'ja' })
+    const pending = staged('acme.hello', [])
+    pending.manifest = {
+      ...pending.manifest,
+      displayName: '%name%',
+      l10n: { en: { name: 'Hello' }, ja: { name: 'Konnichiwa' } },
+    }
+    render(
+      <ConsentDialog staged={pending} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    )
+    expect(screen.getByRole('dialog')).toHaveTextContent('Install Konnichiwa?')
   })
 })
 

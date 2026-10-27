@@ -25,6 +25,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getExtensionHost, type HostedExtension } from '@/lib/extensions/host'
 import { applySafeMode } from '@/lib/extensions/installed-loader'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalize } from '@/lib/extensions/l10n'
 import type { InstalledExtension } from '@/services/extensions/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,6 +77,7 @@ function InstalledCard({
   registry: InstalledRegistry
 }) {
   const { t } = useTranslation()
+  const localize = useLocalize()
   const { service, change, busy } = registry
   return (
     <ExtensionCard
@@ -88,7 +90,7 @@ function InstalledCard({
           <DetailsLink id={entry.id} />
           <Switch
             aria-label={t('extensions:enable', {
-              name: entry.manifest.displayName,
+              name: localize(entry.manifest, entry.manifest.displayName),
             })}
             checked={entry.enabled}
             disabled={busy}

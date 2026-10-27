@@ -10,7 +10,6 @@ keywords:
     contributions,
   ]
 ---
-import { Callout } from 'nextra/components'
 
 # Extension Manifest
 
@@ -164,9 +163,10 @@ Requires the `providers` permission.
 
 ## Localization
 
-`displayName`, `description`, setting titles and descriptions, command titles
-and categories, status item text and tooltips, and provider display names may
-be a literal or a `%key%` reference into `l10n`:
+`displayName`, `description`, setting titles, descriptions, input placeholders
+and dropdown option labels, command titles and categories, status item text and
+tooltips, and provider display names may be a literal or a `%key%` reference
+into `l10n`:
 
 ```json
 {
@@ -180,11 +180,18 @@ be a literal or a `%key%` reference into `l10n`:
 
 Every `%key%` used must exist in `l10n.en`; the validator enforces this.
 
-<Callout type="warning">
-In this release Jan validates `l10n` but displays manifest strings as written;
-`%key%` references are not resolved in the UI yet. Prefer plain English text
-until resolution ships.
-</Callout>
+Jan resolves a reference wherever it shows the string: the command palette and
+menus, the status bar, the settings form, Settings > Extensions, consent dialogs,
+notifications and the model picker. It looks the key up in the app language,
+then in its base language (`de` for `de-DE`), then in `en`; a key found nowhere
+is shown as written. Locale keys use Jan's language codes: `en`, `ca`, `cs`,
+`de-DE`, `es`, `fr`, `hi`, `id`, `it`, `ja`, `ko`, `pl`, `pt-BR`, `ru`, `vn`,
+`zh-CN`, `zh-TW`. Switching the language in Settings updates the text right
+away, and the tables go away with the extension when it stops or is unloaded.
+
+Only a value that is exactly `%key%` is a reference; `Hello %name%` is shown as
+written. Status item text and tooltips set at runtime with `setStatusItem` are
+resolved the same way, so they may also be a `%key%`.
 
 ## Full example
 

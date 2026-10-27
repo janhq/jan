@@ -56,6 +56,7 @@ import {
   type SecretBackend,
 } from './settings-store'
 import { toToolOutcome, type ToolCallOutcome } from './tools'
+import { localize } from './l10n'
 import { crashCounter } from './watchdog'
 import {
   createBlobWorker,
@@ -514,7 +515,7 @@ export class ExtensionHost {
       if (this.crashLimitReached(id)) {
         this.disabledForSession.add(id)
         this.options.notify({
-          extensionName: manifest.displayName,
+          extensionName: localize(manifest, manifest.displayName),
           level: 'error',
           message: i18n.t('extensions:crashed.disabled'),
         })
