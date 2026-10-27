@@ -1,0 +1,77 @@
+---
+title: "Jan v0.8.8: Security Fixes, llama.cpp 0.7.0 & Local API Trusted Hosts"
+version: 0.8.8
+description: "Jan v0.8.8 is a security release: links from chat open in your browser, the local API checks where requests come from, and several file, path and shell-profile checks are tightened. It also updates the bundled llama.cpp engine to 0.7.0 and fixes local models on Windows user names with non-English characters."
+date: 2026-10-27
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.8: Security Fixes, llama.cpp 0.7.0 & Local API Trusted Hosts"
+  date="2026-10-27"
+/>
+
+# A security update to v0.8.7
+
+v0.8.8 fixes security issues reported through GitHub Security Advisories and hardens several places that handle content Jan doesn't control: links in chat, requests to the local API server, and files written for you. **We recommend updating.** Your data and settings carry over. A few behaviours change, listed under **What you might notice**.
+
+Thank you to everyone who reported these issues responsibly. Advisories with full details and credits will be published shortly after this release.
+
+---
+
+# Security
+
+- **Links in chat open in your browser.** Links in model replies, tool results, model cards and release notes now always open in your system browser, never inside Jan's window. Links that aren't web or email links are shown as plain text.
+- **The local API server checks where browser requests come from.** A web page can only call it if its origin is trusted: the same machine, Jan itself, or a host you list in **Trusted Hosts**. Requests without a browser origin (SDKs, scripts, curl, Claude Code) work as before.
+- **Server-side tool execution stays opt-in for every endpoint.** Requests to the local API run MCP tools only when **Settings > Local API Server** allows server-side tool execution.
+- **Paths are checked before Jan reads or writes them.** Thread and assistant ids, and the file operations extensions use, stay inside Jan's data folder.
+- **The Claude Code integration writes your shell profile safely.** Values are quoted, unusual variable names are refused, and Jan's lines are kept in one marked block that Reset removes completely without touching your own lines.
+- **The agent's file tools no longer follow a link out of their workspace**, and folders such as your home, credentials and startup folders can't be attached as writable.
+- **Windows: Jan runs system tools from the Windows system folder**, and sign-in links are opened without going through `cmd`.
+- **MCP sign-in only uses web addresses** (`http`/`https`) for its endpoints.
+
+---
+
+# What you might notice
+
+- **Trusted Hosts for browser-based clients.** A web app on another machine (for example Open WebUI's direct connection) or a browser extension calling Jan's API needs its host added to **Settings > Local API Server > Trusted Hosts**. Entries can include a scheme, so `app://obsidian.md` works for Obsidian plugins (thanks to [@SnowingFox](https://github.com/SnowingFox), [#8608](https://github.com/janhq/jan/issues/8608)). Pages without a normal origin (local files, sandboxed frames) can be allowed by listing `file://` or `null`.
+- **The CORS switch now takes effect**, and it starts **on** after updating. In earlier versions it was shown but had no effect.
+- **Custom environment variables for Claude Code:** keys that change how programs are found (`PATH`, `PATHEXT`, `SystemRoot`, `ComSpec`, `LD_*`, `DYLD_*`, `JAN_*` and the GPU runtime paths Jan uses) are refused with a message. Other variables, including `NODE_OPTIONS`, save as before.
+- **Moving the data folder** to a system folder, your home folder itself or a drive root (for example `D:\`) is refused; choose a folder such as `D:\Jan`.
+- **MCP servers whose sign-in endpoints aren't web addresses** now show a sign-in error.
+
+---
+
+# New
+
+**llama.cpp engine 0.7.0.**
+
+The bundled engine moves from 0.5.0 to 0.7.0 (b11669). New per-model settings: an **MoE expert GPU cache** for mixture-of-experts models, **Probabilistic draft sampling** and **Draft batch size** for speculative decoding. They default to the engine's own defaults, so nothing changes unless you set them. Saved prompt caches from the previous engine are discarded once and rebuilt. ([#9399](https://github.com/janhq/jan/pull/9399))
+
+---
+
+# Fixes
+
+**Local models failed to load on Windows when the user name had non-English characters** (for example Cyrillic). ([#9418](https://github.com/janhq/jan/pull/9418))
+
+**With an HTTP proxy configured, documents with "Use embeddings" failed**, because Jan's requests to its own engine went through the proxy. They now go direct; remote providers still use the proxy. ([#9353](https://github.com/janhq/jan/pull/9353))
+
+**An attachment was sent again on every turn**, adding a copy per message and defeating the prompt cache. It's now included once per request. Thanks to [@yaodong-shen](https://github.com/yaodong-shen). ([#9358](https://github.com/janhq/jan/pull/9358))
+
+**With Shell turned off, a model that called the shell ended its reply.** It now gets "Shell is turned off" and the reply continues. ([#9319](https://github.com/janhq/jan/issues/9319))
+
+**macOS: quitting Jan left the MLX server running** with its model in memory. It's stopped on quit, and one left by an earlier Jan is stopped at startup; an MLX server you started yourself is left alone. ([#9355](https://github.com/janhq/jan/pull/9355))
+
+---
+
+# Thanks
+
+Fixes in this release include work from [@greatjourney589](https://github.com/greatjourney589) ([#8068](https://github.com/janhq/jan/pull/8068)), [@SnowingFox](https://github.com/SnowingFox) ([#8627](https://github.com/janhq/jan/pull/8627)) and [@orenyomtov](https://github.com/orenyomtov).
+
+---
+
+# Known issues
+
+- **Auto compact** needs **Max Context Tokens** set for remote models; Jan does not detect a remote model's context window yet ([#9317](https://github.com/janhq/jan/issues/9317)).
+- Local models do not run on Intel Macs, as in v0.8.5.
