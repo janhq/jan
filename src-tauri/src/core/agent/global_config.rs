@@ -356,8 +356,11 @@ pub(crate) struct ProviderUpdate {
 
 /// `~/.jan`, the user-wide config directory.
 pub(crate) fn global_jan_dir() -> Result<PathBuf, String> {
-    dirs::home_dir()
-        .map(|home| home.join(".jan"))
+    #[cfg(test)]
+    let home = TEST_HOME.with(|home| Some(home.borrow().path().to_path_buf()));
+    #[cfg(not(test))]
+    let home = dirs::home_dir();
+    home.map(|home| home.join(".jan"))
         .ok_or_else(|| "could not resolve the user's home directory".to_string())
 }
 
@@ -1041,30 +1044,48 @@ pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Redirect `HOME` to a scratch dir for the duration of `f`. Every test that
-/// touches `~/.jan` must go through this one helper: `HOME` is process-wide, so
-/// a second lock elsewhere would let those tests race each other.
+// Resolve config paths independently of platform home APIs in unit tests. Each
+// thread starts with a fresh directory, including tests outside with_temp_home.
+#[cfg(test)]
+thread_local! {
+    static TEST_HOME: std::cell::RefCell<tempfile::TempDir> =
+        std::cell::RefCell::new(tempfile::tempdir().expect("test config home"));
+}
+
+/// Give config resolution a fresh scratch home on every platform. Keep HOME
+/// redirected for existing callers that also exercise HOME-based code. That
+/// environment variable is process-wide, so all such callers share this lock.
+/// Both overrides are restored on unwind; the scratch directory is RAII-owned.
 #[cfg(test)]
 pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
-    std::fs::create_dir_all(&home).unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
-    let result = f(&home);
-    match prev {
-        Some(p) => std::env::set_var("HOME", p),
-        None => std::env::remove_var("HOME"),
+    let home = tempfile::tempdir().expect("test config home");
+    let path = home.path().to_path_buf();
+    let previous = TEST_HOME.with(|slot| slot.replace(home));
+    struct Restore {
+        home: Option<tempfile::TempDir>,
+        env: Option<std::ffi::OsString>,
     }
-    let _ = std::fs::remove_dir_all(&home);
-    result
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_HOME.with(|slot| {
+                slot.replace(self.home.take().unwrap());
+            });
+            match &self.env {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+    let _restore = Restore {
+        home: Some(previous),
+        env: std::env::var_os("HOME"),
+    };
+    std::env::set_var("HOME", &path);
+    f(&path)
 }
 
 // The suite covers the provider records and the TUI's settings writers, which
@@ -1073,6 +1094,23 @@ pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_resolver_uses_fixture_and_restores_after_panic() {
+        let before = global_config_path().unwrap();
+        let mut scratch = None;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_temp_home(|home| {
+                scratch = Some(home.to_path_buf());
+                assert_eq!(global_config_path().unwrap(), home.join(".jan/config.toml"));
+                ensure_global_config().unwrap();
+                panic!("exercise fixture cleanup");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(global_config_path().unwrap(), before);
+        assert!(!scratch.unwrap().exists());
+    }
 
     #[test]
     fn missing_file_yields_empty_map() {

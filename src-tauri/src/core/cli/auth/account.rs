@@ -138,7 +138,12 @@ pub fn begin(provider: AccountProvider) -> Result<AccountLogin, String> {
 pub fn debug_log(message: &str) {
     use std::io::Write;
 
+    #[cfg(not(test))]
     let data_folder = crate::core::app::commands::resolve_jan_data_folder();
+    // Async OAuth tests can log without a TempSecrets fixture. Never consult
+    // real app configuration (or process-global JAN_DATA_FOLDER) in unit tests.
+    #[cfg(test)]
+    let data_folder = TEST_LOG_ROOT.with(|root| root.path().to_path_buf());
     let path = data_folder.join("logs").join("account-oauth.log");
     let _ = std::fs::create_dir_all(path.parent().expect("log path has a parent"));
     let timestamp = std::time::SystemTime::now()
@@ -152,6 +157,12 @@ pub fn debug_log(message: &str) {
     {
         let _ = writeln!(file, "[{timestamp}] {message}");
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_LOG_ROOT: tempfile::TempDir = tempfile::tempdir().expect("OAuth test logs");
+    static KEYCHAIN_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn random_url_safe(bytes: usize) -> String {
@@ -662,6 +673,13 @@ fn claude_code_oauth(raw: &str) -> Option<OAuthToken> {
 
 /// The clean generic macOS keychain descriptor type returned by the keyring
 /// crate for a `Claude Code-credentials` entry.
+#[cfg(test)]
+fn claude_code_keychain_entry() -> Option<keyring::Entry> {
+    KEYCHAIN_LOOKUPS.with(|count| count.set(count.get() + 1));
+    None // Unit tests must never read or rotate a developer's credential.
+}
+
+#[cfg(not(test))]
 fn claude_code_keychain_entry() -> Option<keyring::Entry> {
     // The account name is the macOS login user, which the OS keychain keys the
     // entry under. Claude Code names its service with the stable literal
@@ -1107,6 +1125,15 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::{mpsc, MutexGuard};
 
+    #[test]
+    fn debug_log_writes_to_test_scratch_directory() {
+        debug_log("isolated OAuth diagnostic");
+        TEST_LOG_ROOT.with(|root| {
+            let log = std::fs::read_to_string(root.path().join("logs/account-oauth.log")).unwrap();
+            assert!(log.contains("isolated OAuth diagnostic"));
+        });
+    }
+
     /// Serializes the tests that mutate the process-global Claude alias latch,
     /// which cargo runs in parallel threads. A tokio mutex, not a std one:
     /// these tests hold the guard across `.await`.
@@ -1219,8 +1246,14 @@ mod tests {
     }
 
     fn complete_account_for_test(models_base_url: String) -> Result<AccountProvider, String> {
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+        // Stay on the fixture-owning OS thread: global config resolution is
+        // thread-local in unit tests. A spawned completion thread would write
+        // into a different scratch home from the caller's assertions.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = listener.local_addr().unwrap();
                 let mut login = begin(AccountProvider::Codex).unwrap();
@@ -1241,9 +1274,6 @@ mod tests {
                 client.await.unwrap();
                 result
             })
-        })
-        .join()
-        .expect("account completion thread must not panic")
     }
 
 
@@ -1253,8 +1283,14 @@ mod tests {
     fn complete_claude_account_for_test(
         models_base_url: String,
     ) -> Result<AccountProvider, String> {
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+        // Stay on the fixture-owning OS thread: global config resolution is
+        // thread-local in unit tests. A spawned completion thread would write
+        // into a different scratch home from the caller's assertions.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = listener.local_addr().unwrap();
                 let mut login = begin(AccountProvider::Claude).unwrap();
@@ -1274,15 +1310,18 @@ mod tests {
                 client.await.unwrap();
                 result
             })
-        })
-        .join()
-        .expect("claude account completion thread must not panic")
     }
     fn complete_account_manually_for_test(
         models_base_url: String,
     ) -> Result<AccountProvider, String> {
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+        // Stay on the fixture-owning OS thread: global config resolution is
+        // thread-local in unit tests. A spawned completion thread would write
+        // into a different scratch home from the caller's assertions.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let mut login = begin(AccountProvider::Codex).unwrap();
                 login.token_endpoint = codex_token_server("account-321");
@@ -1292,9 +1331,6 @@ mod tests {
                 manual.send(manual_input).unwrap();
                 complete_callback_login_with_manual(listener.into(), login, receiver).await
             })
-        })
-        .join()
-        .expect("manual account completion thread must not panic")
     }
 
     #[test]
@@ -1751,6 +1787,8 @@ mod tests {
                 Some(Credential::OAuthToken(token))
             );
 
+            // Completion must persist in this fixture, not another thread's home.
+            assert!(crate::core::agent::global_config::global_config_path().unwrap().is_file());
             let cfg = load_global_config().unwrap().get("openai").unwrap().clone();
             assert!(cfg.api_key.is_none());
             assert!(cfg.api_keys.is_empty());
@@ -2069,15 +2107,23 @@ mod tests {
     async fn claude_alias_toggle_controls_the_lookup_gate() {
         let _guard = alias_test_lock().await;
         set_claude_alias(false);
-        // Off: the keychain is never touched, so this is deterministic None
-        // even on a machine with Claude Code / omp installed.
+        KEYCHAIN_LOOKUPS.with(|count| count.set(0));
         assert_eq!(claude_code_access_token().await, None);
+        assert_eq!(claude_code_subscription_type(), None);
+        KEYCHAIN_LOOKUPS.with(|count| assert_eq!(count.get(), 0));
         set_claude_alias(true);
+        // Reset even if an assertion panics, so the gate cannot leak to peers.
+        struct ResetAlias;
+        impl Drop for ResetAlias {
+            fn drop(&mut self) {
+                set_claude_alias(false);
+            }
+        }
+        let _reset = ResetAlias;
         assert!(claude_alias_enabled());
-        // On: it may surface a real token (on a machine with omp signed in) or
-        // None (sandboxed/CI); either is a valid gate result, so only assert
-        // the gate flips without panicking.
-        let _ = claude_code_access_token().await;
+        assert_eq!(claude_code_access_token().await, None);
+        assert_eq!(claude_code_subscription_type(), None);
+        KEYCHAIN_LOOKUPS.with(|count| assert_eq!(count.get(), 2));
         set_claude_alias(false);
         assert!(!claude_alias_enabled());
     }

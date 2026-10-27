@@ -28,10 +28,24 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 
 /// The user-wide skill store root: `~/.jan` (skills live in its `skills/`,
 /// beside the user memory scope `~/.jan/memory`). Resolved through
-/// [`crate::core::agent::project::jan_home`], so test builds point at a
-/// per-process temp home. `None` when there is no usable home directory.
+/// [`crate::core::agent::project::jan_home`] in production; test builds use a
+/// per-thread scratch home. `None` when there is no usable home directory.
 pub(crate) fn user_store_root() -> Option<PathBuf> {
-    crate::core::agent::project::jan_home()
+    #[cfg(test)]
+    {
+        TEST_USER_STORE.with(|root| Some(root.path().to_path_buf()))
+    }
+    #[cfg(not(test))]
+    {
+        crate::core::agent::project::jan_home()
+    }
+}
+
+// Separate user fixtures even when cargo runs skill tests concurrently. Owned
+// scratch directories also prevent stale per-process fixtures after PID reuse.
+#[cfg(test)]
+thread_local! {
+    static TEST_USER_STORE: tempfile::TempDir = tempfile::tempdir().expect("test user skills");
 }
 
 /// `~/.jan/skills`, the user scope: skills visible from every project.
@@ -993,6 +1007,21 @@ pub(crate) fn delete(root: &Path, name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_skill_fixtures_are_thread_local() {
+        let mut user = UserSkills::new();
+        user.folder("isolation-probe", "fixture body");
+        let here = user_skills_dir().unwrap();
+        let other = std::thread::spawn(|| {
+            let dir = user_skills_dir().unwrap();
+            assert!(!dir.join("isolation-probe").exists());
+            dir
+        }).join().unwrap();
+        assert_ne!(here, other);
+        assert!(here.join("isolation-probe/SKILL.md").exists());
+        assert!(!other.exists(), "scratch root is removed when its thread exits");
+    }
 
     #[test]
     fn parse_extracts_description_and_strips_frontmatter() {
