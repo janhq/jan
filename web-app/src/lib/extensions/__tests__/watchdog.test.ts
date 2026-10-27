@@ -489,6 +489,19 @@ describe('loadWithCrashLoopGuard', () => {
     expect(counter(settings)).toBe(String(MAX_FAILED_STARTS + 1))
   })
 
+  it('still loads when the counter cannot be read or saved', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const broken of ['get', 'set'] as const) {
+      const settings = memoryAppSettings()
+      vi.spyOn(settings, broken).mockRejectedValue(new Error('disk full'))
+      const { setSafeMode, run } = guard(settings)
+      const load = vi.fn(async () => {})
+      await expect(run(load)).resolves.toBeUndefined()
+      expect(load).toHaveBeenCalledTimes(1)
+      expect(setSafeMode).not.toHaveBeenCalled()
+    }
+  })
+
   it('treats a garbled counter as zero', async () => {
     const settings = memoryAppSettings()
     settings.data.set(FAILED_STARTS_KEY, 'lots')

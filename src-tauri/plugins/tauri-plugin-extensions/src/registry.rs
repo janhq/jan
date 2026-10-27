@@ -198,6 +198,10 @@ pub fn remove_legacy(root: &Path) {
             Err(e) => log::warn!("cannot remove {}: {e}", file.display()),
         }
     }
+    // Not tied to `is_legacy`: an upgrade interrupted after the list was
+    // removed must still lose the folder, and nothing else writes there,
+    // since `is_extension_id` never allows a '@' and every install lives
+    // under its id.
     let scope = root.join(LEGACY_SCOPE_DIR);
     match fs::remove_dir_all(&scope) {
         Ok(()) => log::info!("removed the pre-runtime extensions folder {}", scope.display()),
