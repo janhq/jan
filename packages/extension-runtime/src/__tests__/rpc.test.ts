@@ -386,7 +386,7 @@ describe('Endpoint', () => {
     port2.close()
   })
 
-  it('lets a pong through even when admit refuses everything else', async () => {
+  it('lets a pong to an outstanding ping through even when admit refuses everything else', async () => {
     const rejected = vi.fn()
     const control = vi.fn()
     const admit = vi.fn(() => false)
@@ -397,6 +397,7 @@ describe('Endpoint', () => {
       admit,
     })
     open.push(host)
+    host.sendControl({ v: 1, t: 'ping', n: 1 })
     port2.postMessage({ v: 1, t: 'evt', sub: 1, value: 'flood' })
     port2.postMessage({ v: 1, t: 'pong', n: 1 })
     await vi.waitFor(() => expect(control).toHaveBeenCalledTimes(1))
@@ -405,6 +406,28 @@ describe('Endpoint', () => {
     // The pong spent no token: a busy but alive worker is not starved of
     // its heartbeat by its own traffic.
     expect(admit).toHaveBeenCalledTimes(1)
+    port2.close()
+  })
+
+  it('charges a pong no ping is waiting on to admit', async () => {
+    const rejected = vi.fn()
+    const control = vi.fn()
+    const admit = vi.fn(() => false)
+    const { port1, port2 } = new MessageChannel()
+    const host = new Endpoint(portTransport(port1), {
+      onRejected: rejected,
+      onControl: control,
+      admit,
+    })
+    open.push(host)
+    host.sendControl({ v: 1, t: 'ping', n: 1 })
+    // Ahead of any ping, a repeat of an answered one, and one never sent.
+    port2.postMessage({ v: 1, t: 'pong', n: 1 })
+    port2.postMessage({ v: 1, t: 'pong', n: 1 })
+    port2.postMessage({ v: 1, t: 'pong', n: 2 })
+    await vi.waitFor(() => expect(rejected).toHaveBeenCalledTimes(2))
+    expect(control).toHaveBeenCalledTimes(1)
+    expect(admit).toHaveBeenCalledTimes(2)
     port2.close()
   })
 })

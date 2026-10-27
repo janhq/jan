@@ -491,6 +491,20 @@ describe('startWorker', () => {
     parse.mockRestore()
   })
 
+  it('terminates a worker that floods pongs no ping asked for', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { started, worker } = start(
+      `var JanExtension = { activate: function () {
+        setTimeout(function () {
+          for (var i = 0; i < ${MESSAGE_BURST * 4}; i++)
+            self.postMessage({ v: 1, t: 'pong', n: 0 });
+        }, 10);
+      } };`
+    )
+    await started
+    await vi.waitFor(() => expect(worker()?.terminated).toBe(true))
+  })
+
   it('terminates a worker that keeps making calls it is refused', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { started, worker } = start(
