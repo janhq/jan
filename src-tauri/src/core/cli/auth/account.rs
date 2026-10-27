@@ -671,14 +671,15 @@ fn claude_code_oauth(raw: &str) -> Option<OAuthToken> {
     })
 }
 
-/// The clean generic macOS keychain descriptor type returned by the keyring
-/// crate for a `Claude Code-credentials` entry.
+/// Test fake: count lookup attempts without accessing OS credentials.
 #[cfg(test)]
 fn claude_code_keychain_entry() -> Option<keyring::Entry> {
     KEYCHAIN_LOOKUPS.with(|count| count.set(count.get() + 1));
     None // Unit tests must never read or rotate a developer's credential.
 }
 
+/// The clean generic macOS keychain descriptor type returned by the keyring
+/// crate for a `Claude Code-credentials` entry.
 #[cfg(not(test))]
 fn claude_code_keychain_entry() -> Option<keyring::Entry> {
     // The account name is the macOS login user, which the OS keychain keys the
