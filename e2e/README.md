@@ -109,7 +109,7 @@ cd e2e && yarn test
 | Variable | Effect |
 | --- | --- |
 | `JAN_E2E_KEEP=1` | Keep the throwaway profile after the run instead of deleting it. |
-| `JAN_E2E_HOME=<dir>` | Use `<dir>` as the profile instead of a fresh temp dir. A directory supplied this way is never deleted — only a profile the harness created is cleaned up. Primarily how the launcher hands the path to its workers. |
+| `JAN_E2E_HOME=<dir>` | Use a validated `<dir>` strictly inside the OS temp root as the profile instead of a fresh temp dir. A directory supplied this way is never deleted — only a profile the harness created is cleaned up. Primarily how the launcher hands the path to its workers. |
 
 This package is **not** a yarn workspace of the root project. It has its own
 lockfile, because it shares no code with `core`/`web-app` and adding it to the
@@ -121,7 +121,8 @@ the release-build jobs that never run this suite.
 Two workflows, deliberately split by cost:
 
 - `.github/workflows/e2e-check.yml` runs on every PR that touches `e2e/**`. It
-  type-checks this package and enforces `--immutable` against its lockfile. It
+  runs focused launch-guard unit tests and type-checks this package on Linux,
+  macOS and Windows, and enforces `--immutable` against its lockfile. It
   does not build the app, so it cannot run the suite.
 - `.github/workflows/e2e-suite.yml` builds the app and runs the suite on
   ubuntu-latest, macos-latest, windows-latest and windows-11-arm. Nightly on
@@ -189,6 +190,39 @@ override depends on the platform.
 | macOS | `$HOME/Library/Application Support` | `HOME` |
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
 | Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
+
+### Launch guard (limited guarantee)
+
+Before profile seeding, recursive cleanup registration, or launch,
+`launch-guard.ts` validates `JAN_E2E_HOME`. Inherited paths are checked before
+mkdir; generated profiles require an initial `mkdtemp` allocation, preceded by
+the environment check. It must be strictly inside the OS temp root; CI and local launches
+allocate profiles with `mkdtemp` under Node’s `os.tmpdir()` (which may differ
+from GitHub’s `runner.temp`). Real homes and
+ancestors/descendants of known user Jan paths are rejected, including inherited
+XDG/AppData locations. Existing prefixes are canonicalized (also for not-yet-created
+paths) so symlink aliases cannot disguise overlap; sibling names are accepted.
+Redirected seed/scratch roots and an existing desktop config's `data_folder`
+outside the profile are rejected. Inherited profiles are never recursively deleted.
+
+Unset nonempty `JAN_DATA_ROOT` on Unix: the WDIO service merges
+`{ ...process.env, ...options.env }`, so omitting it from the Unix overrides
+would otherwise preserve it and bypass native HOME/XDG lookup. Even a relative
+value is rejected rather than relying on fallback behavior. Windows explicitly
+overrides it. Nonempty `JAN_DATA_FOLDER`, `CI=e2e`, and `APP_NAME` values other
+than `Jan` (including empty) are rejected too.
+
+This is an accidental-launch guard, **not a filesystem sandbox** or a proof of
+complete confinement. It does not prevent concurrent symlink changes, hard-link
+aliases, every possible legacy/plugin/config escape, Windows registry folder
+redirection, or the Windows CLI/updater gaps below. Use a disposable OS account
+or VM if stronger separation is needed. Existing profiles should be disposable;
+the harness merges a bootstrap seed into their backend settings.
+
+Run `cd e2e && yarn test:unit && yarn typecheck` without an app build. The focused
+`node:test` tests run via the existing `tsx`, use only temporary fixture homes,
+and check rejection without writes, containment siblings, environment bypasses,
+and symlink aliases (Windows skips only if privilege is unavailable).
 
 On Linux the harness pins **every** XDG base directory
 (`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`) rather
@@ -262,7 +296,9 @@ in `isolation.ts` next to `XDG_RUNTIME_DIR`:
   base with Tauri's own resolver rather than `core/app/paths.rs`, landing it in
   the real `%APPDATA%\jan.ai.app\`. Created only when absent.
 
-Both are residue or reads. The one Windows escape that was destructive —
+These are known desktop-suite residue or reads, not a full isolation guarantee.
+Windows CLI/global-config callers and explicit saves are not covered; this
+harness does not fix their known-folder escapes. The one Windows escape that was destructive —
 deep-link registration, which rewrites the `HKCU` `jan://` handler to point at
 whichever binary is running — is compiled out under the `e2e` feature instead of
 being documented, since no environment variable reaches the registry.
@@ -273,12 +309,13 @@ Two things that look like they'd work but don't:
   `JAN_DATA_ROOT` above: it names the data folder itself rather than the OS root
   it sits under, and only `resolve_jan_data_folder()` reads it, which is the CLI
   path. The desktop build ignores it.
-- `CI=e2e` short-circuits `get_app_configurations()` to a hardcoded `"./data"`,
+- `CI=e2e` (now rejected by the launch guard) short-circuits `get_app_configurations()` to a hardcoded `"./data"`,
   which would skip the config resolution these tests exist to cover.
 
-Because the profile is always fresh, **every run is a first launch** — no
+With the default generated fresh profile, **every run is a first launch** — no
 providers are configured, so `/` renders `SetupScreen`. The suite asserts that
-rather than working around it.
+rather than working around it. Reusing an inherited profile can retain providers
+and other state, so it may not satisfy these first-launch assertions.
 
 A first launch used to **download**: Jan fetches its embedding model
 `sentence-transformer-mini` (~45MB) on a profile it has not bootstrapped before,
