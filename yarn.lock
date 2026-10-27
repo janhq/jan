@@ -3037,6 +3037,7 @@ __metadata:
     "@testing-library/react": "npm:16.3.0"
     "@testing-library/user-event": "npm:14.6.1"
     "@types/culori": "npm:2.1.1"
+    "@types/hast": "npm:^3.0.4"
     "@types/istanbul-lib-report": "npm:3.0.3"
     "@types/istanbul-reports": "npm:3.0.4"
     "@types/lodash.clonedeep": "npm:4.5.9"
