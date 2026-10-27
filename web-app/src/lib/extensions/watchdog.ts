@@ -91,6 +91,9 @@ export const START_GRACE_MS = 60_000
  * start tries again. The counter lives in the app settings, which survive
  * a crash of the window. The clean-shutdown reset is best effort: if its
  * write does not land before the window goes, that start counts once.
+ * If the counter cannot be read or raised at all, the extensions load
+ * without the guard: it could not count this start anyway, and skipping
+ * them would turn a settings write error into every extension missing.
  */
 export async function loadWithCrashLoopGuard(options: {
   settings: AppSettingsBackend
@@ -102,9 +105,15 @@ export async function loadWithCrashLoopGuard(options: {
   load(): Promise<void>
 }): Promise<void> {
   const { settings } = options
-  const failed = Number.parseInt((await settings.get(FAILED_STARTS_KEY)) ?? '', 10)
-  const failedStarts = Number.isSafeInteger(failed) && failed > 0 ? failed : 0
-  await settings.set(FAILED_STARTS_KEY, String(failedStarts + 1))
+  let failedStarts: number
+  try {
+    const failed = Number.parseInt((await settings.get(FAILED_STARTS_KEY)) ?? '', 10)
+    failedStarts = Number.isSafeInteger(failed) && failed > 0 ? failed : 0
+    await settings.set(FAILED_STARTS_KEY, String(failedStarts + 1))
+  } catch (error) {
+    console.warn('Crash-loop guard unavailable, loading without it:', error)
+    return options.load()
+  }
   let good = false
   const reset = () => {
     if (good) return
