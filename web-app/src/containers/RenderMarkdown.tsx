@@ -18,6 +18,8 @@ import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { mermaid } from '@streamdown/mermaid'
 
+import { SKIP, visit } from 'unist-util-visit'
+import type { Root } from 'hast'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -26,6 +28,51 @@ import { MermaidError } from '@/components/MermaidError'
 import { CitationLink } from '@/components/CitationLink'
 import { WebCitationChip } from '@/components/WebCitationChip'
 import { MarkdownTable } from '@/components/MarkdownTable'
+
+// Do not resolve model-generated links against the app's own origin.
+function isWebLink(href: string | undefined): boolean {
+  if (!href || !/^https?:\/\//i.test(href)) return false
+  try {
+    const { protocol } = new URL(href)
+    return protocol === 'http:' || protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// Citation fragments are model-controlled too: decode defensively and apply the
+// same absolute HTTP(S) policy before letting a chip create its own anchors.
+function webCitationUrl(href: string | undefined): string | undefined {
+  if (!href?.startsWith('#webcite-')) return undefined
+  try {
+    const url = decodeURIComponent(href.slice('#webcite-'.length))
+    return isWebLink(url) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The hardener normalizes URLs (including repairing incomplete HTTP schemes)
+// and annotates rejected anchors with " [blocked]". Unwrap them first so only
+// their original, formatted label survives.
+function restrictChatLinks() {
+  return (tree: Root) => {
+    visit(tree, 'element', (node, index, parent) => {
+      if (node.tagName !== 'a') return
+      const href = node.properties.href
+      if (
+        typeof href === 'string' &&
+        (href.startsWith('#cite-') || webCitationUrl(href) || isWebLink(href))
+      ) {
+        return
+      }
+      if (parent && index !== undefined) {
+        parent.children.splice(index, 1, ...node.children)
+        return [SKIP, index]
+      }
+    })
+  }
+}
 
 const WEB_CITE_MARKER = /\[\[cite:\s*([^\]\s]+?)\s*\]\]/g
 
@@ -59,7 +106,7 @@ interface MarkdownProps {
 // with a shallow prop compare, and fresh literals here would defeat it, forcing
 // a full re-parse + re-highlight on every streamed token.
 const REMARK_PLUGINS = [remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]
-const REHYPE_PLUGINS = [rehypeKatex, defaultRehypePlugins.harden]
+const REHYPE_PLUGINS = [rehypeKatex, restrictChatLinks, defaultRehypePlugins.harden]
 const STREAMDOWN_PLUGINS = { code, mermaid, cjk }
 const STREAMDOWN_CONTROLS = { mermaid: { fullscreen: false } }
 const LINK_SAFETY = { enabled: false }
@@ -243,9 +290,14 @@ function RenderMarkdownComponent({
         )
       }
       if (typeof href === 'string' && href.startsWith('#webcite-')) {
-        const url = decodeURIComponent(href.slice('#webcite-'.length))
-        return <WebCitationChip messageId={messageId} url={url} />
+        const url = webCitationUrl(href)
+        return url ? (
+          <WebCitationChip messageId={messageId} url={url} />
+        ) : (
+          <>{children}</>
+        )
       }
+      if (!isWebLink(href)) return <>{children}</>
       return <a {...props}>{children}</a>
     }
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
