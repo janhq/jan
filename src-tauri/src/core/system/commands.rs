@@ -222,6 +222,12 @@ fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Res
     Ok(())
 }
 
+/// Set by the first `factory_reset` and never cleared: the reset ends in a
+/// restart, so a second call (double click, retry from the hidden webview)
+/// must not start another teardown that interleaves with it.
+static FACTORY_RESET_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Wipe the selected data categories and restart the app.
 ///
 /// Async so it runs on the async runtime: as a sync command it ran on the main
@@ -240,6 +246,24 @@ pub async fn factory_reset<R: Runtime>(
     let keep_models_and_configs = keep_models_and_configs.unwrap_or(false);
     let clear_web_data = clear_web_data.unwrap_or(false);
 
+    // Refuse before touching anything, so a refused reset leaves the app
+    // running and visible and the frontend sees the error.
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    if data_folder.exists() && !is_safe_to_delete(&data_folder) {
+        log::error!(
+            "Refusing factory reset: path is too close to filesystem root: {}",
+            data_folder.display()
+        );
+        return Err(format!(
+            "Refusing to reset {}: too close to the filesystem root",
+            data_folder.display()
+        ));
+    }
+    if FACTORY_RESET_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        log::warn!("Factory reset already in progress; ignoring repeat request");
+        return Ok(());
+    }
+
     // Hide rather than close: now that the event loop keeps running, closing
     // the last window would start a normal app exit in the middle of the wipe.
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -251,7 +275,6 @@ pub async fn factory_reset<R: Runtime>(
             });
         }
     }
-    let data_folder = get_jan_data_folder_path(app_handle.clone());
     log::info!(
         "Factory reset (keep_app_data={}, keep_models_and_configs={}, clear_web_data={}), data folder: {:?}",
         keep_app_data,
@@ -275,14 +298,6 @@ pub async fn factory_reset<R: Runtime>(
 
     let full_wipe = !keep_app_data && !keep_models_and_configs;
     if data_folder.exists() {
-        if !is_safe_to_delete(&data_folder) {
-            log::error!(
-                "Refusing factory reset: path is too close to filesystem root: {}",
-                data_folder.display()
-            );
-            return Ok(());
-        }
-
         // Discard before deleting: the in-memory copy would otherwise be
         // flushed back by a pending debounced write or the exit-time flush.
         if full_wipe {
