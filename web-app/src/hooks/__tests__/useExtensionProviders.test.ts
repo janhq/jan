@@ -101,6 +101,43 @@ describe('useExtensionProviders', () => {
     expect(persisted.providers.map((p) => p.provider)).toEqual(['openai'])
   })
 
+  it('offers tools on the models of a provider that declares them', async () => {
+    renderHook(() => useExtensionProviders())
+    const contributes = providerManifest.contributes!
+    await host.activateBuiltin(
+      builtin(
+        {
+          ...providerManifest,
+          contributes: {
+            ...contributes,
+            providers: [
+              { ...contributes.providers![0], capabilities: ['completion', 'tools'] },
+            ],
+          },
+        },
+        {
+          activate: (ctx) => {
+            ctx.subscriptions.add(
+              ctx.providers.registerProvider('local', {
+                listModels: async () => [{ id: 'hello-1' }],
+              })
+            )
+          },
+        }
+      )
+    )
+    await waitFor(() =>
+      expect(
+        useModelProvider.getState().getProviderByName('acme.llm/local')?.models
+      ).toEqual([
+        expect.objectContaining({
+          id: 'hello-1',
+          capabilities: ['completion', 'tools'],
+        }),
+      ])
+    )
+  })
+
   it('removes the provider when its extension stops', async () => {
     renderHook(() => useExtensionProviders())
     await host.activateBuiltin(

@@ -1,4 +1,8 @@
-import type { ProviderContribution } from '@janhq/extension-api'
+import {
+  DEFAULT_MODEL_CAPABILITIES,
+  type ProviderContribution,
+  type ProviderModel,
+} from '@janhq/extension-api'
 import { i18n } from '@/i18n/react-i18next-compat'
 import type { ContributionState } from './contributions'
 import { getExtensionHost } from './host'
@@ -70,11 +74,13 @@ export function listExtensionProviders(
  * so the host's model factory runs inference against `baseUrl` itself (on
  * `extensionProviderFetch`) and no token streams over RPC. It carries no
  * settings of its own; the base URL is fixed by the manifest and the key
- * lives in the extension's settings.
+ * lives in the extension's settings. A model's capabilities come from its
+ * `listModels` entry, else from the provider's declaration, else
+ * `['completion']`; chat offers tools only to a model with `tools`.
  */
 export function toModelProvider(
   provider: ActiveExtensionProvider,
-  models: { id: string; displayName?: string }[],
+  models: ProviderModel[],
   apiKey: string | undefined
 ): ModelProvider {
   return {
@@ -91,7 +97,11 @@ export function toModelProvider(
       id: m.id,
       name: m.displayName ?? m.id,
       displayName: m.displayName,
-      capabilities: ['completion'],
+      capabilities: [
+        ...(m.capabilities ??
+          provider.contribution.capabilities ??
+          DEFAULT_MODEL_CAPABILITIES),
+      ],
     })),
     source: {
       extensionId: provider.extensionId,

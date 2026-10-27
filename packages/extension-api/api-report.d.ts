@@ -9,8 +9,26 @@
  */
 export declare const API_VERSION = "1.0.0";
 
+// ---- capabilities.d.ts ----
+
+/**
+ * What a model of a contributed provider can do, as the host reads it:
+ * `tools` turns on tool calling in chat, `vision`, `audio` and `video` allow
+ * those attachments, `embeddings` marks a model for embedding rather than
+ * chat, `reasoning` labels a thinking model. A model with none declared is
+ * `['completion']`.
+ */
+export type ModelCapability = 'completion' | 'tools' | 'vision' | 'audio' | 'video' | 'embeddings' | 'reasoning';
+/** Every `ModelCapability`; anything else is rejected, not ignored. */
+export declare const MODEL_CAPABILITIES: readonly ModelCapability[];
+/** What a model gets when neither its provider nor its listing says. */
+export declare const DEFAULT_MODEL_CAPABILITIES: readonly ModelCapability[];
+/** Narrows a manifest or `listModels` entry to a `ModelCapability`. */
+export declare function isModelCapability(value: unknown): value is ModelCapability;
+
 // ---- context.d.ts ----
 
+import type { ModelCapability } from './capabilities.js';
 import type { JsonValue, SettingValue } from './contributions.js';
 import type { Disposable, DisposableStore } from './disposable.js';
 import type { Event } from './event.js';
@@ -162,6 +180,8 @@ export interface ToolsApi {
 export interface ProviderModel {
     id: string;
     displayName?: string;
+    /** Replaces the provider's declared `capabilities` for this model. */
+    capabilities?: ModelCapability[];
 }
 export interface ProviderHandlers {
     /** Overrides the host's `GET <baseUrl>/models` lookup. */
@@ -230,6 +250,7 @@ export interface ExtensionModule {
 
 // ---- contributions.d.ts ----
 
+import type { ModelCapability } from './capabilities.js';
 /** A JSON value as it survives `JSON.stringify` and structured clone alike. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 export interface JsonObject {
@@ -321,6 +342,12 @@ export interface ProviderContribution {
     baseUrl: string;
     /** The key of a secret setting holding the API key. */
     apiKeySetting?: string;
+    /**
+     * What every model of this provider can do, unless its `listModels` entry
+     * says otherwise. Defaults to `['completion']`; declare `tools` for chat
+     * to offer tool calls.
+     */
+    capabilities?: ModelCapability[];
 }
 export interface Contributions {
     settings?: SettingContribution[];
@@ -397,6 +424,7 @@ export declare class Emitter<T> {
  * manifest types and validator for tooling that only lints package.json.
  */
 export { API_VERSION } from './api-version.js';
+export { DEFAULT_MODEL_CAPABILITIES, isModelCapability, MODEL_CAPABILITIES, type ModelCapability, } from './capabilities.js';
 export { DisposableStore, toDisposable, type Disposable } from './disposable.js';
 export { Emitter, type Event } from './event.js';
 export { ExtensionError, type ExtensionErrorCode } from './errors.js';

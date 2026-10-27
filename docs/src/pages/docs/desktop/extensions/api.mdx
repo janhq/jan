@@ -198,12 +198,25 @@ interface ProviderHandlers {
   /** Overrides the host's GET <baseUrl>/models lookup. */
   listModels?(): Promise<ProviderModel[]>
 }
-interface ProviderModel { id: string; displayName?: string }
+interface ProviderModel {
+  id: string
+  displayName?: string
+  /** Replaces the provider's declared capabilities for this model. */
+  capabilities?: ModelCapability[]
+}
+type ModelCapability =
+  | 'completion' | 'tools' | 'vision' | 'audio' | 'video' | 'embeddings' | 'reasoning'
 ```
 
 Jan runs inference against `baseUrl` itself (OpenAI-compatible chat
 completions), using the API key from the `apiKeySetting` secret if declared.
 Tokens are not streamed through the extension.
+
+A model's capabilities come from its `listModels` entry, else from the
+provider's `capabilities` in the manifest, else `['completion']`. Chat offers
+tools only to a model with `tools`, and image, audio or video attachments only
+with `vision`, `audio` or `video`. An unknown capability makes the manifest
+invalid; in a `listModels` result it fails the listing with `E_INVALID_ARGS`.
 
 ## `ctx.http`
 

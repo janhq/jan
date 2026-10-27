@@ -4,12 +4,14 @@ import {
   Emitter,
   ExtensionError,
   isApiCompatible,
+  isModelCapability,
   RESERVED_PUBLISHER,
   toDisposable,
   type ConversationsApi,
   type Event,
   type ExtensionContext,
   type ExtensionModule,
+  type ModelCapability,
   type PermissionString,
   type ProviderModel,
   type ValidatedManifest,
@@ -137,7 +139,14 @@ interface Entry {
 
 // listModels results come from extension code; only this shape is used.
 const providerModels = z.array(
-  z.object({ id: z.string().min(1), displayName: z.string().optional() })
+  z.object({
+    id: z.string().min(1),
+    displayName: z.string().optional(),
+    capabilities: z
+      .array(z.custom<ModelCapability>(isModelCapability))
+      .nonempty()
+      .optional(),
+  })
 )
 
 const message = (error: unknown) =>

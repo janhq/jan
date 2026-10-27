@@ -3,6 +3,12 @@
  * manifest types and validator for tooling that only lints package.json.
  */
 export { API_VERSION } from './api-version.js'
+export {
+  DEFAULT_MODEL_CAPABILITIES,
+  isModelCapability,
+  MODEL_CAPABILITIES,
+  type ModelCapability,
+} from './capabilities.js'
 export { DisposableStore, toDisposable, type Disposable } from './disposable.js'
 export { Emitter, type Event } from './event.js'
 export { ExtensionError, type ExtensionErrorCode } from './errors.js'

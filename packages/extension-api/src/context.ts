@@ -1,3 +1,4 @@
+import type { ModelCapability } from './capabilities.js'
 import type { JsonValue, SettingValue } from './contributions.js'
 import type { Disposable, DisposableStore } from './disposable.js'
 import type { Event } from './event.js'
@@ -142,6 +143,8 @@ export interface ToolsApi {
 export interface ProviderModel {
   id: string
   displayName?: string
+  /** Replaces the provider's declared `capabilities` for this model. */
+  capabilities?: ModelCapability[]
 }
 
 export interface ProviderHandlers {
