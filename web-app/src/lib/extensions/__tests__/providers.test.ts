@@ -36,6 +36,35 @@ describe('extension providers', () => {
     ])
   })
 
+  it('gives a model only completion when nothing is declared', () => {
+    const [active] = listExtensionProviders(state())
+    const provider = toModelProvider(active, [{ id: 'm1' }], undefined)
+    expect(provider.models.map((m) => m.capabilities)).toEqual([['completion']])
+  })
+
+  it('gives models the capabilities their provider declares', () => {
+    const s = state()
+    s.providers['acme.llm'].local.capabilities = ['completion', 'tools']
+    const [active] = listExtensionProviders(s)
+    const provider = toModelProvider(active, [{ id: 'm1' }], undefined)
+    expect(provider.models[0].capabilities).toEqual(['completion', 'tools'])
+  })
+
+  it('lets a listed model override its provider capabilities', () => {
+    const s = state()
+    s.providers['acme.llm'].local.capabilities = ['completion', 'tools']
+    const [active] = listExtensionProviders(s)
+    const provider = toModelProvider(
+      active,
+      [{ id: 'm1' }, { id: 'e1', capabilities: ['embeddings'] }],
+      undefined
+    )
+    expect(provider.models.map((m) => m.capabilities)).toEqual([
+      ['completion', 'tools'],
+      ['embeddings'],
+    ])
+  })
+
   it('maps to a provider carrying its display name and owning extension', () => {
     const [active] = listExtensionProviders(state())
     const provider = toModelProvider(active, [{ id: 'm1' }], undefined)

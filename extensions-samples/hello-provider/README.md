@@ -12,7 +12,7 @@ Licensed under Apache-2.0.
 | setting `greeting` | Text input, default `Hello`; the status item follows changes |
 | status item `hello.status` | `<greeting> (<count>)`; clicking runs `hello.greet` |
 | tool `echo_upper` | Returns `text` upper-cased; with `delayMs` it waits first and stops at once when the call is cancelled |
-| provider `hello-local` | OpenAI-compatible at `http://127.0.0.1:11999/v1`; `listModels` reports `hello-1` |
+| provider `hello-local` | OpenAI-compatible at `http://127.0.0.1:11999/v1`, declaring `capabilities: ["completion", "tools"]` so chat offers tools; `listModels` reports `hello-1` |
 
 Permissions: `ui:notify`, `tools`, `providers` and `network:127.0.0.1` (a
 provider needs network access to its `baseUrl` host).

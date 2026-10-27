@@ -130,6 +130,7 @@ const full = (): Pkg => ({
           id: 'hello-cloud',
           displayName: 'Hello Cloud',
           baseUrl: 'https://api.acme.dev/v1',
+          capabilities: ['completion', 'tools', 'vision'],
         },
       ],
     },
@@ -314,6 +315,27 @@ describe('validateManifest', () => {
       'jan.contributes.providers',
     ])
   })
+
+  it('rejects a model capability the host does not understand', () => {
+    const pkg = full()
+    const providers = contributes(pkg).providers as Record<string, unknown>[]
+    providers[1].capabilities = ['tools', 'teleport']
+    expect(errorPaths(pkg)).toEqual([
+      'jan.contributes.providers[1].capabilities[1]',
+    ])
+  })
+
+  it.each([[[]], ['tools'], [['tools', 'tools']]])(
+    'rejects provider capabilities %j',
+    (capabilities) => {
+      const pkg = full()
+      const providers = contributes(pkg).providers as Record<string, unknown>[]
+      providers[1].capabilities = capabilities
+      expect(errorPaths(pkg)).toEqual([
+        expect.stringMatching(/^jan\.contributes\.providers\[1\]\.capabilities/),
+      ])
+    }
+  )
 
   it('rejects a provider apiKeySetting that names no declared setting', () => {
     const pkg = full()

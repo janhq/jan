@@ -1,3 +1,4 @@
+import { isModelCapability, MODEL_CAPABILITIES } from './capabilities.js'
 import type {
   Contributions,
   MenuLocation,
@@ -430,7 +431,11 @@ function checkContributions(
     c.fail(`${path}.providers`, "needs the permission 'providers'")
   const providerIds = new Set<string>()
   c.list(contributes, 'providers', path, (provider, p) => {
-    c.known(provider, ['id', 'displayName', 'baseUrl', 'apiKeySetting'], p)
+    c.known(
+      provider,
+      ['id', 'displayName', 'baseUrl', 'apiKeySetting', 'capabilities'],
+      p
+    )
     c.contributionId(provider, 'id', p)
     c.unique(providerIds, provider, 'id', p)
     c.string(provider, 'displayName', p)
@@ -447,6 +452,26 @@ function checkContributions(
           'must name a secret setting declared in contributes.settings'
         )
     }
+    if (provider.capabilities !== undefined)
+      checkCapabilities(c, provider.capabilities, `${p}.capabilities`)
+  })
+}
+
+function checkCapabilities(c: Checker, value: unknown, path: string): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    c.fail(path, 'must be a non-empty array')
+    return
+  }
+  const seen = new Set<unknown>()
+  value.forEach((capability, i) => {
+    if (!isModelCapability(capability))
+      c.fail(
+        `${path}[${i}]`,
+        `must be one of ${MODEL_CAPABILITIES.join(', ')}`
+      )
+    else if (seen.has(capability))
+      c.fail(`${path}[${i}]`, `duplicates '${capability}'`)
+    seen.add(capability)
   })
 }
 

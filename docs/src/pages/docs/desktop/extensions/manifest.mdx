@@ -160,6 +160,7 @@ Requires the `providers` permission.
 | `displayName` | string | Required. |
 | `baseUrl` | string | Required. An OpenAI-compatible base URL. https, or http for `localhost` and `127.0.0.1`. Its host must be covered by a `network:` permission in the same manifest. |
 | `apiKeySetting` | string | Optional. The `key` of a **secret** setting in `contributes.settings` that holds the API key. |
+| `capabilities` | string[] | Optional, non-empty, no duplicates. What the provider's models can do: `completion`, `tools`, `vision`, `audio`, `video`, `embeddings`, `reasoning`. Any other value is an error. Defaults to `["completion"]`; declare `tools` for chat to offer tool calls. A `listModels` entry can override it per model. |
 
 ## Localization
 
@@ -228,7 +229,8 @@ uses every contribution point:
       {
         "id": "hello-local",
         "displayName": "Hello Local",
-        "baseUrl": "http://127.0.0.1:11999/v1"
+        "baseUrl": "http://127.0.0.1:11999/v1",
+        "capabilities": ["completion", "tools"]
       }
     ]
   }

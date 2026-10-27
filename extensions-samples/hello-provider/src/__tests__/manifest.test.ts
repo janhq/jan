@@ -38,6 +38,7 @@ describe('hello-provider manifest', () => {
         id: 'hello-local',
         displayName: 'Hello Local',
         baseUrl: 'http://127.0.0.1:11999/v1',
+        capabilities: ['completion', 'tools'],
       },
     ])
   })

@@ -56,6 +56,17 @@ const WHEN_CLAUSES: &[&str] = &[
     "thread.hasMessages",
 ];
 const PROPOSALS: &[&str] = &["chat"];
+/// `MODEL_CAPABILITIES` in `@janhq/extension-api`: what a contributed
+/// provider may declare its models can do.
+const MODEL_CAPABILITIES: &[&str] = &[
+    "completion",
+    "tools",
+    "vision",
+    "audio",
+    "video",
+    "embeddings",
+    "reasoning",
+];
 const INPUT_TYPES: &[&str] = &["text", "url", "number"];
 
 /// What a valid manifest yields: the fields the installer acts on, plus the
@@ -613,7 +624,7 @@ fn check_contributions(c: &mut Checker, contributes: Option<&Value>, permissions
     }
     let mut provider_ids = BTreeSet::new();
     c.list(contributes, "providers", path, |c, provider, p| {
-        c.known(provider, &["id", "displayName", "baseUrl", "apiKeySetting"], p);
+        c.known(provider, &["id", "displayName", "baseUrl", "apiKeySetting", "capabilities"], p);
         c.contribution_id(provider, "id", p);
         c.unique(&mut provider_ids, provider, "id", p);
         c.string(provider, "displayName", p, false);
@@ -631,7 +642,31 @@ fn check_contributions(c: &mut Checker, contributes: Option<&Value>, permissions
                 );
             }
         }
+        if let Some(capabilities) = provider.get("capabilities") {
+            check_capabilities(c, capabilities, &format!("{p}.capabilities"));
+        }
     });
+}
+
+fn check_capabilities(c: &mut Checker, value: &Value, path: &str) {
+    let Some(items) = value.as_array().filter(|a| !a.is_empty()) else {
+        c.fail(path, "must be a non-empty array");
+        return;
+    };
+    let mut seen = BTreeSet::new();
+    for (i, item) in items.iter().enumerate() {
+        let item_path = format!("{path}[{i}]");
+        match item.as_str() {
+            Some(cap) if MODEL_CAPABILITIES.contains(&cap) => {
+                if !seen.insert(cap) {
+                    c.fail(item_path, format!("duplicates '{cap}'"));
+                }
+            }
+            _ => {
+                c.fail(item_path, format!("must be one of {}", MODEL_CAPABILITIES.join(", ")));
+            }
+        }
+    }
 }
 
 /// Paths of every user-visible string that may be a `%key%` reference.
@@ -1083,6 +1118,22 @@ mod tests {
         let mut pkg = sample();
         pkg["jan"]["contributes"]["providers"][0]["baseUrl"] = json!("http://example.com/v1");
         assert_eq!(paths(&pkg), vec!["jan.contributes.providers[0].baseUrl"]);
+    }
+
+    #[test]
+    fn provider_capabilities() {
+        let mut pkg = sample();
+        pkg["jan"]["contributes"]["providers"][0]["capabilities"] = json!(["completion", "tools"]);
+        assert!(paths(&pkg).is_empty());
+        for (bad, path) in [
+            (json!(["tools", "teleport"]), "jan.contributes.providers[0].capabilities[1]"),
+            (json!(["tools", "tools"]), "jan.contributes.providers[0].capabilities[1]"),
+            (json!([]), "jan.contributes.providers[0].capabilities"),
+            (json!("tools"), "jan.contributes.providers[0].capabilities"),
+        ] {
+            pkg["jan"]["contributes"]["providers"][0]["capabilities"] = bad.clone();
+            assert_eq!(paths(&pkg), vec![path], "{bad}");
+        }
     }
 
     #[test]

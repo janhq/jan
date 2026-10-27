@@ -1,3 +1,5 @@
+import type { ModelCapability } from './capabilities.js'
+
 /** A JSON value as it survives `JSON.stringify` and structured clone alike. */
 export type JsonValue =
   | string
@@ -103,6 +105,12 @@ export interface ProviderContribution {
   baseUrl: string
   /** The key of a secret setting holding the API key. */
   apiKeySetting?: string
+  /**
+   * What every model of this provider can do, unless its `listModels` entry
+   * says otherwise. Defaults to `['completion']`; declare `tools` for chat
+   * to offer tool calls.
+   */
+  capabilities?: ModelCapability[]
 }
 
 export interface Contributions {

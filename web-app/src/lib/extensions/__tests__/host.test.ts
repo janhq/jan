@@ -189,6 +189,37 @@ describe('ExtensionHost', () => {
     expect(host.dispatcher.has('jan.notifier', 'tools')).toBe(false)
   })
 
+  it('passes model capabilities through listModels and rejects unknown ones', async () => {
+    const host = newHost()
+    const models = vi.fn()
+    await host.activateBuiltin(
+      builtin(
+        manifest('acme.llm', {
+          permissions: ['providers', 'network:127.0.0.1'],
+          contributes: {
+            providers: [
+              { id: 'local', displayName: 'Local', baseUrl: 'http://127.0.0.1:1/v1' },
+            ],
+          },
+        }),
+        {
+          activate: (ctx) => {
+            ctx.providers.registerProvider('local', { listModels: models })
+          },
+        }
+      )
+    )
+    models.mockResolvedValueOnce([{ id: 'm1', capabilities: ['tools'] }])
+    await expect(host.listProviderModels('acme.llm', 'local')).resolves.toEqual([
+      { id: 'm1', capabilities: ['tools'] },
+    ])
+    models.mockResolvedValueOnce([{ id: 'm1', capabilities: ['teleport'] }])
+    await expect(
+      host.listProviderModels('acme.llm', 'local')
+    ).rejects.toMatchObject({ code: 'E_INVALID_ARGS' })
+    await host.deactivateAll()
+  })
+
   it('deactivates in reverse order, disposing subscriptions and contributions', async () => {
     const order: string[] = []
     const disposed = vi.fn()
