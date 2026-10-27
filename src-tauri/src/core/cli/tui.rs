@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::future::pending;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -7132,7 +7131,9 @@ impl App {
         let Some(id) = self.thread_id.clone() else {
             return;
         };
-        let path = journal::journal_path(&self.agent_dir, &id);
+        let Ok(path) = journal::journal_path(&self.agent_dir, &id) else {
+            return;
+        };
         self.journal_writer
             .get_or_insert_with(journal::Writer::new)
             .dump(path, self.transcript.display_log.clone());
@@ -20082,18 +20083,7 @@ fn open_account_login_with_begin(
 }
 
 fn open_browser(url: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut command = Command::new("open");
-    #[cfg(target_os = "linux")]
-    let mut command = Command::new("xdg-open");
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "start"]);
-        command
-    };
-    command
-        .arg(url)
+    super::browser::opener_command(url)?
         .spawn()
         .map(|_| ())
         .map_err(|_| "could not open the browser".to_string())
@@ -20851,17 +20841,24 @@ fn restore_snapshots(app: &mut App, metadata: Option<&serde_json::Value>) {
     app.snap_queue.clear();
     app.base_requested = false;
     let Some(meta) = metadata else { return };
+    // The ids go to git on rewind, so only full object ids are taken back.
     let Some(base) = meta
         .get("base_snapshot")
         .and_then(|v| v.as_str())
+        .filter(|sha| git::is_object_id(sha))
         .map(str::to_string)
     else {
         return;
     };
-    app.checkpoints = meta
+    let checkpoints = meta
         .get("checkpoints")
         .and_then(|v| serde_json::from_value::<Vec<Checkpoint>>(v.clone()).ok())
         .unwrap_or_default();
+    // Dropping just a bad one would make a rewind restore the wrong turn.
+    if !checkpoints.iter().all(|c| git::is_object_id(&c.sha)) {
+        return;
+    }
+    app.checkpoints = checkpoints;
     app.base_snapshot = Some(base);
     // A resumed thread already has its base; don't re-snapshot on next submit.
     app.base_requested = true;
@@ -21499,7 +21496,9 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     // messages hold what the model is sent. Prefer the journal for the
     // transcript, and fall back to replaying the messages for a thread saved
     // before journaling (or whose journal was lost).
-    let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
+    let logged = journal::journal_path(&app.agent_dir, full_id)
+        .map(|path| journal::read_journal(&path))
+        .unwrap_or_default();
     app.history = super::rebuild_wire_history(&messages);
     // Only a conversation with something in it predates the snapshot.
     app.resume_notice_pending = !app.history.is_empty();
@@ -28804,6 +28803,34 @@ mod tests {
 
         let rendered: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
+    }
+
+    #[test]
+    fn resume_takes_back_only_full_object_ids_as_snapshots() {
+        let mut app = test_app();
+        let (base, s0) = ("b".repeat(40), "0".repeat(40));
+        let good = serde_json::json!({
+            "base_snapshot": base,
+            "checkpoints": [{ "user_index": 0, "preview": "one", "sha": s0 }],
+        });
+        super::restore_snapshots(&mut app, Some(&good));
+        assert_eq!(app.base_snapshot.as_deref(), Some(base.as_str()));
+        assert_eq!(app.checkpoints.len(), 1);
+
+        for meta in [
+            serde_json::json!({ "base_snapshot": "--index-output=/tmp/x" }),
+            serde_json::json!({
+                "base_snapshot": base,
+                "checkpoints": [
+                    { "user_index": 0, "preview": "one", "sha": s0 },
+                    { "user_index": 1, "preview": "two", "sha": "--output=/tmp/x" },
+                ],
+            }),
+        ] {
+            super::restore_snapshots(&mut app, Some(&meta));
+            assert!(app.base_snapshot.is_none(), "{meta}");
+            assert!(app.checkpoints.is_empty(), "{meta}");
+        }
     }
 
     #[test]
@@ -37199,7 +37226,7 @@ mod tests {
         let mut app = test_app();
         record_full_turn(&mut app);
         let id = app.thread_id.clone().expect("saved");
-        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id)).unwrap();
+        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id).unwrap()).unwrap();
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();

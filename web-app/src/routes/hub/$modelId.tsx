@@ -275,15 +275,6 @@ function HubModelDetailContent() {
                 <div className="text-muted-foreground mb-4">
                   <RenderMarkdown
                     className="select-none reset-heading"
-                    components={{
-                      a: ({ ...props }) => (
-                        <a
-                          {...props}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      ),
-                    }}
                     content={
                       extractDescription(modelData.description) ||
                       modelData.description
@@ -494,17 +485,7 @@ function HubModelDetailContent() {
                   </div>
                 ) : readmeContent ? (
                   <div className="prose prose-invert max-w-none">
-                    <RenderMarkdown
-                      components={{
-                        a: ({ ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                        ),
-                      }}
-                      content={readmeContent}
+                    <RenderMarkdown content={readmeContent}
                     />
                   </div>
                 ) : (

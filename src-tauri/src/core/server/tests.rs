@@ -70,6 +70,7 @@ mod server_tests {
             host: "localhost".to_string(),
             port: 1337,
             enable_server_tool_execution: false,
+            cors_enabled: true,
         };
         assert_eq!(config.prefix, "/v1");
         assert_eq!(config.proxy_api_key, "test-key");
@@ -87,6 +88,7 @@ mod server_tests {
             host: "127.0.0.1".to_string(),
             port: 8080,
             enable_server_tool_execution: false,
+            cors_enabled: true,
         };
         assert_eq!(config.prefix, "");
         assert_eq!(config.proxy_api_key, "");
@@ -1081,6 +1083,31 @@ mod server_tests {
     }
 
     #[test]
+    fn add_cors_headers_reflects_a_listed_opaque_origin() {
+        for (origin, entry) in [("null", "null"), ("file://", "file://")] {
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &[vec![entry.to_string()]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert_eq!(resp.headers().get("access-control-allow-origin").unwrap(), origin);
+
+            let resp = proxy::add_cors_headers_with_host_and_origin(
+                hyper::Response::builder(),
+                "127.0.0.1:1337",
+                origin,
+                &[vec![]],
+            )
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+            assert!(!resp.headers().contains_key("access-control-allow-origin"));
+        }
+    }
+
+    #[test]
     fn add_cors_headers_with_empty_origin_omits_origin() {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
@@ -1109,6 +1136,7 @@ mod server_tests {
             host: "h".to_string(),
             port: 1,
             enable_server_tool_execution: true,
+            cors_enabled: true,
         };
         let cloned = cfg.clone();
         assert_eq!(cloned.prefix, "/p");
@@ -1223,5 +1251,199 @@ mod server_tests {
         });
         proxy::strip_billing_header_in_body(&mut body);
         assert_eq!(body["messages"][0]["content"][0]["text"], json!(PROMPT));
+    }
+
+    // ---- Origin gate and /orchestrations opt-in, against a running server ----
+
+    fn trusted(hosts: &[&str]) -> Vec<Vec<String>> {
+        vec![hosts.iter().map(|h| h.to_string()).collect()]
+    }
+
+    #[test]
+    fn request_origin_refuses_a_non_ascii_origin_header() {
+        let mut headers = hyper::HeaderMap::new();
+        assert_eq!(proxy::request_origin(&headers), Some(""));
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_static("http://localhost:3000"),
+        );
+        assert_eq!(
+            proxy::request_origin(&headers),
+            Some("http://localhost:3000")
+        );
+        headers.insert(
+            hyper::header::ORIGIN,
+            hyper::header::HeaderValue::from_bytes(b"http://\xffevil.com").unwrap(),
+        );
+        assert_eq!(proxy::request_origin(&headers), None);
+    }
+
+    #[test]
+    fn origin_allowed_absent_origin_always_passes() {
+        assert!(proxy::origin_allowed("", "127.0.0.1:1337", &trusted(&[]), true));
+        assert!(proxy::origin_allowed("", "192.168.1.10:1337", &trusted(&[]), false));
+    }
+
+    #[test]
+    fn origin_allowed_matrix() {
+        let t = trusted(&[]);
+        let h = "127.0.0.1:1337";
+        assert!(proxy::origin_allowed("http://localhost:3000", h, &t, true));
+        assert!(proxy::origin_allowed("tauri://localhost", h, &t, true));
+        assert!(!proxy::origin_allowed("https://evil.com", h, &t, true));
+        assert!(!proxy::origin_allowed("null", h, &t, true));
+        assert!(!proxy::origin_allowed("file://", h, &t, true));
+        // Opaque origins only with an explicit entry, and only with CORS on.
+        assert!(proxy::origin_allowed("null", h, &trusted(&["null"]), true));
+        assert!(proxy::origin_allowed("file://", h, &trusted(&["file://"]), true));
+        assert!(!proxy::origin_allowed("file://", h, &trusted(&["null"]), true));
+        assert!(!proxy::origin_allowed("null", h, &trusted(&["null"]), false));
+        // Private-IP pages on the LAN are not trusted unless listed.
+        assert!(!proxy::origin_allowed("http://192.168.1.20:3000", h, &t, true));
+        assert!(proxy::origin_allowed(
+            "http://192.168.1.20:3000",
+            h,
+            &trusted(&["192.168.1.20"]),
+            true
+        ));
+        // CORS off: only the app webview and same-origin pages.
+        assert!(!proxy::origin_allowed("http://localhost:3000", h, &t, false));
+        assert!(proxy::origin_allowed("tauri://localhost", h, &t, false));
+        assert!(proxy::origin_allowed("http://127.0.0.1:1337", h, &t, false));
+        // Same-origin needs a valid Host: a rebinding hostname does not count.
+        assert!(!proxy::origin_allowed(
+            "http://evil.com:1337",
+            "evil.com:1337",
+            &t,
+            true
+        ));
+    }
+
+    #[test]
+    fn orchestrations_follow_tool_execution_opt_in() {
+        let mut cfg = proxy::ProxyConfig {
+            prefix: "/v1".to_string(),
+            proxy_api_key: String::new(),
+            trusted_hosts: vec![vec![]],
+            host: "127.0.0.1".to_string(),
+            port: 1337,
+            enable_server_tool_execution: false,
+            cors_enabled: true,
+        };
+        assert!(!proxy::orchestrations_allowed(&cfg));
+        cfg.enable_server_tool_execution = true;
+        assert!(proxy::orchestrations_allowed(&cfg));
+    }
+
+    async fn start_test_server(
+        enable_server_tool_execution: bool,
+        cors_enabled: bool,
+    ) -> (u16, std::sync::Arc<tokio::sync::Mutex<Option<crate::core::state::ServerHandle>>>) {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        let data = std::env::temp_dir().to_string_lossy().into_owned();
+        proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "127.0.0.1".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec![]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            data,
+            enable_server_tool_execution,
+            cors_enabled,
+        )
+        .await
+        .expect("server starts");
+        (port, handle)
+    }
+
+    async fn post(
+        port: u16,
+        path: &str,
+        origin: Option<&str>,
+        content_type: &str,
+    ) -> reqwest::StatusCode {
+        let mut req = reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{port}/v1{path}"))
+            .header("Content-Type", content_type)
+            .body(r#"{"model":"nope","messages":[{"role":"user","content":"hi"}]}"#);
+        if let Some(o) = origin {
+            req = req.header("Origin", o);
+        }
+        req.send().await.expect("request sent").status()
+    }
+
+    #[tokio::test]
+    async fn untrusted_origin_post_is_refused_before_handlers() {
+        let (port, handle) = start_test_server(false, true).await;
+
+        // A cross-site "simple" request (no preflight) is refused.
+        for path in ["/chat/completions", "/messages", "/orchestrations", "/models"] {
+            assert_eq!(
+                post(port, path, Some("https://evil.example"), "text/plain").await,
+                reqwest::StatusCode::FORBIDDEN,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            post(port, "/chat/completions", Some("http://192.168.1.20:3000"), "text/plain").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        // No Origin (curl, SDKs) and loopback origins reach the handler: no
+        // model is loaded, so the handler answers, just not with the gate's 403.
+        for origin in [None, Some("http://localhost:3000")] {
+            let status = post(port, "/chat/completions", origin, "application/json").await;
+            assert_ne!(status, reqwest::StatusCode::FORBIDDEN, "{origin:?}");
+        }
+
+        proxy::stop_server(handle).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn orchestrations_refused_without_opt_in() {
+        let (port, handle) = start_test_server(false, true).await;
+        assert_eq!(
+            post(port, "/orchestrations", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
+
+        let (port, handle) = start_test_server(true, true).await;
+        assert_ne!(
+            post(port, "/orchestrations", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cors_toggle_off_refuses_loopback_pages() {
+        let (port, handle) = start_test_server(false, false).await;
+        assert_eq!(
+            post(port, "/chat/completions", Some("http://localhost:3000"), "application/json")
+                .await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            post(port, "/chat/completions", None, "application/json").await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        proxy::stop_server(handle).await.unwrap();
     }
 }

@@ -91,6 +91,52 @@ export function isAssetKind(kind: PreviewKind): boolean {
   return kind === 'image' || kind === 'video' || kind === 'audio'
 }
 
+/**
+ * Types "Open" may hand to the OS default app: documents, media and plain text.
+ * The file was written by the agent, so anything the OS would run (`.command`,
+ * `.app`, `.exe`, `.bat`, `.ps1`, `.sh`, `.js`, `.py`, `.lnk`, `.desktop`,
+ * `.jar`, ...) is never opened, only shown in its folder.
+ */
+const OPENS_IN_DEFAULT_APP = new Set([
+  'pdf',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
+  'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'html', 'htm', 'rtf',
+  'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp',
+  'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus',
+  'mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v',
+])
+
+/** Whether "Open" may hand `path` to its default app; see `openOrReveal`. */
+export function opensInDefaultApp(path: string): boolean {
+  return OPENS_IN_DEFAULT_APP.has(extensionOf(path))
+}
+
+/** "Open" for an agent-written file: the default app for a document or media
+ * type, the file manager (file selected) for anything else. The name is only a
+ * first cut: `openArtifact` checks the file itself (a `report.pdf` can be a
+ * link to a program), and whatever it refuses is revealed instead. */
+export async function openOrReveal(
+  opener: {
+    openArtifact(roots: string[], path: string): Promise<void>
+    revealItemInDir(path: string): Promise<void>
+  },
+  roots: Array<string | null>,
+  abs: string
+): Promise<void> {
+  if (opensInDefaultApp(abs)) {
+    try {
+      await opener.openArtifact(
+        roots.filter((r): r is string => !!r),
+        abs
+      )
+      return
+    } catch {
+      // Refused or failed: fall through to showing it in its folder.
+    }
+  }
+  await opener.revealItemInDir(abs)
+}
+
 export function basenameOf(path: string): string {
   return path.split(/[/\\]/).pop() || path
 }

@@ -629,7 +629,12 @@ pub async fn authorize_mcp_server<R: Runtime>(
         log::error!("Failed to emit mcp-oauth-url event: {e}");
     }
     // Best-effort: the url has already been emitted, so a session with no
-    // browser can still finish by opening it by hand.
+    // browser can still finish by opening it by hand. Only http(s) is handed
+    // to the system opener, which would otherwise launch whatever handles the
+    // scheme.
+    if !oauth::is_allowed_oauth_url(&pending.authorization_url) {
+        return Err(format!("'{name}' produced a sign-in URL Jan will not open"));
+    }
     if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
         log::warn!("Could not open the browser for '{name}': {e}");
     }

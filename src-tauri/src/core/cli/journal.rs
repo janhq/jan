@@ -95,8 +95,8 @@ fn default_true() -> bool {
 
 pub const JOURNAL_FILE: &str = "display.jsonl";
 
-pub fn journal_path(agent_dir: &Path, thread_id: &str) -> PathBuf {
-    crate::core::threads::utils::get_thread_dir(agent_dir, thread_id).join(JOURNAL_FILE)
+pub fn journal_path(agent_dir: &Path, thread_id: &str) -> Result<PathBuf, String> {
+    Ok(crate::core::threads::utils::get_thread_dir(agent_dir, thread_id)?.join(JOURNAL_FILE))
 }
 
 /// Rewrite the whole journal. A rewind or `/clear` truncates the log, so an
@@ -353,7 +353,7 @@ mod tests {
         let dir = tmp_dir();
         let base = dir.path();
         assert_eq!(
-            journal_path(base, "t1"),
+            journal_path(base, "t1").unwrap(),
             base.join("threads").join("t1").join(JOURNAL_FILE)
         );
     }

@@ -783,16 +783,6 @@ function ProviderDetail() {
                             className="![>p]:text-muted-foreground select-none"
                             content={setting.description}
                             components={{
-                              // Make links open in a new tab
-                              a: ({ ...props }) => {
-                                return (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                )
-                              },
                               p: ({ ...props }) => (
                                 <p {...props} className="mb-0!" />
                               ),

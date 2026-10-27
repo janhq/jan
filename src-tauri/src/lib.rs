@@ -70,7 +70,6 @@ macro_rules! invoke_commands_with_extras {
         // System commands
         core::system::commands::relaunch,
         core::system::shutdown::shutdown_for_update,
-        core::system::commands::open_app_directory,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
@@ -284,6 +283,8 @@ pub fn run() {
     }));
 
     let mut app_builder = builder
+        // First, so no other plugin's hook sees a navigation it refuses.
+        .plugin(core::navigation::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -354,6 +355,16 @@ pub fn run() {
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
+            // The agent-tools commands take a data folder from the webview; the
+            // sandbox, the mask over settings and keys, and the store all hang
+            // off it, so they use the configured one instead. Installed here,
+            // before the event loop delivers any IPC.
+            {
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
+                    move || get_jan_data_folder_path(handle.clone()),
+                ));
+            }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)

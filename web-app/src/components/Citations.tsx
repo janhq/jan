@@ -5,6 +5,7 @@ import {
   useAttachmentName,
   useEnsureAttachmentNames,
 } from '@/hooks/useAttachmentNames'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 
 export type RagCitation = {
   id: string
@@ -113,15 +114,13 @@ const WebCitationItem = memo(({ c }: { c: WebCitation }) => {
         ) : (
           <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" />
         )}
-        <a
+        <ExternalAnchor
           href={c.url}
-          target="_blank"
-          rel="noreferrer noopener"
           className="truncate font-medium hover:underline"
           title={c.url}
         >
           {c.title || host}
-        </a>
+        </ExternalAnchor>
         <span className="ml-auto truncate text-[10px] text-muted-foreground">
           {host}
         </span>

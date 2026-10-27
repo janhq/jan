@@ -5,7 +5,7 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 
 use crate::core::app::commands::{
     default_data_folder_path, get_configuration_file_path, get_jan_data_folder_path,
-    update_app_configuration,
+    write_app_configuration,
 };
 use crate::core::app::constants::{
     JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
@@ -196,28 +196,397 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
     }
 }
 
+/// Opening line of the block Jan writes into the user's shell profile.
+const ENV_BLOCK_BEGIN: &str = "# >>> jan claude-code >>>";
+/// Closing line of the block Jan writes into the user's shell profile.
+const ENV_BLOCK_END: &str = "# <<< jan claude-code <<<";
+/// The exact line older Jan versions wrote before and after the exported
+/// variables. Every version that wrote to the profile used this marker pair.
+const LEGACY_ENV_MARKER: &str = "# Jan Local API Server - Claude Code Config";
+/// Prefix of the variables older Jan versions wrote inside the marker pair.
+const LEGACY_ENV_PREFIX: &str = "export ANTHROPIC_";
+
+/// Quote a value for a POSIX shell: wrap it in single quotes and turn every
+/// embedded `'` into `'\''`. Nothing inside single quotes is expanded.
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
+/// Largest profile the macOS admin fallback will write. Shell profiles are
+/// small.
+#[cfg_attr(not(unix), allow(dead_code))]
+const MAX_ADMIN_PROFILE_BYTES: usize = 256 * 1024;
+
+/// Shell command the macOS admin fallback runs as root to replace `dst` with
+/// the content of `src`, a file the user process staged (see
+/// `stage_admin_profile`). Only paths travel in the command, never the content.
+///
+/// `src` must be a regular file, not a symlink, owned by `uid` with mode 600
+/// and at most `MAX_ADMIN_PROFILE_BYTES`; it is checked on the descriptor that
+/// is then read, so swapping it after the check does not help. The content is
+/// copied into a fresh root-only directory under /private/tmp, given `dst`'s
+/// owner and mode, then renamed over `dst`. A rename replaces the directory
+/// entry and never writes through a symlink. `dst` must be a regular file that
+/// is not a symlink, or not exist yet (then it gets the owner of its directory
+/// and mode 600); anything else is refused, with a message saying why (a
+/// symlink is named as such). The temp directory must be on the same volume
+/// as `dst` so the move is a rename, not a copy; otherwise it fails with a
+/// message naming the volume problem, which osascript passes on as the error.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn admin_write_shell_command(dst: &str, src: &str, uid: u32) -> Result<String, String> {
+    let dir = std::path::Path::new(dst)
+        .parent()
+        .and_then(|d| d.to_str())
+        .filter(|d| !d.is_empty())
+        .ok_or_else(|| format!("{} has no parent directory", dst))?;
+    if !src.starts_with('/') {
+        return Err(format!("{} is not an absolute path", src));
+    }
+    Ok(format!(
+        "dst={dst}; dir={dir}; src={src}; \
+         if [ -L \"$dst\" ]; then \
+         echo \"$dst is a symbolic link (e.g. managed by a dotfile manager); Jan won't replace it. \
+         Update the file it points to or make it writable.\" >&2; exit 1; fi; \
+         if [ -e \"$dst\" ] && [ ! -f \"$dst\" ]; then \
+         echo \"Refusing to replace $dst: not a regular file\" >&2; exit 1; fi; \
+         if [ -L \"$src\" ] || [ ! -f \"$src\" ]; then \
+         echo \"Refusing to read $src: not a regular file\" >&2; exit 1; fi; \
+         exec 3< \"$src\" || exit 1; \
+         if [ \"$(/usr/bin/stat -f '%HT:%u:%Lp' <&3)\" != 'Regular File:{uid}:600' ] \
+         || [ \"$(/usr/bin/stat -f %z <&3)\" -gt {max} ]; then \
+         echo \"Refusing to read $src: unexpected type, owner, mode or size\" >&2; exit 1; fi; \
+         t=$(/usr/bin/mktemp -d /private/tmp/jan_env.XXXXXX) || exit 1; f=\"$t/profile\"; \
+         if [ -f \"$dst\" ]; then o=$(/usr/bin/stat -f %u:%g \"$dst\") && m=$(/usr/bin/stat -f %Lp \"$dst\"); \
+         else o=$(/usr/bin/stat -L -f %u:%g \"$dir\") && m=600; fi \
+         && {{ [ \"$(/usr/bin/stat -f %d \"$t\")\" = \"$(/usr/bin/stat -L -f %d \"$dir\")\" ] \
+         || {{ echo \"$dst is on a different volume than /private/tmp; \
+         Jan can't update it with administrator rights.\" >&2; false; }}; }} \
+         && /bin/cat <&3 > \"$f\" \
+         && /usr/sbin/chown \"$o\" \"$f\" && /bin/chmod \"$m\" \"$f\" && /bin/mv -f \"$f\" \"$dst\"; \
+         r=$?; /bin/rm -rf \"$t\"; exit $r",
+        dst = shell_single_quote(dst),
+        dir = shell_single_quote(dir),
+        src = shell_single_quote(src),
+        max = MAX_ADMIN_PROFILE_BYTES,
+    ))
+}
+
+/// AppleScript for the macOS admin fallback: run `admin_write_shell_command`
+/// with administrator privileges. The shell command is escaped for the
+/// AppleScript string literal it is embedded in (`\` and `"`).
+#[cfg_attr(not(unix), allow(dead_code))]
+fn admin_write_applescript(dst: &str, src: &str, uid: u32) -> Result<String, String> {
+    let shell = admin_write_shell_command(dst, src, uid)?;
+    let escaped = shell.replace('\\', r"\\").replace('"', r#"\""#);
+    Ok(format!(
+        r#"do shell script "{escaped}" with administrator privileges"#
+    ))
+}
+
+/// A private directory holding the profile content for the admin fallback,
+/// removed (with its content) when dropped.
+#[cfg(unix)]
+struct StagedProfile {
+    dir: PathBuf,
+    file: PathBuf,
+}
+
+#[cfg(unix)]
+impl Drop for StagedProfile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// Write `content` to a new mode-600 file in a fresh mode-700 directory under
+/// the user's temp dir (`$TMPDIR`, per-user on macOS), both created by this
+/// process and neither pre-existing.
+#[cfg(unix)]
+fn stage_admin_profile(content: &str) -> Result<StagedProfile, String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+    let base = std::env::temp_dir();
+    let mut last_err = None;
+    for _ in 0..8 {
+        let dir = base.join(format!("jan_env.{}", uuid::Uuid::new_v4().simple()));
+        match std::fs::DirBuilder::new().mode(0o700).create(&dir) {
+            Ok(()) => {
+                let staged = StagedProfile {
+                    file: dir.join("profile"),
+                    dir,
+                };
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&staged.file)
+                    .map_err(|e| e.to_string())?;
+                f.set_permissions(std::fs::Permissions::from_mode(0o600))
+                    .and_then(|()| f.write_all(content.as_bytes()))
+                    .and_then(|()| f.sync_all())
+                    .map_err(|e| e.to_string())?;
+                return Ok(staged);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(last_err.map_or_else(String::new, |e| e.to_string()))
+}
+
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Variables that change where programs are found, or where Windows resolves
+/// its system binaries. Custom variables are typed by the user, so only keys
+/// that change how Jan or the OS locate programs are refused.
+const RESERVED_ENV_KEYS: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "COMSPEC",
+    "SYSTEMROOT",
+    "WINDIR",
+    "SYSTEMDRIVE",
+    // Where Jan looks for installed programs and GPU runtimes on Windows.
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "CUDA_PATH",
+    "CUDA_HOME",
+    "HIP_PATH",
+    "ROCM_PATH",
+    "ROCM_HOME",
+];
+
+/// Prefixes of reserved variable names: the dynamic loader's settings, Jan's
+/// own configuration, the versioned CUDA install paths Jan scans, and the
+/// WebView2 runtime's settings.
+const RESERVED_ENV_PREFIXES: &[&str] = &["LD_", "DYLD_", "JAN_", "CUDA_PATH_V", "WEBVIEW2_"];
+
+/// Whether `key` is one Jan refuses to set. Compared case-insensitively:
+/// Windows variable names are case-insensitive, and zsh ties lowercase
+/// `path` to `PATH`.
+fn is_reserved_env_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    RESERVED_ENV_KEYS.contains(&upper.as_str())
+        || RESERVED_ENV_PREFIXES.iter().any(|p| upper.starts_with(p))
+}
+
+/// Reject names and values that cannot be written as a single `export` line.
+fn validate_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
+    for (key, value) in env_vars {
+        if !is_valid_env_key(key) {
+            return Err(format!(
+                "Invalid environment variable name {:?}: use only letters, digits and \
+                 underscores, and do not start with a digit.",
+                key
+            ));
+        }
+        if is_reserved_env_key(key) {
+            return Err(format!(
+                "Jan does not set {}: it changes how Jan or the system finds programs. \
+                 Remove it from the custom environment variables.",
+                key
+            ));
+        }
+        if value.contains(['\n', '\r', '\0']) {
+            return Err(format!(
+                "The value for {} contains a line break or NUL character, which cannot be \
+                 written to a shell profile.",
+                key
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Render the marked block of `export` lines Jan owns in the shell profile.
+fn render_env_block(env_vars: &[(String, String)]) -> Result<String, String> {
+    validate_env_vars(env_vars)?;
+    let mut block = String::new();
+    block.push_str(ENV_BLOCK_BEGIN);
+    block.push('\n');
+    for (key, value) in env_vars {
+        block.push_str(&format!("export {}={}\n", key, shell_single_quote(value)));
+    }
+    block.push_str(ENV_BLOCK_END);
+    block.push('\n');
+    Ok(block)
+}
+
+/// Index of the first line after `start` that satisfies `is_end`.
+fn find_closing_line(lines: &[&str], start: usize, is_end: impl Fn(&str) -> bool) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, l)| is_end(l))
+        .map(|(i, _)| i)
+}
+
+/// Remove everything Jan wrote to a shell profile and keep the user's own
+/// lines. Removes the marked block as a whole and legacy blocks between a pair
+/// of `LEGACY_ENV_MARKER` lines as a whole. Lines outside those blocks are the
+/// user's, including their own `export ANTHROPIC_` lines. Returns "" or content
+/// ending in one newline.
+fn strip_jan_env_lines(content: &str) -> String {
+    let lines: Vec<&str> = content.split('\n').collect();
+    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_end();
+        if trimmed == ENV_BLOCK_BEGIN {
+            match find_closing_line(&lines, i, |l| l.trim_end() == ENV_BLOCK_END) {
+                Some(end) => i = end + 1,
+                None => i += 1,
+            }
+            continue;
+        }
+        if trimmed == ENV_BLOCK_END {
+            i += 1;
+            continue;
+        }
+        // The legacy marker opens a block only as a whole line, or in the one
+        // shape an older writer left behind: it appended the opening marker
+        // without first ending the file's last line, so the marker trails one
+        // of the user's lines, and it always wrote its exports on the next
+        // line. A user line that merely ends with the marker text is kept.
+        let legacy_open = trimmed.strip_suffix(LEGACY_ENV_MARKER).filter(|prefix| {
+            prefix.trim().is_empty()
+                || lines
+                    .get(i + 1)
+                    .is_some_and(|next| next.starts_with(LEGACY_ENV_PREFIX))
+        });
+        if let Some(prefix) = legacy_open {
+            if !prefix.trim().is_empty() {
+                kept.push(prefix);
+            }
+            match find_closing_line(&lines, i, |l| l.trim_end() == LEGACY_ENV_MARKER) {
+                Some(end) => i = end + 1,
+                None => {
+                    // No closing line: drop only the exports Jan wrote right
+                    // after the marker, and a closing marker that later text
+                    // was appended to (the admin path wrote it without a
+                    // trailing newline).
+                    i += 1;
+                    while i < lines.len() && lines[i].starts_with(LEGACY_ENV_PREFIX) {
+                        i += 1;
+                    }
+                    if let Some(rest) = lines.get(i).and_then(|l| l.strip_prefix(LEGACY_ENV_MARKER))
+                    {
+                        if !rest.trim().is_empty() {
+                            kept.push(rest);
+                        }
+                        i += 1;
+                    }
+                }
+            }
+            continue;
+        }
+        kept.push(line);
+        i += 1;
+    }
+    let joined = kept.join("\n");
+    let trimmed = joined.trim_end();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", trimmed)
+    }
+}
+
+/// Full new profile content: the user's lines plus Jan's block at the end.
+fn build_env_file_content(existing: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+    let block = render_env_block(env_vars)?;
+    let base = strip_jan_env_lines(existing);
+    if base.is_empty() {
+        Ok(block)
+    } else {
+        Ok(format!("{}\n{}", base, block))
+    }
+}
+
+/// Current content of a shell profile, or "" when it does not exist yet. Any
+/// other read error is returned: rewriting a profile Jan could not read would
+/// replace the user's lines with Jan's block alone.
+fn read_shell_profile(env_file_path: &str) -> Result<String, String> {
+    match std::fs::read_to_string(env_file_path) {
+        Ok(content) => Ok(content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!("Could not read {}: {}", env_file_path, e)),
+    }
+}
+
+/// macOS fallback for a profile Jan cannot write directly: replace
+/// `env_file_path` with `content` with administrator privileges (see
+/// `admin_write_shell_command`). The content goes through a private temp file
+/// and the script through osascript's stdin, so neither shows in any process's
+/// arguments. A cancelled password prompt is returned as an error.
+#[cfg(unix)]
+fn admin_write_shell_profile(env_file_path: &str, content: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    if content.len() > MAX_ADMIN_PROFILE_BYTES {
+        return Err(format!(
+            "{} would be larger than {} KB; not writing it with administrator privileges.",
+            env_file_path,
+            MAX_ADMIN_PROFILE_BYTES / 1024
+        ));
+    }
+    let staged = stage_admin_profile(content)?;
+    let src = staged
+        .file
+        .to_str()
+        .ok_or_else(|| format!("{} is not valid UTF-8", staged.file.display()))?;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let script = admin_write_applescript(env_file_path, src, uid)?;
+    let mut child = std::process::Command::new("/usr/bin/osascript")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let written = child
+        .stdin
+        .take()
+        .ok_or_else(|| "osascript has no stdin".to_string())
+        .and_then(|mut stdin| stdin.write_all(script.as_bytes()).map_err(|e| e.to_string()));
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    written?;
+    drop(staged);
+    check_admin_copy(&output, env_file_path)
+}
+
+#[cfg(not(unix))]
+fn admin_write_shell_profile(env_file_path: &str, _content: &str) -> Result<(), String> {
+    Err(format!("Could not update {}", env_file_path))
+}
+
+/// Turn the osascript result of the admin copy into an error when it failed,
+/// e.g. because the user cancelled the password prompt.
+fn check_admin_copy(output: &std::process::Output, env_file_path: &str) -> Result<(), String> {
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Could not update {} with administrator privileges: {}",
+            env_file_path,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
 // Helper function to write env vars to a shell config file
 fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    let marker = "# Jan Local API Server - Claude Code Config";
-    let new_entries: String = env_vars
-        .iter()
-        .map(|(k, v)| format!("export {}='{}'\n", k, v))
-        .collect();
-
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            // Remove Jan config markers and existing ANTHROPIC env vars to replace them
-            !line.starts_with(marker)
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-
-    let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
-
-    let final_content = cleaned.join("\n") + &new_content;
+    let existing_content = read_shell_profile(env_file_path)?;
+    let final_content = build_env_file_content(&existing_content, env_vars)?;
     std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -300,7 +669,7 @@ pub fn factory_reset<R: Runtime>(
             let default_config = AppConfiguration {
                 data_folder: default_data_folder_path(app_handle.clone()),
             };
-            let _ = update_app_configuration(app_handle.clone(), default_config);
+            let _ = write_app_configuration(app_handle.clone(), default_config);
         }
 
         // Persisted UI state (model-provider, setup flag) lives in webview
@@ -330,23 +699,6 @@ pub fn factory_reset<R: Runtime>(
 #[tauri::command]
 pub fn relaunch<R: Runtime>(app: AppHandle<R>) {
     app.restart()
-}
-
-#[tauri::command]
-pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let app_path = get_jan_data_folder_path(app.clone());
-    let program = if cfg!(target_os = "windows") {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(program)
-        .arg(app_path)
-        .status()
-        .map_err(|e| format!("Failed to open app directory: {e}"))?;
-    Ok(())
 }
 
 #[tauri::command]
@@ -441,6 +793,10 @@ fn build_claude_code_env_vars(
             env.get("key").and_then(|v| v.as_str()),
             env.get("value").and_then(|v| v.as_str()),
         ) {
+            // An unfilled row in the custom env list; nothing to export.
+            if key.is_empty() {
+                continue;
+            }
             env_vars.push((key.to_string(), value.to_string()));
         }
     }
@@ -450,11 +806,10 @@ fn build_claude_code_env_vars(
 
 /// Persist the Claude Code environment variables to the user's shell config
 /// (macOS/Linux) or the Windows registry, then return the result.
-fn write_claude_code_env_vars(
-    env_vars: &[(String, String)],
-) -> Result<(), String> {
-    // Build the command environment
-    // Export environment variables to the user's shell config file
+fn write_claude_code_env_vars(env_vars: &[(String, String)]) -> Result<(), String> {
+    // The shell profile and the Windows registry both take the values
+    // verbatim, so refuse names and values that cannot be stored safely.
+    validate_env_vars(env_vars)?;
 
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
@@ -478,41 +833,9 @@ fn write_claude_code_env_vars(
             }
             Err(_) => {
                 // Use admin privileges to write
-                let marker = "# Jan Local API Server - Claude Code Config";
-                let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
-                let cleaned: Vec<&str> = existing_content
-                    .split('\n')
-                    .filter(|line| {
-                        !line.starts_with(marker)
-                            && !line.starts_with("# Jan Local API Server")
-                            && !line.starts_with("export ANTHROPIC_")
-                    })
-                    .collect();
-
-                let env_content: String = env_vars
-                    .iter()
-                    .map(|(k, v)| format!("export {}='{}'\n", k, v))
-                    .collect();
-
-                let new_block = format!("{}\n{}", marker, env_content);
-
-                let final_content = cleaned.join("\n") + "\n" + &new_block + marker;
-
-                // Write to a temp file first, then use osascript to move it
-                let temp_script_path = format!("{}/.jan_env_update.sh", home_dir);
-                std::fs::write(&temp_script_path, &final_content).map_err(|e| e.to_string())?;
-
-                // Use admin privileges to move the temp file
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}' && echo 'Env vars written to {}'" with administrator privileges"#,
-                    temp_script_path, env_file_path, temp_script_path, env_file_path
-                );
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
+                let existing_content = read_shell_profile(&env_file_path)?;
+                let final_content = build_env_file_content(&existing_content, env_vars)?;
+                admin_write_shell_profile(&env_file_path, &final_content)?;
 
                 log::info!(
                     "Env vars written to {} with admin privileges",
@@ -550,7 +873,7 @@ fn write_claude_code_env_vars(
     } else {
         // On Windows, set persistent user environment variables using setx
         for (key, value) in env_vars {
-            let output = std::process::Command::new("setx")
+            let output = std::process::Command::new(jan_utils::windows_system_tool("setx.exe"))
                 .arg(key)
                 .arg(value)
                 .output()
@@ -568,18 +891,9 @@ fn write_claude_code_env_vars(
 }
 
 /// Build the cleaned shell-file content with all Jan CC env vars stripped out.
-fn build_cleaned_env_content(env_file_path: &str) -> String {
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            !line.starts_with("# Jan Local API Server - Claude Code Config")
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-    // Trim trailing blank lines left behind by the removed block
-    cleaned.join("\n").trim_end().to_string() + "\n"
+fn build_cleaned_env_content(env_file_path: &str) -> Result<String, String> {
+    let existing_content = read_shell_profile(env_file_path)?;
+    Ok(strip_jan_env_lines(&existing_content))
 }
 
 /// Clear all Jan-written Claude Code environment variables from the shell config.
@@ -595,7 +909,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             env_file_path
         );
 
-        let cleaned = build_cleaned_env_content(&env_file_path);
+        let cleaned = build_cleaned_env_content(&env_file_path)?;
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -608,20 +922,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                 Ok(())
             }
             Err(_) => {
-                // Write cleaned content to a temp file, then use osascript to move it
-                let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
-                std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
-
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}'" with administrator privileges"#,
-                    temp_path, env_file_path, temp_path
-                );
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
+                admin_write_shell_profile(&env_file_path, &cleaned)?;
 
                 log::info!(
                     "CC env cleared from {} with admin privileges",
@@ -639,7 +940,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             env_file_path
         );
 
-        let cleaned = build_cleaned_env_content(&env_file_path);
+        let cleaned = build_cleaned_env_content(&env_file_path)?;
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -663,7 +964,7 @@ pub fn clear_claude_code_env() -> Result<(), String> {
             "ANTHROPIC_DEFAULT_HAIKU_MODEL",
         ];
         for key in &keys {
-            let _ = std::process::Command::new("reg")
+            let _ = std::process::Command::new(jan_utils::windows_system_tool("reg.exe"))
                 .args(["delete", "HKCU\\Environment", "/v", key, "/f"])
                 .output();
         }
@@ -871,5 +1172,562 @@ mod tests {
             err.contains("API key"),
             "a whitespace-only key is not a real credential: {err}"
         );
+    }
+
+    fn kv(k: &str, v: &str) -> (String, String) {
+        (k.to_string(), v.to_string())
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        assert_eq!(shell_single_quote("plain"), "'plain'");
+        assert_eq!(shell_single_quote("a'b"), r"'a'\''b'");
+        assert_eq!(shell_single_quote(""), "''");
+    }
+
+    #[test]
+    fn admin_write_applescript_escapes_for_applescript() {
+        let script =
+            admin_write_applescript(r#"/Users/o'b"c\d/.zshenv"#, "/var/t/jan_env.x/profile", 501)
+                .unwrap();
+        assert!(script.starts_with(r#"do shell script "dst='/Users/o'\\''b\"c\\d/.zshenv'; dir='/Users/o'\\''b\"c\\d'; src='/var/t/jan_env.x/profile'; "#));
+        assert!(script.ends_with(r#"exit $r" with administrator privileges"#));
+        // Only the escaped quotes remain inside the AppleScript string.
+        let inner = &script["do shell script \"".len()..script.len() - "\" with administrator privileges".len()];
+        assert!(!inner.replace(r#"\\"#, "").replace(r#"\""#, "").contains('"'));
+    }
+
+    #[test]
+    fn admin_write_command_carries_paths_not_content() {
+        let cmd = admin_write_shell_command("/Users/a/.zshenv", "/var/t/jan_env.x/profile", 501)
+            .unwrap();
+        assert!(cmd.contains("src='/var/t/jan_env.x/profile';"));
+        assert!(cmd.contains("'Regular File:501:600'"));
+        assert!(cmd.contains(&format!("-gt {MAX_ADMIN_PROFILE_BYTES}")));
+        assert!(!cmd.contains("base64"));
+        // Staging stays root-only, under /private/tmp.
+        assert!(cmd.contains("/usr/bin/mktemp -d /private/tmp/"));
+        assert!(admin_write_shell_command(".zshenv", "/t/p", 501).is_err());
+        assert!(admin_write_shell_command("/Users/a/.zshenv", "t/p", 501).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn admin_write_refuses_oversized_content() {
+        let big = "#".repeat(MAX_ADMIN_PROFILE_BYTES + 1);
+        let err = admin_write_shell_profile("/Users/a/.zshenv", &big).unwrap_err();
+        assert!(err.contains("larger than"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_profile_is_private_and_removed_on_drop() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let staged = stage_admin_profile("export A=1\n").unwrap();
+        let dir = staged.dir.clone();
+        assert!(dir.starts_with(std::env::temp_dir()));
+        assert_eq!(fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        let meta = fs::symlink_metadata(&staged.file).unwrap();
+        assert!(meta.file_type().is_file());
+        assert_eq!(meta.permissions().mode() & 0o777, 0o600);
+        assert_eq!(meta.uid(), unsafe { libc::getuid() });
+        assert_eq!(fs::read_to_string(&staged.file).unwrap(), "export A=1\n");
+        drop(staged);
+        assert!(!dir.exists());
+    }
+
+    /// Writes `content` to a mode-600 source file in `dir`.
+    #[cfg(target_os = "macos")]
+    fn admin_source(dir: &std::path::Path, content: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let src = dir.join("staged-profile");
+        fs::write(&src, content).unwrap();
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o600)).unwrap();
+        src
+    }
+
+    /// Runs the privileged command as the current user against temp files.
+    #[cfg(target_os = "macos")]
+    fn run_admin_write(dst: &std::path::Path, src: &std::path::Path) -> std::process::Output {
+        let uid = unsafe { libc::getuid() };
+        let cmd = admin_write_shell_command(dst.to_str().unwrap(), src.to_str().unwrap(), uid)
+            .unwrap();
+        std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(cmd)
+            .output()
+            .unwrap()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_replaces_regular_file_keeping_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let dst = dir.path().join(".zshenv");
+        fs::write(&dst, "old\n").unwrap();
+        fs::set_permissions(&dst, fs::Permissions::from_mode(0o640)).unwrap();
+        let content = "export A='it'\\''s'\n$(touch /tmp/never)\n";
+        let out = run_admin_write(&dst, &admin_source(dir.path(), content));
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), content);
+        assert_eq!(fs::metadata(&dst).unwrap().permissions().mode() & 0o777, 0o640);
+
+        // A profile that does not exist yet is created, private.
+        let new = dir.path().join(".bash_profile");
+        let out = run_admin_write(&new, &admin_source(dir.path(), "export B=1\n"));
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(fs::read_to_string(&new).unwrap(), "export B=1\n");
+        assert_eq!(fs::metadata(&new).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_refuses_symlinks_and_non_files() {
+        let dir = tempdir().unwrap();
+        let src = admin_source(dir.path(), "export EVIL=1\n");
+        let target = dir.path().join("system-file");
+        fs::write(&target, "original\n").unwrap();
+        let link = dir.path().join(".zshenv");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let out = run_admin_write(&link, &src);
+        assert!(!out.status.success());
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("is a symbolic link"), "{err}");
+        assert!(err.contains("Jan won't replace it"), "{err}");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original\n");
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+
+        // Dangling symlink: refused too, nothing created at its target.
+        let dangling = dir.path().join(".bashrc");
+        let missing = dir.path().join("missing");
+        std::os::unix::fs::symlink(&missing, &dangling).unwrap();
+        assert!(!run_admin_write(&dangling, &src).status.success());
+        assert!(!missing.exists());
+
+        let sub = dir.path().join("adir");
+        fs::create_dir(&sub).unwrap();
+        let out = run_admin_write(&sub, &src);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("not a regular file"));
+        assert_eq!(fs::read_dir(&sub).unwrap().count(), 0);
+    }
+
+    /// `/dev` is its own file system, so a profile there is on a different
+    /// volume than /private/tmp. Nothing can be written there by this user;
+    /// the volume check fails first and says so.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_explains_a_different_volume() {
+        let dir = tempdir().unwrap();
+        let src = admin_source(dir.path(), "export A=1\n");
+        let dst = std::path::Path::new("/dev/jan-test-profile-that-does-not-exist");
+        let out = run_admin_write(dst, &src);
+        assert!(!out.status.success());
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("is on a different volume"), "{err}");
+        assert!(err.contains("Jan can't update it with administrator rights"), "{err}");
+        assert!(!dst.exists());
+
+        // osascript hands the script's stderr back; it reaches the error text.
+        let err = check_admin_copy(&out, dst.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("is on a different volume"), "{err}");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn admin_write_command_refuses_a_symlinked_or_loose_source() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let dst = dir.path().join(".zshenv");
+        fs::write(&dst, "old\n").unwrap();
+
+        // A symlink to an otherwise acceptable file is refused.
+        let real = admin_source(dir.path(), "export A=1\n");
+        let link = dir.path().join("linked-profile");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let out = run_admin_write(&dst, &link);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("Refusing to read"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // Readable by others: refused.
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o644)).unwrap();
+        let out = run_admin_write(&dst, &real);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // A directory, and a file that is not there: refused.
+        assert!(!run_admin_write(&dst, dir.path()).status.success());
+        assert!(!run_admin_write(&dst, &dir.path().join("gone")).status.success());
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+
+        // Owned by someone else: refused (the command expects another uid).
+        fs::set_permissions(&real, fs::Permissions::from_mode(0o600)).unwrap();
+        let other = unsafe { libc::getuid() } + 1;
+        let cmd = admin_write_shell_command(dst.to_str().unwrap(), real.to_str().unwrap(), other)
+            .unwrap();
+        let out = std::process::Command::new("/bin/sh").arg("-c").arg(cmd).output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected"));
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "old\n");
+    }
+
+    #[test]
+    fn env_block_quotes_a_value_that_closes_the_quote() {
+        let block =
+            render_env_block(&[kv("ANTHROPIC_DEFAULT_OPUS_MODEL", "x'; touch /tmp/x; #")]).unwrap();
+        assert!(block.contains(r"export ANTHROPIC_DEFAULT_OPUS_MODEL='x'\''; touch /tmp/x; #'"));
+        assert!(block.starts_with(ENV_BLOCK_BEGIN));
+        assert!(block.trim_end().ends_with(ENV_BLOCK_END));
+    }
+
+    #[test]
+    fn env_rejects_line_breaks_and_nul_in_values() {
+        for bad in ["a\nexport X=1", "a\rb", "a\0b"] {
+            let err = render_env_block(&[kv("ANTHROPIC_DEFAULT_OPUS_MODEL", bad)]).unwrap_err();
+            assert!(err.contains("ANTHROPIC_DEFAULT_OPUS_MODEL"), "{err}");
+            assert!(validate_env_vars(&[kv("K", bad)]).is_err());
+        }
+    }
+
+    #[test]
+    fn env_rejects_bad_keys() {
+        for bad in [
+            "",
+            "1ABC",
+            "A-B",
+            "A B",
+            "A;touch x",
+            "A=B",
+            "A\nB",
+            "\u{c9}",
+        ] {
+            assert!(
+                validate_env_vars(&[kv(bad, "v")]).is_err(),
+                "{bad:?} accepted"
+            );
+        }
+        for good in ["A", "_A", "a_b9", "ANTHROPIC_BASE_URL"] {
+            assert!(
+                validate_env_vars(&[kv(good, "v")]).is_ok(),
+                "{good:?} rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn env_rejects_reserved_keys() {
+        for bad in [
+            "PATH",
+            "path",
+            "PathExt",
+            "ComSpec",
+            "SystemRoot",
+            "windir",
+            "SystemDrive",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "LD_AUDIT",
+            "DYLD_INSERT_LIBRARIES",
+            "dyld_library_path",
+            "JAN_DATA_FOLDER",
+            "jan_anything",
+            "ProgramFiles",
+            "PROGRAMW6432",
+            "cuda_path",
+            "CUDA_HOME",
+            "CUDA_PATH_V12_4",
+            "HIP_PATH",
+            "ROCM_PATH",
+            "rocm_home",
+            "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+            "webview2_additional_browser_arguments",
+        ] {
+            let err = validate_env_vars(&[kv(bad, "v")]).unwrap_err();
+            assert!(err.contains(bad), "{bad}: {err}");
+        }
+        // Not a valid name to write either, but reserved in its own right.
+        assert!(is_reserved_env_key("ProgramFiles(x86)"));
+        for good in [
+            "PATHS",
+            "MY_PATH",
+            "ENVIRONMENT",
+            "OLD_LD_PRELOAD",
+            "JANET",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_BASE_URL",
+            "LD",
+            "CUDA_VISIBLE_DEVICES",
+            "HIP_VISIBLE_DEVICES",
+            "WEBVIEW2",
+            // Typed by the user on purpose (e.g. a Claude Code tweak), so allowed.
+            "NODE_OPTIONS",
+            "node_options",
+            "BASH_ENV",
+            "ENV",
+            "ZDOTDIR",
+            "PROMPT_COMMAND",
+            "SHELLOPTS",
+            "BASHOPTS",
+            "IFS",
+            "PS4",
+            "PYTHONSTARTUP",
+            "PERL5OPT",
+        ] {
+            assert!(
+                validate_env_vars(&[kv(good, "v")]).is_ok(),
+                "{good:?} rejected"
+            );
+        }
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        assert!(write_env_to_shell(path.to_str().unwrap(), &[kv("LD_PRELOAD", "/tmp/x")]).is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn env_write_with_invalid_input_leaves_file_untouched() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        fs::write(&path, "export PATH=\"$HOME/bin:$PATH\"\n").unwrap();
+        let p = path.to_str().unwrap();
+        assert!(write_env_to_shell(p, &[kv("BAD KEY", "v")]).is_err());
+        assert!(write_env_to_shell(p, &[kv("K", "a\nb")]).is_err());
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "export PATH=\"$HOME/bin:$PATH\"\n"
+        );
+    }
+
+    #[test]
+    fn claude_code_env_skips_blank_custom_rows() {
+        let env = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("k".to_string()),
+            None,
+            None,
+            None,
+            vec![
+                serde_json::json!({"key": "", "value": ""}),
+                serde_json::json!({"key": "MY_VAR", "value": "1"}),
+            ],
+        )
+        .unwrap();
+        assert!(env.iter().all(|(k, _)| !k.is_empty()));
+        assert!(env.iter().any(|(k, v)| k == "MY_VAR" && v == "1"));
+    }
+
+    #[test]
+    fn env_write_then_reset_preserves_user_lines_and_removes_jan_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        let user = "# my settings\nexport PATH=\"$HOME/bin:$PATH\"\nalias ll='ls -l'\n";
+        fs::write(&path, user).unwrap();
+        let p = path.to_str().unwrap();
+
+        let vars = vec![
+            kv("ANTHROPIC_BASE_URL", "http://127.0.0.1:1337"),
+            kv("ANTHROPIC_AUTH_TOKEN", "sk-'quoted'"),
+            kv("MY_CUSTOM_VAR", "x'; echo hi; #"),
+        ];
+        write_env_to_shell(p, &vars).unwrap();
+        // Writing twice replaces the block instead of stacking it.
+        write_env_to_shell(p, &vars).unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with(user));
+        assert_eq!(written.matches(ENV_BLOCK_BEGIN).count(), 1);
+        assert_eq!(written.matches(ENV_BLOCK_END).count(), 1);
+        assert_eq!(written.matches("MY_CUSTOM_VAR").count(), 1);
+
+        fs::write(&path, build_cleaned_env_content(p).unwrap()).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), user);
+    }
+
+    #[test]
+    fn env_reset_on_file_with_only_jan_block_leaves_it_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".bashrc");
+        let p = path.to_str().unwrap();
+        write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "u")]).unwrap();
+        assert_eq!(build_cleaned_env_content(p).unwrap(), "");
+    }
+
+    #[test]
+    fn env_cleanup_removes_legacy_format_including_stray_lines() {
+        // What older Jan versions wrote: a marker pair around unescaped
+        // exports, where a newline in a value left an extra line behind and a
+        // custom variable did not carry the ANTHROPIC_ prefix.
+        let legacy = "export EDITOR=vim\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='http://127.0.0.1:1337'\n\
+            export ANTHROPIC_DEFAULT_OPUS_MODEL='m\n\
+            touch /tmp/leftover'\n\
+            export MY_CUSTOM_VAR='1'\n\
+            \n\
+            # Jan Local API Server - Claude Code Config\n\
+            export AFTER=1\n";
+        let cleaned = strip_jan_env_lines(legacy);
+        assert_eq!(cleaned, "export EDITOR=vim\nexport AFTER=1\n");
+
+        // Upgrading writes the new block and drops the legacy one.
+        let upgraded =
+            build_env_file_content(legacy, &[kv("ANTHROPIC_BASE_URL", "http://h")]).unwrap();
+        assert!(!upgraded.contains(LEGACY_ENV_MARKER));
+        assert!(!upgraded.contains("leftover"));
+        assert!(!upgraded.contains("MY_CUSTOM_VAR"));
+        assert!(upgraded.starts_with("export EDITOR=vim\nexport AFTER=1\n"));
+        assert_eq!(upgraded.matches("ANTHROPIC_BASE_URL").count(), 1);
+    }
+
+    #[test]
+    fn env_cleanup_handles_unpaired_markers_without_eating_user_lines() {
+        let content = "export A=1\n# Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='x'\nexport B=2\n# >>> jan claude-code >>>\nexport C=3\n";
+        assert_eq!(
+            strip_jan_env_lines(content),
+            "export A=1\nexport B=2\nexport C=3\n"
+        );
+    }
+
+    #[test]
+    fn env_cleanup_keeps_user_comment_that_shares_the_legacy_prefix() {
+        let content = "# Jan Local API Server notes: port 1337\n\
+            export KEEP_ME=1\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export ANTHROPIC_BASE_URL='http://127.0.0.1:1337'\n\
+            # Jan Local API Server - Claude Code Config\n\
+            export AFTER=1\n";
+        assert_eq!(
+            strip_jan_env_lines(content),
+            "# Jan Local API Server notes: port 1337\nexport KEEP_ME=1\nexport AFTER=1\n"
+        );
+    }
+
+    #[test]
+    fn env_write_and_reset_keep_the_users_own_anthropic_exports() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join(".zshenv");
+        let user = "export ANTHROPIC_API_KEY='mine'\nexport ANTHROPIC_MODEL=x\n";
+        fs::write(&path, user).unwrap();
+        let p = path.to_str().unwrap();
+
+        write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "http://h")]).unwrap();
+        assert!(fs::read_to_string(&path).unwrap().starts_with(user));
+
+        fs::write(&path, build_cleaned_env_content(p).unwrap()).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), user);
+    }
+
+    #[test]
+    fn env_cleanup_removes_each_historical_legacy_format() {
+        let m = LEGACY_ENV_MARKER;
+        // First release: the exports were joined without newlines.
+        let joined = format!(
+            "export A=1\n{m}\nexport ANTHROPIC_BASE_URL='u'export ANTHROPIC_API_KEY='k'\n{m}\n"
+        );
+        assert_eq!(strip_jan_env_lines(&joined), "export A=1\n");
+        // Admin fallback: closing marker written without a trailing newline.
+        let admin = format!("export A=1\n\n{m}\nexport ANTHROPIC_BASE_URL='u'\n{m}");
+        assert_eq!(strip_jan_env_lines(&admin), "export A=1\n");
+        // Profile that did not end in a newline: the opening marker trails the
+        // user's last line.
+        let glued_open = format!("export A=1{m}\nexport ANTHROPIC_BASE_URL='u'\n{m}\n");
+        assert_eq!(strip_jan_env_lines(&glued_open), "export A=1\n");
+        // Text appended after an admin-written block lands on the closing line.
+        let glued_close =
+            format!("{m}\nexport ANTHROPIC_AUTH_TOKEN='t'\n{m}export B=2\nexport C=3\n");
+        assert_eq!(
+            strip_jan_env_lines(&glued_close),
+            "export B=2\nexport C=3\n"
+        );
+    }
+
+    #[test]
+    fn env_cleanup_keeps_user_line_that_only_ends_with_the_legacy_marker() {
+        let m = LEGACY_ENV_MARKER;
+        let content = format!(
+            "alias x='y' {m}\nexport KEEP=1\nexport ALSO=2\n{m}\nexport AFTER=1\n"
+        );
+        // The trailing line is not Jan's opening marker, so the lines up to
+        // the next marker stay; only the whole-line marker is removed.
+        assert_eq!(
+            strip_jan_env_lines(&content),
+            format!("alias x='y' {m}\nexport KEEP=1\nexport ALSO=2\nexport AFTER=1\n")
+        );
+        // Last line of the file: nothing to start, nothing removed.
+        let last = format!("export A=1\necho done {m}\n");
+        assert_eq!(strip_jan_env_lines(&last), last);
+        // Indented whole-line marker still counts as the marker.
+        let indented = format!("export A=1\n  {m}\nexport ANTHROPIC_BASE_URL='u'\n{m}\n");
+        assert_eq!(strip_jan_env_lines(&indented), "export A=1\n");
+    }
+
+    #[test]
+    fn env_profile_read_errors_are_returned_except_not_found() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join(".zshenv");
+        assert_eq!(read_shell_profile(missing.to_str().unwrap()).unwrap(), "");
+
+        // Not valid UTF-8: refuse instead of replacing it with Jan's block.
+        let binary = dir.path().join(".bashrc");
+        fs::write(&binary, b"export A=1 # caf\xe9\n").unwrap();
+        let p = binary.to_str().unwrap();
+        assert!(write_env_to_shell(p, &[kv("ANTHROPIC_BASE_URL", "u")]).is_err());
+        assert!(build_cleaned_env_content(p).is_err());
+        assert_eq!(fs::read(&binary).unwrap(), b"export A=1 # caf\xe9\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_admin_copy_failure_is_an_error() {
+        let run = |script: &str| {
+            std::process::Command::new("sh")
+                .arg("-c")
+                .arg(script)
+                .output()
+                .unwrap()
+        };
+        assert!(check_admin_copy(&run("exit 0"), "/p").is_ok());
+        let err =
+            check_admin_copy(&run("echo 'User canceled. (-128)' >&2; exit 1"), "/p").unwrap_err();
+        assert!(err.contains("User canceled"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_file_sources_to_the_literal_values() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let path = home.join(".zshenv");
+        let canary = home.join("canary");
+        let hostile = [
+            format!("x'; touch '{}'; #", canary.display()),
+            format!("$(touch {})", canary.display()),
+            format!("`touch {}`", canary.display()),
+            "a\\b \"c\" $HOME ''' end".to_string(),
+            String::new(),
+        ];
+        for value in &hostile {
+            write_env_to_shell(path.to_str().unwrap(), &[kv("CC_TEST_VAR", value)]).unwrap();
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(". \"$1\" && printf '%s' \"$CC_TEST_VAR\"")
+                .arg("sh")
+                .arg(&path)
+                .env_clear()
+                .env("HOME", home)
+                .env("PATH", "/usr/bin:/bin")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(String::from_utf8(out.stdout).unwrap(), *value);
+            assert!(!canary.exists(), "value {value:?} ran a command");
+        }
     }
 }

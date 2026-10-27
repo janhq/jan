@@ -32,6 +32,7 @@ const COMMANDS: &[&str] = &[
     "cancel_thread_bash",
     "preview_register_root",
     "preview_unregister_root",
+    "open_artifact",
 ];
 
 fn main() {

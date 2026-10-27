@@ -18,6 +18,7 @@ use crate::tools::sandbox::{
     escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
     refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
 };
+use crate::screenshot_pages::PageScope;
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -1494,9 +1495,11 @@ fn chrome_binary() -> Option<PathBuf> {
 /// Render a local HTML/SVG file to PNG bytes.
 ///
 /// `backend`, when present, renders through the desktop's own webview (no Chrome
-/// needed); on any backend failure this falls back to headless Chrome so nothing
-/// regresses. `None` goes straight to Chrome. Either way the viewport clamping
-/// and output cap are identical.
+/// needed), and its result is final: the webview checks every frame the page
+/// loads against the screenshot's own folder, and headless Chrome has no such
+/// check, so a page that makes the webview fail must not get a second render
+/// through Chrome. `None` (no desktop webview, e.g. the CLI) goes to Chrome.
+/// Either way the viewport clamping and output cap are identical.
 ///
 /// `width`/`height` are the viewport in CSS pixels; `scale` is the device pixel
 /// ratio, so the PNG comes out `width*scale` pixels wide with the layout
@@ -1506,6 +1509,7 @@ pub async fn render_html_png(
     width: u64,
     height: u64,
     scale: f64,
+    scope: PageScope,
     backend: Option<&ScreenshotBackend>,
 ) -> Result<Vec<u8>, String> {
     let ext = target
@@ -1530,14 +1534,11 @@ pub async fn render_html_png(
         1.0
     };
 
-    // Try the injected backend (the desktop's webview capture) first, so the tool
-    // works without Chrome; on any failure fall through to Chrome so nothing
-    // regresses.
+    // The desktop's webview capture, when injected, is the only renderer: see
+    // the doc comment for why a failure here does not fall through to Chrome.
     if let Some(backend) = backend {
-        match backend(target.to_path_buf(), width, height, scale).await {
-            Ok(png) => return finalize_screenshot_png(png),
-            Err(_) => { /* fall through to Chrome */ }
-        }
+        let png = backend(target.to_path_buf(), width, height, scale, scope).await?;
+        return finalize_screenshot_png(png);
     }
 
     let Some(chrome) = chrome_binary() else {
@@ -1670,13 +1671,21 @@ async fn screenshot(
     let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
     let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
     let target = resolve_path(root, scratch, path);
-    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
-        return (
-            format!("ERROR: refused to screenshot through a symlink out of the workspace: {path}"),
-            None,
-        );
-    }
-    let png = match render_html_png(&target, width, height, 1.0, backend).await {
+    // A page the user approved outside the trusted roots gets no neighbours:
+    // its directory was never part of what they approved.
+    let scope = match landing(root, scratch, read_roots, &target) {
+        Landing::Escapes => {
+            return (
+                format!(
+                    "ERROR: refused to screenshot through a symlink out of the workspace: {path}"
+                ),
+                None,
+            );
+        }
+        Landing::Inside(_) => PageScope::Directory,
+        Landing::Outside(_) => PageScope::FileOnly,
+    };
+    let png = match render_html_png(&target, width, height, 1.0, scope, backend).await {
         Ok(b) => b,
         Err(e) => return (format!("ERROR: {e}"), None),
     };
@@ -4209,6 +4218,58 @@ mod tests {
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A page in a trusted root may load the files beside it; one the user
+    /// approved outside every root may load only itself.
+    #[cfg(feature = "tauri")]
+    #[tokio::test]
+    async fn screenshot_confines_a_page_outside_the_roots_to_itself() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(root.join("in.html"), b"<h1>in</h1>").unwrap();
+        let out_page = outside.join("out.html");
+        std::fs::write(&out_page, b"<h1>out</h1>").unwrap();
+        let out_page = out_page.to_str().unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_by_backend = seen.clone();
+        let backend: ScreenshotBackend = std::sync::Arc::new(move |_, _, _, _, scope| {
+            seen_by_backend.lock().unwrap().push(scope);
+            Box::pin(async { Ok(b"png".to_vec()) })
+        });
+
+        for (path, read_roots) in [
+            ("in.html", vec![]),
+            (out_page, vec![]),
+            (out_page, vec![outside.clone()]),
+        ] {
+            let (out, _) =
+                screenshot(&json!({"path": path}), &root, None, &read_roots, Some(&backend)).await;
+            assert!(!out.starts_with("ERROR"), "{out}");
+        }
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [PageScope::Directory, PageScope::FileOnly, PageScope::Directory]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A failing desktop renderer is the answer: the page is not rendered a
+    /// second time through Chrome, which would not check its frames.
+    #[tokio::test]
+    async fn a_failing_screenshot_backend_does_not_fall_back_to_chrome() {
+        let root = unique_root();
+        let page = root.join("page.html");
+        std::fs::write(&page, b"<h1>page</h1>").unwrap();
+        let backend: ScreenshotBackend = std::sync::Arc::new(|_, _, _, _, _| {
+            Box::pin(async { Err("webview capture timed out".to_string()) })
+        });
+
+        let result =
+            render_html_png(&page, 800, 600, 1.0, PageScope::Directory, Some(&backend)).await;
+        assert_eq!(result, Err("webview capture timed out".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Renders for real when a browser is present, and returns an image part

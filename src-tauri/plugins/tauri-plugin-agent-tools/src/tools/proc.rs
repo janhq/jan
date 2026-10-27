@@ -323,10 +323,7 @@ fn resolve_shell() -> ShellConfig {
         {
             return config_for(p);
         }
-        let system = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
-            .join("System32");
+        let system = system32_dir();
         let powershell = system
             .join("WindowsPowerShell")
             .join("v1.0")
@@ -351,9 +348,9 @@ pub(crate) fn which(name: &str) -> Option<PathBuf> {
 /// Every match for `name` on PATH, in PATH order.
 fn which_all(name: &str) -> Vec<PathBuf> {
     #[cfg(unix)]
-    let finder = "which";
+    let finder = PathBuf::from("which");
     #[cfg(windows)]
-    let finder = "where";
+    let finder = system32_dir().join("where.exe");
     let Ok(out) = std::process::Command::new(finder).arg(name).output() else {
         return Vec::new();
     };
@@ -742,9 +739,22 @@ pub fn kill_tree(pid: u32) {
     let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
 }
 
+/// `%SystemRoot%\System32`, for spawning system tools by absolute path: a
+/// bare name would be looked up in the application's directory first.
+#[cfg(windows)]
+fn system32_dir() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .filter(|r| !r.is_empty())
+        .or_else(|| std::env::var_os("windir"))
+        .filter(|r| !r.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join("System32")
+}
+
 #[cfg(windows)]
 pub fn kill_tree(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
+    let _ = std::process::Command::new(system32_dir().join("taskkill.exe"))
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .output();
 }
