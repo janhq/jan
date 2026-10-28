@@ -15,6 +15,7 @@
 
 import { fs, joinPath } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { findModelEntries } from './model-tree'
 import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
 
 // ModelConfig is intentionally widened — model.yml may carry extra fields like
@@ -186,37 +187,10 @@ export async function generatePreset(
     await fs.mkdir(modelsDir)
   }
 
-  // DFS for any directory containing model.yml — mirrors the logic in
-  // index.ts:list() so nested model IDs (e.g. "huggingface/foo") work.
-  const modelEntries: { modelId: string; configPath: string }[] = []
-  const stack: string[] = [modelsDir]
-  while (stack.length > 0) {
-    const currentDir = stack.pop() as string
-    const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-    if (await fs.existsSync(modelConfigPath)) {
-      // +1 to drop leading separator. NOTE: matches index.ts behavior; not
-      // Windows-`\\`-aware, same trade-off as the existing list() impl.
-      const modelId = currentDir.slice(modelsDir.length + 1)
-      if (modelId.length > 0) {
-        modelEntries.push({ modelId, configPath: modelConfigPath })
-      }
-      continue
-    }
-    let children: string[] = []
-    try {
-      children = await fs.readdirSync(currentDir)
-    } catch {
-      continue
-    }
-    for (const child of children) {
-      try {
-        const stat = await fs.fileStat(child)
-        if (stat?.isDirectory) stack.push(child)
-      } catch {
-        /* ignore unreadable entries */
-      }
-    }
-  }
+  // A model.yml at the models root itself has no ID to key a section on.
+  const modelEntries = (await findModelEntries(modelsDir)).filter(
+    (e) => e.modelId.length > 0
+  )
 
   modelEntries.sort((a, b) => a.modelId.localeCompare(b.modelId))
 

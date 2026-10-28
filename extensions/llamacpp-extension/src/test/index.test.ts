@@ -527,13 +527,23 @@ describe('llamacpp_extension', () => {
       vi.mocked(getBackendSetting).mockResolvedValue(null)
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
       vi.mocked(joinPath).mockImplementation((p) => Promise.resolve(p.join('/')))
-      vi.mocked(fs.existsSync).mockResolvedValue(true)
-      vi.mocked(fs.readdirSync).mockResolvedValue([
-        '/jan/llamacpp/models/seeded',
-        '/jan/llamacpp/models/custom',
-      ])
+      // A Hub download is nested one level deeper, under its author.
       yamls['/jan/llamacpp/models/seeded/model.yml'] = { name: 's', ctx_size: 8192 }
       yamls['/jan/llamacpp/models/custom/model.yml'] = { name: 'c', ctx_size: 32768 }
+      yamls['/jan/llamacpp/models/author/hub/model.yml'] = { name: 'h', ctx_size: 8192 }
+      const tree: Record<string, string[]> = {
+        '/jan/llamacpp/models': [
+          '/jan/llamacpp/models/seeded',
+          '/jan/llamacpp/models/custom',
+          '/jan/llamacpp/models/author',
+        ],
+        '/jan/llamacpp/models/author': ['/jan/llamacpp/models/author/hub'],
+      }
+      vi.mocked(fs.existsSync).mockImplementation(
+        async (p: string) => p === '/jan/llamacpp/models' || p in yamls
+      )
+      vi.mocked(fs.readdirSync).mockImplementation(async (p: string) => tree[p] ?? [])
+      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 0 })
       ;(fs as any).readYaml = vi.fn((path: string) =>
         Promise.resolve(structuredClone(yamls[path]))
       )
@@ -547,6 +557,7 @@ describe('llamacpp_extension', () => {
       await (extension as any).migrateSeededCtxSize()
 
       expect(yamls['/jan/llamacpp/models/seeded/model.yml']).toEqual({ name: 's' })
+      expect(yamls['/jan/llamacpp/models/author/hub/model.yml']).toEqual({ name: 'h' })
       expect(yamls['/jan/llamacpp/models/custom/model.yml'].ctx_size).toBe(32768)
       expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_seeded_ctx_cleared_v1', '1')
     })
