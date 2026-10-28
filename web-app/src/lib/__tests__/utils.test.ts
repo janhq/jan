@@ -22,6 +22,7 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('openai')).toBe('/images/model-provider/openai.svg')
     expect(getProviderLogo('gemini')).toBe('/images/model-provider/gemini.svg')
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
+    expect(getProviderLogo('powertokens')).toBe('/images/model-provider/powertokens.svg')
   })
 
   it('returns undefined for unknown providers', () => {
@@ -37,6 +38,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('openrouter')).toBe('OpenRouter')
     expect(getProviderTitle('gemini')).toBe('Gemini')
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
+    expect(getProviderTitle('powertokens')).toBe('PowerTokens')
   })
 
   it('capitalizes first letter for unknown providers', () => {
