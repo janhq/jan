@@ -902,6 +902,12 @@ pub(crate) struct ParentLink {
     sent: Arc<std::sync::atomic::AtomicUsize>,
 }
 
+/// The notice-queue key of a child's mid-run messages, apart from its own
+/// `run_id` so collecting the child does not retract them.
+fn message_notice_key(run_id: &str) -> String {
+    format!("{run_id}#msg")
+}
+
 /// Ring the main agent's doorbell from a running child. The message joins the
 /// same notice queue as a completion ping, so it reaches the main agent as a
 /// `<SYSTEM>` reminder at its next turn and wakes it when it is parked or idle.
@@ -917,7 +923,7 @@ pub(crate) fn message_main_agent(link: &ParentLink, text: &str) -> Result<String
     // Keyed apart from the run's completion ping, so collecting this child with
     // `await_subagent` does not retract a message it sent while still working.
     link.bg.push_notice(
-        &format!("{}#msg", link.run_id),
+        &message_notice_key(&link.run_id),
         format!(
             "Subagent '{}' ({}) sent a message while still running:\n\n{}",
             link.name,
@@ -1461,7 +1467,8 @@ impl BackgroundSubagents {
     /// Abort one registered child by `run_id`, the way [`Self::abort_all`] aborts
     /// all of them: the task is cancelled, the counters it held are released, and
     /// its `SubagentStart` bracket is closed so consumers never see one left open.
-    /// Any ping it had queued is dropped -- nobody is waiting for that child now.
+    /// Any ping or mid-run message it had queued is dropped -- nobody is waiting
+    /// for that child now.
     ///
     /// Used when a plan dies after starting some of its children: they were
     /// dispatched silent (`notify_on_finish = false`), so leaving them behind
@@ -1488,7 +1495,13 @@ impl BackgroundSubagents {
                 error: None,
             });
         }
-        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
+        // Its mid-run messages go too: the main agent may never have been told
+        // about this child, and the run they describe no longer exists.
+        let msg_key = message_notice_key(run_id);
+        self.notices
+            .lock()
+            .unwrap()
+            .retain(|n| n.run_id != run_id && n.run_id != msg_key);
         // A waiter parked on this id would otherwise stay parked on a child that
         // will never finish again.
         self.wake.notify_waiters();
@@ -6657,6 +6670,23 @@ pub(crate) mod tests {
         let notices = bg.take_notices();
         assert_eq!(notices.len(), 1, "only the completion ping is dropped");
         assert!(notices[0].contains("heads up"));
+    }
+
+    /// Aborting a child tears down a run the main agent may never have been told
+    /// about (a failed plan's silent children), so its mid-run messages go with
+    /// its completion ping instead of surfacing about a run that no longer exists.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn aborting_a_child_drops_its_mid_run_messages() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let link = test_parent_link(&bg);
+        let _inbox = register_live_child(&bg, "sub-explore-1", "explore");
+        message_main_agent(&link, "heads up").unwrap();
+        bg.push_notice("sub-other-2", "Subagent 'other' finished.".to_string());
+        assert!(bg.abort_child("sub-explore-1"));
+        let notices = bg.take_notices();
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].contains("'other'"), "another child's ping survives");
     }
 
     #[tokio::test]
