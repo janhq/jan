@@ -788,9 +788,11 @@ impl OutputTail {
     /// rather than on every push: progress redraws collapse only once the whole
     /// line is in view.
     pub fn read(&self) -> (String, u64) {
-        let mut buf = self.0.lock().unwrap();
-        let total = buf.total;
-        let bytes = buf.bytes.make_contiguous();
+        // Copied out so the pipe-draining task is not held up by the decode.
+        let (bytes, total) = {
+            let buf = self.0.lock().unwrap();
+            (buf.bytes.iter().copied().collect::<Vec<u8>>(), buf.total)
+        };
         // A trimmed front can start inside a character; skip its continuation
         // bytes rather than decoding them to a replacement character.
         let start = bytes

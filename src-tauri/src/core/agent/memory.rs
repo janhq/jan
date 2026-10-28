@@ -12,6 +12,9 @@ use crate::core::app::paths;
 
 const TOP_K: usize = 3;
 const MAX_EXCERPT_CHARS: usize = 500;
+/// Bound on the extra rows fetched to make up for this session's own answers,
+/// so a long session does not pull hundreds of full rows on every request.
+const MAX_OVER_FETCH: usize = 20;
 
 /// Stable per-project key derived from the project root path.
 fn project_id(project_root: &Path) -> String {
@@ -61,11 +64,23 @@ pub(crate) fn retrieve_block(
     let pid = project_id(project_root);
     let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION);
     let conn = db::open_or_init_conn(&path).ok()?;
-    // Over-fetch so hits echoing this session do not crowd out older ones.
-    let limit = TOP_K + in_conversation.len();
-    let hits = db::memory_search(&conn, &pid, query, limit).ok()?;
-    let texts: Vec<&str> = hits.iter().map(|h| h.text.as_str()).collect();
-    format_block(&texts, in_conversation)
+    let hits = db::memory_search(&conn, &pid, query, fetch_limit(in_conversation.len())).ok()?;
+    format_block(&answer_texts(&hits), in_conversation)
+}
+
+/// Rows to fetch: over-fetch so hits echoing this session do not crowd out
+/// older ones.
+fn fetch_limit(in_conversation: usize) -> usize {
+    TOP_K + in_conversation.min(MAX_OVER_FETCH)
+}
+
+/// The texts of the assistant rows in `hits`. Stores written before user
+/// queries stopped being indexed still hold `user` rows, which are not answers.
+fn answer_texts(hits: &[db::MemoryHit]) -> Vec<&str> {
+    hits.iter()
+        .filter(|h| h.role == "assistant")
+        .map(|h| h.text.as_str())
+        .collect()
 }
 
 /// The recall block for `hits` (best first), minus any already in
@@ -187,6 +202,26 @@ mod tests {
         let block = format_block(&["same answer", "older answer"], &["same answer"]).unwrap();
         assert!(block.contains("1 earlier answer that"));
         assert!(block.ends_with("- Earlier answer: older answer"));
+    }
+
+    #[test]
+    fn only_assistant_rows_are_recalled_as_answers() {
+        let hit = |role: &str, text: &str| db::MemoryHit {
+            msg_id: String::new(),
+            project_id: String::new(),
+            text: text.to_string(),
+            role: role.to_string(),
+            ts: 0,
+            score: 0.0,
+        };
+        let hits = [hit("user", "a question"), hit("assistant", "an answer")];
+        assert_eq!(answer_texts(&hits), ["an answer"]);
+    }
+
+    #[test]
+    fn over_fetch_is_capped() {
+        assert_eq!(fetch_limit(2), TOP_K + 2);
+        assert_eq!(fetch_limit(500), TOP_K + MAX_OVER_FETCH);
     }
 
     #[test]

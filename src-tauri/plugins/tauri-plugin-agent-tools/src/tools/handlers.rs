@@ -385,7 +385,11 @@ fn render_hunk_diff(old: &str, new: &str, start: usize) -> String {
         }
     };
     let (old, new) = (pad(old), pad(new));
-    let diff = TextDiff::from_lines(&old, &new);
+    // Bounded so a large rewrite of a big file cannot stall the async thread;
+    // past the deadline `similar` falls back to a coarser but valid diff.
+    let diff = TextDiff::configure()
+        .timeout(std::time::Duration::from_secs(1))
+        .diff_lines(&old, &new);
     let mut out = String::new();
     for (gi, group) in diff.grouped_ops(DIFF_CONTEXT).iter().enumerate() {
         if gi > 0 {
@@ -1390,8 +1394,11 @@ fn sanitize_control(s: &str) -> String {
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\u{1b}' && chars.next_if_eq(&'[').is_some() {
-            // Parameter and intermediate bytes run up to one final byte.
-            while chars.next().is_some_and(|b| !('@'..='~').contains(&b)) {}
+            // Parameter and intermediate bytes, then one final byte. Anything
+            // else means the sequence was cut off: stop there and keep it, so
+            // a broken escape cannot eat the lines after it.
+            while chars.next_if(|b| (' '..='?').contains(b)).is_some() {}
+            chars.next_if(|b| ('@'..='~').contains(b));
         } else if !c.is_control() || c == '\t' || c == '\n' {
             out.push(c);
         }
@@ -3485,7 +3492,12 @@ mod tests {
         let tail = proc::output_handle(pid).expect("tail while running");
         let (early, _) = tail.read();
         assert!(early.contains(&format!("early {marker}")), "{early:?}");
-        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        // Polled rather than slept for a fixed time: a loaded machine can run
+        // the command well past its nominal two seconds.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while proc::output_handle(pid).is_some() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         assert!(proc::output_handle(pid).is_none(), "the registry let go when it ended");
         let (all, bytes) = tail.read();
         assert!(all.ends_with("late\n") && all.contains("early"), "{all:?}");
@@ -3921,6 +3933,13 @@ mod tests {
         assert!(!out.contains('\u{1b}'), "escape must be stripped");
         assert!(out.contains("abred\n"), "the whole colour sequence goes: {out:?}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cut-off or malformed `ESC[` ends at the first byte that cannot belong
+    /// to it, so the text after it survives.
+    #[test]
+    fn a_broken_escape_does_not_swallow_what_follows() {
+        assert_eq!(sanitize_control("\u{1b}[\n12\n34\nok"), "\n12\n34\nok");
     }
 
     // POSIX command text: Windows runs PowerShell.

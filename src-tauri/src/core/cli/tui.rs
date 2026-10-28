@@ -1537,7 +1537,9 @@ impl GroupedCall {
     fn state(&self) -> ToolState {
         match &self.content {
             None => ToolState::Running,
-            Some(c) if self.command.is_some() && shell_backgrounded(c) => {
+            Some(c) if self.command.is_some()
+                && tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(c) =>
+            {
                 ToolState::Backgrounded
             }
             Some(_) => ToolState::of(self.is_error),
@@ -5687,6 +5689,12 @@ impl App {
     /// `draw` (render tests run in parallel against that process-global state).
     /// A shell that ended keeps its last output on screen, marked finished.
     fn refresh_shell_tail(&mut self) -> bool {
+        // Most pickers open without clearing the detail; one that replaced it
+        // must not keep its tail alive.
+        if self.picker.as_ref().map(|p| p.kind) != Some(PickerKind::ShellDetail) {
+            self.shell_detail = None;
+            return false;
+        }
         let Some(detail) = self.shell_detail.as_mut().filter(|d| !d.finished) else {
             return false;
         };
@@ -11331,12 +11339,6 @@ fn exit_badge(marker: Option<Option<i32>>) -> Option<String> {
     }
 }
 
-/// Whether a shell result is the hand-off of a command that outran its timeout
-/// and runs on in the background, rather than the command's output.
-fn shell_backgrounded(content: &str) -> bool {
-    tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(content)
-}
-
 /// The dim pointer a backgrounded command's row ends on, naming where its
 /// output can be watched. Empty for every other state.
 fn shells_hint(state: ToolState) -> Vec<Span<'static>> {
@@ -11359,7 +11361,7 @@ fn finished_shell_lines(
     is_error: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
-    if shell_backgrounded(output) {
+    if tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(output) {
         // Still running: the call only handed it off, so there is no output
         // to preview and nothing has succeeded or failed yet.
         let mut out = shell_header_rows(
@@ -15009,12 +15011,15 @@ async fn handle_key(
                 app.shell_detail = Some(ShellDetail::open(shell));
             }
             // The detail's `x` stops the shell it shows. Its output stays on
-            // screen, marked finished on the next refresh.
+            // screen, marked finished on the next refresh. Once finished, its
+            // pid may already belong to a newer shell, so nothing is killed.
             KeyCode::Char('x') if picker.kind == PickerKind::ShellDetail => {
-                if let Some(pid) = app.shell_detail.as_ref().map(|d| d.pid) {
-                    if tauri_plugin_agent_tools::tools::proc::kill(pid) {
+                match app.shell_detail.as_ref().map(|d| (d.pid, d.finished)) {
+                    Some((pid, true)) => app.note(&format!("shell {pid} already finished")),
+                    Some((pid, false)) if tauri_plugin_agent_tools::tools::proc::kill(pid) => {
                         app.note(&format!("stopped background shell (pid {pid})"));
                     }
+                    _ => {}
                 }
             }
             // `/shells`: `x` stops the selected background shell (kills its whole
@@ -15161,8 +15166,8 @@ async fn handle_key(
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
                     // Agents Enter is handled by the guarded arm above; the
-                    // detail has no Enter action of its own. Background shells are
-                    // acted on with `x` (stop), not Enter.
+                    // detail has no Enter action of its own. Background shells'
+                    // Enter opens their detail in the guarded arm above.
                     PickerKind::SubagentModels => {
                         // The watermark row (no subagents saved) has no name.
                         if !value.is_empty() {
@@ -26035,6 +26040,62 @@ mod tests {
         assert!(done.contains("ready on :3000"), "keeps the last tail: {done}");
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::BackgroundShells);
+        assert!(app.shell_detail.is_none());
+    }
+
+    /// `x` on a finished detail stops nothing: its pid may already belong to
+    /// a newer shell.
+    #[tokio::test]
+    async fn shell_detail_x_leaves_a_reused_pid_alone() {
+        use tauri_plugin_agent_tools::tools::proc;
+        let thread = Some("shell-detail-reuse-test");
+        let pid = i32::MAX as u32 - 10;
+        let mut app = test_app();
+        app.shell_detail = Some(super::ShellDetail {
+            pid,
+            command: "npm run dev".into(),
+            elapsed_secs: 1,
+            tail: None,
+            output: String::new(),
+            seen: 0,
+            finished: true,
+        });
+        app.picker = Some(super::Picker {
+            kind: PickerKind::ShellDetail,
+            items: Vec::new(),
+            selected: 0,
+            search: None,
+            armed_delete: None,
+        });
+        proc::register(thread, pid, "sleep 9000");
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(proc::output_handle(pid).is_some(), "the newer shell keeps running");
+        assert!(transcript_text(&app).contains("already finished"), "{}", transcript_text(&app));
+        proc::unregister(thread, pid);
+    }
+
+    /// A detail left behind when another picker replaced it is dropped on the
+    /// next tick instead of reading its tail forever.
+    #[test]
+    fn a_replaced_shell_detail_stops_refreshing() {
+        let mut app = test_app();
+        app.shell_detail = Some(super::ShellDetail {
+            pid: 7,
+            command: "yes".into(),
+            elapsed_secs: 1,
+            tail: None,
+            output: String::new(),
+            seen: 0,
+            finished: false,
+        });
+        app.picker = Some(super::Picker {
+            kind: PickerKind::Monitors,
+            items: Vec::new(),
+            selected: 0,
+            search: None,
+            armed_delete: None,
+        });
+        assert!(!app.refresh_shell_tail());
         assert!(app.shell_detail.is_none());
     }
 
