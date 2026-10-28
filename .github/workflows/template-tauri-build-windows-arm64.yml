@@ -348,9 +348,7 @@ jobs:
       - name: Update app version and product name
         shell: bash
         run: |
-          jq --arg version "$NEW_VERSION" \
-             '.version = $version | .bundle.createUpdaterArtifacts = true' \
-             ./src-tauri/tauri.conf.json > /tmp/c.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/c.json
           mv /tmp/c.json ./src-tauri/tauri.conf.json
 
           jq '.bundle.targets = ["nsis"]
@@ -359,16 +357,8 @@ jobs:
              ./src-tauri/tauri.windows.conf.json > /tmp/w.json
           mv /tmp/w.json ./src-tauri/tauri.windows.conf.json
 
-          jq --arg version "$NEW_VERSION" '.version = $version' web-app/package.json > /tmp/p.json
-          mv /tmp/p.json web-app/package.json
-
-          for p in hardware llamacpp; do
-            jq --arg version "$NEW_VERSION" '.version = $version' \
-              "./src-tauri/plugins/tauri-plugin-$p/package.json" > /tmp/p.json
-            mv /tmp/p.json "./src-tauri/plugins/tauri-plugin-$p/package.json"
-            ctoml "./src-tauri/plugins/tauri-plugin-$p/Cargo.toml" package.version "$NEW_VERSION"
-          done
-          ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "$NEW_VERSION"
 
           if [ "$CHANNEL" != "stable" ]; then
             # Without this an arm64 nightly keeps tauri.conf.json's stable

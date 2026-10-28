@@ -143,6 +143,20 @@ jobs:
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --test adk_examples
 
+  # `jan --version` on a build without JAN_CLI_BUILD_VERSION reports the
+  # committed app version, so a bump that skips jan-cli or tauri.conf.json
+  # ships a CLI naming the wrong release (janhq/jan-internal#454). Release
+  # builds restamp all of them through the same script; this keeps the
+  # committed tree honest for source builds. jq only, no toolchain.
+  versions:
+    name: manifest versions agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Compare the app, CLI and Tauri manifest versions
+        run: bash .github/scripts/stamp-version.sh --check
+
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
   # against a document that no longer describes the channel. The unit test in
