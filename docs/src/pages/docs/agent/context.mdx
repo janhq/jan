@@ -189,13 +189,14 @@ auto-compacted 84 -> 31 messages (ctx 96K/128K)
 compacted 84 messages into a summary: the prompt neared the context window
 ```
 
-A run also compacts when it uses up its [session token budget](#budgets), and after a provider
-rejects a prompt as too long (see [Context overflow](#context-overflow)). Both report the same
-way, and so does a subagent's compaction, prefixed with its name.
+A run also compacts after a provider rejects a prompt as too long (see
+[Context overflow](#context-overflow)). That reports the same way, and so does a subagent's
+compaction, prefixed with its name. Using up the [session token budget](#budgets) does not compact:
+spend is not context size.
 
 Headless and RPC clients get a `compaction` event: `phase` is `started`, then `finished` (with
-`messages`, the number summarized) or `failed`, and `reason` is `preflight`, `context_overflow` or
-`session_budget`.
+`messages`, the number summarized) or `failed`, and `reason` is `preflight` or `context_overflow`
+(`session_budget` is still in the schema but no longer sent).
 
 ## Compacting on purpose
 

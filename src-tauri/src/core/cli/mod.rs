@@ -791,8 +791,8 @@ use tokio::sync::{mpsc, Mutex};
 /// `agent.toml [budget].max_tokens` is set and the model's context window is
 /// unknown. `0` disables the ceiling entirely.
 ///
-/// Advisory, not a bound: crossing it compacts the history and records a note,
-/// then the run carries on (see `body_session_budget`). `--max-turns` and
+/// Advisory, not a bound: crossing it records a note and the run carries on
+/// (see `body_session_budget`). It never compacts: spend is not context size. `--max-turns` and
 /// cancellation are what actually stop a runaway loop.
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
@@ -854,9 +854,8 @@ impl SessionBudgetSource {
 /// either explicit source means unbounded and is carried through as-is (see
 /// `body_session_budget`).
 ///
-/// The window is the default because the ceiling compacts when crossed: a
-/// fixed 128K would compact a 1M-window model at an eighth of its capacity,
-/// long before the window-based trigger would.
+/// The window is the default so the advisory note scales with the model: a
+/// fixed 128K would flag a 1M-window run at an eighth of its capacity.
 pub(crate) fn resolve_session_budget(
     flag: Option<u64>,
     configured: Option<u64>,
