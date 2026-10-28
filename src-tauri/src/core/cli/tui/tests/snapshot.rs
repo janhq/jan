@@ -30,7 +30,7 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    input_box, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    input_box_height, subagent_rows, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -205,42 +205,6 @@ fn header_running_thinking_reduced_motion() {
         "header_running_thinking_reduced_motion",
         &header_buffer(&app, DARK),
     );
-}
-
-#[test]
-fn header_parked_waiting_and_watching() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.apply(StreamEvent::Parked);
-    let waiting = header_buffer(&app, DARK);
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let watching = header_buffer(&app, DARK);
-    assert_buffer("header_parked_waiting", &waiting);
-    assert_buffer("header_parked_watching", &watching);
-}
-
-/// The input box while a run is parked on two agents and a monitor: what it
-/// waits on, the stop hint, and the dim tree of names under it.
-#[test]
-fn parked_waiting_on_agents() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.subagents = fan_out().into_iter().take(2).collect();
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "build", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let h = input_box_height(&app, 80);
-    let buf = pinned(DARK, || {
-        let area = Rect::new(0, 0, 80, h);
-        let mut buf = Buffer::empty(area);
-        ratatui::widgets::Widget::render(input_box(&app, 80), area, &mut buf);
-        buf
-    });
-    assert_buffer("parked_waiting_on_agents", &buf);
 }
 
 #[test]
@@ -590,6 +554,51 @@ fn bg_shells_row_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
     assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+}
+
+/// Two subagents running and one queued after the main turn ended: the block
+/// over the idle input, at `now` so the elapsed times are fixed.
+fn idle_fan_out(now: Instant) -> TestApp {
+    let mut app = snapshot_app();
+    let mut kv = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    kv.started = Some(now - Duration::from_secs(65));
+    let mut perf = cached_panel("perf-scan", 0, 0, 0, false);
+    perf.started = Some(now - Duration::from_secs(12));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    app.subagents = vec![kv, perf, queued];
+    app
+}
+
+fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+    pinned(DARK, || lines_buffer(subagent_rows(app, w, now).expect("shown"), w))
+}
+
+#[test]
+fn subagents_running_after_the_turn() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    assert_buffer("subagents_idle_running", &subagent_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &subagent_rows_buffer(&mut app, 36, now));
+    app.apply(StreamEvent::SubagentEnd {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        error: None,
+    });
+    assert_buffer("subagents_idle_one_finished", &subagent_rows_buffer(&mut app, 80, now));
+}
+
+/// Where the block sits: under the rule, over the shells row and the input,
+/// with the dock no longer listing the same children.
+#[test]
+fn subagents_and_shells_over_the_idle_input() {
+    let mut app = idle_fan_out(Instant::now());
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 13));
 }
 
 /// Background pings, each as the row its kind calls for.

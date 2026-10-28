@@ -1,0 +1,46 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                |
+|────────────────────────────────────────────────────────────────────────────────|
+|                                                                                |
+|                                                                                |
+|────────────────────────────────────────────────────────────────────────────────|
+| 2 subagents running · 1 queued · /agents to view or stop                       |
+|  └ kv-review  Running  Read mod_3.rs                                           |
+|    perf-scan  Running  starting…                                               |
+|    docs-writer  Queued (1)                                                     |
+| 1 background shell running · /shells to view · /stop to close                  |
+|>   Type here to chat with agent                                                |
+|                                                                                |
+|📂 /snapshot/repo                                                               |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#98C379
+ 5 0..34 fg=#808080
+ 5 34..41 fg=#56B6C2
+ 5 41..57 fg=#808080
+ 6 0..4 fg=#808080
+ 6 4..13 fg=#56B6C2 mod=BOLD
+ 6 15..22 fg=#56B6C2 mod=BOLD
+ 6 24..37 fg=#808080
+ 7 0..4 fg=#808080
+ 7 4..13 fg=#56B6C2 mod=BOLD
+ 7 15..22 fg=#56B6C2 mod=BOLD
+ 7 24..33 fg=#808080
+ 8 0..4 fg=#808080
+ 8 4..15 fg=#56B6C2 mod=BOLD
+ 8 17..27 fg=#808080
+ 9 0..30 fg=#808080
+ 9 30..37 fg=#56B6C2
+ 9 37..48 fg=#808080
+ 9 48..53 fg=#56B6C2
+ 9 53..62 fg=#808080
+10 0..2 fg=#56B6C2 mod=BOLD
+10 2..3 mod=REVERSED
+10 4..32 mod=DIM | ITALIC
+12 0..1 fg=#808080
+12 2..17 fg=#808080

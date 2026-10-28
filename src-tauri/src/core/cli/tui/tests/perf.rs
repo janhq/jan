@@ -562,11 +562,6 @@ fn animating_lists_every_time_driven_state() {
         &|a| a.status = Status::Idle,
     );
     check(
-        "a parked run",
-        &|a| a.status = Status::Parked,
-        &|a| a.status = Status::Idle,
-    );
-    check(
         "the run clock",
         &|a| a.run_started = Some(Instant::now()),
         &|a| a.run_started = None,

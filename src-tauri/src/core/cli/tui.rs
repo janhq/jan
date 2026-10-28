@@ -465,13 +465,12 @@ impl Selection {
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Status {
     Idle,
+    /// A run is open. There is no parked state: the session owns its
+    /// subagents, monitors and background shells, so the loop never waits on
+    /// one still running -- it parks only to deliver a notice already queued,
+    /// and resumes at once. Work that outlives the turn shows over the idle
+    /// input instead (`subagent_rows`, `bg_shells_row`).
     Running,
-    /// The model finished its turn but the run is still open, waiting on
-    /// background work it dispatched (subagents, run-owned monitors). Nothing
-    /// is generating, so the session presents as idle -- composer live, no
-    /// spinner, `done` on the wire -- but the run is not over: a ping resumes
-    /// it, so typed input steers this cycle instead of starting a new one.
-    Parked,
 }
 
 /// Kind of the last transcript block, used to insert a blank line only when the
@@ -4670,6 +4669,9 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
+    /// When the child's `SubagentStart` arrived, for the elapsed time beside
+    /// it once the main turn has ended. `None` while it is queued or pending.
+    started: Option<Instant>,
     /// The child's run as rows, built from its own stream by the same code
     /// that builds the main transcript, for the `/agents` detail view and the
     /// finished summary row's expand. A child's stream never reaches the
@@ -4718,6 +4720,7 @@ impl SubagentPanel {
             waiting: 0,
             pending: false,
             phase: None,
+            started: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
@@ -5564,11 +5567,6 @@ impl App {
     /// run -- a stranded block spins in the dock on an idle session -- but a
     /// child that did work still earns its summary row, so the calls it made are
     /// accounted for rather than vanishing with the panel.
-    ///
-    /// Clears `Status::Parked` but deliberately does not publish: every caller
-    /// is a run-end path that goes on to set `Status::Idle` and publish once,
-    /// so publishing here would emit an extra intermediate state. A new caller
-    /// that does not follow that pattern owns the `publish_agent_status()`.
     fn close_live_background(&mut self) {
         // Children are session-owned: one still running outlives the run that
         // dispatched it, so its panel stays docked exactly as a still-watching
@@ -5592,11 +5590,8 @@ impl App {
         self.subagents = still_running;
         self.awaiting.clear();
         // Session monitors outlive the run, so the dock keeps whatever is
-        // still watching; a run that ended is no longer parked on anything.
+        // still watching.
         self.monitors = self.monitor_set.snapshot();
-        if self.status == Status::Parked {
-            self.status = Status::Idle;
-        }
     }
 
     /// Re-read the docked monitors from the session set so the poll counter
@@ -5739,17 +5734,15 @@ impl App {
     }
 
     /// True while the composer owns the keyboard: no turn is generating, so a
-    /// typed message, a slash command and the `@path` popup all apply. Parked
-    /// counts -- the model has stopped and only its background work is left, so
-    /// the session takes input (it steers the open run; see `Status::Parked`).
+    /// typed message, a slash command and the `@path` popup all apply.
     fn accepts_input(&self) -> bool {
-        matches!(self.status, Status::Idle | Status::Parked)
+        self.status == Status::Idle
     }
 
-    /// True while a run is open, whether generating or parked on background
-    /// work. What Esc/Ctrl-C cancel and what typed input steers.
+    /// True while a run is open. What Esc/Ctrl-C cancel and what typed input
+    /// steers.
     fn run_is_live(&self) -> bool {
-        matches!(self.status, Status::Running | Status::Parked)
+        self.status == Status::Running
     }
 
     /// True once a fully checked-off plan has sat closed for `TODO_HIDE_AFTER`.
@@ -6619,8 +6612,8 @@ impl App {
             display,
             run_mode: Some(self.run_mode),
         };
-        // A parked run is still open: its next turn (or its `on_done`) picks
-        // this up, so queue rather than start a second run over it.
+        // An open run picks this up at its next step (or its `on_done`), so
+        // queue rather than start a second run over it.
         if self.run_is_live() {
             self.message_queue.push_back(pending);
             self.note(&format!(
@@ -7599,13 +7592,10 @@ impl App {
             StreamEvent::Step { index, max } => {
                 self.transcript.step();
                 self.starting.clear();
-                // A new turn means a ping resumed the run: back to working.
                 self.turn = (index, max);
-                if self.status == Status::Parked {
-                    self.parked_answer = None;
-                    self.status = Status::Running;
-                    self.publish_agent_status();
-                }
+                // A ping resumed a parked run, which records the parked turn
+                // itself.
+                self.parked_answer = None;
             }
             StreamEvent::ToolCallStarted { id, name } => {
                 // Commit buffered prose/reasoning so it renders above the
@@ -7751,6 +7741,7 @@ impl App {
                 // yet). Otherwise open a fresh live panel (several may be active).
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.queued = false;
+                    panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                 } else if let Some(panel) = self
                     .subagents
@@ -7760,6 +7751,7 @@ impl App {
                     panel.run_id = run_id;
                     panel.pending = false;
                     panel.queued = false;
+                    panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                     if let Some(t) = task {
                         panel.task = t;
@@ -7768,6 +7760,7 @@ impl App {
                     self.transcript.finalize_tool_group();
                     self.transcript.flush_assistant();
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
+                    panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
                     self.subagents.push(panel);
                 }
@@ -7851,16 +7844,14 @@ impl App {
                     reason,
                 });
             }
-            // The model is done and the loop waits on background work it
-            // dispatched. Nothing is generating, so present as idle (see
-            // `Status::Parked`) while the run stays open.
+            // The model is done and the loop parks to hand it a background
+            // notice that is already queued, so the next step follows at once
+            // and the run stays `Running` (see `Status`).
             StreamEvent::Parked => {
                 // The turn is over: commit its answer now, so whatever the
                 // wait produces (a child's `Finished` row) reads after it.
                 self.transcript.finalize_tool_group();
                 self.parked_answer = Some(self.take_turn_answer());
-                self.status = Status::Parked;
-                self.publish_agent_status();
             }
             StreamEvent::Subagent {
                 run_id,
@@ -8178,19 +8169,14 @@ impl App {
     fn publish_agent_status(&mut self) {
         use super::agent_status::AgentStatusState as S;
         let state = match self.status {
-            Status::Idle => S::Done,
-            // A live prompt outranks the turn status. A parked run still owns
-            // its background work, and a subagent's permission request is
-            // forwarded to the parent and queued here while the parent is
-            // parked -- reporting `done` there would tell a status consumer the
-            // session is free when it is in fact waiting on the user.
+            // A live prompt outranks the turn status: a session-owned child
+            // can ask for a permission after the main turn ended, and `done`
+            // there would tell a status consumer the session is free when it
+            // is in fact waiting on the user.
             _ if !self.pending_queue.is_empty() => S::Blocked,
             _ if !self.ask_queue.is_empty() => S::Waiting,
             Status::Running => S::Working,
-            // Nothing is asking: parked reports `done` like idle, because the
-            // model has stopped and the session takes input again. The run's
-            // background work is not the agent working.
-            Status::Parked => S::Done,
+            Status::Idle => S::Done,
         };
         let prompt = match state {
             S::Waiting => self
@@ -16339,8 +16325,7 @@ fn init_plan(project_root: &std::path::Path) -> InitPlan {
 /// the normal toolset, permission gate, and transcript. The prompt body itself
 /// is hidden -- the note below is what the user asked for, the canned text is
 /// not. Idle-only, like the other commands that start a turn -- queueing it
-/// behind a running turn would have it survey a project mid-change. A parked
-/// run counts as running here: its background work can still change the tree.
+/// behind a running turn would have it survey a project mid-change.
 fn init_command(app: &mut App) {
     if app.run_is_live() {
         app.note("/init is only available once the run has finished");
@@ -21932,6 +21917,8 @@ fn draw(f: &mut Frame, app: &mut App) {
     let input_h = input_box_height(app, f.area().width);
     let shells_line = bg_shells_row(app, f.area().width);
     let shells_h = u16::from(shells_line.is_some());
+    let agent_lines = subagent_rows(app, f.area().width, Instant::now()).unwrap_or_default();
+    let shells_h = shells_h + agent_lines.len() as u16;
     // Live state -- the plan and the running fan-out -- is docked, not woven
     // into the transcript: it describes *now*, and it is what the eye wants
     // right where the typing happens. Built at most once per frame, since its
@@ -21963,15 +21950,18 @@ fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
         Constraint::Length(panel_h),               // 3: status panel
         Constraint::Length(1),                     // 4: separator rule
-        Constraint::Length(shells_h),              // 5: background shells
+        Constraint::Length(shells_h),              // 5: subagents, background shells
         Constraint::Length(input_h),               // 6: input
         Constraint::Length(1),                     // 7: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[3];
     let chunks = [raw[0], raw[1], raw[6], raw[7]];
-    if let Some(line) = shells_line {
-        f.render_widget(Paragraph::new(line), raw[5]);
+    // The subagents first, then the shells: both are work outliving the turn,
+    // stacked in one slot over the input.
+    let background: Vec<Line<'static>> = agent_lines.into_iter().chain(shells_line).collect();
+    if !background.is_empty() {
+        f.render_widget(Paragraph::new(background), raw[5]);
     }
 
     f.render_widget(header(app), chunks[0]);
@@ -23782,10 +23772,9 @@ fn provider_label_for_model(
 }
 
 /// Status badge glyphs: filled when settled, a ringed dot while the model
-/// runs, hollow while the run is parked on background work.
+/// runs.
 const STATUS_GLYPH_IDLE: &str = "\u{25cf}";
 const STATUS_GLYPH_RUNNING: &str = "\u{25c9}";
-const STATUS_GLYPH_PARKED: &str = "\u{25cb}";
 
 /// Header glyphs of the docked panels, paired with the accent like the badge.
 const TODO_PANEL_GLYPH: &str = "\u{2713} ";
@@ -23808,15 +23797,6 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         (format!("{} signing in", app.spinner()), Style::new().fg(theme::accent()).bold())
     } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().fg(theme::success()))
-    } else if app.status == Status::Parked {
-        // The model is done and the loop waits on background work; a
-        // `[working]` badge over an idle model would misreport it.
-        let label = if app.monitors.is_empty() {
-            "waiting"
-        } else {
-            "watching"
-        };
-        (label.to_string(), Style::new().fg(theme::accent()))
     } else if !app.transcript.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
         // generic 'working'. [thinking] while a  block streams; [thought for
@@ -23944,7 +23924,6 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     let glyph = match app.status {
         Status::Idle => STATUS_GLYPH_IDLE,
         Status::Running => STATUS_GLYPH_RUNNING,
-        Status::Parked => STATUS_GLYPH_PARKED,
     };
     spans.push(Span::styled(
         format!("{glyph} "),
@@ -24152,12 +24131,20 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
     // known (configured, catalog, or fallback), so it is always a denominator.
     let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    let has_activity = !app.subagents.is_empty() || !app.monitors.is_empty();
+    // Once the turn has ended the children are listed over the input
+    // (`subagent_rows`), so the dock leaves them out rather than show them
+    // twice.
+    let panels: &mut [SubagentPanel] = if subagent_rows_shown(app) {
+        &mut []
+    } else {
+        &mut app.subagents
+    };
+    let has_activity = !panels.is_empty() || !app.monitors.is_empty();
     match (has_todos, has_activity) {
         (false, false) => Vec::new(),
         (true, false) => todo_column(&app.todos, width, rows),
         (false, true) => activity_column(
-            &mut app.subagents,
+            panels,
             &app.monitors,
             context_window,
             width,
@@ -24168,7 +24155,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             // Stacked: the plan keeps its head line plus whatever is left after
             // the activity, which is the thing actually moving.
             let activity = activity_column(
-                &mut app.subagents,
+                panels,
                 &app.monitors,
                 context_window,
                 width,
@@ -24184,7 +24171,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
             let left = todo_column(&app.todos, left_w, rows);
             let right = activity_column(
-                &mut app.subagents,
+                panels,
                 &app.monitors,
                 context_window,
                 right_w,
@@ -24328,14 +24315,11 @@ fn bg_shells_count(app: &App) -> Option<String> {
 }
 
 /// Rows the message box occupies: 1 content row for the idle/working
-/// placeholder, the parked row with its detail rows (`parked_rows`), or the
-/// wrapped input height clamped to `MAX_INPUT_ROWS` while editing, plus one
-/// row of air above the dock. The box is borderless, so the
+/// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
+/// editing, plus one row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if let Some(rows) = parked_rows(app, width) {
-        rows.len() as u16
-    } else if app.picker.is_none()
+    let content = if app.picker.is_none()
         && app.blocking_dock().is_none()
         && !(app.status == Status::Running && app.input.is_empty())
     {
@@ -24497,105 +24481,99 @@ fn push_fitting_hint(spans: &mut Vec<Span<'static>>, hints: &[&'static str], wid
     }
 }
 
-/// The parked row's hint, longest first, degrading like `WORKING_HINTS`. Esc
-/// *stops* here rather than cancels: the model's turn already ended, and what
-/// Esc ends is the background work the run is parked on.
-const PARKED_HINTS: [&str; 2] = [" (Esc to stop, type to steer)", " (Esc to stop)"];
+/// Most agent rows `subagent_rows` hangs under its head row, so a wide
+/// fan-out cannot push the transcript off a short terminal. Past it the last
+/// row counts the rest and points at `/agents`, as the dock's overflow does.
+const SUBAGENT_DETAIL_ROWS: usize = 3;
 
-/// Most detail rows the parked row hangs under itself, so a wide fan-out
-/// cannot push the transcript off a short terminal.
-const PARKED_DETAIL_ROWS: usize = 3;
-
-/// What a parked run is waiting on: the subagents it dispatched that are
-/// running or queued for a slot (a later phase that has not started yet is
-/// not waited on until its phase opens), a child still awaited whose panel is
-/// already gone, and the monitors the run owns.
-fn parked_on(app: &App) -> (Vec<&str>, Vec<&MonitorSnapshot>) {
-    let mut agents: Vec<&str> = app
-        .subagents
-        .iter()
-        .filter(|p| !p.pending)
-        .map(|p| p.name.as_str())
-        .collect();
-    agents.extend(
-        app.awaiting
-            .iter()
-            .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
-            .map(|(_, _, name)| name.as_str()),
-    );
-    (agents, app.monitors.iter().collect())
+/// Whether the session's subagents show as `subagent_rows` over the input
+/// rather than in the dock: the main turn has ended, so they are what is
+/// still working, and the user is typing right under them.
+fn subagent_rows_shown(app: &App) -> bool {
+    app.status == Status::Idle && app.picker.is_none() && !app.subagents.is_empty()
 }
 
-/// `Waiting for 2 agents · 1 monitor`, or `Waiting for kv-review` when one
-/// agent is the whole of it, so the input row names what Esc would stop.
-fn parked_reason(app: &App) -> String {
-    let (agents, monitors) = parked_on(app);
-    if let ([name], []) = (agents.as_slice(), monitors.as_slice()) {
-        return format!("Waiting for {name}");
-    }
-    let parts: Vec<String> = [("agent", agents.len()), ("monitor", monitors.len())]
-        .into_iter()
-        .filter(|(_, n)| *n > 0)
-        .map(|(noun, n)| pluralize(noun, n))
-        .collect();
-    if parts.is_empty() {
-        return "Waiting for background work".to_string();
-    }
-    format!("Waiting for {}", parts.join(" \u{b7} "))
-}
-
-/// The input row while a run is parked and the field is empty: a static `• `
-/// and `parked_reason` (nothing is generating, so no shimmer, and no elapsed
-/// time: that is the header's), then a `└` row per thing waited on, at most
-/// `PARKED_DETAIL_ROWS`, the last ending `…` when more are hidden. A lone
-/// agent is already named on the head row, so it gets no detail row. `None`
-/// whenever the input box shows anything else.
-fn parked_rows(app: &App, width: u16) -> Option<Vec<Line<'static>>> {
-    let shown = app.status == Status::Parked
-        && app.input.is_empty()
-        && app.picker.is_none()
-        && app.blocking_dock().is_none()
-        && app.compacting.is_none()
-        && app.run_compacting.is_none()
-        && app.retrying.is_none();
-    if !shown {
+/// The subagents still working after the main turn ended, over the input: a
+/// head row worded like `bg_shells_row` (`2 subagents running . 1 queued .
+/// /agents to view or stop`), then one tree row per child with its status,
+/// and for a running one its elapsed time and current activity.
+///
+/// Built from the live panels, which `SubagentEnd` removes, so a finished
+/// child drops out on its own. A child that has not started shows its place
+/// in line instead. The head names `/agents` because that is where a child is
+/// viewed and stopped: Esc on an idle session clears the input, and typing
+/// starts a new turn rather than steering the children. Every row is clipped
+/// to `width`. `None` whenever `subagent_rows_shown` is false.
+fn subagent_rows(app: &mut App, width: u16, now: Instant) -> Option<Vec<Line<'static>>> {
+    if !subagent_rows_shown(app) {
         return None;
     }
-    let max = width.max(8) as usize;
+    let max = width as usize;
     let dim = Style::new().fg(theme::muted());
-    let reason = parked_reason(app);
-    let mut head = vec![
-        Span::styled(TOOL_BULLET, dim),
-        Span::raw(truncate(&reason, max.saturating_sub(TOOL_BULLET.len()))),
+    let accent = Style::new().fg(theme::accent());
+    let statuses: Vec<AgentStatus> = app.subagents.iter().map(|p| p.status(None)).collect();
+    let count = |want: fn(&AgentStatus) -> bool| statuses.iter().filter(|s| want(s)).count();
+    let counts = [
+        ("running", count(|s| *s == AgentStatus::Running)),
+        ("queued", count(|s| matches!(s, AgentStatus::Queued(_)))),
+        ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_)))),
     ];
-    push_fitting_hint(&mut head, &PARKED_HINTS, width);
-    let mut rows = vec![Line::from(head)];
-    let (agents, monitors) = parked_on(app);
-    if agents.len() == 1 && monitors.is_empty() {
-        return Some(rows);
-    }
-    let room = max.saturating_sub(TREE_FIRST.len() + 2);
-    let items: Vec<Span<'static>> = agents
-        .iter()
-        .map(|name| {
-            let mut span = agent_label(name);
-            span.content = truncate(name, room).into();
-            span
+    // Worded like `bg_shells_row` beneath it: the noun rides on the first
+    // count, so `2 subagents running`, then `1 queued`.
+    let parts: Vec<String> = counts
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .enumerate()
+        .map(|(i, (word, n))| match i {
+            0 => format!("{} {word}", pluralize("subagent", n)),
+            _ => format!("{n} {word}"),
         })
-        .chain(monitors.iter().map(|m| {
-            Span::styled(
-                truncate(&format!("{} {}", m.monitor_id, m.name), room),
-                Style::new().fg(theme::accent()),
-            )
-        }))
         .collect();
-    let cut = items.len() > PARKED_DETAIL_ROWS;
-    for (i, item) in items.into_iter().take(PARKED_DETAIL_ROWS).enumerate() {
-        let mut line = vec![Span::styled(TREE_FIRST, dim), item];
-        if cut && i + 1 == PARKED_DETAIL_ROWS {
-            line.push(Span::styled(" \u{2026}", dim));
+    // The pointer is dropped whole, longest form first, rather than cut
+    // mid-word; the counts are what a narrow terminal keeps.
+    let counts = format!(" {}", parts.join(" \u{b7} "));
+    let room = max.saturating_sub(counts.chars().count());
+    let mut head = vec![Span::styled(counts, dim)];
+    let pointer = " \u{b7} /agents".chars().count();
+    if let Some(tail) = [" to view or stop", ""]
+        .into_iter()
+        .find(|tail| pointer + tail.len() <= room)
+    {
+        head.push(Span::styled(" \u{b7} ", dim));
+        head.push(Span::styled("/agents", accent));
+        head.push(Span::styled(tail, dim));
+    }
+    let mut rows = vec![Line::from(clip_spans(head, max))];
+    let total = app.subagents.len();
+    let shown = if total > SUBAGENT_DETAIL_ROWS {
+        SUBAGENT_DETAIL_ROWS - 1
+    } else {
+        total
+    };
+    for (i, (panel, status)) in app.subagents.iter_mut().zip(statuses).take(shown).enumerate() {
+        let mut spans = vec![
+            Span::styled(if i == 0 { TREE_FIRST } else { TREE_REST }, dim),
+            agent_label(&panel.name),
+            Span::raw("  "),
+        ];
+        let running = status == AgentStatus::Running;
+        spans.extend(status.spans(max));
+        if running {
+            if let Some(started) = panel.started {
+                let secs = now.saturating_duration_since(started).as_secs();
+                spans.push(Span::styled(format!("  {}", format_elapsed(secs)), dim));
+            }
+            let activity = agent_activity(panel, "");
+            if !activity.is_empty() {
+                spans.push(Span::raw("  "));
+                spans.extend(activity);
+            }
         }
-        rows.push(Line::from(line));
+        rows.push(Line::from(clip_spans(spans, max)));
+    }
+    if shown < total {
+        let more = overflow_row(total - shown, "/agents", "running", max);
+        rows.push(Line::from(clip_spans(more.spans, max)));
     }
     Some(rows)
 }
@@ -24653,8 +24631,6 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             Style::new().dim().italic(),
         ))
         .block(block)
-    } else if let Some(rows) = parked_rows(app, width) {
-        Paragraph::new(rows).block(block)
     } else if app.input.is_empty() {
         // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
@@ -24798,16 +24774,6 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
             key_style,
             &[
                 ("Esc/Ctrl-C", "cancel"),
-                ("PgUp/PgDn", "scroll"),
-                ("Ctrl-O", "expand all"),
-            ],
-        ),
-        // Nothing is generating, so there is no turn to cancel: Esc stops the
-        // background work the run is parked on, which ends the run.
-        Status::Parked => hint_spans(
-            key_style,
-            &[
-                ("Esc", "stop"),
                 ("PgUp/PgDn", "scroll"),
                 ("Ctrl-O", "expand all"),
             ],
@@ -38598,12 +38564,14 @@ mod tests {
         let brief = "Build Flappy Space\nRocket dodging asteroids\n400x600 canvas";
 
         let mut solo = test_app();
+        solo.status = Status::Running;
         start_subagent_with_task(&mut solo, "r0", "space", Some(brief));
         let out = render_rows(&mut solo, 100, 24).join("\n");
         assert!(out.contains("Build Flappy Space"), "brief missing: {out}");
         assert!(!out.contains("400x600"), "only the summary line: {out}");
 
         let mut pair = test_app();
+        pair.status = Status::Running;
         start_subagent_with_task(&mut pair, "r0", "space", Some(brief));
         start_subagent_with_task(
             &mut pair,
@@ -38622,6 +38590,7 @@ mod tests {
     #[test]
     fn subagent_block_without_a_task_renders() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r0", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("1 agent") && out.contains("alpha"), "{out}");
@@ -38657,6 +38626,7 @@ mod tests {
     #[test]
     fn subagent_cache_rate_is_a_cumulative_token_share() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(500));
         child_usage(&mut app, "r0", 3_000, Some(2_500));
@@ -38924,6 +38894,7 @@ mod tests {
     #[test]
     fn parallel_subagents_render_one_block_with_live_stats() {
         let mut app = test_app();
+        app.status = Status::Running;
         for (i, name) in ["alpha", "beta"].iter().enumerate() {
             let run = format!("r{i}");
             start_subagent(&mut app, &run, name);
@@ -38982,6 +38953,7 @@ mod tests {
     #[test]
     fn fan_out_is_pinned_below_the_transcript() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r0", "alpha");
         app.apply(StreamEvent::Token {
             text: "parent keeps talking".into(),
@@ -38999,7 +38971,7 @@ mod tests {
             .expect("panel row");
         let input = rows
             .iter()
-            .position(|r| r.contains("Type here to chat with agent"))
+            .position(|r| r.contains("(Esc to cancel"))
             .expect("input");
         assert!(prose < panel, "the panel is docked, not inline: {rows:?}");
         assert!(panel < input, "and it sits above the input: {rows:?}");
@@ -39014,6 +38986,7 @@ mod tests {
     #[test]
     fn parallel_dispatches_share_one_pinned_panel() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r0", "alpha");
         let before = app.transcript.rows.len();
         start_subagent(&mut app, "r1", "beta");
@@ -39090,6 +39063,7 @@ mod tests {
     #[test]
     fn subagent_reports_its_in_flight_call() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r0", "flappy-2d");
         subagent_event(
             &mut app,
@@ -39162,6 +39136,7 @@ mod tests {
     #[test]
     fn subagent_hides_context_share_until_it_reports() {
         let mut app = test_app();
+        app.status = Status::Running;
         start_subagent(&mut app, "r1", "alpha");
         let out = render_rows(&mut app, 100, 20).join("\n");
         assert!(out.contains("1 agent"), "{out}");
@@ -42294,23 +42269,6 @@ mod tests {
         );
     }
 
-    /// A parked run is still a live run: the commands that start a turn stay
-    /// refused, so the slash popup that `accepts_input()` now opens while
-    /// parked cannot be used to race the background work.
-    #[tokio::test]
-    async fn turn_starting_commands_are_refused_while_parked() {
-        use crate::core::agent::plan::RunMode;
-        let mut app = test_app();
-        app.status = Status::Parked;
-        run_command(&mut app, "plan", &no_mcp()).await;
-        assert_eq!(app.run_mode, RunMode::Normal, "must not switch while parked");
-        let text: String = app.transcript.rows.iter().map(row_text).collect();
-        assert!(
-            text.contains("only settable once the run has finished"),
-            "the refusal must not claim the session is busy-until-idle: {text}"
-        );
-    }
-
     #[tokio::test]
     async fn plan_command_with_text_enters_plan_and_submits_it() {
         use crate::core::agent::plan::RunMode;
@@ -43256,12 +43214,11 @@ mod tests {
         let states = [
             super::STATUS_GLYPH_IDLE,
             super::STATUS_GLYPH_RUNNING,
-            super::STATUS_GLYPH_PARKED,
         ];
         for glyph in states {
             assert_eq!(glyph.width(), 1, "{glyph}");
         }
-        assert_eq!(states.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+        assert_eq!(states.iter().collect::<std::collections::HashSet<_>>().len(), 2);
         assert_eq!(super::TODO_PANEL_GLYPH.width(), super::AGENT_PANEL_GLYPH.width());
         assert_eq!(super::TODO_PANEL_GLYPH.width(), 2, "glyph plus a space");
     }
@@ -43273,8 +43230,6 @@ mod tests {
             header_spans(app).iter().map(|s| s.content.as_ref()).collect()
         };
         assert!(badge(&app).contains(&format!("{} [ready]", super::STATUS_GLYPH_IDLE)));
-        app.status = Status::Parked;
-        assert!(badge(&app).contains(&format!("{} [waiting]", super::STATUS_GLYPH_PARKED)));
         app.status = Status::Running;
         assert!(badge(&app).contains(&format!("{} [working]", super::STATUS_GLYPH_RUNNING)));
     }
@@ -43351,98 +43306,35 @@ mod tests {
         assert!(text.contains("1 agent"), "{text}");
     }
 
-    /// A run parked on background work is not working: the header says
-    /// `[watching]` while monitors are up, `[waiting]` otherwise, and goes back
-    /// to `[working]` once a ping starts the next turn. Run end clears both.
+    /// The loop parks only to hand over a notice already queued, and steps
+    /// again at once, so `Parked` must not change what the screen says: the
+    /// header keeps `[working]`, the input row keeps its one-row working form,
+    /// and the composer stays on the steering path.
     #[test]
-    fn a_parked_run_is_watching_not_working() {
-        let mut app = test_app();
-        app.submit_user("go".into());
-        let header = |app: &mut App| render_rows(app, 100, 24)[0].clone();
-        assert!(header(&mut app).contains("[working]"));
-
-        app.apply(StreamEvent::Monitors {
-            monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
-        });
-        app.apply(StreamEvent::Parked);
-        let text = header(&mut app);
-        assert!(text.contains("[watching]"), "{text}");
-        assert!(!text.contains("[working]"), "{text}");
-
-        app.apply(StreamEvent::Step { index: 2, max: 0 });
-        assert!(header(&mut app).contains("[working]"));
-
-        app.apply(StreamEvent::Monitors {
-            monitors: Vec::new(),
-        });
-        app.apply(StreamEvent::Parked);
-        assert!(header(&mut app).contains("[waiting]"));
-
-        app.apply(StreamEvent::Monitors {
-            monitors: vec![monitor("mon-2", "ok", "grep OK build.log", 1)],
-        });
-        app.on_error("upstream".into(), "gone".into());
-        assert!(
-            app.monitors.is_empty(),
-            "run end re-reads the session set, which has nothing running"
-        );
-        assert_eq!(
-            app.status,
-            Status::Idle,
-            "a run that errored out is idle, not merely un-parked"
-        );
-        assert!(header(&mut app).contains("[ready]"));
-    }
-
-    /// A parked run reports itself idle to the terminal (OSC 9999 / title) and
-    /// to the composer: the model is done and only background work is left, so
-    /// the session is ready for another message. The run itself is still live,
-    /// so typed input must ride the steering path, not start a second run.
-    #[test]
-    fn a_parked_run_reports_idle_and_still_steers() {
+    fn a_park_keeps_the_run_working_without_a_layout_jump() {
         use super::super::agent_status::AgentStatusState as S;
         let mut app = test_app();
         app.submit_user("go".into());
-        assert_eq!(app.agent_status.last_state(), Some(S::Working));
-
+        start_subagent(&mut app, "r0", "kv-review");
+        let before = input_rows(&mut app, 100, 24);
         app.apply(StreamEvent::Parked);
-        assert_eq!(
-            app.agent_status.last_state(),
-            Some(S::Done),
-            "a parked run is idle as far as the terminal is concerned"
-        );
-        assert!(
-            app.accepts_input(),
-            "the composer is live while parked, not showing the working placeholder"
-        );
-
-        // Still an in-flight run: a message queues for steering instead of
-        // starting a second one on top of the parked cycle.
+        assert_eq!(app.status, Status::Running);
+        assert_eq!(app.agent_status.last_state(), Some(S::Working));
+        assert!(render_rows(&mut app, 100, 24)[0].contains("[working]"));
+        assert_eq!(input_rows(&mut app, 100, 24), before, "no jump on a park");
         app.want_start = false;
         app.submit_user("and also this".into());
-        assert_eq!(app.message_queue.len(), 1, "parked input steers the run");
-        assert!(!app.want_start, "no second run is spawned while parked");
-
-        // A ping resumes the turn: back to working.
-        app.apply(StreamEvent::Step { index: 2, max: 0 });
-        assert_eq!(app.agent_status.last_state(), Some(S::Working));
+        assert_eq!(app.message_queue.len(), 1, "input still steers the run");
+        assert!(!app.want_start, "no second run is spawned");
     }
 
-    /// Parked reports `done` only when nothing is asking. A subagent still
-    /// running under a parked parent can raise a permission prompt, which is
-    /// forwarded to the parent and queued while the status is `Parked`; saying
-    /// `done` there would tell a status consumer the session is free when it is
-    /// actually blocked on the user.
+    /// A session-owned child can ask for a permission after the main turn
+    /// ended; the session is blocked on the user then, not done.
     #[test]
-    fn a_parked_run_blocked_on_a_prompt_reports_blocked() {
+    fn a_child_prompt_after_the_turn_reports_blocked() {
         use super::super::agent_status::AgentStatusState as S;
         let mut app = test_app();
-        app.submit_user("go".into());
-        app.apply(StreamEvent::Parked);
-        assert_eq!(app.agent_status.last_state(), Some(S::Done));
-
-        // The child is still working under the parked parent and needs a tool
-        // approved. It arrives as a forwarded subagent event, the real path.
+        start_subagent(&mut app, "child-1", "scout");
         app.apply(StreamEvent::Subagent {
             run_id: "child-1".into(),
             name: "scout".into(),
@@ -43458,14 +43350,8 @@ mod tests {
                 justification: None,
             }),
         });
-        assert_eq!(app.status, Status::Parked, "the parent is still parked");
-        assert_eq!(
-            app.agent_status.last_state(),
-            Some(S::Blocked),
-            "a live permission prompt outranks the parked mapping"
-        );
-
-        // Answering it puts the parked run back to `done`.
+        assert_eq!(app.status, Status::Idle);
+        assert_eq!(app.agent_status.last_state(), Some(S::Blocked));
         app.pending_queue.clear();
         app.publish_agent_status();
         assert_eq!(app.agent_status.last_state(), Some(S::Done));
@@ -43483,116 +43369,119 @@ mod tests {
             .collect()
     }
 
-    /// One agent and nothing else: the head row names it, so no detail row
-    /// repeats it, and the run's elapsed time stays in the header.
-    #[test]
-    fn a_run_parked_on_one_agent_names_it() {
-        let mut app = test_app();
-        app.submit_user("go".into());
-        app.run_started = Some(Instant::now() - Duration::from_secs(65));
-        start_subagent(&mut app, "r0", "kv-review");
-        app.apply(StreamEvent::Parked);
-        assert_eq!(super::parked_reason(&app), "Waiting for kv-review");
-        let rows = input_rows(&mut app, 100, 24);
-        assert_eq!(
-            rows,
-            vec!["\u{2022} Waiting for kv-review (Esc to stop, type to steer)"],
-            "{rows:#?}"
-        );
-        let screen = render_rows(&mut app, 100, 24);
-        assert!(screen[0].contains("1m 05s"), "the header keeps it: {screen:#?}");
-        assert!(
-            !rows.iter().any(|r| r.contains("1m 05s")),
-            "no elapsed on the input row: {rows:#?}"
-        );
-        assert!(!screen.join("\n").contains("Type to steer the agent"));
+    /// `subagent_rows` as plain text, at a fixed `now`.
+    fn subagent_text(app: &mut App, width: u16, now: Instant) -> Vec<String> {
+        super::subagent_rows(app, width, now)
+            .unwrap_or_default()
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
     }
 
-    /// Several things: counted on the head row, named under it, a later phase
-    /// that has not started is not waited on yet, and past three the last row
-    /// says more are hidden.
+    /// Two children running and one queued once the main turn is over: a head
+    /// row counting them by state and naming `/agents`, then a row each with
+    /// its status, and for a running one its elapsed time and activity.
     #[test]
-    fn a_run_parked_on_agents_and_a_monitor_lists_them() {
+    fn idle_with_subagents_lists_them_over_the_input() {
+        let mut app = test_app();
+        let now = Instant::now();
+        start_subagent(&mut app, "r0", "kv-review");
+        start_subagent(&mut app, "r1", "perf-scan");
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "r2".into(),
+            name: "docs-writer".into(),
+            task: None,
+            waiting: 1,
+        });
+        app.subagents[0].started = Some(now - Duration::from_secs(65));
+        app.subagents[0].calls.push("Read src/kv.rs".into());
+        app.subagents[1].started = Some(now - Duration::from_secs(12));
+        assert_eq!(
+            subagent_text(&mut app, 100, now),
+            vec![
+                " 2 subagents running \u{b7} 1 queued \u{b7} /agents to view or stop",
+                "  \u{2514} kv-review  Running  1m 05s  Read src/kv.rs",
+                "    perf-scan  Running  12s  starting\u{2026}",
+                "    docs-writer  Queued (1)",
+            ]
+        );
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert_eq!(screen.matches("kv-review").count(), 1, "not in the dock too: {screen}");
+        assert!(screen.contains("Type here to chat with agent"), "{screen}");
+        assert!(!screen.contains("Esc"), "Esc stops nothing here: {screen}");
+    }
+
+    /// While the turn runs the children stay in the dock with their stats, so
+    /// the one-row working input never grows under the user.
+    #[test]
+    fn a_running_turn_keeps_its_subagents_in_the_dock() {
         let mut app = test_app();
         app.submit_user("go".into());
         start_subagent(&mut app, "r0", "kv-review");
-        start_subagent(&mut app, "r1", "docs-writer");
+        assert!(super::subagent_rows(&mut app, 100, Instant::now()).is_none());
+        assert!(render_rows(&mut app, 100, 30).join("\n").contains("1 agent"));
+    }
+
+    /// A finished child drops out of the block, and the block goes with the
+    /// last one.
+    #[test]
+    fn finished_subagents_leave_the_block() {
+        let mut app = test_app();
+        let now = Instant::now();
+        start_subagent(&mut app, "r0", "kv-review");
+        start_subagent(&mut app, "r1", "perf-scan");
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r0".into(),
+            name: "kv-review".into(),
+            error: None,
+        });
+        let rows = subagent_text(&mut app, 100, now);
+        assert!(rows[0].starts_with(" 1 subagent running \u{b7}"), "{rows:#?}");
+        assert!(!rows.iter().any(|r| r.contains("kv-review")), "{rows:#?}");
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r1".into(),
+            name: "perf-scan".into(),
+            error: None,
+        });
+        assert!(super::subagent_rows(&mut app, 100, now).is_none());
+    }
+
+    /// Past `SUBAGENT_DETAIL_ROWS` the last row counts the rest and points at
+    /// `/agents`, and a later phase reads as waiting, not running.
+    #[test]
+    fn a_wide_fan_out_overflows_to_agents() {
+        let mut app = test_app();
+        for (i, name) in ["a", "b", "c", "d"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
         app.subagents.push(SubagentPanel {
             pending: true,
             phase: Some(2),
-            ..SubagentPanel::new("r2".into(), "collector".into(), String::new())
+            ..SubagentPanel::new(String::new(), "collector".into(), String::new())
         });
-        app.apply(StreamEvent::Monitors {
-            monitors: vec![monitor("mon-1", "build", "grep OK build.log", 2)],
-        });
-        app.apply(StreamEvent::Parked);
-        assert_eq!(
-            super::parked_reason(&app),
-            "Waiting for 2 agents \u{b7} 1 monitor"
-        );
-        let rows = input_rows(&mut app, 100, 30);
-        assert_eq!(
-            rows,
-            vec![
-                "\u{2022} Waiting for 2 agents \u{b7} 1 monitor (Esc to stop, type to steer)",
-                "  \u{2514} kv-review",
-                "  \u{2514} docs-writer",
-                "  \u{2514} mon-1 build",
-            ],
-            "{rows:#?}"
-        );
-
-        start_subagent(&mut app, "r3", "perf-scan");
-        let rows = input_rows(&mut app, 100, 30);
-        assert_eq!(rows.len(), 1 + super::PARKED_DETAIL_ROWS, "{rows:#?}");
-        assert!(rows[0].contains("Waiting for 3 agents"), "{rows:#?}");
-        assert_eq!(rows[3], "  \u{2514} perf-scan \u{2026}", "{rows:#?}");
+        let rows = subagent_text(&mut app, 100, Instant::now());
+        assert_eq!(rows.len(), 1 + super::SUBAGENT_DETAIL_ROWS, "{rows:#?}");
+        assert!(rows[0].contains("4 subagents running \u{b7} 1 waiting"), "{rows:#?}");
+        assert_eq!(rows[3], "  +3 more \u{b7} /agents", "{rows:#?}");
     }
 
-    /// The hint sheds by width like the working row's, and the row never
-    /// outgrows the terminal.
+    /// No row outgrows the terminal, however narrow.
     #[test]
-    fn the_parked_row_degrades_by_width() {
+    fn subagent_rows_fit_any_width() {
         let mut app = test_app();
-        app.submit_user("go".into());
-        start_subagent(&mut app, "r0", "kv-review");
-        app.apply(StreamEvent::Parked);
-        let head = |app: &App, width: u16| -> String {
-            let rows = super::parked_rows(app, width).expect("parked");
-            let text: String = rows[0].spans.iter().map(|s| s.content.as_ref()).collect();
-            assert!(spans_width(&rows[0].spans) <= width.max(8) as usize, "{width}: {text}");
-            text
-        };
-        assert!(head(&app, 80).ends_with("(Esc to stop, type to steer)"));
-        let mid = head(&app, 40);
-        assert!(mid.ends_with("(Esc to stop)"), "{mid}");
-        let narrow = head(&app, 26);
-        assert_eq!(narrow, "\u{2022} Waiting for kv-review", "{narrow}");
-        for width in 8..120 {
-            head(&app, width);
+        let now = Instant::now();
+        start_subagent(&mut app, "r0", "a-subagent-with-a-long-name");
+        app.subagents[0].started = Some(now - Duration::from_secs(3_700));
+        app.subagents[0].calls.push("Read a/very/long/path/to/some/file.rs".into());
+        for width in 1..120 {
+            for line in super::subagent_rows(&mut app, width, now).expect("shown") {
+                assert!(spans_width(&line.spans) <= width as usize, "{width}: {line:?}");
+            }
         }
-        // Typing replaces the row with the field, a single row again.
-        app.input = "also".into();
-        assert!(super::parked_rows(&app, 80).is_none());
     }
 
-    /// Parked, Esc stops the background work; there is no turn left to cancel.
-    #[test]
-    fn the_parked_footer_says_esc_stops() {
-        let mut app = test_app();
-        app.submit_user("go".into());
-        let footer = |app: &App| -> String {
-            super::footer_spans(app).iter().map(|s| s.content.as_ref()).collect()
-        };
-        assert!(footer(&app).contains("Esc/Ctrl-C cancel"), "{}", footer(&app));
-        app.apply(StreamEvent::Parked);
-        let parked = footer(&app);
-        assert!(parked.contains("Esc stop"), "{parked}");
-        assert!(!parked.contains("cancel"), "{parked}");
-    }
-
-    /// A child that finishes while the run is parked leaves its `Finished`
-    /// row *after* the answer the run parked on, not above it; a re-park adds
+    /// A child that finishes after the turn parked to deliver a ping leaves its
+    /// `Finished` row *after* the answer, not above it; a re-park adds
     /// nothing; and the answer still reaches `history` when the run ends.
     #[test]
     fn a_child_finishing_while_parked_reads_after_the_answer() {
@@ -43999,6 +43888,7 @@ mod tests {
     fn wide_panel_sets_the_columns_side_by_side() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
+        app.status = Status::Running;
         app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
         start_subagent(&mut app, "r0", "alpha");
         let rows = render_rows(&mut app, 120, 24);
@@ -44022,6 +43912,7 @@ mod tests {
     fn narrow_panel_stacks_the_columns() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
+        app.status = Status::Running;
         app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
         start_subagent(&mut app, "r0", "alpha");
         let rows = render_rows(&mut app, super::PANEL_SPLIT_MIN_WIDTH - 1, 24);
@@ -44536,8 +44427,6 @@ mod tests {
         let filtered = names(&app);
         assert!(!filtered.is_empty() && filtered.len() < all, "{filtered:?}");
         assert!(filtered.iter().any(|n| n == "/compact"), "{filtered:?}");
-        app.status = super::Status::Parked;
-        assert!(!app.slash_matches().is_empty(), "a parked run shows it too");
     }
 
     /// The permission dialog owns the keys and the dock the popup would use.
