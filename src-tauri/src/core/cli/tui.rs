@@ -1586,6 +1586,38 @@ enum ExploreOutcome {
     Failed,
 }
 
+/// One command of a `Ran N commands` row, owned by the committed row.
+#[derive(Clone, Debug, PartialEq)]
+struct ShellChild {
+    command: String,
+    /// The result and whether it is an error, once it landed.
+    result: Option<(String, bool)>,
+}
+
+impl ShellChild {
+    /// A committed row cannot tick, so a command still in flight has no live
+    /// view: it shows just its command.
+    fn view(&self) -> ShellView<'_> {
+        ShellView {
+            command: &self.command,
+            result: self.result.as_ref().map(|(out, err)| (out.as_str(), *err)),
+            live: None,
+        }
+    }
+}
+
+/// One command as a grouped shell row draws it, borrowed from the committed
+/// row or, live, from the open group and its streaming buffer.
+#[derive(Clone, Copy)]
+struct ShellView<'a> {
+    command: &'a str,
+    /// The result and whether it is an error, once it landed.
+    result: Option<(&'a str, bool)>,
+    /// A running command's output so far and elapsed seconds, in the live
+    /// panel only.
+    live: Option<(&'a str, u64)>,
+}
+
 /// One child row of an `Explored` group: consecutive successful reads of the
 /// same kind merge into one action naming every target.
 #[derive(Clone, Debug, PartialEq)]
@@ -1627,6 +1659,33 @@ impl ToolGroup {
     /// as an `Explored` row listing them rather than a counted summary.
     fn explored(&self) -> bool {
         self.calls.iter().all(|c| c.explore.is_some())
+    }
+
+    /// Whether the group is a run of two or more shell commands, so it renders
+    /// as one `Ran N commands` row with each command under it. A lone command
+    /// keeps its own header and preview; any other call in the group (a read
+    /// between two commands) ends the run, and the group keeps its counted
+    /// summary, the way a mixed group never reads as `Explored`.
+    fn shells(&self) -> bool {
+        self.calls.len() > 1 && self.calls.iter().all(|c| c.command.is_some())
+    }
+
+    /// The bullet of a row that lists its calls as a tree (`Explored`, `Ran N
+    /// commands`): running while open with a call in flight, red when any call
+    /// failed, the background accent while a command runs on detached, else how
+    /// the group ended.
+    fn tree_state(&self, state: GroupRow) -> ToolState {
+        if state == GroupRow::Open && self.is_running() {
+            ToolState::Running
+        } else if failed_calls(&self.calls) > 0 {
+            ToolState::Failure
+        } else if self.calls.iter().any(|c| c.state() == ToolState::Backgrounded) {
+            ToolState::Backgrounded
+        } else if state == GroupRow::Aborted && self.is_running() {
+            ToolState::Interrupted
+        } else {
+            ToolState::Success
+        }
     }
 
     /// What the expanded group says before wrapping (see `find::flat_text`),
@@ -1683,20 +1742,26 @@ impl ToolGroup {
     /// current draw width.
     fn row(&self, state: GroupRow) -> Row {
         if self.explored() {
-            let failed = explore_failures(&self.calls);
-            let state = if state == GroupRow::Open && self.is_running() {
-                ToolState::Running
-            } else if failed > 0 {
-                ToolState::Failure
-            } else if state == GroupRow::Aborted && self.is_running() {
-                ToolState::Interrupted
-            } else {
-                ToolState::Success
-            };
             return RowKind::Explored {
-                state,
-                failed,
+                state: self.tree_state(state),
+                failed: failed_calls(&self.calls),
                 actions: explore_actions(&self.calls),
+            }
+            .into();
+        }
+        if self.shells() {
+            // A committed row cannot tick, so a command still in flight shows
+            // just its command; the live panel draws its clock and output.
+            return RowKind::Shells {
+                state: self.tree_state(state),
+                children: self
+                    .calls
+                    .iter()
+                    .map(|c| ShellChild {
+                        command: c.command.clone().unwrap_or_default(),
+                        result: c.content.clone().map(|out| (out, c.is_error)),
+                    })
+                    .collect(),
             }
             .into();
         }
@@ -2087,6 +2152,12 @@ enum RowKind {
         failed: usize,
         actions: Vec<ExploreAction>,
     },
+    /// A run of shell commands: a `Ran N commands` header over one child per
+    /// command with its output preview (see `shell_group_lines`).
+    Shells {
+        state: ToolState,
+        children: Vec<ShellChild>,
+    },
     /// A tool result summary plus its optional diff body, hung off the
     /// call row above as its first child. `content` is `None` when the call row
     /// already says the same thing.
@@ -2370,6 +2441,10 @@ impl RowKind {
                     "Explored"
                 };
                 explored_lines(state.bullet(), verb, *failed, actions, Vec::new(), width)
+            }
+            RowKind::Shells { state, children } => {
+                let views: Vec<ShellView> = children.iter().map(ShellChild::view).collect();
+                shell_group_lines(state.bullet(), *state == ToolState::Running, &views, width)
             }
             RowKind::Result {
                 is_error,
@@ -2855,8 +2930,8 @@ impl Transcript {
                 continue;
             }
             if let Some(run) = collapsed_headers.get(&i) {
-                let line = trace_header_line(run);
-                let seg = Segment::eager(Some(i), vec![line], width);
+                let lines = trace_header_lines(run, &self.trace_nouns(run), width);
+                let seg = Segment::eager(Some(i), lines, width);
                 if self.reveal == Some(i) {
                     reveal_at = Some(content_h);
                 }
@@ -3375,6 +3450,16 @@ impl Transcript {
         runs
     }
 
+    /// The breakdown nouns of every tool group in `run` (groups close in row
+    /// order), so its folded header can summarize what the hidden calls did.
+    fn trace_nouns(&self, run: &TraceRun) -> Vec<(&'static str, bool)> {
+        self.groups
+            .iter()
+            .filter(|g| (run.start..=run.end).contains(&g.idx))
+            .flat_map(|g| g.nouns.iter().copied())
+            .collect()
+    }
+
     /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
     /// default fold). A no-op if `start` is not a trace or active-fold start.
     fn toggle_trace(&mut self, start: usize) {
@@ -3405,13 +3490,35 @@ impl Transcript {
     ///
     /// One block per command, in dispatch order: a group runs its calls in
     /// parallel, so several commands can be streaming at once and each shows its
-    /// own output rather than one hiding the rest.
+    /// own output rather than one hiding the rest. A run of commands lists them
+    /// under one `Running N commands` row, each with its own clock and tail.
     fn live_shell_panel(
         &self,
         group: &ToolGroup,
         spinner_frame: usize,
         width: u16,
     ) -> Vec<Line<'static>> {
+        if group.shells() {
+            let views: Vec<ShellView> = group
+                .calls
+                .iter()
+                .map(|c| ShellView {
+                    command: c.command.as_deref().unwrap_or(""),
+                    result: c.content.as_deref().map(|out| (out, c.is_error)),
+                    live: Some((
+                        self.live_output.get(&c.id).map_or("", String::as_str),
+                        c.started.elapsed().as_secs(),
+                    )),
+                })
+                .collect();
+            let state = group.tree_state(GroupRow::Open);
+            let bullet = if state == ToolState::Running {
+                running_bullet(spinner_frame)
+            } else {
+                state.bullet()
+            };
+            return shell_group_lines(bullet, state == ToolState::Running, &views, width);
+        }
         let mut out = Vec::new();
         for call in group.calls.iter().filter(|c| c.command.is_some()) {
             let command = call.command.as_deref().unwrap_or("");
@@ -10856,11 +10963,12 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
     // summary is a counted breakdown) need the per-call headers. An `Explored`
-    // row already ends on its tree of actions, so its detail always names each
-    // call and carries that tree on rather than opening a second corner.
-    let explored = group.explored();
-    let show_headers = group.calls.len() > 1 || explored;
-    let first = |out: &Vec<Line<'static>>| out.is_empty() && !explored;
+    // or `Ran N commands` row already ends on its tree, so its detail always
+    // names each call and carries that tree on rather than opening a second
+    // corner.
+    let tree = group.explored() || group.shells();
+    let show_headers = group.calls.len() > 1 || tree;
+    let first = |out: &Vec<Line<'static>>| out.is_empty() && !tree;
     for call in &group.calls {
         if show_headers {
             out.extend(gutter_lines(
@@ -10951,8 +11059,8 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
     }
 }
 
-/// Calls in an exploration group whose result came back as an error.
-fn explore_failures(calls: &[GroupedCall]) -> usize {
+/// Calls in a group whose result came back as an error.
+fn failed_calls(calls: &[GroupedCall]) -> usize {
     calls
         .iter()
         .filter(|c| c.content.is_some() && c.is_error)
@@ -11106,15 +11214,29 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
 /// past tense (`• Worked · N steps` / `• Thought · N steps`). Only finished
 /// traces fold;
 /// the active run renders as the live growing rail (each step as it happens), so
-/// there is no present-tense header form.
-fn trace_header_line(run: &TraceRun) -> Line<'static> {
+/// there is no present-tense header form. A run that called tools hangs what
+/// those calls did under the header (`Read 4 files; ran 3 commands`, from its
+/// groups' `nouns`), cut to one row; a reasoning-only run has nothing to add.
+fn trace_header_lines(
+    run: &TraceRun,
+    nouns: &[(&str, bool)],
+    width: u16,
+) -> Vec<Line<'static>> {
     let verb = if run.tool_ran { "Worked" } else { "Thought" };
     let unit = if run.steps == 1 { "step" } else { "steps" };
-    Line::from(vec![
+    let mut out = vec![Line::from(vec![
         Span::styled(TOOL_BULLET, Style::new().dim()),
         Span::styled(verb, Style::new().dim().bold()),
-        Span::styled(format!(" · {} {unit}", run.steps), Style::new().dim()),
-    ])
+        Span::styled(format!(" \u{b7} {} {unit}", run.steps), Style::new().dim()),
+    ])];
+    if !nouns.is_empty() {
+        let max = (width as usize).saturating_sub(TREE_FIRST.len() + 2).max(1);
+        out.push(Line::from(vec![
+            child_prefix(true),
+            Span::styled(truncate(&group_summary(nouns), max), Style::new().dim()),
+        ]));
+    }
+    out
 }
 
 /// The terminal cap of an expanded trace's rail: a `└` corner that closes the
@@ -11143,13 +11265,12 @@ fn trace_done_line() -> Line<'static> {
 /// While in flight the label also carries a brightness sweep (colour only, so
 /// the wrap is the committed row's); the finished row is the plain one.
 fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-    let elapsed = format_elapsed(group.started.elapsed().as_secs());
-    let badge = vec![Span::styled(format!(" ({elapsed})"), Style::new().dark_gray())];
+    let badge = vec![elapsed_badge(group.started.elapsed().as_secs())];
     if group.explored() {
         return explored_lines(
             running_bullet(spinner_frame),
             "Exploring",
-            explore_failures(&group.calls),
+            failed_calls(&group.calls),
             &explore_actions(&group.calls),
             badge,
             width,
@@ -11185,6 +11306,14 @@ const SHELL_COMMAND_MAX_CONT: usize = 2;
 /// that reads as more of the command rather than as its output.
 const SHELL_CONT: &str = "  \u{2502} ";
 
+/// `SHELL_CONT` for a command listed under a `Ran N commands` row, the rail
+/// under the command's own first column.
+const SHELL_CHILD_CONT: &str = "    \u{2502} ";
+
+/// Output rows each command of a `Ran N commands` row previews (or, running,
+/// tails): fewer than a lone command's, since several share the screen.
+const SHELL_CHILD_PREVIEW_LINES: usize = 2;
+
 /// A shell call's header: `bullet`, the bold `verb` and the command's first line,
 /// then up to `SHELL_COMMAND_MAX_CONT` continuation rows on a dim rail and a
 /// count of the rest. Each line is cut to one row rather than wrapped, and the
@@ -11200,49 +11329,68 @@ fn shell_header_rows(
     let max = (width.saturating_sub(TOOL_ROW_RESERVE) as usize)
         .saturating_sub(ELAPSED_RESERVE)
         .max(1);
+    // Budgeted against the longer verb, so "Ran" cuts the command where
+    // "Running" did and the text does not re-flow as the call resolves.
+    let room = max.saturating_sub("Running ".len());
+    let head = vec![bullet, Span::styled(verb, Style::new().bold())];
+    shell_command_lines(head, " ", command, room, suffix, SHELL_CONT, max)
+}
+
+/// `head`, then the command's first line (after `sep`) cut to `room` and
+/// `suffix`, then up to `SHELL_COMMAND_MAX_CONT` continuation rows after `rail`
+/// cut to `max`, and a count of the rest. Shared by a lone command's header and
+/// a command listed under a `Ran N commands` row.
+fn shell_command_lines(
+    mut head: Vec<Span<'static>>,
+    sep: &str,
+    command: &str,
+    room: usize,
+    suffix: Option<Span<'static>>,
+    rail: &'static str,
+    max: usize,
+) -> Vec<Line<'static>> {
     let mut lines = command.lines();
     let first = single_line(lines.next().unwrap_or(""));
-    let mut head = vec![bullet, Span::styled(verb, Style::new().bold())];
     if !first.is_empty() {
-        // Budgeted against the longer verb, so "Ran" cuts the command where
-        // "Running" did and the text does not re-flow as the call resolves.
-        let room = max.saturating_sub("Running ".len());
-        head.push(Span::raw(format!(" {}", truncate(&first, room))));
+        head.push(Span::raw(format!("{sep}{}", truncate(&first, room))));
     }
     head.extend(suffix);
     let mut out = vec![Line::from(head)];
     let rest: Vec<&str> = lines.collect();
-    let rail = Style::new().dark_gray();
+    let style = Style::new().dark_gray();
     for line in rest.iter().take(SHELL_COMMAND_MAX_CONT) {
         out.push(Line::from(vec![
-            Span::styled(SHELL_CONT, rail),
+            Span::styled(rail, style),
             Span::raw(truncate(&single_line(line), max)),
         ]));
     }
     if rest.len() > SHELL_COMMAND_MAX_CONT {
         let more = pluralize("line", rest.len() - SHELL_COMMAND_MAX_CONT);
         out.push(Line::from(vec![
-            Span::styled(SHELL_CONT, rail),
-            Span::styled(format!("\u{2026} +{more}"), rail),
+            Span::styled(rail, style),
+            Span::styled(format!("\u{2026} +{more}"), style),
         ]));
     }
     out
 }
 
+/// One row of a command's output: a `note` (a count, a placeholder) is set as
+/// chrome; output is dim so the command above stays the thing to read.
+fn shell_output_span((text, note): (String, bool)) -> Span<'static> {
+    let style = if note {
+        Style::new().dark_gray()
+    } else {
+        Style::new().dim()
+    };
+    Span::styled(text, style)
+}
+
 /// Hang `rows` off a shell header as its tree: the corner on the first row, the
-/// blank indent after. `notes` are counts and placeholders, set as chrome; the
-/// rest is output, dim so the command above stays the thing to read.
+/// blank indent after.
 fn shell_tree(rows: Vec<(String, bool)>) -> Vec<Line<'static>> {
     rows.into_iter()
         .enumerate()
-        .map(|(i, (text, note))| {
-            let style = if note {
-                Style::new().dark_gray()
-            } else {
-                Style::new().dim()
-            };
-            Line::from(vec![child_prefix(i == 0), Span::styled(text, style)])
-        })
+        .map(|(i, row)| Line::from(vec![child_prefix(i == 0), shell_output_span(row)]))
         .collect()
 }
 
@@ -11253,35 +11401,21 @@ fn shell_output_width(width: u16) -> usize {
     (width as usize).saturating_sub(TREE_REST.len() + 2).max(1)
 }
 
-/// The running command, live: its header with the elapsed badge, then the newest
-/// `LIVE_OUTPUT_TAIL_LINES` of its output under the tree, behind a count of the
-/// lines that have scrolled past. Rebuilt every frame from the call's live
-/// buffer, so output streams in as the command prints it. The buffer is raw:
-/// only the rows shown are sanitized, by the rule the tool's result follows,
-/// so a progress bar shows its last frame and colour codes do not leak in.
-fn running_shell_lines(
-    command: &str,
-    output: &str,
-    elapsed: u64,
-    spinner_frame: usize,
-    width: u16,
-) -> Vec<Line<'static>> {
+/// A running command's elapsed badge, set as chrome rather than as another
+/// argument of the command it ends.
+fn elapsed_badge(secs: u64) -> Span<'static> {
+    Span::styled(format!(" ({})", format_elapsed(secs)), Style::new().dark_gray())
+}
+
+/// The newest `take` rows of a running command's output, cut to `max`, behind a
+/// count of the lines that have scrolled past. The buffer is raw: only the rows
+/// shown are sanitized, by the rule the tool's result follows, so a progress
+/// bar shows its last frame and colour codes do not leak in.
+fn shell_tail_rows(output: &str, take: usize, max: usize) -> Vec<(String, bool)> {
     use tauri_plugin_agent_tools::tools::handlers::sanitize_output;
-    let badge = Span::styled(
-        format!(" ({})", format_elapsed(elapsed)),
-        Style::new().dark_gray(),
-    );
-    let mut out = shell_header_rows(
-        running_bullet(spinner_frame),
-        "Running",
-        command,
-        Some(badge),
-        width,
-    );
-    let max = shell_output_width(width);
     let all: Vec<&str> = output.lines().collect();
-    let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
-    let mut rows = Vec::with_capacity(LIVE_OUTPUT_TAIL_LINES + 1);
+    let skipped = all.len().saturating_sub(take);
+    let mut rows = Vec::with_capacity(take + 1);
     if skipped > 0 {
         rows.push((
             format!("\u{2026} +{}", pluralize("earlier line", skipped)),
@@ -11293,6 +11427,28 @@ fn running_shell_lines(
             .iter()
             .map(|l| (truncate(&sanitize_output(l), max), false)),
     );
+    rows
+}
+
+/// The running command, live: its header with the elapsed badge, then the newest
+/// `LIVE_OUTPUT_TAIL_LINES` of its output under the tree, behind a count of the
+/// lines that have scrolled past. Rebuilt every frame from the call's live
+/// buffer, so output streams in as the command prints it.
+fn running_shell_lines(
+    command: &str,
+    output: &str,
+    elapsed: u64,
+    spinner_frame: usize,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let mut out = shell_header_rows(
+        running_bullet(spinner_frame),
+        "Running",
+        command,
+        Some(elapsed_badge(elapsed)),
+        width,
+    );
+    let rows = shell_tail_rows(output, LIVE_OUTPUT_TAIL_LINES, shell_output_width(width));
     out.extend(shell_tree(rows));
     out
 }
@@ -11350,61 +11506,123 @@ fn shells_hint(state: ToolState) -> Vec<Span<'static>> {
     }
 }
 
-/// A finished command, kept readable until its group folds: the header in its
-/// settled state (a failure appends its exit code), then the first
-/// `SHELL_PREVIEW_LINES` of output under the tree and a count of the rest that
-/// names the key that shows it all. A silent command says so rather than ending
-/// on a bare header.
-fn finished_shell_lines(
-    command: &str,
+/// How a finished command reads: its state, the dim suffix its command line
+/// ends on (a failure's exit code, a hand-off's `in the background`), and the
+/// rows under it -- the first `take` lines of output cut to `max` and a count of
+/// the rest that names the key that shows it all. A silent command says so
+/// rather than ending on a bare command.
+fn settled_shell_rows(
     output: &str,
     is_error: bool,
-    width: u16,
-) -> Vec<Line<'static>> {
+    take: usize,
+    max: usize,
+) -> (ToolState, Option<Span<'static>>, Vec<(String, bool)>) {
     if tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(output) {
         // Still running: the call only handed it off, so there is no output
         // to preview and nothing has succeeded or failed yet.
-        let mut out = shell_header_rows(
-            ToolState::Backgrounded.bullet(),
-            "Running",
-            command,
+        return (
+            ToolState::Backgrounded,
             Some(Span::styled(" in the background", Style::new().dark_gray())),
-            width,
+            vec![("/shells to view".to_string(), true)],
         );
-        out.extend(shell_tree(vec![("/shells to view".to_string(), true)]));
-        return out;
     }
     let (body, marker) = split_exit_marker(output);
     let badge = exit_badge(marker)
         .filter(|_| is_error)
         .map(|b| Span::styled(format!(" ({b})"), Style::new().dark_gray()));
-    let mut out = shell_header_rows(
-        ToolState::of(is_error).bullet(),
-        "Ran",
-        command,
-        badge,
-        width,
-    );
-    let max = shell_output_width(width);
     let rows = if body.trim().is_empty() {
         vec![("(no output)".to_string(), true)]
     } else {
         let mut lines = body.lines();
         let mut rows: Vec<(String, bool)> = lines
             .by_ref()
-            .take(SHELL_PREVIEW_LINES)
+            .take(take)
             .map(|l| (truncate(l, max), false))
             .collect();
         let more = lines.count();
         if more > 0 {
-            rows.push((
-                format!("\u{2026} +{} (Ctrl-O to expand)", pluralize("line", more)),
-                true,
-            ));
+            let note = format!("\u{2026} +{} (Ctrl-O to expand)", pluralize("line", more));
+            rows.push((truncate(&note, max), true));
         }
         rows
     };
+    (ToolState::of(is_error), badge, rows)
+}
+
+/// A finished command, kept readable until its group folds: the header in its
+/// settled state, then the first `SHELL_PREVIEW_LINES` of output under the tree
+/// (see `settled_shell_rows`). A backgrounded command still reads as running.
+fn finished_shell_lines(
+    command: &str,
+    output: &str,
+    is_error: bool,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let (state, suffix, rows) =
+        settled_shell_rows(output, is_error, SHELL_PREVIEW_LINES, shell_output_width(width));
+    let verb = if state == ToolState::Backgrounded {
+        "Running"
+    } else {
+        "Ran"
+    };
+    let mut out = shell_header_rows(state.bullet(), verb, command, suffix, width);
     out.extend(shell_tree(rows));
+    out
+}
+
+/// A run of shell commands: `bullet` and `Ran N commands` (`Running` while one
+/// is in flight), then each command under the tree with a shorter preview of
+/// its output than a lone command gets, `SHELL_CHILD_PREVIEW_LINES` deep, so
+/// the run reads in one place without one command burying the rest. A failed
+/// command ends on its exit code; a running one on its elapsed time over the
+/// newest lines of its live output; one without a result yet on nothing.
+fn shell_group_lines(
+    bullet: Span<'static>,
+    running: bool,
+    views: &[ShellView<'_>],
+    width: u16,
+) -> Vec<Line<'static>> {
+    let verb = if running { "Running" } else { "Ran" };
+    let room = (width as usize).saturating_sub(bullet.width() + verb.len());
+    let mut out = vec![Line::from(vec![
+        bullet,
+        Span::styled(verb, Style::new().bold()),
+        Span::raw(truncate(&format!(" {}", pluralize("command", views.len())), room)),
+    ])];
+    let max = (width as usize).saturating_sub(TREE_NESTED.len() + 2).max(1);
+    for (i, view) in views.iter().enumerate() {
+        let (suffix, rows) = match (view.result, view.live) {
+            (Some((output, is_error)), _) => {
+                let (_, suffix, rows) =
+                    settled_shell_rows(output, is_error, SHELL_CHILD_PREVIEW_LINES, max);
+                (suffix, rows)
+            }
+            (None, Some((output, elapsed))) => (
+                Some(elapsed_badge(elapsed)),
+                shell_tail_rows(output, SHELL_CHILD_PREVIEW_LINES, max),
+            ),
+            (None, None) => (None, Vec::new()),
+        };
+        // Held back like a lone header's, so the elapsed badge ticking (or
+        // turning into an exit code) does not re-cut the command.
+        let held = suffix.as_ref().map_or(0, Span::width).max(ELAPSED_RESERVE);
+        let room = (width as usize)
+            .saturating_sub(TREE_REST.len() + 2 + held)
+            .max(1);
+        out.extend(shell_command_lines(
+            vec![child_prefix(i == 0)],
+            "",
+            view.command,
+            room,
+            suffix,
+            SHELL_CHILD_CONT,
+            room,
+        ));
+        out.extend(
+            rows.into_iter()
+                .map(|row| Line::from(vec![Span::raw(TREE_NESTED), shell_output_span(row)])),
+        );
+    }
     out
 }
 
@@ -26774,7 +26992,9 @@ mod tests {
     fn tool_state(row: &Row) -> Option<ToolState> {
         fn of(kind: &RowKind) -> Option<ToolState> {
             match kind {
-                RowKind::Tool { state, .. } | RowKind::Explored { state, .. } => Some(*state),
+                RowKind::Tool { state, .. }
+                | RowKind::Explored { state, .. }
+                | RowKind::Shells { state, .. } => Some(*state),
                 RowKind::Resolved { call, .. } => of(call),
                 _ => None,
             }
@@ -28521,6 +28741,36 @@ mod tests {
         );
     }
 
+    /// A folded run that called tools says what they did under its header, in
+    /// `group_summary`'s words; a reasoning-only run keeps the bare header; a
+    /// narrow terminal cuts the summary rather than wrapping it.
+    #[test]
+    fn a_folded_trace_summarizes_its_tools_under_the_header() {
+        let run = super::TraceRun {
+            start: 0,
+            end: 4,
+            tool_ran: true,
+            steps: 5,
+        };
+        let nouns = [("file", true), ("command", false), ("file", true), ("command", false)];
+        let text: Vec<String> = super::trace_header_lines(&run, &nouns, 70)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert_eq!(
+            text,
+            vec!["\u{2022} Worked \u{b7} 5 steps", "  \u{2514} Read 2 files; ran 2 commands"]
+        );
+        let thought = super::TraceRun {
+            tool_ran: false,
+            ..run
+        };
+        assert_eq!(super::trace_header_lines(&thought, &[], 70).len(), 1);
+        for line in super::trace_header_lines(&run, &nouns, 20) {
+            assert!(row_width(&line) <= 20, "{}", line_text(&line));
+        }
+    }
+
     #[test]
     fn group_summary_splits_read_and_run_clauses() {
         // Mixed ops keep the verb agreeing with its noun: never "Ran 1 directory".
@@ -28669,12 +28919,13 @@ mod tests {
             delta: "running 3 tests\n".into(),
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("Running make (0s)"), "first command: {live}");
+        assert!(live.contains("Running 2 commands"), "one row for the run: {live}");
+        assert!(live.contains("\u{2514} make (0s)"), "first command: {live}");
         assert!(live.contains("compiling foo"), "first command output: {live}");
-        assert!(live.contains("Running cargo test (0s)"), "second command: {live}");
+        assert!(live.contains("    cargo test (0s)"), "second command: {live}");
         assert!(live.contains("running 3 tests"), "second command output: {live}");
         assert!(
-            live.find("compiling foo").unwrap() < live.find("Running cargo test").unwrap(),
+            live.find("compiling foo").unwrap() < live.find("cargo test (0s)").unwrap(),
             "each output sits under its own command: {live}"
         );
 
@@ -28688,9 +28939,10 @@ mod tests {
             diff: None,
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("\u{2022} Ran make"), "the finished command stays: {live}");
-        assert!(live.contains("  \u{2514} compiling foo"), "with its final output: {live}");
-        assert!(live.contains("Running cargo test"), "the running one streams on: {live}");
+        assert!(live.contains("\u{2514} make "), "the finished command stays: {live}");
+        assert!(!live.contains("make (0s)"), "settled, so no clock: {live}");
+        assert!(live.contains("      compiling foo"), "with its final output: {live}");
+        assert!(live.contains("cargo test (0s)"), "the running one streams on: {live}");
     }
 
     /// The result is the authoritative output, so the live buffer is released
@@ -28781,6 +29033,165 @@ mod tests {
         assert_eq!(text[1], "  \u{2514} \u{2026} +55 earlier lines");
         assert_eq!(text[2], "    line 55");
         assert_eq!(text.last().unwrap(), "    line 59");
+    }
+
+    /// Apply a `bash` call for each `(id, command)`, without results.
+    fn run_commands(app: &mut App, commands: &[(&str, &str)]) {
+        for (id, command) in commands {
+            app.apply(StreamEvent::ToolCall {
+                id: (*id).into(),
+                name: "bash".into(),
+                args: json!({ "command": command }),
+            });
+        }
+    }
+
+    fn land(app: &mut App, id: &str, content: &str, is_error: bool) {
+        app.apply(StreamEvent::ToolResult {
+            id: id.into(),
+            content: content.into(),
+            is_error,
+            diff: None,
+        });
+    }
+
+    /// Consecutive commands fold into one `Ran N commands` row listing each
+    /// command under the tree with a two-line preview, the failed one naming
+    /// its exit code and turning the bullet red.
+    #[test]
+    fn consecutive_commands_group_under_one_row() {
+        let mut app = test_app();
+        run_commands(
+            &mut app,
+            &[("a", "cargo check"), ("b", "git status --short"), ("c", "cargo test")],
+        );
+        land(&mut app, "a", "Finished dev\n[exit 0]", false);
+        land(&mut app, "b", "", false);
+        land(&mut app, "c", "test a ... FAILED\nl2\nl3\nl4\n[exit 101]", true);
+        app.transcript.finalize_tool_group();
+        let group = app.transcript.groups.last().expect("folded group");
+        let row = group.row(super::GroupRow::Closed);
+        assert!(matches!(row.kind, RowKind::Shells { state: ToolState::Failure, .. }));
+        let text: Vec<String> = row.lines(70).iter().map(line_text).collect();
+        assert_eq!(
+            text,
+            vec![
+                "\u{2022} Ran 3 commands",
+                "  \u{2514} cargo check",
+                "      Finished dev",
+                "    git status --short",
+                "      (no output)",
+                "    cargo test (exit 101)",
+                "      test a ... FAILED",
+                "      l2",
+                "      \u{2026} +2 lines (Ctrl-O to expand)",
+            ]
+        );
+    }
+
+    /// A read between two commands ends the run: the group keeps its counted
+    /// summary, as a mixed group never reads as `Explored` either.
+    #[test]
+    fn a_non_shell_call_breaks_the_command_group() {
+        let mut app = test_app();
+        run_commands(&mut app, &[("a", "make")]);
+        app.apply(StreamEvent::ToolCall {
+            id: "r".into(),
+            name: "read".into(),
+            args: json!({ "path": "a.rs" }),
+        });
+        run_commands(&mut app, &[("b", "make test")]);
+        for id in ["a", "r", "b"] {
+            land(&mut app, id, "ok", false);
+        }
+        app.transcript.finalize_tool_group();
+        assert!(has_tool_row(&app, "Read 1 file; ran 2 commands", ToolState::Success));
+    }
+
+    /// While a command of the run is in flight the row reads `Running N
+    /// commands`, each running command with its own clock over its newest
+    /// lines, the finished ones with their preview.
+    #[test]
+    fn a_running_command_group_tails_each_command() {
+        let mut app = test_app();
+        run_commands(&mut app, &[("a", "cargo fmt --check"), ("b", "cargo build")]);
+        land(&mut app, "a", "[exit 0]", false);
+        for chunk in ["one\n", "two\n", "three\n"] {
+            app.apply(StreamEvent::ToolOutputDelta {
+                id: "b".into(),
+                delta: chunk.into(),
+            });
+        }
+        let group = app.transcript.tool_group.as_ref().expect("open group");
+        let text: Vec<String> = app
+            .transcript
+            .live_shell_panel(group, 0, 60)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert_eq!(
+            text,
+            vec![
+                "\u{2022} Running 2 commands",
+                "  \u{2514} cargo fmt --check",
+                "      (no output)",
+                "    cargo build (0s)",
+                "      \u{2026} +1 earlier line",
+                "      two",
+                "      three",
+            ]
+        );
+        // Only the panel draws: no second activity row under it.
+        let body = render_rows(&mut app, 60, 20).join("\n");
+        assert_eq!(body.matches("cargo build").count(), 1, "{body}");
+    }
+
+    /// A backgrounded command inside a run keeps its wording on its own line,
+    /// and the row's bullet reads as still running detached.
+    #[test]
+    fn a_backgrounded_command_in_a_group_keeps_its_wording() {
+        let mut app = test_app();
+        run_commands(&mut app, &[("a", "npm run dev"), ("b", "curl localhost")]);
+        land(
+            &mut app,
+            "a",
+            "Command exceeded 5s and is still running in the background.",
+            false,
+        );
+        land(&mut app, "b", "ok\n[exit 0]", false);
+        app.transcript.finalize_tool_group();
+        let row = app.transcript.groups[0].row(super::GroupRow::Closed);
+        assert!(matches!(row.kind, RowKind::Shells { state: ToolState::Backgrounded, .. }));
+        let text = row.lines(70).iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            text.contains("\u{2514} npm run dev in the background\n      /shells to view"),
+            "{text}"
+        );
+    }
+
+    /// Every row of a command group fits a narrow terminal: commands, their
+    /// continuation lines and output are cut, never wrapped past the width.
+    #[test]
+    fn a_command_group_fits_a_narrow_width() {
+        let long = "x".repeat(200);
+        let views = [
+            super::ShellView {
+                command: &format!("echo {long}\nsecond {long}"),
+                result: Some((&format!("{long}\n[exit 3]"), true)),
+                live: None,
+            },
+            super::ShellView {
+                command: "sleep 1",
+                result: None,
+                live: Some((&long, 3599)),
+            },
+        ];
+        for width in [16u16, 24, 40] {
+            let lines = super::shell_group_lines(ToolState::Running.bullet(), true, &views, width);
+            for line in &lines {
+                assert!(row_width(line) <= width as usize, "{width}: {}", line_text(line));
+            }
+        }
     }
 
     /// A finished command previews its first rows and points at the expand
@@ -28896,8 +29307,8 @@ mod tests {
         let group = app.transcript.tool_group.as_mut().expect("group open");
         group.calls[0].started = Instant::now() - Duration::from_secs(65);
         let rows = render_rows(&mut app, 80, 20).join("\n");
-        assert!(rows.contains("Running make build (1m 05s)"), "{rows}");
-        assert!(rows.contains("Running make test (0s)"), "{rows}");
+        assert!(rows.contains("\u{2514} make build (1m 05s)"), "{rows}");
+        assert!(rows.contains("    make test (0s)"), "{rows}");
     }
 
     /// A signal and a truncation note no longer hide the exit marker: both
@@ -36352,18 +36763,20 @@ mod tests {
         );
     }
 
+    /// A counted group reports its latest result. (A run of commands lists
+    /// each one, so its bullet goes red on any failure instead.)
     #[test]
     fn grouped_row_reports_the_latest_result_not_an_earlier_failure() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "cargo buidl" }),
+            name: "web_fetch".into(),
+            args: json!({ "url": "https://example.invalid" }),
         });
         let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
-            content: "ERROR: no such subcommand".into(),
+            content: "ERROR: no such host".into(),
             is_error: true,
             diff: None,
         });
@@ -36881,6 +37294,7 @@ mod tests {
         // Default (an answer follows): folded to one header, members hidden.
         let folded = render_rows(&mut app, 70, 20).join("\n");
         assert!(folded.contains("Worked \u{b7} 2 steps"), "fold header: {folded}");
+        assert!(folded.contains("  \u{2514} Ran 1 search"), "fold summary: {folded}");
         assert!(!folded.contains("Thought"), "reasoning row hidden: {folded}");
         assert!(folded.contains("the answer"), "prose survives: {folded}");
 
@@ -36889,6 +37303,7 @@ mod tests {
         let open = render_rows(&mut app, 70, 20).join("\n");
         assert!(open.contains("Thought"), "reasoning summary shows: {open}");
         assert!(!open.contains("Worked \u{b7}"), "no header when expanded: {open}");
+        assert!(!open.contains("\u{2514} Ran 1 search"), "no fold summary: {open}");
 
         // Ctrl-O folds everything back.
         app.transcript.toggle_trace(start);

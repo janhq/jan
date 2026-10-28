@@ -1,0 +1,30 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› build it                                                                      |
+|                                                                                |
+|                                                                                |
+|• Running 2 commands                                                            |
+|  └ git pull --ff-only                                                          |
+|      Already up to date.                                                       |
+|    make build (0s)                                                             |
+|      … +1 earlier line                                                         |
+|      compiling cli                                                             |
+|      linking jan                                                               |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..10 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 10..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 mod=DIM
+ 4 2..9 mod=BOLD
+ 5 0..4 fg=DarkGray
+ 6 6..25 mod=DIM
+ 7 0..4 fg=DarkGray
+ 7 14..19 fg=DarkGray
+ 8 6..23 fg=DarkGray
+ 9 6..19 mod=DIM
+10 6..17 mod=DIM

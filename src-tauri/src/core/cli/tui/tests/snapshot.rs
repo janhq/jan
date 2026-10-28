@@ -1044,6 +1044,97 @@ fn transcript_running_shell_command() {
     assert_buffer("transcript_running_shell_command", &body(&mut app));
 }
 
+/// The three commands of the run the grouped fixtures share, one failing.
+fn run_three_commands(app: &mut App) {
+    start_turn(app, "check and test the cli");
+    tool_call(app, "b1", "bash", json!({ "command": "cargo check --features cli" }));
+    tool_call(app, "b2", "bash", json!({ "command": "git status --short" }));
+    tool_call(app, "b3", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_result(app, "b1", "Finished dev profile in 2.1s\n[exit 0]", false, None);
+    tool_result(app, "b2", " M src/foo.rs\n[exit 0]", false, None);
+    let failed: String = std::iter::once("test a ... FAILED\n".to_string())
+        .chain((0..40).map(|i| format!("line {i}\n")))
+        .chain(std::iter::once("[exit 101]".to_string()))
+        .collect();
+    tool_result(app, "b3", &failed, true, None);
+}
+
+/// Consecutive commands, open and folded: one `Ran 3 commands` row listing each
+/// command with a short preview, the failed one naming its code, the bullet red.
+#[test]
+fn transcript_grouped_shell_commands() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_grouped_shell_commands_open", &open);
+    assert_buffer("transcript_grouped_shell_commands", &body(&mut app));
+}
+
+/// A run with one command finished and one still streaming: `Running 2
+/// commands`, the live one with its clock over its newest lines.
+#[test]
+fn transcript_grouped_shell_commands_running() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "git pull --ff-only" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "make build" }));
+    tool_result(&mut app, "b1", "Already up to date.\n[exit 0]", false, None);
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b2".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The clock reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.transcript.tool_group.as_mut() {
+        for call in &mut group.calls {
+            call.started = Instant::now();
+        }
+    }
+    assert_buffer("transcript_grouped_shell_commands_running", &body(&mut app));
+}
+
+/// The folded run on a narrow terminal: every row is cut to the width rather
+/// than wrapped, multi-line commands included.
+#[test]
+fn grouped_shell_commands_narrow() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    tool_call(
+        &mut app,
+        "b4",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo clippy --all-targets -- -D warnings" }),
+    );
+    tool_result(&mut app, "b4", "warning: unused variable `width_of_the_row`\n[exit 0]", false, None);
+    app.transcript.finalize_tool_group();
+    let group = app.transcript.groups.last().expect("folded group");
+    let lines = pinned(DARK, || group.row(super::super::GroupRow::Closed).lines(30));
+    assert_buffer("grouped_shell_commands_narrow", &lines_buffer(lines, 30));
+}
+
+/// A finished turn folds its steps under `Worked`, with what the tools did
+/// hung under the header.
+#[test]
+fn transcript_folded_worked_summary() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "why does the cli test fail?");
+    app.apply(StreamEvent::Reasoning { text: "Look at the parser first.".into() });
+    tool_call(&mut app, "r1", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_call(&mut app, "r2", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_result(&mut app, "r1", "pub mod tui;", false, None);
+    tool_result(&mut app, "r2", "fn main() {}", false, None);
+    app.apply(StreamEvent::Reasoning { text: "Now run it.".into() });
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "git diff --stat" }));
+    tool_result(&mut app, "b1", "ok\n[exit 0]", false, None);
+    tool_result(&mut app, "b2", "1 file changed\n[exit 0]", false, None);
+    token(&mut app, "It passes now.");
+    finish_turn(&mut app, 4_000, 30);
+    assert_buffer("transcript_folded_worked_summary", &body(&mut app));
+}
+
 #[test]
 fn transcript_failed_tool_call() {
     let mut app = snapshot_app();
