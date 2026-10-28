@@ -11672,7 +11672,7 @@ fn shell_group_lines(
     if hidden > 0 {
         let note = format!(
             "\u{2026} +{} ({} in this group, Ctrl-O to expand)",
-            pluralize("earlier command", hidden),
+            pluralize("finished command", hidden),
             views.len()
         );
         out.push(Line::from(vec![
@@ -29035,7 +29035,7 @@ mod tests {
         assert_eq!(text[0], "\u{2022} Shell");
         assert_eq!(
             text[1],
-            "  \u{2514} \u{2026} +2 earlier commands (7 in this group, Ctrl-O to expand)"
+            "  \u{2514} \u{2026} +2 finished commands (7 in this group, Ctrl-O to expand)"
         );
         assert_eq!(text[2], "    \u{2022} Ran step 3");
         let body = text.join("\n");
@@ -29069,7 +29069,7 @@ mod tests {
             .map(line_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!text.contains("earlier command"), "{text}");
+        assert!(!text.contains("finished command"), "{text}");
         assert!(text.contains("\u{2514} \u{2022} Ran a"), "{text}");
     }
 
@@ -29095,7 +29095,7 @@ mod tests {
         let body = text.join("\n");
         assert!(body.contains("Running slow"), "in-flight command folded: {body}");
         assert!(body.contains("tick"), "live tail lost: {body}");
-        assert!(body.contains("+2 earlier commands (7 in this group"), "{body}");
+        assert!(body.contains("+2 finished commands (7 in this group"), "{body}");
         for kept in ["Ran d", "Ran e", "Ran f", "Ran g"] {
             assert!(body.contains(kept), "{kept}: {body}");
         }
