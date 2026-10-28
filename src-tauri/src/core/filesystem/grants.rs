@@ -9,11 +9,16 @@
 //!   a picked folder grants everything under it;
 //! - **typed as an `@path` reference**: any ordinary file under the home
 //!   folder, but never through a dot-prefixed folder (`.ssh`, `.aws`,
-//!   `.config`, ...) or a known credential store (see [`CREDENTIAL_DIRS`]).
+//!   `.config`, ...) or per-app private data (`Library`, `AppData`; see
+//!   [`PRIVATE_APP_DATA`]).
 //!
 //! Paths are compared canonicalized (symlinks resolved) and component by
 //! component, never as glob patterns. Grants persist in a file next to
 //! `settings.json`, outside the data folder, so the web view cannot write it.
+//! The first run seeds grants from the `model.yml` files of models already
+//! imported in place; those files are writable by the web view, so only
+//! `.gguf` files and MLX model folders (a `config.json` next to the weights)
+//! are taken from them.
 
 use super::helpers::canonical_scope_path;
 use crate::core::app::commands::{get_configuration_file_path, get_jan_data_folder_path};
@@ -30,35 +35,21 @@ pub const DENIED_PREFIX: &str = "fs_read_denied";
 
 pub const STORE_FILE_NAME: &str = "fs-grants.json";
 
-/// Folders under the home folder that hold credentials without a dot prefix,
-/// as lowercase components relative to home. A heuristic, not a complete list:
-/// it exists because macOS and Windows keep browser profiles and keychains in
-/// `Library` and `AppData`, which the dot-folder rule does not reach.
-const CREDENTIAL_DIRS: &[&[&str]] = &[
-    // macOS
-    &["library", "keychains"],
-    &["library", "cookies"],
-    &["library", "mail"],
-    &["library", "messages"],
-    &["library", "safari"],
-    &["library", "application support", "google"],
-    &["library", "application support", "firefox"],
-    &["library", "application support", "chromium"],
-    &["library", "application support", "bravesoftware"],
-    &["library", "application support", "microsoft edge"],
-    &["library", "application support", "arc"],
-    &["library", "application support", "1password"],
-    // Windows
-    &["appdata", "roaming", "microsoft", "credentials"],
-    &["appdata", "roaming", "microsoft", "protect"],
-    &["appdata", "roaming", "microsoft", "vault"],
-    &["appdata", "roaming", "mozilla"],
-    &["appdata", "roaming", "opera software"],
-    &["appdata", "local", "microsoft", "credentials"],
-    &["appdata", "local", "microsoft", "vault"],
-    &["appdata", "local", "microsoft", "edge"],
-    &["appdata", "local", "google"],
-    &["appdata", "local", "bravesoftware"],
+/// What `home_read_allowed` refuses below the home folder, as lowercase
+/// components relative to home, besides everything dot-prefixed. These hold
+/// per-app private data (session tokens, cookies, keychains, browser and chat
+/// profiles), so they are refused as a whole instead of by listing the apps
+/// that keep secrets there. `Library` keeps the folders that are the user's
+/// own files; Windows has no such folder inside `AppData`.
+const PRIVATE_APP_DATA: &[(&[&str], &[&[&str]])] = &[
+    (
+        &["library"],
+        &[
+            &["library", "cloudstorage"],
+            &["library", "mobile documents"],
+        ],
+    ),
+    (&["appdata"], &[]),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,14 +251,24 @@ pub fn home_read_allowed(canonical: &Path, canonical_home: &Path) -> bool {
     if parts.iter().any(|part| part.starts_with('.')) {
         return false;
     }
-    !CREDENTIAL_DIRS
-        .iter()
-        .any(|dir| parts.len() >= dir.len() && parts.iter().zip(dir.iter()).all(|(a, b)| a == b))
+    !PRIVATE_APP_DATA.iter().any(|(dir, exceptions)| {
+        starts_with_components(&parts, dir)
+            && !exceptions
+                .iter()
+                .any(|keep| starts_with_components(&parts, keep))
+    })
+}
+
+fn starts_with_components(parts: &[String], prefix: &[&str]) -> bool {
+    parts.len() >= prefix.len() && parts.iter().zip(prefix).all(|(a, b)| a == b)
 }
 
 /// Absolute paths that models imported in place point at, read from the
 /// `model.yml` files under the data folder. Used once, to seed the grants of
 /// an existing install.
+///
+/// The web view can write those files, so only values that look like what the
+/// app itself stores are taken: see [`is_model_path`].
 pub fn in_place_model_paths(data_folder: &Path) -> Vec<PathBuf> {
     let mut configs = Vec::new();
     for engine in ["llamacpp", "mlx"] {
@@ -283,16 +284,42 @@ pub fn in_place_model_paths(data_folder: &Path) -> Vec<PathBuf> {
             continue;
         };
         for (key, value) in &map {
-            if let (Some(key), Some(value)) = (key.as_str(), value.as_str()) {
-                let path = Path::new(value);
-                if key.ends_with("_path") && path.is_absolute() && !paths.iter().any(|p| p == path)
-                {
-                    paths.push(path.to_path_buf());
-                }
+            let (Some(key), Some(value)) = (key.as_str(), value.as_str()) else {
+                continue;
+            };
+            let path = Path::new(value);
+            if path.is_absolute() && is_model_path(key, path) && !paths.iter().any(|p| p == path) {
+                paths.push(path.to_path_buf());
             }
         }
     }
     paths
+}
+
+/// Whether `path`, the value of `key` in a `model.yml`, is something Jan
+/// stores for a model imported in place: the weights or projector of a
+/// llama.cpp model (a `.gguf` file) or an MLX model folder (it holds a
+/// `config.json`). A `.gguf` need not exist yet, as an external drive may not
+/// be mounted at the first start.
+fn is_model_path(key: &str, path: &Path) -> bool {
+    let gguf = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
+        && !path.is_dir();
+    match key {
+        "mmproj_path" => gguf,
+        "model_path" => gguf || holds_mlx_weights(path),
+        _ => false,
+    }
+}
+
+/// Whether `dir` is an MLX model folder: a `config.json` next to the weights
+/// (`model.safetensors`, or its shard index). Many tools keep a `config.json`
+/// of their own in a folder, so that file alone does not make a model.
+fn holds_mlx_weights(dir: &Path) -> bool {
+    dir.join("config.json").is_file()
+        && (dir.join("model.safetensors").is_file()
+            || dir.join("model.safetensors.index.json").is_file())
 }
 
 /// Collects `model.yml` files under `dir`, `depth` folder levels deep,
@@ -487,12 +514,20 @@ mod tests {
         for rel in [
             "Documents/notes.txt",
             "Library/CloudStorage/Dropbox/a.txt",
+            "Library/Mobile Documents/com~apple~CloudDocs/b.txt",
             ".ssh/id_rsa",
             ".config/app/x",
             "projects/app/.env",
             "Library/Keychains/login.keychain-db",
             "Library/Application Support/Google/Chrome/Default/Cookies",
+            "Library/Application Support/Slack/Cookies",
+            "Library/Application Support/discord/Local Storage/leveldb/1.ldb",
+            "Library/Application Support/Code/User/globalStorage/state.vscdb",
+            "Library/Containers/com.example.app/Data/token",
             "AppData/Roaming/Microsoft/Credentials/blob",
+            "AppData/Roaming/discord/Local Storage/leveldb/1.ldb",
+            "AppData/Roaming/Code/User/globalStorage/state.vscdb",
+            "AppData/Local/Slack/storage",
         ] {
             let p = home.join(rel);
             fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -506,23 +541,32 @@ mod tests {
         assert!(ok("Documents/notes.txt"));
         assert!(
             ok("Library/CloudStorage/Dropbox/a.txt"),
-            "cloud storage is not a credential store"
+            "cloud storage holds the user's files"
         );
+        assert!(ok("Library/Mobile Documents/com~apple~CloudDocs/b.txt"));
         assert!(!ok(".ssh/id_rsa"));
         assert!(!ok(".config/app/x"));
         assert!(
             !ok("projects/app/.env"),
             "a hidden folder or file anywhere below home is refused"
         );
-        assert!(!ok("Library/Keychains/login.keychain-db"));
-        assert!(
-            !ok("library/keychains/login.keychain-db"),
-            "matching ignores case"
-        );
-        assert!(!ok(
-            "Library/Application Support/Google/Chrome/Default/Cookies"
-        ));
-        assert!(!ok("AppData/Roaming/Microsoft/Credentials/blob"));
+        // Per-app private data is refused as a whole, not by naming the apps
+        // that keep tokens there.
+        for private in [
+            "Library/Keychains/login.keychain-db",
+            "library/keychains/login.keychain-db",
+            "Library/Application Support/Google/Chrome/Default/Cookies",
+            "Library/Application Support/Slack/Cookies",
+            "Library/Application Support/discord/Local Storage/leveldb/1.ldb",
+            "Library/Application Support/Code/User/globalStorage/state.vscdb",
+            "Library/Containers/com.example.app/Data/token",
+            "AppData/Roaming/Microsoft/Credentials/blob",
+            "AppData/Roaming/discord/Local Storage/leveldb/1.ldb",
+            "AppData/Roaming/Code/User/globalStorage/state.vscdb",
+            "AppData/Local/Slack/storage",
+        ] {
+            assert!(!ok(private), "{private} is application data");
+        }
         assert!(
             home_read_allowed(&h, &h),
             "the home folder can be listed: the @ picker starts there"
@@ -530,34 +574,92 @@ mod tests {
         assert!(!home_read_allowed(&canon(&outside), &h), "outside home");
     }
 
+    /// Writes a model.yml under `data/<engine>/models/<name>` with `body`.
+    fn write_model_yml(data: &Path, engine: &str, name: &str, body: &str) {
+        let dir = data.join(engine).join("models").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("model.yml"), body).unwrap();
+    }
+
     #[test]
-    fn in_place_model_paths_come_from_absolute_path_keys_only() {
+    fn seeding_takes_model_weights_and_model_folders_only() {
         let tmp = TempDir::new().unwrap();
         let data = tmp.path().join("data");
-        let external = tmp.path().join("external").join("model.gguf");
+        let weights = tmp.path().join("external").join("model.gguf");
+        let mmproj = tmp.path().join("external").join("mmproj.GGUF");
         let mlx_dir = tmp.path().join("mlx-weights");
-        let llama = data.join("llamacpp").join("models").join("m1");
-        let mlx = data.join("mlx").join("models").join("m2");
-        fs::create_dir_all(&llama).unwrap();
-        fs::create_dir_all(&mlx).unwrap();
-        fs::write(
-            llama.join("model.yml"),
-            format!(
-                "model_path: {}\nmmproj_path: llamacpp/models/m1/mmproj.gguf\nname: m1\n",
-                external.display()
+        fs::create_dir_all(weights.parent().unwrap()).unwrap();
+        fs::create_dir_all(&mlx_dir).unwrap();
+        fs::write(&weights, "w").unwrap();
+        fs::write(&mmproj, "p").unwrap();
+        fs::write(mlx_dir.join("config.json"), "{}").unwrap();
+        fs::write(mlx_dir.join("model.safetensors"), "w").unwrap();
+        write_model_yml(
+            &data,
+            "llamacpp",
+            "m1",
+            &format!(
+                "model_path: {}\nmmproj_path: {}\nname: m1\n",
+                weights.display(),
+                mmproj.display()
             ),
-        )
-        .unwrap();
-        fs::write(
-            mlx.join("model.yml"),
-            format!("model_path: {}\n", mlx_dir.display()),
-        )
-        .unwrap();
+        );
+        write_model_yml(
+            &data,
+            "mlx",
+            "m2",
+            &format!("model_path: {}\n", mlx_dir.display()),
+        );
+        // Relative paths stay data-folder paths.
+        write_model_yml(
+            &data,
+            "llamacpp",
+            "m3",
+            "model_path: llamacpp/models/m3/model.gguf\nmmproj_path: llamacpp/models/m3/mmproj.gguf\n",
+        );
 
         let mut found = in_place_model_paths(&data);
         found.sort();
-        let mut expected = vec![external, mlx_dir];
+        let mut expected = vec![weights, mmproj, mlx_dir];
         expected.sort();
-        assert_eq!(found, expected, "relative paths stay data-folder paths");
+        assert_eq!(found, expected);
+    }
+
+    #[test]
+    fn seeding_ignores_a_planted_model_yml_that_names_something_else() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let home = tmp.path().join("home");
+        let key = home.join(".ssh").join("id_rsa");
+        let project = tmp.path().join("project");
+        let docker = home.join(".docker");
+        fs::create_dir_all(key.parent().unwrap()).unwrap();
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&docker).unwrap();
+        fs::write(&key, "PRIVATE").unwrap();
+        fs::write(project.join("notes.txt"), "n").unwrap();
+        fs::write(docker.join("config.json"), "{\"auths\":{}}").unwrap();
+
+        for (i, body) in [
+            "model_path: /\n".to_string(),
+            format!("model_path: {}\n", home.display()),
+            format!("model_path: {}\n", key.display()),
+            // A folder with a `config.json` but no weights is not a model
+            // folder: `~/.docker` has one, and so does most tooling.
+            format!("model_path: {}\n", docker.display()),
+            format!("model_path: {}\n", project.display()),
+            // Only `model_path` and `mmproj_path` name model files.
+            format!("other_path: {}\n", key.display()),
+            format!("draft_model_path: {}\n", key.display()),
+            // A weights file must be a `.gguf`.
+            format!("mmproj_path: {}\n", key.display()),
+        ]
+        .iter()
+        .enumerate()
+        {
+            write_model_yml(&data, "llamacpp", &format!("p{i}"), body);
+        }
+
+        assert_eq!(in_place_model_paths(&data), Vec::<PathBuf>::new());
     }
 }
