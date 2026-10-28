@@ -21,9 +21,8 @@ export class TauriAppService extends DefaultAppService {
    * localStorage still holds a frozen pre-migration snapshot (kept so a
    * downgraded build can read it). It is cleared on the next startup via a
    * Rust sentinel (see `main.tsx`), never here: the backend can still refuse
-   * the reset, and on success the invoke never resolves because the process
-   * restarts, so there is no point at which clearing here is both safe and
-   * reached.
+   * the reset, and on success the process restarts right after the invoke
+   * resolves, so clearing here would race the restart flush.
    */
   async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')

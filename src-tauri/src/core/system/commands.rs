@@ -63,24 +63,80 @@ fn stage_for_deletion(data_folder: &std::path::Path, targets: &[&str], trash: &s
             log::warn!("Failed to create {}: {e}", trash.display());
         }
         log::info!("Staging for deletion: {}", path.display());
-        if let Err(e) = fs::rename(&path, trash.join(name)) {
-            // Windows refuses to move a folder with a file still open in it;
-            // deleting in place is slower but still removes it.
-            log::warn!("Failed to move {}: {e}; deleting in place", path.display());
-            remove_path(&path);
+        let dest = trash.join(name);
+        if let Err(e) = rename_with_retry(&path, &dest) {
+            log::warn!("Failed to move {}: {e}; staging its contents", path.display());
+            let left = stage_contents(&path, &dest);
+            if left > 0 {
+                log::warn!("{left} locked entries stay in {}", path.display());
+            }
         }
     }
 }
 
-fn remove_path(path: &std::path::Path) {
+/// Rename, retrying briefly: a lock held by a process the reset just stopped,
+/// an indexer or antivirus is usually released within moments.
+fn rename_with_retry(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    const ATTEMPTS: u32 = 3;
+    let mut attempt = 1;
+    loop {
+        match fs::rename(from, to) {
+            Err(_) if attempt < ATTEMPTS => {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Move what can be moved from `from` into `to`, one entry at a time, and
+/// return how many entries had to stay. Windows refuses to move a folder with
+/// a file open anywhere in it, and deleting it in place stops at the first
+/// such file, so this leaves behind only the files that are actually locked.
+fn stage_contents(from: &std::path::Path, to: &std::path::Path) -> usize {
+    let is_dir = fs::symlink_metadata(from).is_ok_and(|m| m.is_dir());
+    if !is_dir {
+        if let Err(e) = fs::remove_file(from) {
+            log::warn!("Failed to remove {}: {e}", from.display());
+            return 1;
+        }
+        return 0;
+    }
+    let entries = match fs::create_dir_all(to).and_then(|()| fs::read_dir(from)) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::warn!("Failed to stage {}: {e}", from.display());
+            return 1;
+        }
+    };
+    let mut left = 0;
+    for entry in entries.flatten() {
+        let src = entry.path();
+        let dest = to.join(entry.file_name());
+        if fs::rename(&src, &dest).is_err() {
+            left += stage_contents(&src, &dest);
+        }
+    }
+    if left == 0 {
+        if let Err(e) = fs::remove_dir(from) {
+            log::warn!("Failed to remove {}: {e}", from.display());
+            left = 1;
+        }
+    }
+    left
+}
+
+fn remove_path(path: &std::path::Path) -> std::io::Result<()> {
     let removed = if path.is_dir() {
         fs::remove_dir_all(path)
     } else {
         fs::remove_file(path)
     };
-    if let Err(e) = removed {
+    if let Err(e) = &removed {
         log::warn!("Failed to remove {}: {e}", path.display());
     }
+    removed
 }
 
 fn pending_trash_record<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Option<PathBuf> {
@@ -106,7 +162,11 @@ fn sweep_pending_trash(record: &std::path::Path) {
     if is_reset_trash && is_safe_to_delete(&trash) {
         if trash.exists() {
             log::info!("Deleting factory reset leftovers: {}", trash.display());
-            remove_path(&trash);
+            // A partial failure (a file locked on Windows) keeps the record,
+            // so the next start retries instead of losing the folder for good.
+            if remove_path(&trash).is_err() && trash.exists() {
+                return;
+            }
         }
     } else {
         log::warn!("Ignoring unexpected reset trash path: {}", trash.display());
@@ -404,7 +464,7 @@ pub async fn factory_reset<R: Runtime>(
             if !matches!(recorded, Ok(Some(()))) {
                 log::warn!("Could not record reset trash; deleting it now");
                 if trash.exists() {
-                    remove_path(&trash);
+                    let _ = remove_path(&trash);
                 }
             }
         })
@@ -442,7 +502,10 @@ pub async fn factory_reset<R: Runtime>(
     }
 
     // The staged data is deleted by the next start (`sweep_reset_trash`).
-    app_handle.restart();
+    // Not `restart()`: off the main thread it parks this runtime worker
+    // forever while the exit handler blocks on the same runtime for cleanup.
+    app_handle.request_restart();
+    Ok(())
 }
 
 #[tauri::command]
@@ -908,6 +971,88 @@ mod tests {
 
         sweep_pending_trash(&record);
 
+        assert!(!trash.exists());
+        assert!(!record.exists());
+    }
+
+    /// A read-only directory holding one file: its entries can be neither moved
+    /// nor removed, which stands in for a file held open on Windows. `None`
+    /// when permissions are not enforced (running as root).
+    #[cfg(unix)]
+    fn locked_dir(parent: &std::path::Path) -> Option<PathBuf> {
+        use std::os::unix::fs::PermissionsExt;
+        let locked = parent.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("held.bin"), "data").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+        if fs::write(locked.join("probe"), "").is_ok() {
+            unlock(&locked);
+            return None;
+        }
+        Some(locked)
+    }
+
+    #[cfg(unix)]
+    fn unlock(dir: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_contents_leaves_only_the_locked_entries() {
+        let tmp = tempdir().unwrap();
+        let models = tmp.path().join("llamacpp");
+        fs::create_dir_all(models.join("free")).unwrap();
+        fs::write(models.join("free").join("a.gguf"), "data").unwrap();
+        fs::write(models.join("b.gguf"), "data").unwrap();
+        let Some(locked) = locked_dir(&models) else {
+            return;
+        };
+        let dest = tmp.path().join("trash").join("llamacpp");
+
+        let left = stage_contents(&models, &dest);
+        unlock(&locked);
+
+        assert_eq!(left, 1);
+        assert!(dest.join("free").join("a.gguf").exists());
+        assert!(dest.join("b.gguf").exists());
+        assert!(!models.join("free").exists());
+        assert!(!models.join("b.gguf").exists());
+        assert!(locked.join("held.bin").exists());
+    }
+
+    #[test]
+    fn staging_contents_removes_the_emptied_folder() {
+        let tmp = tempdir().unwrap();
+        let models = tmp.path().join("llamacpp");
+        fs::create_dir_all(models.join("free")).unwrap();
+        fs::write(models.join("free").join("a.gguf"), "data").unwrap();
+        let dest = tmp.path().join("trash").join("llamacpp");
+
+        assert_eq!(stage_contents(&models, &dest), 0);
+        assert!(!models.exists());
+        assert!(dest.join("free").join("a.gguf").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sweep_keeps_the_record_until_the_trash_is_gone() {
+        let tmp = tempdir().unwrap();
+        let record = tmp.path().join(PENDING_TRASH_FILE);
+        let trash = tmp.path().join("data").join(format!("{RESET_TRASH_PREFIX}1"));
+        fs::create_dir_all(&trash).unwrap();
+        let Some(locked) = locked_dir(&trash) else {
+            return;
+        };
+        record_pending_trash(&record, &trash).unwrap();
+
+        sweep_pending_trash(&record);
+        assert!(trash.exists());
+        assert!(record.exists());
+
+        unlock(&locked);
+        sweep_pending_trash(&record);
         assert!(!trash.exists());
         assert!(!record.exists());
     }
