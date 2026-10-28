@@ -13,7 +13,7 @@ expression: render_snapshot(buf)
 | ☐ routes                                                   |
 | ☐ auth                                                     |
 |≡ 1 agent                                                   |
-|• api-review  2t · 2r                                       |
+|• api-review  2 tools                                       |
 |   review the file                                          |
 |   Read mod_1.rs                                            |
 |────────────────────────────────────────────────────────────|

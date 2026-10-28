@@ -30,7 +30,7 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    input_box, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    input_box_height, subagent_rows, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -205,42 +205,6 @@ fn header_running_thinking_reduced_motion() {
         "header_running_thinking_reduced_motion",
         &header_buffer(&app, DARK),
     );
-}
-
-#[test]
-fn header_parked_waiting_and_watching() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.apply(StreamEvent::Parked);
-    let waiting = header_buffer(&app, DARK);
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let watching = header_buffer(&app, DARK);
-    assert_buffer("header_parked_waiting", &waiting);
-    assert_buffer("header_parked_watching", &watching);
-}
-
-/// The input box while a run is parked on two agents and a monitor: what it
-/// waits on, the stop hint, and the dim tree of names under it.
-#[test]
-fn parked_waiting_on_agents() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.subagents = fan_out().into_iter().take(2).collect();
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "build", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let h = input_box_height(&app, 80);
-    let buf = pinned(DARK, || {
-        let area = Rect::new(0, 0, 80, h);
-        let mut buf = Buffer::empty(area);
-        ratatui::widgets::Widget::render(input_box(&app, 80), area, &mut buf);
-        buf
-    });
-    assert_buffer("parked_waiting_on_agents", &buf);
 }
 
 #[test]
@@ -584,12 +548,101 @@ fn shells_inspector_lists_the_shells() {
     assert_buffer("shells_inspector_list", &frame(&mut app, DARK, 80, 10));
 }
 
+/// Enter on a `/shells` row: the shell's command and status over the newest
+/// lines of its output.
+#[test]
+fn shells_inspector_detail() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    open_background_shells_picker(&mut app);
+    let output: String = (1..=12).map(|i| format!("[vite] hmr update /src/App.tsx ({i})\n")).collect();
+    app.shell_detail = Some(crate::core::cli::tui::ShellDetail {
+        pid: 4242,
+        command: "npm run dev".into(),
+        elapsed_secs: 65,
+        tail: None,
+        output,
+        seen: 0,
+        finished: false,
+    });
+    if let Some(picker) = app.picker.as_mut() {
+        picker.kind = PickerKind::ShellDetail;
+    }
+    assert_buffer("shells_inspector_detail", &frame(&mut app, DARK, 80, 14));
+}
+
+/// A call that outran its timeout, open and folded: running in the
+/// background, pointing at `/shells`, never a green `Ran`.
+#[test]
+fn transcript_backgrounded_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "start the dev server");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "npm run dev" }));
+    tool_result(
+        &mut app,
+        "b1",
+        "Command exceeded 120s and is still running in the background. Its result will be \
+         written to /tmp/jan-bash/out-1.txt once it finishes.",
+        false,
+        None,
+    );
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_backgrounded_shell_command_open", &open);
+    assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
+}
+
 /// The idle dock with two background shells: the dim row over the input.
 #[test]
 fn bg_shells_row_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
     assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+}
+
+/// Two subagents running and one queued after the main turn ended: the block
+/// over the idle input, at `now` so the elapsed times are fixed.
+fn idle_fan_out(now: Instant) -> TestApp {
+    let mut app = snapshot_app();
+    let mut kv = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    kv.started = Some(now - Duration::from_secs(65));
+    let mut perf = cached_panel("perf-scan", 0, 0, 0, false);
+    perf.started = Some(now - Duration::from_secs(12));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    app.subagents = vec![kv, perf, queued];
+    app
+}
+
+fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+    pinned(DARK, || lines_buffer(subagent_rows(app, w, now).expect("shown"), w))
+}
+
+#[test]
+fn subagents_running_after_the_turn() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    assert_buffer("subagents_idle_running", &subagent_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &subagent_rows_buffer(&mut app, 36, now));
+    app.apply(StreamEvent::SubagentEnd {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        error: None,
+    });
+    assert_buffer("subagents_idle_one_finished", &subagent_rows_buffer(&mut app, 80, now));
+}
+
+/// Where the block sits: under the rule, over the shells row and the input,
+/// with the dock no longer listing the same children.
+#[test]
+fn subagents_and_shells_over_the_idle_input() {
+    let mut app = idle_fan_out(Instant::now());
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 13));
 }
 
 /// Background pings, each as the row its kind calls for.
@@ -991,6 +1044,97 @@ fn transcript_running_shell_command() {
     assert_buffer("transcript_running_shell_command", &body(&mut app));
 }
 
+/// The three commands of the run the grouped fixtures share, one failing.
+fn run_three_commands(app: &mut App) {
+    start_turn(app, "check and test the cli");
+    tool_call(app, "b1", "bash", json!({ "command": "cargo check --features cli" }));
+    tool_call(app, "b2", "bash", json!({ "command": "git status --short" }));
+    tool_call(app, "b3", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_result(app, "b1", "Finished dev profile in 2.1s\n[exit 0]", false, None);
+    tool_result(app, "b2", " M src/foo.rs\n[exit 0]", false, None);
+    let failed: String = std::iter::once("test a ... FAILED\n".to_string())
+        .chain((0..40).map(|i| format!("line {i}\n")))
+        .chain(std::iter::once("[exit 101]".to_string()))
+        .collect();
+    tool_result(app, "b3", &failed, true, None);
+}
+
+/// Consecutive commands, open and folded: one `Ran 3 commands` row listing each
+/// command with a short preview, the failed one naming its code, the bullet red.
+#[test]
+fn transcript_grouped_shell_commands() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_grouped_shell_commands_open", &open);
+    assert_buffer("transcript_grouped_shell_commands", &body(&mut app));
+}
+
+/// A run with one command finished and one still streaming: `Running 2
+/// commands`, the live one with its clock over its newest lines.
+#[test]
+fn transcript_grouped_shell_commands_running() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "git pull --ff-only" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "make build" }));
+    tool_result(&mut app, "b1", "Already up to date.\n[exit 0]", false, None);
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b2".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The clock reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.transcript.tool_group.as_mut() {
+        for call in &mut group.calls {
+            call.started = Instant::now();
+        }
+    }
+    assert_buffer("transcript_grouped_shell_commands_running", &body(&mut app));
+}
+
+/// The folded run on a narrow terminal: every row is cut to the width rather
+/// than wrapped, multi-line commands included.
+#[test]
+fn grouped_shell_commands_narrow() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    tool_call(
+        &mut app,
+        "b4",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo clippy --all-targets -- -D warnings" }),
+    );
+    tool_result(&mut app, "b4", "warning: unused variable `width_of_the_row`\n[exit 0]", false, None);
+    app.transcript.finalize_tool_group();
+    let group = app.transcript.groups.last().expect("folded group");
+    let lines = pinned(DARK, || group.row(super::super::GroupRow::Closed).lines(30));
+    assert_buffer("grouped_shell_commands_narrow", &lines_buffer(lines, 30));
+}
+
+/// A finished turn folds its steps under `Worked`, with what the tools did
+/// hung under the header.
+#[test]
+fn transcript_folded_worked_summary() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "why does the cli test fail?");
+    app.apply(StreamEvent::Reasoning { text: "Look at the parser first.".into() });
+    tool_call(&mut app, "r1", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_call(&mut app, "r2", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_result(&mut app, "r1", "pub mod tui;", false, None);
+    tool_result(&mut app, "r2", "fn main() {}", false, None);
+    app.apply(StreamEvent::Reasoning { text: "Now run it.".into() });
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "git diff --stat" }));
+    tool_result(&mut app, "b1", "ok\n[exit 0]", false, None);
+    tool_result(&mut app, "b2", "1 file changed\n[exit 0]", false, None);
+    token(&mut app, "It passes now.");
+    finish_turn(&mut app, 4_000, 30);
+    assert_buffer("transcript_folded_worked_summary", &body(&mut app));
+}
+
 #[test]
 fn transcript_failed_tool_call() {
     let mut app = snapshot_app();
@@ -1017,14 +1161,13 @@ fn transcript_edit_with_diff() {
         "e1",
         "Applied 1 edit(s) to src/geometry.rs",
         false,
-        // The edit tool's own shape: numbered rows, one header per edit.
+        // The edit tool's own shape: numbered rows, distant hunks split by a gap.
         Some(concat!(
-            "@@ edit 1/2 @@\n",
             "     8 | use std::fmt;\n",
             "-    9 | fn area(w: u32, h: u32) -> u32 {\n",
             "+    9 | fn area(w: u64, h: u64) -> u64 {\n",
             "    10 |     w * h\n",
-            "@@ edit 2/2 @@\n",
+            "      ...\n",
             "-  112 |     let cells: u32 = area(4, 4);\n",
             "+  112 |     let cells: u64 = area(4, 4);",
         )),
