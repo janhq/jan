@@ -719,6 +719,15 @@ describe('generatePreset upstream-default skipping', () => {
     expect(modelSection('m')).toContain('ctx-size = 16384')
   })
 
+  // No ctx_size in model.yml (the seeded 8192 is gone) means nothing pins n_ctx,
+  // so fit is free to shrink the context down to fit_ctx.
+  it('emits no ctx-size anywhere when fit is on and the model sets none', async () => {
+    setupModel('m', {})
+    await generatePreset('/p', '/jan', { fit: true } as any)
+    expect(modelSection('m')).not.toContain('ctx-size')
+    expect(globalSection()).not.toContain('ctx-size')
+  })
+
   it('emits n-gpu-layers for auto (-1) and all (-2) but not below', async () => {
     setupModel('a', { n_gpu_layers: -1 })
     await generatePreset('/p', '/jan', { fit: false } as any)

@@ -1994,8 +1994,12 @@ function ThreadDetail() {
     const model = provider.models[modelIndex]
 
     // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
+    // An empty ctx_len is left to fit, so the window to grow from is the one
+    // the model launched with, not a guess that could be below it.
     const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+      readCtxLen(model.settings?.ctx_len?.controller_props?.value) ??
+      launchedCtxLens.get(threadId) ??
+      8192
     const maxCtxLen =
       (model.settings?.ctx_len?.controller_props?.max as number) || 131072
 
