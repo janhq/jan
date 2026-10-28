@@ -34,6 +34,7 @@ import {
  settingsFileExists,
 } from './settings-store'
 import { applyPlatformFitDefault } from './fit-default'
+import { findModelEntries } from './model-tree'
 
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -1309,18 +1310,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   const modelsDir = await joinPath([providerPath, 'models'])
   if (!(await fs.existsSync(modelsDir))) return
 
-  let entries: string[] = []
-  try {
-   entries = await fs.readdirSync(modelsDir)
-  } catch (e) {
-   logger.warn(`Could not list models while sweeping ${key}:`, e)
-   return
-  }
-
-  for (const entry of entries) {
-   const configPath = await joinPath([entry, 'model.yml'])
+  for (const { configPath } of await findModelEntries(modelsDir)) {
    try {
-    if (!(await fs.existsSync(configPath))) continue
     // Read as a bag rather than ModelConfig: that type covers the
     // plugin's own fields, not every per-model key the sidebar writes.
     const cfg = await fs.readYaml<Record<string, unknown>>(configPath)
@@ -1697,41 +1688,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    logger.warn(`list: migrateLegacyModels failed, continuing: ${String(err)}`)
   }
 
-  let modelIds: string[] = []
-
-  // DFS. Mirror the defensive pattern in preset.ts: an unreadable entry
-  // (Windows AV quarantine, junction, locked file) must not kill the whole
-  // scan — log and continue past it.
-  let stack = [modelsDir]
-  while (stack.length > 0) {
-   const currentDir = stack.pop()
-
-   // check if model.yml exists
-   const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-   if (await fs.existsSync(modelConfigPath)) {
-    // +1 to remove the leading slash
-    // NOTE: this does not handle Windows path \\
-    modelIds.push(currentDir.slice(modelsDir.length + 1))
-    continue
-   }
-
-   let children: string[] = []
-   try {
-    children = await fs.readdirSync(currentDir)
-   } catch (err) {
-    logger.warn(`list: readdir failed for ${currentDir}: ${String(err)}`)
-    continue
-   }
-   for (const child of children) {
-    try {
-     const dirInfo = await fs.fileStat(child)
-     if (!dirInfo?.isDirectory) continue
-     stack.push(child)
-    } catch (err) {
-     logger.warn(`list: stat failed for ${child}: ${String(err)}`)
-    }
-   }
-  }
+  const modelIds = (await findModelEntries(modelsDir)).map((e) => e.modelId)
 
   // Per-model isolation: one malformed model.yml (or a write_yaml failure
   // inside resolveEmbeddingConfig) must not discard the other entries.
