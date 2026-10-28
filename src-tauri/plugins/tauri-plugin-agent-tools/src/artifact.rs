@@ -109,7 +109,7 @@ mod tests {
     fn an_allowed_document_inside_a_root_opens() {
         let root = temp_root("doc");
         std::fs::write(root.join("Report.PDF"), b"%PDF-1.7").unwrap();
-        let got = checked_artifact(&root.join("Report.PDF"), &[root.clone()]).unwrap();
+        let got = checked_artifact(&root.join("Report.PDF"), std::slice::from_ref(&root)).unwrap();
         assert_eq!(got, root.join("Report.PDF"));
     }
 
@@ -118,7 +118,8 @@ mod tests {
         let root = temp_root("root");
         let other = temp_root("other");
         std::fs::write(other.join("report.pdf"), b"%PDF").unwrap();
-        let err = checked_artifact(&other.join("report.pdf"), &[root.clone()]).unwrap_err();
+        let err =
+            checked_artifact(&other.join("report.pdf"), std::slice::from_ref(&root)).unwrap_err();
         assert!(err.contains("outside"), "{err}");
         // Climbing out by `..` is judged by where it lands.
         let climbed = root
@@ -134,7 +135,7 @@ mod tests {
         for name in ["run.command", "setup.exe", "x.sh", "noext"] {
             std::fs::write(root.join(name), b"x").unwrap();
             assert!(
-                checked_artifact(&root.join(name), &[root.clone()]).is_err(),
+                checked_artifact(&root.join(name), std::slice::from_ref(&root)).is_err(),
                 "{name}"
             );
         }
@@ -150,7 +151,7 @@ mod tests {
         std::fs::write(root.join("real.pdf"), b"%PDF").unwrap();
         std::os::unix::fs::symlink(root.join("real.pdf"), root.join("alias.pdf")).unwrap();
         for name in ["report.pdf", "alias.pdf"] {
-            let err = checked_artifact(&root.join(name), &[root.clone()]).unwrap_err();
+            let err = checked_artifact(&root.join(name), std::slice::from_ref(&root)).unwrap_err();
             assert!(err.contains("link"), "{name}: {err}");
         }
     }
