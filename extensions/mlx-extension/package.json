@@ -19,7 +19,7 @@
     "rimraf": "3.0.2",
     "rolldown": "1.0.0-beta.1",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "3.2.7"
   },
   "dependencies": {
     "@janhq/core": "workspace:*",
