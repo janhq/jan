@@ -256,7 +256,7 @@ async fn execute_text(
 /// its position in the file; `None` for other tools or when nothing would
 /// change. Used to show the change in the permission prompt. Both variants read
 /// the prior file: `write` to show its `created`/`overwrote` header, `edit` to
-/// locate `old_string` and number the hunk against real file lines.
+/// apply the batch and number the hunks against real file lines.
 pub async fn preview_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -302,9 +302,9 @@ pub async fn preview_diff(
 /// Returns `(content, diff)`. The diff is line-prefixed (`-`/`+`) hunk text for
 /// **display only**: the model gets the concise summary in `content`, since the
 /// hunk merely replays an edit it just authored and would cost context on every
-/// mutating call. Diffs are computed against the pre-execution file so line
-/// numbers match the file as the model saw it. `None` for non-mutating tools
-/// and on error.
+/// mutating call. The diff compares the file before and after the call, so
+/// deleted lines carry their original numbers and kept or inserted lines their
+/// numbers in the result. `None` for non-mutating tools and on error.
 pub async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -327,79 +327,34 @@ pub async fn execute_builtin_with_diff(
     }
 }
 
-/// 1-based line number of the start of `pos` within `text`.
-fn line_number_at(text: &str, pos: usize) -> usize {
-    text[..pos].matches('\n').count() + 1
-}
-
 /// Lines of surrounding file context kept around a change, and the threshold
-/// past which one edit's hunk is split with a `...` gap. Matches the feel of a
-/// unified diff without the `@@ -a,b +c,d @@` range header (the existing
-/// `@@ edit i/n @@` marker already identifies the hunk).
+/// past which distant changes are split with a `...` gap. Matches the feel of a
+/// unified diff without the `@@ -a,b +c,d @@` range header.
 const DIFF_CONTEXT: usize = 2;
 
-/// Per-edit hunks computed with a real line-level diff (`similar`), so a
-/// one-line change inside a large `old_string`/`new_string` pair shows only the
-/// lines that actually differ instead of the whole block as removed and
-/// re-added. The compared blocks are widened from the raw arguments to whole
-/// lines plus up to `DIFF_CONTEXT` unchanged lines taken from the file, so a
-/// change is shown in place even when `old_string` carries no context of its
-/// own. Deleted lines are numbered against the file before the edit, kept and
-/// inserted lines against the file after it. Multiple edits are separated by
-/// `@@ edit i/n @@` and applied in order so later edits number against the
-/// state left by earlier ones, matching what `edit()` does.
+/// One line-level diff (`similar`) of the file before and after the whole
+/// batch, so hunks come out in file order however the edits are listed,
+/// overlapping edits show only their net change, and a one-line change inside
+/// a large `old_string`/`new_string` pair shows only the lines that differ.
+/// Deleted lines are numbered against the file before the batch, kept and
+/// inserted lines against the file after it. When the batch would be rejected
+/// (an `old_string` missing or not unique) there is no file position to number
+/// against, so each edit's arguments are shown on their own, numbered from 1.
 fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
-    let n = edits.len();
-    let mut working = prior.to_string();
-    let mut out = String::new();
-    for (i, e) in edits.iter().enumerate() {
-        let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-        let new = e.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-        if n > 1 {
-            out.push_str(&format!("@@ edit {}/{} @@\n", i + 1, n));
-        }
-        let (old, new) = line_endings_of_file(&working, old, new);
-        match working.find(&*old) {
-            Some(pos) => {
-                let (old_block, new_block, start) = expand_hunk(&working, pos, &old, &new);
-                out.push_str(&render_hunk_diff(&old_block, &new_block, start));
-                working.replace_range(pos..pos + old.len(), &new);
-            }
-            // `edit()` will reject this call, but the arguments are still worth
-            // showing; there is no file position to number them against.
-            None => out.push_str(&render_hunk_diff(&old, &new, 1)),
-        }
-    }
+    let out = match apply_edits(prior, edits) {
+        Ok(updated) => render_hunk_diff(prior, &updated, 1),
+        Err(_) => edits
+            .iter()
+            .map(|e| {
+                let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                let new = e.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let (old, new) = line_endings_of_file(prior, old, new);
+                render_hunk_diff(&old, &new, 1)
+            })
+            .collect::<Vec<_>>()
+            .join("      ...\n"),
+    };
     out.trim_end().to_string()
-}
-
-/// Widen the replacement of `old` at `pos` in `text` to whole lines plus
-/// `DIFF_CONTEXT` lines of surrounding file context, returning the before and
-/// after blocks and the 1-based line the blocks start at. Both blocks share the
-/// context verbatim, so the diff renders it as unchanged lines; whole-line
-/// bounds keep a match that starts or ends mid-line from being diffed against a
-/// line fragment.
-fn expand_hunk(text: &str, pos: usize, old: &str, new: &str) -> (String, String, usize) {
-    let end = pos + old.len();
-    let mut ctx_start = text[..pos].rfind('\n').map_or(0, |i| i + 1);
-    for _ in 0..DIFF_CONTEXT {
-        if ctx_start == 0 {
-            break;
-        }
-        ctx_start = text[..ctx_start - 1].rfind('\n').map_or(0, |i| i + 1);
-    }
-    let mut ctx_end = text[end..].find('\n').map_or(text.len(), |i| end + i);
-    for _ in 0..DIFF_CONTEXT {
-        if ctx_end >= text.len() {
-            break;
-        }
-        ctx_end = text[ctx_end + 1..]
-            .find('\n')
-            .map_or(text.len(), |i| ctx_end + 1 + i);
-    }
-    let old_block = text[ctx_start..ctx_end].to_string();
-    let new_block = format!("{}{new}{}", &text[ctx_start..pos], &text[end..ctx_end]);
-    (old_block, new_block, line_number_at(text, ctx_start))
 }
 
 /// Line-diff `old` against `new`, rendering each changed/context line with its
@@ -818,6 +773,35 @@ fn line_endings_of_file<'a>(
     }
 }
 
+/// Apply an `edit` call's replacements to `content` in order, so a later edit
+/// may target text an earlier one inserted. Each `old_string` must match
+/// exactly once in the text as it stands at that point. Shared by `edit()` and
+/// its diff preview so the preview always shows the change that is applied.
+fn apply_edits(content: &str, edits: &[serde_json::Value]) -> Result<String, String> {
+    let mut content = content.to_string();
+    for (i, e) in edits.iter().enumerate() {
+        let Some(old_string) = e.get("old_string").and_then(|v| v.as_str()) else {
+            return Err(format!("edit {}: missing 'old_string'", i + 1));
+        };
+        let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
+            return Err(format!("edit {}: missing 'new_string'", i + 1));
+        };
+        let (old_string, new_string) = line_endings_of_file(&content, old_string, new_string);
+        let count = content.matches(&*old_string).count();
+        if count == 0 {
+            return Err(format!("edit {}: old_string not found", i + 1));
+        }
+        if count > 1 {
+            return Err(format!(
+                "edit {}: old_string not unique ({count} matches)",
+                i + 1
+            ));
+        }
+        content = content.replacen(&*old_string, &new_string, 1);
+    }
+    Ok(content)
+}
+
 async fn edit(
     args: &serde_json::Value,
     root: &Path,
@@ -849,7 +833,7 @@ async fn edit(
     };
     let read_path = real.clone();
     let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;
-    let mut content = match read {
+    let content = match read {
         Ok(Ok(bytes)) => match String::from_utf8(bytes) {
             Ok(c) => c,
             Err(_) => return format!("ERROR: {shown}: stream did not contain valid UTF-8"),
@@ -861,26 +845,10 @@ async fn edit(
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };
 
-    for (i, e) in edits.iter().enumerate() {
-        let Some(old_string) = e.get("old_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: {shown}: edit {}: missing 'old_string'", i + 1);
-        };
-        let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: {shown}: edit {}: missing 'new_string'", i + 1);
-        };
-        let (old_string, new_string) = line_endings_of_file(&content, old_string, new_string);
-        let count = content.matches(&*old_string).count();
-        if count == 0 {
-            return format!("ERROR: {shown}: edit {}: old_string not found", i + 1);
-        }
-        if count > 1 {
-            return format!(
-                "ERROR: {shown}: edit {}: old_string not unique ({count} matches)",
-                i + 1
-            );
-        }
-        content = content.replacen(&*old_string, &new_string, 1);
-    }
+    let content = match apply_edits(&content, edits) {
+        Ok(c) => c,
+        Err(e) => return format!("ERROR: {shown}: {e}"),
+    };
 
     let written = tokio::task::spawn_blocking(move || nofollow::write(&real, content.as_bytes()));
     match written.await {
@@ -2292,8 +2260,10 @@ mod tests {
         assert_eq!(d, "-    1 | foo\n+    1 | bar");
     }
 
+    /// A batch renders as one diff of the file before and after all its edits,
+    /// with no per-edit headers.
     #[test]
-    fn edit_diff_multi_hunk_is_numbered_and_multiline() {
+    fn edit_diff_merges_a_batch_into_one_numbered_diff() {
         let d = render_edit_diff(
             &[
                 json!({"old_string": "a\nb", "new_string": "A"}),
@@ -2303,7 +2273,7 @@ mod tests {
         );
         assert_eq!(
             d,
-            "@@ edit 1/2 @@\n-    1 | a\n-    2 | b\n+    1 | A\n     2 | c\n@@ edit 2/2 @@\n     1 | A\n-    2 | c\n+    2 | C\n+    3 | D"
+            "-    1 | a\n-    2 | b\n-    3 | c\n+    1 | A\n+    2 | C\n+    3 | D"
         );
     }
 
@@ -2319,9 +2289,10 @@ mod tests {
         );
     }
 
-    /// Two edits far apart in one call: each hunk carries its own file context
-    /// and nothing in between, and the second is numbered against the state the
-    /// first left behind (edit 1 adds a line, so `eight` is renumbered 8 -> 9).
+    /// Two edits far apart in one call: one diff of the final file, split by a
+    /// gap. Deleted lines keep their old number and the rest take the final
+    /// one, so `eight` (old line 8) becomes `EIGHT` on line 9 after the
+    /// insertion above it.
     #[test]
     fn edit_diff_numbers_later_edits_against_earlier_ones() {
         let d = render_edit_diff(
@@ -2331,28 +2302,69 @@ mod tests {
             ],
             "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
         );
+        assert_eq!(d, SPREAD_EDITS_DIFF);
+    }
+
+    const SPREAD_EDITS_DIFF: &str = concat!(
+        "     1 | one\n",
+        "-    2 | two\n",
+        "+    2 | TWO\n",
+        "+    3 | TWO.5\n",
+        "     4 | three\n",
+        "     5 | four\n",
+        "      ...\n",
+        "     7 | six\n",
+        "     8 | seven\n",
+        "-    8 | eight\n",
+        "+    9 | EIGHT\n",
+        "    10 | nine",
+    );
+
+    /// The edits array need not follow file order: the diff is still listed
+    /// top to bottom with ascending line numbers.
+    #[test]
+    fn edit_diff_lists_out_of_order_edits_in_file_order() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+                json!({"old_string": "two", "new_string": "TWO"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
         assert_eq!(
             d,
             concat!(
-                "@@ edit 1/2 @@\n",
                 "     1 | one\n",
                 "-    2 | two\n",
                 "+    2 | TWO\n",
-                "+    3 | TWO.5\n",
-                "     4 | three\n",
-                "     5 | four\n",
-                "@@ edit 2/2 @@\n",
-                "     7 | six\n",
-                "     8 | seven\n",
-                "-    9 | eight\n",
-                "+    9 | EIGHT\n",
-                "    10 | nine",
+                "     3 | three\n",
+                "     4 | four\n",
+                "      ...\n",
+                "     6 | six\n",
+                "     7 | seven\n",
+                "-    8 | eight\n",
+                "+    8 | EIGHT\n",
+                "     9 | nine",
             )
         );
     }
 
-    /// A later edit may target text an earlier one inserted, since both run
-    /// against the same `working` copy that `edit()` mutates in order.
+    /// An insertion listed after an edit further down still shifts that edit's
+    /// final line numbers, exactly as when the edits come in file order.
+    #[test]
+    fn edit_diff_shifts_an_earlier_listed_edit_below_a_later_insertion() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+                json!({"old_string": "two", "new_string": "TWO\nTWO.5"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
+        assert_eq!(d, SPREAD_EDITS_DIFF);
+    }
+
+    /// A later edit may target text an earlier one inserted, as `edit()`
+    /// applies them in order; the diff shows only the net change.
     #[test]
     fn edit_diff_lets_a_later_edit_target_inserted_text() {
         let d = render_edit_diff(
@@ -2364,19 +2376,7 @@ mod tests {
         );
         assert_eq!(
             d,
-            concat!(
-                "@@ edit 1/2 @@\n",
-                "     1 | a\n",
-                "     2 | b\n",
-                "+    3 | BETA\n",
-                "     4 | c\n",
-                "@@ edit 2/2 @@\n",
-                "     1 | a\n",
-                "     2 | b\n",
-                "-    3 | BETA\n",
-                "+    3 | GAMMA\n",
-                "     4 | c",
-            )
+            "     1 | a\n     2 | b\n+    3 | GAMMA\n     4 | c"
         );
     }
 

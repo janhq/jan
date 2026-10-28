@@ -1017,14 +1017,13 @@ fn transcript_edit_with_diff() {
         "e1",
         "Applied 1 edit(s) to src/geometry.rs",
         false,
-        // The edit tool's own shape: numbered rows, one header per edit.
+        // The edit tool's own shape: numbered rows, distant hunks split by a gap.
         Some(concat!(
-            "@@ edit 1/2 @@\n",
             "     8 | use std::fmt;\n",
             "-    9 | fn area(w: u32, h: u32) -> u32 {\n",
             "+    9 | fn area(w: u64, h: u64) -> u64 {\n",
             "    10 |     w * h\n",
-            "@@ edit 2/2 @@\n",
+            "      ...\n",
             "-  112 |     let cells: u32 = area(4, 4);\n",
             "+  112 |     let cells: u64 = area(4, 4);",
         )),
