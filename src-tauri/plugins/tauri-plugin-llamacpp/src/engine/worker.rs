@@ -174,6 +174,20 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .any(|m| line_lower.contains(m))
 }
 
+/// Whether a worker log line says auto-fit found no plan that fits this
+/// device. llama.cpp then loads with the unfitted parameters anyway, so the load
+/// that follows fails with an allocation error that does not name the cause.
+///
+/// Only the "cannot fit even in system memory" reason counts: the others
+/// fit.cpp gives (an explicit n_gpu_layers or tensor split, a split mode it does
+/// not handle) are fit declining to run, not a model that is too big. The
+/// second phrase is the older wording the issue (jan-internal#487) quotes.
+/// Neither is a runtime fault, so `classify_fault` ignores them.
+pub fn is_fit_failure_line(line_lower: &str) -> bool {
+    (line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model"))
+        || line_lower.contains("common_fit_params: failed to allocate a plan")
+}
+
 /// Turns worker stderr lines into faults, one call per line.
 ///
 /// Metal reports a failed command buffer as two lines: a status line that
@@ -251,6 +265,9 @@ const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
 
 /// The last few stderr lines, shared between the drain task and the handle.
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
+
+/// The last fit-failure line the worker printed, until a load consumes it.
+type FitFailure = Arc<Mutex<Option<String>>>;
 
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
@@ -521,6 +538,7 @@ pub struct WorkerHandle {
     pub devices: Option<Vec<DeviceIdentity>>,
     child: Child,
     stderr_tail: StderrTail,
+    fit_failure: FitFailure,
     /// The task filling `stderr_tail`; it ends when the worker's stderr closes.
     stderr_drain: Option<tokio::task::JoinHandle<()>>,
     /// Declared after `child` so it is dropped after it: the graceful stop must
@@ -595,6 +613,13 @@ impl WorkerHandle {
     /// None while still running, otherwise the exit status.
     pub fn exited(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
+    }
+
+    /// The fit-failure line printed since the last call, if any. Taken rather
+    /// than read, so a load clears it on the way in and then only ever sees its
+    /// own: a stale note would blame the next, unrelated failure on fit.
+    pub fn take_fit_failure(&self) -> Option<String> {
+        self.fit_failure.lock().ok().and_then(|mut f| f.take())
     }
 
     /// None while still running, otherwise how it ended and what it last said.
@@ -681,9 +706,11 @@ pub async fn spawn(
     // Drained on its own task: a full stderr pipe would otherwise block the
     // worker mid-generation, which is a hang with no error message.
     let stderr_tail = StderrTail::default();
+    let fit_failure = FitFailure::default();
     let mut stderr_drain = None;
     if let Some(stderr) = child.stderr.take() {
         let tail = stderr_tail.clone();
+        let fit_note = fit_failure.clone();
         stderr_drain = Some(tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             let mut reader = FaultReader::default();
@@ -714,6 +741,11 @@ pub async fn spawn(
                 let Ok(Some(line)) = next else { break };
                 log::debug!("jan-llama-worker: {line}");
                 remember_stderr_line(&tail, &line);
+                if is_fit_failure_line(&line.to_lowercase()) {
+                    if let Ok(mut note) = fit_note.lock() {
+                        *note = Some(line.trim().to_string());
+                    }
+                }
                 for (fault, text) in reader.feed(&line) {
                     report(fault, text);
                 }
@@ -782,6 +814,7 @@ pub async fn spawn(
         devices: hs.devices,
         child,
         stderr_tail,
+        fit_failure,
         stderr_drain,
         #[cfg(windows)]
         _job: job,
@@ -875,6 +908,31 @@ pub(crate) mod tests {
             classify_fault("common_fit_params: failed to allocate a plan"),
             None
         );
+    }
+
+    // The b11669 wording (common/fit.cpp) when even system memory cannot hold
+    // the model at fit_ctx, and the older wording the issue quotes.
+    #[test]
+    fn recognises_fit_finding_no_plan() {
+        for line in [
+            "common_fit_params: failed to fit params to free device memory: was unable to fit model into system memory by reducing context, abort",
+            "common_fit_params: failed to allocate a plan",
+        ] {
+            assert!(is_fit_failure_line(&line.to_lowercase()), "{line:?}");
+        }
+    }
+
+    // fit declining to run (the user pinned the layers) is not a model that is
+    // too big, and must not be reported as one.
+    #[test]
+    fn fit_declining_to_run_is_not_a_fit_failure() {
+        for line in [
+            "common_fit_params: failed to fit params to free device memory: n_gpu_layers already set by user to 99, abort",
+            "common_fit_params: successfully fit params to free device memory",
+            "alloc_tensor_range: failed to allocate cuda0 buffer of size 2491323904",
+        ] {
+            assert!(!is_fit_failure_line(&line.to_lowercase()), "{line:?}");
+        }
     }
 
     #[test]

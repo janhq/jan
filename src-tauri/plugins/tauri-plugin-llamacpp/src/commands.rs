@@ -94,6 +94,35 @@ enum WorkerFate {
 const EXIT_GRACE: Duration = Duration::from_millis(500);
 const EXIT_POLL: Duration = Duration::from_millis(50);
 
+/// How long a failed load waits for the worker's fit-failure line. fit prints
+/// it before the load starts, but stderr is drained on its own task, so it can
+/// still be in the pipe when the HTTP answer arrives.
+const FIT_NOTE_WAIT: Duration = Duration::from_millis(100);
+
+/// The fit-failure line the worker on `port` printed since the last call.
+async fn take_fit_failure(state: &LlamacppState, port: u16) -> Option<String> {
+    let guard = state.engine.lock().await;
+    guard
+        .as_ref()
+        .filter(|h| h.port == port)
+        .and_then(|h| h.take_fit_failure())
+}
+
+/// Rewords a failed load whose cause was fit finding no plan. Without this the
+/// user sees the allocation error that followed, which reads like a context
+/// they could lower, when fit already lowered it as far as `fit_ctx` allows.
+async fn with_fit_cause(state: &LlamacppState, port: u16, err: LlamacppError) -> LlamacppError {
+    let mut note = take_fit_failure(state, port).await;
+    if note.is_none() {
+        tokio::time::sleep(FIT_NOTE_WAIT).await;
+        note = take_fit_failure(state, port).await;
+    }
+    match note {
+        Some(line) => LlamacppError::model_does_not_fit(&line, err.details.as_deref().unwrap_or("")),
+        None => err,
+    }
+}
+
 /// Checks the process, which is the one thing that tells the two causes of an
 /// unreachable worker apart: a crash, or something between Jan and 127.0.0.1.
 ///
@@ -464,6 +493,8 @@ async fn post_load<R: Runtime>(
     }
 
     let state: State<Arc<LlamacppState>> = app_handle.state();
+    // Drop a note left by an earlier load, so only this attempt's counts.
+    let _ = take_fit_failure(&state, port).await;
     let client = http_client().await;
     let url = format!("http://127.0.0.1:{}/models/load", port);
     let resp = client
@@ -491,10 +522,8 @@ async fn post_load<R: Runtime>(
         let body = resp.text().await.unwrap_or_default();
         if !body.to_lowercase().contains("already") {
             progress_task.abort();
-            return Err(ServerError::Llamacpp(load_rejection_error(
-                status.as_u16(),
-                &body,
-            )));
+            let err = load_rejection_error(status.as_u16(), &body);
+            return Err(ServerError::Llamacpp(with_fit_cause(&state, port, err).await));
         }
     }
 
@@ -520,7 +549,12 @@ async fn post_load<R: Runtime>(
         ))),
     };
     progress_task.abort();
-    result
+    match result {
+        Err(ServerError::Llamacpp(err)) => {
+            Err(ServerError::Llamacpp(with_fit_cause(&state, port, err).await))
+        }
+        other => other,
+    }
 }
 
 #[derive(Debug, PartialEq)]

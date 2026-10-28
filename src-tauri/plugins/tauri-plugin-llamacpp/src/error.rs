@@ -12,6 +12,10 @@ pub enum ErrorCode {
 
     // --- Memory Errors ---
     OutOfMemory,
+    /// Auto-fit found no layer/context split that fits this device's memory,
+    /// so the load could only fail. Distinct from `OutOfMemory`: lowering the
+    /// context will not help, because fit already tried that.
+    ModelDoesNotFit,
 
     // --- Engine Process Errors ---
     /// The worker process exited on its own: a crash, or something killed it.
@@ -57,6 +61,22 @@ impl LlamacppError {
     /// reason is a failed load rather than a crashed process, and `details`
     /// keeps llama.cpp's own words so the UI can show them next to the
     /// localized advice instead of an HTTP status line.
+    /// A failed load after auto-fit said it found no plan. Whatever the engine
+    /// then reported (an allocation error, a generic failure) is a consequence,
+    /// kept in `details` beside fit's own line.
+    pub fn model_does_not_fit(fit_line: &str, output: &str) -> Self {
+        let details = if output.trim().is_empty() {
+            fit_line.to_string()
+        } else {
+            format!("{fit_line}; {output}")
+        };
+        Self::new(
+            ErrorCode::ModelDoesNotFit,
+            "The model does not fit on this device.".into(),
+            Some(details),
+        )
+    }
+
     pub fn from_load_failure(output: &str) -> Self {
         Self::classify(output).unwrap_or_else(|| {
             Self::new(
@@ -273,6 +293,7 @@ mod tests {
             (ErrorCode::UnsupportedCpu, "UNSUPPORTED_CPU"),
             (ErrorCode::GpuDriverTooOld, "GPU_DRIVER_TOO_OLD"),
             (ErrorCode::OutOfMemory, "OUT_OF_MEMORY"),
+            (ErrorCode::ModelDoesNotFit, "MODEL_DOES_NOT_FIT"),
             (ErrorCode::EngineStopped, "ENGINE_STOPPED"),
             (ErrorCode::EngineUnreachable, "ENGINE_UNREACHABLE"),
             (ErrorCode::InvalidArgument, "INVALID_ARGUMENT"),
@@ -405,6 +426,23 @@ mod tests {
             classify("something else entirely went wrong").code,
             ErrorCode::ModelLoadFailed
         ));
+    }
+
+    #[test]
+    fn a_load_fit_could_not_plan_is_reported_as_not_fitting() {
+        let fit = "common_fit_params: failed to allocate a plan";
+        let err = LlamacppError::model_does_not_fit(fit, "failed to load model");
+        let json: serde_json::Value = serde_json::to_value(&err).unwrap();
+
+        assert_eq!(json["code"], "MODEL_DOES_NOT_FIT");
+        assert_eq!(
+            json["details"],
+            "common_fit_params: failed to allocate a plan; failed to load model"
+        );
+        assert_eq!(
+            LlamacppError::model_does_not_fit(fit, "  ").details.as_deref(),
+            Some(fit)
+        );
     }
 
     #[test]
