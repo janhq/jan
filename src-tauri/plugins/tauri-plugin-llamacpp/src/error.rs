@@ -57,10 +57,6 @@ impl LlamacppError {
         }
     }
 
-    /// Classifies engine output from a failed model load. An unrecognized
-    /// reason is a failed load rather than a crashed process, and `details`
-    /// keeps llama.cpp's own words so the UI can show them next to the
-    /// localized advice instead of an HTTP status line.
     /// A failed load after auto-fit said it found no plan. Whatever the engine
     /// then reported (an allocation error, a generic failure) is a consequence,
     /// kept in `details` beside fit's own line.
@@ -77,6 +73,10 @@ impl LlamacppError {
         )
     }
 
+    /// Classifies engine output from a failed model load. An unrecognized
+    /// reason is a failed load rather than a crashed process, and `details`
+    /// keeps llama.cpp's own words so the UI can show them next to the
+    /// localized advice instead of an HTTP status line.
     pub fn from_load_failure(output: &str) -> Self {
         Self::classify(output).unwrap_or_else(|| {
             Self::new(
