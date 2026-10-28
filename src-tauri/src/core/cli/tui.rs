@@ -1677,11 +1677,12 @@ impl ToolGroup {
     }
 
     /// The bullet of a row that lists its calls as a tree (`Explored`, `Ran N
-    /// commands`): running while open with a call in flight, red when any call
-    /// failed, the background accent while a command runs on detached, else how
-    /// the group ended.
+    /// commands`): running while a call is in flight (a background notice can
+    /// commit the group before its result lands), red when any call failed, the
+    /// background accent while a command runs on detached, else how the group
+    /// ended.
     fn tree_state(&self, state: GroupRow) -> ToolState {
-        if state == GroupRow::Open && self.is_running() {
+        if state != GroupRow::Aborted && self.is_running() {
             ToolState::Running
         } else if failed_calls(&self.calls) > 0 {
             ToolState::Failure
@@ -1742,10 +1743,11 @@ impl ToolGroup {
             .unwrap_or_default()
     }
 
-    /// The group's row: present tense with a running bullet only while it is
-    /// open with a call in flight, otherwise a resolved bullet plus past-tense
-    /// summary. The label is stored untruncated; `Row::Tool` clamps it to the
-    /// current draw width.
+    /// The group's row: present tense with a running bullet while a call is in
+    /// flight, otherwise a resolved bullet plus past-tense summary. Closing the
+    /// group does not resolve its calls: a notice or a child's row can commit it
+    /// mid-call, and the late result rewrites it then. The label is stored
+    /// untruncated; `Row::Tool` clamps it to the current draw width.
     fn row(&self, state: GroupRow) -> Row {
         if self.explored() {
             return RowKind::Explored {
@@ -1772,7 +1774,7 @@ impl ToolGroup {
             }
             .into();
         }
-        if state == GroupRow::Open && self.is_running() {
+        if state != GroupRow::Aborted && self.is_running() {
             return RowKind::Tool {
                 state: ToolState::Running,
                 label: self.activity(),
@@ -3164,6 +3166,7 @@ impl Transcript {
     /// Mark every edit/write row still awaiting a result as interrupted: the
     /// stream that would have resolved it is over.
     fn interrupt_pending_rows(&mut self) {
+        self.interrupt_committed_groups();
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.rows.len() {
                 self.rows[row.idx] = match &self.rows[row.idx].kind {
@@ -3178,6 +3181,18 @@ impl Transcript {
                     },
                 }
                 .into();
+            }
+        }
+    }
+
+    /// A group committed mid-call reads as running until its result lands;
+    /// once no result can land (the stream is over, or the call is history
+    /// being replayed), it reads as interrupted instead.
+    fn interrupt_committed_groups(&mut self) {
+        for group in self.groups.iter_mut().filter(|g| g.is_running()) {
+            if group.idx < self.rows.len() {
+                group.flat = std::cell::OnceCell::new();
+                self.rows[group.idx] = group.row(GroupRow::Aborted);
             }
         }
     }
@@ -21973,8 +21988,10 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
     }
     // A replay is rendering, not work: the calls it re-renders must not stage
     // files for the next checkpoint, leave a call awaiting a diff, or read as
-    // todo activity in the turn that follows.
+    // todo activity in the turn that follows. A logged call with no logged
+    // result will never get one.
     app.transcript.finalize_tool_group();
+    app.transcript.interrupt_committed_groups();
     app.turn_touched.clear();
     app.transcript.diff_paths.clear();
     app.todo_call_this_turn = false;
@@ -29287,6 +29304,86 @@ mod tests {
         ));
     }
 
+    /// A child's compaction note lands while the parent's command still runs,
+    /// committing the open group: the committed row has no result to report,
+    /// so it must read as running, not as a finished `Ran`, until it lands.
+    #[test]
+    fn a_mid_call_notice_leaves_the_command_reading_running() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+        app.apply(StreamEvent::Subagent {
+            run_id: "sub-1".into(),
+            name: "general-4".into(),
+            event: Box::new(StreamEvent::Compaction {
+                phase: CompactionPhase::Finished,
+                reason: CompactionReason::Preflight,
+                messages: Some(9),
+            }),
+        });
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("general-4: compacted 9 messages"), "{rows}");
+        assert!(rows.contains("Running cargo test"), "{rows}");
+        assert!(!rows.contains("Ran cargo test"), "{rows}");
+        let group = app.transcript.groups.last().expect("committed group");
+        assert!(matches!(
+            group.row(super::GroupRow::Closed).kind,
+            RowKind::Tool { state: ToolState::Running, .. }
+        ));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Ran cargo test"), "{rows}");
+    }
+
+    /// The same for a run of commands committed mid-call: the `Shell` header
+    /// and the command without a result stay running.
+    #[test]
+    fn a_mid_call_notice_leaves_a_shell_run_reading_running() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        for (id, cmd) in [("c1", "make"), ("c2", "cargo test")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "ok\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Notice {
+            text: "Monitor mon-1: 'build' matched".into(),
+        });
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Running cargo test"), "{rows}");
+        assert!(!rows.contains("Ran cargo test"), "{rows}");
+        let group = app.transcript.groups.last().expect("committed group");
+        assert!(matches!(
+            group.row(super::GroupRow::Closed).kind,
+            RowKind::Shells { state: ToolState::Running, .. }
+        ));
+        // The run ends without the result: nothing is running any more.
+        app.abort_tool_rows();
+        let idx = app.transcript.groups.last().expect("committed group").idx;
+        assert!(matches!(
+            app.transcript.rows[idx].kind,
+            RowKind::Shells { state: ToolState::Interrupted, aborted: true, .. }
+        ));
+    }
+
     /// Output streamed after a call's result landed (a backgrounded command
     /// printing on) has no live view to feed, so it must not re-create one.
     #[test]
@@ -36022,18 +36119,24 @@ mod tests {
         });
         assert!(app.transcript.tool_group.is_some());
         // Prose begins streaming in the same turn (no intervening Step): the
-        // group's status must land in the timeline as resolved right away.
+        // group lands in the timeline right away, still running until its
+        // result does, then resolved.
         app.apply(StreamEvent::Token {
             text: "Here".into(),
         });
         assert!(app.transcript.tool_group.is_none());
-        let row = app
-            .transcript
-            .rows
-            .iter()
-            .rev()
-            .find(|r| row_text(r).contains("Ran grep"))
-            .unwrap();
+        let idx = app.transcript.groups[0].idx;
+        let row = &app.transcript.rows[idx];
+        assert!(row_text(row).contains("Running grep"), "{}", row_text(row));
+        assert_eq!(tool_state(row), Some(ToolState::Running), "{}", row_text(row));
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "src/a.rs:1:foo".into(),
+            is_error: false,
+            diff: None,
+        });
+        let row = &app.transcript.rows[idx];
+        assert!(row_text(row).contains("Ran grep"), "{}", row_text(row));
         assert_eq!(tool_state(row), Some(ToolState::Success), "{}", row_text(row));
         // Later tokens must not re-trigger finalize work.
         app.apply(StreamEvent::Token {
