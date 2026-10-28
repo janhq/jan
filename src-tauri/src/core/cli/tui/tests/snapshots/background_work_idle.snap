@@ -1,0 +1,64 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 164
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                |
+|────────────────────────────────────────────────────────────────────────────────|
+|                                                                                |
+|                                                                                |
+|                                                                                |
+|                                                                                |
+|                                                                                |
+|────────────────────────────────────────────────────────────────────────────────|
+| 1 monitor watching · /monitors to view or stop                                 |
+|  └ mon-3 CI done #9487 · 25 polls                                              |
+| 2 subagents running · 1 queued · /agents to view or stop                       |
+|  └ kv-review · Read mod_3.rs                                                   |
+|    perf-scan · starting…                                                       |
+|    docs-writer · Queued (1)                                                    |
+| 2 background shells running · /shells to view · /stop to close                 |
+|  └ npm run dev · 1m 05s                                                        |
+|    tail -f app.log · 7s                                                        |
+|>   Type here to chat with agent                                                |
+|                                                                                |
+|📂 /snapshot/repo                                                               |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#98C379
+ 8 0..22 fg=#808080
+ 8 22..31 fg=#56B6C2
+ 8 31..47 fg=#808080
+ 9 0..4 fg=DarkGray
+ 9 4..23 fg=#56B6C2 mod=BOLD
+ 9 23..34 fg=#808080
+10 0..34 fg=#808080
+10 34..41 fg=#56B6C2
+10 41..57 fg=#808080
+11 0..4 fg=DarkGray
+11 4..13 fg=#56B6C2 mod=BOLD
+11 13..29 fg=#808080
+12 0..4 fg=DarkGray
+12 4..13 fg=#56B6C2 mod=BOLD
+12 13..25 fg=#808080
+13 0..4 fg=DarkGray
+13 4..15 fg=#56B6C2 mod=BOLD
+13 15..28 fg=#808080
+14 0..31 fg=#808080
+14 31..38 fg=#56B6C2
+14 38..49 fg=#808080
+14 49..54 fg=#56B6C2
+14 54..63 fg=#808080
+15 0..4 fg=DarkGray
+15 4..15 fg=#56B6C2 mod=BOLD
+15 15..24 fg=#808080
+16 0..4 fg=DarkGray
+16 4..19 fg=#56B6C2 mod=BOLD
+16 19..24 fg=#808080
+17 0..2 fg=#56B6C2 mod=BOLD
+17 2..3 mod=REVERSED
+17 4..32 mod=DIM | ITALIC
+19 0..1 fg=#808080
+19 2..17 fg=#808080

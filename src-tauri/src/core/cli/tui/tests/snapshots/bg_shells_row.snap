@@ -1,12 +1,18 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 164
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                |
 |────────────────────────────────────────────────────────────────────────────────|
 |                                                                                |
+|                                                                                |
+|                                                                                |
+|                                                                                |
 |────────────────────────────────────────────────────────────────────────────────|
 | 2 background shells running · /shells to view · /stop to close                 |
+|  └ npm run dev · 1m 05s                                                        |
+|    tail -f app.log · 7s                                                        |
 |>   Type here to chat with agent                                                |
 |                                                                                |
 |📂 /snapshot/repo                                                               |
@@ -15,13 +21,19 @@ expression: render_snapshot(buf)
  0 3..14 mod=BOLD
  0 14..29 fg=#E5C07B
  0 55..64 fg=#98C379
- 4 0..31 fg=#808080
- 4 31..38 fg=#56B6C2
- 4 38..49 fg=#808080
- 4 49..54 fg=#56B6C2
- 4 54..63 fg=#808080
- 5 0..2 fg=#56B6C2 mod=BOLD
- 5 2..3 mod=REVERSED
- 5 4..32 mod=DIM | ITALIC
- 7 0..1 fg=#808080
- 7 2..17 fg=#808080
+ 7 0..31 fg=#808080
+ 7 31..38 fg=#56B6C2
+ 7 38..49 fg=#808080
+ 7 49..54 fg=#56B6C2
+ 7 54..63 fg=#808080
+ 8 0..4 fg=DarkGray
+ 8 4..15 fg=#56B6C2 mod=BOLD
+ 8 15..24 fg=#808080
+ 9 0..4 fg=DarkGray
+ 9 4..19 fg=#56B6C2 mod=BOLD
+ 9 19..24 fg=#808080
+10 0..2 fg=#56B6C2 mod=BOLD
+10 2..3 mod=REVERSED
+10 4..32 mod=DIM | ITALIC
+12 0..1 fg=#808080
+12 2..17 fg=#808080

@@ -30,7 +30,7 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    input_box_height, subagent_rows, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    background_rows, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -401,7 +401,7 @@ fn todo_panel_single_phase() {
 }
 
 #[test]
-fn todo_panel_multi_phase_beside_the_monitors() {
+fn todo_panel_multi_phase() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![
@@ -411,24 +411,22 @@ fn todo_panel_multi_phase_beside_the_monitors() {
         ),
         ("frontend", vec![("ui", Open)]),
     ]);
-    app.monitors = vec![monitor("mon-1", "build", "grep -m1 OK build.log", 12)];
     assert_buffer(
-        "todo_panel_split_with_monitors",
+        "todo_panel_multi_phase",
         &frame(&mut app, DARK, 100, 18),
     );
 }
 
 #[test]
-fn todo_panel_stacks_above_the_monitors_when_narrow() {
+fn todo_panel_narrow() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![(
         "",
         vec![("routes", InProgress), ("auth", Open)],
     )]);
-    app.monitors = vec![monitor("mon-1", "build", "grep -m1 OK build.log", 12)];
     assert_buffer(
-        "todo_panel_stacked_narrow",
+        "todo_panel_narrow",
         &frame(&mut app, DARK, 60, 18),
     );
 }
@@ -511,12 +509,15 @@ fn monitors_inspector_empty() {
 }
 
 #[test]
-fn monitor_dock_overflow_points_at_monitors() {
-    let monitors: Vec<MonitorSnapshot> = (1..=4)
+fn monitor_group_overflow_counts_the_rest() {
+    let mut app = snapshot_app();
+    app.monitors = (1..=4)
         .map(|n| monitor(&format!("mon-{n}"), "build", "grep OK build.log", n))
         .collect();
-    let buf = pinned(DARK, || lines_buffer(monitors_column(&monitors, 40, 3), 40));
-    assert_buffer("monitor_dock_overflow", &buf);
+    let buf = pinned(DARK, || {
+        lines_buffer(background_rows(&mut app, 60, 8, Instant::now()), 60)
+    });
+    assert_buffer("monitor_group_overflow", &buf);
 }
 
 #[test]
@@ -571,12 +572,12 @@ fn transcript_backgrounded_shell_command() {
     assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
 }
 
-/// The idle dock with two background shells: the dim row over the input.
+/// The idle dock with two background shells: their group over the input.
 #[test]
 fn bg_shells_row_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
-    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 13));
 }
 
 /// Two subagents running and one queued after the main turn ended: the block
@@ -595,7 +596,7 @@ fn idle_fan_out(now: Instant) -> TestApp {
 }
 
 fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
-    pinned(DARK, || lines_buffer(subagent_rows(app, w, now).expect("shown"), w))
+    pinned(DARK, || lines_buffer(background_rows(app, w, 8, now), w))
 }
 
 #[test]
@@ -612,8 +613,8 @@ fn subagents_running_after_the_turn() {
     assert_buffer("subagents_idle_one_finished", &subagent_rows_buffer(&mut app, 80, now));
 }
 
-/// Where the block sits: under the rule, over the shells row and the input,
-/// with the dock no longer listing the same children.
+/// Where the block sits: under the rule, subagents over shells, over the
+/// input.
 #[test]
 fn subagents_and_shells_over_the_idle_input() {
     let mut app = idle_fan_out(Instant::now());
@@ -622,6 +623,35 @@ fn subagents_and_shells_over_the_idle_input() {
     }
     app.bg_shells = vec![shell(4242, "npm run dev", 65)];
     assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
+}
+
+/// Monitors, subagents and shells at once: one block, one grammar, on the
+/// same rows whether the turn is idle or running, and trimmed child rows
+/// first on a narrow terminal.
+#[test]
+fn background_work_block_idle_running_and_narrow() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.monitors = vec![monitor("mon-3", "CI done #9487", "gh pr checks 9487 --json bucket", 25)];
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    let idle = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_idle", &idle);
+    start_turn(&mut app, "keep going");
+    let running = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_running", &running);
+    // The rows from the rule down to the input, which holds the working row
+    // in one state and the placeholder in the other.
+    let block = |buf: &Buffer| -> Vec<String> {
+        let text = render_snapshot(buf);
+        let rows: Vec<&str> = text.lines().take(20).collect();
+        let rule = rows.iter().rposition(|r| r.starts_with("|\u{2500}")).expect("rule");
+        rows[rule..rows.len() - 3].iter().map(|r| r.to_string()).collect()
+    };
+    assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
+    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 14));
 }
 
 /// Background pings, each as the row its kind calls for.

@@ -469,7 +469,7 @@ enum Status {
     /// subagents, monitors and background shells, so the loop never waits on
     /// one still running -- it parks only to deliver a notice already queued,
     /// and resumes at once. Work that outlives the turn shows over the idle
-    /// input instead (`subagent_rows`, in either state, and `bg_shells_row`).
+    /// input instead, in either state (`background_rows`).
     Running,
 }
 
@@ -496,7 +496,7 @@ const SYSTEM_GLYPH: &str = "•";
 const WARN_GLYPH: &str = "⚠";
 const ERROR_GLYPH: &str = "■";
 
-/// Gutter glyph for a monitor: the dock, `/monitors` and a match row share it.
+/// Gutter glyph for a monitor: `/monitors` and a match row share it.
 const MONITOR_GLYPH: &str = "◔";
 
 /// What a background ping's headline reports, so each kind gets the row its
@@ -22494,17 +22494,21 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
     }
 }
 
-/// Rows the status panel may take, given the frame it has to share. The
-/// conversation is the point of the screen, so the panel is what gives way: it
-/// gets what is left after the header, rule, input, dock and
-/// `MIN_TRANSCRIPT_ROWS`, capped at `PANEL_MAX_ROWS`, and disappears entirely
-/// on a frame with nothing to spare.
-fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+/// Rows the live state over the input may take, given the frame it has to
+/// share. The conversation is the point of the screen, so this is what gives
+/// way: what is left after the header, rule, input, dock and
+/// `MIN_TRANSCRIPT_ROWS`, and nothing on a frame with nothing to spare. The
+/// background-work block takes it uncapped, since each of its groups is
+/// already bounded (`BACKGROUND_GROUP_ROWS`).
+fn spare_rows(frame_h: u16, input_h: u16) -> usize {
     // header, transcript air, rule, input, dock
     let fixed = 1 + TRANSCRIPT_BOTTOM_PAD + 1 + input_h + 1;
-    frame_h
-        .saturating_sub(fixed + MIN_TRANSCRIPT_ROWS)
-        .min(PANEL_MAX_ROWS as u16) as usize
+    frame_h.saturating_sub(fixed + MIN_TRANSCRIPT_ROWS) as usize
+}
+
+/// Rows the plan may take: `spare_rows`, capped at `PANEL_MAX_ROWS`.
+fn panel_budget(frame_h: u16, input_h: u16) -> usize {
+    spare_rows(frame_h, input_h).min(PANEL_MAX_ROWS)
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
@@ -22524,25 +22528,27 @@ fn draw(f: &mut Frame, app: &mut App) {
     // pulling content into view a row per frame.
     autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
-    let shells_line = bg_shells_row(app, f.area().width);
-    let shells_h = u16::from(shells_line.is_some());
-    let mut agent_lines = subagent_rows(app, f.area().width, Instant::now()).unwrap_or_default();
-    // The block shows in every state now, so it takes the same clamp the dock
-    // does: a short terminal drops child rows from the tail, then the head,
-    // before the conversation loses a row.
-    agent_lines.truncate(panel_budget(f.area().height, input_h + shells_h));
-    let shells_h = shells_h + agent_lines.len() as u16;
-    // Live state -- the plan and the monitors -- is docked, not woven
-    // into the transcript: it describes *now*, and it is what the eye wants
-    // right where the typing happens. Built at most once per frame, since its
-    // own height sizes the layout, and clamped to what the frame can spare so a
-    // short terminal loses panel rows rather than conversation.
+    // Live state -- the work running in the background and the plan -- is
+    // docked, not woven into the transcript: it describes *now*, and it is
+    // what the eye wants right where the typing happens. Built at most once per
+    // frame, since its own height sizes the layout, and clamped to what the
+    // frame can spare so a short terminal loses these rows rather than
+    // conversation. The background work is the thing moving, so it is sized
+    // first and the plan takes what is left.
+    let width = f.area().width.max(1);
+    let background = background_rows(
+        app,
+        width,
+        spare_rows(f.area().height, input_h),
+        Instant::now(),
+    );
+    let background_h = background.len() as u16;
     let panel_lines = app
         .picker
         .is_none()
         .then(|| {
-            let width = f.area().width.max(1);
-            status_panel(app, width, panel_budget(f.area().height, input_h + shells_h))
+            let rows = panel_budget(f.area().height, input_h + background_h);
+            todo_column(&app.todos, width, if app.todos_expired() { 0 } else { rows })
         })
         .filter(|l| !l.is_empty());
     let panel_h = panel_lines.as_ref().map_or(0, |l| l.len() as u16);
@@ -22556,23 +22562,21 @@ fn draw(f: &mut Frame, app: &mut App) {
     // the panel (rather than the body's own bottom border) so the live state
     // reads as part of the input dock, above the line, instead of stranded
     // between the rule and the prompt. A zero-length slot collapses away, so a
-    // session with neither todos nor subagents renders exactly as before.
+    // session with no plan and nothing in the background renders exactly as
+    // before.
     let raw = Layout::vertical([
         Constraint::Length(1),                     // 0: header
         Constraint::Min(1),                        // 1: body
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
         Constraint::Length(panel_h),               // 3: status panel
         Constraint::Length(1),                     // 4: separator rule
-        Constraint::Length(shells_h),              // 5: subagents, background shells
+        Constraint::Length(background_h),          // 5: background work
         Constraint::Length(input_h),               // 6: input
         Constraint::Length(1),                     // 7: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[3];
     let chunks = [raw[0], raw[1], raw[6], raw[7]];
-    // The subagents first, then the shells: both are work outliving the turn,
-    // stacked in one slot over the input.
-    let background: Vec<Line<'static>> = agent_lines.into_iter().chain(shells_line).collect();
     if !background.is_empty() {
         f.render_widget(Paragraph::new(background), raw[5]);
     }
@@ -24177,32 +24181,9 @@ const MIN_TRANSCRIPT_ROWS: u16 = 4;
 /// appears only on some frames is a layout that jumps.
 const TRANSCRIPT_BOTTOM_PAD: u16 = 1;
 
-/// Narrowest terminal that still gets two side-by-side columns. Under it they
-/// stack, plan first, because a 30-column half fits neither a task nor an agent.
-const PANEL_SPLIT_MIN_WIDTH: u16 = 76;
-
-/// Cells between the two columns, including the divider glyph.
-const PANEL_GUTTER: u16 = 3;
-
 /// A trailing run of identical calls this long reads as a spin, not progress, so
 /// the collapsed `×N` count becomes a `⚠ looping ×N` warning.
 const STUCK_REPEAT_THRESHOLD: usize = 4;
-
-/// A dock column's overflow row: `+N more · /command`, naming the inspector
-/// that lists the rest, or the compact `+N more {fallback}` when the (often
-/// half-width) column cannot fit the command.
-fn overflow_row(hidden: usize, command: &str, fallback: &str, max: usize) -> Line<'static> {
-    let dim = Style::new().fg(theme::muted());
-    let lead = format!("  +{hidden} more · ");
-    if lead.chars().count() + command.chars().count() <= max {
-        Line::from(vec![
-            Span::styled(lead, dim),
-            Span::styled(command.to_string(), Style::new().fg(theme::accent())),
-        ])
-    } else {
-        Line::from(Span::styled(format!("  +{hidden} more {fallback}"), dim))
-    }
-}
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
 /// column of them stays the same width as the numbers grow.
@@ -24596,173 +24577,8 @@ fn todo_column(
     lines
 }
 
-/// Pad `lines` to exactly `rows` entries so a column keeps its shape when the
-/// other one is taller.
-fn pad_column(mut lines: Vec<Line<'static>>, rows: usize) -> Vec<Line<'static>> {
-    lines.resize_with(rows, || Line::raw(""));
-    lines
-}
-
-/// Set two columns side by side, `left` padded out to `left_w` and separated by
-/// a dim divider. Callers pass columns already clamped to their own widths.
-fn join_columns(
-    left: Vec<Line<'static>>,
-    right: Vec<Line<'static>>,
-    left_w: u16,
-) -> Vec<Line<'static>> {
-    let rows = left.len().max(right.len());
-    let (left, right) = (pad_column(left, rows), pad_column(right, rows));
-    left.into_iter()
-        .zip(right)
-        .map(|(l, r)| {
-            let pad = (left_w as usize).saturating_sub(spans_width(&l.spans));
-            let mut spans = l.spans;
-            spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(" │ ", Style::new().fg(theme::muted())));
-            spans.extend(r.spans);
-            Line::from(spans)
-        })
-        .collect()
-}
-
-/// The docked status panel: the plan on the left, the live monitors on the
-/// right, both bounded by `rows`.
-///
-/// Neither belongs in the transcript -- they describe *now*, not what was said
-/// -- so they sit above the input where the eye already is, and they use the
-/// width instead of stacking. When the terminal is too narrow to split, the
-/// columns stack (plan first, since it is the shorter of the two); when it is
-/// too short, `rows` shrinks and each column elides its own tail. Subagents are
-/// not docked here: they are listed over the input in every state
-/// (`subagent_rows`).
-fn status_panel(app: &App, width: u16, rows: usize) -> Vec<Line<'static>> {
-    if rows == 0 {
-        return Vec::new();
-    }
-    let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    match (has_todos, !app.monitors.is_empty()) {
-        (false, false) => Vec::new(),
-        (true, false) => todo_column(&app.todos, width, rows),
-        (false, true) => monitors_column(&app.monitors, width, rows),
-        (true, true) if width < PANEL_SPLIT_MIN_WIDTH => {
-            // Stacked: the plan keeps its head line plus whatever is left after
-            // the monitors, which are the thing actually moving.
-            let monitors = monitors_column(&app.monitors, width, rows.saturating_sub(1));
-            let mut out = todo_column(&app.todos, width, rows - monitors.len());
-            out.extend(monitors);
-            out
-        }
-        (true, true) => {
-            let left_w = (width.saturating_sub(PANEL_GUTTER)) / 2;
-            let right_w = width.saturating_sub(left_w + PANEL_GUTTER);
-            let left = todo_column(&app.todos, left_w, rows);
-            let right = monitors_column(&app.monitors, right_w, rows);
-            join_columns(left, right, left_w)
-        }
-    }
-}
-
-/// The session's active monitors, as a column: one line per monitor (id, name,
-/// polls so far), plus its script when the budget stretches to a second row
-/// each.
-fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec<Line<'static>> {
-    if monitors.is_empty() || rows == 0 {
-        return Vec::new();
-    }
-    let dim = Style::new().fg(theme::muted());
-    let max = width.max(8) as usize;
-    let mut out = vec![Line::from(vec![
-        Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
-        Span::styled(
-            pluralize("monitor", monitors.len()),
-            Style::new().fg(theme::accent()).bold(),
-        ),
-    ])];
-    let body = rows - 1;
-    let (shown, hidden) = if monitors.len() <= body {
-        (monitors.len(), 0)
-    } else {
-        (
-            body.saturating_sub(1),
-            monitors.len() - body.saturating_sub(1),
-        )
-    };
-    // The overflow row takes its line first, or a script line would push it
-    // past `rows` and the hidden monitors would go uncounted.
-    let spare = (body - shown).saturating_sub(usize::from(hidden > 0));
-    let detail = spare.checked_div(shown).is_some_and(|n| n >= 1);
-    for monitor in monitors.iter().take(shown) {
-        let stats = format!("  {}", pluralize("poll", monitor.polls as usize));
-        let label = format!("{} {}", monitor.monitor_id, monitor.name);
-        out.push(Line::from(vec![
-            Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
-            Span::styled(
-                truncate(&label, max.saturating_sub(2 + stats.len())),
-                Style::new().fg(theme::accent()),
-            ),
-            Span::styled(stats, dim),
-        ]));
-        if detail {
-            out.push(Line::from(vec![
-                Span::raw("   "),
-                Span::styled(truncate(&monitor.script, max.saturating_sub(3)), dim),
-            ]));
-        }
-    }
-    if hidden > 0 {
-        out.push(overflow_row(hidden, "/monitors", "watching", max));
-    }
-    out.truncate(rows);
-    out
-}
-
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
-
-/// `1 background shell running \u{b7} /shells to view \u{b7} /stop to close`: the dim
-/// row over the input while the agent has commands running in the background,
-/// cut to `width` (the commands go before the words, so a narrow terminal
-/// still says how many are running).
-///
-/// `None` with nothing backgrounded, behind a picker, and while the working
-/// row shows: a turn's input dock is one row tall by rule (see
-/// `working_row`), so a shell backgrounded mid-turn must not make it jump.
-/// The working row carries the count then instead (`bg_shells_count`).
-fn bg_shells_row(app: &App, width: u16) -> Option<Line<'static>> {
-    let n = app.bg_shells.len();
-    if n == 0 || app.picker.is_some() || working_row_shown(app) {
-        return None;
-    }
-    let dim = Style::new().fg(theme::muted());
-    let accent = Style::new().fg(theme::accent());
-    let spans = vec![
-        Span::styled(format!(" {} running \u{b7} ", pluralize("background shell", n)), dim),
-        Span::styled("/shells", accent),
-        Span::styled(" to view \u{b7} ", dim),
-        Span::styled("/stop", accent),
-        Span::styled(" to close", dim),
-    ];
-    Some(Line::from(clip_spans(spans, width as usize)))
-}
-
-/// Whether the input row is the running turn's shimmering working row.
-fn working_row_shown(app: &App) -> bool {
-    app.status == Status::Running
-        && app.input.is_empty()
-        && app.message_queue.is_empty()
-        && app.picker.is_none()
-        && app.compacting.is_none()
-        && app.run_compacting.is_none()
-        && app.retrying.is_none()
-}
-
-/// The working row's ` \u{b7} 1 background shell` while background shells
-/// run, the compact stand-in for `bg_shells_row`, which yields to the working
-/// row.
-fn bg_shells_count(app: &App) -> Option<String> {
-    let n = app.bg_shells.len();
-    (n > 0).then(|| format!(" \u{b7} {}", pluralize("background shell", n)))
-}
 
 /// Rows the message box occupies: 1 content row for the idle/working
 /// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
@@ -24901,12 +24717,6 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     let pad = (longest + 1).saturating_sub(word.chars().count() + 1);
     spans.push(Span::raw(" ".repeat(pad)));
     spans.splice(0..0, empty_prompt_prefix());
-    if let Some(count) = bg_shells_count(app) {
-        let room = (width as usize).saturating_sub(spans_width(&spans));
-        if count.chars().count() <= room {
-            spans.push(Span::styled(count, Style::new().fg(theme::muted())));
-        }
-    }
     push_fitting_hint(&mut spans, &WORKING_HINTS, width);
     Line::from(spans)
 }
@@ -24931,98 +24741,220 @@ fn push_fitting_hint(spans: &mut Vec<Span<'static>>, hints: &[&'static str], wid
     }
 }
 
-/// Most agent rows `subagent_rows` hangs under its head row, so a wide
-/// fan-out cannot push the transcript off a short terminal. Past it the last
-/// row counts the rest and points at `/agents`, as the dock's overflow does.
-const SUBAGENT_DETAIL_ROWS: usize = 3;
+/// Most child rows one group of the background-work block hangs under its
+/// head, so a wide fan-out cannot push the transcript off a short terminal.
+/// Past it the last row counts the rest; the head already names the command
+/// that lists them, so the count does not repeat it.
+const BACKGROUND_GROUP_ROWS: usize = 3;
 
-/// The session's subagents, over the input: a head row worded like
-/// `bg_shells_row` (`2 subagents running . 1 queued . /agents to view or
-/// stop`), then one tree row per child with its status, and for a running one
-/// its elapsed time and current activity.
-///
-/// Drawn in this one slot whether the main turn runs or not: a finishing child
-/// pings the session, which flips it to Running and back, and children that
-/// followed the status hopped between the dock and the input on every ping.
-/// Built from the live panels, which `SubagentEnd` removes, so a finished
-/// child drops out on its own. A child that has not started shows its place
-/// in line instead. The head names `/agents` because that is where a child is
-/// viewed and stopped in either state: Esc mid-turn cancels the turn and every
-/// child with it, and idle it only clears the input. Every row is clipped to
-/// `width`. `None` with no children, and behind a picker, which hides the
-/// block rather than moving it.
-fn subagent_rows(app: &mut App, width: u16, now: Instant) -> Option<Vec<Line<'static>>> {
-    if app.picker.is_some() || app.subagents.is_empty() {
-        return None;
-    }
-    let max = width as usize;
+/// A head row of the background-work block: counts by state, the noun riding
+/// on the first (`2 subagents running . 1 queued`), then the commands that
+/// view or stop the group, each with its words.
+struct WorkHead {
+    noun: &'static str,
+    counts: Vec<(&'static str, usize)>,
+    hints: &'static [(&'static str, &'static str)],
+}
+
+/// One child row of the background-work block: a name, then the facts worth
+/// a glance (a status word when it is not plain running, its elapsed time or
+/// polls, what it is doing), each already styled.
+struct WorkChild {
+    name: String,
+    facts: Vec<Vec<Span<'static>>>,
+}
+
+/// A group of the background-work block: monitors, subagents or shells.
+struct WorkGroup {
+    head: WorkHead,
+    children: Vec<WorkChild>,
+}
+
+/// The one place the background-work block is formatted, so monitors,
+/// subagents and shells cannot drift apart: a head row indented one column,
+/// with its counts and hints muted, its commands in the accent and `.` between
+/// every part; then up to `cap` children on the transcript's own tree prefix
+/// (`child_prefix`), name in the accent and facts muted behind the same `.`,
+/// and a `+N more` row for the rest. Hints are dropped whole, words first,
+/// rather than cut mid-word, and every row is clipped to `max`.
+fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let accent = Style::new().fg(theme::accent());
-    let statuses: Vec<AgentStatus> = app.subagents.iter().map(|p| p.status(None)).collect();
+    let sep = || Span::styled(" \u{b7} ", dim);
+    let parts: Vec<String> = group
+        .head
+        .counts
+        .iter()
+        .filter(|(_, n)| *n > 0)
+        .enumerate()
+        .map(|(i, (word, n))| match i {
+            0 => format!("{} {word}", pluralize(group.head.noun, *n)),
+            _ => format!("{n} {word}"),
+        })
+        .collect();
+    let counts = format!(" {}", parts.join(" \u{b7} "));
+    let room = max.saturating_sub(counts.chars().count());
+    let hints = |words: bool| {
+        let mut spans = Vec::new();
+        for (command, tail) in group.head.hints {
+            spans.push(sep());
+            spans.push(Span::styled(*command, accent));
+            if words {
+                spans.push(Span::styled(*tail, dim));
+            }
+        }
+        spans
+    };
+    let mut head = vec![Span::styled(counts, dim)];
+    if let Some(tail) = [hints(true), hints(false)]
+        .into_iter()
+        .find(|h| spans_width(h) <= room)
+    {
+        head.extend(tail);
+    }
+    let mut out = vec![Line::from(clip_spans(head, max))];
+    let total = group.children.len();
+    let shown = if total > cap { cap.saturating_sub(1) } else { total };
+    for (i, child) in group.children.iter().take(shown).enumerate() {
+        let mut spans = vec![
+            child_prefix(i == 0),
+            Span::styled(child.name.clone(), accent.bold()),
+        ];
+        for fact in child.facts.iter().filter(|f| !f.is_empty()) {
+            spans.push(sep());
+            spans.extend(fact.iter().cloned());
+        }
+        out.push(Line::from(clip_spans(spans, max)));
+    }
+    // At `cap` 0 the group is its head alone, which already carries the count.
+    if shown < total && cap > 0 {
+        let more = vec![
+            child_prefix(shown == 0),
+            Span::styled(format!("+{} more", total - shown), dim),
+        ];
+        out.push(Line::from(clip_spans(more, max)));
+    }
+    out
+}
+
+/// The session's monitors as a group: `mon-1 build . 12 polls` each. The
+/// script stays in `/monitors`; here it was a line of noise per monitor.
+fn monitor_group(monitors: &[MonitorSnapshot]) -> Option<WorkGroup> {
+    let dim = Style::new().fg(theme::muted());
+    (!monitors.is_empty()).then(|| WorkGroup {
+        head: WorkHead {
+            noun: "monitor",
+            counts: vec![("watching", monitors.len())],
+            hints: &[("/monitors", " to view or stop")],
+        },
+        children: monitors
+            .iter()
+            .map(|m| WorkChild {
+                name: format!("{} {}", m.monitor_id, single_line(&m.name)),
+                facts: vec![vec![Span::styled(pluralize("poll", m.polls as usize), dim)]],
+            })
+            .collect(),
+    })
+}
+
+/// The session's subagents as a group. A running child shows its elapsed
+/// time and what it is doing; the head already says it is running, so only
+/// a child that is not (queued, waiting on a phase) carries a status word.
+/// The head names `/agents` because that is where a child is viewed and
+/// stopped in either state: Esc mid-turn cancels the turn and every child
+/// with it, and idle it only clears the input.
+fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGroup> {
+    if panels.is_empty() {
+        return None;
+    }
+    let dim = Style::new().fg(theme::muted());
+    let statuses: Vec<AgentStatus> = panels.iter().map(|p| p.status(None)).collect();
     let count = |want: fn(&AgentStatus) -> bool| statuses.iter().filter(|s| want(s)).count();
-    let counts = [
+    let counts = vec![
         ("running", count(|s| *s == AgentStatus::Running)),
         ("queued", count(|s| matches!(s, AgentStatus::Queued(_)))),
         ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_)))),
     ];
-    // Worded like `bg_shells_row` beneath it: the noun rides on the first
-    // count, so `2 subagents running`, then `1 queued`.
-    let parts: Vec<String> = counts
-        .into_iter()
-        .filter(|(_, n)| *n > 0)
-        .enumerate()
-        .map(|(i, (word, n))| match i {
-            0 => format!("{} {word}", pluralize("subagent", n)),
-            _ => format!("{n} {word}"),
+    let children = panels
+        .iter_mut()
+        .zip(statuses)
+        .map(|(panel, status)| {
+            let facts = if status == AgentStatus::Running {
+                let elapsed = panel.started.map(|started| {
+                    let secs = now.saturating_duration_since(started).as_secs();
+                    vec![Span::styled(format_elapsed(secs), dim)]
+                });
+                elapsed.into_iter().chain([agent_activity(panel, "")]).collect()
+            } else {
+                vec![status.spans(usize::MAX)]
+            };
+            WorkChild {
+                name: panel.name.clone(),
+                facts,
+            }
         })
         .collect();
-    // The pointer is dropped whole, longest form first, rather than cut
-    // mid-word; the counts are what a narrow terminal keeps.
-    let counts = format!(" {}", parts.join(" \u{b7} "));
-    let room = max.saturating_sub(counts.chars().count());
-    let mut head = vec![Span::styled(counts, dim)];
-    let pointer = " \u{b7} /agents".chars().count();
-    if let Some(tail) = [" to view or stop", ""]
-        .into_iter()
-        .find(|tail| pointer + tail.len() <= room)
-    {
-        head.push(Span::styled(" \u{b7} ", dim));
-        head.push(Span::styled("/agents", accent));
-        head.push(Span::styled(tail, dim));
+    Some(WorkGroup {
+        head: WorkHead {
+            noun: "subagent",
+            counts,
+            hints: &[("/agents", " to view or stop")],
+        },
+        children,
+    })
+}
+
+/// The commands the agent left running in the background, as a group:
+/// `npm run dev . 1m 05s` each.
+fn shell_group(shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo]) -> Option<WorkGroup> {
+    let dim = Style::new().fg(theme::muted());
+    (!shells.is_empty()).then(|| WorkGroup {
+        head: WorkHead {
+            noun: "background shell",
+            counts: vec![("running", shells.len())],
+            hints: &[("/shells", " to view"), ("/stop", " to close")],
+        },
+        children: shells
+            .iter()
+            .map(|shell| WorkChild {
+                name: single_line(&shell.command),
+                facts: vec![vec![Span::styled(format_elapsed(shell.elapsed_secs), dim)]],
+            })
+            .collect(),
+    })
+}
+
+/// Everything working in the background -- monitors, subagents, shells -- as
+/// one block over the input, at most `rows` tall.
+///
+/// Drawn in this one slot whether the main turn runs or not: a finishing child
+/// or a matching monitor pings the session, which flips it to Running and
+/// back, and work that followed the status hopped between the dock and the
+/// input on every ping. A short frame gives up child rows first, a row per
+/// group at a time, then whole groups from the bottom up, keeping each head as
+/// long as it can. Built from the live sets, so finished work drops out on its
+/// own. Empty behind a picker, which hides the block rather than moving it.
+fn background_rows(app: &mut App, width: u16, rows: usize, now: Instant) -> Vec<Line<'static>> {
+    if app.picker.is_some() {
+        return Vec::new();
     }
-    let mut rows = vec![Line::from(clip_spans(head, max))];
-    let total = app.subagents.len();
-    let shown = if total > SUBAGENT_DETAIL_ROWS {
-        SUBAGENT_DETAIL_ROWS - 1
-    } else {
-        total
-    };
-    for (i, (panel, status)) in app.subagents.iter_mut().zip(statuses).take(shown).enumerate() {
-        let mut spans = vec![
-            Span::styled(if i == 0 { TREE_FIRST } else { TREE_REST }, dim),
-            agent_label(&panel.name),
-            Span::raw("  "),
-        ];
-        let running = status == AgentStatus::Running;
-        spans.extend(status.spans(max));
-        if running {
-            if let Some(started) = panel.started {
-                let secs = now.saturating_duration_since(started).as_secs();
-                spans.push(Span::styled(format!("  {}", format_elapsed(secs)), dim));
-            }
-            let activity = agent_activity(panel, "");
-            if !activity.is_empty() {
-                spans.push(Span::raw("  "));
-                spans.extend(activity);
-            }
+    let groups: Vec<WorkGroup> = [
+        monitor_group(&app.monitors),
+        subagent_group(&mut app.subagents, now),
+        shell_group(&app.bg_shells),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let max = width as usize;
+    for cap in (0..=BACKGROUND_GROUP_ROWS).rev() {
+        let out: Vec<Line<'static>> =
+            groups.iter().flat_map(|g| work_group_lines(g, cap, max)).collect();
+        if out.len() <= rows || cap == 0 {
+            return out.into_iter().take(rows).collect();
         }
-        rows.push(Line::from(clip_spans(spans, max)));
     }
-    if shown < total {
-        let more = overflow_row(total - shown, "/agents", "running", max);
-        rows.push(Line::from(clip_spans(more.spans, max)));
-    }
-    Some(rows)
+    Vec::new()
 }
 
 fn input_box(app: &App, width: u16) -> Paragraph<'static> {
@@ -25233,8 +25165,8 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         // the other states.
         Status::Idle => vec![Span::raw(" ")],
     };
-    // A pending queue leads the row in every state. Background shells have
-    // their own row over the input (`bg_shells_row`).
+    // A pending queue leads the row in every state. Background shells are
+    // listed over the input (`background_rows`).
     let queue_count = app.message_queue.len();
     if queue_count > 0 {
         spans.insert(
@@ -25301,8 +25233,8 @@ mod tests {
         SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_picker_items, background_shell_picker_items, bg_shells_row,
-        cache_summary_lines, monitor_picker_items, monitors_column, open_agents_picker,
+        agent_picker_items, background_shell_picker_items,
+        cache_summary_lines, monitor_picker_items, open_agents_picker,
         open_background_shells_picker, open_monitors_picker, NoticeKind, retry_wait_label, RetryWait, SubagentPanel, CHILD_RESULT_MAX,
         CHILD_ROWS_MAX,
     };
@@ -25465,7 +25397,7 @@ mod tests {
         let call = "bash {\"command\":\"ls -la\"}";
         let mut app = test_app();
         app.subagents = vec![panel_with_calls("kv-review", vec![call; 5])];
-        let lines = super::subagent_rows(&mut app, 80, Instant::now()).expect("shown");
+        let lines = super::background_rows(&mut app, 80, 8, Instant::now());
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("⚠ looping ×5"), "a spin reads as a loop: {text}");
         // The single call is not duplicated across five rows.
@@ -26108,15 +26040,6 @@ mod tests {
         ));
     }
 
-    /// An overflow row too narrow for its command falls back to the plain
-    /// count rather than spilling `/agents` off the edge.
-    #[test]
-    fn overflow_row_drops_the_command_when_too_narrow() {
-        let row = |max| line_text(&super::overflow_row(3, "/agents", "running", max));
-        assert_eq!(row(80), "  +3 more \u{b7} /agents");
-        assert_eq!(row(12), "  +3 more running");
-    }
-
     #[test]
     fn shells_commands_are_registered() {
         assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/shells"));
@@ -26397,10 +26320,10 @@ mod tests {
         assert!(items[0].value.is_empty());
     }
 
-    /// The shells row sits over an idle input, but a running turn keeps its
-    /// one-row dock and folds the count into the working row instead.
+    /// Background shells are listed over the input in both states, on the
+    /// same rows, and the working row no longer carries a second count.
     #[test]
-    fn bg_shells_row_yields_to_the_working_row() {
+    fn background_shells_hold_their_rows_across_a_turn() {
         let mut app = test_app();
         app.bg_shells.push(tauri_plugin_agent_tools::tools::proc::ShellInfo {
             pid: 1,
@@ -26408,16 +26331,23 @@ mod tests {
             elapsed_secs: 1,
             backgrounded: true,
         });
-        let idle = render_rows(&mut app, 80, 12);
-        assert!(
-            idle.iter().any(|r| r.contains("1 background shell running · /shells to view · /stop to close")),
-            "{idle:#?}"
+        let shell_rows = |app: &mut App| -> Vec<(usize, String)> {
+            render_rows(app, 80, 14)
+                .into_iter()
+                .enumerate()
+                .filter(|(_, r)| r.contains("shell") || r.contains("sleep 9000"))
+                .collect()
+        };
+        let idle = shell_rows(&mut app);
+        assert_eq!(
+            idle.iter().map(|(_, r)| r.trim_end()).collect::<Vec<_>>(),
+            vec![
+                " 1 background shell running \u{b7} /shells to view \u{b7} /stop to close",
+                "  \u{2514} sleep 9000 \u{b7} 1s",
+            ]
         );
         app.submit_user("go".into());
-        let running = render_rows(&mut app, 80, 12);
-        assert!(!running.iter().any(|r| r.contains("background shell running")), "{running:#?}");
-        assert!(running.iter().any(|r| r.contains("\u{b7} 1 background shell")), "{running:#?}");
-        assert!(bg_shells_row(&app, 80).is_none());
+        assert_eq!(shell_rows(&mut app), idle, "same rows while the turn runs");
     }
 
     fn steering_request(
@@ -44264,11 +44194,10 @@ mod tests {
         }
     }
 
-    /// Running monitors are live state like the fan-out, so they dock in the
-    /// status panel: one line each with the name and poll count, the script
-    /// beneath when the budget allows, beside any live agents.
+    /// Running monitors join the background-work block, one row each with
+    /// the poll count; the script stays in `/monitors`.
     #[test]
-    fn running_monitors_dock_in_the_status_panel() {
+    fn running_monitors_list_in_the_background_block() {
         let mut app = test_app();
         app.submit_user("go".into());
         app.apply(StreamEvent::Monitors {
@@ -44278,18 +44207,17 @@ mod tests {
             ],
         });
         let text = render_rows(&mut app, 100, 24).join("\n");
-        assert!(text.contains("2 monitors"), "{text}");
-        assert!(text.contains("mon-1 build"), "{text}");
-        assert!(text.contains("3 polls"), "{text}");
-        assert!(text.contains("grep OK build.log"), "{text}");
-        assert!(text.contains("mon-2 tests"), "{text}");
+        assert!(text.contains(" 2 monitors watching \u{b7} /monitors to view or stop"), "{text}");
+        assert!(text.contains("\u{2514} mon-1 build \u{b7} 3 polls"), "{text}");
+        assert!(text.contains("    mon-2 tests \u{b7} 1 poll"), "{text}");
+        assert!(!text.contains("grep OK build.log"), "no script: {text}");
 
         start_subagent(&mut app, "r0", "alpha");
         let text = render_rows(&mut app, 100, 24).join("\n");
         assert!(text.contains("1 subagent running"), "{text}");
         assert!(text.contains("2 monitors"), "{text}");
 
-        // The set is replaced wholesale; an emptied set drops the column.
+        // The set is replaced wholesale; an emptied set drops the group.
         app.apply(StreamEvent::Monitors {
             monitors: Vec::new(),
         });
@@ -44361,10 +44289,9 @@ mod tests {
             .collect()
     }
 
-    /// `subagent_rows` as plain text, at a fixed `now`.
+    /// `background_rows` as plain text, at a fixed `now`, with room to spare.
     fn subagent_text(app: &mut App, width: u16, now: Instant) -> Vec<String> {
-        super::subagent_rows(app, width, now)
-            .unwrap_or_default()
+        super::background_rows(app, width, 20, now)
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect()
@@ -44392,9 +44319,9 @@ mod tests {
             subagent_text(&mut app, 100, now),
             vec![
                 " 2 subagents running \u{b7} 1 queued \u{b7} /agents to view or stop",
-                "  \u{2514} kv-review  Running  1m 05s  Read src/kv.rs",
-                "    perf-scan  Running  12s  starting\u{2026}",
-                "    docs-writer  Queued (1)",
+                "  \u{2514} kv-review \u{b7} 1m 05s \u{b7} Read src/kv.rs",
+                "    perf-scan \u{b7} 12s \u{b7} starting\u{2026}",
+                "    docs-writer \u{b7} Queued (1)",
             ]
         );
         let screen = render_rows(&mut app, 100, 30).join("\n");
@@ -44442,7 +44369,7 @@ mod tests {
         assert_eq!(block(&render_rows(&mut app, 80, 11)), 1, "trimmed to its head");
         assert_eq!(block(&render_rows(&mut app, 80, 9)), 0, "gone before the conversation");
         open_agents_picker(&mut app);
-        assert!(super::subagent_rows(&mut app, 80, Instant::now()).is_none());
+        assert!(subagent_text(&mut app, 80, Instant::now()).is_empty());
     }
 
     /// A finished child drops out of the block, and the block goes with the
@@ -44466,11 +44393,12 @@ mod tests {
             name: "perf-scan".into(),
             error: None,
         });
-        assert!(super::subagent_rows(&mut app, 100, now).is_none());
+        assert!(subagent_text(&mut app, 100, now).is_empty());
     }
 
-    /// Past `SUBAGENT_DETAIL_ROWS` the last row counts the rest and points at
-    /// `/agents`, and a later phase reads as waiting, not running.
+    /// Past `BACKGROUND_GROUP_ROWS` the last row counts the rest, without
+    /// repeating the `/agents` the head already names, and a later phase reads
+    /// as waiting, not running.
     #[test]
     fn a_wide_fan_out_overflows_to_agents() {
         let mut app = test_app();
@@ -44483,24 +44411,106 @@ mod tests {
             ..SubagentPanel::new(String::new(), "collector".into(), String::new())
         });
         let rows = subagent_text(&mut app, 100, Instant::now());
-        assert_eq!(rows.len(), 1 + super::SUBAGENT_DETAIL_ROWS, "{rows:#?}");
+        assert_eq!(rows.len(), 1 + super::BACKGROUND_GROUP_ROWS, "{rows:#?}");
         assert!(rows[0].contains("4 subagents running \u{b7} 1 waiting"), "{rows:#?}");
-        assert_eq!(rows[3], "  +3 more \u{b7} /agents", "{rows:#?}");
+        assert_eq!(rows[3], "    +3 more", "{rows:#?}");
+        assert_eq!(rows.join("\n").matches("/agents").count(), 1, "{rows:#?}");
     }
 
     /// No row outgrows the terminal, however narrow.
     #[test]
-    fn subagent_rows_fit_any_width() {
+    fn background_rows_fit_any_width() {
         let mut app = test_app();
         let now = Instant::now();
         start_subagent(&mut app, "r0", "a-subagent-with-a-long-name");
         app.subagents[0].started = Some(now - Duration::from_secs(3_700));
         app.subagents[0].calls.push("Read a/very/long/path/to/some/file.rs".into());
         for width in 1..120 {
-            for line in super::subagent_rows(&mut app, width, now).expect("shown") {
+            for line in super::background_rows(&mut app, width, 8, now) {
                 assert!(spans_width(&line.spans) <= width as usize, "{width}: {line:?}");
             }
         }
+    }
+
+    /// Every group of the background-work block reads alike: its head one
+    /// column in, with `.` between parts and the commands in the accent; its
+    /// children on the transcript's tree prefix, name in the accent and facts
+    /// behind the same `.`. This is what keeps a new group from growing its
+    /// own look.
+    #[test]
+    fn every_background_group_shares_one_grammar() {
+        let mut app = test_app();
+        let now = Instant::now();
+        app.monitors = vec![
+            monitor("mon-1", "build", "grep OK build.log", 3),
+            monitor("mon-2", "boot", "curl -sf localhost", 1),
+        ];
+        start_subagent(&mut app, "r0", "kv-review");
+        start_subagent(&mut app, "r1", "perf-scan");
+        app.subagents[0].started = Some(now - Duration::from_secs(5));
+        for (pid, command) in [(1, "npm run dev"), (2, "tail -f app.log")] {
+            app.bg_shells.push(tauri_plugin_agent_tools::tools::proc::ShellInfo {
+                pid,
+                command: command.into(),
+                elapsed_secs: 65,
+                backgrounded: true,
+            });
+        }
+        let lines = super::background_rows(&mut app, 100, 20, now);
+        assert_eq!(lines.len(), 9, "three heads, two children each: {lines:#?}");
+        let accent = Some(super::theme::accent());
+        let muted = Some(super::theme::muted());
+        for group in lines.chunks(3) {
+            let head = &group[0];
+            assert!(line_text(head).starts_with(' ') && !line_text(head).starts_with("  "), "{head:?}");
+            for span in &head.spans {
+                let command = span.content.starts_with('/');
+                let sep = span.content.as_ref() == " \u{b7} ";
+                assert_eq!(span.style.fg, if command { accent } else { muted }, "{span:?}");
+                assert!(!span.content.contains('\u{b7}') || sep || command, "{span:?}");
+            }
+            for (i, child) in group[1..].iter().enumerate() {
+                assert_eq!(child.spans[0], super::child_prefix(i == 0), "{child:?}");
+                assert_eq!(child.spans[1].style, Style::new().fg(super::theme::accent()).bold());
+                let facts = &child.spans[2..];
+                assert!(!facts.is_empty(), "{child:?}");
+                assert_eq!(facts[0].content.as_ref(), " \u{b7} ", "{child:?}");
+                assert_eq!(facts[0].style.fg, muted, "{child:?}");
+            }
+        }
+        let heads: Vec<String> = lines.chunks(3).map(|g| line_text(&g[0])).collect();
+        assert!(heads[0].starts_with(" 2 monitors watching \u{b7} /monitors"), "{heads:?}");
+        assert!(heads[1].starts_with(" 2 subagents running \u{b7} /agents"), "{heads:?}");
+        assert!(heads[2].starts_with(" 2 background shells running \u{b7} /shells"), "{heads:?}");
+    }
+
+    /// A short frame gives up child rows first, every group alike, then whole
+    /// groups from the bottom, and a head is the last thing a group loses.
+    #[test]
+    fn a_short_frame_trims_children_before_heads() {
+        let mut app = test_app();
+        let now = Instant::now();
+        app.monitors = vec![monitor("mon-1", "build", "grep OK build.log", 3)];
+        for (i, name) in ["a", "b", "c", "d"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
+        let heads = |app: &mut App, n: usize| {
+            super::background_rows(app, 100, n, now)
+                .iter()
+                .map(line_text)
+                .filter(|r| !r.starts_with("  "))
+                .count()
+        };
+        let at = |app: &mut App, n: usize| super::background_rows(app, 100, n, now).len();
+        assert_eq!(at(&mut app, 20), 2 + 4, "full: 1 monitor, 3 agents and a +1 row");
+        assert_eq!(at(&mut app, 5), 5, "two children a group");
+        assert_eq!(heads(&mut app, 5), 2);
+        assert_eq!(at(&mut app, 4), 4, "one row a group: mon-1, then +4 more");
+        assert_eq!(heads(&mut app, 4), 2);
+        assert_eq!(at(&mut app, 3), 2, "not enough for both: heads only");
+        assert_eq!(at(&mut app, 2), 2, "heads only");
+        assert_eq!(heads(&mut app, 2), 2);
+        assert_eq!(heads(&mut app, 1), 1, "the bottom group goes first");
     }
 
     /// A child that finishes after the turn parked to deliver a ping leaves its
@@ -44905,49 +44915,6 @@ mod tests {
         assert!(!app.todos_expired());
     }
 
-    /// A wide terminal sets the plan and the monitors side by side, each in
-    /// its own half, so the panel spends rows once instead of twice.
-    #[test]
-    fn wide_panel_sets_the_columns_side_by_side() {
-        use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.status = Status::Running;
-        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
-        app.monitors = vec![monitor("mon-1", "build", "grep OK build.log", 3)];
-        let rows = render_rows(&mut app, 120, 24);
-        let head = rows
-            .iter()
-            .find(|r| r.contains("Todos"))
-            .expect("panel head");
-        assert!(
-            head.contains("│") && head.contains("1 monitor"),
-            "both columns share the row: {head:?}"
-        );
-        assert!(
-            head.find("Todos") < head.find("1 monitor"),
-            "plan on the left, monitors on the right: {head:?}"
-        );
-    }
-
-    /// Too narrow to split: the columns stack rather than being squeezed into
-    /// halves too thin to hold a task or an agent name.
-    #[test]
-    fn narrow_panel_stacks_the_columns() {
-        use crate::core::agent::todo::TodoStatus::*;
-        let mut app = test_app();
-        app.status = Status::Running;
-        app.todos = todos_from(vec![("only", vec![("wire routes", InProgress)])]);
-        app.monitors = vec![monitor("mon-1", "build", "grep OK build.log", 3)];
-        let rows = render_rows(&mut app, super::PANEL_SPLIT_MIN_WIDTH - 1, 24);
-        assert!(
-            !rows.iter().any(|r| r.contains("│")),
-            "no divider when stacked: {rows:?}"
-        );
-        let todos = rows.iter().position(|r| r.contains("Todos")).expect("plan");
-        let monitors = rows.iter().position(|r| r.contains("1 monitor")).expect("monitors");
-        assert!(todos < monitors, "plan first when stacked: {rows:?}");
-    }
-
     /// The dock is one unit and the conversation is another:
     /// `TRANSCRIPT_BOTTOM_PAD` keeps the model's closing line off the rule that
     /// separates the transcript from the input.
@@ -45060,8 +45027,8 @@ mod tests {
         assert!(rows.last().unwrap().contains("/tmp/repo"), "{rows:?}");
     }
 
-    /// Many parallel agents cannot push the plan off the screen: the column
-    /// shows what fits and counts the rest.
+    /// Many parallel agents cannot push the conversation off the screen: the
+    /// block shows what fits and counts the rest.
     #[test]
     fn crowded_fan_out_elides_with_a_running_count() {
         let mut app = test_app();
@@ -45071,14 +45038,7 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let shown = rows.iter().filter(|r| r.contains("agent-")).count();
         assert!(shown < 9, "not every agent fits: {rows:?}");
-        // The overflow row counts the hidden agents, in either elision form: the
-        // `/agents` hint when the column is wide enough, the compact "more
-        // running" otherwise.
-        assert!(
-            rows.iter()
-                .any(|r| r.contains("more · /agents") || r.contains("more running")),
-            "the rest are counted: {rows:?}"
-        );
+        assert!(rows.iter().any(|r| r.contains("+7 more")), "the rest are counted: {rows:?}");
     }
 
     #[tokio::test]
