@@ -354,6 +354,9 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(core::filesystem::grants::ReadGrants::with_home(
+            dirs::home_dir(),
+        ))
         .setup(|app| {
             // The agent-tools commands take a data folder from the webview; the
             // sandbox, the mask over settings and keys, and the store all hang
@@ -380,6 +383,9 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            // Load the read grants before the event loop delivers any IPC, so a
+            // read of a path the user picked in an earlier session is allowed.
+            core::filesystem::grants::init(app.handle());
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
