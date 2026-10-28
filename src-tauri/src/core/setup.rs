@@ -392,24 +392,14 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> 
                 button_state: MouseButtonState::Up,
                 ..
             } => {
-                // let's show and focus the main window when the tray is clicked
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                crate::core::system::commands::show_main_window(tray.app_handle());
             }
             _ => {
                 log::debug!("unhandled event {event:?}");
             }
         })
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => {
-                let window = app.get_webview_window("main").unwrap();
-                window.show().unwrap();
-                window.set_focus().unwrap();
-            }
+            "open" => crate::core::system::commands::show_main_window(app),
             "quit" => {
                 app.exit(0);
             }
