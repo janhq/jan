@@ -1050,7 +1050,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         ""
                     };
                     format!(
-                        "Command exceeded {timeout_secs}s and is still running in the \
+                        "{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the \
                          background. Its result will be written to {display} once it \
                          finishes; read that file to collect it (if the output was large \
                          that file keeps a tail and points to the full log).{ping}"
@@ -1072,7 +1072,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         }
                     });
                     format!(
-                        "Command exceeded {timeout_secs}s and is still running in the \
+                        "{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the \
                          background, but a file to capture its output could not be created, \
                          so the output will not be collected."
                     )
@@ -1330,16 +1330,35 @@ const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun 
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
 pub fn bash_result_failed(content: &str) -> bool {
-    content.lines().any(|line| {
-        let l = line.trim();
-        if l == "[terminated by signal]" {
-            return true;
-        }
-        l.strip_prefix("[exit ")
-            .and_then(|r| r.strip_suffix(']'))
-            .and_then(|n| n.parse::<i32>().ok())
-            .is_some_and(|code| code != 0)
-    })
+    content
+        .lines()
+        .any(|line| matches!(exit_marker(line), Some(code) if code != Some(0)))
+}
+
+/// The exit marker [`BashCapture::finish`] writes, read off one line: `Some`
+/// with the code for `[exit N]`, `Some(None)` for a signal, `None` for any
+/// other line. Public so a renderer splits the marker off by the same rule.
+pub fn exit_marker(line: &str) -> Option<Option<i32>> {
+    let l = line.trim();
+    if l == "[terminated by signal]" {
+        return Some(None);
+    }
+    l.strip_prefix("[exit ")
+        .and_then(|r| r.strip_suffix(']'))
+        .and_then(|n| n.parse::<i32>().ok())
+        .map(Some)
+}
+
+/// How the result of a command that outran its timeout starts. Private: callers
+/// ask [`bash_result_backgrounded`], which also rules out real output that
+/// happens to begin with the same words.
+const BACKGROUNDED_PREFIX: &str = "Command exceeded ";
+
+/// True when a shell tool result is the hand-off of a command that outran its
+/// timeout and kept running in the background, rather than its output. Such a
+/// result carries no exit marker: the command has not finished.
+pub fn bash_result_backgrounded(content: &str) -> bool {
+    content.starts_with(BACKGROUNDED_PREFIX) && !content.lines().any(|l| exit_marker(l).is_some())
 }
 
 impl Drop for BashCapture {
@@ -3472,6 +3491,17 @@ mod tests {
         assert!(all.ends_with("late\n") && all.contains("early"), "{all:?}");
         assert_eq!(bytes, all.len() as u64);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hand-off is recognisable as such, while finished output that
+    /// happens to start with the same words is not.
+    #[test]
+    fn only_the_hand_off_reads_as_backgrounded() {
+        assert!(bash_result_backgrounded(&format!(
+            "{BACKGROUNDED_PREFIX}5s and is still running in the background."
+        )));
+        assert!(!bash_result_backgrounded("Command exceeded quota\n[exit 1]"));
+        assert!(!bash_result_backgrounded("ok\n[exit 0]"));
     }
 
     #[tokio::test]

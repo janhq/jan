@@ -1525,6 +1525,35 @@ struct GroupedCall {
     /// What this call explored, when it is a read-only exploration call. A
     /// group made only of these renders as an `Explored` row listing them.
     explore: Option<Explore>,
+    /// When this call was dispatched. Per call, not per group: a group runs its
+    /// calls in parallel, so a later command must not inherit the first's clock.
+    started: Instant,
+}
+
+impl GroupedCall {
+    /// Where this call stands. A command that outran its timeout has a result
+    /// (the hand-off) but is still running detached, so it is neither a success
+    /// nor a failure yet.
+    fn state(&self) -> ToolState {
+        match &self.content {
+            None => ToolState::Running,
+            Some(c) if self.command.is_some() && shell_backgrounded(c) => {
+                ToolState::Backgrounded
+            }
+            Some(_) => ToolState::of(self.is_error),
+        }
+    }
+
+    /// The past-tense label once the call resolved: `Backgrounded <cmd>` for a
+    /// command still running detached, else the call's own finished label.
+    fn settled_label(&self) -> String {
+        match self.command.as_deref() {
+            Some(cmd) if self.state() == ToolState::Backgrounded => {
+                format!("Backgrounded {}", collapse_command(cmd))
+            }
+            _ => self.done.clone(),
+        }
+    }
 }
 
 /// A read-only exploration call, reduced to what its `Explored` child row
@@ -1681,19 +1710,27 @@ impl ToolGroup {
         // `activity()` label: `first_done` ("Ran cargo build") beside the yellow
         // interrupted mark would read as completed. Mirrors the standalone
         // edit/write orphan path (resolve_orphan_tool_rows).
-        let label = if self.nouns.len() <= 1 {
+        // A lone command that detached reads as still running, not as done:
+        // the call returned, but the work it started did not.
+        let backgrounded = self
+            .calls
+            .first()
+            .filter(|c| self.nouns.len() <= 1 && c.state() == ToolState::Backgrounded);
+        let label = if let Some(call) = backgrounded {
+            call.settled_label()
+        } else if self.nouns.len() <= 1 {
             if state == GroupRow::Aborted && self.is_running() {
                 self.activity()
             } else {
                 // A failed command names its exit code, which the folded row
                 // would otherwise only show behind an expand.
-                let code = self
+                let badge = self
                     .calls
                     .first()
                     .filter(|c| c.is_error && c.command.is_some())
-                    .and_then(|c| split_exit_marker(c.content.as_deref()?).1);
-                match code {
-                    Some(code) => format!("{} (exit {code})", self.first_done),
+                    .and_then(|c| exit_badge(split_exit_marker(c.content.as_deref()?).1));
+                match badge {
+                    Some(badge) => format!("{} ({badge})", self.first_done),
                     None => self.first_done.clone(),
                 }
             }
@@ -1701,7 +1738,10 @@ impl ToolGroup {
             group_summary(&self.nouns)
         };
         RowKind::Tool {
-            state: self.outcome(state == GroupRow::Aborted),
+            state: match backgrounded {
+                Some(_) => ToolState::Backgrounded,
+                None => self.outcome(state == GroupRow::Aborted),
+            },
             label,
             reserve: TOOL_ROW_RESERVE,
         }
@@ -1721,6 +1761,9 @@ enum ToolState {
     Failure,
     /// The run ended before the call resolved.
     Interrupted,
+    /// A command that outran its timeout and runs on detached; `/shells`
+    /// shows it.
+    Backgrounded,
 }
 
 impl ToolState {
@@ -1738,6 +1781,7 @@ impl ToolState {
             ToolState::Success => Style::new().fg(theme::success()).bold(),
             ToolState::Failure => Style::new().red().bold(),
             ToolState::Interrupted => Style::new().fg(theme::warning()),
+            ToolState::Backgrounded => Style::new().fg(theme::accent()),
         }
     }
 
@@ -2311,7 +2355,7 @@ impl RowKind {
                 label,
                 *reserve,
                 width,
-                Vec::new(),
+                shells_hint(*state),
             ),
             RowKind::Explored {
                 state,
@@ -2592,6 +2636,13 @@ impl Transcript {
 
     /// Output a running shell call streamed.
     fn output_delta(&mut self, id: String, delta: &str) {
+        // Only a call still awaiting its result has a live view. A backgrounded
+        // command keeps streaming after its hand-off result landed; `/shells`
+        // shows that output, so a buffer here would only be re-created for
+        // nothing to render until the turn settles.
+        if !self.bash_commands.contains_key(&id) {
+            return;
+        }
         // Bounded from the end: a runaway command must not be able to
         // grow the TUI's memory. The tool keeps the authoritative full
         // output (spilling to disk past its own cap) and hands it over
@@ -3210,6 +3261,7 @@ impl Transcript {
             // so the shell rows survive the result clearing `bash_commands`.
             command: self.bash_commands.get(id).cloned(),
             explore: explore_of(name, args),
+            started: Instant::now(),
         };
         let extend = self
             .tool_group
@@ -3358,7 +3410,6 @@ impl Transcript {
         spinner_frame: usize,
         width: u16,
     ) -> Vec<Line<'static>> {
-        let elapsed = group.started.elapsed().as_secs();
         let mut out = Vec::new();
         for call in group.calls.iter().filter(|c| c.command.is_some()) {
             let command = call.command.as_deref().unwrap_or("");
@@ -3369,6 +3420,7 @@ impl Transcript {
                         .live_output
                         .get(&call.id)
                         .map_or("", String::as_str);
+                    let elapsed = call.started.elapsed().as_secs();
                     out.extend(running_shell_lines(
                         command, output, elapsed, spinner_frame, width,
                     ));
@@ -9674,8 +9726,8 @@ const TREE_NESTED: &str = "      ";
 
 /// Columns held back for the live row's elapsed badge. Fixed rather than
 /// measured so the body's wrap points never move as the counter ticks; wide
-/// enough for the four digits a single tool call will not outlive.
-const ELAPSED_RESERVE: usize = 8;
+/// enough for the widest `format_elapsed` badge, ` (59m 59s)`.
+const ELAPSED_RESERVE: usize = 10;
 
 /// Rows one tool label may occupy before it elides. A label is wrapped rather
 /// than cut so a long command stays readable, but a heredoc body would
@@ -10803,13 +10855,9 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let first = |out: &Vec<Line<'static>>| out.is_empty() && !explored;
     for call in &group.calls {
         if show_headers {
-            let state = match call.content {
-                Some(_) => ToolState::of(call.is_error),
-                None => ToolState::Running,
-            };
             out.extend(gutter_lines(
-                wrap_spans_hard(verb_first_spans(&call.done), max),
-                vec![child_prefix(first(&out)), state.bullet()],
+                wrap_spans_hard(verb_first_spans(&call.settled_label()), max),
+                vec![child_prefix(first(&out)), call.state().bullet()],
                 vec![Span::raw(TREE_NESTED)],
             ));
         }
@@ -11087,8 +11135,8 @@ fn trace_done_line() -> Line<'static> {
 /// While in flight the label also carries a brightness sweep (colour only, so
 /// the wrap is the committed row's); the finished row is the plain one.
 fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-    let elapsed = group.started.elapsed().as_secs();
-    let badge = vec![Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray())];
+    let elapsed = format_elapsed(group.started.elapsed().as_secs());
+    let badge = vec![Span::styled(format!(" ({elapsed})"), Style::new().dark_gray())];
     if group.explored() {
         return explored_lines(
             running_bullet(spinner_frame),
@@ -11200,7 +11248,9 @@ fn shell_output_width(width: u16) -> usize {
 /// The running command, live: its header with the elapsed badge, then the newest
 /// `LIVE_OUTPUT_TAIL_LINES` of its output under the tree, behind a count of the
 /// lines that have scrolled past. Rebuilt every frame from the call's live
-/// buffer, so output streams in as the command prints it.
+/// buffer, so output streams in as the command prints it. The buffer is raw:
+/// only the rows shown are sanitized, by the rule the tool's result follows,
+/// so a progress bar shows its last frame and colour codes do not leak in.
 fn running_shell_lines(
     command: &str,
     output: &str,
@@ -11208,7 +11258,11 @@ fn running_shell_lines(
     spinner_frame: usize,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let badge = Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray());
+    use tauri_plugin_agent_tools::tools::handlers::sanitize_output;
+    let badge = Span::styled(
+        format!(" ({})", format_elapsed(elapsed)),
+        Style::new().dark_gray(),
+    );
     let mut out = shell_header_rows(
         running_bullet(spinner_frame),
         "Running",
@@ -11226,29 +11280,71 @@ fn running_shell_lines(
             true,
         ));
     }
-    rows.extend(all[skipped..].iter().map(|l| (truncate(l, max), false)));
+    rows.extend(
+        all[skipped..]
+            .iter()
+            .map(|l| (truncate(&sanitize_output(l), max), false)),
+    );
     out.extend(shell_tree(rows));
     out
 }
 
-/// Split the exec tool's trailing `[exit N]` marker off a command's output,
-/// returning the output without it and the code it carried. The marker is the
-/// header's business (a failure appends its code there); printed under the tree
-/// it would be one more line of output. Output without a final marker (a signal,
-/// a truncation note after it) comes back whole.
-fn split_exit_marker(output: &str) -> (&str, Option<i32>) {
-    let body = output.trim_end();
-    let (head, last) = match body.rfind('\n') {
-        Some(at) => (&body[..at], &body[at + 1..]),
-        None => ("", body),
-    };
-    match last
-        .strip_prefix("[exit ")
-        .and_then(|r| r.strip_suffix(']'))
-        .and_then(|n| n.parse().ok())
-    {
-        Some(code) => (head, Some(code)),
-        None => (output, None),
+/// Split the exec tool's exit marker off a command's output, returning the
+/// output without it and what it carried: `Some(code)` for `[exit N]`, `None`
+/// for `[terminated by signal]`. The marker is the header's business (a failure
+/// appends a badge there); printed under the tree it would be one more line of
+/// output. It is the last line, or the one before a truncation note; output
+/// without one comes back whole.
+fn split_exit_marker(output: &str) -> (std::borrow::Cow<'_, str>, Option<Option<i32>>) {
+    use tauri_plugin_agent_tools::tools::handlers::exit_marker;
+    fn last_line(s: &str) -> (&str, &str) {
+        match s.rfind('\n') {
+            Some(at) => (&s[..at], &s[at + 1..]),
+            None => ("", s),
+        }
+    }
+    let (head, last) = last_line(output.trim_end());
+    if let Some(marker) = exit_marker(last) {
+        return (head.into(), Some(marker));
+    }
+    if last.starts_with("[output truncated") {
+        let (body, line) = last_line(head);
+        if let Some(marker) = exit_marker(line) {
+            let kept = if body.is_empty() {
+                last.to_string()
+            } else {
+                format!("{body}\n{last}")
+            };
+            return (kept.into(), Some(marker));
+        }
+    }
+    (output.into(), None)
+}
+
+/// The header badge an exit marker earns: the code of a failed exit, `killed`
+/// when a signal ended the command, nothing for a clean exit.
+fn exit_badge(marker: Option<Option<i32>>) -> Option<String> {
+    match marker? {
+        Some(0) => None,
+        Some(code) => Some(format!("exit {code}")),
+        None => Some("killed".to_string()),
+    }
+}
+
+/// Whether a shell result is the hand-off of a command that outran its timeout
+/// and runs on in the background, rather than the command's output.
+fn shell_backgrounded(content: &str) -> bool {
+    tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(content)
+}
+
+/// The dim pointer a backgrounded command's row ends on, naming where its
+/// output can be watched. Empty for every other state.
+fn shells_hint(state: ToolState) -> Vec<Span<'static>> {
+    match state {
+        ToolState::Backgrounded => {
+            vec![Span::styled(" \u{b7} /shells to view", Style::new().dark_gray())]
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -11263,10 +11359,23 @@ fn finished_shell_lines(
     is_error: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let (body, code) = split_exit_marker(output);
-    let badge = code
-        .filter(|c| is_error && *c != 0)
-        .map(|c| Span::styled(format!(" (exit {c})"), Style::new().dark_gray()));
+    if shell_backgrounded(output) {
+        // Still running: the call only handed it off, so there is no output
+        // to preview and nothing has succeeded or failed yet.
+        let mut out = shell_header_rows(
+            ToolState::Backgrounded.bullet(),
+            "Running",
+            command,
+            Some(Span::styled(" in the background", Style::new().dark_gray())),
+            width,
+        );
+        out.extend(shell_tree(vec![("/shells to view".to_string(), true)]));
+        return out;
+    }
+    let (body, marker) = split_exit_marker(output);
+    let badge = exit_badge(marker)
+        .filter(|_| is_error)
+        .map(|b| Span::styled(format!(" ({b})"), Style::new().dark_gray()));
     let mut out = shell_header_rows(
         ToolState::of(is_error).bullet(),
         "Ran",
@@ -24436,7 +24545,7 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
 
-/// `1 background shell running · /shells to view · /stop to close`: the dim
+/// `1 background shell running \u{b7} /shells to view \u{b7} /stop to close`: the dim
 /// row over the input while the agent has commands running in the background,
 /// cut to `width` (the commands go before the words, so a narrow terminal
 /// still says how many are running).
@@ -24453,9 +24562,9 @@ fn bg_shells_row(app: &App, width: u16) -> Option<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let accent = Style::new().fg(theme::accent());
     let spans = vec![
-        Span::styled(format!(" {} running · ", pluralize("background shell", n)), dim),
+        Span::styled(format!(" {} running \u{b7} ", pluralize("background shell", n)), dim),
         Span::styled("/shells", accent),
-        Span::styled(" to view · ", dim),
+        Span::styled(" to view \u{b7} ", dim),
         Span::styled("/stop", accent),
         Span::styled(" to close", dim),
     ];
@@ -24473,11 +24582,12 @@ fn working_row_shown(app: &App) -> bool {
         && app.retrying.is_none()
 }
 
-/// The working row's ` · 1 bg shell` while background shells run, the
-/// compact stand-in for `bg_shells_row`, which yields to the working row.
+/// The working row's ` \u{b7} 1 background shell` while background shells
+/// run, the compact stand-in for `bg_shells_row`, which yields to the working
+/// row.
 fn bg_shells_count(app: &App) -> Option<String> {
     let n = app.bg_shells.len();
-    (n > 0).then(|| format!(" · {}", pluralize("bg shell", n)))
+    (n > 0).then(|| format!(" \u{b7} {}", pluralize("background shell", n)))
 }
 
 /// Rows the message box occupies: 1 content row for the idle/working
@@ -26104,7 +26214,7 @@ mod tests {
         app.submit_user("go".into());
         let running = render_rows(&mut app, 80, 12);
         assert!(!running.iter().any(|r| r.contains("background shell running")), "{running:#?}");
-        assert!(running.iter().any(|r| r.contains("· 1 bg shell")), "{running:#?}");
+        assert!(running.iter().any(|r| r.contains("\u{b7} 1 background shell")), "{running:#?}");
         assert!(bg_shells_row(&app, 80).is_none());
     }
 
@@ -28579,6 +28689,11 @@ mod tests {
     #[test]
     fn live_output_is_bounded() {
         let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "yes" }),
+        });
         app.apply(StreamEvent::ToolOutputDelta {
             id: "t1".into(),
             delta: "x".repeat(super::LIVE_OUTPUT_MAX_BYTES * 2),
@@ -28631,6 +28746,143 @@ mod tests {
             .map(line_text)
             .collect();
         assert_eq!(failed, vec!["\u{2022} Ran false (exit 1)", "  \u{2514} (no output)"]);
+    }
+
+    /// A command that outran its timeout is still running: its row must not
+    /// read as a green `Ran`, and the hand-off text is not output to preview.
+    #[test]
+    fn a_backgrounded_command_reads_as_running_in_the_background() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "npm run dev" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "Command exceeded 120s and is still running in the background. \
+                      Its result will be written to /tmp/x once it finishes."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        let open = render_rows(&mut app, 80, 20).join("\n");
+        assert!(open.contains("\u{2022} Running npm run dev in the background"), "{open}");
+        assert!(open.contains("\u{2514} /shells to view"), "{open}");
+        assert!(!open.contains("Ran npm"), "{open}");
+        assert!(!open.contains("Command exceeded"), "{open}");
+        app.transcript.finalize_tool_group();
+        let folded = render_rows(&mut app, 80, 20).join("\n");
+        assert!(
+            folded.contains("\u{2022} Backgrounded npm run dev \u{b7} /shells to view"),
+            "{folded}"
+        );
+        let group = app.transcript.groups.last().expect("folded group");
+        assert!(matches!(
+            group.row(super::GroupRow::Closed).kind,
+            RowKind::Tool { state: ToolState::Backgrounded, .. }
+        ));
+    }
+
+    /// Output streamed after a call's result landed (a backgrounded command
+    /// printing on) has no live view to feed, so it must not re-create one.
+    #[test]
+    fn output_after_the_result_does_not_recreate_a_buffer() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "npm run dev" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "Command exceeded 1s and is still running in the background.".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b1".into(),
+            delta: "listening on :3000\n".into(),
+        });
+        assert!(app.transcript.live_output.is_empty());
+    }
+
+    /// The live view shows what a terminal would: a progress bar's last frame,
+    /// with no colour codes leaking in as text.
+    #[test]
+    fn the_live_panel_sanitizes_progress_and_colour() {
+        let raw = "fetch 10%\rfetch 100%\n\u{1b}[32mok\u{1b}[0m\n";
+        let text: Vec<String> = super::running_shell_lines("git fetch", raw, 0, 0, 70)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert_eq!(text[1], "  \u{2514} fetch 100%");
+        assert_eq!(text[2], "    ok");
+    }
+
+    /// Each command in a parallel batch counts its own time, in the same
+    /// format as everywhere else elapsed time shows.
+    #[test]
+    fn each_running_command_shows_its_own_elapsed() {
+        let mut app = test_app();
+        for (id, cmd) in [("b1", "make build"), ("b2", "make test")] {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+        }
+        let group = app.transcript.tool_group.as_mut().expect("group open");
+        group.calls[0].started = Instant::now() - Duration::from_secs(65);
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Running make build (1m 05s)"), "{rows}");
+        assert!(rows.contains("Running make test (0s)"), "{rows}");
+    }
+
+    /// A signal and a truncation note no longer hide the exit marker: both
+    /// become the header's badge instead of a line of output.
+    #[test]
+    fn exit_markers_after_a_signal_or_a_truncation_note_become_badges() {
+        let killed: Vec<String> =
+            super::finished_shell_lines("sleep 9", "zzz\n[terminated by signal]", true, 70)
+                .iter()
+                .map(line_text)
+                .collect();
+        assert_eq!(killed, vec!["\u{2022} Ran sleep 9 (killed)", "  \u{2514} zzz"]);
+        let note = "[output truncated at 9 of 99 bytes]";
+        let truncated: Vec<String> =
+            super::finished_shell_lines("make", &format!("tail\n[exit 2]\n{note}"), true, 70)
+                .iter()
+                .map(line_text)
+                .collect();
+        assert_eq!(
+            truncated,
+            vec![
+                "\u{2022} Ran make (exit 2)".to_string(),
+                "  \u{2514} tail".to_string(),
+                format!("    {note}"),
+            ]
+        );
+    }
+
+    /// The folded row of a killed command says so too.
+    #[test]
+    fn a_killed_command_folds_with_its_badge() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 9" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "[terminated by signal]".into(),
+            is_error: true,
+            diff: None,
+        });
+        app.transcript.finalize_tool_group();
+        let rows = render_rows(&mut app, 80, 20).join("\n");
+        assert!(rows.contains("Ran sleep 9 (killed)"), "{rows}");
     }
 
     /// A multi-line command shows two continuation rows on its rail, then a
@@ -35897,7 +36149,7 @@ mod tests {
         let old = running_group_rows(group, 0, 44);
         assert_eq!(strip(&old), fresh, "the counter re-flowed the command");
         assert!(
-            line_text(old.last().expect("no rows")).contains("(4321s)"),
+            line_text(old.last().expect("no rows")).contains("(1h 12m)"),
             "badge is not on the last row: {:?}",
             lines_text(&old)
         );

@@ -571,6 +571,27 @@ fn shells_inspector_detail() {
     assert_buffer("shells_inspector_detail", &frame(&mut app, DARK, 80, 14));
 }
 
+/// A call that outran its timeout, open and folded: running in the
+/// background, pointing at `/shells`, never a green `Ran`.
+#[test]
+fn transcript_backgrounded_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "start the dev server");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "npm run dev" }));
+    tool_result(
+        &mut app,
+        "b1",
+        "Command exceeded 120s and is still running in the background. Its result will be \
+         written to /tmp/jan-bash/out-1.txt once it finishes.",
+        false,
+        None,
+    );
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_backgrounded_shell_command_open", &open);
+    assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
+}
+
 /// The idle dock with two background shells: the dim row over the input.
 #[test]
 fn bg_shells_row_over_the_input() {
