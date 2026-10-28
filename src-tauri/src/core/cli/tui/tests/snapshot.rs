@@ -573,12 +573,12 @@ fn transcript_backgrounded_shell_command() {
     assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
 }
 
-/// The idle dock with two background shells: their group over the input.
+/// Two background shells on an idle session: their group over the input.
 #[test]
-fn bg_shells_row_over_the_input() {
+fn background_shells_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
-    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 13));
+    assert_buffer("background_shells", &frame(&mut app, DARK, 80, 13));
 }
 
 /// Two subagents running and one queued after the main turn ended: the block
@@ -596,7 +596,7 @@ fn idle_fan_out(now: Instant) -> TestApp {
     app
 }
 
-fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+fn background_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
     pinned(DARK, || lines_buffer(background_rows(app, w, 8, now), w))
 }
 
@@ -604,14 +604,14 @@ fn subagent_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
 fn subagents_running_after_the_turn() {
     let now = Instant::now();
     let mut app = idle_fan_out(now);
-    assert_buffer("subagents_idle_running", &subagent_rows_buffer(&mut app, 80, now));
-    assert_buffer("subagents_idle_narrow", &subagent_rows_buffer(&mut app, 36, now));
+    assert_buffer("subagents_idle_running", &background_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &background_rows_buffer(&mut app, 36, now));
     app.apply(StreamEvent::SubagentEnd {
         run_id: "sub-kv-review-1".into(),
         name: "kv-review".into(),
         error: None,
     });
-    assert_buffer("subagents_idle_one_finished", &subagent_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
 }
 
 /// Where the block sits: under the rule, subagents over shells, over the
@@ -915,7 +915,7 @@ fn body(app: &mut App) -> Buffer {
     let full = frame(app, DARK, BODY_WIDTH, BODY_HEIGHT);
     let input_h = pinned(DARK, || input_box_height(app, BODY_WIDTH));
     // Header and the body's top border above; the air row, the rule, the
-    // input and the dock line below. No fixture docks a status panel.
+    // input and the dock line below. No fixture docks a plan.
     let last = BODY_HEIGHT - TRANSCRIPT_BOTTOM_PAD - 1 - input_h - 1;
     let blank = |y: u16| {
         (0..BODY_WIDTH).all(|x| {

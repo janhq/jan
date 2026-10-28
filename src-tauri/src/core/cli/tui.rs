@@ -468,8 +468,9 @@ enum Status {
     /// A run is open. There is no parked state: the session owns its
     /// subagents, monitors and background shells, so the loop never waits on
     /// one still running -- it parks only to deliver a notice already queued,
-    /// and resumes at once. Work that outlives the turn shows over the idle
-    /// input instead, in either state (`background_rows`).
+    /// and resumes at once. Background work shows in one block over the input
+    /// whether a run is open or not (`background_rows`), so it can outlive the
+    /// turn without a state of its own.
     Running,
 }
 
@@ -4841,7 +4842,8 @@ const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 /// transition rather than the thought vanishing the instant the tool runs.
 const REASONING_FOLD_AFTER: Duration = Duration::from_secs(4);
 
-/// One background subagent: its dock stats and activity, and its run as a
+/// One background subagent: its stats and activity for the background-work
+/// block and `/agents`, and its run as a
 /// transcript for the `/agents` detail. Moved into a `SubagentBlock` when the
 /// child finishes, so the summary row and `/agents` can still show the run.
 struct SubagentPanel {
@@ -5036,7 +5038,8 @@ enum SubagentOutcome {
     Interrupted,
 }
 
-/// Where a subagent stands, in the one vocabulary the dock, `/agents` and the
+/// Where a subagent stands, in the one vocabulary the background-work block,
+/// `/agents` and the
 /// transcript's summary row all speak, so a child reads the same wherever it
 /// is shown.
 #[derive(Clone, Debug, PartialEq)]
@@ -5087,22 +5090,18 @@ fn agent_label(name: &str) -> Span<'static> {
 }
 
 /// A subagent's stats, dim and joined by a middle dot: `4 tools, 4 req, 50% ctx,
-/// 75% cache hit`, or without the request count in the `compact` form the dock
-/// fits beside the plan, which keeps the same words as the `/agents` list rather
-/// than abbreviating them. A part that is not known yet is left out rather than
-/// shown as a zero that would read as a stalled agent, and a child that has not
-/// started has none. The cache rate is its own span so a zero hit stands out, in
-/// the same alarm style as the header badge.
-fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec<Span<'static>> {
+/// 75% cache hit`, the same words in the `/agents` list and the child's detail
+/// header. A part that is not known yet is left out rather than shown as a zero
+/// that would read as a stalled agent, and a child that has not started has
+/// none. The cache rate is its own span so a zero hit stands out, in the same
+/// alarm style as the header badge.
+fn agent_stats(panel: &SubagentPanel, context_window: u64) -> Vec<Span<'static>> {
     if panel.queued || panel.pending {
         return Vec::new();
     }
     let dim = Style::new().fg(theme::muted());
     let (tools, requests) = (panel.calls.len(), panel.requests);
-    let mut parts = vec![pluralize("tool", tools)];
-    if !compact {
-        parts.push(format!("{requests} req"));
-    }
+    let mut parts = vec![pluralize("tool", tools), format!("{requests} req")];
     // A running later-phase child keeps its phase, so the dependent stage
     // stays visible past the wait.
     if let Some(p) = panel.phase {
@@ -5129,7 +5128,7 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec
 /// of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a loop and is
 /// flagged as one, even while the newest copy is still streaming. Empty for a
 /// child that has not started.
-fn agent_activity(panel: &mut SubagentPanel, frame: &str) -> Vec<Span<'static>> {
+fn agent_activity(panel: &mut SubagentPanel) -> Vec<Span<'static>> {
     if panel.queued || panel.pending {
         return Vec::new();
     }
@@ -5147,9 +5146,10 @@ fn agent_activity(panel: &mut SubagentPanel, frame: &str) -> Vec<Span<'static>> 
         return out;
     }
     if let Some(call) = panel.active.as_mut() {
-        let label = call.activity_label();
-        let text = if frame.is_empty() { label } else { format!("{frame} {label}") };
-        return vec![Span::styled(text, Style::new().fg(theme::accent()).dim())];
+        return vec![Span::styled(
+            call.activity_label(),
+            Style::new().fg(theme::accent()).dim(),
+        )];
     }
     match last {
         Some(last) if repeats > 1 => vec![
@@ -20141,7 +20141,7 @@ fn agent_picker_items(
             agent_label(&p.name),
             Span::raw("  "),
         ];
-        let stats = agent_stats(p, context_window, false);
+        let stats = agent_stats(p, context_window);
         if !stats.is_empty() {
             spans.extend(stats);
             spans.push(Span::raw("  "));
@@ -20154,7 +20154,7 @@ fn agent_picker_items(
         let status = p.status(None);
         let running = status == AgentStatus::Running;
         let mut tail = status.spans(AGENT_PREVIEW_MAX);
-        let activity = agent_activity(p, "");
+        let activity = agent_activity(p);
         if running && !activity.is_empty() {
             tail.push(Span::styled(" \u{b7} ", dim));
             tail.extend(activity);
@@ -20188,7 +20188,7 @@ fn agent_detail_header(
         agent_label(&panel.name),
         Span::styled(format!("  ({})", panel.run_id), dim),
     ])];
-    let mut row = agent_stats(panel, context_window, false);
+    let mut row = agent_stats(panel, context_window);
     if !row.is_empty() {
         row.push(Span::raw("  "));
     }
@@ -20197,7 +20197,7 @@ fn agent_detail_header(
     // A loop is still worth flagging: the transcript alone reads as busy.
     if status == AgentStatus::Running && panel.repeats >= STUCK_REPEAT_THRESHOLD {
         row.push(Span::styled(" \u{b7} ", dim));
-        row.extend(agent_activity(panel, ""));
+        row.extend(agent_activity(panel));
     }
     out.push(Line::from(row));
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
@@ -22580,7 +22580,7 @@ fn panel_budget(frame_h: u16, input_h: u16) -> usize {
 }
 
 fn draw(f: &mut Frame, app: &mut App) {
-    // Cached before anything reads it: the status panel sizes the layout, so a
+    // Cached before anything reads it: the plan dock sizes the layout, so a
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
     app.transcript.view_width = f.area().width.max(1);
@@ -22636,7 +22636,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(1),                     // 0: header
         Constraint::Min(1),                        // 1: body
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
-        Constraint::Length(panel_h),               // 3: status panel
+        Constraint::Length(panel_h),               // 3: plan dock
         Constraint::Length(1),                     // 4: separator rule
         Constraint::Length(background_h),          // 5: background work
         Constraint::Length(input_h),               // 6: input
@@ -24233,9 +24233,10 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
     output_tokens as f64 * 1000.0 / d as f64
 }
 
-/// Rows the docked status panel may occupy. Both columns elide to fit; a short
-/// terminal shrinks the budget further (see `draw`), and a terminal with no
-/// room left for the conversation drops the panel entirely.
+/// Rows the plan dock above the rule may occupy. The plan elides to fit; the
+/// background-work block over the input and a short terminal shrink the budget
+/// further (see `draw`), and a terminal with no room left for the conversation
+/// drops the plan entirely.
 const PANEL_MAX_ROWS: usize = 8;
 
 /// Conversation rows the panel may never eat into. Below this the panel gives
@@ -24955,7 +24956,7 @@ fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGrou
                 let secs = now.saturating_duration_since(started).as_secs();
                 vec![Span::styled(format_elapsed(secs), dim)]
             });
-            let activity = running.then(|| agent_activity(panel, ""));
+            let activity = running.then(|| agent_activity(panel));
             let facts = word.into_iter().chain(elapsed).chain(activity).collect();
             WorkChild {
                 name: panel.name.clone(),
@@ -25441,9 +25442,9 @@ mod tests {
         assert_eq!(panel.calls.len(), 6, "every call is still listed");
     }
 
-    /// Labels that collide must not read as a spin in the dock either.
+    /// Labels that collide must not read as a spin in the background block either.
     #[test]
-    fn agents_column_does_not_flag_same_label_calls_with_new_arguments() {
+    fn background_block_does_not_flag_same_label_calls_with_new_arguments() {
         let mut panel = panel_with_calls("kv-review", vec![]);
         for offset in 0..5u64 {
             panel.record_call(
@@ -25458,11 +25459,11 @@ mod tests {
         assert!(!text.contains('\u{d7}'), "no repeat marker: {text}");
     }
 
-    /// A worker spinning on one call collapses to a `×N` line in the panel, so
+    /// A worker spinning on one call collapses to a `×N` line in the block, so
     /// the loop is visible at a glance rather than hidden behind the tool counter
     /// with one innocuous call on screen.
     #[test]
-    fn agents_column_collapses_a_repeated_call() {
+    fn background_block_collapses_a_repeated_call() {
         let call = "bash {\"command\":\"ls -la\"}";
         let mut app = test_app();
         app.subagents = vec![panel_with_calls("kv-review", vec![call; 5])];
@@ -25481,7 +25482,7 @@ mod tests {
 
     /// Below the loop threshold a run of one call keeps a quiet dim count.
     #[test]
-    fn agents_column_counts_a_short_repeat_quietly() {
+    fn background_block_counts_a_short_repeat_quietly() {
         let mut app = test_app();
         app.subagents = vec![panel_with_calls("kv-review", vec!["Ran ls"; 2])];
         let text = subagent_text(&mut app, 80, Instant::now()).join("\n");
@@ -25578,30 +25579,25 @@ mod tests {
         assert!(subagent_text(&mut app, 100, now)[0].starts_with(" 1 subagent running"));
     }
 
-    /// The full and compact stats come from one function and leave out what
-    /// is not known yet.
+    /// The stats leave out what is not known yet.
     #[test]
-    fn agent_stats_full_and_compact_forms() {
+    fn agent_stats_leave_out_what_is_not_known() {
         let text = |spans: Vec<ratatui::text::Span<'static>>| {
             spans.iter().map(|s| s.content.to_string()).collect::<String>()
         };
         let mut panel = panel_with_calls("kv-review", vec!["Ran a", "Ran b", "Ran c", "Ran d"]);
         panel.requests = 4;
-        assert_eq!(text(agent_stats(&panel, 128_000, false)), "4 tools \u{b7} 4 req");
+        assert_eq!(text(agent_stats(&panel, 128_000)), "4 tools \u{b7} 4 req");
         panel.prompt_tokens = 64_000;
         panel.total_prompt_tokens = 64_000;
         panel.total_cached_tokens = 48_000;
         panel.cache_reported = true;
         assert_eq!(
-            text(agent_stats(&panel, 128_000, false)),
+            text(agent_stats(&panel, 128_000)),
             "4 tools \u{b7} 4 req \u{b7} 50% ctx \u{b7} 75% cache hit"
         );
-        assert_eq!(
-            text(agent_stats(&panel, 128_000, true)),
-            "4 tools \u{b7} 50% ctx \u{b7} 75% cache hit"
-        );
         panel.queued = true;
-        assert!(agent_stats(&panel, 128_000, false).is_empty(), "no stats before it starts");
+        assert!(agent_stats(&panel, 128_000).is_empty(), "no stats before it starts");
     }
 
     /// A dispatch is a bullet row naming every child, with each brief under it.
