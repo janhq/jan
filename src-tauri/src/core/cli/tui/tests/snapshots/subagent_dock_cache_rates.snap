@@ -3,11 +3,11 @@ source: src/core/cli/tui/tests/snapshot.rs
 expression: render_snapshot(buf)
 ---
 |≡ 5 agents                                                              |
-|• kv-review  4t · 4r · 50% ctx · 75% cached                             |
+|• kv-review  4 tools · 50% ctx · 75% cache hit                          |
 |   Read mod_3.rs                                                        |
-|• perf-scan  3t · 3r · 16% ctx · 0% cached                              |
+|• perf-scan  3 tools · 16% ctx · 0% cache hit                           |
 |   Read mod_2.rs                                                        |
-|• lint-fix  1t · 1r · 4% ctx                                            |
+|• lint-fix  1 tool · 4% ctx                                             |
 |   Read mod_0.rs                                                        |
 |· docs-writer  Queued (1)                                               |
 |   review the file                                                      |
@@ -18,16 +18,16 @@ expression: render_snapshot(buf)
  0 2..10 fg=#56B6C2 mod=BOLD
  1 0..2 fg=#56B6C2
  1 2..11 fg=#56B6C2 mod=BOLD
- 1 13..43 fg=#808080
+ 1 13..46 fg=#808080
  2 3..16 fg=#808080
  3 0..2 fg=#56B6C2
  3 2..11 fg=#56B6C2 mod=BOLD
  3 13..33 fg=#808080
- 3 33..42 fg=#E5C07B
+ 3 33..45 fg=Red mod=BOLD
  4 3..16 fg=#808080
  5 0..2 fg=#56B6C2
  5 2..10 fg=#56B6C2 mod=BOLD
- 5 12..28 fg=#808080
+ 5 12..27 fg=#808080
  6 3..16 fg=#808080
  7 0..2 fg=#56B6C2
  7 2..13 fg=#56B6C2 mod=BOLD

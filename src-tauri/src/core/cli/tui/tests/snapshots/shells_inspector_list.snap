@@ -11,7 +11,7 @@ expression: render_snapshot(buf)
 |────────────────────────────────────────────────────────────────────────────────|
 |selecting…                                                                      |
 |                                                                                |
-|📂 /snapshot/repo                                ↑/↓ select   x stop   Esc close|
+|📂 /snapshot/repo                   ↑/↓ select   Enter view   x stop   Esc close|
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
@@ -29,4 +29,4 @@ expression: render_snapshot(buf)
  7 0..10 mod=DIM | ITALIC
  9 0..1 fg=#808080
  9 2..17 fg=#808080
- 9 48..80 mod=DIM
+ 9 35..80 mod=DIM

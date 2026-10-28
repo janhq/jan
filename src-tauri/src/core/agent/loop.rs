@@ -2188,7 +2188,11 @@ impl ToolInvoker for CompositeToolInvoker {
         // resume it and spend a model turn reacting to nothing. A woken side
         // either queued something (we return) or has nothing left (it drops out
         // of the next round), so this cannot spin.
-        loop {
+        //
+        // Checked before waiting as well as after: a park entered for a notice
+        // already queued (a hook's answer) must deliver it now, not sit behind a
+        // session-owned child that never held the run.
+        while !self.has_queued_background() {
             let mut waits: Vec<
                 std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>,
             > = Vec::new();
@@ -2209,7 +2213,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 return;
             }
             let _ = futures::future::select_all(waits).await;
-            if self.has_queued_background() || !self.background_pending() {
+            if !self.background_pending() {
                 return;
             }
         }
@@ -3672,7 +3676,16 @@ async fn orchestrate_inner(
     if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
-                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                // Indexed answers are plain-string `content`, so that is all an
+                // echo of this session can match.
+                let answers: Vec<&str> = conversation_messages
+                    .iter()
+                    .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("assistant"))
+                    .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+                    .collect();
+                if let Some(mem) =
+                    crate::core::agent::memory::retrieve_block(root, &query, &answers)
+                {
                     volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
@@ -11167,6 +11180,37 @@ mod tests {
         assert_eq!(notices.len(), 1);
         assert!(notices[0].headline.is_some(), "a shell reports its own end");
         assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A park entered for a notice that is already queued (here a hook's) must
+    /// deliver it at once, not wait out a session-owned command that happens
+    /// to be running: that command never held the run, and waiting on it would
+    /// leave the model silent until it finished.
+    #[tokio::test]
+    async fn a_queued_notice_is_not_held_behind_a_session_owned_command() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.bg_shells_outlive_run = true;
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            timeout_secs: 600,
+        });
+        invoker.hook_notices_queue.lock().unwrap().push(BackgroundNotice {
+            headline: None,
+            text: "hook said so".to_string(),
+        });
+        assert!(invoker.background_pending(), "the hook answer is owed");
+        let waited = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            invoker.await_background(),
+        )
+        .await;
+        assert!(waited.is_ok(), "the park must not wait on the running command");
         let _ = std::fs::remove_dir_all(&root);
     }
 
