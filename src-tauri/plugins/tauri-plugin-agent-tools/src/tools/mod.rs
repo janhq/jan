@@ -209,6 +209,11 @@ pub struct ToolContext<'a> {
     /// `None` keeps the pull-only behaviour, which is right for a surface with
     /// no conversation to deliver into.
     pub shell_done_sink: Option<ShellDoneSink>,
+    /// While true, a running `bash` command is handed off to the background
+    /// before its timeout, the way the timeout itself does. Lets a surface free
+    /// the agent for a message the user typed mid-call instead of holding it
+    /// until the command ends. `None` leaves the timeout as the only hand-off.
+    pub detach_signal: Option<tokio::sync::watch::Receiver<bool>>,
     /// The backend `web_search`/`web_fetch` use, as the host's settings chose
     /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
     /// in the environment.
@@ -248,6 +253,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("plan_mode", &self.plan_mode)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
+            .field("detach_signal", &self.detach_signal.is_some())
             // The config can hold an API key, so only the backend id is shown.
             .field(
                 "web_search",
@@ -402,6 +408,7 @@ impl<'a> ToolContext<'a> {
             plan_mode: false,
             hook_sink: None,
             shell_done_sink: None,
+            detach_signal: None,
             web_search: None,
         }
     }
@@ -420,6 +427,13 @@ impl<'a> ToolContext<'a> {
     /// [`Self::shell_done_sink`].
     pub fn with_shell_done_sink(mut self, sink: ShellDoneSink) -> Self {
         self.shell_done_sink = Some(sink);
+        self
+    }
+
+    /// Let `signal` background a running command early. See
+    /// [`Self::detach_signal`].
+    pub fn with_detach_signal(mut self, signal: tokio::sync::watch::Receiver<bool>) -> Self {
+        self.detach_signal = Some(signal);
         self
     }
 

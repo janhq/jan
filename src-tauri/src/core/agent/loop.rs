@@ -194,6 +194,13 @@ pub(crate) struct OrchestrationArgs {
     /// to child) rides the steering channel, since the child's loop already has
     /// the safe boundary to apply it at.
     pub parent_link: Option<crate::core::agent::subagent::ParentLink>,
+    /// Raised by the owner while the user has a message waiting for this run:
+    /// a `bash` call still running then moves to the background instead of
+    /// holding the message until it ends (see
+    /// `ToolContext::detach_signal`). Only meaningful with a session-owned
+    /// `bg_shells`, which reports the command's end as a turn of its own.
+    /// Never inherited by a child run, which the user's message is not for.
+    pub shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -814,6 +821,8 @@ struct CompositeToolInvoker {
     /// `message_main_agent` calls ring. `None` for a top-level run, where the
     /// tool is neither advertised nor executable.
     parent_link: Option<crate::core::agent::subagent::ParentLink>,
+    /// See [`OrchestrationArgs::shell_detach`].
+    shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1200,7 +1209,7 @@ impl CompositeToolInvoker {
                 &self.enabled_skills,
             ))
             .with_skill_user_root(self.memory_home.as_deref());
-        ctx.with_network(self.allow_network)
+        let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_escalation(self.escalation.offered())
@@ -1214,7 +1223,11 @@ impl CompositeToolInvoker {
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
         )
-        .with_shell_done_sink(self.shell_done_sink())
+        .with_shell_done_sink(self.shell_done_sink());
+        match &self.shell_detach {
+            Some(signal) => ctx.with_detach_signal(signal.clone()),
+            None => ctx,
+        }
     }
 
     /// Where a backgrounded `bash` command reports when it finally ends: the
@@ -2913,6 +2926,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         subagent_bg: None,
         // A server-side proxy run is top-level: nothing dispatched it.
         parent_link: None,
+        // Nobody can type into a proxy run.
+        shell_detach: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -3591,6 +3606,7 @@ async fn orchestrate_inner(
         // Read through `args` where it is needed (tool advertisement, the
         // invoker), so this stays a plain destructure of the rest.
         parent_link: _,
+        shell_detach: _,
         sandbox,
         allow_escalation,
         compaction,
@@ -4017,6 +4033,10 @@ async fn orchestrate_inner(
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
             parent_link: args.parent_link.clone(),
+            // Without a session registry nothing would deliver the detached
+            // command's end except a park, which holds the message just the
+            // same; so the signal only applies where the session owns shells.
+            shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -8871,6 +8891,7 @@ mod tests {
                 crate::core::agent::bg_shell::BackgroundShells::default(),
             ),
             parent_link: None,
+            shell_detach: None,
         }
     }
 
@@ -12491,6 +12512,106 @@ mod tests {
         // The edit ran in the sequential pass and the read after it, so the
         // announcements follow completion.
         assert_eq!(*heard.lock().unwrap(), ["e", "r"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A message the user typed during a long foreground command reaches the
+    /// model at the next step, not when the command ends: the waiting message
+    /// moves the command into the session's background set, its call is still
+    /// answered (by the hand-off) before the message, and its end is owed to
+    /// the session as an ordinary background ping.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_waiting_message_moves_a_running_command_to_the_background() {
+        let root = hooks_root("detach_on_message");
+        let marker = format!("detach-{}", std::process::id());
+        let command = format!("sleep 60; echo {marker}");
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let (detach, signal) = tokio::sync::watch::channel(false);
+        let mut invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        invoker.bg_shells_outlive_run = true;
+        invoker.shell_detach = Some(signal);
+        let model = MockModel::new(vec![
+            json!({"choices": [{"message": {
+                "content": serde_json::Value::Null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "shell",
+                        "arguments": json!({"command": command, "timeout": 1800}).to_string()
+                    }
+                }]
+            }, "finish_reason": "tool_calls"}]}),
+            json!({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            let first = requests.recv().await.unwrap();
+            first.reply.send(vec![]).unwrap();
+            // The user types while the model is about to run the command.
+            detach.send_replace(true);
+            let boundary = requests.recv().await.unwrap();
+            boundary
+                .reply
+                .send(vec![json!({"role": "user", "content": "stop and look at this"})])
+                .unwrap();
+            detach.send_replace(false);
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        let body = json!({});
+        let run = run_turn_cycle(
+            &events,
+            &body,
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "build it"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+            None,
+        );
+        let finished = tokio::time::timeout(std::time::Duration::from_secs(20), run).await;
+        // Reaped before asserting, so a failure does not leave it running.
+        for shell in tauri_plugin_agent_tools::tools::proc::snapshot() {
+            if shell.command == command {
+                tauri_plugin_agent_tools::tools::proc::kill(shell.pid);
+            }
+        }
+        finished.expect("the message must not wait out the command").unwrap();
+        {
+            let sent = model.requests.lock().unwrap();
+            assert_eq!(sent.len(), 2);
+            let messages = sent[1]["messages"].as_array().unwrap();
+            let tool = &messages[messages.len() - 2];
+            assert_eq!(tool["role"], "tool");
+            assert_eq!(tool["tool_call_id"], "call_1", "the call keeps its result");
+            let handoff = tool["content"].as_str().unwrap();
+            assert!(
+                tauri_plugin_agent_tools::tools::handlers::bash_result_backgrounded(handoff),
+                "{handoff}"
+            );
+            assert!(handoff.contains("notified automatically"), "{handoff}");
+            assert_eq!(messages[messages.len() - 1]["content"], "stop and look at this");
+        }
+        assert!(invoker.bg_shells.has_pending_work(), "the command's end is owed");
+        drop(steering);
+        consumer.await.unwrap();
         let _ = std::fs::remove_dir_all(&root);
     }
 

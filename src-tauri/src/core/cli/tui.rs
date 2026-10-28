@@ -4637,6 +4637,11 @@ struct App {
     /// (`submit_background_notices`). Distinct from `bg_shells`, which is the
     /// process-wide display snapshot behind the footer chip and `/shells`.
     shell_set: Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// Raised while a typed message waits on the live run, so a `bash` call
+    /// still running moves into `shell_set` and the message reaches the agent
+    /// at the next step rather than after the command ends (see
+    /// `OrchestrationArgs::shell_detach`). Kept in step by `sync_shell_detach`.
+    shell_detach: tokio::sync::watch::Sender<bool>,
     /// The session-owned background-subagent registry, on the same terms as
     /// `shell_set`. Children outlive the run that dispatched them, so their
     /// panels survive a run end and a completion between runs starts a turn.
@@ -5354,6 +5359,7 @@ impl App {
             monitors: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
             shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
+            shell_detach: tokio::sync::watch::Sender::default(),
             subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
@@ -7075,6 +7081,20 @@ impl App {
         self.reminder_count += 1;
         self.reminder_awaiting_progress = true;
         self.submit_reminder(text);
+    }
+
+    /// Ask the live run to move its running commands to the background while
+    /// a typed message waits on it, and stop asking once none does. A message
+    /// is only taken at the run's next step, which a foreground command holds
+    /// back for as long as it runs. Only while `steer_run` would hand the
+    /// message over: one held for a fresh run gains nothing from it.
+    fn sync_shell_detach(&self) {
+        let waiting = self.run_is_live()
+            && !self.message_queue.is_empty()
+            && self.pending_queue.is_empty()
+            && self.ask_queue.is_empty()
+            && !self.want_start;
+        self.shell_detach.send_if_modified(|on| std::mem::replace(on, waiting) != waiting);
     }
 
     /// Dequeue the next message from the queue and submit it. Called after
@@ -12801,6 +12821,10 @@ pub async fn run(
     // fresh turn by `submit_background_notices`.
     let shell_set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
     args.bg_shells = Some(shell_set.clone());
+    // A command the user is waiting behind moves into that set too, so a
+    // typed message is not held until a long build ends.
+    let (shell_detach, detach_signal) = tokio::sync::watch::channel(false);
+    args.shell_detach = Some(detach_signal);
     let subagent_set = Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
         args.max_parallel_subagents,
     ));
@@ -12888,6 +12912,7 @@ pub async fn run(
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
     app.shell_set = shell_set;
+    app.shell_detach = shell_detach;
     app.subagent_set = subagent_set;
     app.args = Some(args.clone());
     app.sync_think_tags();
@@ -13500,6 +13525,9 @@ async fn chat_loop<B: Backend>(
             .into_iter()
             .filter(|s| s.backgrounded)
             .collect();
+        // Once per pass rather than at each place the queue or the run changes,
+        // so none of them can leave a command detaching for nobody.
+        app.sync_shell_detach();
         // Skip a frame that would come out identical: nothing handled since the
         // last one and nothing on screen moving with time. ratatui would emit
         // no cells for it, but the frame still costs a full layout and writes
@@ -26434,6 +26462,25 @@ mod tests {
         )
     }
 
+    /// A message typed into a live run asks it to background its running
+    /// command, and the ask is withdrawn once the run took the message.
+    #[test]
+    fn a_waiting_message_asks_the_run_to_background_its_command() {
+        let mut app = test_app();
+        let detach = app.shell_detach.subscribe();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "nothing is waiting yet");
+        app.submit_user("look at this instead".into());
+        app.sync_shell_detach();
+        assert!(*detach.borrow(), "the queued message wants the agent back");
+        let (request, _reply) = steering_request(app.history.clone());
+        app.steer_run(request);
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "delivered, so later commands run in front");
+    }
+
     #[test]
     fn steering_preserves_images_paths_order_and_transcript_once() {
         let mut app = test_app();
@@ -32580,6 +32627,7 @@ mod tests {
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
             parent_link: None,
+            shell_detach: None,
             compaction: None,
             session_start: None,
         })
