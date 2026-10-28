@@ -1059,8 +1059,9 @@ fn run_three_commands(app: &mut App) {
     tool_result(app, "b3", &failed, true, None);
 }
 
-/// Consecutive commands, open and folded: one `Ran 3 commands` row listing each
-/// command with a short preview, the failed one naming its code, the bullet red.
+/// Consecutive commands, open and folded: one `Shell` row listing each command
+/// as its own `Ran <cmd>` with its own bullet and a short preview, the failed
+/// one naming its code, its bullet and the header's red.
 #[test]
 fn transcript_grouped_shell_commands() {
     let mut app = snapshot_app();
