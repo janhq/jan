@@ -6,8 +6,11 @@ export const modelSettings = {
       'Size of the prompt context. Leave empty to auto-fit when --fit is on.',
     controller_type: 'input',
     controller_props: {
-      value: 8192,
-      placeholder: '8192',
+      // Empty, not 8192: an explicit value pins n_ctx and upstream's fit then
+      // leaves the context alone. With fit off, preset.ts's [*] ctx-size =
+      // 8192 still applies, so the effective default is unchanged there.
+      value: '',
+      placeholder: 'auto',
       type: 'number',
     },
   },
