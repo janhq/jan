@@ -22602,14 +22602,20 @@ fn draw(f: &mut Frame, app: &mut App) {
     // frame, since its own height sizes the layout, and clamped to what the
     // frame can spare so a short terminal loses these rows rather than
     // conversation. The background work is the thing moving, so it is sized
-    // first and the plan takes what is left.
+    // first and the plan takes what is left -- less a floor of its head and
+    // one item, so a full block cannot squeeze a live plan out of view. The
+    // floor comes out of the spare rows only, never the conversation's
+    // `MIN_TRANSCRIPT_ROWS`, and only when the frame has that much to spare.
     let width = f.area().width.max(1);
-    let background = background_rows(
-        app,
-        width,
-        spare_rows(f.area().height, input_h),
-        Instant::now(),
-    );
+    let spare = spare_rows(f.area().height, input_h);
+    let plan_shown = app.picker.is_none() && !app.todos_expired();
+    let plan_floor = if plan_shown {
+        todo_column(&app.todos, width, PLAN_FLOOR_ROWS).len()
+    } else {
+        0
+    };
+    let background_cap = if spare >= plan_floor { spare - plan_floor } else { spare };
+    let background = background_rows(app, width, background_cap, Instant::now());
     let background_h = background.len() as u16;
     let panel_lines = app
         .picker
@@ -24239,6 +24245,10 @@ fn tokens_per_second(output_tokens: u64, duration_ms: u64) -> f64 {
 /// drops the plan entirely.
 const PANEL_MAX_ROWS: usize = 8;
 
+/// Rows the plan keeps against the background-work block: its head row and
+/// one item, enough to say what is being worked on.
+const PLAN_FLOOR_ROWS: usize = 2;
+
 /// Conversation rows the panel may never eat into. Below this the panel gives
 /// up its own rows first: the transcript is the point of the screen.
 const MIN_TRANSCRIPT_ROWS: u16 = 4;
@@ -25577,6 +25587,23 @@ mod tests {
         subagent_event(&mut app, "r0", "builder", StreamEvent::Step { index: 2, max: 8 });
         assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
         assert!(subagent_text(&mut app, 100, now)[0].starts_with(" 1 subagent running"));
+    }
+
+    /// A child's `Parked` is the child's alone: the parent's own run neither
+    /// commits its answer as parked nor leaves `Running`, and only the panel
+    /// of the child that sent it reads as waiting.
+    #[test]
+    fn a_wrapped_parked_marks_only_that_child() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        assert_eq!(app.status, Status::Running);
+        start_subagent(&mut app, "r0", "builder");
+        start_subagent(&mut app, "r1", "tester");
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Parked);
+        assert!(app.subagents[0].parked, "the sender is parked");
+        assert!(!app.subagents[1].parked, "its sibling is not");
+        assert!(app.parked_answer.is_none(), "the parent did not park");
+        assert_eq!(app.status, Status::Running);
     }
 
     /// The stats leave out what is not known yet.
@@ -44426,6 +44453,42 @@ mod tests {
         let text = render_rows(&mut app, 100, 24).join("\n");
         assert!(!text.contains("monitor"), "{text}");
         assert!(text.contains("1 subagent running"), "{text}");
+    }
+
+    /// The background block is sized first, but a full one (all three groups
+    /// at their cap) must not squeeze a live plan out of a 24-row terminal:
+    /// the plan keeps its head and one item, and every group keeps its head.
+    #[test]
+    fn a_full_background_block_leaves_the_plan_its_floor() {
+        use crate::core::agent::todo::TodoStatus::*;
+        let mut app = test_app();
+        app.todos = todos_from(vec![(
+            "only",
+            vec![("wire routes", InProgress), ("add tests", Pending), ("ship", Pending)],
+        )]);
+        app.monitors = (1..=4)
+            .map(|i| monitor(&format!("mon-{i}"), "build", "grep OK build.log", i))
+            .collect();
+        for i in 0..4 {
+            start_subagent(&mut app, &format!("r{i}"), &format!("child-{i}"));
+        }
+        app.bg_shells = (0..4)
+            .map(|i| tauri_plugin_agent_tools::tools::proc::ShellInfo {
+                pid: 4000 + i,
+                command: format!("npm run dev-{i}"),
+                elapsed_secs: 5,
+                backgrounded: true,
+            })
+            .collect();
+        // A three-line draft grows the input, which is what leaves the block
+        // and the plan competing for the same spare rows.
+        app.set_input("one\ntwo\nthree".into());
+        let text = render_rows(&mut app, 100, 24).join("\n");
+        assert!(text.contains("Todos"), "plan head: {text}");
+        assert!(text.contains("wire routes"), "one plan item: {text}");
+        assert!(text.contains("monitors watching"), "{text}");
+        assert!(text.contains("subagents running"), "{text}");
+        assert!(text.contains("background shells running"), "{text}");
     }
 
     /// The loop parks only to hand over a notice already queued, and steps
