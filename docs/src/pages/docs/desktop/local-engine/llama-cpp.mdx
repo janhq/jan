@@ -76,133 +76,71 @@ These are advanced settings. You typically only need to adjust them if models ar
 
 ## Engine Management
 
-| Feature | What It Does | When You Need It |
-|---------|-------------|------------------|
-| **Engine Version** | Shows which version of llama.cpp you're running | Check compatibility with newer models |
-| **Check Updates** | Downloads newer engine versions | When new models require updated engine |
-| **Backend Selection** | Choose the version optimized for your hardware | After installing new graphics cards or when performance is poor |
-| **Auto Update Engine** | Automatically updates llama.cpp to latest version | Enable for automatic compatibility with new models |
-| **Max Concurrent Models** | Maximum models the router keeps loaded at once | Set to 1 if you want strict single-model operation; 0 means unlimited |
+| Setting | What It Does | Default | When You Need It |
+|---------|-------------|---------|------------------|
+| **Engine version** | Shows the bundled llama.cpp version, build and commit | - | Quote it when you report a model that fails to load |
+| **Max Concurrently Loaded Models** | Maximum models the engine keeps loaded at once; the least recently used idle model is unloaded first | 1 | Raise it to keep several models warm; 0 means unlimited |
+| **Timeout for llamacpp** | Connection and load timeout, in seconds | 600 | Raise it for very large models on slow disks |
+| **Environmental variables** | Extra `KEY=VALUE` variables for the engine, separated by `;` | Empty | Only when a llama.cpp guide asks for a specific variable |
 
 <Callout type="info">
-Jan v0.8.0 switched llama.cpp from launching a separate server for each model to a single **router process** (`llama-server --models-preset <router.preset.ini> --models-max <N> --no-webui`) that loads and unloads models on demand via the upstream `POST /models/load` and `POST /models/unload` endpoints. You no longer need to manually start or stop individual models — the router handles scheduling automatically. After installing a backend, Jan checks for required system libraries (CUDA, Vulkan, cuDNN) and shows you what to install if anything is missing.
+Since v0.8.5, llama.cpp is compiled into Jan and runs in a supervised worker process (`jan-llama-worker`). There is no `llama-server` to download and no backend to install or update: the engine updates together with the app. The worker loads and unloads models on demand, so you never start or stop a model by hand. If the worker stops unexpectedly, sending the message again starts it again.
 </Callout>
 
-## Hardware Backends
+## Hardware Support
 
-Jan offers different backend versions optimized for your specific hardware. Think of these as different "drivers" - each one is tuned for particular processors or graphics cards.
+Each Jan installer ships the GPU backends for its platform, and the engine picks the CPU code path that suits your processor when it starts. There is no build to choose.
+
+| Platform | GPU acceleration included |
+|----------|---------------------------|
+| **Windows (x64)** | NVIDIA through CUDA 13; AMD, Intel Arc and NVIDIA through Vulkan |
+| **Windows (ARM64)** | NVIDIA through CUDA 13, with Vulkan as a fallback |
+| **Linux (x64)** | NVIDIA through CUDA 13; AMD, Intel Arc and NVIDIA through Vulkan |
+| **macOS (Apple Silicon)** | Metal, used automatically |
+
+Everything runs on the CPU when no supported GPU is available.
 
 <Callout type="warning">
-Using the wrong backend can make models run slowly or fail to load. Pick the one that matches your hardware.
+Intel-based Macs are not supported: the bundled engine is built for Apple Silicon only. On an Intel Mac, Jan still works with remote and custom providers, but local models do not run.
 </Callout>
 
-<Tabs items={['Windows', 'Linux', 'macOS']}>
+### Choosing which GPU llama.cpp uses
 
-<Tabs.Tab>
+Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**:
 
-### NVIDIA Graphics Cards (CUDA)
-Choose based on your CUDA version (check NVIDIA Control Panel):
+- Turn a GPU's switch off to keep the engine off it, or on to use it.
+- When a GPU is reachable through more than one API (for example an NVIDIA card through both CUDA and Vulkan), click the API you want under its name. CUDA is usually faster on NVIDIA cards.
+- If you add or wake a GPU while Jan is running, press **Refresh** so the engine restarts and picks it up.
 
-**CUDA 12.0 (recommended):**
-- `win-avx2-cuda-cu12.0-x64` (most common)
-- `win-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
-- `win-avx-cuda-cu12.0-x64` (older CPUs)
-- `win-cuda-12-common_cpus-x64` (broadest CPU compatibility)
+Changing these stops the loaded models; they reload on next use.
 
-**CUDA 11.7:**
-- `win-avx2-cuda-cu11.7-x64` (most common)
-- `win-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
-- `win-avx-cuda-cu11.7-x64` (older CPUs)
-- `win-cuda-11-common_cpus-x64` (broadest CPU compatibility)
+### Using a different llama.cpp version or backend
 
-**CUDA 13:**
-- `win-cuda-13-common_cpus-x64`
-
-### CPU Only
-- `win-avx2-x64` (most modern CPUs, recommended)
-- `win-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
-- `win-avx-x64` (older CPUs)
-- `win-noavx-x64` (very old CPUs)
-- `win-common_cpus-x64` (broadest compatibility)
-
-### Other Graphics Cards (Vulkan — AMD, Intel Arc)
-- `win-vulkan-x64` (recommended for GPU acceleration)
-- `win-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
-
-<Callout type="info">
-**Quick Test**: Start with `win-avx2-cuda-cu12.0-x64` for NVIDIA, `win-vulkan-x64` for AMD/Intel Arc, or `win-avx2-x64` for CPU-only.
-</Callout>
-
-</Tabs.Tab>
-
-<Tabs.Tab>
-
-### NVIDIA Graphics Cards (CUDA)
-Choose based on your CUDA version:
-
-**CUDA 12.0 (recommended):**
-- `linux-avx2-cuda-cu12.0-x64` (most common)
-- `linux-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
-- `linux-avx-cuda-cu12.0-x64` (older CPUs)
-- `linux-cuda-12-common_cpus-x64` (broadest CPU compatibility)
-
-**CUDA 11.7:**
-- `linux-avx2-cuda-cu11.7-x64` (most common)
-- `linux-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
-- `linux-avx-cuda-cu11.7-x64` (older CPUs)
-- `linux-cuda-11-common_cpus-x64` (broadest CPU compatibility)
-
-**CUDA 13:**
-- `linux-cuda-13-common_cpus-x64`
-
-### CPU Only
-- `linux-avx2-x64` (most modern CPUs, recommended)
-- `linux-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
-- `linux-avx-x64` (older CPUs)
-- `linux-noavx-x64` (very old CPUs)
-- `linux-common_cpus-x64` (broadest compatibility)
-
-### Other Graphics Cards (Vulkan — AMD, Intel Arc)
-- `linux-vulkan-x64` (recommended for GPU acceleration)
-- `linux-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
-
-<Callout type="info">
-**Quick Test**: Start with `linux-avx2-cuda-cu12.0-x64` for NVIDIA, `linux-vulkan-x64` for AMD/Intel Arc, or `linux-avx2-x64` for CPU-only.
-</Callout>
-
-</Tabs.Tab>
-
-<Tabs.Tab>
-
-- `macos-arm64` (Apple Silicon — M1/M2/M3/M4, recommended)
-- `macos-x64` (Intel Macs)
-
-<Callout type="info">
-Apple Silicon Macs automatically use the GPU through Metal - no additional setup needed.
-</Callout>
-
-</Tabs.Tab>
-
-</Tabs>
+The bundled engine cannot be swapped. To run a llama.cpp version or backend that Jan does not ship (for example HIP/ROCm on Windows), run your own `llama-server` and connect it as a [custom endpoint](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
 
 ## Performance Settings (Engine-wide)
 
-These engine-wide settings are applied to every model the router loads. Per-model overrides (Context Size, GPU Layers, Batch Size, Disable KV Offload, etc.) live on the model's own settings page.
+These engine-wide settings apply to every model the engine loads. Per-model overrides (Context Size, GPU Layers, Batch Size, Disable KV Offload, etc.) live on the model's own settings page.
 
 | Setting | What It Does | Default | Impact |
 |---------|-------------|---------|---------|
-| **Continuous Batching** | Process multiple requests at once | Disabled | Enable for faster multi-tool or multi-conversation workloads |
-| **Parallel Sequences** | Number of parallel sequences to decode | 1 | 1 enables `-kvu` single-request optimization; raise for concurrent serving |
+| **Continuous Batching** | Process multiple requests at once | Enabled | Matches llama.cpp; leave on unless you are debugging |
+| **Parallel Sequences** | Number of parallel sequences to decode | 0 (llama.cpp default) | Raise for concurrent serving |
 | **Threads** | Number of threads to use during generation | -1 (auto) | -1 uses all logical cores |
 | **Threads (Batch)** | Threads for batch and prompt processing | -1 (same as Threads) | Tune separately for prompt-heavy workloads |
+| **Batch Size** | Logical maximum batch size for processing prompts | 2048 | Lower it if prompt processing runs out of memory |
 | **uBatch Size** | Physical maximum batch size | 512 | Controls memory usage during batching |
-| **Devices for Offload** | Comma-separated device list (e.g. `CUDA0,CUDA1`) | empty (auto) | Restrict which GPUs the model can use |
-| **GPU Split Mode** | How to distribute the model across GPUs | Layer | Layer is the common multi-GPU choice |
-| **Main GPU Index** | Primary GPU for processing | 0 | Change to target a specific GPU |
+| **Fit (auto-adjust to device memory)** | Adjust unset settings so the model fits in device memory | Disabled | Enable to let llama.cpp choose GPU layers and context for you |
+| **Devices for Offload** | Comma-separated accelerators, named as in the detected hardware list | Empty (all) | Restrict which GPUs the model can use; `none` disables offload |
+| **GPU Split Mode** | How to distribute the model across GPUs (None, Layer, Row, Tensor) | Layer | Layer is the common multi-GPU choice |
+| **Main GPU Index** | The GPU used for the model (split mode None) or intermediate results (split mode Row) | 0 | Change to target a specific GPU |
+| **Tensor Split** | Proportions for splitting the model across devices, e.g. `3,1` | Empty (even split) | Uneven GPUs |
+| **MoE Layers on CPU** | Keep the Mixture-of-Experts weights of the first N layers in CPU memory | 0 | Fit a large MoE model in limited VRAM |
+| **Dense FFN Layers on CPU** | Keep the dense feed-forward weights of the first N layers in CPU memory | 0 | The same for dense models |
 
 ## Memory Settings (Engine-wide)
 
-These engine-wide settings control how the router and every loaded model use system and GPU memory.
+These engine-wide settings control how every loaded model uses system and GPU memory.
 
 | Setting | What It Does | Default | When to Change |
 |---------|-------------|---------|----------------|
@@ -210,11 +148,12 @@ These engine-wide settings control how the router and every loaded model use sys
 | **Disable mmap** | Don't memory-map model files | Disabled | Enable if experiencing crashes or pageouts |
 | **MLock** | Keep model in RAM, prevent swapping | Disabled | Enable if you have enough RAM and want consistent performance |
 | **Context Shift** | Allow trimming the start of the prompt when context fills | Disabled | Enable for very long chats or multiple tool calls |
+| **Disable KV Cache Offload** | Keep the KV cache in system RAM instead of GPU memory | Disabled | When VRAM is scarce, at the cost of speed |
 | **KV Cache K Type** | KV-cache precision for keys | f16 | Switch to q8_0 / q4_0 to save VRAM |
 | **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
 
 <Callout type="info">
-**Per-model settings** (configured on each model's page, not here): Context Size (`ctx_size`), GPU Layers (`n_gpu_layers`), Batch Size (`batch_size`), **Disable KV Offload** (`no_kv_offload` — enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Chat Template, Chat template options (`chat_template_kwargs`), and sampling parameters. The router applies engine-wide settings as the `[*]` defaults in `router.preset.ini` and lets per-model entries override them.
+**Per-model settings** (configured on each model's page, not here): Context Size, GPU Layers, Batch Size, **Disable KV Offload** (enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Custom Jinja Chat template, Chat template options (`chat_template_kwargs`), and sampling parameters. Jan writes the engine-wide settings as the `[*]` defaults in `router.preset.ini` in its data folder, and each model's own settings override them.
 </Callout>
 
 <Callout type="warning">
@@ -231,7 +170,7 @@ The default KV cache type was temporarily set to `q8_0` in a prior release and h
 These settings are for fine-tuning model behavior and advanced use cases.
 
 <Callout type="info">
-**Custom Jinja Chat Template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+**Custom Jinja Chat template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
 </Callout>
 
 ### Text Generation Control
@@ -239,51 +178,53 @@ These settings are for fine-tuning model behavior and advanced use cases.
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
 | **Max Tokens to Predict** | Maximum tokens to generate | -1 (infinite) | Set a limit to prevent runaway generation |
-| **Custom Jinja Chat Template** (per-model) | Override model's chat format: a built-in template name, an inline Jinja body, or an absolute path to a `.jinja` file | Empty | Only if model needs special formatting |
+| **Custom Jinja Chat template** (per-model) | Override model's chat format: a built-in template name, an inline Jinja body, or an absolute path to a `.jinja` file | Empty | Only if model needs special formatting |
 | **Chat template options** (per-model) | Extra options the model's chat template accepts (sent as `chat_template_kwargs`, e.g. `enable_thinking`) | Empty | To toggle template features like reasoning or tool formatting per model |
 
 ### RoPE (Rotary Position Embedding) Settings
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
-| **RoPE Scaling Method** | Context extension method | None | For models that support extended context |
-| **RoPE Scale Factor** | Context scaling multiplier | 1 | Increase for longer contexts |
-| **RoPE Frequency Base** | Base frequency for RoPE | 0 (auto) | Usually loaded from model |
-| **RoPE Frequency Scale Factor** | Frequency scaling factor | 1 | Advanced tuning only |
+| **RoPE Scaling Method** | Context extension method (Model default, None, Linear, YaRN) | Model default | For models that support extended context |
+| **RoPE Frequency Base** | Base frequency for RoPE | 0 (loaded from model) | Usually loaded from model |
+| **RoPE Frequency Scale Factor** | Frequency scaling factor; 1 forces no scaling | 0 (loaded from model) | Advanced tuning only |
 
 ### Cache & Memory Tuning
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
-| **Prompt Cache RAM (MiB)** | Maximum prompt cache size in MiB (`--cache-ram`). -1 = unlimited, 0 = disabled | -1 | Set a positive value to cap RAM used for prompt caching |
+| **Prompt Cache RAM (MiB)** | Maximum prompt cache size in MiB (`--cache-ram`). -1 = unlimited, 0 = disabled | 8192 | Lower it to cap RAM used for prompt caching |
+| **Remember Conversations Between Sessions** | Keep each conversation's prompt cache on disk so reopening it does not re-read the whole conversation | Enabled | Disable to save disk space |
+| **Conversation Cache Disk Limit (MiB)** | Disk budget for saved conversation caches; the oldest are dropped first | 8192 | Raise it if you switch between many long conversations |
 | **Cache Reuse** | Min chunk size of matching prefix tokens to reuse from cache (`--cache-reuse`) | 0 (disabled) | Set a positive value to speed up repeated prompts with a shared prefix |
-| **Full SWA Cache** | Use full-size SWA cache (`--swa-full`) | Disabled | Enable for Gemma / Mistral-family SWA models when you need full-context recall (costs memory) |
+| **Full SWA Cache** | Use full-size SWA cache (`--swa-full`) | Disabled | Enable if a sliding-window model (e.g. Gemma) reprocesses the whole prompt every turn (costs memory) |
 | **Keep First N Tokens** | Tokens from the initial prompt to keep on context shift (`--keep`, -1 = keep all) | 0 | Increase to preserve more of the system prompt when context fills |
 
 ### Mirostat Sampling (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
-| **Mirostat Mode** | Alternative sampling method | Disabled | Try V1 or V2 for more consistent output |
-| **Mirostat Learning Rate** | How fast it adapts | 0.1 | Lower for more stable output |
-| **Mirostat Target Entropy** | Target perplexity | 5 | Higher for more variety |
+| **Mirostat** | Adaptive perplexity-targeting sampler (Off, v1, v2); overrides Top K / Top P / Min P | Off | Try v1 or v2 for more consistent output |
+| **Mirostat Eta** | Mirostat learning rate | 0.1 | Lower for more stable output |
+| **Mirostat Tau** | Target entropy; lower is more focused | 5 | Higher for more variety |
 
 ### Output Constraints (per-model)
 
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
 | **Grammar** | Constrain output with a GBNF grammar: an inline grammar body or an absolute path to a `.gbnf` file | Empty | For structured output (JSON, code, etc.) |
-| **JSON Schema File** | Enforce JSON structure | Empty | When you need specific JSON formats |
+| **JSON Schema** | Constrain the output to valid JSON matching a schema; ignored if a grammar is also set | Empty | When you need specific JSON formats |
 
 ## Troubleshooting Common Issues
 
 **Models won't load:**
-- Try a different backend (switch from CUDA to CPU or vice versa)
 - Check if you have enough RAM/VRAM
-- Update to latest engine version
+- Update Jan: the engine updates with the app, and newer model architectures need a newer engine
+- Turn the GPU off in **Settings** > **Hardware** to see whether the model loads on the CPU
+- If a model only works on a different llama.cpp version, [run your own `llama-server`](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version)
 
 **Very slow performance:**
-- Make sure you're using GPU acceleration (CUDA/Metal/Vulkan backend)
+- Make sure your GPU is turned on in **Settings** > **Hardware**
 - Increase GPU Layers in model settings
 - Close other memory-intensive programs
 
@@ -293,35 +234,34 @@ These settings are for fine-tuning model behavior and advanced use cases.
 - Try a smaller model variant
 
 **Random crashes:**
-- Switch to a more stable backend (try avx instead of avx2)
-- Disable overclocking if you have it enabled
 - Update graphics drivers
+- On an NVIDIA card, try its Vulkan API instead of CUDA (or the reverse) in **Settings** > **Hardware**
+- Disable overclocking if you have it enabled
 
 ## Quick Setup Guide
 
 **For most users:**
-1. Use the default backend that Jan installs
-2. Enable Auto Update Engine for automatic compatibility
-3. Leave all performance settings at defaults
-4. Only adjust if you experience problems
+1. Leave all settings at their defaults; Jan detects your GPU and uses it
+2. Keep Jan updated, which also updates the engine
+3. Only adjust settings if you experience problems
 
 **If you have an NVIDIA graphics card:**
-1. Select the appropriate CUDA backend from the dropdown (e.g., `avx2-cuda-12-0`)
+1. In **Settings** > **Hardware**, make sure the GPU is on and its CUDA API is selected
 2. Make sure GPU Layers is set high in model settings
-3. Keep Flash Attention enabled
+3. Keep Flash Attention on Auto
 4. Set Main GPU Index if you have multiple GPUs
 
 **If models are too slow:**
-1. Check you're using GPU acceleration (CUDA/Metal/Vulkan backend)
-2. Enable Continuous Batching
-3. Increase Batch Size (per-model) and uBatch Size (engine)
+1. Check that your GPU is on in **Settings** > **Hardware**
+2. Keep Continuous Batching enabled
+3. Increase Batch Size and uBatch Size
 4. Close other applications using memory
 
 **If running out of memory:**
-1. Set **Max Concurrent Models** to 1 so the router unloads the previous model before loading a new one
+1. Set **Max Concurrently Loaded Models** to 1 so the previous model is unloaded before a new one loads
 2. Change KV Cache K/V Type to q8_0 or q4_0
 3. Reduce Context Size in model settings
-4. Enable MLock if you have sufficient RAM
+4. Enable **Fit (auto-adjust to device memory)**
 5. Try a smaller model
 
 **For advanced users:**

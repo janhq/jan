@@ -115,7 +115,7 @@ and toggle the **ON** switch if not enabled.
 
 <Tabs.Tab>
 
-Jan supports AMD GPUs via two backends: **Vulkan** (default) and **llama.cpp HIP** (ROCm-accelerated). The HIP backend provides significantly better performance than Vulkan for supported AMD GPUs.
+Jan's built-in engine runs AMD GPUs through **Vulkan**. For ROCm acceleration you can run llama.cpp's own HIP build next to Jan and connect it as a custom endpoint; it often performs better than Vulkan on supported AMD GPUs.
 
 <Steps>
 
@@ -126,9 +126,9 @@ Vulkan works out of the box with no additional setup.
 Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
 and toggle the **ON** switch if not enabled.
 
-### Option B: llama.cpp HIP Backend (Recommended)
+### Option B: llama.cpp HIP Build (Optional)
 
-For better performance, use the HIP backend with ROCm installed.
+For better performance, run llama.cpp's HIP build with ROCm installed.
 
 **1. Check GPU Detection**
 
@@ -146,21 +146,19 @@ Verify your AMD GPU is recognized:
 hipInfo
 ```
 
-**3. Download and Install llama.cpp HIP Backend**
+**3. Run llama.cpp's HIP build and connect it to Jan**
 
-Jan does not ship with a pre-built HIP backend. You need to download it manually from the official llama.cpp releases:
+Jan's built-in engine does not include HIP. Download it from the official llama.cpp releases and run it yourself:
 
-1. Go to the [llama.cpp releases page](https://github.com/ggerganov/llama.cpp/releases)
+1. Go to the [llama.cpp releases page](https://github.com/ggml-org/llama.cpp/releases)
 2. Download the latest release with `hip` in the filename (e.g., `llama-<version>-bin-win-hip-x64.zip`)
 3. Extract the downloaded archive
-4. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Providers** > **Llama.cpp**
-5. Use the backend version selector to point at the extracted folder
-6. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** and ensure GPU acceleration is enabled
+4. Start `llama-server` from it with your model and add it to Jan as a custom provider, as described in [Use a different llama.cpp version](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version)
 
 </Steps>
 
 <Callout type="info">
-The HIP backend requires a compatible AMD GPU (RX 6000 series or newer recommended) and ROCm installed. If you encounter issues, fall back to the Vulkan backend.
+The HIP build requires a compatible AMD GPU (RX 6000 series or newer recommended) and ROCm installed. If you encounter issues, use Jan's built-in engine, which runs on Vulkan.
 </Callout>
 
 </Tabs.Tab>

@@ -287,23 +287,24 @@ Ubuntu on Proxmox VM
 
 ## AMD and Apple GPUs
 
-Jan isn't limited to NVIDIA. It detects your hardware and picks a backend automatically, but a GPU
-backend is only preferred when a GPU reports **at least 6 GB of VRAM** — below that, Jan runs on CPU.
+Jan isn't limited to NVIDIA. The llama.cpp engine is built into Jan with the GPU backends for your
+platform (CUDA and Vulkan on Windows and Linux, Metal on Apple Silicon), so there is no backend to
+download or pick. Choose which GPUs it uses in **Settings** > **Hardware** > **GPUs**.
 
 **AMD / Intel (Vulkan):**
 - Requires up-to-date GPU drivers with Vulkan support.
 - If you see a `ggml_vulkan ... error` in the logs, update your drivers and confirm Vulkan is
   installed (`vulkaninfo` on Linux).
-- Select the Vulkan backend under **Settings** > **Model Providers** > **Llama.cpp** > **Backend**.
+- Make sure the GPU is turned on in **Settings** > **Hardware** > **GPUs**.
 
 **Apple Silicon (Metal):**
 - Metal acceleration is used automatically on M-series Macs; no setup needed.
 - A `ggml_metal ... error` usually means the model is too large for available unified memory — use a
   smaller or more heavily quantized model.
 
-**CPU requirement (all platforms):**
-- llama.cpp builds require **AVX2**. On very old CPUs without AVX2, pick a `noavx`/CPU-compatible
-  backend build; otherwise the model process will fail to start.
+**Intel Macs:**
+- Not supported for local models: the bundled engine is built for Apple Silicon only. Remote and
+  custom providers still work.
 
 **GPU not detected after sleep (Linux):**
 - After suspend/resume the driver state can go stale and Jan may report "No GPU detected." Restart
@@ -319,7 +320,7 @@ common causes:
 - *Symptom:* The model fails to load, or generation stops with an out-of-memory error.
 - *Cause:* The model + context needs more memory than is available.
 - *Fix:* Use a smaller or more quantized model; reduce the **context size**; offload fewer layers to
-  the GPU (lower `ngl`); or switch to the CPU backend.
+  the GPU (lower **GPU Layers**); or turn the GPU off in **Settings** > **Hardware** to run on CPU.
 
 **Out of context size**
 - *Symptom:* A banner says the model ran out of context size.
@@ -328,34 +329,36 @@ common causes:
   settings (default `8192`, up to `131072`). Larger context uses more memory.
 
 **Model architecture not supported**
-- *Symptom:* "The model's architecture is not supported by this version of the backend."
-- *Cause:* The backend build is older than the model, or the file isn't a supported text model.
-- *Fix:* Update the llama.cpp backend (**Settings** > **Model Providers** > **Llama.cpp** >
-  **Backend**), or use a different model.
+- *Symptom:* "This model's architecture is not supported by the current engine."
+- *Cause:* The bundled llama.cpp is older than the model, or the file isn't a supported text model.
+- *Fix:* Update Jan (the engine updates with the app), use a different model, or
+  [run a newer `llama-server` yourself](/docs/desktop/remote-models/custom-endpoint#use-a-different-llamacpp-version).
 
 **Model load timed out**
-- *Symptom:* "Router took too long to start and timed out."
+- *Symptom:* "The model took too long to load and was stopped."
 - *Cause:* A large model on a slow disk didn't finish loading within the timeout (default 600s).
-- *Fix:* Wait and retry, use a smaller model, or store models on faster storage.
+- *Fix:* Wait and retry, use a smaller model, store models on faster storage, or raise **Timeout for
+  llamacpp** in **Settings** > **Model Providers** > **Llama.cpp**.
 
 **Backend / driver error**
 - *Symptom:* "The model process encountered an unexpected error," or a `cuda error:` /
   `ggml_vulkan`/`ggml_metal` line in the logs.
-- *Cause:* GPU driver/runtime problem or an unsupported operation on the selected backend.
-- *Fix:* Update drivers, or switch backends (CPU / Vulkan / CUDA). Check the logs for the exact line.
+- *Cause:* GPU driver/runtime problem or an unsupported operation on the GPU's API.
+- *Fix:* Update drivers. On a GPU reachable through both CUDA and Vulkan, try the other API in
+  **Settings** > **Hardware** > **GPUs**, or turn the GPU off to run on CPU. Check the logs for the exact line.
 
 ### Common llama.cpp error messages
 
-These strings appear in `logs/app.log` (prefixed `[llamacpp-router]`) when a model fails:
+These strings appear in `logs/app.log` (on lines starting `jan-llama-worker:`) when a model fails:
 
 | Log message | Likely cause | Resolution |
 | --- | --- | --- |
-| `unknown model architecture: '<arch>'` | Backend too old, or not a supported text model | Update the backend; confirm the model is supported |
+| `unknown model architecture: '<arch>'` | Engine too old, or not a supported text model | Update Jan; confirm the model is supported |
 | `error loading model` / `failed to load model` | Corrupt or truncated GGUF, or partial download | Re-download the model |
 | `missing tensor` / `wrong number of tensors` | Incomplete or mismatched GGUF | Re-download from a known-good source, or try another quantization |
 | `failed to allocate ... buffer` / `out of memory` / `cudaMalloc` | Not enough RAM/VRAM for the model or KV cache | Smaller model, lower context, fewer GPU layers |
 | `request (N tokens) exceeds the available context size (M)` | Prompt longer than the context window | Increase context size or shorten the conversation |
-| `GGML_ASSERT(...)` | Backend bug or unsupported op on this backend | Try a different backend; report upstream if it persists |
+| `GGML_ASSERT(...)` | Engine bug or unsupported op on this GPU API | Try the other GPU API or the CPU; report upstream if it persists |
 
 <Callout type="info">
 For multi-shard (split) GGUF models, point the model file at **shard 1** (the standard llama.cpp
