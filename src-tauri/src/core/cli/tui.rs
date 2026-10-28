@@ -4850,22 +4850,23 @@ fn agent_label(name: &str) -> Span<'static> {
     Span::styled(name.to_string(), Style::new().fg(theme::accent()).bold())
 }
 
-/// A subagent's stats, dim and joined by ` · `: `4 tools · 4 req · 50% ctx ·
-/// 75% cached`, or `4t · 4r · ...` in the `compact` form the dock fits beside
-/// the plan. A part that is not known yet is left out rather than shown as a
-/// zero that would read as a stalled agent, and a child that has not started
-/// has none. The cache rate is its own span so a zero hit stands out.
+/// A subagent's stats, dim and joined by a middle dot: `4 tools, 4 req, 50% ctx,
+/// 75% cache hit`, or without the request count in the `compact` form the dock
+/// fits beside the plan, which keeps the same words as the `/agents` list rather
+/// than abbreviating them. A part that is not known yet is left out rather than
+/// shown as a zero that would read as a stalled agent, and a child that has not
+/// started has none. The cache rate is its own span so a zero hit stands out, in
+/// the same alarm style as the header badge.
 fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec<Span<'static>> {
     if panel.queued || panel.pending {
         return Vec::new();
     }
     let dim = Style::new().fg(theme::muted());
     let (tools, requests) = (panel.calls.len(), panel.requests);
-    let mut parts = if compact {
-        vec![format!("{tools}t"), format!("{requests}r")]
-    } else {
-        vec![pluralize("tool", tools), format!("{requests} req")]
-    };
+    let mut parts = vec![pluralize("tool", tools)];
+    if !compact {
+        parts.push(format!("{requests} req"));
+    }
     // A running later-phase child keeps its phase, so the dependent stage
     // stays visible past the wait.
     if let Some(p) = panel.phase {
@@ -4880,9 +4881,9 @@ fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec
     }
     let mut out = vec![Span::styled(parts.join(" \u{b7} "), dim)];
     if let Some(pct) = panel.cache_hit_rate() {
-        let style = if pct == 0.0 { Style::new().fg(theme::warning()) } else { dim };
+        let style = if pct == 0.0 { Style::new().red().bold() } else { dim };
         out.push(Span::styled(" \u{b7} ", dim));
-        out.push(Span::styled(format!("{pct:.0}% cached"), style));
+        out.push(Span::styled(format!("{pct:.0}% cache hit"), style));
     }
     out
 }
@@ -7891,21 +7892,19 @@ impl App {
                 self.session_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                 self.session_cached_tokens += usage.cached_tokens.unwrap_or(0);
                 self.session_cache_write_tokens += usage.cache_write_tokens.unwrap_or(0);
-                if usage.cached_tokens.is_some() || usage.cache_write_tokens.is_some() {
-                    self.session_cache_reported = true;
-                    self.turn_cache_reported = true;
-                }
+                let cache_reported =
+                    usage.cached_tokens.is_some() || usage.cache_write_tokens.is_some();
+                self.session_cache_reported |= cache_reported;
                 // Latest request's context, not a sum: each request resends the
                 // whole conversation, so adding them would be meaningless.
                 if let Some(prompt) = usage.prompt_tokens {
                     self.turn_prompt_tokens = prompt;
-                    // Cache read/write for the same request. Only overwrite when
-                    // the provider reported a value, so a provider that omits the
-                    // fields leaves the last known figures rather than zeroing.
-                    self.turn_cached_tokens = usage.cached_tokens.unwrap_or(self.turn_cached_tokens);
-                    self.turn_cache_write_tokens = usage
-                        .cache_write_tokens
-                        .unwrap_or(self.turn_cache_write_tokens);
+                    // Cache read/write for the same request, replaced wholesale:
+                    // keeping an older request's figures when this one omits
+                    // them would put two requests on the "last request" line.
+                    self.turn_cache_reported = cache_reported;
+                    self.turn_cached_tokens = usage.cached_tokens.unwrap_or(0);
+                    self.turn_cache_write_tokens = usage.cache_write_tokens.unwrap_or(0);
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
@@ -8891,24 +8890,24 @@ fn usage_lines(
     out
 }
 
-/// `N req · 12.3K in (8.1K cached) · 3.4K out`, the shape both the per-model
-/// rows and the total use.
+/// `N req, 12.3K in (8.1K cache hit), 3.4K out, 1.5K cache written` (joined by
+/// middle dots), the shape both the per-model rows and the total use.
 fn usage_counts(usage: &super::model_catalog::TokenUsage) -> String {
     let mut line = format!(
-        "{} req · {} in",
+        "{} req \u{b7} {} in",
         usage.requests,
         format_tokens(usage.prompt_tokens)
     );
     if usage.cached_tokens > 0 {
-        line.push_str(&format!(" ({} cached)", format_tokens(usage.cached_tokens)));
+        line.push_str(&format!(" ({} cache hit)", format_tokens(usage.cached_tokens)));
     }
     line.push_str(&format!(
-        " · {} out",
+        " \u{b7} {} out",
         format_tokens(usage.completion_tokens)
     ));
     if usage.cache_write_tokens > 0 {
         line.push_str(&format!(
-            " · {} cache write",
+            " \u{b7} {} cache written",
             format_tokens(usage.cache_write_tokens)
         ));
     }
@@ -9113,19 +9112,15 @@ fn cache_summary_lines(report: &ContextReport) -> Vec<(String, Style)> {
         } else {
             ""
         };
-        let read_pct =
-            cache_hit_percent(report.session_cached_tokens, report.session_prompt_tokens);
-        let mut line = format!(
-            "Prompt cache (session{scope}): {} read ({read_pct:.0}% of prompt)",
-            format_tokens(report.session_cached_tokens)
+        let line = cache_line(
+            &format!("session{scope}"),
+            report.session_cached_tokens,
+            report.session_prompt_tokens,
+            report.session_cache_write_tokens,
         );
-        if report.session_cache_write_tokens > 0 {
-            line.push_str(&format!(
-                ", {} written",
-                format_tokens(report.session_cache_write_tokens)
-            ));
-        }
-        let style = if read_pct == 0.0 {
+        let hit_pct =
+            cache_hit_percent(report.session_cached_tokens, report.session_prompt_tokens);
+        let style = if hit_pct == 0.0 {
             Style::new().red().bold()
         } else {
             Style::new().cyan()
@@ -9133,32 +9128,43 @@ fn cache_summary_lines(report: &ContextReport) -> Vec<(String, Style)> {
         lines.push((line, style));
     }
     if report.turn_cache_reported {
-        let read_pct = cache_hit_percent(report.cached_tokens, report.fill);
-        let mut line = format!(
-            "Prompt cache (last request): {} read ({read_pct:.0}% of prompt)",
-            format_tokens(report.cached_tokens)
+        let line = cache_line(
+            "last request",
+            report.cached_tokens,
+            report.fill,
+            report.cache_write_tokens,
         );
-        if report.cache_write_tokens > 0 {
-            line.push_str(&format!(
-                ", {} written",
-                format_tokens(report.cache_write_tokens)
-            ));
-        }
         lines.push((line, Style::new().cyan()));
     }
     if lines.is_empty() && report.fill_reported {
         // A measured request that reported no cache field. Saying so beats
-        // printing a 0% the provider never claimed. Deliberately not "not
-        // reported *by this provider*": the OpenAI-shaped path reads usage
-        // through a client that normalizes a reported `0` to absent (see
-        // `genai_bridge::completion_json`), so what this line can honestly
-        // report is that no cache field arrived, not who withheld it.
+        // printing a 0% the provider never claimed. Deliberately not "this
+        // provider does not cache": the OpenAI-shaped path reads usage through
+        // a client that normalizes a reported `0` to absent (see
+        // `genai_bridge::completion_json`), so a caching route with a cold
+        // prefix lands here too. All this line can honestly say is that no hit
+        // count arrived.
         lines.push((
-            "Prompt cache: not reported".to_string(),
+            "Prompt cache: no hits reported".to_string(),
             Style::new().dim(),
         ));
     }
     lines
+}
+
+/// One `/context` cache line: `Prompt cache (<scope>): 42% hit, 1.2M of 2.9M
+/// prompt tokens read, 140K written`, the write count only when there was one.
+fn cache_line(scope: &str, cached: u64, prompt: u64, written: u64) -> String {
+    let mut line = format!(
+        "Prompt cache ({scope}): {:.0}% hit, {} of {} prompt tokens read",
+        cache_hit_percent(cached, prompt),
+        format_tokens(cached),
+        format_tokens(prompt)
+    );
+    if written > 0 {
+        line.push_str(&format!(", {} written", format_tokens(written)));
+    }
+    line
 }
 
 /// Share of a prompt the cache served, clamped to 100%: normally a cache read is
@@ -9408,7 +9414,7 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             )],
         ];
         for (text, style) in cache_summary_lines(report) {
-            rows.push(vec![Span::styled(text, style)]);
+            rows.extend(wrap_text(&text, style, max));
         }
         if let Some(cost) = cost_summary_line(report) {
             rows.push(vec![Span::styled(cost, Style::new().yellow())]);
@@ -9520,8 +9526,10 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         ),
         Style::new().bold(),
     )]);
+    // Wrapped rather than clipped: the written count sits at the end of a
+    // line that outgrows a narrow pane.
     for (text, style) in cache_summary_lines(report) {
-        rows.push(vec![Span::styled(text, style)]);
+        rows.extend(wrap_text(&text, style, max));
     }
     if let Some(cost) = cost_summary_line(report) {
         rows.push(vec![Span::styled(cost, Style::new().yellow())]);
@@ -23900,7 +23908,7 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         } else {
             Style::new().fg(theme::accent())
         };
-        spans.push(Span::styled(format!("cache {pct:.0}%{scope}"), style));
+        spans.push(Span::styled(format!("cache hit {pct:.0}%{scope}"), style));
     }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Output rate segment: last completed turn's tokens/sec, cached so it holds
@@ -25144,18 +25152,18 @@ mod tests {
         };
         let mut panel = panel_with_calls("kv-review", vec!["Ran a", "Ran b", "Ran c", "Ran d"]);
         panel.requests = 4;
-        assert_eq!(text(agent_stats(&panel, 128_000, false)), "4 tools · 4 req");
+        assert_eq!(text(agent_stats(&panel, 128_000, false)), "4 tools \u{b7} 4 req");
         panel.prompt_tokens = 64_000;
         panel.total_prompt_tokens = 64_000;
         panel.total_cached_tokens = 48_000;
         panel.cache_reported = true;
         assert_eq!(
             text(agent_stats(&panel, 128_000, false)),
-            "4 tools · 4 req · 50% ctx · 75% cached"
+            "4 tools \u{b7} 4 req \u{b7} 50% ctx \u{b7} 75% cache hit"
         );
         assert_eq!(
             text(agent_stats(&panel, 128_000, true)),
-            "4t · 4r · 50% ctx · 75% cached"
+            "4 tools \u{b7} 50% ctx \u{b7} 75% cache hit"
         );
         panel.queued = true;
         assert!(agent_stats(&panel, 128_000, false).is_empty(), "no stats before it starts");
@@ -38653,11 +38661,11 @@ mod tests {
         child_usage(&mut app, "r0", 1_000, Some(500));
         child_usage(&mut app, "r0", 3_000, Some(2_500));
         let out = render_rows(&mut app, 120, 20).join("\n");
-        assert!(out.contains(" · 75% cached"), "{out}");
+        assert!(out.contains(" \u{b7} 75% cache hit"), "{out}");
         let items = agent_picker_items(&mut app.subagents, &[], 200_000);
-        assert!(items[0].label.contains("75% cached"), "{}", items[0].label);
+        assert!(items[0].label.contains("75% cache hit"), "{}", items[0].label);
         let detail = agent_detail_text(&mut app, "r0", 80, 20);
-        assert!(detail.contains("75% cached"), "{detail}");
+        assert!(detail.contains("75% cache hit"), "{detail}");
     }
 
     /// A child that never reports a cache field shows no rate at all -- never a
@@ -38668,15 +38676,15 @@ mod tests {
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, None);
         let out = render_rows(&mut app, 120, 20).join("\n");
-        assert!(!out.contains("cached"), "{out}");
+        assert!(!out.contains("cache hit"), "{out}");
         let items = agent_picker_items(&mut app.subagents, &[], 200_000);
-        assert!(!items[0].label.contains("cached"), "{}", items[0].label);
+        assert!(!items[0].label.contains("cache hit"), "{}", items[0].label);
     }
 
-    /// A reported zero is the expensive state, so it renders, in the palette's
-    /// warning colour.
+    /// A reported zero is the expensive state, so it renders, in the same alarm
+    /// style as the header badge and `/context`.
     #[test]
-    fn subagent_zero_cache_rate_is_a_warning() {
+    fn subagent_zero_cache_rate_is_an_alarm() {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(0));
@@ -38684,9 +38692,9 @@ mod tests {
         let span = lines
             .iter()
             .flat_map(|l| l.spans.iter())
-            .find(|s| s.content.contains("0% cached"))
+            .find(|s| s.content.contains("0% cache hit"))
             .expect("a zero rate is shown");
-        assert_eq!(span.style.fg, Some(super::theme::warning()), "{span:?}");
+        assert_eq!(span.style, Style::new().red().bold(), "{span:?}");
     }
 
     /// Child cache reads stay out of the parent's session counters: the header
@@ -38955,8 +38963,8 @@ mod tests {
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
         assert!(
-            out.contains("1t · 1r"),
-            "missing compact call/request counts: {out}"
+            out.contains("1 tool \u{b7} 10% ctx") && out.contains("1 tool \u{b7} 20% ctx"),
+            "missing spelled-out call counts: {out}"
         );
         // Two agents -> one activity line each, so the block stays scannable.
         assert_eq!(
@@ -39128,7 +39136,7 @@ mod tests {
             out.contains("flappy-2d.html"),
             "destination should surface: {out}"
         );
-        assert!(out.contains("0t · "), "still no completed call: {out}");
+        assert!(out.contains("flappy-2d  0 tools"), "still no completed call: {out}");
 
         // The completed call supersedes the in-progress row.
         subagent_event(
@@ -39142,7 +39150,7 @@ mod tests {
             },
         );
         let out = render_rows(&mut app, 100, 20).join("\n");
-        assert!(out.contains("1t · "), "completed call should count: {out}");
+        assert!(out.contains("flappy-2d  1 tool"), "completed call should count: {out}");
         assert!(
             app.subagents[0].active.is_none(),
             "in-flight view should clear once the call lands"
@@ -39938,7 +39946,7 @@ mod tests {
                 .collect();
             let joined = text.join("\n");
             assert!(joined.contains("2 req"), "{joined}");
-            assert!(joined.contains("(40K cached)"), "{joined}");
+            assert!(joined.contains("(40K cache hit)"), "{joined}");
             assert!(
                 joined.contains("no published price"),
                 "an unpriced model must say so: {joined}"
@@ -40640,6 +40648,14 @@ mod tests {
         report
     }
 
+    fn cache_text(report: &ContextReport) -> String {
+        cache_summary_lines(report)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn context_text(report: &ContextReport) -> String {
         context_lines(report, 80)
             .iter()
@@ -40662,15 +40678,36 @@ mod tests {
         report.cached_tokens = 90_000;
         report.cache_write_tokens = 12_000;
 
-        let text = context_text(&report);
+        let text = cache_text(&report);
         assert!(
-            text.contains("Prompt cache (session): 1.2M read (91% of prompt), 140K written"),
+            text.contains(
+                "Prompt cache (session): 91% hit, 1.2M of 1.3M prompt tokens read, 140K written"
+            ),
             "{text}"
         );
         assert!(
-            text.contains("Prompt cache (last request): 90K read (75% of prompt), 12K written"),
+            text.contains(
+                "Prompt cache (last request): 75% hit, 90K of 120K prompt tokens read, 12K written"
+            ),
             "{text}"
         );
+    }
+
+    /// A cache line longer than the pane wraps instead of losing its tail.
+    #[test]
+    fn context_view_wraps_a_long_cache_line() {
+        let mut report = context_cache_report();
+        report.turn_cache_reported = true;
+        report.cached_tokens = 90_000;
+        report.cache_write_tokens = 12_000;
+
+        let rows = context_lines(&report, 60).iter().map(line_text).collect::<Vec<_>>();
+        let at = rows
+            .iter()
+            .position(|r| r.starts_with("Prompt cache (last request)"))
+            .unwrap_or_else(|| panic!("{rows:?}"));
+        assert!(rows[at].chars().count() <= 60, "{rows:?}");
+        assert!(rows[at + 1].contains("12K written"), "{rows:?}");
     }
 
     /// A route that reports zero cache reads renders `0%`, in the alarm colour.
@@ -40688,7 +40725,7 @@ mod tests {
         let summary = cache_summary_lines(&report);
         assert_eq!(
             summary[0].0,
-            "Prompt cache (session): 0 read (0% of prompt), 30K written"
+            "Prompt cache (session): 0% hit, 0 of 240K prompt tokens read, 30K written"
         );
         assert_eq!(
             summary[0].1,
@@ -40696,28 +40733,29 @@ mod tests {
             "a zero hit rate is the state to alarm on"
         );
 
-        let text = context_text(&report);
+        let text = cache_text(&report);
         assert!(
-            text.contains("Prompt cache (last request): 0 read (0% of prompt), 30K written"),
+            text.contains(
+                "Prompt cache (last request): 0% hit, 0 of 120K prompt tokens read, 30K written"
+            ),
             "{text}"
         );
-        assert!(!text.contains("not reported"), "{text}");
+        assert!(!text.contains("no hits reported"), "{text}");
     }
 
     /// A measured request that reported no cache field says so. Printing a `0%`
     /// there would be a number the provider never claimed, and the previous
-    /// blank line left an honest zero indistinguishable from this case.
+    /// blank line left an honest zero indistinguishable from this case. The
+    /// wording claims no more than arrived: a route that does cache can still
+    /// land here when it reported a zero the client normalized away.
     #[test]
-    fn context_view_says_not_reported_when_the_route_reports_no_cache_fields() {
+    fn context_view_says_no_hits_reported_when_the_route_reports_no_cache_fields() {
         let report = context_cache_report();
 
         let text = context_text(&report);
+        assert!(text.contains("Prompt cache: no hits reported"), "{text}");
         assert!(
-            text.contains("Prompt cache: not reported"),
-            "{text}"
-        );
-        assert!(
-            !text.contains("0% of prompt"),
+            !text.contains("0% hit"),
             "a non-reporting route must not show a fabricated zero: {text}"
         );
     }
@@ -40744,9 +40782,11 @@ mod tests {
         report.session_prompt_tokens = 100_000;
         report.session_cached_tokens = 50_000;
 
-        let text = context_text(&report);
+        let text = cache_text(&report);
         assert!(
-            text.contains("Prompt cache (session, this process): 50K read (50% of prompt)"),
+            text.contains(
+                "Prompt cache (session, this process): 50% hit, 50K of 100K prompt tokens read"
+            ),
             "{text}"
         );
     }
@@ -40787,6 +40827,36 @@ mod tests {
             "a reported zero is still a report, and the last-request line must \
              show it rather than vanish"
         );
+    }
+
+    /// The last-request figures describe the latest request only: a request
+    /// that omits the cache fields (a route or model switch mid-turn) clears
+    /// them instead of leaving an older request's read count on the line.
+    #[test]
+    fn last_request_cache_figures_follow_the_latest_request() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(1_000),
+                cached_tokens: Some(900),
+                cache_write_tokens: Some(50),
+                ..Default::default()
+            },
+            execution_id: None,
+        });
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(2_000),
+                ..Default::default()
+            },
+            execution_id: None,
+        });
+        assert_eq!(app.turn_prompt_tokens, 2_000);
+        assert_eq!(app.turn_cached_tokens, 0, "no read count from the older request");
+        assert_eq!(app.turn_cache_write_tokens, 0);
+        assert!(!app.turn_cache_reported, "the latest request reported no cache field");
+        assert!(app.session_cache_reported, "the session latch still holds");
+        assert_eq!(app.session_cached_tokens, 900);
     }
 
     #[test]
@@ -46458,7 +46528,7 @@ mod tests {
         app.session_prompt_tokens = 200_000;
         app.session_cached_tokens = 150_000;
 
-        assert!(header_text(&app).contains("cache 75%"), "{}", header_text(&app));
+        assert!(header_text(&app).contains("cache hit 75%"), "{}", header_text(&app));
     }
 
     /// No badge means the route reports no cache usage at all -- never a `0%`
@@ -46485,7 +46555,7 @@ mod tests {
             .into_iter()
             .find(|s| s.content.contains("cache"))
             .expect("the badge must render once the route reports");
-        assert_eq!(span.content, "cache 0%");
+        assert_eq!(span.content, "cache hit 0%");
         assert_eq!(span.style, Style::new().red().bold());
     }
 
@@ -46500,7 +46570,7 @@ mod tests {
         app.session_cached_tokens = 90_000;
 
         assert!(
-            header_text(&app).contains("cache 90% (this process)"),
+            header_text(&app).contains("cache hit 90% (this process)"),
             "{}",
             header_text(&app)
         );
