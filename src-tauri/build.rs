@@ -4,6 +4,18 @@ fn main() {
         tauri_build::build();
     }
 
+    // Windows: resolve the executable's own static imports from System32 only
+    // (LOAD_LIBRARY_SEARCH_SYSTEM32), so a DLL dropped in the install folder
+    // cannot stand in for a system DLL of the same name. Every static import of
+    // Jan-Desktop.exe is a system DLL, so nothing is loaded from the app folder
+    // this way. The flag applies to the binaries only; test executables and
+    // other targets keep the default search.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+    {
+        println!("cargo:rustc-link-arg-bins=/DEPENDENTLOADFLAG:0x800");
+    }
+
     #[cfg(target_os = "macos")]
     {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");

@@ -39,7 +39,6 @@ dependencies = [
  "jan-utils",
  "keyring",
  "libc",
- "libloading 0.8.9",
  "log",
  "machine-uid",
  "nix 0.30.1",
