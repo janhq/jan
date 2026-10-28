@@ -401,7 +401,7 @@ fn todo_panel_single_phase() {
 }
 
 #[test]
-fn todo_panel_multi_phase_beside_the_agents() {
+fn todo_panel_multi_phase_beside_the_monitors() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![
@@ -411,32 +411,29 @@ fn todo_panel_multi_phase_beside_the_agents() {
         ),
         ("frontend", vec![("ui", Open)]),
     ]);
-    app.subagents = vec![cached_panel("api-review", 6, 12_000, 9_000, true)];
+    app.monitors = vec![monitor("mon-1", "build", "grep -m1 OK build.log", 12)];
     assert_buffer(
-        "todo_panel_split_with_agents",
+        "todo_panel_split_with_monitors",
         &frame(&mut app, DARK, 100, 18),
     );
 }
 
 #[test]
-fn todo_panel_stacks_above_the_agents_when_narrow() {
+fn todo_panel_stacks_above_the_monitors_when_narrow() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![(
         "",
         vec![("routes", InProgress), ("auth", Open)],
     )]);
-    app.subagents = vec![cached_panel("api-review", 2, 0, 0, false)];
+    app.monitors = vec![monitor("mon-1", "build", "grep -m1 OK build.log", 12)];
     assert_buffer(
         "todo_panel_stacked_narrow",
         &frame(&mut app, DARK, 60, 18),
     );
 }
 
-// ---- Subagent panel and /agents --------------------------------------------
-
-/// The reduced-motion throbber, as `motion::spinner` returns it.
-const THROBBER: &str = "\u{2022}";
+// ---- Subagents and /agents ------------------------------------------------
 
 /// A running child with `calls` calls and, when `reported`, a prompt-cache
 /// history of `cached` out of `prompt` tokens.
@@ -473,24 +470,6 @@ fn fan_out() -> Vec<SubagentPanel> {
         queued,
         waiting,
     ]
-}
-
-#[test]
-fn subagent_dock_shows_stats_and_cache_rates() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 12, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_cache_rates", &buf);
-}
-
-#[test]
-fn subagent_dock_overflow_points_at_agents() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 4, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_overflow", &buf);
 }
 
 #[test]
@@ -642,7 +621,7 @@ fn subagents_and_shells_over_the_idle_input() {
         panel.started = None;
     }
     app.bg_shells = vec![shell(4242, "npm run dev", 65)];
-    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 13));
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
 }
 
 /// Background pings, each as the row its kind calls for.
