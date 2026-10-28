@@ -3672,7 +3672,16 @@ async fn orchestrate_inner(
     if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
-                if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
+                // Indexed answers are plain-string `content`, so that is all an
+                // echo of this session can match.
+                let answers: Vec<&str> = conversation_messages
+                    .iter()
+                    .filter(|m| m.get("role").and_then(|v| v.as_str()) == Some("assistant"))
+                    .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+                    .collect();
+                if let Some(mem) =
+                    crate::core::agent::memory::retrieve_block(root, &query, &answers)
+                {
                     volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
