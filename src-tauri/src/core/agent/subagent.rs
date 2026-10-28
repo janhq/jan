@@ -837,8 +837,11 @@ fn resolve_dispatch(
 /// Child stream events are folded into the parent's own stream, except the
 /// child's terminal `Done`/`Error`: the parent must not see the child terminate
 /// its stream. Dispatch turns the child's result into a synthetic tool result
-/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child's monitor set
-/// and its parked state describe the child alone, so they stay with it too.
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child never has a
+/// monitor (`never_delegated`), so its always-empty monitor set stays with it.
+/// Its `Parked` is forwarded: wrapped in `Subagent` it is display-only, and it
+/// is the one sign a child has stopped generating to wait on a command it
+/// backgrounded, which otherwise reads as a child still running.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
     !matches!(
@@ -847,7 +850,6 @@ fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
             | StreamEvent::Error { .. }
             | StreamEvent::MessagesUpdated { .. }
             | StreamEvent::Monitors { .. }
-            | StreamEvent::Parked
     )
 }
 
@@ -4284,6 +4286,17 @@ pub(crate) mod tests {
         assert!(!forward_to_parent(&StreamEvent::Error {
             code: "e".into(),
             message: "m".into(),
+        }));
+    }
+
+    /// A child parked on its own background work says so to the parent's
+    /// screen; its monitor set, empty by construction, does not travel.
+    #[test]
+    fn forward_carries_a_childs_park_but_not_its_monitor_set() {
+        use crate::core::agent::events::StreamEvent;
+        assert!(forward_to_parent(&StreamEvent::Parked));
+        assert!(!forward_to_parent(&StreamEvent::Monitors {
+            monitors: Vec::new(),
         }));
     }
 

@@ -30,7 +30,8 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    background_rows, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    background_rows, input_box_height, subagent_group, turn_stats_line, work_group_lines, Level,
+    TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -652,6 +653,36 @@ fn background_work_block_idle_running_and_narrow() {
     };
     assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
     assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 14));
+}
+
+/// Each way a child can be not-running reads distinctly: running, queued for
+/// a slot, waiting on an earlier phase, and parked on its own background
+/// work, in the block and in `/agents`.
+#[test]
+fn subagent_states_read_distinctly() {
+    let now = Instant::now();
+    let mut app = snapshot_app();
+    let mut running = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    running.started = Some(now - Duration::from_secs(65));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    let mut phased = cached_panel("collector", 0, 0, 0, false);
+    phased.pending = true;
+    phased.phase = Some(2);
+    let mut parked = cached_panel("builder", 2, 8_000, 0, false);
+    parked.started = Some(now - Duration::from_secs(30));
+    parked.parked = true;
+    app.subagents = vec![running, queued, phased, parked];
+    // Through the block's own helper with room for all four; the live block
+    // caps a group at `BACKGROUND_GROUP_ROWS` and counts the rest.
+    let buf = pinned(DARK, || {
+        let group = subagent_group(&mut app.subagents, now).expect("children");
+        lines_buffer(work_group_lines(&group, 4, 80), 80)
+    });
+    assert_buffer("subagent_states", &buf);
+    open_agents_picker(&mut app);
+    assert_buffer("subagent_states_inspector", &frame(&mut app, DARK, 100, 13));
 }
 
 /// Background pings, each as the row its kind calls for.

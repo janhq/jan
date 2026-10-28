@@ -4873,6 +4873,10 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
+    /// True while the child has stopped generating to wait on a command it
+    /// backgrounded (its forwarded `Parked`); its next `Step` clears it. A
+    /// parked child is otherwise indistinguishable from one still working.
+    parked: bool,
     /// When the child's `SubagentStart` arrived, for the elapsed time beside
     /// it once the main turn has ended. `None` while it is queued or pending.
     started: Option<Instant>,
@@ -4924,6 +4928,7 @@ impl SubagentPanel {
             waiting: 0,
             pending: false,
             phase: None,
+            parked: false,
             started: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
@@ -4981,6 +4986,7 @@ impl SubagentPanel {
             Some(SubagentOutcome::Interrupted) => AgentStatus::Interrupted,
             None if self.pending => AgentStatus::Waiting(self.phase),
             None if self.queued => AgentStatus::Queued(self.waiting),
+            None if self.parked => AgentStatus::Parked,
             None => AgentStatus::Running,
         }
     }
@@ -5020,6 +5026,8 @@ enum AgentStatus {
     Queued(u32),
     /// A later-phase child waiting on the phase before it.
     Waiting(Option<u32>),
+    /// Started, but idle until a command it backgrounded reports back.
+    Parked,
     /// Finished on its own, with the first line of its reply when it gave one.
     Completed(Option<String>),
     Interrupted,
@@ -5038,6 +5046,7 @@ impl AgentStatus {
             AgentStatus::Queued(n) => word(&format!("Queued ({n})"), dim),
             AgentStatus::Waiting(Some(p)) => word(&format!("Waiting (phase {p})"), dim),
             AgentStatus::Waiting(None) => word("Waiting", dim),
+            AgentStatus::Parked => word("Waiting on background work", dim),
             AgentStatus::Completed(preview) => {
                 let mut out = word("Completed", Style::new().fg(theme::success()));
                 if let Some(preview) = preview {
@@ -8295,6 +8304,8 @@ impl App {
             // happening even during a long think with no tool calls.
             StreamEvent::Step { .. } => {
                 if let Some(panel) = panel {
+                    // A request is the child working again, so a park is over.
+                    panel.parked = false;
                     panel.requests += 1;
                     panel.transcript.step();
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
@@ -8353,6 +8364,11 @@ impl App {
                 reason,
                 messages,
             } => self.apply_compaction(phase, reason, messages, Some(name)),
+            StreamEvent::Parked => {
+                if let Some(panel) = panel {
+                    panel.parked = true;
+                }
+            }
             // Anything else a child emits (a nested bracket, its terminal
             // events) has no place on this screen: a child's end arrives as
             // the parent's own `SubagentEnd`.
@@ -24866,7 +24882,9 @@ fn monitor_group(monitors: &[MonitorSnapshot]) -> Option<WorkGroup> {
 
 /// The session's subagents as a group. A running child shows its elapsed
 /// time and what it is doing; the head already says it is running, so only
-/// a child that is not (queued, waiting on a phase) carries a status word.
+/// a child that is not carries a status word: queued for a slot (with its
+/// place in line), waiting on an earlier phase, or started and waiting on
+/// background work of its own, which keeps its elapsed time.
 /// The head names `/agents` because that is where a child is viewed and
 /// stopped in either state: Esc mid-turn cancels the turn and every child
 /// with it, and idle it only clears the input.
@@ -24880,21 +24898,20 @@ fn subagent_group(panels: &mut [SubagentPanel], now: Instant) -> Option<WorkGrou
     let counts = vec![
         ("running", count(|s| *s == AgentStatus::Running)),
         ("queued", count(|s| matches!(s, AgentStatus::Queued(_)))),
-        ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_)))),
+        ("waiting", count(|s| matches!(s, AgentStatus::Waiting(_) | AgentStatus::Parked))),
     ];
     let children = panels
         .iter_mut()
         .zip(statuses)
         .map(|(panel, status)| {
-            let facts = if status == AgentStatus::Running {
-                let elapsed = panel.started.map(|started| {
-                    let secs = now.saturating_duration_since(started).as_secs();
-                    vec![Span::styled(format_elapsed(secs), dim)]
-                });
-                elapsed.into_iter().chain([agent_activity(panel, "")]).collect()
-            } else {
-                vec![status.spans(usize::MAX)]
-            };
+            let running = status == AgentStatus::Running;
+            let word = (!running).then(|| status.spans(usize::MAX));
+            let elapsed = panel.started.map(|started| {
+                let secs = now.saturating_duration_since(started).as_secs();
+                vec![Span::styled(format_elapsed(secs), dim)]
+            });
+            let activity = running.then(|| agent_activity(panel, ""));
+            let facts = word.into_iter().chain(elapsed).chain(activity).collect();
             WorkChild {
                 name: panel.name.clone(),
                 facts,
@@ -25488,6 +25505,32 @@ mod tests {
         assert_eq!(style.fg, Some(ratatui::style::Color::Red));
         assert_eq!(words(AgentStatus::Queued(2)).0, "Queued (2)");
         assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Waiting (phase 3)");
+        assert_eq!(words(AgentStatus::Parked).0, "Waiting on background work");
+    }
+
+    /// A child that parks on its own background work reads as waiting, in
+    /// the block, its head count and `/agents`, and goes back to running on
+    /// its next request.
+    #[test]
+    fn a_parked_child_waits_then_resumes() {
+        let mut app = test_app();
+        let now = Instant::now();
+        start_subagent(&mut app, "r0", "builder");
+        app.subagents[0].started = Some(now - Duration::from_secs(30));
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Parked);
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Parked);
+        assert_eq!(
+            subagent_text(&mut app, 100, now),
+            vec![
+                " 1 subagent waiting \u{b7} /agents to view or stop",
+                "  \u{2514} builder \u{b7} Waiting on background work \u{b7} 30s",
+            ]
+        );
+        let items = agent_picker_items(&mut app.subagents, &[], 128_000);
+        assert!(items[0].label.contains("Waiting on background work"), "{}", items[0].label);
+        subagent_event(&mut app, "r0", "builder", StreamEvent::Step { index: 2, max: 8 });
+        assert_eq!(app.subagents[0].status(None), AgentStatus::Running);
+        assert!(subagent_text(&mut app, 100, now)[0].starts_with(" 1 subagent running"));
     }
 
     /// The full and compact stats come from one function and leave out what
