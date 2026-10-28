@@ -1754,6 +1754,7 @@ impl ToolGroup {
             // just its command; the live panel draws its clock and output.
             return RowKind::Shells {
                 state: self.tree_state(state),
+                aborted: state == GroupRow::Aborted,
                 children: self
                     .calls
                     .iter()
@@ -2163,6 +2164,10 @@ enum RowKind {
     /// command with its output preview (see `shell_group_lines`).
     Shells {
         state: ToolState,
+        /// The run was cut short, so a command without a result is
+        /// interrupted. Held apart from `state`, where a failed or detached
+        /// sibling outranks the interruption.
+        aborted: bool,
         children: Vec<ShellChild>,
     },
     /// A closed group of mixed calls: `Worked · N tool calls` over the
@@ -2461,15 +2466,13 @@ impl RowKind {
                 calls,
                 summary,
             } => worked_lines(state.bullet(), *calls, summary, width),
-            RowKind::Shells { state, children } => {
+            RowKind::Shells {
+                state,
+                aborted,
+                children,
+            } => {
                 let views: Vec<ShellView> = children.iter().map(ShellChild::view).collect();
-                shell_group_lines(
-                    state.bullet(),
-                    &views,
-                    None,
-                    *state == ToolState::Interrupted,
-                    width,
-                )
+                shell_group_lines(state.bullet(), &views, None, *aborted, width)
             }
             RowKind::Result {
                 is_error,
@@ -11650,9 +11653,22 @@ fn shell_group_lines(
         Span::styled("Shell", Style::new().bold()),
     ])];
     let max = (width as usize).saturating_sub(TREE_NESTED.len() + 2).max(1);
-    // Only the newest commands are listed; the fold line takes the corner so
-    // the tree still opens on the first row under the header.
-    let hidden = views.len().saturating_sub(SHELL_GROUP_MAX_COMMANDS);
+    // Only the newest settled commands are listed; one without a result is
+    // never folded, so a long-running early command keeps its clock and tail
+    // in the live panel. The fold line takes the corner so the tree still
+    // opens on the first row under the header.
+    let unresolved = views.iter().filter(|v| v.result.is_none()).count();
+    let settled = views.len() - unresolved;
+    let hidden = settled.saturating_sub(SHELL_GROUP_MAX_COMMANDS.saturating_sub(unresolved));
+    let mut to_hide = hidden;
+    let shown: Vec<&ShellView<'_>> = views
+        .iter()
+        .filter(|v| {
+            let fold = to_hide > 0 && v.result.is_some();
+            to_hide -= usize::from(fold);
+            !fold
+        })
+        .collect();
     if hidden > 0 {
         let note = format!(
             "\u{2026} +{} ({} in this group, Ctrl-O to expand)",
@@ -11667,7 +11683,7 @@ fn shell_group_lines(
             ),
         ]));
     }
-    for (i, view) in views.iter().enumerate().skip(hidden) {
+    for (i, view) in shown.into_iter().enumerate() {
         let (state, suffix, rows) = match (view.result, view.live) {
             (Some((output, is_error)), _) => {
                 settled_shell_rows(output, is_error, SHELL_CHILD_PREVIEW_LINES, max)
@@ -29246,6 +29262,60 @@ mod tests {
             .join("\n");
         assert!(!text.contains("earlier command"), "{text}");
         assert!(text.contains("\u{2514} \u{2022} Ran a"), "{text}");
+    }
+
+    /// The fold hides only settled commands: an early command still in flight
+    /// keeps its row (and in the live panel its clock and tail) while newer
+    /// finished ones fold away.
+    #[test]
+    fn the_fold_never_hides_a_command_still_running() {
+        let names = ["slow", "b", "c", "d", "e", "f", "g"];
+        let views: Vec<super::ShellView> = names
+            .iter()
+            .map(|c| super::ShellView {
+                command: c,
+                result: (*c != "slow").then_some(("[exit 0]", false)),
+                live: (*c == "slow").then_some(("tick", 12)),
+            })
+            .collect();
+        let text: Vec<String> =
+            super::shell_group_lines(ToolState::Running.bullet(), &views, Some(0), false, 80)
+                .iter()
+                .map(line_text)
+                .collect();
+        let body = text.join("\n");
+        assert!(body.contains("Running slow"), "in-flight command folded: {body}");
+        assert!(body.contains("tick"), "live tail lost: {body}");
+        assert!(body.contains("+2 earlier commands (7 in this group"), "{body}");
+        for kept in ["Ran d", "Ran e", "Ran f", "Ran g"] {
+            assert!(body.contains(kept), "{kept}: {body}");
+        }
+        assert!(!body.contains("Ran b") && !body.contains("Ran c"), "{body}");
+    }
+
+    /// An aborted run marks its unresolved command interrupted even when a
+    /// failed sibling gives the header a different state.
+    #[test]
+    fn an_aborted_group_with_a_failure_marks_the_unresolved_command_interrupted() {
+        let mut app = test_app();
+        run_commands(&mut app, &[("a", "false"), ("b", "sleep 300")]);
+        land(&mut app, "a", "[exit 1]", true);
+        let group = app.transcript.tool_group.as_ref().expect("open group");
+        let row = group.row(super::GroupRow::Aborted);
+        assert!(
+            matches!(row.kind, RowKind::Shells { state: ToolState::Failure, aborted: true, .. }),
+            "failure outranks the abort in the header"
+        );
+        let lines = row.lines(70);
+        let sleep = lines
+            .iter()
+            .find(|l| line_text(l).contains("sleep 300"))
+            .expect("unresolved command row");
+        assert!(
+            sleep.spans.iter().any(|s| s.style == ToolState::Interrupted.bullet_style()),
+            "unresolved command left running: {}",
+            line_text(sleep)
+        );
     }
 
     /// A read between two commands ends the run: the group keeps its counted
