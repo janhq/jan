@@ -790,6 +790,9 @@ enum PickerKind {
     /// `/shells`: the background-shell inspector. Lists commands the `bash` tool
     /// detached (outran their timeout, still running), each stoppable with `x`.
     BackgroundShells,
+    /// One background shell's live output, following its tail. Reached with
+    /// Enter from `BackgroundShells`; Esc steps back to the list.
+    ShellDetail,
     /// `/monitors`: the session's running monitors, each stoppable with `x`.
     Monitors,
 }
@@ -855,6 +858,7 @@ impl Picker {
             PickerKind::Agents => " subagents ",
             PickerKind::AgentDetail => " subagent ",
             PickerKind::BackgroundShells => " background shells ",
+            PickerKind::ShellDetail => " background shell ",
             PickerKind::Monitors => " monitors ",
         }
     }
@@ -885,9 +889,11 @@ impl Picker {
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
             PickerKind::AgentDetail => " PgUp/PgDn scroll   m message   x stop   Esc back",
-            PickerKind::BackgroundShells | PickerKind::Monitors => {
-                " ↑/↓ select   x stop   Esc close"
+            PickerKind::BackgroundShells => {
+                " \u{2191}/\u{2193} select   Enter view   x stop   Esc close"
             }
+            PickerKind::ShellDetail => " x stop   Esc back",
+            PickerKind::Monitors => " \u{2191}/\u{2193} select   x stop   Esc close",
         }
     }
 }
@@ -4288,6 +4294,9 @@ struct App {
     /// Lines the `/agents` detail is scrolled up from its bottom; 0 follows
     /// the child as it works. Clamped to the content on every draw.
     agent_detail_scroll: u16,
+    /// The background shell the `/shells` inspector is drilled into, or `None`
+    /// at the list. Refreshed off the render path (`refresh_shell_tail`).
+    shell_detail: Option<ShellDetail>,
     /// MCP work handed to the loop to run off the render loop. Taken once.
     mcp_job_request: Option<McpJob>,
     /// An OAuth sign-in in flight, shown in place on the `/mcp` screen and as a
@@ -5082,6 +5091,7 @@ impl App {
             mcp_detail: None,
             agent_detail: None,
             agent_detail_scroll: 0,
+            shell_detail: None,
             mcp_job_request: None,
             mcp_auth: None,
             mcp_auth_cancel: false,
@@ -5615,6 +5625,38 @@ impl App {
         }
         self.monitors = live;
         true
+    }
+
+    /// Catch the `/shells` detail up with its shell: new output, the elapsed
+    /// time, and whether it is still running. Returns whether anything changed,
+    /// so the caller marks the frame dirty only on a real change.
+    ///
+    /// Reads the process registry, so it runs on the loop's tick and never in
+    /// `draw` (render tests run in parallel against that process-global state).
+    /// A shell that ended keeps its last output on screen, marked finished.
+    fn refresh_shell_tail(&mut self) -> bool {
+        let Some(detail) = self.shell_detail.as_mut().filter(|d| !d.finished) else {
+            return false;
+        };
+        let pid = detail.pid;
+        // Checked before the read: the shell's last output lands in the tail
+        // before it leaves the registry, so a read after this sees all of it.
+        let gone = tauri_plugin_agent_tools::tools::proc::output_handle(pid).is_none();
+        let mut changed = false;
+        if let Some(tail) = detail.tail.as_ref().filter(|t| t.total() != detail.seen) {
+            (detail.output, detail.seen) = tail.read();
+            changed = true;
+        }
+        if let Some(shell) = self.bg_shells.iter().find(|s| s.pid == pid) {
+            changed |= std::mem::replace(&mut detail.elapsed_secs, shell.elapsed_secs)
+                != shell.elapsed_secs;
+        }
+        if gone {
+            detail.finished = true;
+            detail.tail = None;
+            changed = true;
+        }
+        changed
     }
 
     /// Stop every session monitor and undock it: the conversation they were
@@ -13044,6 +13086,11 @@ async fn chat_loop<B: Backend>(
                 if app.refresh_monitors() {
                     idle_tick = false;
                 }
+                // Same cadence for an open `/shells` detail, so its output
+                // follows the shell; a no-op otherwise.
+                if app.refresh_shell_tail() {
+                    idle_tick = false;
+                }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     // Input draws at once, past the frame cap: typing must not
                     // wait on output pacing.
@@ -14841,6 +14888,26 @@ async fn handle_key(
                     }
                 }
             }
+            // `/shells`: Enter drills into the selected shell's live output.
+            KeyCode::Enter if picker.kind == PickerKind::BackgroundShells => {
+                let pid: Option<u32> = picker.items[picker.selected].value.parse().ok();
+                // The watermark row (no shells running) has no pid to open.
+                let Some(shell) = pid.and_then(|pid| app.bg_shells.iter().find(|s| s.pid == pid))
+                else {
+                    return;
+                };
+                picker.kind = PickerKind::ShellDetail;
+                app.shell_detail = Some(ShellDetail::open(shell));
+            }
+            // The detail's `x` stops the shell it shows. Its output stays on
+            // screen, marked finished on the next refresh.
+            KeyCode::Char('x') if picker.kind == PickerKind::ShellDetail => {
+                if let Some(pid) = app.shell_detail.as_ref().map(|d| d.pid) {
+                    if tauri_plugin_agent_tools::tools::proc::kill(pid) {
+                        app.note(&format!("stopped background shell (pid {pid})"));
+                    }
+                }
+            }
             // `/shells`: `x` stops the selected background shell (kills its whole
             // process tree). The rows are rebuilt from the live registry each
             // frame, so the stopped one drops out on the next draw.
@@ -15006,6 +15073,7 @@ async fn handle_key(
                     PickerKind::Agents
                     | PickerKind::AgentDetail
                     | PickerKind::BackgroundShells
+                    | PickerKind::ShellDetail
                     | PickerKind::Monitors => {}
                     PickerKind::PluginConnect => {}
                 }
@@ -15034,6 +15102,11 @@ async fn handle_key(
                 picker.kind = PickerKind::Agents;
                 app.agent_detail = None;
             }
+            // Likewise a shell's detail steps back to the `/shells` list.
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::ShellDetail => {
+                picker.kind = PickerKind::BackgroundShells;
+                app.shell_detail = None;
+            }
             // The subagents list sits one level inside `/settings`: Esc steps
             // back to the menu, on the row that opened it.
             KeyCode::Esc | KeyCode::Char('q')
@@ -15049,6 +15122,7 @@ async fn handle_key(
                 app.picker = None;
                 app.mcp_detail = None;
                 app.agent_detail = None;
+                app.shell_detail = None;
             }
             _ if ctrl_c || ctrl_d => {
                 app.plugin_setup_queue.clear();
@@ -15057,6 +15131,7 @@ async fn handle_key(
                 app.picker = None;
                 app.mcp_detail = None;
                 app.agent_detail = None;
+                app.shell_detail = None;
             }
             _ => {}
         }
@@ -19313,6 +19388,7 @@ fn open_agents_picker(app: &mut App) {
 /// rows are rebuilt from the live process registry every frame (see `draw`), so
 /// a shell that finishes or is stopped drops out without reopening.
 fn open_background_shells_picker(app: &mut App) {
+    app.shell_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::BackgroundShells,
         items: background_shell_picker_items(&app.bg_shells),
@@ -19392,6 +19468,94 @@ fn background_shell_picker_items(
             )
         })
         .collect()
+}
+
+/// The `/shells` detail's state: which shell, and the last of its output as
+/// `refresh_shell_tail` last read it. Kept once the shell ends, so the output
+/// it finished on stays readable.
+struct ShellDetail {
+    pid: u32,
+    command: String,
+    elapsed_secs: u64,
+    /// The shell's live output tail, shared with the task feeding it. `None`
+    /// once the shell has ended.
+    tail: Option<tauri_plugin_agent_tools::tools::proc::OutputTail>,
+    /// `tail` as last read, sanitized for display.
+    output: String,
+    /// The tail's byte count at that read, so an unchanged tail is not re-read.
+    seen: u64,
+    finished: bool,
+}
+
+impl ShellDetail {
+    /// Drill into `shell`, reading what it has printed so far so the first
+    /// frame already shows it.
+    fn open(shell: &tauri_plugin_agent_tools::tools::proc::ShellInfo) -> Self {
+        let tail = tauri_plugin_agent_tools::tools::proc::output_handle(shell.pid);
+        let (output, seen) = tail.as_ref().map(|t| t.read()).unwrap_or_default();
+        ShellDetail {
+            pid: shell.pid,
+            command: shell.command.clone(),
+            elapsed_secs: shell.elapsed_secs,
+            finished: tail.is_none(),
+            tail,
+            output,
+            seen,
+        }
+    }
+}
+
+/// The `/shells` detail inside the inspector's box: the command and its status
+/// line (running or finished, elapsed, pid), then the newest output rows that
+/// fit, each cut to the width, so the view follows the shell as it prints.
+fn draw_shell_detail(f: &mut Frame, area: Rect, detail: Option<&ShellDetail>) {
+    let block = panel_block(theme::border_active()).title(" background shell ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let dim = Style::new().fg(theme::muted());
+    let Some(detail) = detail else {
+        let gone = "this shell is no longer available. Press Esc to go back.";
+        f.render_widget(Paragraph::new(Line::styled(gone, dim)), inner);
+        return;
+    };
+    let max = inner.width as usize;
+    let accent = Style::new().fg(theme::accent());
+    let (bullet, status) = if detail.finished {
+        (ToolState::Success.bullet(), "finished after")
+    } else {
+        (Span::styled(TOOL_BULLET, accent), "running")
+    };
+    let mut lines = vec![
+        Line::from(vec![
+            bullet,
+            Span::styled(
+                truncate(&single_line(&detail.command), max.saturating_sub(TOOL_BULLET.len())),
+                accent,
+            ),
+        ]),
+        Line::styled(
+            format!(
+                "  {status} {} \u{b7} pid {}",
+                format_elapsed(detail.elapsed_secs),
+                detail.pid
+            ),
+            dim,
+        ),
+        Line::from(""),
+    ];
+    let room = (inner.height as usize).saturating_sub(lines.len());
+    let output: Vec<&str> = detail.output.lines().collect();
+    if output.is_empty() {
+        let none = if detail.finished { "(no output)" } else { "(no output yet)" };
+        lines.push(Line::styled(none, dim));
+    } else {
+        let shown = &output[output.len().saturating_sub(room)..];
+        lines.extend(shown.iter().map(|l| Line::raw(truncate(l, max))));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 /// Open the `/monitors` inspector. Rebuilt from `App::monitors` every frame
@@ -22002,6 +22166,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.row_index.clear();
         if kind == PickerKind::AgentDetail {
             draw_agent_detail(f, chunks[1], app);
+        } else if kind == PickerKind::ShellDetail {
+            draw_shell_detail(f, chunks[1], app.shell_detail.as_ref());
         } else if let Some(picker) = &app.picker {
             let toml_path = app.agent_dir.join("agent.toml");
             draw_picker(
@@ -25717,6 +25883,78 @@ mod tests {
         assert_eq!(items[0].value, "4242", "pid rides in value for the stop action");
         assert!(items[0].label.contains("sleep 9000"), "{}", items[0].label);
         assert!(items[0].label.contains("1m 05s"), "elapsed shown: {}", items[0].label);
+    }
+
+    /// Enter on a `/shells` row opens that shell's live output; the tail is
+    /// read on the loop's tick, follows new output, and stays on screen
+    /// marked finished once the shell is gone. Esc steps back to the list.
+    #[tokio::test]
+    async fn shells_picker_enter_opens_a_live_detail() {
+        use tauri_plugin_agent_tools::tools::proc;
+        // A pid no live process group can own, under a bucket of its own so
+        // no other test's shells are touched.
+        let thread = Some("shell-detail-test");
+        let pid = i32::MAX as u32 - 9;
+        proc::register(thread, pid, "npm run dev");
+        proc::mark_backgrounded(thread, pid);
+        let tail = proc::output_handle(pid).expect("registered");
+        tail.push(b"compiling\n");
+        let mut app = test_app();
+        app.bg_shells.push(proc::ShellInfo {
+            pid,
+            command: "npm run dev".into(),
+            elapsed_secs: 3,
+            backgrounded: true,
+        });
+        open_background_shells_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::ShellDetail);
+        let rows = render_rows(&mut app, 80, 16).join("\n");
+        assert!(rows.contains("npm run dev"), "{rows}");
+        assert!(rows.contains("running 3s \u{b7} pid"), "{rows}");
+        assert!(rows.contains("compiling"), "{rows}");
+        assert!(!app.refresh_shell_tail(), "nothing new, nothing to redraw");
+        tail.push(b"\x1b[32mready\x1b[0m on :3000\n");
+        assert!(app.refresh_shell_tail(), "new output marks the frame dirty");
+        assert!(render_rows(&mut app, 80, 16).join("\n").contains("ready on :3000"));
+        proc::unregister(thread, pid);
+        assert!(app.refresh_shell_tail(), "the shell ending is a change");
+        assert!(!app.refresh_shell_tail());
+        let done = render_rows(&mut app, 80, 16).join("\n");
+        assert!(done.contains("finished after 3s"), "{done}");
+        assert!(done.contains("ready on :3000"), "keeps the last tail: {done}");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::BackgroundShells);
+        assert!(app.shell_detail.is_none());
+    }
+
+    /// The detail follows the tail: only the newest lines that fit show, each
+    /// cut to the box rather than wrapped.
+    #[test]
+    fn shell_detail_shows_the_newest_lines_cut_to_width() {
+        let mut app = test_app();
+        let output: String = (0..50).map(|i| format!("line {i} {}\n", "x".repeat(100))).collect();
+        app.shell_detail = Some(super::ShellDetail {
+            pid: 7,
+            command: "yes".into(),
+            elapsed_secs: 1,
+            tail: None,
+            output,
+            seen: 0,
+            finished: false,
+        });
+        app.picker = Some(super::Picker {
+            kind: PickerKind::ShellDetail,
+            items: Vec::new(),
+            selected: 0,
+            search: None,
+            armed_delete: None,
+        });
+        let rows = render_rows(&mut app, 60, 20);
+        let text = rows.join("\n");
+        assert!(text.contains("line 49 "), "{text}");
+        assert!(!text.contains("line 0 "), "{text}");
+        assert!(rows.iter().all(|r| r.chars().count() <= 60), "{rows:#?}");
     }
 
     #[test]

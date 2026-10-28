@@ -548,6 +548,29 @@ fn shells_inspector_lists_the_shells() {
     assert_buffer("shells_inspector_list", &frame(&mut app, DARK, 80, 10));
 }
 
+/// Enter on a `/shells` row: the shell's command and status over the newest
+/// lines of its output.
+#[test]
+fn shells_inspector_detail() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    open_background_shells_picker(&mut app);
+    let output: String = (1..=12).map(|i| format!("[vite] hmr update /src/App.tsx ({i})\n")).collect();
+    app.shell_detail = Some(crate::core::cli::tui::ShellDetail {
+        pid: 4242,
+        command: "npm run dev".into(),
+        elapsed_secs: 65,
+        tail: None,
+        output,
+        seen: 0,
+        finished: false,
+    });
+    if let Some(picker) = app.picker.as_mut() {
+        picker.kind = PickerKind::ShellDetail;
+    }
+    assert_buffer("shells_inspector_detail", &frame(&mut app, DARK, 80, 14));
+}
+
 /// The idle dock with two background shells: the dim row over the input.
 #[test]
 fn bg_shells_row_over_the_input() {

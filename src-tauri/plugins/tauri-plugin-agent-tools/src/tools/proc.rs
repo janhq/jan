@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Instant;
 
 use tokio::process::{Child, Command};
@@ -749,17 +749,73 @@ pub fn kill_tree(pid: u32) {
         .output();
 }
 
-/// A running bash command: what it is, when it started, and whether it outran
-/// its call's timeout and detached into the background. Backs the `/shells`
-/// inspector, which lists the detached ones so the user can stop a stuck job.
+/// Raw output bytes a running shell keeps for the `/shells` live view. Past
+/// this the front is dropped: the view shows a tail, and the tool keeps the
+/// authoritative full output (spilling to disk past its own cap).
+pub const OUTPUT_TAIL_MAX_BYTES: usize = 64 * 1024;
+
+#[derive(Default)]
+struct TailBuf {
+    bytes: std::collections::VecDeque<u8>,
+    total: u64,
+}
+
+/// The newest [`OUTPUT_TAIL_MAX_BYTES`] of one shell's combined output plus a
+/// count of every byte it ever printed, so a viewer can tell new output from a
+/// repaint without diffing the text. Shared between the registry, which drops
+/// it with the shell, and the task draining the shell's pipes, which feeds it.
+#[derive(Clone, Default)]
+pub struct OutputTail(Arc<Mutex<TailBuf>>);
+
+impl OutputTail {
+    /// Append a raw chunk of the shell's output, dropping the front past the cap.
+    pub fn push(&self, chunk: &[u8]) {
+        let mut buf = self.0.lock().unwrap();
+        buf.total += chunk.len() as u64;
+        let keep = &chunk[chunk.len().saturating_sub(OUTPUT_TAIL_MAX_BYTES)..];
+        buf.bytes.extend(keep.iter().copied());
+        let over = buf.bytes.len().saturating_sub(OUTPUT_TAIL_MAX_BYTES);
+        buf.bytes.drain(..over);
+    }
+
+    /// Bytes printed so far, without decoding the tail: a viewer compares this
+    /// to the count its last [`read`](Self::read) returned to skip a no-op read.
+    pub fn total(&self) -> u64 {
+        self.0.lock().unwrap().total
+    }
+
+    /// The tail as display text plus the byte count it covers, sanitized here
+    /// rather than on every push: progress redraws collapse only once the whole
+    /// line is in view.
+    pub fn read(&self) -> (String, u64) {
+        let mut buf = self.0.lock().unwrap();
+        let total = buf.total;
+        let bytes = buf.bytes.make_contiguous();
+        // A trimmed front can start inside a character; skip its continuation
+        // bytes rather than decoding them to a replacement character.
+        let start = bytes
+            .iter()
+            .position(|b| b & 0xC0 != 0x80)
+            .unwrap_or(bytes.len());
+        let text = String::from_utf8_lossy(&bytes[start..]);
+        (super::handlers::sanitize_output(&text), total)
+    }
+}
+
+/// A running bash command: what it is, when it started, whether it outran its
+/// call's timeout and detached into the background, and the tail of what it
+/// printed. Backs the `/shells` inspector, which lists the detached ones so the
+/// user can watch or stop a stuck job.
 struct ShellProc {
     command: String,
     started: Instant,
     backgrounded: bool,
+    output: OutputTail,
 }
 
 /// One running background shell, as `snapshot` reports it to the UI. `pid` is
-/// the handle [`kill`] takes to stop it.
+/// the handle [`kill`] and [`output_handle`] take. The output stays out of this
+/// per-frame copy.
 #[derive(Debug, Clone)]
 pub struct ShellInfo {
     pub pid: u32,
@@ -793,8 +849,22 @@ pub fn register(thread: Option<&str>, pid: u32, command: &str) {
                 command: command.to_string(),
                 started: Instant::now(),
                 backgrounded: false,
+                output: OutputTail::default(),
             },
         );
+}
+
+/// The output tail of a running shell: the task draining its pipes feeds it,
+/// and a viewer reads it. Taken once, so the output itself never passes through
+/// the registry lock. `None` once the shell finished or was stopped; the
+/// registry drops its reference then, so the tail lives on only as long as a
+/// viewer still holding it, which keeps the last of the output on screen.
+pub fn output_handle(pid: u32) -> Option<OutputTail> {
+    running()
+        .lock()
+        .unwrap()
+        .values()
+        .find_map(|set| set.get(&pid).map(|p| p.output.clone()))
 }
 
 pub fn unregister(thread: Option<&str>, pid: u32) {
@@ -1257,6 +1327,40 @@ mod tests {
         assert!(!got(fg).unwrap().backgrounded, "the other is not");
         unregister(Some("snap"), fg);
         unregister(Some("snap"), bg);
+    }
+
+    /// The live tail keeps only the newest bytes, counts every byte, and the
+    /// registry lets go of it with the shell.
+    #[test]
+    fn output_tail_is_bounded_counted_and_freed() {
+        let pid = u32::MAX - 20;
+        register(Some("tail"), pid, "yes");
+        let tail = output_handle(pid).expect("registered");
+        tail.push(&vec![b'a'; OUTPUT_TAIL_MAX_BYTES]);
+        tail.push(b"\nlast\n");
+        let (text, total) = output_handle(pid).expect("still running").read();
+        assert_eq!(total, OUTPUT_TAIL_MAX_BYTES as u64 + 6);
+        assert_eq!(tail.total(), total);
+        assert_eq!(text.len(), OUTPUT_TAIL_MAX_BYTES);
+        assert!(text.ends_with("\nlast\n"), "keeps the newest bytes");
+        unregister(Some("tail"), pid);
+        assert!(output_handle(pid).is_none(), "freed with the shell");
+        assert_eq!(std::sync::Arc::strong_count(&tail.0), 1, "only the viewer holds it");
+    }
+
+    /// Read for display: progress redraws collapse, escapes go, and a front
+    /// trimmed mid-character does not decode to a replacement character.
+    #[test]
+    fn output_tail_reads_sanitized() {
+        let tail = OutputTail::default();
+        tail.push(b"10%\r50%\r100%\n\x1b[31mred\x1b[0m\n");
+        assert_eq!(tail.read().0, "100%\nred\n");
+        // The cap now falls on the second byte of the two-byte `\u{e9}`.
+        tail.push("\u{e9}".as_bytes());
+        tail.push(&vec![b'a'; OUTPUT_TAIL_MAX_BYTES - 1]);
+        let (text, _) = tail.read();
+        assert!(!text.contains('\u{fffd}'), "decoded a split character");
+        assert_eq!(text.len(), OUTPUT_TAIL_MAX_BYTES - 1);
     }
 
     /// `kill` drops the named pid from the registry (whichever bucket it is in)

@@ -98,6 +98,14 @@ fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String
     out
 }
 
+/// Command output as it should be shown to the model or a person: carriage-return
+/// redraws collapsed to their final frame, then control characters dropped. The
+/// one sanitizer for the tool result, the `/shells` live tail and the TUI's
+/// streamed view, so all three show the same text.
+pub fn sanitize_output(s: &str) -> String {
+    sanitize_control(&collapse_carriage_returns(s))
+}
+
 /// Collapse carriage-return redraws (`git`/`curl`-style progress lines) to what
 /// a terminal would actually show: text after the last `\r` on each line wins.
 /// Without this, thousands of `\r`-separated progress frames read as one giant
@@ -967,8 +975,11 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
     let escalation = ctx.escalation;
+    // Fed from the first byte, so a command the user opens in `/shells` after it
+    // backgrounded still shows what it printed before the timeout.
+    let tail = pid.and_then(proc::output_handle);
     tokio::spawn(async move {
-        let mut out = collect_and_format(child, spill_scratch, sink).await;
+        let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
             out.push_str(&sandbox_denial_note(&out, &policy, escalation));
@@ -1116,6 +1127,7 @@ async fn collect_and_format(
     mut child: tokio::process::Child,
     scratch: Option<PathBuf>,
     sink: Option<crate::tools::OutputSink>,
+    tail: Option<proc::OutputTail>,
 ) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
@@ -1130,6 +1142,9 @@ async fn collect_and_format(
     // enough to straddle one. Hold the incomplete tail back for the next chunk.
     let mut carry: Vec<u8> = Vec::new();
     let tee = |bytes: &[u8], carry: &mut Vec<u8>| {
+        if let Some(tail) = tail.as_ref() {
+            tail.push(bytes);
+        }
         let Some(sink) = sink.as_ref() else { return };
         carry.extend_from_slice(bytes);
         let text = match std::str::from_utf8(carry) {
@@ -1227,7 +1242,7 @@ impl BashCapture {
             let _ = w.flush();
         }
         let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
-        let collapsed = sanitize_control(&collapse_carriage_returns(&retained));
+        let collapsed = sanitize_output(&retained);
         let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
         let shown_lines = capped.matches('\n').count();
         // Truncated when the model-facing output lost real lines (front dropped)
@@ -1346,13 +1361,23 @@ fn bytecount_newlines(bytes: &[u8]) -> usize {
 /// Drop control characters that would corrupt the model's view of the output
 /// (NUL, bell, ANSI escapes, etc.), keeping only tab and newline. Carriage
 /// returns are already resolved by [`collapse_carriage_returns`] beforehand.
+/// A CSI sequence (colour, cursor movement) goes whole: dropping only its ESC
+/// would leave `[31m` in the text.
 fn sanitize_control(s: &str) -> String {
     if !s.chars().any(|c| c.is_control() && c != '\t' && c != '\n') {
         return s.to_string();
     }
-    s.chars()
-        .filter(|&c| !c.is_control() || c == '\t' || c == '\n')
-        .collect()
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.next_if_eq(&'[').is_some() {
+            // Parameter and intermediate bytes run up to one final byte.
+            while chars.next().is_some_and(|b| !('@'..='~').contains(&b)) {}
+        } else if !c.is_control() || c == '\t' || c == '\n' {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Keep the last `max_lines` lines and last `max_bytes` bytes of `s` (trimming
@@ -3416,6 +3441,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A backgrounded command's live tail holds what it printed before the
+    /// timeout as well as after, and the registry lets go of it once the
+    /// command ends.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_command_feeds_its_live_tail() {
+        let root = unique_root();
+        let marker = format!("tail-{}", std::process::id());
+        let command = format!("printf 'early {marker}\\n'; sleep 1.5; printf 'late\\n'; sleep 0.5");
+        let out = execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": command, "timeout": 1}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("still running in the background"), "{out}");
+        let pid = proc::snapshot()
+            .into_iter()
+            .find(|s| s.command == command && s.backgrounded)
+            .expect("listed as a background shell")
+            .pid;
+        let tail = proc::output_handle(pid).expect("tail while running");
+        let (early, _) = tail.read();
+        assert!(early.contains(&format!("early {marker}")), "{early:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        assert!(proc::output_handle(pid).is_none(), "the registry let go when it ended");
+        let (all, bytes) = tail.read();
+        assert!(all.ends_with("late\n") && all.contains("early"), "{all:?}");
+        assert_eq!(bytes, all.len() as u64);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
@@ -3831,6 +3889,7 @@ mod tests {
         assert!(!out.contains('\u{0}'), "NUL must be stripped");
         assert!(!out.contains('\u{7}'), "bell must be stripped");
         assert!(!out.contains('\u{1b}'), "escape must be stripped");
+        assert!(out.contains("abred\n"), "the whole colour sequence goes: {out:?}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
