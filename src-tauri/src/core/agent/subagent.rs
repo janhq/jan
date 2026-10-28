@@ -4694,6 +4694,18 @@ pub(crate) mod tests {
         bg.running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// End a child held by [`hold_running`] the way a real one ends: its ping
+    /// is queued before the run count drops, then any parked waiter is woken.
+    #[cfg(feature = "cli")]
+    pub(crate) fn finish_held_child(bg: &Arc<BackgroundSubagents>, run_id: &str, name: &str) {
+        bg.push_notice(
+            run_id,
+            completion_notice(name, run_id, None, &Ok("done".to_string())),
+        );
+        bg.running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        bg.wake.notify_waiters();
+    }
+
     #[cfg(feature = "cli")]
     pub(crate) fn child_is_finished(bg: &Arc<BackgroundSubagents>, run_id: &str) -> bool {
         bg.inner.lock().unwrap()[run_id]

@@ -11979,6 +11979,126 @@ mod tests {
         invoker
     }
 
+    /// The real invoker's background side, with a tool call standing in for a
+    /// long `bash` command: a subagent finishes while the call is still running.
+    #[cfg(feature = "cli")]
+    struct ChildEndsMidCall {
+        inner: CompositeToolInvoker,
+        bg: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+        /// Whether the ping was already queued when the call returned.
+        queued_during_call: StdMutex<Option<bool>>,
+    }
+    #[cfg(feature = "cli")]
+    #[async_trait]
+    impl ToolInvoker for ChildEndsMidCall {
+        async fn invoke(
+            &self,
+            tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            crate::core::agent::subagent::tests::finish_held_child(
+                &self.bg,
+                "sub-explore-1",
+                "explore",
+            );
+            // Let a woken waiter run, as wall time passing in a real call would.
+            tokio::task::yield_now().await;
+            *self.queued_during_call.lock().unwrap() = Some(self.bg.has_queued_notices());
+            Ok(tool_calls
+                .iter()
+                .map(|c| {
+                    ToolOutcome::plain(
+                        c["id"].as_str().unwrap_or_default().to_string(),
+                        "sleep done\n[exit 0]".to_string(),
+                    )
+                })
+                .collect())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            self.inner.background_notices()
+        }
+        fn background_pending(&self) -> bool {
+            self.inner.background_pending()
+        }
+        async fn await_background(&self) {
+            self.inner.await_background().await
+        }
+    }
+
+    /// A subagent finishing while a tool call is still running is neither lost
+    /// nor delivered early: its ping waits in the queue until the call returns,
+    /// then the next request carries it after the tool result as a `<SYSTEM>`
+    /// reminder, costing no extra turn. Checked for a session-owned registry
+    /// (the TUI) and a run-owned one (headless).
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_subagent_finishing_during_a_tool_call_is_drained_after_the_result() {
+        for outlive in [true, false] {
+            let root = unique_project_root();
+            let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+            crate::core::agent::subagent::tests::hold_running(&bg);
+            let mut inner = invoker_with_registry(root.clone(), bg.clone());
+            inner.subagent_bg_outlive_run = outlive;
+            let tool = ChildEndsMidCall {
+                inner,
+                bg: bg.clone(),
+                queued_during_call: StdMutex::new(None),
+            };
+            let (tx, _rx) = mpsc::unbounded_channel();
+            let model =
+                MockModel::new(vec![tool_call_completion(), final_answer("saw both")]);
+            let mut budget = SessionBudget::new(None);
+
+            let result = run_turn_cycle(
+                &tx,
+                &json!({}),
+                "m",
+                &[],
+                Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+                None,
+                true,
+                8,
+                &mut budget,
+                &model,
+                &tool,
+                crate::core::agent::plan::RunMode::Normal,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                *tool.queued_during_call.lock().unwrap(),
+                Some(true),
+                "{outlive}: the ping was queued while the call ran"
+            );
+            assert_eq!(result["choices"][0]["message"]["content"], "saw both");
+            let requests = model.requests.lock().unwrap();
+            assert_eq!(requests.len(), 2, "{outlive}: no extra turn for the ping");
+            let first = requests[0]["messages"].to_string();
+            assert!(!first.contains("Subagent 'explore'"), "{outlive}: not delivered early");
+            let sent = requests[1]["messages"].as_array().unwrap();
+            let n = sent.len();
+            assert_eq!(sent[n - 2]["role"], "tool", "{outlive}: result first: {sent:?}");
+            assert_eq!(sent[n - 2]["tool_call_id"], "call_1");
+            let last = &sent[n - 1];
+            assert_eq!(last["role"], "user");
+            assert!(
+                crate::core::agent::reminder::is_reminder_only(&last["content"]),
+                "{outlive}: {last}"
+            );
+            assert!(
+                last["content"].as_str().unwrap().contains("Subagent 'explore' (sub-explore-1)"),
+                "{outlive}: {last}"
+            );
+            assert!(!bg.has_queued_notices(), "{outlive}: drained exactly once");
+            assert!(!tool.background_pending(), "{outlive}: nothing left owed");
+            let _ = std::fs::remove_dir_all(&root);
+        }
+    }
+
     /// A shell abandoned at its park budget wakes its own wait with nothing to
     /// deliver. While a subagent still holds the run open, that empty wake must
     /// not end the park: the run would resume and spend a model turn reacting
