@@ -37,12 +37,16 @@ struct SettingsMap {
     /// Keys changed since the last flush, for the dev-build write log. Only
     /// populated under `debug_assertions`.
     pending_keys: BTreeSet<String>,
+    /// Set once a factory reset has deleted `settings.json`. From then on the
+    /// store refuses writes, so neither the webview nor the exit flush can
+    /// recreate the file before the app restarts.
+    discarded: bool,
 }
 
 impl SettingsMap {
     /// Returns true if the value changed (i.e. a flush is warranted).
     fn set(&mut self, key: String, value: String) -> bool {
-        if self.map.get(&key).is_some_and(|v| *v == value) {
+        if self.discarded || self.map.get(&key).is_some_and(|v| *v == value) {
             return false;
         }
         #[cfg(debug_assertions)]
@@ -53,12 +57,21 @@ impl SettingsMap {
 
     /// Returns true if a key was actually removed.
     fn remove(&mut self, key: &str) -> bool {
-        if self.map.remove(key).is_none() {
+        if self.discarded || self.map.remove(key).is_none() {
             return false;
         }
         #[cfg(debug_assertions)]
         self.pending_keys.insert(key.to_string());
         true
+    }
+
+    /// Drop everything, pending writes included, and refuse further changes.
+    fn discard(&mut self) {
+        self.map.clear();
+        self.pending_keys.clear();
+        self.dirty = false;
+        self.flush_at = None;
+        self.discarded = true;
     }
 
     fn mark_dirty(&mut self) {
@@ -95,6 +108,11 @@ type Store = (Mutex<SettingsMap>, Condvar);
 
 static STORE: OnceLock<Store> = OnceLock::new();
 
+/// Serializes disk writes against [`discard_settings`]. Writers drop the map
+/// lock during I/O so `settings_set` never waits on the disk; this lock is
+/// what lets a discard wait out a write already in flight.
+static WRITE: Mutex<()> = Mutex::new(());
+
 fn settings_file_path() -> PathBuf {
     resolve_jan_data_folder().join(CONFIGURATION_FILE_NAME)
 }
@@ -125,6 +143,7 @@ fn store() -> &'static Store {
             dirty: false,
             flush_at: None,
             pending_keys: BTreeSet::new(),
+            discarded: false,
         };
         std::thread::Builder::new()
             .name("settings-flush".into())
@@ -135,7 +154,32 @@ fn store() -> &'static Store {
 }
 
 fn lock(store: &Store) -> std::sync::MutexGuard<'_, SettingsMap> {
-    store.0.lock().unwrap_or_else(|e| e.into_inner())
+    lock_map(&store.0)
+}
+
+fn lock_map(map: &Mutex<SettingsMap>) -> std::sync::MutexGuard<'_, SettingsMap> {
+    map.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Write a flush snapshot to disk unless the store was discarded after the
+/// snapshot was taken. Returns whether it wrote. A failed write re-arms the
+/// flush so it is retried, except after a discard, where a retry would write
+/// an empty `{}` file in place of the deleted one.
+fn persist(
+    state: &Mutex<SettingsMap>,
+    path: &PathBuf,
+    snapshot: &BTreeMap<String, String>,
+) -> Result<bool, String> {
+    let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    if lock_map(state).discarded {
+        return Ok(false);
+    }
+    write_map_atomic(path, snapshot).map(|()| true).inspect_err(|_| {
+        let mut guard = lock_map(state);
+        if !guard.discarded {
+            guard.dirty = true;
+        }
+    })
 }
 
 /// Background thread: waits for dirty state, honors the debounce deadline
@@ -162,12 +206,10 @@ fn flush_loop() {
         }
         let (snapshot, keys) = guard.take_flush_batch();
         drop(guard);
-        if let Err(e) = write_map_atomic(&settings_file_path(), &snapshot) {
-            log::warn!("settings flush failed: {}", e);
-            // Re-arm so a later write (or exit flush) retries.
-            lock(store).dirty = true;
-        } else {
-            log_flushed_keys(&keys);
+        match persist(&store.0, &settings_file_path(), &snapshot) {
+            Ok(true) => log_flushed_keys(&keys),
+            Ok(false) => {}
+            Err(e) => log::warn!("settings flush failed: {}", e),
         }
     }
 }
@@ -183,12 +225,22 @@ pub fn flush_settings() {
     }
     let (snapshot, keys) = guard.take_flush_batch();
     drop(guard);
-    if let Err(e) = write_map_atomic(&settings_file_path(), &snapshot) {
-        log::warn!("settings exit flush failed: {}", e);
-        lock(store).dirty = true;
-    } else {
-        log_flushed_keys(&keys);
+    match persist(&store.0, &settings_file_path(), &snapshot) {
+        Ok(true) => log_flushed_keys(&keys),
+        Ok(false) => {}
+        Err(e) => log::warn!("settings exit flush failed: {}", e),
     }
+}
+
+/// Forget the in-memory settings and stop persisting them for the rest of
+/// this process. Factory reset calls this after deleting `settings.json`;
+/// without it a pending debounced write or the exit flush would write the
+/// pre-reset settings straight back.
+pub fn discard_settings() {
+    let store = store();
+    // Wait out a write already in flight; any later one sees `discarded`.
+    let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    lock(store).discard();
 }
 
 #[tauri::command]
@@ -229,6 +281,7 @@ mod tests {
             dirty: false,
             flush_at: None,
             pending_keys: BTreeSet::new(),
+            discarded: false,
         }
     }
 
@@ -273,6 +326,41 @@ mod tests {
         assert!(m.pending_keys.is_empty());
         // pending_keys only tracked under debug_assertions (tests run debug).
         assert_eq!(keys, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn discard_empties_the_map_and_ignores_later_writes() {
+        let mut m = new_map();
+        m.set("a".into(), "1".into());
+        m.mark_dirty();
+        m.discard();
+        assert!(m.map.is_empty());
+        assert!(!m.dirty);
+        assert!(m.flush_at.is_none());
+        assert!(m.pending_keys.is_empty());
+        // A webview write racing the factory-reset restart must not bring a
+        // wiped settings.json back.
+        assert!(!m.set("b".into(), "2".into()));
+        assert!(!m.remove("a"));
+        assert!(m.map.is_empty());
+    }
+
+    #[test]
+    fn persist_skips_the_write_once_discarded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut map = BTreeMap::new();
+        map.insert("theme".to_string(), "\"dark\"".to_string());
+        let state = Mutex::new(new_map());
+
+        assert_eq!(persist(&state, &path, &map), Ok(true));
+        assert!(path.is_file());
+
+        // A flush that snapshotted before the reset must not recreate the file.
+        fs::remove_file(&path).unwrap();
+        state.lock().unwrap().discard();
+        assert_eq!(persist(&state, &path, &map), Ok(false));
+        assert!(!path.exists());
     }
 
     #[test]
