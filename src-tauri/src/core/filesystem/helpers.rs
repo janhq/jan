@@ -1,9 +1,10 @@
+use super::grants::{ReadGrants, DENIED_PREFIX};
 use crate::core::app::commands::get_jan_data_folder_path;
 #[cfg(windows)]
 use jan_utils::strip_verbatim_prefix;
 use jan_utils::{normalize_file_path, normalize_path};
 use std::path::{Path, PathBuf};
-use tauri::Runtime;
+use tauri::{Manager, Runtime};
 
 /// Builds a path string for `join_path`. It does no scope checks: the result is
 /// only a string handed back to the caller, and every command that then touches
@@ -86,6 +87,12 @@ fn normalize_scope_path(path: PathBuf) -> PathBuf {
     normalize_path(&path)
 }
 
+/// The form [`super::grants`] compares in: symlinks resolved, verbatim
+/// prefixes stripped, `.` and `..` folded.
+pub fn canonical_scope_path(path: &Path) -> PathBuf {
+    normalize_scope_path(canonicalize_for_scope(path))
+}
+
 pub fn resolve_path_within_jan_data_folder(
     jan_data_folder: &Path,
     path: &str,
@@ -110,27 +117,41 @@ pub fn resolve_path_within_jan_data_folder(
     Ok((canonical_data, canonical_path))
 }
 
-/// Scope for the read-only legacy file commands (`exists_sync`, `file_stat`,
+/// Scope for the read-only file commands (`exists_sync`, `file_stat`,
 /// `read_file_sync`, `readdir_sync`).
 ///
 /// `file:` URIs and relative paths are data-folder paths and must stay inside
-/// it. A plain absolute path is let through, read-only, because the app reads
-/// files the user chose wherever they live:
-/// - `@path` references in the chat input, resolved against the home folder
-///   or typed as absolute paths (web-app `lib/path-references.ts`);
-/// - attachments and project files picked in a dialog or dropped on the window
-///   (web-app `ChatInput.tsx`, `ProjectFiles.tsx`);
-/// - models imported in place, whose `model_path` stays absolute (MLX reads
-///   `config.json` and stats the folder; llama.cpp stats the weights).
+/// it. An absolute path is readable when it
+/// - is inside the data folder, or
+/// - is covered by a grant: the user picked it, or a folder above it, in a
+///   native dialog (attachments, project folders, models imported in place),
+///   or
+/// - is an ordinary file under `home`, the case of a typed `@path` reference
+///   (see [`home_read_allowed`]).
 ///
-/// The commands that create, move or write files never take this path; they
-/// use [`resolve_path_within_jan_data_folder`].
-pub fn resolve_read_path(jan_data_folder: &Path, path: &str) -> Result<PathBuf, String> {
+/// Anything else fails with [`DENIED_PREFIX`]. The commands that create, move
+/// or write files never take this path; they use
+/// [`resolve_path_within_jan_data_folder`].
+pub fn resolve_read_path(
+    jan_data_folder: &Path,
+    path: &str,
+    grants: &ReadGrants,
+) -> Result<PathBuf, String> {
     if is_file_uri(path) || !Path::new(path).is_absolute() {
         return resolve_path_within_jan_data_folder(jan_data_folder, path)
             .map(|(_, resolved)| resolved);
     }
     let path = PathBuf::from(path);
+    let canonical = canonical_scope_path(&path);
+    let allowed = canonical.starts_with(canonical_scope_path(jan_data_folder))
+        || grants.allows(&canonical)
+        || grants.allows_typed_reference(&canonical);
+    if !allowed {
+        return Err(format!(
+            "{DENIED_PREFIX}: {} is outside the Jan data folder and the files and folders you picked",
+            path.display()
+        ));
+    }
     Ok(path.canonicalize().unwrap_or(path))
 }
 
@@ -138,8 +159,12 @@ pub fn resolve_app_read_path<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     path: &str,
 ) -> Result<PathBuf, String> {
-    let jan_data_folder = get_jan_data_folder_path(app_handle);
-    resolve_read_path(&jan_data_folder, path)
+    let jan_data_folder = get_jan_data_folder_path(app_handle.clone());
+    // Without the managed grants nothing outside the data folder is readable.
+    let state = app_handle.try_state::<ReadGrants>();
+    let none = ReadGrants::default();
+    let grants: &ReadGrants = state.as_deref().unwrap_or(&none);
+    resolve_read_path(&jan_data_folder, path, grants)
 }
 
 pub fn resolve_app_path_within_jan_data_folder<R: Runtime>(
@@ -235,7 +260,7 @@ mod tests {
                 "{uri} should be rejected"
             );
             assert!(
-                resolve_read_path(&data, uri).is_err(),
+                resolve_read_path(&data, uri, &ReadGrants::default()).is_err(),
                 "{uri} should be rejected for reads"
             );
         }
@@ -247,26 +272,76 @@ mod tests {
         let data = tmp.path().join("data");
         fs::create_dir_all(data.join("models")).unwrap();
 
-        let resolved = resolve_read_path(&data, "models").expect("resolves");
+        let none = ReadGrants::default();
+        let resolved = resolve_read_path(&data, "models", &none).expect("resolves");
         // Compare in the resolver's own form: on Windows `canonicalize` adds a
         // `\\?\` prefix that the resolver strips.
         assert!(resolved.starts_with(normalize_scope_path(canonicalize_for_scope(&data))));
-        let resolved = resolve_read_path(&data, "file://models").expect("resolves");
+        let resolved = resolve_read_path(&data, "file://models", &none).expect("resolves");
         assert!(resolved.ends_with("models"));
-        assert!(resolve_read_path(&data, "../elsewhere").is_err());
+        assert!(resolve_read_path(&data, "../elsewhere", &none).is_err());
     }
 
     #[test]
-    fn read_path_allows_absolute_user_chosen_paths() {
-        // Imported models and attachments live outside the data folder.
+    fn read_path_denies_an_absolute_path_nobody_granted() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let secret = tmp.path().join("secret.txt");
+        fs::create_dir_all(&data).unwrap();
+        fs::write(&secret, "s").unwrap();
+
+        let err = resolve_read_path(&data, &secret.to_string_lossy(), &ReadGrants::default())
+            .expect_err("denied");
+        assert!(err.starts_with(DENIED_PREFIX), "{err}");
+    }
+
+    #[test]
+    fn read_path_allows_absolute_paths_inside_the_data_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let file = data.join("models").join("m").join("model.yml");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, "a: 1").unwrap();
+
+        let resolved = resolve_read_path(&data, &file.to_string_lossy(), &ReadGrants::default())
+            .expect("inside the data folder");
+        assert_eq!(resolved, file.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn read_path_allows_a_granted_absolute_path() {
+        // An imported model folder or an attachment lives outside the data folder.
         let tmp = TempDir::new().unwrap();
         let data = tmp.path().join("data");
         let model = tmp.path().join("imported-model");
         fs::create_dir_all(&data).unwrap();
         fs::create_dir_all(&model).unwrap();
+        let grants = ReadGrants::default();
+        grants.record_pick(&model);
 
-        let resolved = resolve_read_path(&data, &model.to_string_lossy()).expect("resolves");
+        let resolved =
+            resolve_read_path(&data, &model.to_string_lossy(), &grants).expect("granted");
         assert_eq!(resolved, model.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn read_path_lets_a_typed_reference_reach_home_but_not_a_hidden_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let home = tmp.path().join("home");
+        let note = home.join("Documents").join("note.txt");
+        let key = home.join(".ssh").join("id_rsa");
+        for file in [&note, &key] {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, "x").unwrap();
+        }
+        fs::create_dir_all(&data).unwrap();
+        let grants = ReadGrants::with_home(Some(home));
+
+        assert!(resolve_read_path(&data, &note.to_string_lossy(), &grants).is_ok());
+        let err =
+            resolve_read_path(&data, &key.to_string_lossy(), &grants).expect_err("hidden folder");
+        assert!(err.starts_with(DENIED_PREFIX), "{err}");
     }
 
     #[test]

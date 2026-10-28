@@ -1,4 +1,5 @@
 use super::commands::*;
+use super::grants::ReadGrants;
 use super::helpers::resolve_path_within_jan_data_folder;
 use crate::core::app::commands::get_jan_data_folder_path;
 use jan_utils::normalize_path;
@@ -6,6 +7,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::test::mock_app;
+use tauri::Manager;
 
 #[test]
 fn test_rm() {
@@ -384,6 +386,7 @@ fn test_write_file_sync_and_mv_inside_data_folder() {
 #[test]
 fn test_read_commands_scope() {
     let app = mock_app();
+    app.manage(ReadGrants::default());
     fs::create_dir_all(get_jan_data_folder_path(app.handle().clone())).unwrap();
 
     // file: URIs and relative paths may not leave the data folder.
@@ -394,11 +397,31 @@ fn test_read_commands_scope() {
         assert!(readdir_sync(app.handle().clone(), vec![escape.into()]).is_err());
     }
 
-    // Absolute paths the user chose (an imported model folder) stay readable.
+    // An absolute path outside the data folder is readable only once the user
+    // has picked it (a model folder, an attachment). Until then reads fail and
+    // `exists_sync` reports `false`, the same as for a missing path.
     let model = tempfile::tempdir().unwrap();
     fs::write(model.path().join("config.json"), "{\"a\":1}").unwrap();
     let dir = model.path().to_string_lossy().to_string();
-    let config = model.path().join("config.json").to_string_lossy().to_string();
+    let config = model
+        .path()
+        .join("config.json")
+        .to_string_lossy()
+        .to_string();
+    assert!(!exists_sync(app.handle().clone(), vec![config.clone()]).unwrap());
+    for err in [
+        file_stat(app.handle().clone(), dir.clone()).err().unwrap(),
+        read_file_sync(app.handle().clone(), vec![config.clone()])
+            .err()
+            .unwrap(),
+        readdir_sync(app.handle().clone(), vec![dir.clone()])
+            .err()
+            .unwrap(),
+    ] {
+        assert!(err.starts_with(super::grants::DENIED_PREFIX), "{err}");
+    }
+
+    app.state::<ReadGrants>().record_pick(model.path());
     assert!(exists_sync(app.handle().clone(), vec![config.clone()]).unwrap());
     assert!(file_stat(app.handle().clone(), dir.clone()).unwrap().is_directory);
     assert_eq!(
