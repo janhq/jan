@@ -1670,6 +1670,12 @@ impl ToolGroup {
         self.calls.len() > 1 && self.calls.iter().all(|c| c.command.is_some())
     }
 
+    /// Whether the group folds to a `Worked` row once no call is in flight:
+    /// calls of more than one kind, neither all exploration nor all commands.
+    fn worked(&self) -> bool {
+        self.nouns.len() > 1 && !self.explored() && !self.shells()
+    }
+
     /// The bullet of a row that lists its calls as a tree (`Explored`, `Ran N
     /// commands`): running while open with a call in flight, red when any call
     /// failed, the background accent while a command runs on detached, else how
@@ -10990,11 +10996,12 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
-    // summary is a counted breakdown) need the per-call headers. An `Explored`
-    // or `Shell` row already ends on its tree, so its detail always
+    // summary is a counted breakdown) need the per-call headers. An `Explored`,
+    // `Shell` or `Worked` row already ends on its tree, so its detail always
     // names each call and carries that tree on rather than opening a second
     // corner.
-    let tree = group.explored() || group.shells();
+    // A mixed group still in flight reads as its running call, with no tree yet.
+    let tree = group.explored() || group.shells() || (group.worked() && !group.is_running());
     let show_headers = group.calls.len() > 1 || tree;
     let first = |out: &Vec<Line<'static>>| out.is_empty() && !tree;
     for call in &group.calls {
@@ -29079,6 +29086,11 @@ mod tests {
             .rows
             .iter()
             .any(|r| row_text(r).contains("\u{2514} Read 1 file; ran 2 commands")));
+        // Expanded, the calls carry the row's tree on: no second corner.
+        let group = app.transcript.groups.last().expect("folded group");
+        let detail: Vec<String> =
+            super::group_detail_lines(group, 80).iter().map(line_text).collect();
+        assert!(!detail.iter().any(|l| l.contains('\u{2514}')), "{detail:#?}");
     }
 
     /// While a command of the run is in flight it reads `Running <cmd>` under
