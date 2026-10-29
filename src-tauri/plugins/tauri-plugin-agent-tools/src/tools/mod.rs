@@ -707,7 +707,8 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     // `Read` so plan mode keeps its reads and the parallel read path takes it: it
     // writes only the agent's own notes, which the user does not manage
     // (janhq/jan-internal#497). Plan mode's refusal of the changing ops is per
-    // op, in the handler.
+    // op, in the handler, which also serializes those ops on a per-store lock
+    // so a parallel batch cannot lose one of two edits to a note.
     BuiltinTool {
         name: MEMORY_TOOL,
         capability: Capability::Read,

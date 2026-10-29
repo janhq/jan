@@ -37,6 +37,11 @@ approval, in the TUI, headless runs or ACP:
 
 A `deny = ["memory"]` entry in `agent.toml` turns the tool off.
 
+`view` and `search` calls in one turn run in parallel. Changes (`write`, `edit`, `delete`, `move`)
+to one store apply one at a time, whoever makes them (the agent, a tidy, the desktop app), so two
+edits of the same note never lose one: the second sees the first's result, and an `edit` whose text
+is gone by then fails with `not found` instead of overwriting.
+
 Memory belongs to the main agent only. [Subagents](/docs/agent/subagents#isolation) get no `memory`
 tool and no memory index, so the main agent passes them any remembered fact they need in the task.
 
