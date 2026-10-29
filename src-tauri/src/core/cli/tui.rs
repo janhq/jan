@@ -46437,6 +46437,7 @@ mod tests {
             home_readonly: false,
             // Bare shell: these exercise the TUI wiring, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 
