@@ -131,10 +131,13 @@ These engine-wide settings apply to every model the engine loads. Per-model over
 | **Batch Size** | Logical maximum batch size for processing prompts | 2048 | Lower it if prompt processing runs out of memory |
 | **uBatch Size** | Physical maximum batch size | 512 | Controls memory usage during batching |
 | **Fit (auto-adjust to device memory)** | Adjust unset settings so the model fits in device memory | Disabled | Enable to let llama.cpp choose GPU layers and context for you |
+| **Fit Target per Device (MiB)** | Target memory margin per device for Fit, as a comma-separated list of MiB values; a single value applies to every device | 1024 | Only used when Fit is enabled |
+| **Fit Minimum Context Size** | Smallest context size, in tokens, that Fit may set | 4096 | Only used when Fit is enabled |
 | **Devices for Offload** | Comma-separated accelerators, named as in the detected hardware list | Empty (all) | Restrict which GPUs the model can use; `none` disables offload |
 | **GPU Split Mode** | How to distribute the model across GPUs (None, Layer, Row, Tensor) | Layer | Layer is the common multi-GPU choice |
 | **Main GPU Index** | The GPU used for the model (split mode None) or intermediate results (split mode Row) | 0 | Change to target a specific GPU |
 | **Tensor Split** | Proportions for splitting the model across devices, e.g. `3,1` | Empty (even split) | Uneven GPUs |
+| **Disable Op Offload** | Keep host tensor operations on the CPU instead of offloading them to the accelerator (`--no-op-offload`) | Disabled | Advanced tuning only |
 | **MoE Layers on CPU** | Keep the Mixture-of-Experts weights of the first N layers in CPU memory | 0 | Fit a large MoE model in limited VRAM |
 | **Dense FFN Layers on CPU** | Keep the dense feed-forward weights of the first N layers in CPU memory | 0 | The same for dense models |
 
@@ -146,18 +149,17 @@ These engine-wide settings control how every loaded model uses system and GPU me
 |---------|-------------|---------|----------------|
 | **Flash Attention** | Enable Flash Attention kernel | Auto | Force On or Off only if you hit kernel issues |
 | **Disable mmap** | Don't memory-map model files | Disabled | Enable if experiencing crashes or pageouts |
+| **Lazy Tensor Reading** | Read the rows of large arch-marked tensors (e.g. per-layer embeddings) from disk on demand instead of keeping them in memory; Auto applies it above 4 GiB | Auto | Off keeps those tensors in memory; requires mmap, so it has no effect with Disable mmap on |
 | **MLock** | Keep model in RAM, prevent swapping | Disabled | Enable if you have enough RAM and want consistent performance |
 | **Context Shift** | Allow trimming the start of the prompt when context fills | Disabled | Enable for very long chats or multiple tool calls |
 | **Disable KV Cache Offload** | Keep the KV cache in system RAM instead of GPU memory | Disabled | When VRAM is scarce, at the cost of speed |
+| **Unified KV Cache** | Use a single KV buffer shared across all slots | Auto | Saves memory when running multiple parallel slots |
+| **Context Per Slot** | Cap, in tokens, on how much of the unified KV cache one slot may use; 0 lets a slot fill the whole cache | 0 | Only applies when the KV cache is unified |
 | **KV Cache K Type** | KV-cache precision for keys | f16 | Switch to q8_0 / q4_0 to save VRAM |
 | **KV Cache V Type** | KV-cache precision for values | f16 | Switch to q8_0 / q4_0 to save VRAM |
 
 <Callout type="info">
 **Per-model settings** (configured on each model's page, not here): Context Size, GPU Layers, Batch Size, **Disable KV Offload** (enable to keep the KV cache on CPU when GPU VRAM is tight), Override Tensor Buffer Type, Custom Jinja Chat template, Chat template options (`chat_template_kwargs`), and sampling parameters. Jan writes the engine-wide settings as the `[*]` defaults in `router.preset.ini` in its data folder, and each model's own settings override them.
-</Callout>
-
-<Callout type="warning">
-The default KV cache type was temporarily set to `q8_0` in a prior release and has been reverted to `f16`. This is **not automatically migrated** — if your models fail to load after updating to v0.8.0, set **KV Cache K Type** and **KV Cache V Type** back to `f16` manually.
 </Callout>
 
 ### KV Cache Types Explained
@@ -170,7 +172,7 @@ The default KV cache type was temporarily set to `q8_0` in a prior release and h
 These settings are for fine-tuning model behavior and advanced use cases.
 
 <Callout type="info">
-**Custom Jinja Chat template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
+**Custom Jinja Chat template**, **Chat template options**, **Mirostat Sampling**, and the **Output Constraints** (Grammar / JSON Schema) below are **per-model** settings, configured on an individual model's page (the gear icon next to the model), not on the engine-wide Settings -> Llama.cpp page. **Max Tokens to Predict**, **Preserve Reasoning History**, **RoPE**, and **Cache & Memory Tuning** are engine-wide.
 </Callout>
 
 ### Text Generation Control
@@ -178,6 +180,7 @@ These settings are for fine-tuning model behavior and advanced use cases.
 | Setting | What It Does | Default Value | When to Change |
 |---------|-------------|---------------|----------------|
 | **Max Tokens to Predict** | Maximum tokens to generate | -1 (infinite) | Set a limit to prevent runaway generation |
+| **Preserve Reasoning History** | Keep the reasoning of every earlier assistant turn in the prompt, not just the most recent one | Enabled | Only affects models whose chat template supports it; disable to save prompt tokens |
 | **Custom Jinja Chat template** (per-model) | Override model's chat format: a built-in template name, an inline Jinja body, or an absolute path to a `.jinja` file | Empty | Only if model needs special formatting |
 | **Chat template options** (per-model) | Extra options the model's chat template accepts (sent as `chat_template_kwargs`, e.g. `enable_thinking`) | Empty | To toggle template features like reasoning or tool formatting per model |
 
@@ -198,6 +201,8 @@ These settings are for fine-tuning model behavior and advanced use cases.
 | **Conversation Cache Disk Limit (MiB)** | Disk budget for saved conversation caches; the oldest are dropped first | 8192 | Raise it if you switch between many long conversations |
 | **Cache Reuse** | Min chunk size of matching prefix tokens to reuse from cache (`--cache-reuse`) | 0 (disabled) | Set a positive value to speed up repeated prompts with a shared prefix |
 | **Full SWA Cache** | Use full-size SWA cache (`--swa-full`) | Disabled | Enable if a sliding-window model (e.g. Gemma) reprocesses the whole prompt every turn (costs memory) |
+| **Context Checkpoints** | Maximum context checkpoints kept per slot, which let a shifted context be restored instead of reprocessed (`--ctx-checkpoints`) | 32 | Advanced tuning only |
+| **Checkpoint Minimum Step** | Minimum number of tokens between context checkpoints (`--checkpoint-min-step`) | 8192 | Advanced tuning only |
 | **Keep First N Tokens** | Tokens from the initial prompt to keep on context shift (`--keep`, -1 = keep all) | 0 | Increase to preserve more of the system prompt when context fills |
 
 ### Mirostat Sampling (per-model)
