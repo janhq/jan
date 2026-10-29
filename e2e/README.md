@@ -180,8 +180,9 @@ server ever bound.
 
 ## Isolation
 
-Each run gets a throwaway profile in a temp dir, so tests never touch real Jan
-data. The desktop app resolves its data folder from
+Each run gets a throwaway profile in a temp dir to redirect Jan application
+data. This is not complete isolation: macOS WebKit storage and the other gaps
+below can still touch the real user profile. The desktop app resolves its data folder from
 `core::app::paths::data_dir()`; which variables that leaves you needing to
 override depends on the platform.
 
@@ -190,6 +191,25 @@ override depends on the platform.
 | macOS | `$HOME/Library/Application Support` | `HOME` |
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
 | Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
+
+### Known macOS WebKit gap — follow-up
+
+HOME redirection does **not** isolate WKWebView localStorage. In native macOS
+arm64 validation on [#9457](https://github.com/janhq/jan/pull/9457) and
+[#9464](https://github.com/janhq/jan/pull/9464), thinhlpg observed writes under the
+real `~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage/`
+(`jan.ai.app`), shared with an installed Jan. The redirected profile contained
+no `Library/WebKit`; `Library/Caches/jan.ai.app` did redirect. Therefore both
+normal and migration launches may read or modify installed-Jan browser state;
+a passing migration smoke does not prove browser-storage isolation or migration.
+Use a disposable macOS account/VM for separation, not merely `JAN_E2E_HOME`.
+
+**Follow-up ([jan-internal#496](https://github.com/janhq/jan-internal/issues/496),
+not fixed here):** isolate macOS e2e WebKit storage, evaluating a
+distinct e2e bundle identifier, and verify with real installed-Jan storage that
+launches do not touch it. The possible connection to a missing setup wizard on
+an already-used Mac is unproven. This PR changes neither bundle IDs nor WebKit
+storage behavior.
 
 ### Launch guard (limited guarantee)
 
@@ -222,7 +242,7 @@ than `Jan` (including empty) are rejected too.
 This is an accidental-launch guard, **not a filesystem sandbox** or a proof of
 complete confinement. It does not prevent concurrent symlink changes, hard-link
 aliases, every possible legacy/plugin/config escape, Windows registry folder
-redirection, or the Windows CLI/updater gaps below. Use a disposable OS account
+redirection, the macOS WebKit gap, or the Windows CLI/updater gaps below. Use a disposable OS account
 or VM if stronger separation is needed. Existing profiles should be disposable;
 the harness merges a bootstrap seed into their backend settings.
 
@@ -676,3 +696,63 @@ Those lines no longer reach the terminal at all: `outputDir` sends the driver
 log to `logs/<spec>-<cid>.log` instead of the console, so what you see live is
 the spec reporter alone. The lines are still worth reading when something does
 fail — that file is where the last attempt before the give-up is recorded.
+
+## Migration smoke (separate scenario)
+
+After building the same debug `e2e` binary described above:
+
+```bash
+cd e2e
+xvfb-run -a yarn test:migration # Linux; omit xvfb-run on macOS/Windows
+```
+
+This copies the committed `src-tauri/tests/fixtures/upgrade/0.8.3` contents
+(store, MCP config and two threads) into its own fresh guarded temporary
+profile. It requires schema 3 and an Exa entry before starting. It launches
+**two sequential WDIO commands / real desktop processes**, with the same
+profile and no reseeding between them. The embedded driver port must be closed
+before the first launch and after each launch; a still-listening process is
+never killed by name or by port. A failed first phase stops the run.
+
+Both starts assert on disk: schema 5, exactly the fixture MCP config minus Exa
+(all other servers and settings unchanged), and all fixture thread IDs,
+metadata, message IDs and content preserved. Both navigate to historical thread
+`784952d3-dc72-474e-ab24-0d78e7035280` and assert its user and assistant text.
+There is no provider setup, model download or inference request. The embedder
+bootstrap suppression flag is seeded once; incidental app metadata requests
+are not blocked, so this is not an offline/network-isolation test.
+
+`JAN_E2E_SCENARIO` accepts only `default` (the existing five specs) or `migration`
+(only `migration.e2e.ts`); use the runner, not a hand-exported migration scenario.
+`test:migration` rejects inherited `JAN_E2E_HOME` and
+`JAN_E2E_EMBEDDER_DOWNLOAD`. It uses the same launch safety guard as the default
+suite. On failure/interruption the owned profile and phase-specific runner and
+WDIO logs remain under the printed temporary path. On success it removes them
+unless `JAN_E2E_KEEP=1`. The migration runner directly spawns and retains handles
+for the app and WDIO; the migration config disables the service launcher to avoid
+a second app. It waits for the embedded `/status` readiness before starting WDIO.
+The spec then waits for the historical sidebar row (thread-store hydration), not
+merely `#root`, before navigating to the historical conversation.
+
+SIGINT/SIGTERM and the ten-minute phase deadline cancel startup or execution and
+await cleanup of both owned roots. Unix sends TERM then KILL after five seconds;
+Windows invokes bounded `taskkill /PID <owned-live-root> /T /F` before the root
+exits, rather than force-killing WDIO and losing its tree. No PID is discovered
+from a port, log, process name, or PID file; no detached processes/groups or broad
+image-name kills are used. Each phase also requires the driver port to close.
+Any failure or uncertain teardown retains the profile. This is a guarantee for
+tracked roots and driver closure, **not** proof that every Unix grandchild has
+exited: Unix app/worker descendants are not independently enumerated. SIGKILL of
+the runner, machine shutdown, or already-orphaned Windows descendants cannot be
+reliably cleaned up by this harness. Retained profiles are evidence, not a claim
+that every possible orphan was terminated. Injectable lifecycle tests cover
+startup/run cancellation, real short-deadline automatic cancellation, escalation,
+and cleanup failure. Work and teardown failures are retained together (including
+the driver-port closure barrier), rather than cleanup masking the original error.
+
+This covers startup migrations and persistence across a second process start,
+not an installer upgrade, old binary execution, browser localStorage migration,
+provider credential migration, or an exhaustive upgrade matrix. The fixture is
+not a copy of an OS browser profile. `yarn test:unit` exercises fixture comparison,
+strict scenario selection, and launch/barrier ordering without starting Jan;
+it does not substitute for the desktop smoke.
