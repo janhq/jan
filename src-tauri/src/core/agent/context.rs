@@ -8,6 +8,7 @@
 //! placement, so "who writes above the cache line" is answered by config and by
 //! one exhaustive match rather than by whoever edited the builder last.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
@@ -356,6 +357,90 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
     .prompt_block()
 }
 
+/// A content hash per writable note (this project's and the user's), read now.
+fn memory_fingerprint(project_root: &Path) -> BTreeMap<String, u64> {
+    let (store, home, cross_project) = crate::core::agent::project::memory_roots(project_root);
+    memory::Scopes {
+        store: &store,
+        home: home.as_deref(),
+        cross_project,
+    }
+    .fingerprint()
+}
+
+/// Most names the changes block spells out before it only counts the rest, so
+/// a tidy that touched hundreds of notes cannot flood the tail.
+const MAX_CHANGED_NAMES: usize = 20;
+
+/// The memory index as the session started with it, and a fingerprint of the
+/// notes it was rendered from.
+///
+/// The index sits above the cache line, so it is taken once per session rather
+/// than per run: a note written mid-session would otherwise change the system
+/// prompt, and a changed prompt is appended as a whole new system message
+/// (`upstream::set_system_prompt`), resending every byte of it. What changed
+/// since the snapshot is reported below the history instead (see
+/// [`MemorySnapshot::changes_block`]). Refreshed only where the conversation
+/// starts over anyway: `/new`, `/clear`, `/resume`, a fork, and after a
+/// compaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MemorySnapshot {
+    block: Option<String>,
+    fingerprint: BTreeMap<String, u64>,
+}
+
+impl MemorySnapshot {
+    /// Render the index and fingerprint the notes of `project_root` now.
+    pub(crate) fn capture(project_root: &Path) -> Self {
+        Self {
+            block: load_memory_catalog(project_root),
+            fingerprint: memory_fingerprint(project_root),
+        }
+    }
+
+    /// The memory section as the session's system prompt carries it.
+    pub(crate) fn block(&self) -> Option<&str> {
+        self.block.as_deref()
+    }
+
+    /// The `# Memory Changes` tail block: every note added (`+`), changed
+    /// (`~`) or deleted (`-`) since the snapshot, by this run or any other
+    /// (a subagent, a tidy, another session). `None` when nothing changed.
+    pub(crate) fn changes_block(&self, project_root: &Path) -> Option<String> {
+        memory_changes(&self.fingerprint, &memory_fingerprint(project_root))
+    }
+}
+
+fn memory_changes(
+    before: &BTreeMap<String, u64>,
+    after: &BTreeMap<String, u64>,
+) -> Option<String> {
+    let mut changes: Vec<String> = Vec::new();
+    for (name, hash) in after {
+        match before.get(name) {
+            None => changes.push(format!("+ {name}")),
+            Some(old) if old != hash => changes.push(format!("~ {name}")),
+            Some(_) => {}
+        }
+    }
+    for name in before.keys().filter(|name| !after.contains_key(*name)) {
+        changes.push(format!("- {name}"));
+    }
+    if changes.is_empty() {
+        return None;
+    }
+    let total = changes.len();
+    changes.truncate(MAX_CHANGED_NAMES);
+    let more = match total - changes.len() {
+        0 => String::new(),
+        n => format!(", and {n} more"),
+    };
+    Some(format!(
+        "# Memory Changes\n\nMemory changes this session: {}{more}\nThe memory index in your system prompt is the session-start snapshot; read a changed note by name for its current content.",
+        changes.join(", ")
+    ))
+}
+
 /// Everything the prompt-block composers read.
 struct CompositionInputs<'a> {
     base: Option<&'a str>,
@@ -377,14 +462,18 @@ struct CompositionInputs<'a> {
 pub(crate) struct SessionStart {
     date: String,
     branch: Option<String>,
+    /// The memory index the session started with. `None` with no project, and
+    /// in a fixed test snapshot, where the index is read live instead.
+    memory: Option<MemorySnapshot>,
 }
 
 impl SessionStart {
-    /// Read the clock and `project_root`'s checkout now.
+    /// Read the clock, `project_root`'s checkout and its memory now.
     pub(crate) fn capture(project_root: Option<&Path>) -> Self {
         Self {
             date: chrono::Local::now().format("%Y-%m-%d").to_string(),
             branch: project_root.and_then(crate::core::agent::git::current_branch),
+            memory: project_root.map(MemorySnapshot::capture),
         }
     }
 
@@ -393,6 +482,23 @@ impl SessionStart {
         Self {
             date: date.to_string(),
             branch: branch.map(str::to_string),
+            memory: None,
+        }
+    }
+
+    /// The session's memory snapshot, when it took one.
+    pub(crate) fn memory(&self) -> Option<&MemorySnapshot> {
+        self.memory.as_ref()
+    }
+
+    /// Re-take only the memory snapshot, keeping the date and branch: for a
+    /// compaction, which starts the history over but not the session. The
+    /// TUI is the only caller that compacts a session it keeps.
+    #[cfg(feature = "cli")]
+    pub(crate) fn with_fresh_memory(&self, project_root: &Path) -> Self {
+        Self {
+            memory: Some(MemorySnapshot::capture(project_root)),
+            ..self.clone()
         }
     }
 
@@ -457,11 +563,17 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
         Composer::ProjectContext => load_context_files(inputs.project_root),
         Composer::Skills => load_skills(inputs.project_root),
-        Composer::MemoryCatalog => load_memory_catalog(inputs.project_root),
+        // The session's snapshot when it has one, so a note written mid-session
+        // never rewrites the prompt; read live only for a run with no session.
+        Composer::MemoryCatalog => match inputs.session_start.and_then(SessionStart::memory) {
+            Some(snapshot) => snapshot.block().map(str::to_string),
+            None => load_memory_catalog(inputs.project_root),
+        },
         // Built where the request is assembled, because they need state the
         // composition has no access to: the tool array is a request field, and
-        // the last three read per-turn state (a query, the todo registry).
+        // the rest read per-turn state (a query, the notes, the todo registry).
         Composer::ToolSchemas
+        | Composer::MemoryChanges
         | Composer::MemoryRecall
         | Composer::PlanAddendum
         | Composer::TodoAddendum => None,
@@ -620,6 +732,66 @@ mod tests {
         assert!(!block.contains("SECRET_BODY_MARKER"));
         assert!(block.contains("memory_read"));
         assert!(!block.contains("ignored.txt"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// P0 of #497: a note written mid-session leaves the composed prompt
+    /// byte-identical; the change is reported by the tail block instead.
+    #[test]
+    fn a_memory_write_mid_session_does_not_change_the_prompt() {
+        let root = scratch_project("memsnapshot");
+        write_memory(&root, "keep.md", "Kept.");
+        write_memory(&root, "edit.md", "Before.");
+        write_memory(&root, "gone.md", "Deleted later.");
+        let start = SessionStart::capture(Some(&root));
+        let compose = || {
+            compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), Some(&start))
+                .unwrap()
+                .prefix
+        };
+        let before = compose();
+        assert!(before.contains("`gone`"), "{before}");
+        let snapshot = start.memory().expect("a project session snapshots memory");
+        assert_eq!(snapshot.changes_block(&root), None, "nothing changed yet");
+
+        write_memory(&root, "new.md", "Added.");
+        write_memory(&root, "edit.md", "After.");
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::remove_file(dir.join("gone.md")).unwrap();
+
+        assert_eq!(compose(), before, "the prompt is the session-start snapshot");
+        let changes = snapshot.changes_block(&root).expect("changes are reported");
+        assert!(changes.starts_with("# Memory Changes"), "{changes}");
+        assert!(
+            changes.contains("Memory changes this session: ~ edit, + new, - gone"),
+            "{changes}"
+        );
+        assert!(!changes.contains("keep"), "{changes}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_memory_changes_block_caps_the_names_it_lists() {
+        let before = BTreeMap::new();
+        let after: BTreeMap<String, u64> =
+            (0..25).map(|i| (format!("n{i:02}"), 1)).collect();
+        let block = memory_changes(&before, &after).unwrap();
+        assert_eq!(block.matches("+ n").count(), MAX_CHANGED_NAMES);
+        assert!(block.contains(", and 5 more"), "{block}");
+    }
+
+    /// After a compaction the session keeps its date and branch but takes a
+    /// fresh memory index, so the tail stops repeating folded-in changes.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn a_fresh_memory_snapshot_keeps_the_date_and_branch() {
+        let root = scratch_project("memrefresh");
+        let start = SessionStart::capture(Some(&root));
+        write_memory(&root, "later.md", "Written after the start.");
+        let fresh = start.with_fresh_memory(&root);
+        assert_eq!((fresh.date.as_str(), &fresh.branch), (start.date.as_str(), &start.branch));
+        assert!(fresh.memory().unwrap().block().unwrap().contains("`later`"));
+        assert_eq!(fresh.memory().unwrap().changes_block(&root), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

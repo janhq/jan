@@ -5454,6 +5454,22 @@ impl App {
         self.adopt_session_start(Some(start));
     }
 
+    /// Re-take the session's memory index after a compaction. The compaction
+    /// already rewrote the history, so the prompt it is about to send is new
+    /// either way, and a fresh index stops the changes block from repeating
+    /// what the summary folded in. The date and branch stay the session's.
+    fn refresh_memory_snapshot(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let Some(start) = args.session_start.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let fresh = start.with_fresh_memory(&root);
+        self.adopt_session_start(Some(fresh));
+    }
+
     /// Run the session on `start` from the next turn on; a no-op when it is
     /// already the one in use.
     fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
@@ -8487,6 +8503,7 @@ impl App {
                 if child.is_none() {
                     self.run_compacting = None;
                     self.pending_compaction_refresh = true;
+                    self.refresh_memory_snapshot();
                 }
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
@@ -17118,6 +17135,7 @@ fn finish_compaction(
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
+            app.refresh_memory_snapshot();
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             // The provider's last `usage` measured the pre-compaction history, so
@@ -43823,6 +43841,26 @@ mod tests {
         let start = app.args.as_ref().and_then(|a| a.session_start.clone());
         let fresh = crate::core::agent::context::SessionStart::capture(Some(&app.project_root));
         assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
+    }
+
+    /// A compaction rewrites the history anyway, so the session takes a fresh
+    /// memory index there; the date and branch stay the session's.
+    #[test]
+    fn a_compaction_refreshes_only_the_memory_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        args.session_start = Some(stale.clone());
+        app.args = Some(std::sync::Arc::new(args));
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        finish_compaction(&mut app, Ok(vec![json!({ "role": "user", "content": "s" })]), 5);
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone()).unwrap();
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).unwrap_or(app.project_root.clone());
+        assert_eq!(start, stale.with_fresh_memory(&root));
+        assert!(start.memory().is_some(), "the memory index was re-taken");
     }
 
     /// A fork continues the source's prefix, so it keeps the source's snapshot

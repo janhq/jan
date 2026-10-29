@@ -89,6 +89,7 @@ pub(crate) enum Composer {
     MemoryCatalog,
     ToolSchemas,
     // Below it today: per-turn content, so they can never be in the prefix.
+    MemoryChanges,
     MemoryRecall,
     PlanAddendum,
     TodoAddendum,
@@ -109,6 +110,7 @@ impl Composer {
         Composer::Skills,
         Composer::MemoryCatalog,
         Composer::ToolSchemas,
+        Composer::MemoryChanges,
         Composer::MemoryRecall,
         Composer::PlanAddendum,
         Composer::TodoAddendum,
@@ -130,6 +132,7 @@ impl Composer {
             Composer::Skills => "skills",
             Composer::MemoryCatalog => "memory_catalog",
             Composer::ToolSchemas => "tool_schemas",
+            Composer::MemoryChanges => "memory_changes",
             Composer::MemoryRecall => "memory_recall",
             Composer::PlanAddendum => "plan_addendum",
             Composer::TodoAddendum => "todo_addendum",
@@ -157,6 +160,7 @@ impl Composer {
             Composer::Skills => "the installed skill catalog",
             Composer::MemoryCatalog => "the curated memory note catalog",
             Composer::ToolSchemas => "the advertised tool array (a request field)",
+            Composer::MemoryChanges => "memory notes changed since the session started",
             Composer::MemoryRecall => "memory recalled for this request",
             Composer::PlanAddendum => "the plan-mode instructions",
             Composer::TodoAddendum => "the active todo list",
@@ -186,7 +190,8 @@ impl Composer {
             | Composer::Skills
             | Composer::MemoryCatalog
             | Composer::ToolSchemas => Some(Placement::Prefix),
-            Composer::MemoryRecall
+            Composer::MemoryChanges
+            | Composer::MemoryRecall
             | Composer::PlanAddendum
             | Composer::TodoAddendum => None,
         }
@@ -217,7 +222,8 @@ impl Composer {
             | Composer::Skills
             | Composer::MemoryCatalog
             | Composer::ToolSchemas => true,
-            Composer::MemoryRecall
+            Composer::MemoryChanges
+            | Composer::MemoryRecall
             | Composer::PlanAddendum
             | Composer::TodoAddendum => false,
         }
