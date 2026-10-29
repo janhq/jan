@@ -373,12 +373,21 @@ pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
         .any(|p| p == want)
 }
 
-/// The commit `rev` names in `repo`, or `None` when it names none. `rev` comes
-/// from the model (a dispatch's `{"ref": ...}`), so one that starts with `-`
-/// is refused before git can read it as an option.
+/// Whether a model-supplied ref (a dispatch's `{"ref": ...}`) is a plain
+/// name git can neither read as an option nor as a refspec: no leading `-`
+/// or `+`, no `:` (a `src:dst` refspec would let a fetch move any local
+/// branch), no whitespace or control characters.
+pub(crate) fn is_plain_ref(r: &str) -> bool {
+    !r.is_empty()
+        && !r.starts_with(['-', '+'])
+        && !r.chars().any(|c| c == ':' || c.is_whitespace() || c.is_control())
+}
+
+/// The commit `rev` names in `repo`, or `None` when it names none or is not a
+/// [plain ref](is_plain_ref).
 #[cfg(feature = "cli")]
 pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
-    if rev.is_empty() || rev.starts_with('-') {
+    if !is_plain_ref(rev) {
         return None;
     }
     let spec = format!("{rev}^{{commit}}");
@@ -389,12 +398,23 @@ pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
 
 /// Fetch `rev` from `origin` into `FETCH_HEAD` and return the commit it named,
 /// for a ref the local repository does not have (`pull/9486/head`).
+///
+/// `rev` must be a [plain ref](is_plain_ref) that `git check-ref-format`
+/// accepts, so it is never a refspec with a destination. `--refmap=` turns off
+/// the remote-tracking update a configured `remote.origin.fetch` would make:
+/// `FETCH_HEAD` is the only ref this writes.
 #[cfg(feature = "cli")]
 pub(crate) fn fetch_commit(repo: &Path, rev: &str) -> Result<String, String> {
-    if rev.is_empty() || rev.starts_with('-') {
+    if !is_plain_ref(rev) {
         return Err(format!("not a git ref: {rev:?}"));
     }
-    run(repo, None, &["fetch", "--quiet", "--no-tags", "origin", "--", rev])?;
+    run(repo, None, &["check-ref-format", "--allow-onelevel", rev])
+        .map_err(|_| format!("not a git ref: {rev:?}"))?;
+    run(
+        repo,
+        None,
+        &["fetch", "--quiet", "--no-tags", "--refmap=", "origin", "--", rev],
+    )?;
     resolve_commit(repo, "FETCH_HEAD").ok_or_else(|| format!("fetching {rev} named no commit"))
 }
 
@@ -784,6 +804,53 @@ mod tests {
             assert!(repo_root(&dir).is_none());
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fetch ref comes from the model, so a refspec (`src:dst`, a leading
+    /// `+`) is refused before git sees it, and a plain ref lands in
+    /// `FETCH_HEAD` only: no local branch or remote-tracking ref moves.
+    #[test]
+    fn fetch_commit_refuses_refspecs_and_moves_no_local_ref() {
+        let Some(upstream) = init_repo() else { return };
+        let trunk = current_branch(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", "-b", "x"]).unwrap();
+        std::fs::write(upstream.join("x.txt"), "x\n").unwrap();
+        run(&upstream, None, &["add", "x.txt"]).unwrap();
+        run(&upstream, None, &["commit", "-q", "-m", "x", "--no-gpg-sign"]).unwrap();
+        let x = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", &trunk]).unwrap();
+        let clone = upstream.with_extension("clone");
+        let _ = std::fs::remove_dir_all(&clone);
+        let (from, to) = (upstream.to_string_lossy(), clone.to_string_lossy());
+        git(&["clone", "-q", "--single-branch", "-b", &trunk, &from, &to]).unwrap();
+        // The usual wildcard refspec, under which a plain `git fetch origin x`
+        // would also move `refs/remotes/origin/x`.
+        let wide = "+refs/heads/*:refs/remotes/origin/*";
+        run(&clone, None, &["config", "remote.origin.fetch", wide]).unwrap();
+        run(&clone, None, &["branch", "victim"]).unwrap();
+        let before = head_sha(&clone).unwrap();
+
+        for bad in [
+            "+refs/heads/x:refs/heads/victim",
+            "x:victim",
+            "refs/heads/x:refs/heads/victim",
+            "+x",
+            "x:",
+            "x\u{7}",
+        ] {
+            assert!(fetch_commit(&clone, bad).is_err(), "{bad:?} must be refused");
+            assert_eq!(
+                resolve_commit(&clone, "refs/heads/victim").as_deref(),
+                Some(before.as_str()),
+                "{bad:?} moved a local branch"
+            );
+        }
+        assert_eq!(fetch_commit(&clone, "x").as_deref(), Ok(x.as_str()));
+        assert_eq!(resolve_commit(&clone, "refs/heads/x"), None, "no local branch made");
+        assert_eq!(resolve_commit(&clone, "refs/remotes/origin/x"), None);
+        assert_eq!(resolve_commit(&clone, "refs/heads/victim").as_deref(), Some(before.as_str()));
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&upstream);
     }
 
     /// The primitives a subagent worktree's life is built from: resolve a ref

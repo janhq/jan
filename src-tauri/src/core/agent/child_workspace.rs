@@ -60,7 +60,9 @@ pub(crate) fn parse_request(
             _ => Err(bad()),
         },
         Some(serde_json::Value::Object(map)) if map.len() == 1 => match map.get("ref") {
-            Some(serde_json::Value::String(r)) if is_ref(r.trim()) => {
+            Some(serde_json::Value::String(r))
+                if crate::core::agent::git::is_plain_ref(r.trim()) =>
+            {
                 Ok(Some(WorkspaceRequest::Ref(r.trim().to_string())))
             }
             _ => Err(bad()),
@@ -74,12 +76,6 @@ fn is_worker_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
-/// A ref git would not read as an option and that names no path outside the
-/// ref namespace; git itself rejects the rest when it resolves it.
-fn is_ref(r: &str) -> bool {
-    !r.is_empty() && !r.starts_with('-') && !r.chars().any(|c| c.is_whitespace() || c == '\0')
 }
 
 /// Whether a child with this final tool allowlist can change files. `None`
@@ -599,6 +595,10 @@ mod tests {
             json!("../x"),
             json!(3),
             json!({"ref": "--upload-pack=x"}),
+            json!({"ref": "+refs/heads/x:refs/heads/main"}),
+            json!({"ref": "x:main"}),
+            json!({"ref": "+x"}),
+            json!({"ref": "a\u{1}b"}),
             json!({"ref": ""}),
             json!({"ref": "a", "extra": 1}),
             json!({"branch": "a"}),
