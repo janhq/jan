@@ -524,6 +524,9 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 /// `plan_mode` only `view` and `search` run: plan mode is read-only, and the
 /// tool is classed `Read` (so the loop's capability check lets it through),
 /// which makes this the one place that knows which ops change the store.
+/// For the same reason every change holds the store's change lock from the
+/// freshness check to its own bookkeeping, so changes batched in parallel, or
+/// made by a tidy beside the main agent, apply one after another.
 async fn memory_tool(
     args: &serde_json::Value,
     scopes: memory::Scopes<'_>,
@@ -544,6 +547,10 @@ async fn memory_tool(
             op.unwrap_or_default()
         );
     }
+    let _change_lock = match (mutates, arg_str(args, "name")) {
+        (true, Some(name)) => scopes.lock_changes(name).await,
+        _ => None,
+    };
     // A tidy runs beside the main agent: its whole-file changes must be based
     // on the note as it is now (see `ChangeBudget::check_fresh`). `edit` needs
     // no check, being an exact match against the current text.
@@ -4334,6 +4341,91 @@ mod tests {
         assert_eq!(super::execute_builtin(memory, &json!({"op": "view", "name": "fact"}), &ctx).await.0, "A fact");
         let found = super::execute_builtin(memory, &json!({"op": "search", "query": "fact"}), &ctx).await.0;
         assert!(found.contains("`fact`"), "{found}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `memory` is a read-capability tool, so the loop drives a batch of its
+    /// calls together (`FuturesUnordered` in one task, as `join!` does here).
+    /// Each edit is a read-modify-write of the note; without the store's
+    /// change lock every edit read the same text and the last write won, so
+    /// all but one edit were lost while every call reported success.
+    #[tokio::test]
+    async fn concurrent_memory_edits_on_one_note_all_apply() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("log.md"), "Log\n\nA0 B0 C0 D0\n").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]);
+        let memory = lookup("memory").unwrap();
+        let edit = |old: &str, new: &str| {
+            let args = json!({"op": "edit", "name": "log", "old": old, "new": new});
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+        let (a, b, c, d) =
+            tokio::join!(edit("A0", "A1"), edit("B0", "B1"), edit("C0", "C1"), edit("D0", "D1"));
+        for r in [&a, &b, &c, &d] {
+            assert!(r.starts_with("Edited"), "{r}");
+        }
+        let body = std::fs::read_to_string(dir.join("log.md")).unwrap();
+        assert_eq!(body, "Log\n\nA1 B1 C1 D1\n", "no edit was lost");
+
+        // Two edits of the same text: one applies, the other finds its `old`
+        // gone and says so instead of overwriting the first.
+        let (x, y) = tokio::join!(edit("A1", "X"), edit("A1", "Y"));
+        let applied = [&x, &y].iter().filter(|r| r.starts_with("Edited")).count();
+        assert_eq!(applied, 1, "{x} / {y}");
+        let failed = if x.starts_with("Edited") { &y } else { &x };
+        assert!(failed.starts_with("ERROR") && failed.contains("not found"), "{failed}");
+        let body = std::fs::read_to_string(dir.join("log.md")).unwrap();
+        let winner = if x.starts_with("Edited") { "X" } else { "Y" };
+        assert_eq!(body, format!("Log\n\n{winner} B1 C1 D1\n"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Concurrent changes to different notes all land, and a write racing an
+    /// edit of the same note leaves one of the two whole, never a mix.
+    #[tokio::test]
+    async fn concurrent_memory_changes_to_different_notes_all_land() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[]);
+        let memory = lookup("memory").unwrap();
+        let run = |args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+        let (a, b, c) = tokio::join!(
+            run(json!({"op": "write", "name": "a", "content": "Note a"})),
+            run(json!({"op": "write", "name": "b", "content": "Note b"})),
+            run(json!({"op": "write", "name": "grp/c", "content": "Note c"})),
+        );
+        for r in [&a, &b, &c] {
+            assert!(r.starts_with("Wrote"), "{r}");
+        }
+        let dir = store.join("memory");
+        assert_eq!(std::fs::read_to_string(dir.join("a.md")).unwrap(), "Note a");
+        assert_eq!(std::fs::read_to_string(dir.join("b.md")).unwrap(), "Note b");
+        assert_eq!(std::fs::read_to_string(dir.join("grp/c.md")).unwrap(), "Note c");
+        let index = std::fs::read_to_string(store.join(crate::memory::INDEX_FILE)).unwrap();
+        assert!(index.contains("`a`") && index.contains("`b`") && index.contains("`grp/`"), "{index}");
+
+        let (m, d) = tokio::join!(
+            run(json!({"op": "move", "name": "a", "to": "grp/a"})),
+            run(json!({"op": "delete", "name": "b"})),
+        );
+        assert!(m.starts_with("Moved") && d.starts_with("Deleted"), "{m} / {d}");
+        let (w, e) = tokio::join!(
+            run(json!({"op": "write", "name": "grp/c", "content": "Rewritten c"})),
+            run(json!({"op": "edit", "name": "grp/c", "old": "Note", "new": "Edited"})),
+        );
+        assert!(w.starts_with("Wrote"), "{w}");
+        // Either order ends with the write's text: an edit that ran first was
+        // replaced whole, one that ran second found `Note` gone.
+        assert!(e.starts_with("Edited") || e.contains("not found"), "{e}");
+        let body = std::fs::read_to_string(dir.join("grp/c.md")).unwrap();
+        assert_eq!(body, "Rewritten c");
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -374,17 +374,39 @@ fn load_meta(store: &Path) -> Option<Meta> {
     }
 }
 
+/// Process-wide locks of one kind, one per store directory.
+type StoreLocks<L> = std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, std::sync::Arc<L>>>>;
+
+fn store_lock<L: Default>(locks: &'static StoreLocks<L>, store: &Path) -> std::sync::Arc<L> {
+    let locks = locks.get_or_init(Default::default);
+    let mut locks = locks.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(memory_dir(store)).or_default().clone()
+}
+
 /// One lock per store directory, shared by every thread of the process: the
 /// loop runs `memory` calls in parallel (it is a read-capability tool) and a
 /// tidy subagent writes the same store as the main agent, so unserialized
-/// read-modify-writes of the side file would drop each other's updates.
+/// read-modify-writes of the side file would drop each other's updates. Reads
+/// update the side file too, so this is separate from (and taken inside)
+/// [`lock_changes`], which only changes hold.
 fn meta_lock(store: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
-    static LOCKS: std::sync::OnceLock<
-        std::sync::Mutex<HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
-    > = std::sync::OnceLock::new();
-    let locks = LOCKS.get_or_init(Default::default);
-    let mut locks = locks.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    locks.entry(memory_dir(store)).or_default().clone()
+    static LOCKS: StoreLocks<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    store_lock(&LOCKS, store)
+}
+
+/// Proof that the caller holds a store's change lock; see [`lock_changes`].
+pub type ChangeGuard = tokio::sync::OwnedMutexGuard<()>;
+
+/// Take the store's change lock, which every change to its notes (write, edit,
+/// delete, move) holds for its whole read-modify-write. `memory` calls run in
+/// parallel (the tool is classed `Read`), a tidy subagent changes the store
+/// beside the main agent, and the desktop changes it over IPC: without one
+/// lock two edits of a note would both read the old text and the later write
+/// would silently drop the earlier edit. Async, because it is held across the
+/// file I/O; reads never take it.
+pub async fn lock_changes(store: &Path) -> ChangeGuard {
+    static LOCKS: StoreLocks<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    store_lock(&LOCKS, store).lock_owned().await
 }
 
 /// Read, change and save the side file under the store's lock. Best-effort:
@@ -536,7 +558,8 @@ pub fn catalog(store: &Path) -> Vec<CatalogEntry> {
 
 /// Create or overwrite a note and regenerate the store's index. Returns the
 /// path written relative to `memory/`, so callers can phrase their own result
-/// message. Its folder is created as needed.
+/// message. Its folder is created as needed. The caller holds
+/// [`lock_changes`] (as do [`delete`] and [`rename`]'s callers).
 pub async fn write(store: &Path, name: &str, content: &str) -> Result<String, String> {
     let rel = if target(store, name)?.is_file() {
         note_relpath(name)?
@@ -959,6 +982,14 @@ impl<'a> Scopes<'a> {
         let note = target.note.filter(|n| !n.ends_with('/'))?;
         let path = memory_dir(&target.store).join(note_relpath(&note).ok()?);
         (!path.is_dir() && !path.with_extension("").is_dir()).then_some(path)
+    }
+
+    /// Take the change lock (see [`lock_changes`]) of the store `name` writes
+    /// to; `None` when it names no store. Callers of [`Self::write`],
+    /// [`Self::edit`], [`Self::delete`] and [`Self::rename`] hold it.
+    pub async fn lock_changes(&self, name: &str) -> Option<ChangeGuard> {
+        let target = self.resolve(name).ok()?;
+        Some(lock_changes(&target.store).await)
     }
 
     /// `view`: no name is the full index; a folder (`tui/` or `tui`) lists its

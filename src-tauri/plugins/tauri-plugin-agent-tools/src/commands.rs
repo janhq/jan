@@ -299,14 +299,12 @@ pub async fn memory_write(
     content: String,
 ) -> Result<(), AgentToolsError> {
     let data_folder = workspace::host_data_folder(&data_folder);
-    memory::write(
-        &resolve_store(&data_folder, project.as_deref()),
-        &name,
-        &content,
-    )
-    .await
-    .map(|_| ())
-    .map_err(Into::into)
+    let store = resolve_store(&data_folder, project.as_deref());
+    let _lock = memory::lock_changes(&store).await;
+    memory::write(&store, &name, &content)
+        .await
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 /// Name + summary + mtime for every memory note, name-sorted. This is the
@@ -334,9 +332,9 @@ pub async fn memory_delete(
     name: String,
 ) -> Result<(), AgentToolsError> {
     let data_folder = workspace::host_data_folder(&data_folder);
-    memory::delete(&resolve_store(&data_folder, project.as_deref()), &name)
-        .await
-        .map_err(Into::into)
+    let store = resolve_store(&data_folder, project.as_deref());
+    let _lock = memory::lock_changes(&store).await;
+    memory::delete(&store, &name).await.map_err(Into::into)
 }
 
 /// OpenAI-shaped function schemas for every built-in tool. The frontend picks
