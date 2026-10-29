@@ -373,6 +373,66 @@ pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
         .any(|p| p == want)
 }
 
+/// The commit `rev` names in `repo`, or `None` when it names none. `rev` comes
+/// from the model (a dispatch's `{"ref": ...}`), so one that starts with `-`
+/// is refused before git can read it as an option.
+#[cfg(feature = "cli")]
+pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
+    if rev.is_empty() || rev.starts_with('-') {
+        return None;
+    }
+    let spec = format!("{rev}^{{commit}}");
+    run(repo, None, &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec])
+        .ok()
+        .filter(|sha| is_object_id(sha))
+}
+
+/// Fetch `rev` from `origin` into `FETCH_HEAD` and return the commit it named,
+/// for a ref the local repository does not have (`pull/9486/head`).
+#[cfg(feature = "cli")]
+pub(crate) fn fetch_commit(repo: &Path, rev: &str) -> Result<String, String> {
+    if rev.is_empty() || rev.starts_with('-') {
+        return Err(format!("not a git ref: {rev:?}"));
+    }
+    run(repo, None, &["fetch", "--quiet", "--no-tags", "origin", "--", rev])?;
+    resolve_commit(repo, "FETCH_HEAD").ok_or_else(|| format!("fetching {rev} named no commit"))
+}
+
+/// The git directory every checkout of `repo` shares (objects, refs, the
+/// per-worktree admin dirs), canonicalized. A linked worktree's commit writes
+/// here, not into the checkout, which is why a sandboxed writer needs it.
+#[cfg(feature = "cli")]
+pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
+    let raw = run(repo, None, &["rev-parse", "--git-common-dir"]).ok()?;
+    let dir = PathBuf::from(raw);
+    let dir = if dir.is_absolute() { dir } else { repo.join(dir) };
+    dir.canonicalize().ok()
+}
+
+/// Commits on `HEAD` of `worktree` that `base` does not have, or `None` when
+/// git cannot say (then the caller must assume there is work to keep).
+#[cfg(feature = "cli")]
+pub(crate) fn commits_since(worktree: &Path, base: &str) -> Option<u64> {
+    require_object_id(base).ok()?;
+    run(worktree, None, &["rev-list", "--count", &format!("{base}..HEAD")])
+        .ok()?
+        .parse()
+        .ok()
+}
+
+/// Remove the checkout at `path` and delete `branch`, the inverse of
+/// [`worktree_add`]. Forced, because the caller has already decided the
+/// checkout holds nothing worth keeping.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_remove(repo: &Path, path: &Path, branch: &str) -> Result<(), String> {
+    run(
+        repo,
+        None,
+        &["worktree", "remove", "--force", "--", &path.to_string_lossy()],
+    )?;
+    run(repo, None, &["branch", "-D", "--", branch]).map(|_| ())
+}
+
 /// Forget worktree registrations whose directory the user has deleted. Without
 /// this, `worktree add` refuses a path that a stale registration still claims.
 #[cfg(feature = "cli")]
@@ -710,6 +770,42 @@ mod tests {
             assert!(repo_root(&dir).is_none());
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The primitives a subagent worktree's life is built from: resolve a ref
+    /// to the commit it names, count what was committed on top of a base, find
+    /// the shared git dir a sandboxed `git commit` writes into, and remove the
+    /// checkout plus its branch again.
+    #[test]
+    fn a_child_worktree_can_be_resolved_counted_and_removed() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        assert_eq!(resolve_commit(&root, "HEAD").as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_commit(&root, "no-such-ref"), None);
+        // A ref is never read as an option, whatever it is spelled as.
+        assert_eq!(resolve_commit(&root, "--output=x"), None);
+
+        let common = git_common_dir(&root).expect("a repo has a common dir");
+        assert_eq!(common, root.join(".git").canonicalize().unwrap());
+
+        let wt = root.parent().unwrap().join(format!(
+            "{}-child",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        worktree_add(&root, &wt, "jan/agent/child-1", &head).unwrap();
+        assert_eq!(git_common_dir(&wt), Some(common), "a linked worktree shares it");
+        assert_eq!(commits_since(&wt, &head), Some(0));
+        std::fs::write(wt.join("b.txt"), "b\n").unwrap();
+        run(&wt, None, &["add", "b.txt"]).unwrap();
+        run(&wt, None, &["commit", "-q", "-m", "b", "--no-gpg-sign"]).unwrap();
+        assert_eq!(commits_since(&wt, &head), Some(1));
+
+        worktree_remove(&root, &wt, "jan/agent/child-1").unwrap();
+        assert!(!wt.exists());
+        assert!(!worktree_registered(&root, &wt));
+        assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "branch deleted");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `current_branch` re-reads `HEAD` live rather than caching it, so a
