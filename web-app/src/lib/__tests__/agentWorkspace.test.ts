@@ -86,8 +86,13 @@ describe('agentWorkspace', () => {
     expect(slugifyMemoryName('How to set up CUDA 12?')).toBe(
       'how-to-set-up-cuda-12'
     )
-    expect(slugifyMemoryName('  ---  ')).toBe('memory')
-    expect(slugifyMemoryName('')).toBe('memory')
+    // Never a name the store reserves for its index, which would make the
+    // Remember action fail for an empty, non-Latin or literal title.
+    expect(slugifyMemoryName('  ---  ')).toBe('note')
+    expect(slugifyMemoryName('')).toBe('note')
+    expect(slugifyMemoryName('\u8bb0\u5fc6')).toBe('note')
+    expect(slugifyMemoryName('Memory')).toBe('memory-note')
+    expect(slugifyMemoryName('INDEX')).toBe('index-note')
     expect(slugifyMemoryName('a'.repeat(100))).toHaveLength(60)
   })
 

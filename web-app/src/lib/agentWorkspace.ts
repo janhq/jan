@@ -65,6 +65,10 @@ export async function deleteMemory(name: string): Promise<void> {
  * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
  * falls back to a generic stem rather than failing the save.
  */
+// The store refuses these stems: the harness builds the memory index itself
+// (`MEMORY.md`), and on a case-insensitive filesystem `memory.md` is that file.
+const RESERVED_MEMORY_NAMES = new Set(['index', 'memory'])
+
 export function slugifyMemoryName(title: string): string {
   const slug = title
     .toLowerCase()
@@ -72,7 +76,8 @@ export function slugifyMemoryName(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
     .replace(/-+$/, '')
-  return slug || 'memory'
+  if (!slug) return 'note'
+  return RESERVED_MEMORY_NAMES.has(slug) ? `${slug}-note` : slug
 }
 
 export type RememberResult = {
