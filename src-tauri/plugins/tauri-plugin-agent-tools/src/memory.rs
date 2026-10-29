@@ -975,13 +975,14 @@ impl<'a> Scopes<'a> {
         }
     }
 
-    /// The file a note name resolves to, when it names a single note (not a
-    /// folder or a project index). It may not exist.
+    /// The file a note name resolves to, when it names a single note (not
+    /// `folder/` or a project index). It may not exist. A folder of the same
+    /// name does not change it: write, edit, delete and move of `tui` act on
+    /// `tui.md` whether or not `tui/` exists, so the file is what they guard.
     pub(crate) fn note_file(&self, name: &str) -> Option<PathBuf> {
         let target = self.resolve(name).ok()?;
         let note = target.note.filter(|n| !n.ends_with('/'))?;
-        let path = memory_dir(&target.store).join(note_relpath(&note).ok()?);
-        (!path.is_dir() && !path.with_extension("").is_dir()).then_some(path)
+        Some(memory_dir(&target.store).join(note_relpath(&note).ok()?))
     }
 
     /// Take the change lock (see [`lock_changes`]) of the store `name` writes
@@ -992,8 +993,10 @@ impl<'a> Scopes<'a> {
         Some(lock_changes(&target.store).await)
     }
 
-    /// `view`: no name is the full index; a folder (`tui/` or `tui`) lists its
-    /// notes; a note returns its content; `project:<slug>` that project's index.
+    /// `view`: no name is the full index; a folder (`tui/`, or `tui` when no
+    /// note `tui` exists) lists its notes; a note returns its content;
+    /// `project:<slug>` that project's index. When a note and a folder share a
+    /// name, `tui` is the note and `tui/` the folder.
     pub async fn view(&self, name: Option<&str>) -> Result<String, String> {
         let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) else {
             return Ok(self.full_index());
@@ -1008,8 +1011,11 @@ impl<'a> Scopes<'a> {
             });
         };
         let folder = note.trim_end_matches('/');
+        let dir = memory_dir(&target.store);
         let is_folder = note.ends_with('/')
-            || (!folder.contains('/') && memory_dir(&target.store).join(folder).is_dir());
+            || (!folder.contains('/')
+                && dir.join(folder).is_dir()
+                && !note_relpath(folder).is_ok_and(|rel| dir.join(rel).is_file()));
         if is_folder {
             let lines: Vec<String> = folder_entries(&target.store, folder)
                 .iter()

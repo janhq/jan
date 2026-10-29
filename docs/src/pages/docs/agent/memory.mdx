@@ -28,7 +28,7 @@ approval, in the TUI, headless runs or ACP:
 
 | `op` | Arguments | What it does |
 | --- | --- | --- |
-| `view` | `name`? | No name: the full index. A folder (`tui/`): its notes. A note: its content |
+| `view` | `name`? | No name: the full index. A folder (`tui/`): its notes. A note: its content. If a note and a folder share a name, `tui` is the note and `tui/` the folder |
 | `search` | `query` | Keyword search over titles and bodies, archived notes included |
 | `write` | `name`, `title`, `content` | Create or overwrite; the title is the note's first line |
 | `edit` | `name`, `old`, `new` | Replace one exact, unique piece of text |
