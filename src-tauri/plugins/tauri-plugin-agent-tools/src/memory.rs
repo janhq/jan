@@ -363,34 +363,71 @@ impl NoteMeta {
     }
 }
 
-fn load_meta(store: &Path) -> Meta {
-    std::fs::read_to_string(memory_dir(store).join(META_FILE))
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
+/// The recency side file: empty when it does not exist yet, `None` when it
+/// exists but cannot be read or parsed. A caller about to save must not treat
+/// `None` as empty, or one bad read would wipe every note's recency.
+fn load_meta(store: &Path) -> Option<Meta> {
+    match std::fs::read_to_string(memory_dir(store).join(META_FILE)) {
+        Ok(raw) => serde_json::from_str(&raw).ok(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Meta::default()),
+        Err(_) => None,
+    }
 }
 
-/// Update one note's recency. Best-effort: losing a timestamp only reorders
-/// the index, it never loses a note.
-fn touch_meta(store: &Path, name: &str, update: impl FnOnce(&mut NoteMeta)) {
-    let mut meta = load_meta(store);
-    update(meta.notes.entry(name.to_string()).or_default());
-    save_meta(store, &meta);
+/// One lock per store directory, shared by every thread of the process: the
+/// loop runs `memory` calls in parallel (it is a read-capability tool) and a
+/// tidy subagent writes the same store as the main agent, so unserialized
+/// read-modify-writes of the side file would drop each other's updates.
+fn meta_lock(store: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+    static LOCKS: std::sync::OnceLock<
+        std::sync::Mutex<HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
+    > = std::sync::OnceLock::new();
+    let locks = LOCKS.get_or_init(Default::default);
+    let mut locks = locks.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(memory_dir(store)).or_default().clone()
 }
 
-fn forget_meta(store: &Path, name: &str) {
-    let mut meta = load_meta(store);
-    if meta.notes.remove(name).is_some() {
+/// Read, change and save the side file under the store's lock. Best-effort:
+/// losing a timestamp only reorders the index, it never loses a note. A side
+/// file that fails to parse is left as it is rather than replaced with what
+/// `update` made of an empty one.
+fn update_meta(store: &Path, update: impl FnOnce(&mut Meta) -> bool) {
+    let lock = meta_lock(store);
+    let _held = lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(mut meta) = load_meta(store) else {
+        return;
+    };
+    if update(&mut meta) {
         save_meta(store, &meta);
     }
 }
 
+/// Update one note's recency.
+fn touch_meta(store: &Path, name: &str, update: impl FnOnce(&mut NoteMeta)) {
+    update_meta(store, |meta| {
+        update(meta.notes.entry(name.to_string()).or_default());
+        true
+    });
+}
+
+fn forget_meta(store: &Path, name: &str) {
+    update_meta(store, |meta| meta.notes.remove(name).is_some());
+}
+
+/// Write the side file through a temp file in the same directory and a
+/// rename, so a reader sees the old file or the new one, never half of one.
+/// Called only under [`meta_lock`], which also keeps the temp name unique.
 fn save_meta(store: &Path, meta: &Meta) {
     let dir = memory_dir(store);
-    if std::fs::create_dir_all(&dir).is_ok() {
-        if let Ok(raw) = serde_json::to_string_pretty(meta) {
-            let _ = std::fs::write(dir.join(META_FILE), raw);
-        }
+    let Ok(raw) = serde_json::to_string_pretty(meta) else {
+        return;
+    };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let tmp = dir.join(format!("{META_FILE}.{}.tmp", std::process::id()));
+    if std::fs::write(&tmp, raw).is_err() || std::fs::rename(&tmp, dir.join(META_FILE)).is_err() {
+        let _ = std::fs::remove_file(&tmp);
     }
 }
 
@@ -408,12 +445,17 @@ pub fn migrate(store: &Path) {
     if !dir.is_dir() || dir.join(MIGRATED_FILE).exists() {
         return;
     }
-    let mut meta = load_meta(store);
-    for note in scan(store) {
-        meta.notes.entry(note.name.clone()).or_insert(NoteMeta {
-            read_ms: None,
-            written_ms: Some(note.mtime_ms),
-        });
+    let notes = scan(store);
+    update_meta(store, |meta| {
+        for note in &notes {
+            meta.notes.entry(note.name.clone()).or_insert(NoteMeta {
+                read_ms: None,
+                written_ms: Some(note.mtime_ms),
+            });
+        }
+        true
+    });
+    for note in notes {
         let first = split_front_matter(&note.body)
             .1
             .lines()
@@ -428,7 +470,6 @@ pub fn migrate(store: &Path) {
             }
         }
     }
-    save_meta(store, &meta);
     let _ = std::fs::write(dir.join(MIGRATED_FILE), "1\n");
     write_index(store);
 }
@@ -565,11 +606,13 @@ pub async fn rename(store: &Path, from: &str, to: &str) -> Result<String, String
         // Fails while anything is left in it, which is the point.
         let _ = tokio::fs::remove_dir(parent).await;
     }
-    let mut meta = load_meta(store);
-    if let Some(recency) = meta.notes.remove(&canonical(from)) {
-        meta.notes.insert(canonical(to), recency);
-        save_meta(store, &meta);
-    }
+    update_meta(store, |meta| match meta.notes.remove(&canonical(from)) {
+        Some(recency) => {
+            meta.notes.insert(canonical(to), recency);
+            true
+        }
+        None => false,
+    });
     write_index(store);
     Ok(rel.to_string_lossy().replace('\\', "/"))
 }
@@ -597,7 +640,7 @@ impl Entry {
 /// A store's listed notes as index entries, most recently used first: a
 /// folder collapses to one entry, ranked by its most recent note.
 fn entries(store: &Path) -> Vec<Entry> {
-    let meta = load_meta(store);
+    let meta = load_meta(store).unwrap_or_default();
     let used = |n: &Note| {
         meta.notes
             .get(&n.name)
@@ -1376,7 +1419,7 @@ mod tests {
         let before = mtime_ms(&memory_dir(&root).join("fact.md"));
         read(&root, "fact").await.unwrap();
         assert_eq!(mtime_ms(&memory_dir(&root).join("fact.md")), before);
-        assert!(load_meta(&root).notes["fact"].read_ms.is_some());
+        assert!(load_meta(&root).unwrap().notes["fact"].read_ms.is_some());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1659,12 +1702,58 @@ mod tests {
         assert_eq!(live, "Still true.", "live notes are untouched");
         let names: Vec<String> = catalog(&root).into_iter().map(|e| e.name).collect();
         assert_eq!(names, vec!["live", "tui/x"]);
-        assert!(load_meta(&root).notes.contains_key("tui/x"), "recency is seeded");
+        assert!(load_meta(&root).unwrap().notes.contains_key("tui/x"), "recency is seeded");
 
         // Once: a note marked DONE later is the agent's business, not the migration's.
         put(&root, "later", "DONE. later");
         migrate(&root);
         assert!(!is_done(&std::fs::read_to_string(memory_dir(&root).join("later.md")).unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn concurrent_recency_updates_are_all_kept_and_leave_no_temp_file() {
+        let root = unique_root();
+        std::fs::create_dir_all(memory_dir(&root)).unwrap();
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        touch_meta(&root, &format!("n{t}-{i}"), |m| m.read_ms = Some(1));
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        let meta = load_meta(&root).expect("parses");
+        assert_eq!(meta.notes.len(), 200, "no update was lost");
+        let leftovers: Vec<_> = std::fs::read_dir(memory_dir(&root))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n != META_FILE)
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_side_file_is_never_overwritten_with_empty_recency() {
+        let root = unique_root();
+        put(&root, "a", "one");
+        let path = memory_dir(&root).join(META_FILE);
+        std::fs::write(&path, "{\"notes\": {\"a\": {\"read_ms\": 5").unwrap();
+        read(&root, "a").await.unwrap();
+        write(&root, "b", "two").await.unwrap();
+        delete(&root, "b").await.unwrap();
+        rename(&root, "a", "c").await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"notes\": {\"a\": {\"read_ms\": 5",
+            "left for a human to repair, not wiped"
+        );
+        assert!(scan(&root).iter().any(|n| n.name == "c"), "the ops themselves still work");
         let _ = std::fs::remove_dir_all(&root);
     }
 
