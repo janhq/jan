@@ -215,8 +215,8 @@ preserves the thread of the conversation, including the parts that sent it off c
 ## Context overflow
 
 If a request overflows anyway, the loop compacts and retries rather than erroring out. That path is
-still needed: a route served by a local engine carries no window the loop can read, and an estimate
-is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
+still needed: a route served by a local engine carries no window the loop can read, so this is the
+only compaction it gets, and an estimate is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
 conversation at all, it gives up rather than looping.
 
 ## Capping output

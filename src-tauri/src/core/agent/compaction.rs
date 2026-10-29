@@ -276,8 +276,8 @@ pub(crate) fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
 /// Compaction is the one lifecycle point that discards conversation, so a team
 /// that wants a transcript archived or a summary pinned has to be told before
 /// it happens rather than after. It lives here, beside the compaction itself,
-/// so every path that compacts fires it: the reactive overflow retry, the
-/// end-of-run budget pass, and the TUI's `/compact`.
+/// so every path that compacts fires it: the preflight, the reactive overflow
+/// retry, and the TUI's `/compact`.
 ///
 /// A deny is not honored -- refusing to compact would leave the run wedged on
 /// an oversized history it cannot send -- so only `context` and the failure

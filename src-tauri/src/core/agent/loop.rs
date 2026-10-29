@@ -5045,9 +5045,13 @@ async fn run_turn_cycle(
             // size: every completion is charged in full, but thinking is not
             // resent, so a long run on a reasoning model passes a window-sized
             // ceiling while its prompt is a fraction of the window. Compacting
-            // then throws away live context and saves no spend. A history that
-            // really is oversized is compacted by the preflight above, on the
-            // next request that would carry it.
+            // then throws away live context and saves no spend. With a known
+            // window, a history that really is oversized is compacted by the
+            // preflight above, on the next request that would carry it. With
+            // none (`compaction` is `None`, only the desktop API-server proxy)
+            // nothing shrinks it proactively: the overflow path compacts once a
+            // provider rejects a request. A pass here would not help that route
+            // anyway, since its HTTP client owns the history and resends it.
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: client_history(&transcript, send_reasoning),
             });

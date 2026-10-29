@@ -792,8 +792,8 @@ use tokio::sync::{mpsc, Mutex};
 /// unknown. `0` disables the ceiling entirely.
 ///
 /// Advisory, not a bound: crossing it records a note and the run carries on
-/// (see `body_session_budget`). It never compacts: spend is not context size. `--max-turns` and
-/// cancellation are what actually stop a runaway loop.
+/// (see `body_session_budget`). It never compacts: spend is not context size.
+/// `--max-turns` and cancellation are what actually stop a runaway loop.
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// How long `run` and `step` wait for the session-scoped provider's startup
