@@ -12,6 +12,7 @@ keywords:
     Ollama,
     LiteLLM,
     LocalAI,
+    llamay,
     proxy,
     base URL,
     API key,
@@ -23,12 +24,12 @@ import { Settings, Plus } from 'lucide-react'
 
 Beyond the built-in cloud providers, Jan can connect to **any endpoint that speaks the OpenAI or
 Anthropic wire format**. This covers self-hosted servers (vLLM, Ollama, LocalAI, llama.cpp server,
-TGI), gateways and proxies (LiteLLM, OpenRouter-style routers, Amazon Bedrock proxies), and any
+TGI, llamay), gateways and proxies (LiteLLM, OpenRouter-style routers, Amazon Bedrock proxies), and any
 provider that exposes an OpenAI- or Anthropic-compatible API.
 
 ## When to use a custom endpoint
 
-- You run your own inference server (vLLM, Ollama, LocalAI, TGI, llama.cpp `llama-server`) on your
+- You run your own inference server (vLLM, Ollama, LocalAI, TGI, llama.cpp `llama-server`, llamay) on your
   machine or LAN.
 - You use a gateway/proxy (LiteLLM, a Bedrock or Vertex proxy, an internal company gateway).
 - You have a provider that isn't in Jan's built-in list but offers an OpenAI- or Anthropic-compatible API.
@@ -101,6 +102,7 @@ tools, vision, or audio. Add each model manually and configure its capabilities 
 | LocalAI | OpenAI-Compatible | `http://localhost:8080/v1` |
 | llama.cpp `llama-server` | OpenAI-Compatible | `http://localhost:8080/v1` |
 | Text Generation Inference (TGI) | OpenAI-Compatible | `http://localhost:8080/v1` |
+| llamay | OpenAI-Compatible | `http://localhost:11435/v1` |
 | LiteLLM (OpenAI mode) | OpenAI-Compatible | `http://localhost:4000/v1` |
 | LiteLLM (Anthropic mode) | Anthropic-Compatible | `http://localhost:4000` |
 
