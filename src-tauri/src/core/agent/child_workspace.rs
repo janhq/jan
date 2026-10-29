@@ -325,6 +325,9 @@ struct LedgerState {
     by_name: HashMap<String, ChildWorkspace>,
     /// Worktrees with a writer in them right now.
     busy: HashSet<PathBuf>,
+    /// Worktrees a sweep or undo is checking for removal right now, which no
+    /// dispatch may be given: they may be gone before its child starts.
+    removing: HashSet<PathBuf>,
     /// Worktrees this session created, in creation order.
     created: Vec<ChildWorktree>,
 }
@@ -384,6 +387,14 @@ impl Ledger {
             None => ChildWorkspace::shared(parent_root, read_only),
         };
         let mut state = self.state.lock().unwrap();
+        if let Some(wt) = ws.worktree.as_ref().filter(|wt| state.removing.contains(&wt.path)) {
+            return Err(format!(
+                "refused: {} (branch {}) is being removed, as it held no work. This \
+                 subagent was not started. Give it workspace \"new\" instead",
+                display(&wt.path),
+                wt.branch
+            ));
+        }
         let lease = match ws.worktree.as_ref().filter(|_| writer) {
             Some(wt) => {
                 if !state.busy.insert(wt.path.clone()) {
@@ -418,14 +429,37 @@ impl Ledger {
     /// holds nothing. Everything else the session made stays, since a later
     /// dispatch may still name it. Call after the dispatch's lease is gone.
     pub(crate) fn undo(&self, name: &str, ws: &ChildWorkspace) {
-        let mut state = self.state.lock().unwrap();
-        state.by_name.remove(name);
-        let Some(wt) = ws.worktree.as_ref().filter(|_| ws.fresh) else {
-            return;
-        };
-        if !state.busy.contains(&wt.path) && remove_if_empty(wt) {
-            state.created.retain(|c| c.path != wt.path);
+        self.state.lock().unwrap().by_name.remove(name);
+        if let Some(wt) = ws.worktree.as_ref().filter(|_| ws.fresh) {
+            self.remove_unless_busy(wt);
         }
+    }
+
+    /// Mark `path` as being removed, unless a writer is in it or it already
+    /// is. While marked, `assign` hands it to nobody, so the git that decides
+    /// and does the removal runs without the ledger's lock: a lease dropping
+    /// meanwhile never waits on it.
+    fn claim(&self, path: &Path) -> bool {
+        let mut state = self.state.lock().unwrap();
+        !state.busy.contains(path) && state.removing.insert(path.to_path_buf())
+    }
+
+    /// Remove `wt` when no writer is in it and it holds nothing, forgetting it
+    /// and every name that pointed at it. Returns whether it went.
+    fn remove_unless_busy(&self, wt: &ChildWorktree) -> bool {
+        if !self.claim(&wt.path) {
+            return false;
+        }
+        let gone = remove_if_empty(wt);
+        let mut state = self.state.lock().unwrap();
+        state.removing.remove(&wt.path);
+        if gone {
+            state.created.retain(|c| c.path != wt.path);
+            state
+                .by_name
+                .retain(|_, ws| ws.worktree.as_ref().is_none_or(|w| w.path != wt.path));
+        }
+        gone
     }
 }
 
@@ -577,29 +611,33 @@ impl Ledger {
     /// a line for each one kept. A worktree a writer is still in is kept, and
     /// so is one git cannot read: removal is forced and deletes the branch,
     /// so "unknown" must never count as "clean".
+    ///
+    /// The ledger's lock is held only to snapshot and to record each removal,
+    /// never across git, so leases and dispatches carry on meanwhile.
     pub(crate) fn finish_session(&self) -> Vec<String> {
-        let mut state = self.state.lock().unwrap();
-        let created = std::mem::take(&mut state.created);
+        let created = {
+            let mut state = self.state.lock().unwrap();
+            state.by_name.clear();
+            state.created.clone()
+        };
         let mut kept = Vec::new();
         for wt in created {
             if !wt.path.is_dir() {
+                self.state.lock().unwrap().created.retain(|c| c.path != wt.path);
                 continue;
             }
-            if !state.busy.contains(&wt.path) && remove_if_empty(&wt) {
-                continue;
+            if !self.remove_unless_busy(&wt) {
+                kept.push(kept_line(&wt));
             }
-            kept.push(kept_line(&wt));
-            state.created.push(wt);
         }
-        state.by_name.clear();
         kept
     }
 
-    /// The session's subagent worktrees still on disk, for `/worktree`.
+    /// The session's subagent worktrees still on disk, for `/worktree`. Runs
+    /// git per worktree, outside the ledger's lock.
     pub(crate) fn live(&self) -> Vec<String> {
-        let state = self.state.lock().unwrap();
-        state
-            .created
+        let created = self.state.lock().unwrap().created.clone();
+        created
             .iter()
             .filter(|wt| wt.path.is_dir())
             .map(kept_line)
@@ -974,6 +1012,72 @@ mod git_tests {
             let reuse = WorkspaceRequest::Reuse(gone.to_string());
             assert!(ledger.assign(&root, "next", false, Some(&reuse)).is_err(), "{gone}");
         }
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Make every `git status` in `root`'s worktrees take seconds, through a
+    /// `core.fsmonitor` hook, so a sweep is slow without any test seam.
+    #[cfg(unix)]
+    fn slow_status(root: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = root.with_extension("fsmonitor.sh");
+        std::fs::write(&hook, "#!/bin/sh\nsleep 2\nexit 1\n").unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(git(root, &["config", "core.fsmonitor", &hook.to_string_lossy()]));
+    }
+
+    /// The sweep runs git per worktree; a writer finishing meanwhile (its
+    /// lease dropping, from an async task) must not wait for that git.
+    #[cfg(unix)]
+    #[test]
+    fn a_lease_drop_does_not_wait_on_a_slow_sweep() {
+        use std::time::{Duration, Instant};
+        let Some(root) = repo("slow") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
+        let (busy, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        drop(l1);
+        commit(&busy.root, "b.txt");
+        slow_status(&root);
+        let sweep = {
+            let ledger = ledger.clone();
+            std::thread::spawn(move || ledger.finish_session())
+        };
+        std::thread::sleep(Duration::from_millis(500));
+        let started = Instant::now();
+        drop(l2);
+        let waited = started.elapsed();
+        let kept = sweep.join().unwrap();
+        assert!(waited < Duration::from_secs(1), "the lease drop waited {waited:?}");
+        assert!(!idle.root.exists(), "the idle worktree still goes");
+        assert_eq!(kept.len(), 1, "the one holding a commit is kept: {kept:?}");
+        let _ = std::fs::remove_dir_all(&busy.root);
+        let _ = std::fs::remove_file(root.with_extension("fsmonitor.sh"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A worktree the sweep has claimed for removal is not handed to a later
+    /// dispatch, writer or reader: it may be gone by the time the child starts.
+    #[test]
+    fn a_worktree_being_removed_is_not_reused() {
+        let Some(root) = repo("removing") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let path = ws.worktree.as_ref().unwrap().path.clone();
+        assert!(ledger.claim(&path));
+        assert!(!ledger.claim(&path), "one removal at a time");
+        let reuse = WorkspaceRequest::Reuse("general".to_string());
+        for writer in [true, false] {
+            let err = ledger.assign(&root, "next", writer, Some(&reuse)).unwrap_err();
+            assert!(err.contains("being removed"), "{err}");
+        }
+        ledger.state.lock().unwrap().removing.remove(&path);
+        let (again, lease) = ledger.assign(&root, "next", true, Some(&reuse)).unwrap();
+        assert_eq!(again.root, ws.root);
+        assert!(!ledger.claim(&path), "a busy worktree is never claimed");
+        drop(lease);
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
