@@ -2403,7 +2403,16 @@ fn start_dispatch(
         // the teardown (Esc stops its children mid-session), and its earlier
         // children's worktrees and names are still the session's to reuse.
         lease.release();
-        bg.workspaces.undo(&name, &workspace);
+        // `undo` runs git (and holds the ledger's lock while it does), so it
+        // goes to the blocking pool rather than stalling this async worker and
+        // every lease drop waiting on that lock. Nothing waits on it: the
+        // dispatch is refused either way.
+        let ledger = bg.workspaces.clone();
+        let undo = move || ledger.undo(&name, &workspace);
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => drop(handle.spawn_blocking(undo)),
+            Err(_) => undo(),
+        }
         return Err(SubagentError::Cancelled);
     }
 
@@ -5481,6 +5490,13 @@ pub(crate) mod tests {
         let refused = start_dispatch(&scope, &args, late, &events_tx, None, false);
         assert!(matches!(refused, Err(SubagentError::Cancelled)));
 
+        // The undo runs on the blocking pool; give it a bounded moment.
+        for _ in 0..300 {
+            if !late_wt.path.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
         assert!(!late_wt.path.exists(), "the stale dispatch's worktree is removed");
         let branches = std::process::Command::new("git")
             .arg("-C")
