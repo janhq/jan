@@ -416,7 +416,7 @@ impl MemorySnapshot {
 
     /// The `# Memory Changes` tail block: every note added (`+`), changed
     /// (`~`) or deleted (`-`) since the snapshot, by this run or any other
-    /// (a subagent, a tidy, another session). `None` when nothing changed.
+    /// (the tidy subagent, another session). `None` when nothing changed.
     pub(crate) fn changes_block(&self, project_root: &Path) -> Option<String> {
         memory_changes(&self.fingerprint, &memory_fingerprint(project_root))
     }
@@ -473,7 +473,7 @@ fn skill_guide(memory: bool) -> String {
     let skills = guide.split("\n## Memory").next().unwrap_or(guide).trim_end();
     skills.replacen(
         "# Skills and Project Memory\n\nYou are running as a project agent. This project keeps two kinds of durable\nnotes that you maintain: skills (reusable procedures) and memory (durable\nfacts). Manage both with the dedicated tools below. Do NOT use `shell`, `cat`,\n`ls`, or raw file paths for skills or memory; the tools handle location and\nnaming for you.",
-        "# Skills\n\nYou are running as a project agent. Use the dedicated skill tools below; do NOT use\n`shell`, `cat`, `ls`, or raw file paths for skills. You have no memory tool and no\nmemory index: everything you need from earlier sessions is in your task.",
+        "# Skills\n\nYou are running as a project agent. Use the dedicated skill tools below; do NOT use\n`shell`, `cat`, `ls`, or raw file paths for skills. Memory belongs to the agent that\ndispatched you: anything you need from earlier sessions is in your task.",
         1,
     )
 }

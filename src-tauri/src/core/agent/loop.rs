@@ -3711,7 +3711,7 @@ async fn orchestrate_inner(
         }
     }
     // The index above the cache line is the session's snapshot, so a note
-    // written since (by this run, a subagent, a tidy) is reported here instead.
+    // written since (by this run, a tidy, another session) is reported here instead.
     // Not gated on `project_memory`: that is about recall and indexing, and an
     // ephemeral session still has the index and the tool.
     if jan_owns_prompt && system_prompt_override.is_none() {
@@ -11857,7 +11857,7 @@ mod tests {
             assert!(!child.contains(absent), "{absent} leaked into a child prompt:\n{child}");
         }
         assert!(child.contains("# Skills"), "skills stay: {child}");
-        assert!(child.contains("You have no memory tool"), "{child}");
+        assert!(child.contains("Memory belongs to the agent that\ndispatched you"), "{child}");
         let main = build(None, true);
         assert!(main.contains("# Available Memories") && main.contains("A remembered fact"));
         assert!(main.contains("Subagents have no memory"), "{main}");
