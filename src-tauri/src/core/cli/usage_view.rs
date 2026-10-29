@@ -108,22 +108,23 @@ fn short_date(stamp: &str) -> String {
     }
 }
 
-/// `N req · 12.3K in (8.1K cached) · 3.4K out`, for a server-reported row.
-/// Mirrors [`usage_counts`] so the session and account views read alike --
-/// token counts are the one thing the two sources measure the same way.
+/// `N req, 12.3K in (8.1K cache hit), 3.4K out, 1.5K cache written` (joined by
+/// middle dots), for a server-reported row. Mirrors [`usage_counts`] so the
+/// session and account views read alike -- token counts are the one thing the
+/// two sources measure the same way.
 fn reported_counts(row: &crate::core::cli::tokamak::usage::Aggregate) -> String {
     let mut line = format!(
-        "{} req · {} in",
+        "{} req \u{b7} {} in",
         row.request_count,
         format_tokens(row.prompt_tokens)
     );
     if row.cache_read_tokens > 0 {
-        line.push_str(&format!(" ({} cached)", format_tokens(row.cache_read_tokens)));
+        line.push_str(&format!(" ({} cache hit)", format_tokens(row.cache_read_tokens)));
     }
-    line.push_str(&format!(" · {} out", format_tokens(row.completion_tokens)));
+    line.push_str(&format!(" \u{b7} {} out", format_tokens(row.completion_tokens)));
     if row.cache_creation_tokens > 0 {
         line.push_str(&format!(
-            " · {} cache write",
+            " \u{b7} {} cache written",
             format_tokens(row.cache_creation_tokens)
         ));
     }
@@ -184,7 +185,7 @@ fn total_rows(summary: &crate::core::cli::tokamak::usage::AccountSummary) -> Vec
         reported_counts(&summary.total)
     )];
     if let Some(savings) = &summary.total.savings {
-        out.push(format!("  caching saved ${savings}"));
+        out.push(format!("  cache hits saved ${savings}"));
     }
     if let Some((start, end)) = &summary.period {
         out.push(format!("  {} to {}", day_only(start), day_only(end)));
@@ -338,10 +339,10 @@ pub fn reported_usage_lines(
                     }
                     out.push(head);
                     out.push(format!(
-                        "    {} in{} · {} out{}",
+                        "    {} in{} \u{b7} {} out{}",
                         format_tokens(record.prompt_tokens),
                         if record.cache_read_tokens > 0 {
-                            format!(" ({} cached)", format_tokens(record.cache_read_tokens))
+                            format!(" ({} cache hit)", format_tokens(record.cache_read_tokens))
                         } else {
                             String::new()
                         },
@@ -349,7 +350,7 @@ pub fn reported_usage_lines(
                         record
                             .execution_id
                             .as_deref()
-                            .map(|id| format!(" · {id}"))
+                            .map(|id| format!(" \u{b7} {id}"))
                             .unwrap_or_default()
                     ));
                 }
@@ -430,7 +431,7 @@ mod tests {
         // formatter -- a reconciliation reads these digits.
         assert!(folded.contains("$1240.10224445"), "{folded}");
         assert!(folded.contains("15049 req"), "{folded}");
-        assert!(folded.contains("caching saved $1200.5278263"), "{folded}");
+        assert!(folded.contains("cache hits saved $1200.5278263"), "{folded}");
         assert!(folded.contains("2026-08-23 to 2026-09-22"), "{folded}");
         assert!(!folded.contains("by_model["), "no raw JSON paths: {folded}");
 
@@ -577,7 +578,7 @@ mod tests {
         assert!(text.contains("1 recorded request"), "{text}");
         assert!(text.contains("4b1e70d6"), "the id to look up: {text}");
         assert!(text.contains("$0.0322445"), "{text}");
-        assert!(text.contains("41K cached"), "{text}");
+        assert!(text.contains("41K cache hit"), "{text}");
         // Not yet billed, so the figure must not read as a settled charge.
         assert!(text.contains("(not_billed)"), "{text}");
         assert!(text.contains("2026-09-22 08:57"), "{text}");

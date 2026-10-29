@@ -1,0 +1,34 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› check and test the cli                                                        |
+|                                                                                |
+|                                                                                |
+|• Ran 3 commands                                                                |
+|  └ cargo check --features cli                                                  |
+|      Finished dev profile in 2.1s                                              |
+|    git status --short                                                          |
+|       M src/foo.rs                                                             |
+|    cargo test -- cli:: (exit 101)                                              |
+|      test a ... FAILED                                                         |
+|      line 0                                                                    |
+|      … +39 lines (Ctrl-O to expand)                                            |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..24 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 24..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 fg=Red mod=BOLD
+ 4 2..5 mod=BOLD
+ 5 0..4 fg=DarkGray
+ 6 6..34 mod=DIM
+ 7 0..4 fg=DarkGray
+ 8 6..19 mod=DIM
+ 9 0..4 fg=DarkGray
+ 9 23..34 fg=DarkGray
+10 6..23 mod=DIM
+11 6..12 mod=DIM
+12 6..36 fg=DarkGray
