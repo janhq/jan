@@ -65,6 +65,16 @@ impl ToolPermissions {
         }
     }
 
+    /// These permissions with `name` denied as well: hidden from the tool list
+    /// and refused at the gate, whatever the allow lists say. How a caller takes
+    /// one tool away from a run (a subagent's memory) without a config edit.
+    pub fn with_denied(mut self, name: &str) -> Self {
+        if let Ok(pattern) = Pattern::new(&Pattern::escape(name)) {
+            self.deny.push(pattern);
+        }
+        self
+    }
+
     pub fn is_denied(&self, name: &str) -> bool {
         self.deny.iter().any(|p| p.matches(name))
     }
@@ -100,6 +110,15 @@ mod tests {
 
     fn s(items: &[&str]) -> Vec<String> {
         items.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn with_denied_takes_one_exact_tool_away_even_from_an_allow_list() {
+        let perms = ToolPermissions::new(PermissionDefault::Allow, &s(&["memory"]), &[], &[])
+            .with_denied("memory");
+        assert!(perms.is_denied("memory"));
+        assert!(!perms.is_denied("memory_extra"), "an exact name, not a prefix");
+        assert!(!perms.is_denied("read"));
     }
 
     #[test]

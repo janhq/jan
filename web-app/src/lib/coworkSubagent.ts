@@ -254,6 +254,9 @@ const WITHHELD_FROM_SUBAGENTS = new Set([
   // conversation; a child has no inbox, so its watcher would report to no one.
   // (The Rust CLI differs: there a child run owns a registry of its own.)
   MONITOR_TOOL_NAME,
+  // Subagents have no memory: the dispatching agent states what matters in the
+  // task. Matches the Rust child args, which deny `memory`.
+  'memory',
 ])
 
 /**

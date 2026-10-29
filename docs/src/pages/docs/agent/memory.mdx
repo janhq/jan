@@ -36,6 +36,9 @@ approval, in the TUI, headless runs or ACP:
 
 A `deny = ["memory"]` entry in `agent.toml` turns the tool off.
 
+Memory belongs to the main agent only. [Subagents](/docs/agent/subagents#isolation) get no `memory`
+tool and no memory index, so the main agent passes them any remembered fact they need in the task.
+
 ## Where it lives
 
 As plain markdown files in your Jan home, outside the repository. You can read them, edit them, or

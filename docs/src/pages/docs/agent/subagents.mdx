@@ -152,6 +152,11 @@ Subagents also cannot:
 - dispatch subagents of their own (no recursion)
 - read or change the main agent's todo list
 - ask you an interactive question
+- use [memory](/docs/agent/memory): they get no `memory` tool and no memory index in their prompt
+
+Memory stays with the main agent. When a subagent needs something the main agent remembers, the main
+agent puts that fact in the task, and it records anything worth keeping from the subagent's answer
+itself. That keeps one curator for memory instead of several writers it never sees.
 
 They *can* request permission for a write or a command. Those prompts surface in your console,
 labelled with which subagent asked.
@@ -283,6 +288,10 @@ A subagent gets the session's full toolset unless something narrows it, and it i
 
 Either way it can only ever reach a subset of what the parent could reach, so delegation cannot be
 used to escape your project's [tool policy](/docs/agent/permissions#project-policy).
+
+`memory` is never a tool a subagent can be given: it is left out of the `allowed_tools` choices, and a
+definition or dispatch that names it still gets a subagent without it. The only subagent with memory
+is Jan's own [tidy](/docs/agent/memory#tidying) run, which cannot be dispatched by the agent.
 
 One exception: `skill_list` and `skill_read` are always available to a subagent, whatever its
 allowlist says. Skills are how a subagent executes its procedure, and plugin `agents/*.md` files

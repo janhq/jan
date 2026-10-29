@@ -247,7 +247,9 @@ other agent fits. Dispatch independent subagents in parallel when \
 their work doesn't depend on each other; each returns in the background and a note carries its answer when \
 it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
-yourself for small, targeted tasks where delegating would cost more than it saves.";
+yourself for small, targeted tasks where delegating would cost more than it saves. Subagents have no \
+memory: no memory tool and no memory index. Put any fact from your memory that a subagent needs into its \
+task, and record anything worth keeping from its answer yourself.";
 
 /// The `# Subagents` block: the guide, then the predefined agents the
 /// `dispatch_subagent` `agent` enum accepts, each with its model and purpose.
@@ -457,6 +459,23 @@ struct CompositionInputs<'a> {
     scratch: Option<&'a Path>,
     subagents_enabled: bool,
     session_start: Option<&'a SessionStart>,
+    memory: bool,
+}
+
+/// The skill/memory guide for a run that has memory, or only its skills half
+/// for one that does not (a subagent): no memory instructions for a tool the
+/// run was not given.
+fn skill_guide(memory: bool) -> String {
+    let guide = DEFAULT_SKILL_GUIDE.trim();
+    if memory {
+        return guide.to_string();
+    }
+    let skills = guide.split("\n## Memory").next().unwrap_or(guide).trim_end();
+    skills.replacen(
+        "# Skills and Project Memory\n\nYou are running as a project agent. This project keeps two kinds of durable\nnotes that you maintain: skills (reusable procedures) and memory (durable\nfacts). Manage both with the dedicated tools below. Do NOT use `shell`, `cat`,\n`ls`, or raw file paths for skills or memory; the tools handle location and\nnaming for you.",
+        "# Skills\n\nYou are running as a project agent. Use the dedicated skill tools below; do NOT use\n`shell`, `cat`, `ls`, or raw file paths for skills. You have no memory tool and no\nmemory index: everything you need from earlier sessions is in your task.",
+        1,
+    )
 }
 
 /// The date and git branch a session started with, taken once and then carried
@@ -568,12 +587,13 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         }
         Composer::SessionStart => inputs.session_start.map(SessionStart::block),
         Composer::SubagentGuide => inputs.subagents_enabled.then(|| subagent_guide(inputs.project_root)),
-        Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
+        Composer::SkillGuide => Some(skill_guide(inputs.memory)),
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
         Composer::ProjectContext => load_context_files(inputs.project_root),
         Composer::Skills => load_skills(inputs.project_root),
         // The session's snapshot when it has one, so a note written mid-session
         // never rewrites the prompt; read live only for a run with no session.
+        Composer::MemoryCatalog if !inputs.memory => None,
         Composer::MemoryCatalog => match inputs.session_start.and_then(SessionStart::memory) {
             Some(snapshot) => snapshot.block().map(str::to_string),
             None => load_memory_catalog(inputs.project_root),
@@ -598,6 +618,10 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
 /// fails the run instead of quietly costing a cache miss per turn. Blocks the
 /// policy sends to the tail are returned rather than dropped: they reach the
 /// model, just below the conversation instead of in front of it.
+///
+/// `memory` is false for a run that has no memory (a subagent): its prompt then
+/// carries no memory index and no memory instructions.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compose_system_prompt(
     base: Option<&str>,
     project_root: &Path,
@@ -605,6 +629,7 @@ pub(crate) fn compose_system_prompt(
     subagents_enabled: bool,
     policy: &PromptPolicy,
     session_start: Option<&SessionStart>,
+    memory: bool,
 ) -> Result<ComposedPrompt, String> {
     let inputs = CompositionInputs {
         base,
@@ -612,6 +637,7 @@ pub(crate) fn compose_system_prompt(
         scratch,
         subagents_enabled,
         session_start,
+        memory,
     };
     policy.validate()?;
     let mut prefix: Vec<String> = Vec::new();
@@ -654,6 +680,7 @@ mod tests {
             subagents_enabled,
             &PromptPolicy::default(),
             None,
+            true,
         )
         .ok()
         .map(|composed| composed.as_prompt())
@@ -754,7 +781,7 @@ mod tests {
         write_memory(&root, "gone.md", "Deleted later.");
         let start = SessionStart::capture(Some(&root));
         let compose = || {
-            compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), Some(&start))
+            compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), Some(&start), true)
                 .unwrap()
                 .prefix
         };
@@ -1209,6 +1236,7 @@ mod tests {
             false,
             &PromptPolicy::default(),
             Some(&start),
+            true,
         )
         .expect("default policy");
         let block = "# Session Start\n\nSession start date: 2026-09-30\nStarting branch: `feat/x`";
@@ -1234,6 +1262,7 @@ mod tests {
             false,
             &PromptPolicy::default(),
             Some(&start),
+            true,
         )
         .unwrap()
         .prefix;
@@ -1269,6 +1298,7 @@ mod tests {
                 false,
                 &PromptPolicy::default(),
                 Some(&start),
+                true,
             )
             .unwrap()
             .prefix
@@ -1295,7 +1325,7 @@ mod tests {
                 "guidelines".to_string(),
             ]),
         );
-        let composed = compose_system_prompt(None, &root, None, false, &policy, None).expect("policy");
+        let composed = compose_system_prompt(None, &root, None, false, &policy, None, true).expect("policy");
 
         assert!(composed.prefix.contains("# Guidelines"));
         assert!(
@@ -1328,7 +1358,7 @@ mod tests {
         let root = scratch_project("varying");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["memory_recall".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy, None)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None, true)
             .expect_err("a per-turn composer cannot be allowed into the prefix");
         assert!(error.contains("memory_recall"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -1341,7 +1371,7 @@ mod tests {
         let root = scratch_project("typo");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["skils".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy, None)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None, true)
             .expect_err("an unknown id must not read as a policy");
         assert!(error.contains("skils"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -1355,7 +1385,7 @@ mod tests {
         let root = scratch_project("order");
         write_skill(&root, "s.md", "Do the thing.");
         std::fs::write(root.join("JAN.md"), "PROJECT_RULES").unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None)
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None, true)
             .expect("default policy");
 
         // Every block the registry declares for the prefix is present, in the

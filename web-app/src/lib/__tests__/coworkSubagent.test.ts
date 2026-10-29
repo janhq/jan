@@ -436,6 +436,14 @@ describe('subagentTools', () => {
     expect(Object.keys(out)).toEqual(['read'])
   })
 
+  it('never gives a child memory, even when its allowlist names it', () => {
+    const out = subagentTools(tools('read', 'memory'), ['read', 'memory'])
+    expect(Object.keys(out)).toEqual(['read'])
+    expect(Object.keys(subagentTools(tools('read', 'memory'), null))).toEqual([
+      'read',
+    ])
+  })
+
   it('narrows to the allowlist', () => {
     const out = subagentTools(tools('read', 'grep', 'write'), ['read'])
     expect(Object.keys(out)).toEqual(['read'])
