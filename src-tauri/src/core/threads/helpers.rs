@@ -48,7 +48,7 @@ pub fn read_messages_from_file(
     data_folder: &Path,
     thread_id: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = get_messages_path(data_folder, thread_id);
+    let path = get_messages_path(data_folder, thread_id)?;
     if !path.exists() {
         return Ok(vec![]);
     }
@@ -85,7 +85,7 @@ pub fn update_thread_metadata(
     thread_id: &str,
     thread: &serde_json::Value,
 ) -> Result<(), String> {
-    let path = get_thread_metadata_path(data_folder, thread_id);
+    let path = get_thread_metadata_path(data_folder, thread_id)?;
     let data = serde_json::to_string_pretty(thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
     Ok(())

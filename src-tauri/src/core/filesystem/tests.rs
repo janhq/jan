@@ -1,4 +1,5 @@
 use super::commands::*;
+use super::grants::ReadGrants;
 use super::helpers::resolve_path_within_jan_data_folder;
 use crate::core::app::commands::get_jan_data_folder_path;
 use jan_utils::normalize_path;
@@ -6,6 +7,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::test::mock_app;
+use tauri::Manager;
 
 #[test]
 fn test_rm() {
@@ -31,6 +33,79 @@ fn test_mkdir() {
         .join(path)
         .exists());
     let _ = fs::remove_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path));
+}
+
+#[test]
+fn test_mkdir_rejects_path_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside = unique_test_dir("mkdir-outside");
+    let args = vec![outside.to_string_lossy().to_string()];
+    let result = mkdir(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(!outside.exists());
+}
+
+#[test]
+fn test_mv_rejects_source_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside_dir = unique_test_dir("mv-outside-src");
+    fs::create_dir_all(&outside_dir).unwrap();
+    let outside_file = outside_dir.join("source.txt");
+    File::create(&outside_file).unwrap();
+
+    let destination = get_jan_data_folder_path(app.handle().clone()).join("moved.txt");
+    let args = vec![
+        outside_file.to_string_lossy().to_string(),
+        destination.to_string_lossy().to_string(),
+    ];
+    let result = mv(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(outside_file.exists());
+    assert!(!destination.exists());
+
+    let _ = fs::remove_dir_all(&outside_dir);
+}
+
+#[test]
+fn test_mv_rejects_destination_outside_jan_data_folder() {
+    let app = mock_app();
+    let source = get_jan_data_folder_path(app.handle().clone()).join("mv_src.txt");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    File::create(&source).unwrap();
+
+    let outside_dir = unique_test_dir("mv-outside-dest");
+    fs::create_dir_all(&outside_dir).unwrap();
+    let outside_dest = outside_dir.join("moved.txt");
+
+    let args = vec![
+        source.to_string_lossy().to_string(),
+        outside_dest.to_string_lossy().to_string(),
+    ];
+    let result = mv(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(source.exists());
+    assert!(!outside_dest.exists());
+
+    let _ = fs::remove_file(&source);
+    let _ = fs::remove_dir_all(&outside_dir);
+}
+
+#[test]
+fn test_write_file_sync_rejects_path_outside_jan_data_folder() {
+    let app = mock_app();
+    let outside = unique_test_dir("write-outside");
+    fs::create_dir_all(&outside).unwrap();
+    let outside_file = outside.join("forbidden.txt");
+
+    let args = vec![
+        outside_file.to_string_lossy().to_string(),
+        "malicious content".to_string(),
+    ];
+    let result = write_file_sync(app.handle().clone(), args);
+    assert!(result.is_err());
+    assert!(!outside_file.exists());
+
+    let _ = fs::remove_dir_all(&outside);
 }
 
 #[test]
@@ -245,4 +320,113 @@ fn normalize_test_path(path: &Path) -> PathBuf {
     }
 
     normalize_path(path)
+}
+
+#[test]
+fn test_mutating_commands_refuse_paths_outside_data_folder() {
+    let app = mock_app();
+    fs::create_dir_all(get_jan_data_folder_path(app.handle().clone())).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let source = outside.path().join("source.txt");
+    fs::write(&source, "keep").unwrap();
+    let target = outside.path().join("written.txt");
+    let target_dir = outside.path().join("made");
+
+    let abs = |p: &Path| p.to_string_lossy().to_string();
+    assert!(write_file_sync(app.handle().clone(), vec![abs(&target), "x".into()]).is_err());
+    assert!(mkdir(app.handle().clone(), vec![abs(&target_dir)]).is_err());
+    assert!(mv(
+        app.handle().clone(),
+        vec![abs(&source), "file://moved.txt".into()]
+    )
+    .is_err());
+    assert!(mv(
+        app.handle().clone(),
+        vec!["file://does-not-matter".into(), abs(&target)]
+    )
+    .is_err());
+    for escape in ["file:/../../escaped.txt", "file://../escaped.txt", "../escaped.txt"] {
+        assert!(
+            write_file_sync(app.handle().clone(), vec![escape.into(), "x".into()]).is_err(),
+            "{escape} should be refused"
+        );
+        assert!(mkdir(app.handle().clone(), vec![escape.into()]).is_err());
+    }
+
+    assert!(!target.exists());
+    assert!(!target_dir.exists());
+    assert_eq!(fs::read_to_string(&source).unwrap(), "keep");
+}
+
+#[test]
+fn test_write_file_sync_and_mv_inside_data_folder() {
+    let app = mock_app();
+    let data = get_jan_data_folder_path(app.handle().clone());
+    fs::create_dir_all(&data).unwrap();
+    let tmp = data.join("test_write_mv.tmp");
+    let out = data.join("test_write_mv.json");
+
+    write_file_sync(
+        app.handle().clone(),
+        vec![tmp.to_string_lossy().to_string(), "{}".into()],
+    )
+    .unwrap();
+    mv(
+        app.handle().clone(),
+        vec![
+            tmp.to_string_lossy().to_string(),
+            "file://test_write_mv.json".into(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(fs::read_to_string(&out).unwrap(), "{}");
+    fs::remove_file(out).unwrap();
+}
+
+#[test]
+fn test_read_commands_scope() {
+    let app = mock_app();
+    app.manage(ReadGrants::default());
+    fs::create_dir_all(get_jan_data_folder_path(app.handle().clone())).unwrap();
+
+    // file: URIs and relative paths may not leave the data folder.
+    for escape in ["file:/../..", "file://../outside", "../outside"] {
+        assert!(exists_sync(app.handle().clone(), vec![escape.into()]).is_err());
+        assert!(file_stat(app.handle().clone(), escape.into()).is_err());
+        assert!(read_file_sync(app.handle().clone(), vec![escape.into()]).is_err());
+        assert!(readdir_sync(app.handle().clone(), vec![escape.into()]).is_err());
+    }
+
+    // An absolute path outside the data folder is readable only once the user
+    // has picked it (a model folder, an attachment). Until then reads fail and
+    // `exists_sync` reports `false`, the same as for a missing path.
+    let model = tempfile::tempdir().unwrap();
+    fs::write(model.path().join("config.json"), "{\"a\":1}").unwrap();
+    let dir = model.path().to_string_lossy().to_string();
+    let config = model
+        .path()
+        .join("config.json")
+        .to_string_lossy()
+        .to_string();
+    assert!(!exists_sync(app.handle().clone(), vec![config.clone()]).unwrap());
+    for err in [
+        file_stat(app.handle().clone(), dir.clone()).err().unwrap(),
+        read_file_sync(app.handle().clone(), vec![config.clone()])
+            .err()
+            .unwrap(),
+        readdir_sync(app.handle().clone(), vec![dir.clone()])
+            .err()
+            .unwrap(),
+    ] {
+        assert!(err.starts_with(super::grants::DENIED_PREFIX), "{err}");
+    }
+
+    app.state::<ReadGrants>().record_pick(model.path());
+    assert!(exists_sync(app.handle().clone(), vec![config.clone()]).unwrap());
+    assert!(file_stat(app.handle().clone(), dir.clone()).unwrap().is_directory);
+    assert_eq!(
+        read_file_sync(app.handle().clone(), vec![config]).unwrap(),
+        "{\"a\":1}"
+    );
+    assert_eq!(readdir_sync(app.handle().clone(), vec![dir]).unwrap().len(), 1);
 }

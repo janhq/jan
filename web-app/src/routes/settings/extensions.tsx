@@ -58,14 +58,6 @@ function ExtensionsContent() {
                       <RenderMarkdown
                         content={item.description ?? ''}
                         components={{
-                          // Make links open in a new tab
-                          a: ({ ...props }) => (
-                            <a
-                              {...props}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            />
-                          ),
                           // Custom paragraph component remove margin
                           p: ({ ...props }) => (
                             <p {...props} className="mb-0!" />

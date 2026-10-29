@@ -1,7 +1,19 @@
-import { render, waitFor, act, cleanup } from '@testing-library/react'
+import {
+  render,
+  waitFor,
+  act,
+  cleanup,
+  fireEvent,
+} from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RenderMarkdown } from '../RenderMarkdown'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { openExternalUrl } from '@/lib/externalLink'
+
+vi.mock('@/lib/externalLink', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/externalLink')>()),
+  openExternalUrl: vi.fn(),
+}))
 
 vi.mock('@i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -490,7 +502,7 @@ describe('RenderMarkdown', () => {
   })
 
   // Exercise the real Streamdown parser and hardener, not a renderer mock:
-  // target/rel on allowed links come from the existing hardener.
+  // Allowed links use the external opener without a duplicate new-window request.
   // Completed-message emphasis normalization inserts an invisible ZWSP; compare
   // exact visible labels without it (never ignore visible hardener annotations).
   describe.each([false, true])('chat links (isStreaming=%s)', (isStreaming) => {
@@ -507,7 +519,11 @@ describe('RenderMarkdown', () => {
       )
       const link = container.querySelector('a')
       expect(link).toHaveAttribute('href', new URL(href).href)
-      expect(link).toHaveAttribute('target', '_blank')
+      expect(link?.hasAttribute('target')).toBe(false)
+      vi.mocked(openExternalUrl).mockClear()
+      expect(fireEvent.click(link!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith(new URL(href).href)
+      vi.mocked(openExternalUrl).mockClear()
       expect(link?.rel.split(/\s+/)).toEqual(
         expect.arrayContaining(['noopener', 'noreferrer'])
       )
@@ -616,7 +632,13 @@ describe('RenderMarkdown', () => {
         'a[href="https://example.com/source"]'
       )
       expect(webCitation?.querySelector('img')).toBeTruthy()
-      expect(webCitation).toHaveAttribute('target', '_blank')
+      expect(webCitation?.hasAttribute('target')).toBe(false)
+      vi.mocked(openExternalUrl).mockClear()
+      expect(fireEvent.click(webCitation!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith(
+        'https://example.com/source'
+      )
+      vi.mocked(openExternalUrl).mockClear()
     })
   })
 
@@ -658,6 +680,62 @@ describe('RenderMarkdown', () => {
       )
       expect(container.querySelector('img')).toBeNull()
       expect(container.textContent).toContain('No citations here.')
+    })
+  })
+
+  describe('links in rendered output', () => {
+    afterEach(() => vi.mocked(openExternalUrl).mockClear())
+
+    it('opens a web link outside the app instead of navigating in place', () => {
+      const { container } = render(
+        <RenderMarkdown content={'See [the docs](https://example.com/a?b=1).'} />
+      )
+      const link = container.querySelector('a[href="https://example.com/a?b=1"]')
+      expect(link).toBeTruthy()
+      // No target: a _blank link would also raise a new-window request.
+      expect(link?.hasAttribute('target')).toBe(false)
+      // fireEvent returns false when a handler called preventDefault.
+      expect(fireEvent.click(link!)).toBe(false)
+      expect(openExternalUrl).toHaveBeenCalledTimes(1)
+      expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/a?b=1')
+    })
+
+    it('rejects mailto links under the HTTP(S)-only chat policy', () => {
+      const { container } = render(
+        <RenderMarkdown content={'[mail](mailto:team@example.com)'} />
+      )
+      const link = container.querySelector('a[href^="mailto:"]')
+      expect(link).toBeNull()
+      expect(container).toHaveTextContent('mail')
+      expect(openExternalUrl).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      'file:///etc/passwd',
+      'asset://localhost/%2Ftmp%2Fx.html',
+      '/settings/providers',
+      'tauri://localhost/',
+    ])('renders a %s link without a navigable href', (href) => {
+      const { container } = render(
+        <RenderMarkdown content={`[click me](${href})`} />
+      )
+      expect(container.textContent).toContain('click me')
+      const anchors = Array.from(container.querySelectorAll('a'))
+      for (const a of anchors) {
+        const target = a.getAttribute('href')
+        expect(target === null || target.startsWith('#')).toBe(true)
+      }
+      for (const a of anchors) fireEvent.click(a)
+      expect(openExternalUrl).not.toHaveBeenCalled()
+    })
+
+    it('rejects model-controlled in-page fragment links', () => {
+      const { container } = render(
+        <RenderMarkdown content={'[jump](#section-2)'} />
+      )
+      expect(container.querySelector('a')).toBeNull()
+      expect(container).toHaveTextContent('jump')
+      expect(openExternalUrl).not.toHaveBeenCalled()
     })
   })
 })

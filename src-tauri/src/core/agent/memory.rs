@@ -47,7 +47,9 @@ pub(crate) fn index_message(project_root: &Path, role: &str, text: &str) {
     }
     let pid = project_id(project_root);
     let id = content_id(&pid, role, text);
-    let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION);
+    let Ok(path) = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION) else {
+        return;
+    };
     if let Ok(conn) = db::open_or_init_conn(&path) {
         let _ = db::memory_index(&conn, &id, &pid, text, role, now_ts());
     }
@@ -62,7 +64,7 @@ pub(crate) fn retrieve_block(
     in_conversation: &[&str],
 ) -> Option<String> {
     let pid = project_id(project_root);
-    let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION);
+    let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION).ok()?;
     let conn = db::open_or_init_conn(&path).ok()?;
     let hits = db::memory_search(&conn, &pid, query, fetch_limit(in_conversation.len())).ok()?;
     format_block(&answer_texts(&hits), in_conversation)

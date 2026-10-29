@@ -17,6 +17,7 @@ import { getProviderTitle } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getModelCapabilities } from '@/lib/models'
 import { toast } from 'sonner'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 
 type DialogAddModelProps = {
   provider: ModelProvider
@@ -122,10 +123,8 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
         {/* Explore models link */}
         {provider.explore_models_url && (
           <div className="text-sm text-muted-foreground">
-            <a
+            <ExternalAnchor
               href={provider.explore_models_url}
-              target="_blank"
-              rel="noopener noreferrer"
               className="flex items-center gap-1 hover:underline"
             >
               <span>
@@ -133,7 +132,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
                   provider: getProviderTitle(provider.provider),
                 })}
               </span>
-            </a>
+            </ExternalAnchor>
           </div>
         )}
 

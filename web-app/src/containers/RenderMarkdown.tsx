@@ -28,6 +28,7 @@ import { MermaidError } from '@/components/MermaidError'
 import { CitationLink } from '@/components/CitationLink'
 import { WebCitationChip } from '@/components/WebCitationChip'
 import { MarkdownTable } from '@/components/MarkdownTable'
+import { externalHref, openExternalUrl } from '@/lib/externalLink'
 
 // Do not resolve model-generated links against the app's own origin.
 function isWebLink(href: string | undefined): boolean {
@@ -297,8 +298,31 @@ function RenderMarkdownComponent({
           <>{children}</>
         )
       }
+      // Keep the HTTP(S)-only chat policy even if the hardener repairs a URL.
       if (!isWebLink(href)) return <>{children}</>
-      return <a {...props}>{children}</a>
+      // Model and tool output must never navigate the app window. Open
+      // allowed web links outside the app, without a second new-window request.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { node: _node, href: _href, target: _target, ...rest } = props as
+        typeof props & { node?: unknown }
+      const external = externalHref(href)
+      if (external) {
+        return (
+          <a
+            {...rest}
+            href={external}
+            // No target="_blank": see ExternalAnchor for why.
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.preventDefault()
+              openExternalUrl(external)
+            }}
+          >
+            {children}
+          </a>
+        )
+      }
+      return <>{children}</>
     }
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components, messageId])

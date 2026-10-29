@@ -7819,6 +7819,7 @@ dependencies = [
  "similar",
  "tauri",
  "tauri-plugin",
+ "tauri-plugin-opener",
  "tauri-plugin-websearch",
  "thiserror 2.0.18",
  "tokio",

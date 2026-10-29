@@ -1,9 +1,13 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
-use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
+use super::grants::{record_picks, DENIED_PREFIX};
+use super::helpers::{
+    resolve_app_path_within_jan_data_folder, resolve_app_read_path, resolve_path,
+};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
+use std::path::PathBuf;
 use tauri::Runtime;
 
 #[tauri::command]
@@ -39,7 +43,7 @@ pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> 
         return Err("mkdir error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let (_, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])?;
     fs::create_dir_all(&path).map_err(|e| e.to_string())
 }
 
@@ -49,8 +53,8 @@ pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("mv error: Invalid argument - source and destination required".to_string());
     }
 
-    let source = resolve_path(app_handle.clone(), &args[0]);
-    let destination = resolve_path(app_handle, &args[1]);
+    let (_, source) = resolve_app_path_within_jan_data_folder(app_handle.clone(), &args[0])?;
+    let (_, destination) = resolve_app_path_within_jan_data_folder(app_handle, &args[1])?;
 
     if !source.exists() {
         return Err("mv error: Source path does not exist".to_string());
@@ -82,8 +86,13 @@ pub fn exists_sync<R: Runtime>(
         return Err("exist_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
-    Ok(path.exists())
+    match resolve_app_read_path(app_handle, &args[0]) {
+        Ok(path) => Ok(path.exists()),
+        // A path the app may not read looks the same as a missing one, so this
+        // command cannot be used to probe the disk.
+        Err(e) if e.starts_with(DENIED_PREFIX) => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 #[tauri::command]
@@ -95,7 +104,7 @@ pub fn file_stat<R: Runtime>(
         return Err("file_stat error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args);
+    let path = resolve_app_read_path(app_handle, &args)?;
     let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
     let is_directory = metadata.is_dir();
     let size = if is_directory { 0 } else { metadata.len() };
@@ -112,7 +121,7 @@ pub fn read_file_sync<R: Runtime>(
         return Err("read_file_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_app_read_path(app_handle, &args[0])?;
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -125,7 +134,7 @@ pub fn write_file_sync<R: Runtime>(
         return Err("write_file_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let (_, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])?;
     let content = &args[1];
     fs::write(&path, content).map_err(|e| e.to_string())
 }
@@ -139,7 +148,7 @@ pub fn readdir_sync<R: Runtime>(
         return Err("read_dir_sync error: Invalid argument".to_string());
     }
 
-    let path = resolve_path(app_handle, &args[0]);
+    let path = resolve_app_read_path(app_handle, &args[0])?;
     let entries = fs::read_dir(&path).map_err(|e| e.to_string())?;
     let paths: Vec<String> = entries
         .filter_map(|entry| entry.ok())
@@ -262,7 +271,8 @@ pub(crate) fn unpack_archive(
 
 // rfd native file dialog
 #[tauri::command]
-pub async fn open_dialog(
+pub async fn open_dialog<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
     options: Option<DialogOpenOptions>,
 ) -> Result<Option<serde_json::Value>, String> {
     let mut dialog = AsyncFileDialog::new();
@@ -285,6 +295,7 @@ pub async fn open_dialog(
         if opts.directory == Some(true) {
             let result = dialog.pick_folder().await;
             return Ok(result.map(|folder| {
+                record_picks(&app_handle, &[folder.path().to_path_buf()]);
                 serde_json::Value::String(folder.path().to_string_lossy().to_string())
             }));
         }
@@ -293,9 +304,11 @@ pub async fn open_dialog(
         if opts.multiple == Some(true) {
             let result = dialog.pick_files().await;
             return Ok(result.map(|files| {
-                let paths: Vec<String> = files
+                let picked: Vec<PathBuf> = files.iter().map(|f| f.path().to_path_buf()).collect();
+                record_picks(&app_handle, &picked);
+                let paths: Vec<String> = picked
                     .iter()
-                    .map(|f| f.path().to_string_lossy().to_string())
+                    .map(|p| p.to_string_lossy().to_string())
                     .collect();
                 serde_json::to_value(paths).unwrap()
             }));
@@ -304,7 +317,10 @@ pub async fn open_dialog(
 
     // Default: single file selection
     let result = dialog.pick_file().await;
-    Ok(result.map(|file| serde_json::Value::String(file.path().to_string_lossy().to_string())))
+    Ok(result.map(|file| {
+        record_picks(&app_handle, &[file.path().to_path_buf()]);
+        serde_json::Value::String(file.path().to_string_lossy().to_string())
+    }))
 }
 
 #[tauri::command]

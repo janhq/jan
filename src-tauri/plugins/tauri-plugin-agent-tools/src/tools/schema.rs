@@ -83,7 +83,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "screenshot",
-                "description": "Render a local HTML or SVG file with headless Chrome and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
+                "description": "Render a local HTML or SVG file and return a PNG screenshot of it, so you can see what you built and iterate on the visual result. Use after writing an HTML/SVG artifact to check its appearance; the returned image is what a viewer would see. Relative assets (images, css, js) resolve against the file's own directory. Non-HTML/SVG files are rejected.",
                 "parameters": {
                     "type": "object",
                     "properties": {

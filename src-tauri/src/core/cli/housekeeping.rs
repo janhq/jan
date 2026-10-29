@@ -141,7 +141,9 @@ pub fn run(base: &Path, policy: Policy, protect: &HashSet<String>) -> usize {
         .as_secs_f64();
     let mut removed = 0;
     for id in plan(&threads, now, policy, protect) {
-        let dir = crate::core::threads::utils::get_thread_dir(base, &id);
+        let Ok(dir) = crate::core::threads::utils::get_thread_dir(base, &id) else {
+            continue;
+        };
         if std::fs::remove_dir_all(&dir).is_ok() {
             crate::core::agent::git::cleanup_snapshot_index(&id);
             removed += 1;
@@ -322,7 +324,7 @@ mod tests {
             "jan-housekeeping-corrupt-{}",
             std::process::id()
         ));
-        let dir = crate::core::threads::utils::get_thread_dir(&base, "broken");
+        let dir = crate::core::threads::utils::get_thread_dir(&base, "broken").unwrap();
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join(crate::core::threads::constants::THREADS_FILE),
@@ -354,7 +356,7 @@ mod tests {
         }
         ids.push("stale".to_string());
         for id in &ids {
-            let dir = crate::core::threads::utils::get_thread_dir(&base, id);
+            let dir = crate::core::threads::utils::get_thread_dir(&base, id).unwrap();
             std::fs::create_dir_all(&dir).unwrap();
             let updated = if id == "stale" { now - 400.0 * DAY } else { now };
             std::fs::write(
@@ -364,8 +366,8 @@ mod tests {
             .unwrap();
         }
         assert_eq!(run(&base, policy(90, 0), &none()), 1);
-        assert!(!crate::core::threads::utils::get_thread_dir(&base, "stale").exists());
-        assert!(crate::core::threads::utils::get_thread_dir(&base, "keep0").exists());
+        assert!(!crate::core::threads::utils::get_thread_dir(&base, "stale").unwrap().exists());
+        assert!(crate::core::threads::utils::get_thread_dir(&base, "keep0").unwrap().exists());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -63,4 +63,18 @@ describe('useLocalApiServer - coverage', () => {
 
     expect(result.current.enableServerToolExecution).toBe(true)
   })
+
+  it('resets a CORS choice saved before the switch took effect', () => {
+    const migrate = useLocalApiServer.persist.getOptions().migrate!
+    const migrated = migrate(
+      { corsEnabled: false, runInBackground: false },
+      4
+    ) as { corsEnabled: boolean; runInBackground: boolean }
+    expect(migrated.corsEnabled).toBe(true)
+    expect(migrated.runInBackground).toBe(false)
+    expect(
+      (migrate({ corsEnabled: false }, 5) as { corsEnabled: boolean })
+        .corsEnabled
+    ).toBe(false)
+  })
 })
