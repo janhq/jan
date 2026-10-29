@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    command_touches_hidden_root, escapes_read_roots, escapes_write_roots, in_hidden_root,
+    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -186,16 +186,25 @@ pub fn resolve_decision(
     // nor a routine "allow writes" approval reaches keys, hooks or the agent's
     // own permissions.
     if let Some(hidden) = ctx.hidden_root {
+        // An attached root inside the home (a parent's view of its subagents'
+        // worktrees) is the one part of it a read may reach; a write never
+        // does, since only `write_roots` widen writes.
+        let carved = |p: &str| {
+            tool.capability != Capability::Write
+                && in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+        };
+        let hidden_hit = |p: &str| {
+            in_hidden_root(ctx.project_root, ctx.scratch, hidden, p) && !carved(p)
+        };
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
-                .is_some_and(|p| in_hidden_root(ctx.project_root, ctx.scratch, hidden, p))
+                .is_some_and(hidden_hit)
         });
         let hits_command = tool.capability == Capability::Exec
-            && args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .is_some_and(|c| command_touches_hidden_root(ctx.project_root, ctx.scratch, hidden, c));
+            && args.get("command").and_then(|v| v.as_str()).is_some_and(|c| {
+                hidden_tokens(hidden, c).into_iter().any(|t| hidden_hit(&t))
+            });
         if hits_path || hits_command {
             return Decision::HardDeny(DenyReason::Hidden);
         }
@@ -1086,6 +1095,65 @@ mod tests {
     /// The Cowork opt-in at the gate layer: an attached root also passed as a
     /// write root takes the ordinary in-project Write prompt, not WriteEscape,
     /// while a path outside both roots keeps the escape classification.
+    /// The parent may read its subagents' worktrees under `~/.jan/worktrees`
+    /// through a read root, by path and from the shell; the rest of the Jan
+    /// home stays hidden, and a read root still grants no write.
+    #[test]
+    fn a_read_root_inside_the_jan_home_is_readable_and_nothing_else_there_is() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let trees = jan.join("worktrees/proj-1");
+        std::fs::create_dir_all(trees.join("general-ab12")).unwrap();
+        std::fs::write(trees.join("general-ab12/a.txt"), b"a").unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let roots = vec![trees.canonicalize().unwrap()];
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &roots,
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let file = trees.join("general-ab12/a.txt");
+        let read = |args| resolve_decision(lookup("read").unwrap(), &args, &ctx, &perms, &grants);
+        assert_eq!(read(json!({"path": file.to_string_lossy()})), Decision::Allow);
+        assert_eq!(
+            read(json!({"path": jan.join("config.toml").to_string_lossy()})),
+            Decision::HardDeny(DenyReason::Hidden)
+        );
+        let shell = |cmd: String| {
+            resolve_decision(
+                lookup(crate::tools::SHELL_TOOL).unwrap(),
+                &json!({"command": cmd}),
+                &ctx,
+                &perms,
+                &grants,
+            )
+        };
+        assert_eq!(
+            shell(format!("git -C {} diff", file.parent().unwrap().display())),
+            Decision::Prompt(PromptKind::Exec),
+            "an ordinary exec, not a hidden-path refusal"
+        );
+        assert_eq!(
+            shell(format!("cat {}", jan.join("config.toml").display())),
+            Decision::HardDeny(DenyReason::Hidden)
+        );
+        let write = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": file.to_string_lossy(), "content": "x"}),
+            &ctx,
+            &perms,
+            &grants,
+        );
+        assert_ne!(write, Decision::Allow, "a read root is not writable");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     #[test]
     fn a_write_root_downgrades_the_escape_to_an_ordinary_write() {
         let root = unique_root();
