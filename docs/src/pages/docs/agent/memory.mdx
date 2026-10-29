@@ -94,7 +94,10 @@ archive or merge.
 The index is a **snapshot taken when the session starts**. Writing, editing or deleting a note
 mid-session never changes the system prompt, so the cached prompt prefix survives memory updates.
 Changes made since the snapshot, by the agent or by a tidy, are listed in a short
-`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead. The
+`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead.
+The block is sent with the first request of every run and again after any successful `memory` call
+that changed it, so a note written mid-run (in a headless `jan cli agent run` too, including
+follow-ups sent with `--input-format stream-json`) reaches the model's next request. The
 snapshot is retaken on `/new`, `/clear`, `/resume`, a fork, and after a compaction.
 
 ## Scopes

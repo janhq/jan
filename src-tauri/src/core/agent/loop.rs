@@ -377,6 +377,46 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// the default does nothing, which is right for every invoker that has no
     /// project and therefore no hook files to read.
     async fn pre_compact(&self, _message_count: usize) {}
+
+    /// The `# Memory Changes` block, when it differs from the one this run
+    /// last sent: called after a batch with a successful `memory` call, so a
+    /// later request in the same run learns what changed. `None` when nothing
+    /// new is to be said, and for every invoker without a memory snapshot.
+    fn fresh_memory_changes(&self) -> Option<String> {
+        None
+    }
+}
+
+/// The session's memory snapshot and the `# Memory Changes` block this run
+/// last sent. The block is part of the run's tail, built once per run; a note
+/// written mid-run would otherwise reach the model only on the next run.
+pub(crate) struct MemoryChangesTracker {
+    snapshot: crate::core::agent::context::MemorySnapshot,
+    sent: std::sync::Mutex<Option<String>>,
+}
+
+impl MemoryChangesTracker {
+    /// `sent` is the block the run's tail already carries, if any.
+    pub(crate) fn new(
+        snapshot: crate::core::agent::context::MemorySnapshot,
+        sent: Option<String>,
+    ) -> Self {
+        Self {
+            snapshot,
+            sent: std::sync::Mutex::new(sent),
+        }
+    }
+
+    /// The current block when it is not the one last sent, marking it sent.
+    fn fresh(&self, project_root: &std::path::Path) -> Option<String> {
+        let now = self.snapshot.changes_block(project_root)?;
+        let mut sent = self.sent.lock().unwrap();
+        if sent.as_deref() == Some(now.as_str()) {
+            return None;
+        }
+        *sent = Some(now.clone());
+        Some(now)
+    }
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -823,6 +863,10 @@ struct CompositeToolInvoker {
     parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// See [`OrchestrationArgs::shell_detach`].
     shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// The session's memory snapshot, for a mid-run `# Memory Changes`
+    /// block. `None` where the run's tail carries none (a child run, a
+    /// host-owned prompt, no snapshot).
+    memory_changes: Option<MemoryChangesTracker>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -2170,6 +2214,10 @@ impl ToolInvoker for CompositeToolInvoker {
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
         self.monitors.snapshot()
+    }
+
+    fn fresh_memory_changes(&self) -> Option<String> {
+        self.memory_changes.as_ref()?.fresh(&self.project_root)
     }
 
     async fn pre_compact(&self, message_count: usize) {
@@ -3714,12 +3762,18 @@ async fn orchestrate_inner(
     // written since (by this run, a tidy, another session) is reported here instead.
     // Not gated on `project_memory`: that is about recall and indexing, and an
     // ephemeral session still has the index and the tool.
+    // The same block is recomputed after a successful `memory` call later in
+    // this run (`MemoryChangesTracker`), so the run's own writes reach its
+    // next request rather than only the next run.
+    let mut memory_changes: Option<MemoryChangesTracker> = None;
     if jan_owns_prompt && system_prompt_override.is_none() {
         let snapshot = session_start.as_ref().and_then(|s| s.memory());
         if let (Some(root), Some(snapshot)) = (project_root.as_deref(), snapshot) {
-            if let Some(block) = snapshot.changes_block(root) {
-                volatile_parts.push((Composer::MemoryChanges, block));
+            let block = snapshot.changes_block(root);
+            if let Some(block) = &block {
+                volatile_parts.push((Composer::MemoryChanges, block.clone()));
             }
+            memory_changes = Some(MemoryChangesTracker::new(snapshot.clone(), block));
         }
     }
     // Child (subagent) runs are excluded via `system_prompt_override`, the
@@ -4052,6 +4106,7 @@ async fn orchestrate_inner(
             // command's end except a park, which holds the message just the
             // same; so the signal only applies where the session owns shells.
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
+            memory_changes,
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -5285,6 +5340,7 @@ async fn run_turn_cycle(
         // `todo` at all means the list was just reconciled, regardless of
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
+        let mut memory_touched_this_batch = false;
         for outcome in tool_results {
             // Emitted here only when the invoker did not announce it already
             // (the default invoker never does; a failed call refused before
@@ -5302,6 +5358,9 @@ async fn run_turn_cycle(
                 ..
             } = outcome;
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            if name == tauri_plugin_agent_tools::tools::MEMORY_TOOL && !is_error {
+                memory_touched_this_batch = true;
+            }
             if name == "todo" {
                 todo_touched_this_batch = true;
             } else if !is_error
@@ -5341,6 +5400,14 @@ async fn run_turn_cycle(
                     "tool_call_id": id,
                     "content": wire_content
                 }));
+            }
+        }
+        // A note this run wrote is reported to its next request, below the
+        // history like the run's own tail: the index above the cache line is
+        // the session-start snapshot and must not move.
+        if memory_touched_this_batch {
+            if let Some(block) = tools.fresh_memory_changes() {
+                transcript.record_reminder(&block);
             }
         }
         if todo_touched_this_batch {
@@ -8857,6 +8924,7 @@ mod tests {
             ),
             parent_link: None,
             shell_detach: None,
+            memory_changes: None,
         }
     }
 
@@ -11807,6 +11875,79 @@ mod tests {
         assert_eq!(asked, vec!["read".to_string()], "allowed_tools cannot add it back");
         let tidy = child_tools(None, true);
         assert!(tidy.iter().any(|n| n == "memory"), "{tidy:?}");
+    }
+
+    /// #497 bug 1: a headless run builds its tail once, so a note the model
+    /// wrote mid-run never reached a later request of the same run. The next
+    /// request now carries `# Memory Changes` naming the note, below the
+    /// history, while the system prompt bytes stay the session's.
+    #[tokio::test]
+    async fn a_memory_write_mid_run_reaches_the_next_request_of_the_same_run() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let snapshot = crate::core::agent::context::MemorySnapshot::capture(&root);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        invoker.sandbox = false;
+        invoker.hidden_root = None;
+        invoker.auto_approve = true;
+        invoker.memory_changes = Some(MemoryChangesTracker::new(snapshot, None));
+        let write = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "w1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"write\",\"name\":\"build_cmd\",\"title\":\"Build\",\"content\":\"make foo\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let shell = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "v1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"view\",\"name\":\"build_cmd\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let model = MockModel::new(vec![write, shell, final_answer("done")]);
+        let (events, _events_rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "remember the build command"}),
+            ]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+        let _ = std::fs::remove_dir_all(&root);
+        let sent = model.requests.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3);
+        let text = |i: usize| serde_json::to_string(&sent[i]["messages"]).unwrap();
+        assert!(!text(0).contains("# Memory Changes"), "nothing changed yet: {}", text(0));
+        assert!(text(1).contains("# Memory Changes"), "{}", text(1));
+        assert!(text(1).contains("+ build_cmd"), "{}", text(1));
+        // Said once: a read-only call later does not repeat an unchanged block.
+        assert_eq!(text(2).matches("# Memory Changes").count(), 1, "{}", text(2));
+        for request in &sent {
+            let messages = request["messages"].as_array().unwrap();
+            assert_eq!(messages[0], json!({"role": "system", "content": "Stable instructions."}));
+            let systems = messages.iter().filter(|m| m["role"] == "system").count();
+            assert_eq!(systems, 1, "no second system message: {messages:?}");
+        }
+        // The block follows the tool result, below the history.
+        let second = sent[1]["messages"].as_array().unwrap();
+        let last = second.last().unwrap();
+        assert_eq!(last["role"], "user", "{second:?}");
+        assert!(last["content"].as_str().unwrap().contains("+ build_cmd"));
     }
 
     /// A child that names `memory` anyway is refused at the gate.
