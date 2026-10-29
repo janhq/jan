@@ -338,28 +338,41 @@ pub fn in_hidden_root(project_root: &Path, scratch: Option<&Path>, hidden: &Path
     }
 }
 
-/// True iff a shell command names a path inside `hidden` (best-effort token
-/// scan). `~` and `$HOME` are expanded, since `cat ~/.jan/config.toml` is the
-/// obvious spelling. Best-effort is enough only because the OS sandbox masks
-/// the directory too (see [`super::jail::Policy::hide_root`]); this turns a
-/// plain attempt into a clear refusal instead of an empty directory.
-pub fn command_touches_hidden_root(
-    project_root: &Path,
-    scratch: Option<&Path>,
-    hidden: &Path,
-    command: &str,
-) -> bool {
+/// The path-like tokens of a shell command (best-effort), `~` and `$HOME`
+/// expanded against the home `hidden` sits in, since that is the obvious way
+/// to spell a path under it. The gate refuses a command when one of them is
+/// in the hidden root; best-effort is enough only because the OS sandbox
+/// masks the directory too (see [`super::jail::Policy::hide_root`]).
+pub fn hidden_tokens(hidden: &Path, command: &str) -> Vec<String> {
     let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
     command
         .split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c))
         .filter(|t| !t.is_empty())
-        .any(|t| {
-            let expanded = match &home {
-                Some(home) => expand_home(t, home),
-                None => t.to_string(),
-            };
-            in_hidden_root(project_root, scratch, hidden, &expanded)
+        .map(|t| match &home {
+            Some(home) => expand_home(t, home),
+            None => t.to_string(),
         })
+        .collect()
+}
+
+/// True iff `raw` resolves inside one of `roots` (canonicalized attached
+/// folders). Relative paths belong to the project, never to a root.
+pub fn in_attached_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    roots: &[PathBuf],
+    raw: &str,
+) -> bool {
+    if roots.is_empty() || !Path::new(raw).is_absolute() {
+        return false;
+    }
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, raw)) else {
+        return false;
+    };
+    roots
+        .iter()
+        .filter_map(|r| r.canonicalize().ok())
+        .any(|r| resolved.starts_with(r))
 }
 
 fn expand_home(token: &str, home: &str) -> String {
@@ -1056,6 +1069,17 @@ mod tests {
         assert!(in_hidden_root(&wt, None, &jan, "../../../config.toml"));
         assert!(in_hidden_root(&wt, None, &jan, jan.join("config.toml").to_str().unwrap()));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    fn command_touches_hidden_root(
+        project: &Path,
+        scratch: Option<&Path>,
+        hidden: &Path,
+        cmd: &str,
+    ) -> bool {
+        hidden_tokens(hidden, cmd)
+            .iter()
+            .any(|t| in_hidden_root(project, scratch, hidden, t))
     }
 
     #[test]
