@@ -3342,6 +3342,8 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
+            // A subagent (the run with an override prompt) has no memory, so
+            // its prompt carries no memory index or memory instructions.
             crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
@@ -3349,6 +3351,7 @@ fn build_run_system_prompt(
                 subagents_enabled,
                 policy,
                 session_start,
+                override_prompt.is_none(),
             )
             .map(Some)
         }
@@ -11752,6 +11755,113 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(out.starts_with("ERROR:"), "{out}");
         assert!(out.contains("only a subagent"), "{out}");
+    }
+
+    /// The names a dispatched child is advertised, given the allowlist it was
+    /// dispatched with and whether it is Jan's tidy subagent.
+    fn child_tools(allowed: Option<&[&str]>, memory_access: bool) -> Vec<String> {
+        let root = std::env::temp_dir().join(format!(
+            "jan-child-tools-{}-{}",
+            std::process::id(),
+            TEST_ROOT_SEQ.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let permissions = if memory_access {
+            ToolPermissions::allow_all()
+        } else {
+            ToolPermissions::allow_all().with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        };
+        let allowed: Option<std::collections::HashSet<String>> =
+            allowed.map(|names| names.iter().map(|n| n.to_string()).collect());
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            allowed.as_ref(),
+            &permissions,
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Normal,
+            false,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            true,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// Subagents have no memory: a dispatched child is never offered the tool,
+    /// even when its `allowed_tools` names it. Jan's tidy subagent is the one
+    /// child that keeps it.
+    #[test]
+    fn a_dispatched_child_is_never_offered_memory_but_the_tidy_child_is() {
+        let full = child_tools(None, false);
+        assert!(full.iter().any(|n| n == "read"), "{full:?}");
+        assert!(!full.iter().any(|n| n.starts_with("memory")), "{full:?}");
+        let asked = child_tools(Some(&["read", "memory"]), false);
+        assert_eq!(asked, vec!["read".to_string()], "allowed_tools cannot add it back");
+        let tidy = child_tools(None, true);
+        assert!(tidy.iter().any(|n| n == "memory"), "{tidy:?}");
+    }
+
+    /// A child that names `memory` anyway is refused at the gate.
+    #[tokio::test]
+    async fn a_child_calling_memory_is_refused() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let call = json!({
+            "id": "m1",
+            "type": "function",
+            "function": { "name": "memory", "arguments": "{\"op\":\"view\"}" }
+        });
+        let out = invoker.invoke(&[call]).await.unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(out[0].content.starts_with("ERROR:"), "{}", out[0].content);
+    }
+
+    /// A subagent's prompt carries no memory section: no index, no memory
+    /// instructions. The main agent's has both, and tells it subagents have
+    /// no memory.
+    #[test]
+    fn a_child_prompt_has_no_memory_section() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fact.md"), "A remembered fact.").unwrap();
+        let build = |override_prompt: Option<&str>, subagents: bool| {
+            build_run_system_prompt(
+                None,
+                override_prompt,
+                Some(&root),
+                Some("s1"),
+                subagents,
+                false,
+                &PromptPolicy::default(),
+                None,
+            )
+            .unwrap()
+            .unwrap()
+            .as_prompt()
+        };
+        let child = build(Some("You are a reviewer."), false);
+        for absent in ["# Available Memories", "A remembered fact", "`memory` tool", "## Memory"] {
+            assert!(!child.contains(absent), "{absent} leaked into a child prompt:\n{child}");
+        }
+        assert!(child.contains("# Skills"), "skills stay: {child}");
+        assert!(child.contains("You have no memory tool"), "{child}");
+        let main = build(None, true);
+        assert!(main.contains("# Available Memories") && main.contains("A remembered fact"));
+        assert!(main.contains("Subagents have no memory"), "{main}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A dispatching run is offered the steering tool beside dispatch, and

@@ -766,6 +766,12 @@ pub struct SubagentRequest {
     pub description: String,
     pub allowed_tools: Option<Vec<String>>,
     pub agent: String,
+    /// Whether the child keeps the `memory` tool. Subagents have no memory:
+    /// the main agent hands them the facts they need in the task, and a child
+    /// writing notes the main agent never sees would fork the record. Only
+    /// Jan's own tidy subagent sets this. It is never read from a tool call, so
+    /// neither the model nor a definition can ask for it.
+    pub memory_access: bool,
 }
 
 /// A group of subagents that run concurrently. The next phase starts only once
@@ -1914,12 +1920,13 @@ async fn run_subagent(
     inbox: Arc<ChildInbox>,
     parent_link: ParentLink,
     transcript_dir: Option<PathBuf>,
+    memory_access: bool,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::r#loop::run_orchestration_steered;
 
     let name = resolved.definition.name.clone();
-    let mut child_args = parent_args;
+    let mut child_args = without_memory(parent_args, memory_access);
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     // The host wrote its prompt for the conversation it drives, not for a
     // delegate with a task of its own; left in place it would also replace the
@@ -2042,6 +2049,25 @@ async fn run_subagent(
     outcome
 }
 
+/// The run args a child starts from: the parent's, minus memory unless
+/// `memory_access` (Jan's own tidy subagent). Denying the tool both hides it
+/// from the child's tool list and refuses a call to it, whatever the child's
+/// `allowed_tools` or definition says; recall and indexing are already off for
+/// a child (`system_prompt_override`), and so is the memory section of its
+/// prompt (see `context::compose_system_prompt`).
+pub(crate) fn without_memory(
+    mut args: crate::core::agent::r#loop::OrchestrationArgs,
+    memory_access: bool,
+) -> crate::core::agent::r#loop::OrchestrationArgs {
+    if !memory_access {
+        args.permissions = args
+            .permissions
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+    }
+    args.project_memory = false;
+    args
+}
+
 /// Resolve and start a subagent on a background task, returning its `run_id`
 /// immediately (non-blocking). The caller collects the result later with
 /// [`await_subagent`]. Registered in `bg` so the parent run can abort it on
@@ -2155,6 +2181,7 @@ pub(crate) fn spawn_subagent(
     let entry_events = bg.child_events(events);
     let inherited = parent.clone();
     let description = req.description.clone();
+    let memory_access = req.memory_access;
     let run_id_task = run_id.clone();
     let name_task = name.clone();
     let registry = bg.clone();
@@ -2218,6 +2245,7 @@ pub(crate) fn spawn_subagent(
             task_inbox,
             parent_link,
             transcript_dir,
+            memory_access,
         )
         .await;
         if let Some((_, path)) = &result_file {
@@ -2921,11 +2949,13 @@ pub fn agent_catalog(registry: &SubagentRegistry) -> Option<String> {
 }
 
 /// Tools a child never gets whatever its allowlist says: it cannot dispatch
-/// (nesting is capped at one), and it has no `ask` client, todo list or
-/// monitor set of its own (see [`run_subagent`]).
+/// (nesting is capped at one), it has no `ask` client, todo list or monitor
+/// set of its own, and it has no memory (see [`run_subagent`] and
+/// [`without_memory`]).
 fn never_delegated(name: &str) -> bool {
     is_subagent_tool(name)
         || matches!(name, "ask" | "todo")
+        || name == tauri_plugin_agent_tools::tools::MEMORY_TOOL
         || name == tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME
 }
 
@@ -3010,7 +3040,7 @@ pub fn subagent_tool_schemas(
     let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to. Steer a running child with message_subagent, or stop it with stop_subagent, by its name (reported when it starts).");
     let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
     let dispatch_desc = format!(
-        "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it."
+        "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it, except memory: subagents have no memory tool and no memory index, so put any remembered fact a subagent needs into its task."
     );
     vec![
         json!({
@@ -3028,7 +3058,7 @@ pub fn subagent_tool_schemas(
                                 "type": "object",
                                 "properties": {
                                     "agent": agent_field,
-                                    "task": { "type": "string", "description": "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them." },
+                                    "task": { "type": "string", "description": "The subagent's sole instruction. Include everything it needs, including any facts from your memory; it does not see this conversation or your memory. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them." },
                                     "phase": { "type": "integer", "minimum": 0, "description": "Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out." },
                                     "allowed_tools": {
                                         "type": "array",
@@ -3181,6 +3211,7 @@ pub fn parse_dispatch_plan(
             description,
             allowed_tools: optional_tool_list(sub),
             agent,
+            memory_access: false,
         });
     }
     let phases = by_phase
@@ -3885,6 +3916,7 @@ pub(crate) mod tests {
             description: "do the thing".to_string(),
             allowed_tools: allowed,
             agent: name.to_string(),
+            memory_access: false,
         }
     }
 
@@ -6017,6 +6049,52 @@ pub(crate) mod tests {
             .find(|s| s["function"]["name"] == "create_subagent")
             .unwrap();
         assert!(create["function"]["parameters"]["properties"].get("allowed_tools").is_none());
+    }
+
+    /// Subagents have no memory, so `memory` is never a name a dispatch or a
+    /// definition can hand a child, even when the parent offers it.
+    #[test]
+    fn memory_is_never_a_delegable_tool_name() {
+        let reg = SubagentRegistry::load(&unique_root("tool_enum_memory"));
+        let mut tools = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        tools.push(serde_json::json!({ "type": "function", "function": { "name": "memory" } }));
+        tools.push(serde_json::json!({ "type": "function", "function": { "name": "shell" } }));
+        constrain_tool_names(&mut tools, &ToolPermissions::allow_all(), false);
+        let dispatch = &tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]
+            ["properties"]["allowed_tools"]["items"]["enum"];
+        assert_eq!(dispatch, &serde_json::json!(["find", "grep", "ls", "shell"]));
+        let create = tools
+            .iter()
+            .find(|s| s["function"]["name"] == "create_subagent")
+            .unwrap();
+        let names = &create["function"]["parameters"]["properties"]["allowed_tools"]["items"]["enum"];
+        assert!(!names.as_array().unwrap().iter().any(|n| n == "memory"), "{names}");
+        for gone in ["memory_list", "memory_read", "memory_write"] {
+            assert!(!dispatch.as_array().unwrap().iter().any(|n| n == gone));
+        }
+        let description = tools[0]["function"]["description"].as_str().unwrap();
+        assert!(description.contains("subagents have no memory tool"), "{description}");
+    }
+
+    /// A dispatched child's args deny `memory` (so it is neither advertised nor
+    /// callable) and turn recall/indexing off; only the internal tidy request
+    /// keeps the tool.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_loses_memory_unless_it_is_the_tidy_subagent() {
+        let parent = max_par_args(&unique_root("child-memory"));
+        let child = without_memory(parent.clone(), false);
+        assert!(child.permissions.is_denied("memory"));
+        assert!(!child.project_memory);
+        let tidy = without_memory(parent, true);
+        assert!(!tidy.permissions.is_denied("memory"));
+        assert!(!tidy.project_memory, "a tidy run still indexes nothing");
+        // Nothing a model writes can set it.
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({
+            "subagents": [{ "agent": "general", "task": "t", "memory_access": true }]
+        }))
+        .unwrap();
+        assert!(!plan.phases[0].subagents[0].memory_access);
     }
 
     /// A name is held from the moment a dispatch hands it out -- a later-phase
