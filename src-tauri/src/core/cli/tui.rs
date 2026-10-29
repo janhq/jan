@@ -4549,6 +4549,12 @@ struct App {
     repaint: bool,
     /// Set when the user submits a message; the loop spawns a run next tick.
     want_start: bool,
+    /// Set by [`App::end_session_work`]: the conversation the run reports into
+    /// was replaced, so `handle_key` drops it before another event is read.
+    abort_requested: bool,
+    /// The spawned run's task, so [`App::end_session_work`] can stop it at
+    /// once rather than after the rest of the command has run.
+    run_abort: Option<tokio::task::AbortHandle>,
     /// Turns (model roundtrips, plus the submission that kicked off a run)
     /// since the todo list last had open work. The list is the model's own
     /// scratchpad, so a finished one lingers until it declares a new plan --
@@ -5288,6 +5294,8 @@ impl App {
             scrollback: 0,
             repaint: false,
             want_start: false,
+            abort_requested: false,
+            run_abort: None,
             turns_since_todos_closed: 0,
             todos_closed_at: None,
             should_quit: false,
@@ -5396,6 +5404,7 @@ impl App {
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
     fn reset_session(&mut self) {
+        self.end_session_work();
         self.history.clear();
         self.thread_id = None;
         // A fresh session drops any active goal along with the conversation.
@@ -5470,6 +5479,34 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+    }
+
+    /// End the work still bound to a conversation that is being replaced
+    /// (`/new`, `/clear`, `/resume`, `/fork`). Left running, a turn's stream
+    /// lands in the new session, and its `MessagesUpdated` writes the old
+    /// conversation over the new one and persists it; a compaction landing
+    /// does the same with its summary, and an overflow retry restarts the old
+    /// turn there. The interrupted turn is kept in its own thread, as Esc would
+    /// keep it.
+    fn end_session_work(&mut self) {
+        // The loop aborts the compaction's task once `compacting` is gone.
+        self.compacting = None;
+        self.compact_started = None;
+        self.compact_request = None;
+        self.retry_after_compact = false;
+        if !self.run_is_live() {
+            return;
+        }
+        // Abort before cancelling, as Esc does: the rest of the command awaits,
+        // and the run's tools must not keep working through it.
+        if let Some(run) = self.run_abort.take() {
+            run.abort();
+        }
+        // Follow-ups queued for the old conversation; `cancel_run` would
+        // otherwise start the next one.
+        self.message_queue.clear();
+        self.cancel_run();
+        self.abort_requested = true;
     }
 
     /// Forget the session-cumulative cache counters, and what the route has
@@ -13310,6 +13347,14 @@ async fn chat_loop<B: Backend>(
             app.run_goal_evaluation().await;
         }
 
+        // Only a replaced session drops `compacting` while its task still runs
+        // (see `App::end_session_work`); its summary belongs to nothing now.
+        if app.compacting.is_none() {
+            if let Some(task) = compact_task.take() {
+                task.abort();
+            }
+        }
+
         // Kick off a queued run once the previous one has cleared, the MCP
         // servers (if any) are connected, and the base snapshot (if any) is
         // captured. `submit_user` already flipped status to Running and reset
@@ -13324,7 +13369,9 @@ async fn chat_loop<B: Backend>(
                 // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
                 let run_args = app.args.clone().unwrap_or_else(|| args.clone());
-                current = Some(spawn_run(&run_args, app.body()));
+                let run = spawn_run(&run_args, app.body());
+                app.run_abort = Some(run.handle.abort_handle());
+                current = Some(run);
             } else if !loading_noted && !mcp_ready {
                 // The base snapshot gates silently; only the MCP connect notes.
                 loading_noted = true;
@@ -14707,6 +14754,21 @@ fn resume_hint(thread_id: &str) -> String {
     format!("\x1b[2m[session {id} - resume with `jan --resume={id}`]\x1b[0m")
 }
 async fn handle_key(
+    app: &mut App,
+    key: KeyEvent,
+    registry: &PermissionRegistry,
+    current: &mut Option<CurrentRun>,
+    mcp_servers: &crate::core::state::SharedMcpServers,
+) {
+    handle_key_input(app, key, registry, current, mcp_servers).await;
+    // A command that replaced the conversation already cancelled its run in
+    // `App`; the task itself is held here.
+    if std::mem::take(&mut app.abort_requested) {
+        abort_run(current);
+    }
+}
+
+async fn handle_key_input(
     app: &mut App,
     key: KeyEvent,
     registry: &PermissionRegistry,
@@ -21927,6 +21989,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         Err(e) => return app.note(&format!("failed to load messages: {e}")),
     };
 
+    app.end_session_work();
     app.history.clear();
     app.thread_id = Some(full_id.to_string());
     app.transcript.rows.clear();
@@ -30283,6 +30346,145 @@ mod tests {
         let mut current: Option<CurrentRun> = None;
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         handle_key(app, esc, &registry, &mut current, &mcp_servers).await;
+    }
+
+    /// Submit `line` from the composer while `current` is the live run.
+    async fn enter_line_mid_run(app: &mut App, line: &str, current: &mut Option<CurrentRun>) {
+        let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+        app.input = line.to_string();
+        app.cursor = app.input.len();
+        let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        handle_key(app, enter, &registry, current, &no_mcp()).await;
+    }
+
+    /// A run streaming the answer to "old question", as the loop holds it.
+    fn live_old_run(app: &mut App) -> (Option<CurrentRun>, mpsc::UnboundedSender<StreamEvent>) {
+        app.submit_user("old question".into());
+        app.want_start = false;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (_steering_tx, steering) = mpsc::unbounded_channel();
+        let handle = tokio::spawn(std::future::pending());
+        app.run_abort = Some(handle.abort_handle());
+        let current = Some(CurrentRun {
+            rx,
+            steering,
+            handle,
+        });
+        app.apply(StreamEvent::Token {
+            text: "old answer".into(),
+        });
+        (current, tx)
+    }
+
+    #[tokio::test]
+    async fn new_session_mid_run_ends_the_old_run() {
+        for cmd in ["/new", "/clear"] {
+            let mut app = test_app();
+            let (mut current, tx) = live_old_run(&mut app);
+            let old_thread = app.thread_id.clone();
+            enter_line_mid_run(&mut app, cmd, &mut current).await;
+
+            // The old run is gone, so nothing it still sends can reach the
+            // new session -- before, its `MessagesUpdated` copied the old
+            // conversation into it and saved that as a new thread.
+            assert!(current.is_none(), "{cmd} must abort the old run");
+            assert!(tx.is_closed());
+            assert!(!app.run_is_live(), "{cmd} leaves the new session idle");
+            assert!(app.history.is_empty(), "{cmd}");
+            assert!(app.thread_id.is_none(), "{cmd}");
+            // The interrupted turn is kept in the thread it belongs to.
+            let (saved, _) = super::super::cli_read_messages_lenient(
+                &app.agent_dir,
+                old_thread.as_deref().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                saved.last().unwrap()["content"][0]["text"]["value"],
+                "old answer",
+                "{cmd}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resume_mid_run_ends_the_old_run() {
+        let mut app = test_app();
+        let other = vec![
+            json!({ "role": "user", "content": "other question" }),
+            json!({ "role": "assistant", "content": "other answer" }),
+        ];
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "m", &other, None).unwrap();
+        let (mut current, tx) = live_old_run(&mut app);
+        enter_line_mid_run(&mut app, &format!("/resume {id}"), &mut current).await;
+
+        // Left running, the old run's next `MessagesUpdated` would overwrite
+        // the resumed thread on disk with the old conversation.
+        assert!(current.is_none(), "/resume must abort the old run");
+        assert!(tx.is_closed());
+        assert!(!app.run_is_live());
+        assert_eq!(app.thread_id.as_deref(), Some(id.as_str()));
+        assert_eq!(app.history, other);
+    }
+
+    #[tokio::test]
+    async fn new_session_drops_a_run_not_yet_spawned() {
+        let mut app = test_app();
+        // Submitted, but still gated on MCP/snapshot readiness.
+        app.submit_user("old question".into());
+        assert!(app.want_start);
+        let mut current = None;
+        enter_line_mid_run(&mut app, "/new", &mut current).await;
+        // Otherwise the loop spawns it against the new, empty session.
+        assert!(!app.want_start);
+        assert!(!app.run_is_live());
+        assert!(app.history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn new_session_drops_an_in_flight_compaction() {
+        let mut app = test_app();
+        app.submit_user("old question".into());
+        app.want_start = false;
+        // An overflow error is being recovered: compaction, then a retry.
+        app.compacting = Some(CompactKind::Auto);
+        app.compact_started = Some(Instant::now());
+        app.retry_after_compact = true;
+        app.status = Status::Idle;
+        let mut current = None;
+        enter_line_mid_run(&mut app, "/new", &mut current).await;
+        // `compacting` gone is what tells the loop to abort the task, so its
+        // summary never lands and the old turn is never retried here.
+        assert!(app.compacting.is_none());
+        assert!(app.compact_started.is_none());
+        assert!(!app.retry_after_compact);
+    }
+
+    #[tokio::test]
+    async fn fork_mid_run_ends_the_old_run() {
+        let mut app = test_app();
+        app.submit_user("first question".into());
+        app.want_start = false;
+        app.apply(StreamEvent::Token {
+            text: "first answer".into(),
+        });
+        app.on_done("stop".into(), None);
+        let source = app.thread_id.clone().expect("saved");
+        let (mut current, tx) = live_old_run(&mut app);
+
+        enter_line_mid_run(&mut app, "/fork", &mut current).await;
+        assert!(app.picker.is_some(), "/fork opens its picker");
+        // The newest message is preselected: fork before "old question".
+        enter_line_mid_run(&mut app, "", &mut current).await;
+
+        assert!(current.is_none(), "/fork must abort the old run");
+        assert!(tx.is_closed());
+        assert!(!app.run_is_live());
+        assert_ne!(app.thread_id.as_deref(), Some(source.as_str()));
+        assert!(
+            !app.history.iter().any(|m| m["content"] == "old answer"),
+            "{:?}",
+            app.history
+        );
     }
 
     #[tokio::test]
