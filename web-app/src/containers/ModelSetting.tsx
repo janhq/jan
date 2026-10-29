@@ -30,7 +30,7 @@ type ModelSettingProps = {
 
 /**
  * Shared model-settings form + persistence, driven by both the header Sheet
- * (ModelSetting) and the Cowork right rail (CoworkModelPanel). Keeping the
+ * (ModelSetting) and the Cowork sheet (ModelSettingSheet). Keeping the
  * handlers here avoids two copies of the debounced yaml-write / router-restart
  * logic diverging.
  */
@@ -261,7 +261,7 @@ function useModelSettingControls(model: Model, provider: ProviderObject) {
   }
 }
 
-/** The settings body, shared by the header Sheet and the Cowork rail. */
+/** The settings body, shared by the header Sheet and the Cowork sheet. */
 export function ModelSettingFields({ model, provider }: ModelSettingProps) {
   const { t } = useTranslation()
   const {
@@ -381,8 +381,43 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
   )
 }
 
-export function ModelSetting({ model, provider }: ModelSettingProps) {
+function ModelSettingSheetBody({ model, provider }: ModelSettingProps) {
   const { t } = useTranslation()
+  return (
+    <SheetContent>
+      <SheetHeader>
+        <SheetTitle>
+          {t('common:modelSettings.title', {
+            modelId: getModelDisplayName(model),
+          })}
+        </SheetTitle>
+        <SheetDescription className="text-xs leading-normal">
+          {t('common:modelSettings.description')}
+        </SheetDescription>
+      </SheetHeader>
+      <ModelSettingFields model={model} provider={provider} />
+    </SheetContent>
+  )
+}
+
+/** Controlled variant without a trigger (Cowork opens it from a chip). */
+export function ModelSettingSheet({
+  model,
+  provider,
+  open,
+  onOpenChange,
+}: ModelSettingProps & {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <ModelSettingSheetBody model={model} provider={provider} />
+    </Sheet>
+  )
+}
+
+export function ModelSetting({ model, provider }: ModelSettingProps) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -390,19 +425,7 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
           <IconSettings size={18} className="text-muted-foreground" />
         </Button>
       </SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>
-            {t('common:modelSettings.title', {
-              modelId: getModelDisplayName(model),
-            })}
-          </SheetTitle>
-          <SheetDescription className="text-xs leading-normal">
-            {t('common:modelSettings.description')}
-          </SheetDescription>
-        </SheetHeader>
-        <ModelSettingFields model={model} provider={provider} />
-      </SheetContent>
+      <ModelSettingSheetBody model={model} provider={provider} />
     </Sheet>
   )
 }

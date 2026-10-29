@@ -2305,7 +2305,7 @@ function ThreadDetail() {
         >
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
-              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
+              className={cn('mx-auto w-full px-6 md:w-4/5 xl:w-4/6')}
             >
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
@@ -2455,7 +2455,7 @@ function ThreadDetail() {
         </div>
 
         {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
+        <div className="py-4 px-6 mx-auto w-full md:w-4/5 xl:w-4/6">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}

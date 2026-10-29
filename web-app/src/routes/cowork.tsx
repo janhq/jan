@@ -82,7 +82,7 @@ import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
 import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
 import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
 import { CoworkModelChip } from '@/containers/CoworkModelChip'
-import { CoworkModelPanel } from '@/containers/CoworkModelPanel'
+import { ModelSettingSheet } from '@/containers/ModelSetting'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
 import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
@@ -230,7 +230,7 @@ function CoworkPage() {
   const overflowModel = coworkLocalModel(overflowProvider, selectedModel?.id)
   const overflowContext = coworkModelContext(overflowProvider, selectedModel?.id)
   // The selected provider's own model entry (with settings) drives the model
-  // rail; undefined for remote/inactive providers, which hides its chip.
+  // settings sheet; undefined for remote/inactive providers, which hides its chip.
   const modelProvider = providers.find(
     (provider) => provider.provider === selectedProvider
   )
@@ -1472,6 +1472,9 @@ function CoworkPage() {
   // they were opened from.
   useEffect(() => setRail(null), [session?.id])
 
+  // The model sheet floats over the page; only docked rails narrow the column.
+  const dockedRail = rail !== null && rail.kind !== 'model'
+
   return (
     <div
       data-testid="cowork-surface"
@@ -1506,12 +1509,12 @@ function CoworkPage() {
                     reads as tucked behind it. */}
                 <ConversationContent
                   className={cn(
-                    'mx-auto w-full pb-4',
+                    'mx-auto w-full px-6 pb-4',
                     // The centering fractions assume the transcript owns the
                     // width; with a side panel open the column is already
                     // narrow, so keeping them crushes the message and composer
                     // into an unreadable sliver.
-                    !rail && 'md:w-4/5 xl:w-4/6'
+                    !dockedRail && 'md:w-4/5 xl:w-4/6'
                   )}
                 >
                   {uiMessages.map((message, i) => (
@@ -1635,7 +1638,7 @@ function CoworkPage() {
           </div>
 
           <div className="py-4 shrink-0">
-            <div className={cn('mx-auto w-full', !rail && 'md:w-4/5 xl:w-4/6')}>
+            <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
               {/* The card rises in when a question arrives and folds away once
                   answered, so the chat box glides instead of jumping. A card
                   already pending when the view mounts just appears. */}
@@ -1824,11 +1827,16 @@ function CoworkPage() {
             onClose={() => setRail(null)}
           />
         )}
-        {rail?.kind === 'model' && localModel && modelProvider && (
-          <CoworkModelPanel
+        {/* Always mounted so Radix can play the close animation; the sheet
+            overlays the page, so it is not a docked rail. */}
+        {localModel && modelProvider && (
+          <ModelSettingSheet
             model={localModel}
             provider={modelProvider}
-            onClose={() => setRail(null)}
+            open={rail?.kind === 'model'}
+            onOpenChange={(open) =>
+              setRail((r) => (!open && r?.kind === 'model' ? null : r))
+            }
           />
         )}
       </div>
