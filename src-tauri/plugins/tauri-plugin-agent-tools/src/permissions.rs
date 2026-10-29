@@ -32,9 +32,16 @@ pub struct ToolPermissions {
     allow_write: Vec<Pattern>,
 }
 
+/// Each pattern as written, plus `memory` for one that named the old memory
+/// tools (see [`crate::tools::names_legacy_memory`]), so such a rule keeps
+/// applying -- a deny to the whole tool, which is the conservative reading.
 fn compile(patterns: &[String]) -> Vec<Pattern> {
     patterns
         .iter()
+        .flat_map(|p| {
+            let alias = crate::tools::names_legacy_memory(p).then_some(crate::tools::MEMORY_TOOL);
+            std::iter::once(p.as_str()).chain(alias)
+        })
         .filter_map(|p| Pattern::new(p).ok())
         .collect()
 }
@@ -119,6 +126,22 @@ mod tests {
         assert!(perms.is_denied("memory"));
         assert!(!perms.is_denied("memory_extra"), "an exact name, not a prefix");
         assert!(!perms.is_denied("read"));
+    }
+
+    /// A rule on an old memory tool name still applies, to the one `memory`
+    /// tool: a deny on `memory_read` denies every op rather than none.
+    #[test]
+    fn old_memory_tool_names_apply_to_the_memory_tool() {
+        for old in ["memory_write", "memory_read", "memory_list", "memory_*"] {
+            let perms = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&[old]), &[]);
+            assert!(perms.is_denied("memory"), "deny {old}");
+            let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &s(&[old]), &[], &[]);
+            assert!(perms.is_allowed("memory"), "allow {old}");
+            let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &s(&[old]));
+            assert!(perms.is_allowed("memory"), "allow_write {old}");
+        }
+        let broad = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["*write*"]), &[]);
+        assert!(!broad.is_denied("memory"), "a glob that never named memory is left alone");
     }
 
     #[test]

@@ -78,19 +78,17 @@ pub struct ToolResult {
     pub images: Vec<ImageContentPart>,
 }
 
-/// `content` plus, on a shell call, a line per hook matcher that still names
-/// the shell's old name. The CLI reports hook load notices once at run start;
-/// this surface has no run around a call, so they ride on the shell call
-/// itself -- exactly the call the stale hook no longer guards.
-fn with_renamed_shell_notices(
+/// `content` plus a line per hook matcher that still names `tool` by an old
+/// name (`bash`, `memory_write`, ...). The CLI reports hook load notices once
+/// at run start; this surface has no run around a call, so they ride on the
+/// call of the tool the stale matcher meant.
+fn with_renamed_tool_notices(
     tool: &str,
     mut content: String,
     hooks: &crate::tools::hooks::HookSet,
 ) -> String {
-    if tool == crate::tools::SHELL_TOOL {
-        for notice in hooks.renamed_shell_notices() {
-            content.push_str(&format!("\n[hook config: {notice}]"));
-        }
+    for notice in hooks.renamed_notices(tool) {
+        content.push_str(&format!("\n[hook config: {notice}]"));
     }
     content
 }
@@ -1047,7 +1045,7 @@ async fn execute_tool_inner(
         ctx = ctx.with_output_sink(sink);
     }
     let (content, diff, images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
-    let content = with_renamed_shell_notices(tool.name, content, &hooks);
+    let content = with_renamed_tool_notices(tool.name, content, &hooks);
     let is_error = handlers::tool_result_failed(tool, &content);
     Ok(ToolResult {
         content,
@@ -1542,12 +1540,32 @@ mod tests {
             }],
             Path::new("config.toml"),
         );
-        let out = with_renamed_shell_notices("shell", "ok\n[exit 0]".into(), &hooks);
+        let out = with_renamed_tool_notices("shell", "ok\n[exit 0]".into(), &hooks);
         assert!(out.starts_with("ok\n[exit 0]\n[hook config: "), "{out}");
         assert!(out.contains("now `shell`"), "{out}");
-        assert_eq!(with_renamed_shell_notices("read", "x".into(), &hooks), "x");
+        assert_eq!(with_renamed_tool_notices("read", "x".into(), &hooks), "x");
+        assert_eq!(with_renamed_tool_notices("memory", "x".into(), &hooks), "x");
         let none = crate::tools::hooks::HookSet::new();
-        assert_eq!(with_renamed_shell_notices("shell", "x".into(), &none), "x");
+        assert_eq!(with_renamed_tool_notices("shell", "x".into(), &none), "x");
+    }
+
+    /// The same for a matcher on an old memory tool name, under memory calls.
+    #[test]
+    fn an_old_memory_hook_matcher_is_reported_under_memory_calls() {
+        let mut hooks = crate::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![crate::tools::hooks::HookEntry {
+                event: "PreToolUse".into(),
+                matcher: Some("memory_read".into()),
+                command: "guard".into(),
+                timeout_secs: None,
+            }],
+            Path::new("config.toml"),
+        );
+        let out = with_renamed_tool_notices("memory", "Drift".into(), &hooks);
+        assert!(out.starts_with("Drift\n[hook config: "), "{out}");
+        assert!(out.contains("`memory_read`"), "{out}");
+        assert_eq!(with_renamed_tool_notices("shell", "x".into(), &hooks), "x");
     }
 
     /// The network flag has to survive the whole IPC -> ToolContext -> jail path.

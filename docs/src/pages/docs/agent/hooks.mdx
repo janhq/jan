@@ -142,6 +142,11 @@ for `bash` no longer matches it; change it to `shell`. A `bash` matcher is repor
 CLI when a run starts, and by the desktop app under each shell call. A script's `tool_name` check
 cannot be detected, so search your hooks for it.
 
+The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. A
+matcher that names an old one (or a glob such as `memory_*`) still applies, to every `memory` op, and
+is reported the same way; rename it to `memory`. A script that tests `tool_name` for an old name
+needs the same change.
+
 ## The answer
 
 Whatever the command writes to stdout, up to 64KB.
