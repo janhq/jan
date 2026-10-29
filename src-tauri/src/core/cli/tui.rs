@@ -4564,10 +4564,13 @@ struct App {
     tidy_request: Option<TidyKind>,
     /// The tidy in flight, if any: one at a time.
     tidy_running: Option<TidyKind>,
-    /// Whether this session already considered an automatic tidy. Auto-tidy
-    /// runs at most once per session, so a tidy that cannot get the index under
+    /// Whether this session already queued an automatic tidy. Auto-tidy runs
+    /// at most once per session, so a tidy that cannot get the index under
     /// budget never loops; `/new`, `/clear` and `/resume` reset it.
     auto_tidy_checked: bool,
+    /// The memory stamp (`Scopes::stamp`) the last under-budget check saw, so
+    /// a turn that changed no note skips rebuilding the index.
+    auto_tidy_stamp: Option<u64>,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
@@ -5361,6 +5364,7 @@ impl App {
             tidy_request: None,
             tidy_running: None,
             auto_tidy_checked: false,
+            auto_tidy_stamp: None,
             compact_request: None,
             compacting: None,
             compact_started: None,
@@ -5517,6 +5521,7 @@ impl App {
         self.refresh_session_start();
         // A new session gets its own chance at an automatic tidy.
         self.auto_tidy_checked = false;
+        self.auto_tidy_stamp = None;
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -8742,12 +8747,15 @@ impl App {
     /// Queue an automatic memory tidy when the index has outgrown its prompt
     /// budget, at most once per session.
     ///
-    /// Checked at the end of a turn rather than per write: that is when the
+    /// Checked at the end of every turn rather than per write: that is when the
     /// session's own writes have landed, and the first turn's end also covers
-    /// a store that was already over budget at session start. The tidy runs in
-    /// the background on the session's subagent registry and never starts a
-    /// model turn, so it cannot block or loop; its changes reach this session
-    /// only through the `Memory Changes` tail block. Off with
+    /// a store that was already over budget at session start. Only a queued
+    /// tidy spends the session's one automatic tidy, so a store that grows
+    /// past its budget mid-session is still tidied. Cheap when nothing changed:
+    /// the index is rebuilt only when the notes' metadata stamp moved. The tidy
+    /// runs in the background on the session's subagent registry and never
+    /// starts a model turn, so it cannot block or loop; its changes reach this
+    /// session only through the `Memory Changes` tail block. Off with
     /// `memory_auto_tidy = false`.
     fn maybe_auto_tidy(&mut self) {
         if self.auto_tidy_checked || self.tidy_running.is_some() || self.tidy_request.is_some() {
@@ -8756,18 +8764,22 @@ impl App {
         let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
             return;
         };
-        self.auto_tidy_checked = true;
         if !crate::core::agent::global_config::memory_auto_tidy_enabled() {
             return;
         }
         let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
-        let over = tauri_plugin_agent_tools::memory::Scopes {
+        let scopes = tauri_plugin_agent_tools::memory::Scopes {
             store: &store,
             home: home.as_deref(),
             cross_project,
+        };
+        let stamp = scopes.stamp();
+        if self.auto_tidy_stamp == Some(stamp) {
+            return;
         }
-        .over_budget();
-        if over {
+        self.auto_tidy_stamp = Some(stamp);
+        if scopes.over_budget() {
+            self.auto_tidy_checked = true;
             self.tidy_request = Some(TidyKind::Auto);
         }
     }
@@ -44123,6 +44135,11 @@ mod tests {
     /// temp home so the config read is the default (auto-tidy on).
     fn over_budget_app(app: &mut App) {
         own_project(app);
+        fill_store(app);
+    }
+
+    /// Write enough notes into `app`'s own store to put its index over budget.
+    fn fill_store(app: &App) {
         let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         for i in 0..200 {
@@ -44153,16 +44170,26 @@ mod tests {
         });
     }
 
-    /// Under budget nothing is queued, and the check is still spent for the
-    /// session.
+    /// Under budget nothing is queued and the check is not spent: a store that
+    /// outgrows its budget later in the session is tidied at that turn's end,
+    /// still only once.
     #[test]
-    fn auto_tidy_leaves_a_small_index_alone() {
+    fn auto_tidy_rechecks_each_turn_until_the_index_outgrows_its_budget() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
             own_project(&mut app);
             app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "a small index is left alone");
+            app.maybe_auto_tidy();
             assert_eq!(app.tidy_request, None);
-            assert!(app.auto_tidy_checked);
+            fill_store(&app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a later over-budget turn tidies");
+            app.tidy_request = None;
+            let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+            std::fs::write(dir.join("later.md"), "Another note").unwrap();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "still at most once per session");
         });
     }
 

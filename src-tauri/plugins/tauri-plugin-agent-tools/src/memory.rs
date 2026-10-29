@@ -738,6 +738,35 @@ fn note_hashes(store: &Path, prefix: &str, out: &mut BTreeMap<String, u64>) {
     }
 }
 
+/// Feed every entry of a store's `memory/` (one folder level, like [`scan`])
+/// into `h` by name, size and mtime, in a stable order.
+fn stamp_store(store: &Path, h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    let mut rows: Vec<(PathBuf, u64, u64)> = Vec::new();
+    let mut push = |path: PathBuf| {
+        let meta = std::fs::metadata(&path).ok();
+        let len = meta.as_ref().map_or(0, std::fs::Metadata::len);
+        rows.push((path.clone(), len, mtime_ms(&path)));
+    };
+    let Ok(rd) = std::fs::read_dir(memory_dir(store)) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Ok(inner) = std::fs::read_dir(&path) {
+                inner.flatten().for_each(|sub| push(sub.path()));
+            }
+        } else if !path.file_name().and_then(|f| f.to_str()).is_some_and(|f| f.starts_with('.')) {
+            // Side files skipped: every read rewrites `.meta.json`, and
+            // recency alone never moves the index over its budget.
+            push(path);
+        }
+    }
+    rows.sort();
+    rows.hash(h);
+}
+
 /// The memory a run can reach, and how scoped names resolve against it.
 #[derive(Debug, Clone, Copy)]
 pub struct Scopes<'a> {
@@ -1065,6 +1094,22 @@ impl<'a> Scopes<'a> {
     /// signal auto-tidy runs on.
     pub fn over_budget(&self) -> bool {
         self.index_tokens() > INDEX_BUDGET_TOKENS
+    }
+
+    /// A cheap stamp of this project's and the user's notes, from file
+    /// metadata alone (name, size, mtime; nothing is read): equal stamps mean
+    /// [`Self::over_budget`] would answer as it did before, so a caller that
+    /// asks every turn only pays for the full index when a note changed.
+    /// Other projects are not stamped: they only add one pointer line each.
+    pub fn stamp(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        stamp_store(self.store, &mut h);
+        if let Some(home) = self.home {
+            stamp_store(home, &mut h);
+        }
+        self.cross_project.hash(&mut h);
+        h.finish()
     }
 
     /// The list of `user:`/project notes with names and hashes, used to tell
@@ -1574,6 +1619,23 @@ mod tests {
         put(&root, "later", "DONE. later");
         migrate(&root);
         assert!(!is_done(&std::fs::read_to_string(memory_dir(&root).join("later.md")).unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_stamp_moves_with_the_notes_but_not_with_recency() {
+        let root = unique_root();
+        put(&root, "a", "one");
+        let scopes = Scopes::store_only(&root);
+        let before = scopes.stamp();
+        assert_eq!(scopes.stamp(), before, "stable");
+        touch_meta(&root, "a", |m| m.read_ms = Some(42));
+        assert_eq!(scopes.stamp(), before, "a read changes nothing that counts");
+        put(&root, "b", "two");
+        assert_ne!(scopes.stamp(), before, "a new note does");
+        let with_b = scopes.stamp();
+        put(&root, "b", "two, longer");
+        assert_ne!(scopes.stamp(), with_b, "so does a rewrite");
         let _ = std::fs::remove_dir_all(&root);
     }
 
