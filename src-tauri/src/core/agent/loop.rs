@@ -5041,48 +5041,17 @@ async fn run_turn_cycle(
                     continue;
                 }
             }
-            // Every turn is finished and the run passed its token ceiling, so
-            // the conversation is both complete and oversized. Compact it here,
-            // while nothing is waiting on the result: the ceiling no longer
-            // stops a run, so without this the thread only grows, and the next
-            // run resumes it by sending the whole oversized history upstream.
-            // The reactive path above cannot help with that -- it only fires
-            // once an upstream has already rejected a request.
-            //
-            // Only when there is something to drop: a plan that
-            // covers nothing would spend a summarizer call to publish an
-            // unchanged history.
-            if budget.exhausted() {
-                tools
-                    .pre_compact(projected_message_count(
-                        &transcript,
-                        volatile_system.as_deref(),
-                        send_reasoning,
-                    ))
-                    .await;
-                match compact(
-                    &mut transcript,
-                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
-                    model_id,
-                    model,
-                    budget,
-                    events,
-                    CompactionReason::SessionBudget,
-                )
-                .await
-                {
-                    Ok(Some(dropped)) => {
-                        log::info!(
-                            "agent: budget exhausted at end of run, compacted {dropped} messages \
-                             into a summary"
-                        );
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        log::warn!("agent: budget exhausted but compaction failed: {error}");
-                    }
-                }
-            }
+            // A spent token ceiling does not compact here. Spend is not context
+            // size: every completion is charged in full, but thinking is not
+            // resent, so a long run on a reasoning model passes a window-sized
+            // ceiling while its prompt is a fraction of the window. Compacting
+            // then throws away live context and saves no spend. With a known
+            // window, a history that really is oversized is compacted by the
+            // preflight above, on the next request that would carry it. With
+            // none (`compaction` is `None`, only the desktop API-server proxy)
+            // nothing shrinks it proactively: the overflow path compacts once a
+            // provider rejects a request. A pass here would not help that route
+            // anyway, since its HTTP client owns the history and resends it.
             let _ = events.send(StreamEvent::MessagesUpdated {
                 messages: client_history(&transcript, send_reasoning),
             });
@@ -8080,48 +8049,57 @@ mod tests {
         );
     }
 
-    /// Passing the ceiling no longer stops a run, so a long thread only grows.
-    /// Once every turn is finished, the oversized conversation is compacted
-    /// before it is published -- otherwise the next run resumes this thread by
-    /// sending the whole thing upstream.
+    /// A long, well-cached run whose live prompt never nears the window must not
+    /// be compacted, however far its cumulative spend has gone. Spend outruns
+    /// the live context by design: every completion is charged in full, but a
+    /// reasoning model's thinking is not resent, so the next prompt grows by
+    /// far less than was charged. A subagent making ~180 tool calls crossed a
+    /// window-sized budget this way at a fraction of its window.
     #[tokio::test]
-    async fn an_exhausted_budget_compacts_the_conversation_once_turns_are_done() {
+    async fn a_long_cached_run_under_the_window_is_not_compacted_for_its_spend() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-
-        // Comfortably longer than DEFAULT_KEEP_RECENT so there is a middle to drop.
-        let convo: Vec<serde_json::Value> = (0..24)
-            .map(|i| {
-                json!({
-                    "role": if i % 2 == 0 { "user" } else { "assistant" },
-                    "content": format!("message {i}"),
-                })
+        const WINDOW: u64 = 128_000;
+        const STEPS: u64 = 100;
+        let usage = |step: u64| {
+            // A 20K prompt growing by a 200-token tool result per step: 40K at
+            // the end, well under the 102.4K trigger. 98% of it is a cache hit,
+            // and each 1.5K completion is mostly thinking that is not resent.
+            let prompt = 20_000 + 200 * step;
+            json!({
+                "prompt_tokens": prompt,
+                "completion_tokens": 1_500,
+                "total_tokens": prompt + 1_500,
+                "prompt_tokens_details": { "cached_tokens": prompt * 98 / 100 },
+            })
+        };
+        let mut responses: Vec<serde_json::Value> = (0..STEPS)
+            .map(|step| {
+                let mut c = tool_call_completion();
+                c["usage"] = usage(step);
+                c
             })
             .collect();
-        let original_len = convo.len();
-
-        let mut over_budget = json!({
+        let mut done = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
-        // The replayed prompt is the baseline; the 100-token reply is the spend.
-        over_budget["usage"] =
-            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
-        let summary = json!({
-            "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
-        });
-        // Second response is consumed by the summarizer inside compaction.
-        let model = MockModel::new(vec![over_budget, summary]);
+        done["usage"] = usage(STEPS);
+        responses.push(done);
+        // Anything past the run's own turns is a summarizer call.
+        responses.push(json!({ "choices": [{ "message": { "content": "SUMMARY" } }] }));
+        let model = MockModel::new(responses);
         let tool = MockTool::default();
-        let mut budget = SessionBudget::new(Some(50));
+        // The child's default budget: its model's window.
+        let mut budget = SessionBudget::new(Some(WINDOW));
 
         run_turn_cycle(
             &tx,
             &json!({}),
             "m",
             &[],
-            Transcript::from_history(convo),
+            Transcript::from_history(vec![json!({ "role": "user", "content": "task" })]),
             None,
             true,
-            8,
+            0,
             &mut budget,
             &model,
             &tool,
@@ -8129,59 +8107,31 @@ mod tests {
             None,
             None,
             None,
-            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: WINDOW,
+                ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                reserve_tokens: None,
+                window_pinned: false,
+            }),
         )
         .await
         .expect("run completes");
 
-        assert!(budget.exhausted(), "precondition: the ceiling was passed");
-        assert_eq!(
-            model.requests.lock().unwrap().len(),
-            2,
-            "one turn, plus the summarizer call compaction makes"
-        );
-
-        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        // The user is told: the TUI runs with logging off, so without an event
-        // this compaction is invisible.
-        let phases: Vec<CompactionPhase> = events
-            .iter()
-            .filter_map(|ev| match ev {
-                StreamEvent::Compaction {
-                    phase,
-                    reason: CompactionReason::SessionBudget,
-                    ..
-                } => Some(*phase),
-                _ => None,
-            })
+        // 101 completions of 1.5K, the 200-token growth absorbed by the
+        // previous completion each time: the cached share charges nothing.
+        assert_eq!(budget.spent(), (STEPS + 1) * 1_500);
+        assert!(budget.exhausted(), "precondition: spend passed the window");
+        let compactions: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|ev| matches!(ev, StreamEvent::Compaction { .. }))
             .collect();
+        assert!(
+            compactions.is_empty(),
+            "a 40K prompt on a 128K window is not compacted: {compactions:?}"
+        );
         assert_eq!(
-            phases,
-            [CompactionPhase::Started, CompactionPhase::Finished],
-            "the budget compaction is announced, start and end"
-        );
-        // The published history is the compacted one: shorter, and carrying the
-        // summary in place of the dropped middle.
-        let published = events
-            .into_iter()
-            .rev()
-            .find_map(|ev| match ev {
-                StreamEvent::MessagesUpdated { messages } => Some(messages),
-                _ => None,
-            })
-            .expect("a MessagesUpdated is published");
-        assert!(
-            published.len() < original_len,
-            "history was compacted: {} -> {}",
-            original_len,
-            published.len()
-        );
-        assert!(
-            published.iter().any(|m| m["content"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("SUMMARY OF THE EARLIER WORK")),
-            "the summary replaced the dropped middle: {published:#?}"
+            model.requests.lock().unwrap().len() as u64,
+            STEPS + 1,
+            "no summarizer call"
         );
     }
 
