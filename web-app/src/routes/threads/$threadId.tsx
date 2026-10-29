@@ -28,6 +28,7 @@ import {
   resolveThreadForRoute,
 } from '@/lib/threadRouteClassification'
 import { useTools } from '@/hooks/useTools'
+import { usePrompts } from '@/hooks/usePrompts'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
@@ -588,6 +589,7 @@ function ThreadDetail() {
   const currentThread = useRef<string | undefined>(undefined)
 
   useTools()
+  usePrompts()
   const chatFolder = useChatFolder(threadId)
   const taskRouter = useRouter()
   const [continueAsTaskOpen, setContinueAsTaskOpen] = useState(false)
