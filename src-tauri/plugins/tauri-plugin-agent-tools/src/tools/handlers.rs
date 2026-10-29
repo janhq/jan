@@ -1115,7 +1115,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // Cloned into the detached task, which is what keeps a backgrounded command
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
-    let sandboxed = ctx.sandbox;
+    // A read-only root is confined even in an unsandboxed session, so its
+    // denials get the note too.
+    let sandboxed = ctx.sandbox || ctx.workspace_readonly;
     let escalation = ctx.escalation;
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
@@ -1489,7 +1491,9 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
         return String::new();
     }
     let mut note = jail::denial_hint(policy);
-    if escalation {
+    // Escalating drops the sandbox but not a read-only root, so offering it to
+    // a read-only run only buys a pointless prompt.
+    if escalation && !policy.workspace_readonly {
         note.push_str(ESCALATION_HINT);
     }
     note
@@ -3878,6 +3882,24 @@ mod tests {
         assert!(offered.contains("escalate: true"));
         assert!(sandbox_denial_note("no such file\n[exit 1]", &policy, true).is_empty());
         assert!(sandbox_denial_note("Read-only file system\n[exit 0]", &policy, true).is_empty());
+    }
+
+    /// A read-only workspace is named as read-only, never as where writes go,
+    /// and escalation is not offered: it would not lift the read-only root.
+    #[test]
+    fn a_read_only_workspace_denial_says_read_only_and_offers_no_escalation() {
+        let policy = jail::Policy::new(Path::new("/w"), true)
+            .with_scratch_root(Path::new("/var/scratch/jan-agent-s1"))
+            .with_workspace_readonly(true);
+        let denied = "touch: cannot touch '/w/x': Read-only file system\n[exit 1]";
+        let note = sandbox_denial_note(denied, &policy, true);
+        assert!(note.contains("the workspace (/w) is read-only"), "got: {note}");
+        assert!(note.contains("writes are limited to the scratch dir"), "got: {note}");
+        assert!(!note.contains("writes are limited to the workspace"), "got: {note}");
+        assert!(!note.contains("escalate"), "got: {note}");
+        let bare = jail::Policy::new(Path::new("/w"), true).with_workspace_readonly(true);
+        let note = sandbox_denial_note(denied, &bare, false);
+        assert!(note.contains("is read-only and nothing here is writable"), "got: {note}");
     }
 
     #[test]

@@ -822,6 +822,20 @@ pub fn denial_hint(policy: &Policy) -> String {
         }
         s
     };
+    // A read-only workspace is not a place writes may go: naming it as one sends
+    // the model straight back to retry there.
+    if policy.workspace_readonly {
+        let scratch = scratch.strip_prefix(" and ").unwrap_or("");
+        let writes = if scratch.is_empty() {
+            " and nothing here is writable".to_string()
+        } else {
+            format!("; writes are limited to {scratch}")
+        };
+        return format!(
+            "\n[sandbox: the workspace ({}) is read-only{writes}{home}.{net}{attached}]",
+            policy.workspace.display()
+        );
+    }
     format!(
         "\n[sandbox: writes are limited to the workspace ({}){scratch}{home}.{net}{attached}]",
         policy.workspace.display()
