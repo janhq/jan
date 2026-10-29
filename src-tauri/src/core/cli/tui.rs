@@ -4744,6 +4744,10 @@ struct App {
     /// When the current run started, so the header can show elapsed time.
     /// `None` while idle.
     run_started: Option<Instant>,
+    /// The plan mode the live run was started in. `run_mode` can change under a
+    /// running turn (a plan review choice), and `steer_run` only hands a queued
+    /// message to a run of the mode it was typed in.
+    live_run_mode: crate::core::agent::plan::RunMode,
     /// Mouse selection, live or finished. Cleared by any key, wheel notch or
     /// fresh press.
     selection: Option<Selection>,
@@ -5385,6 +5389,7 @@ impl App {
             last_scroll: 0,
             row_index: Vec::new(),
             run_started: None,
+            live_run_mode: crate::core::agent::plan::RunMode::Normal,
             selection: None,
             copy_armed: false,
             copy_request: None,
@@ -7089,8 +7094,14 @@ impl App {
     /// back for as long as it runs. Only while `steer_run` would hand the
     /// message over: one held for a fresh run gains nothing from it.
     fn sync_shell_detach(&self) {
+        // `steer_run`'s own filter: a message typed for another mode (a plan
+        // switch) waits for a fresh run, so the live run's commands stay put.
+        let mode = self.live_run_mode;
         let waiting = self.run_is_live()
-            && !self.message_queue.is_empty()
+            && self
+                .message_queue
+                .front()
+                .is_some_and(|m| m.run_mode.is_none_or(|m| m == mode))
             && self.pending_queue.is_empty()
             && self.ask_queue.is_empty()
             && !self.want_start;
@@ -8490,6 +8501,7 @@ impl App {
     fn begin_turn(&mut self) {
         self.status = Status::Running;
         self.run_started = Some(Instant::now());
+        self.live_run_mode = self.run_mode;
         self.turn = (0, 0);
         self.tokens_per_sec = None;
         self.turn_output_tokens = 0;
@@ -26502,6 +26514,25 @@ mod tests {
         app.steer_run(request);
         app.sync_shell_detach();
         assert!(!*detach.borrow(), "delivered, so later commands run in front");
+    }
+
+    /// A message typed for another plan mode waits for a fresh run, which
+    /// `steer_run` will not give it, so it must not detach the live run's
+    /// commands either.
+    #[test]
+    fn a_message_for_another_mode_leaves_the_running_command_in_front() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        let detach = app.shell_detach.subscribe();
+        app.submit_user("start".into());
+        app.want_start = false;
+        app.run_mode = RunMode::Plan;
+        app.submit_user("plan this instead".into());
+        app.sync_shell_detach();
+        assert!(!*detach.borrow(), "the queued message is for a fresh run");
+        let (request, mut reply) = steering_request(app.history.clone());
+        app.steer_run(request);
+        assert!(reply.try_recv().unwrap().is_empty(), "steer_run holds it too");
     }
 
     #[test]
