@@ -4480,6 +4480,9 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// Set by `/worktree` to ask the loop to gather its report off the render
+    /// loop: it runs git per worktree. Taken once, like `context_request`.
+    worktree_request: bool,
     /// The provider's execution id for the most recent request that reported
     /// one, so `/usage` can name something concrete to look up. `None` when no
     /// request has reported one -- which is the normal case on the default
@@ -5336,6 +5339,7 @@ impl App {
             vibe_confirm: None,
             readout: None,
             context_request: false,
+            worktree_request: false,
             last_execution_id: None,
             reported_usage_request: None,
             mcp_prompt: None,
@@ -13426,6 +13430,9 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    // `/worktree` gathering its report: git per worktree, so on the blocking
+    // pool. One at a time.
+    let mut worktree_task: Option<tokio::task::JoinHandle<WorktreeReport>> = None;
     type ReportedUsageResult = (
         super::tokamak::usage::Query,
         Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
@@ -13579,6 +13586,10 @@ async fn chat_loop<B: Backend>(
             app.context_request = false;
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
+        }
+        if worktree_task.is_none() && app.worktree_request {
+            app.worktree_request = false;
+            worktree_task = Some(spawn_worktree_report(app));
         }
         // `/usage <view>` asked for an account read. It is a network call, so
         // it runs off the render loop exactly like `/context`'s report: one at
@@ -13915,6 +13926,9 @@ async fn chat_loop<B: Backend>(
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
+            }
+            Some(report) = await_worktree_report(&mut worktree_task) => {
+                finish_worktree_report(app, report);
             }
             Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
                 finish_reported_usage(app, &query, result);
@@ -22095,15 +22109,56 @@ fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
 ///
 /// Read-only on purpose. Getting the work out is the user's own git: this
 /// session must never write to the branch they left behind.
+///
+/// It runs git once per worktree, so this only raises a flag; the loop
+/// gathers the report on the blocking pool and [`finish_worktree_report`]
+/// shows it when it lands, keeping the frame live meanwhile.
 fn worktree_command(app: &mut App) {
-    let children = app.subagent_set.workspaces.live();
-    if !children.is_empty() {
+    app.worktree_request = true;
+}
+
+/// What `/worktree` shows, gathered off the render loop.
+struct WorktreeReport {
+    /// A line per live subagent worktree.
+    children: Vec<String>,
+    /// The session's own worktree and its changed paths, if it has one.
+    workspace: Option<(Worktree, Vec<String>)>,
+}
+
+/// Gather `/worktree`'s report on the blocking pool.
+fn spawn_worktree_report(app: &App) -> tokio::task::JoinHandle<WorktreeReport> {
+    let ledger = app.subagent_set.workspaces.clone();
+    let workspace = app.workspace.clone();
+    tokio::task::spawn_blocking(move || WorktreeReport {
+        children: ledger.live(),
+        workspace: workspace.map(|ws| {
+            let changed = git::changed_paths(&ws.path);
+            (ws, changed)
+        }),
+    })
+}
+
+/// Await an in-flight `/worktree` report, parking forever when none is
+/// running so this can sit in the loop's `select!` unconditionally.
+async fn await_worktree_report(
+    task: &mut Option<tokio::task::JoinHandle<WorktreeReport>>,
+) -> Option<WorktreeReport> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok()
+}
+
+fn finish_worktree_report(app: &mut App, report: WorktreeReport) {
+    if !report.children.is_empty() {
         app.note("subagent worktrees:");
-        for line in &children {
+        for line in &report.children {
             app.system_detail_text(&format!("        {line}"));
         }
     }
-    let Some(workspace) = app.workspace.clone() else {
+    let Some((workspace, changed)) = report.workspace else {
         app.note(
             "working in the project directory; start with --worktree for a dedicated checkout",
         );
@@ -22112,7 +22167,6 @@ fn worktree_command(app: &mut App) {
     app.note("worktree:");
     app.system_detail_text(&format!("path    {}", tilde_path(&workspace.path)));
     app.system_detail_text(&format!("branch  {}", workspace.branch));
-    let changed = git::changed_paths(&workspace.path);
     if changed.is_empty() {
         app.system_detail_text("changes nothing yet");
         return;
@@ -25830,7 +25884,8 @@ mod tests {
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, await_worktree_report, spawn_worktree_report,
+        finish_worktree_report, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -39199,10 +39254,61 @@ mod tests {
         assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
     }
 
-    #[test]
-    fn worktree_command_without_one_points_at_the_flag() {
+    /// `/worktree` the way the loop runs it: the command only asks, and the
+    /// report (git per worktree) is gathered on the blocking pool and shown
+    /// when it lands.
+    async fn run_worktree_command(app: &mut App) {
+        worktree_command(app);
+        assert!(app.transcript.rows.is_empty(), "nothing is shown before git answers");
+        assert!(std::mem::take(&mut app.worktree_request));
+        let mut task = Some(spawn_worktree_report(app));
+        let report = await_worktree_report(&mut task).await.unwrap();
+        finish_worktree_report(app, report);
+    }
+
+    #[tokio::test]
+    async fn worktree_command_lists_live_subagent_worktrees() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path().to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(["-C", &r, "-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if !git(&["init", "-q"]) {
+            return;
+        }
+        std::fs::write(root.path().join("a.txt"), "a\n").unwrap();
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]));
         let mut app = test_app();
-        worktree_command(&mut app);
+        let ledger = app.subagent_set.workspaces.clone();
+        let (ws, lease) = ledger.assign(root.path(), "general", true, None).unwrap();
+        drop(lease);
+        let branch = ws.worktree.as_ref().unwrap().branch.clone();
+
+        run_worktree_command(&mut app).await;
+        let notes: String = app
+            .transcript
+            .rows
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(notes.contains("subagent worktrees:"), "{notes}");
+        assert!(notes.contains(&branch), "{notes}");
+        assert!(notes.contains("(0 commit(s), 0 uncommitted file(s))"), "{notes}");
+        assert!(notes.contains("--worktree"), "{notes}");
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    #[tokio::test]
+    async fn worktree_command_without_one_points_at_the_flag() {
+        let mut app = test_app();
+        run_worktree_command(&mut app).await;
         let notes: String = app
             .transcript
             .rows
