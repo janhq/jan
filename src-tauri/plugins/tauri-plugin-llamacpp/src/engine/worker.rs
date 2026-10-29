@@ -174,18 +174,18 @@ fn is_backend_error_line(line_lower: &str) -> bool {
     .any(|m| line_lower.contains(m))
 }
 
-/// Whether a worker log line says auto-fit found no plan that fits this
-/// device. llama.cpp then loads with the unfitted parameters anyway, so the load
-/// that follows fails with an allocation error that does not name the cause.
+/// Whether a worker log line says auto-fit could not fit the model even into
+/// system memory. llama.cpp then loads with the unfitted parameters anyway, so
+/// the load that follows fails with an error that does not name the cause.
 ///
-/// Only the "cannot fit even in system memory" reason counts: the others
-/// fit.cpp gives (an explicit n_gpu_layers or tensor split, a split mode it does
-/// not handle) are fit declining to run, not a model that is too big. The
-/// second phrase is the older wording the issue (jan-internal#487) quotes.
-/// Neither is a runtime fault, so `classify_fault` ignores them.
+/// fit.cpp throws this only when there is no GPU at all (`nd == 0`); with a GPU
+/// it shrinks the context and offloads instead, and a model still too big shows
+/// up as an ordinary out-of-memory load failure (see `commands::explain_load_failure`).
+/// The other reasons fit gives (an explicit n_gpu_layers or tensor split, a
+/// split mode it does not handle) are fit declining to run, not a model that is
+/// too big. None of them is a runtime fault, so `classify_fault` ignores them.
 pub fn is_fit_failure_line(line_lower: &str) -> bool {
-    (line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model"))
-        || line_lower.contains("common_fit_params: failed to allocate a plan")
+    line_lower.contains("failed to fit params") && line_lower.contains("unable to fit model")
 }
 
 /// Turns worker stderr lines into faults, one call per line.
@@ -266,8 +266,21 @@ const STDERR_DRAIN_WAIT: Duration = Duration::from_millis(300);
 /// The last few stderr lines, shared between the drain task and the handle.
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
 
-/// The last fit-failure line the worker printed, until a load consumes it.
-type FitFailure = Arc<Mutex<Option<String>>>;
+/// Fit-failure lines the worker printed. Counted rather than taken, so a load
+/// can ask for the lines printed since it started without clearing a line that
+/// a concurrent load on the same worker is still waiting for.
+#[derive(Default)]
+struct FitNotes {
+    count: u64,
+    last: Option<String>,
+}
+
+type FitFailure = Arc<Mutex<FitNotes>>;
+
+/// How many fit-failure lines a worker had printed at some moment; see
+/// [`WorkerHandle::fit_failure_since`].
+#[derive(Debug, Clone, Copy)]
+pub struct FitMark(u64);
 
 /// Lines that are kept out of the tail, though still logged. ggml prints one
 /// `load_backend: loaded ... from <path>` per backend at start, which says
@@ -536,6 +549,9 @@ pub struct WorkerHandle {
     /// not in the webview, so it survives a page reload and always describes
     /// the worker that is actually running.
     pub devices: Option<Vec<DeviceIdentity>>,
+    /// The preset the worker was started from. Jan regenerates it in place and
+    /// the worker reloads the same path, so it also describes later loads.
+    pub preset_path: PathBuf,
     child: Child,
     stderr_tail: StderrTail,
     fit_failure: FitFailure,
@@ -615,11 +631,28 @@ impl WorkerHandle {
         self.child.try_wait().ok().flatten()
     }
 
-    /// The fit-failure line printed since the last call, if any. Taken rather
-    /// than read, so a load clears it on the way in and then only ever sees its
-    /// own: a stale note would blame the next, unrelated failure on fit.
-    pub fn take_fit_failure(&self) -> Option<String> {
-        self.fit_failure.lock().ok().and_then(|mut f| f.take())
+    /// Taken before a load, so only a fit failure printed during that load is
+    /// blamed for it: a stale one would pin the next, unrelated failure on fit.
+    pub fn fit_mark(&self) -> FitMark {
+        FitMark(self.fit_failure.lock().map(|f| f.count).unwrap_or(0))
+    }
+
+    /// The latest fit-failure line, if one was printed after `mark`.
+    ///
+    /// The line names no model: llama.cpp logs it from inside the load. The
+    /// worker loads one model at a time, but two loads sent at once can each
+    /// see a line printed after both marks, so a model that failed for another
+    /// reason can be reported as not fitting when the other one did not fit.
+    /// Tagging the line would take a marker that llama.cpp's own (asynchronous)
+    /// logger orders against, which it does not offer. Rare in practice: the
+    /// frontend loads one chat model at a time.
+    pub fn fit_failure_since(&self, mark: FitMark) -> Option<String> {
+        let notes = self.fit_failure.lock().ok()?;
+        if notes.count > mark.0 {
+            notes.last.clone()
+        } else {
+            None
+        }
     }
 
     /// None while still running, otherwise how it ended and what it last said.
@@ -742,8 +775,9 @@ pub async fn spawn(
                 log::debug!("jan-llama-worker: {line}");
                 remember_stderr_line(&tail, &line);
                 if is_fit_failure_line(&line.to_lowercase()) {
-                    if let Ok(mut note) = fit_note.lock() {
-                        *note = Some(line.trim().to_string());
+                    if let Ok(mut notes) = fit_note.lock() {
+                        notes.count += 1;
+                        notes.last = Some(line.trim().to_string());
                     }
                 }
                 for (fault, text) in reader.feed(&line) {
@@ -812,6 +846,7 @@ pub async fn spawn(
         models: hs.models,
         cuda_toolkit: hs.cuda_toolkit,
         devices: hs.devices,
+        preset_path: preset_path.to_path_buf(),
         child,
         stderr_tail,
         fit_failure,
@@ -908,18 +943,6 @@ pub(crate) mod tests {
             classify_fault("common_fit_params: failed to allocate a plan"),
             None
         );
-    }
-
-    // The b11669 wording (common/fit.cpp) when even system memory cannot hold
-    // the model at fit_ctx, and the older wording the issue quotes.
-    #[test]
-    fn recognises_fit_finding_no_plan() {
-        for line in [
-            "common_fit_params: failed to fit params to free device memory: was unable to fit model into system memory by reducing context, abort",
-            "common_fit_params: failed to allocate a plan",
-        ] {
-            assert!(is_fit_failure_line(&line.to_lowercase()), "{line:?}");
-        }
     }
 
     // fit declining to run (the user pinned the layers) is not a model that is

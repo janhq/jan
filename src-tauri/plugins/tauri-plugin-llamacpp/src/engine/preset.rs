@@ -67,6 +67,33 @@ pub fn shared_value(ini: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Whether auto-fit is free to size `section`'s context: fit is on (llama.cpp's
+/// default when the preset says nothing) and no `ctx-size` pins it.
+///
+/// Only then has fit already shrunk the context as far as `fit-ctx` allows by
+/// the time a load runs out of memory, so "use a smaller context" would be
+/// wrong advice. Any `ctx-size`, 0 included, stops fit from touching it
+/// (`common/arg.cpp`: 0 asks for the full trained context). A model's own line
+/// wins over `[*]`, the order the C++ loader applies them in. Only the spellings
+/// Jan's preset generator writes are read.
+pub fn fit_owns_context(ini: &str, section: &str) -> bool {
+    let bodies = section_bodies(ini);
+    let value = |key: &str| {
+        [section, "*"].iter().find_map(|name| {
+            bodies.get(*name)?.iter().find_map(|line| {
+                let (k, v) = line.split_once('=')?;
+                (k.trim() == key).then(|| v.trim().to_string())
+            })
+        })
+    };
+    // `common_arg_utils::is_falsey`; anything else leaves fit at its default.
+    let fit_on = !matches!(
+        value("fit").as_deref(),
+        Some("off" | "disabled" | "false" | "0")
+    );
+    fit_on && value("ctx-size").is_none()
+}
+
 /// Load specs for every model in a preset.
 ///
 /// The spec carries the section body so `Registry::reload` can diff it. Two
@@ -179,6 +206,27 @@ embeddings = true
             base["sentence-transformer-mini"],
             edited["sentence-transformer-mini"]
         );
+    }
+
+    #[test]
+    fn fit_owns_the_context_only_when_on_and_no_ctx_size_pins_it() {
+        let auto = "[*]\nparallel = 1\n\n[m]\nmodel = /m.gguf\n";
+        assert!(fit_owns_context(auto, "m"), "fit is on by default");
+        assert!(fit_owns_context("[*]\nfit = on\n[m]\n", "m"));
+
+        // Jan's preset with fit off pins the shared context as well.
+        let off = "[*]\nfit = off\nctx-size = 8192\n\n[m]\nmodel = /m.gguf\n";
+        assert!(!fit_owns_context(off, "m"));
+        assert!(!fit_owns_context("[*]\nfit = false\n[m]\n", "m"));
+
+        // A user's own context, or 0 (the full trained one), is left alone by
+        // fit, so a smaller context is still advice that helps.
+        assert!(!fit_owns_context("[*]\n[m]\nctx-size = 32768\n", "m"));
+        assert!(!fit_owns_context("[*]\n[m]\nctx-size = 0\n", "m"));
+        assert!(fit_owns_context("[*]\n[m]\n[other]\nctx-size = 4096\n", "m"));
+
+        // A model's own line overrides [*].
+        assert!(fit_owns_context("[*]\nfit = off\n[m]\nfit = on\n", "m"));
     }
 
     // Comments and blank lines are not settings; a reload triggered by one
