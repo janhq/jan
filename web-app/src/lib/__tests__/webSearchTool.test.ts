@@ -20,7 +20,7 @@ vi.mock('@/hooks/useMCPServers', () => ({
   useMCPServers: { getState: () => h.mcp },
 }))
 
-import { executeWebTool, webOutputCap } from '../webSearchTool'
+import { executeWebTool, webOutputCap, webToolRoute } from '../webSearchTool'
 import { parseWebFetchOutput } from '../toolPresentation'
 
 const page = (content: string, truncated = false) => ({
@@ -215,5 +215,38 @@ describe('webOutputCap', () => {
   it('is nothing when neither applies', () => {
     h.mcp.settings = { maxToolOutputChars: 0 }
     expect(webOutputCap(undefined)).toBeUndefined()
+  })
+})
+
+// #9458: Parallel Search and other search servers expose tools called
+// `web_search` / `web_fetch`, the built-ins' own names.
+describe('webToolRoute', () => {
+  const mcp = new Set(['web_search', 'web_fetch', 'read_file'])
+
+  it.each(['web_search', 'web_fetch'])(
+    'serves %s with the built-in while web search is on, whatever MCP offers',
+    (name) => {
+      expect(webToolRoute(name, true, mcp)).toBe('builtin')
+      expect(webToolRoute(name, true, new Set())).toBe('builtin')
+    }
+  )
+
+  it.each(['web_search', 'web_fetch'])(
+    'hands %s to the user\'s MCP server while web search is off',
+    (name) => {
+      expect(webToolRoute(name, false, mcp)).toBe('other')
+    }
+  )
+
+  it.each(['web_search', 'web_fetch'])(
+    'refuses %s while web search is off and no server provides it',
+    (name) => {
+      expect(webToolRoute(name, false, new Set(['read_file']))).toBe('disabled')
+    }
+  )
+
+  it('leaves every other tool name alone', () => {
+    expect(webToolRoute('read_file', false, mcp)).toBe('other')
+    expect(webToolRoute('shell', false, new Set())).toBe('other')
   })
 })

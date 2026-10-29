@@ -5,6 +5,7 @@ const context = {
   isRagTool: false,
   isAgentTool: false,
   webSearchProviderLabel: 'Exa',
+  webSearchEnabled: true,
 }
 
 describe('resolveToolOrigin', () => {
@@ -42,11 +43,32 @@ describe('resolveToolOrigin', () => {
     ).toEqual({ kind: 'mcp', detail: 'filesystem' })
   })
 
-  // Mirrors the thread route's execution order, where native web tools are
-  // dispatched before any MCP tool of the same name.
-  it('prefers the native web tool over a same-named MCP tool', () => {
+  // Mirrors the thread route: while web search is on the native tool is what
+  // was offered and what runs, even when an MCP server has the same name.
+  it('prefers the native web tool over a same-named MCP tool while web search is on', () => {
     expect(
       resolveToolOrigin('web_search', { ...context, mcpServer: 'someserver' })
+    ).toEqual({ kind: 'web-search', detail: 'Exa' })
+  })
+
+  // With it off the MCP server's tool is the one that ran (#9458); labelling
+  // it as the built-in provider would credit a search Exa never saw.
+  it.each(['web_search', 'web_fetch'])(
+    'credits a same-named MCP %s to its server while web search is off',
+    (name) => {
+      expect(
+        resolveToolOrigin(name, {
+          ...context,
+          webSearchEnabled: false,
+          mcpServer: 'parallel',
+        })
+      ).toEqual({ kind: 'mcp', detail: 'parallel' })
+    }
+  )
+
+  it('keeps the built-in label for a recorded web call no server provides', () => {
+    expect(
+      resolveToolOrigin('web_search', { ...context, webSearchEnabled: false })
     ).toEqual({ kind: 'web-search', detail: 'Exa' })
   })
 

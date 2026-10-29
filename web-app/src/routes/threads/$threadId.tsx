@@ -100,7 +100,8 @@ import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
-import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -160,13 +161,24 @@ const continueReplaceIds = new Map<string, string>()
 // "Increase Context Size" button to resume from.
 const pendingContinuations = new Map<
   string,
-  { message: UIMessage; text: string }
+  { message: UIMessage; content: { text: string; reasoning: string } }
 >()
 // The n_ctx the thread's local model launched with, read by isContextLimitStop.
 const launchedCtxLens = new Map<string, number | undefined>()
 // The thread's in-flight title summarization. Only that thread's own activity
 // cancels it.
 const titleAborts = new Map<string, AbortController>()
+
+// The text and reasoning a reply generated so far: what a resume replays as
+// the assistant prefill, so a thinking model keeps its reasoning.
+const partialOf = (message: UIMessage) => {
+  const collect = (type: 'text' | 'reasoning') =>
+    message.parts
+      .filter((p) => p.type === type)
+      .map((p) => (p as { text: string }).text)
+      .join('')
+  return { text: collect('text'), reasoning: collect('reasoning') }
+}
 
 const takeFrom = <V,>(map: Map<string, V>, threadId: string) => {
   const value = map.get(threadId)
@@ -234,6 +246,12 @@ const SHELL_DISABLED_TOOL_ERROR =
   'Shell is turned off: the user disabled it, so this command was not run. ' +
   'Do not call the shell again in this chat; use another approach or tell the user it is needed.'
 
+// Recorded for a call to a built-in web tool while the user has web search off
+// and no MCP server provides a tool of that name.
+const WEB_DISABLED_TOOL_ERROR =
+  'Web search is turned off: the user disabled it, so this call was not run. ' +
+  'Do not call web_search or web_fetch again in this chat; answer from what you know or tell the user it is needed.'
+
 // Rewrites a turn that is already stored with what its live copy holds now. A
 // turn is stored before its tools run, so a call's outcome (result, error,
 // stopped) only reaches storage when a later reply rewrites the turn; when no
@@ -294,13 +312,27 @@ function isDisabledChatAgentTool(toolName: string): boolean {
   return chatShellRoute(toolName) === 'disabled'
 }
 
+// How a call to a built-in web tool name is served. Same contract as the shell:
+// while web search is on the built-in is what was offered, so it serves the
+// call; while it is off nothing is offered, so an MCP tool of the same name is
+// the user's own and is served as an MCP tool (it prompts like any other); with
+// no such MCP tool the call is refused instead of reaching the search provider
+// the user switched off.
+function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
+  return webToolRoute(
+    toolName,
+    useWebSearchConfig.getState().webSearchEnabled,
+    useAppState.getState().mcpToolNames
+  )
+}
+
 // Internal tools never prompt: RAG and the native web tools are Jan's own, and
 // the built-in shell is gated in Rust (execute_tool refuses anything needing
 // approval), so only workspace-confined calls ever reach here.
 function isAutoAllowedTool(toolName: string): boolean {
   return (
     useAppState.getState().ragToolNames.has(toolName) ||
-    WEB_TOOL_NAMES.has(toolName) ||
+    webRoute(toolName) === 'builtin' ||
     chatShellRoute(toolName) === 'builtin'
   )
 }
@@ -535,13 +567,10 @@ function ThreadDetail() {
         if (isContextLimit) {
           // Stash the partial so the manual "Increase Context Size" button can
           // resume from here. Surface the standard banner with the manual
-          // button — auto-increase was removed; the user explicitly opts in.
-          const partialText = message.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => (p as { type: 'text'; text: string }).text)
-            .join('')
-          if (partialText) {
-            pendingContinuations.set(threadId, { message, text: partialText })
+          // button - auto-increase was removed; the user explicitly opts in.
+          const content = partialOf(message)
+          if (content.text || content.reasoning) {
+            pendingContinuations.set(threadId, { message, content })
           }
           // Stamped on the thread's own messages, so a thread that finished in
           // the background shows the banner when the user returns to it.
@@ -549,10 +578,11 @@ function ThreadDetail() {
           if (openThreadIdRef.current === threadId) {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
           }
-          return
+          // Falls through to store the partial as a stopped reply: returning
+          // here dropped everything the model had generated.
         }
-        // Non-context-limit length truncation: fall through and persist the
-        // partial marked as stopped so the "Continue" button can resume it.
+        // Any other length stop is the output-token cap: the partial is stored
+        // as stopped so the "Continue" button can resume it.
       }
 
       if (!isAbort && message.parts.length) clearPendingContinue(threadId)
@@ -795,6 +825,16 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
+            if (webRoute(toolName) === 'disabled') {
+              record({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: WEB_DISABLED_TOOL_ERROR,
+              })
+              continue
+            }
+
             if (isDisabledChatAgentTool(toolName)) {
               record({
                 state: 'output-error',
@@ -856,7 +896,7 @@ function ThreadDetail() {
             // a hung MCP server) must not hold the loop, and the thread, busy.
             const result = await untilAborted<ToolRunResult>(
               (async () => {
-                if (WEB_TOOL_NAMES.has(toolName)) {
+                if (webRoute(toolName) === 'builtin') {
                   return await executeWebTool(toolName, toolCall.input, {
                     maxOutputChars,
                   })
@@ -1058,6 +1098,7 @@ function ThreadDetail() {
       if (
         !isAutoAllowedTool(toolCall.toolName) &&
         !isDisabledChatAgentTool(toolCall.toolName) &&
+        webRoute(toolCall.toolName) !== 'disabled' &&
         !approvalsOf(threadId).has(toolCall.toolCallId)
       ) {
         approvalsOf(threadId).set(
@@ -1908,13 +1949,7 @@ function ThreadDetail() {
     (messageId: string) => {
       const msg = chatMessages.find((m) => m.id === messageId)
       if (!msg) return
-      const collect = (type: 'text' | 'reasoning') =>
-        msg.parts
-          .filter((p) => p.type === type)
-          .map((p) => (p as { text: string }).text)
-          .join('')
-      const text = collect('text')
-      const reasoning = collect('reasoning')
+      const { text, reasoning } = partialOf(msg)
       if (!text && !reasoning) return
       setContinueFromContent({ text, reasoning })
       continueReplaceIds.set(threadId, messageId)
@@ -1981,6 +2016,21 @@ function ThreadDetail() {
   // Handler for increasing context size
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
+
+    // The reply this click resumes if the turn that stopped is not in
+    // pendingContinuations (a restart empties it): the stored partial, marked
+    // `stopped`, that hydration restored. Read before the awaits below, while
+    // the open thread is still this one.
+    const lastMessage = chatMessagesRef.current.at(-1)
+    const stoppedPartial =
+      lastMessage?.role === 'assistant' &&
+      (lastMessage.metadata as { stopped?: boolean } | undefined)?.stopped
+        ? { message: lastMessage, content: partialOf(lastMessage) }
+        : undefined
+    const storedPartial =
+      stoppedPartial?.content.text || stoppedPartial?.content.reasoning
+        ? stoppedPartial
+        : undefined
 
     const updateProvider = useModelProvider.getState().updateProvider
     const provider = getProviderByName(selectedProvider)
@@ -2058,21 +2108,27 @@ function ThreadDetail() {
       await serviceHub.models().stopModel(selectedModel.id)
     }
 
-    // Consume any pending partial captured at the `finishReason === 'length'`
-    // event so the regenerate resumes from where the stream stopped, and the
-    // "Growing the Mind…" shimmer renders while the model reloads.
+    // Resume from the partial the reply stopped at: the one captured at the
+    // `finishReason === 'length'` event, or, when none was (the Map is empty
+    // after an application restart), the stored reply read above. The
+    // regenerate then continues it, and the "Growing the Mind…" shimmer renders
+    // while the model reloads.
     // The prefill goes on this thread's own transport: the user may have
     // opened another thread while the model reloaded.
-    const pending = takeFrom(pendingContinuations, threadId)
+    const pending =
+      takeFrom(pendingContinuations, threadId) ?? storedPartial
     if (pending) {
       useChatSessions
         .getState()
-        .sessions[threadId]?.transport.setContinueFromContent(pending.text)
+        .sessions[threadId]?.transport.setContinueFromContent(pending.content)
       setPendingContinue({ threadId, message: pending.message })
+      // The partial is stored (see onFinish), so the resumed reply replaces it
+      // in place rather than forking a second version of the same answer.
+      continueReplaceIds.set(threadId, pending.message.id)
     }
 
     setTimeout(() => {
-      handleRegenerate()
+      handleRegenerate(pending?.message.id)
     }, 1000)
   }, [
     selectedModel,
@@ -2254,12 +2310,15 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                // A banner error stands in for the failed assistant turn:
-                // regenerate/reload restarts it from scratch, so hide the
-                // partial (tool calls, "Worked for Ns") and show only the banner.
+                // An out-of-memory or backend error stands in for the failed
+                // assistant turn: regenerate/reload restarts it from scratch, so
+                // hide the partial (tool calls, "Worked for Ns") and show only
+                // the banner. A context-limit stop keeps its partial: that text
+                // was generated and stored, and the banner only offers a bigger
+                // context to resume it.
                 if (
                   isLastMessage &&
-                  hasBannerError &&
+                  (oomError || backendError) &&
                   message.role === 'assistant'
                 )
                   return null
