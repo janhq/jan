@@ -17247,11 +17247,41 @@ fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
             }
             app.note(&format!(
                 "memory tidied: {}",
-                if quiet { "no changes" } else { report }
+                if quiet { "no changes".to_string() } else { tidy_summary(report) }
             ));
         }
         Err(e) => app.note(&format!("memory tidy failed: {e}")),
     }
+}
+
+/// Verbs a tidy report's lines start with (see `MEMORY_TIDY_PROMPT`).
+const TIDY_VERBS: [&str; 5] = ["archived", "merged", "deleted", "moved", "refused"];
+
+/// A tidy report as one line. The report has a line per change, and a note
+/// that carried all of them grew taller than the screen, pushing its own
+/// `memory tidied:` header out of view. A few changes are listed; more are
+/// counted per verb, the full list staying in the memory-tidy row.
+fn tidy_summary(report: &str) -> String {
+    let changes: Vec<&str> = report
+        .lines()
+        .map(|l| l.trim().trim_start_matches(['-', '*', ' ']))
+        .filter(|l| TIDY_VERBS.iter().any(|v| l.starts_with(v)))
+        .collect();
+    if changes.is_empty() {
+        let first = report.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        return first.chars().take(160).collect();
+    }
+    if changes.len() <= 3 {
+        return changes.join("; ");
+    }
+    TIDY_VERBS
+        .iter()
+        .filter_map(|verb| {
+            let n = changes.iter().filter(|l| l.starts_with(verb)).count();
+            (n > 0).then(|| format!("{verb} {n}"))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 async fn await_memory_tidy(
@@ -44142,6 +44172,90 @@ mod tests {
         let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("memory tidied: archived pr-1"), "{text}");
         assert!(text.contains("memory tidied: no changes"), "{text}");
+    }
+
+    /// A stub OpenAI-compatible upstream answering every request with `text`
+    /// as a plain final answer. Returns the provider configs pointing at it.
+    fn stub_upstream(
+        text: &'static str,
+    ) -> std::collections::HashMap<String, crate::core::state::ProviderConfig> {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant",
+                    "content": text}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect()
+    }
+
+    /// #497 bug 2: the `memory tidied:` note never showed in the live TUI.
+    /// The tidy's report is one line per change, and the whole report became
+    /// one note, so with dozens of changes its header scrolled off before a
+    /// frame painted it. Driven through the real select loop with a spawned
+    /// tidy against a stub provider, and checked on the rendered frame.
+    #[tokio::test]
+    async fn a_spawned_tidy_shows_its_note_in_the_live_frame() {
+        let report: &'static str = Box::leak(
+            (0..70)
+                .map(|i| format!("archived note-{i:03}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_boxed_str(),
+        );
+        let mut app = test_app();
+        own_project(&mut app);
+        let args = test_args(&app, stub_upstream(report));
+        app.args = Some(args.clone());
+        app.tidy_request = Some(TidyKind::Manual);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        let registry: PermissionRegistry = Default::default();
+        let asks = crate::core::agent::interaction::new_registry();
+        let servers: crate::core::state::SharedMcpServers = Default::default();
+        // The loop has no exit of its own here; the tidy lands well inside this.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(8),
+            super::chat_loop(&mut terminal, &args, &registry, &asks, &mut app, None, None, &servers, false),
+        )
+        .await;
+        assert!(app.tidy_running.is_none(), "the tidy was collected");
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let frame: String = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>() + "\n")
+            .collect();
+        assert!(frame.contains("memory tidied: archived 70"), "{frame}");
+        assert!(!frame.contains("archived note-030"), "one line, not the full list: {frame}");
     }
 
     /// A tidy never touches the conversation: no turn is started and the
