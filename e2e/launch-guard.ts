@@ -10,12 +10,20 @@ export interface LaunchContext {
   tempRoot: string
 }
 
-export function launchContext(): LaunchContext {
+export function launchContext(accountHome: () => string = () => userInfo().homedir): LaunchContext {
+  let realAccountHome: string
+  try {
+    realAccountHome = accountHome()
+  } catch (error) {
+    // Fail closed: HOME alone may have been redirected and is not evidence of
+    // the account's real home (e.g. an arbitrary container UID without passwd).
+    throw new Error('Cannot validate e2e isolation: unable to resolve the account home via os.userInfo()', { cause: error })
+  }
   return {
     env: process.env,
     platform: process.platform,
     // HOME may itself have been overridden; protect the account home as well.
-    realHomes: [userInfo().homedir, homedir()],
+    realHomes: [realAccountHome, homedir()],
     tempRoot: tmpdir(),
   }
 }
@@ -101,7 +109,6 @@ export function assertSafeE2eHome(home: string, context: LaunchContext): string 
   ]) {
     if (env[key] && isAbsolute(env[key]!)) addRoot(env[key]!)
   }
-  if (env.JAN_DATA_FOLDER && isAbsolute(env.JAN_DATA_FOLDER)) protectedPaths.push(env.JAN_DATA_FOLDER)
   for (const path of protectedPaths) {
     const protectedPath = canonicalPath(path)
     if (containsPath(candidate, protectedPath) || containsPath(protectedPath, candidate)) {

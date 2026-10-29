@@ -127,7 +127,6 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 tokio-stream = "0.1"
 jan-utils = { path = "./utils" }
-libloading = "0.8.7"
 log = "0.4"
 # Pulled in by rmcp's `auth` feature; used directly for `TokenResponse`
 # accessors on the persisted token record (`core::mcp::oauth`).

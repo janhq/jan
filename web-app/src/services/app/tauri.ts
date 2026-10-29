@@ -6,7 +6,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
 import type { FactoryResetOptions, LogEntry } from './types'
 import { DefaultAppService } from './default'
-import { pruneLocalStorageByFlags } from './reset-localstorage'
 
 export class TauriAppService extends DefaultAppService {
   /**
@@ -20,9 +19,10 @@ export class TauriAppService extends DefaultAppService {
    * snapshot/restore is needed.
    *
    * localStorage still holds a frozen pre-migration snapshot (kept so a
-   * downgraded build can read it). The reliable clear happens on next startup
-   * via a Rust sentinel (see `main.tsx`) — renderer-side removal here is a
-   * best-effort supplement that races the restart flush.
+   * downgraded build can read it). It is cleared on the next startup via a
+   * Rust sentinel (see `main.tsx`), never here: the backend can still refuse
+   * the reset, and on success the process restarts right after the invoke
+   * resolves, so clearing here would race the restart flush.
    */
   async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')
@@ -36,8 +36,6 @@ export class TauriAppService extends DefaultAppService {
     const keepAppData = options?.keepAppData ?? false
     const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
     const clearWebData = options?.clearWebData ?? false
-
-    pruneLocalStorageByFlags({ keepAppData, keepModelsAndConfigs })
 
     if (!keepAppData && !keepModelsAndConfigs && !clearWebData) {
       await invoke('factory_reset')

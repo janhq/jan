@@ -3,8 +3,18 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, type LaunchContext } from '../launch-guard.js'
+import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, launchContext, type LaunchContext } from '../launch-guard.js'
 import { isolationEnv } from '../isolation.js'
+
+test('account lookup failure reports the isolation requirement and preserves its cause', () => {
+  const cause = new Error('no passwd entry')
+  assert.throws(() => launchContext(() => { throw cause }), (error: unknown) => {
+    assert.ok(error instanceof Error)
+    assert.match(error.message, /Cannot validate e2e isolation.*account home/)
+    assert.equal(error.cause, cause)
+    return true
+  })
+})
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const root = canonicalPath(mkdtempSync(join(tmpdir(), 'jan-guard-test-')))

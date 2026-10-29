@@ -36,8 +36,9 @@ describe('LlamacppEngineInfo', () => {
   })
 
   // A 40-char sha would wrap the row and buys nothing a reader can use; the
-  // link is what gets them to the full commit.
-  it('shortens the commit and links the build to its upstream release', async () => {
+  // link is what gets them to the full commit. The changelog lives on the
+  // versioned release (v0.5.0); the b<N> tag page is a bare build artifact.
+  it('shortens the commit and links the version to its upstream release', async () => {
     getEngineVersion.mockResolvedValue(PIN)
     render(<LlamacppEngineInfo />)
 
@@ -47,7 +48,7 @@ describe('LlamacppEngineInfo', () => {
       screen.getByRole('link', { name: /engineReleaseNotes/ })
     ).toHaveAttribute(
       'href',
-      'https://github.com/ggml-org/llama.cpp/releases/tag/b11146'
+      'https://github.com/ggml-org/llama.cpp/releases/tag/v0.5.0'
     )
   })
 

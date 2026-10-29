@@ -79,6 +79,15 @@ import { join } from 'node:path'
  * (`jan.ai.app`) and not on the executable name, so an unconfined test run and
  * an installed Jan share one browser profile.
  *
+ * macOS gap: HOME does not redirect WKWebView localStorage. Native validation
+ * by thinhlpg on PRs #9457/#9464 observed writes in the real account's
+ * ~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage, shared
+ * with installed Jan (jan.ai.app), not in the temporary profile. Both normal
+ * and migration launches can touch that state. Follow-up: isolate WebKit
+ * storage (jan-internal#496; evaluate a distinct e2e bundle ID) and verify
+ * that launches leave real-profile storage untouched. This is not fixed here.
+ * Use a disposable macOS account/VM for stronger separation.
+ *
  * Deliberately absent:
  * - XDG_DATA_DIRS / XDG_CONFIG_DIRS: read-only system paths; overriding them
  *   breaks GTK schema and theme lookup.

@@ -82,8 +82,8 @@ const context = launchContext()
 assertSafeLaunchEnvironment(context)
 const inheritedHome = process.env.JAN_E2E_HOME
 const ownsTestHome = !inheritedHome
-// resolve() because `dirs` silently ignores a relative XDG value and falls back
-// to its $HOME-relative default -- which, with a relative HOME, is also relative.
+// assertSafeE2eHome canonicalizes relative paths before they become HOME/XDG
+// values: `dirs` ignores relative XDG values and falls back to HOME defaults.
 const testHome = assertSafeE2eHome(
   inheritedHome || mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-')),
   context

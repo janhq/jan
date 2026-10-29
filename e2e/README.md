@@ -180,8 +180,9 @@ server ever bound.
 
 ## Isolation
 
-Each run gets a throwaway profile in a temp dir, so tests never touch real Jan
-data. The desktop app resolves its data folder from
+Each run gets a throwaway profile in a temp dir to redirect Jan application
+data. This is not complete isolation: macOS WebKit storage and the other gaps
+below can still touch the real user profile. The desktop app resolves its data folder from
 `core::app::paths::data_dir()`; which variables that leaves you needing to
 override depends on the platform.
 
@@ -190,6 +191,25 @@ override depends on the platform.
 | macOS | `$HOME/Library/Application Support` | `HOME` |
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
 | Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
+
+### Known macOS WebKit gap — follow-up
+
+HOME redirection does **not** isolate WKWebView localStorage. In native macOS
+arm64 validation on [#9457](https://github.com/janhq/jan/pull/9457) and
+[#9464](https://github.com/janhq/jan/pull/9464), thinhlpg observed writes under the
+real `~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage/`
+(`jan.ai.app`), shared with an installed Jan. The redirected profile contained
+no `Library/WebKit`; `Library/Caches/jan.ai.app` did redirect. Therefore both
+normal and migration launches may read or modify installed-Jan browser state;
+a passing migration smoke does not prove browser-storage isolation or migration.
+Use a disposable macOS account/VM for separation, not merely `JAN_E2E_HOME`.
+
+**Follow-up ([jan-internal#496](https://github.com/janhq/jan-internal/issues/496),
+not fixed here):** isolate macOS e2e WebKit storage, evaluating a
+distinct e2e bundle identifier, and verify with real installed-Jan storage that
+launches do not touch it. The possible connection to a missing setup wizard on
+an already-used Mac is unproven. This PR changes neither bundle IDs nor WebKit
+storage behavior.
 
 ### Launch guard (limited guarantee)
 
@@ -222,7 +242,7 @@ than `Jan` (including empty) are rejected too.
 This is an accidental-launch guard, **not a filesystem sandbox** or a proof of
 complete confinement. It does not prevent concurrent symlink changes, hard-link
 aliases, every possible legacy/plugin/config escape, Windows registry folder
-redirection, or the Windows CLI/updater gaps below. Use a disposable OS account
+redirection, the macOS WebKit gap, or the Windows CLI/updater gaps below. Use a disposable OS account
 or VM if stronger separation is needed. Existing profiles should be disposable;
 the harness merges a bootstrap seed into their backend settings.
 

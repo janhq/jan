@@ -1836,7 +1836,7 @@ mod openai_responses_tests {
         // `cached_tokens: 0` is Responses saying the prefix was not reused --
         // the state the console draws as a red `0%`. Dropping it here left that
         // indistinguishable from a response that never mentions caching, which
-        // the readout can only render as "not reported".
+        // the readout can only render as "no hits reported".
         let reported =
             convert_usage(Some(&json!({"input_tokens": 100, "output_tokens": 5, "input_tokens_details": {"cached_tokens": 0}})));
         assert_eq!(reported["prompt_tokens_details"]["cached_tokens"], json!(0));
