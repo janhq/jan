@@ -614,8 +614,8 @@ fn subagents_running_after_the_turn() {
     assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
 }
 
-/// Where the block sits: under the rule, subagents over shells, over the
-/// input.
+/// Where the block sits: over the rule, subagents over shells, the rule on
+/// the input.
 #[test]
 fn subagents_and_shells_over_the_idle_input() {
     let mut app = idle_fan_out(Instant::now());
@@ -626,9 +626,10 @@ fn subagents_and_shells_over_the_idle_input() {
     assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
 }
 
-/// Monitors, subagents and shells at once: one block, one grammar, on the
-/// same rows whether the turn is idle or running, and trimmed child rows
-/// first on a narrow terminal.
+/// Monitors, subagents and shells at once: one block, one grammar, parked on
+/// the rule over the input on the same rows whether the turn is idle or
+/// running; a narrow terminal sheds hints and facts before it cuts a name,
+/// and a very narrow one keeps the heads alone.
 #[test]
 fn background_work_block_idle_running_and_narrow() {
     let now = Instant::now();
@@ -643,16 +644,21 @@ fn background_work_block_idle_running_and_narrow() {
     start_turn(&mut app, "keep going");
     let running = frame(&mut app, DARK, 80, 20);
     assert_buffer("background_work_running", &running);
-    // The rows from the rule down to the input, which holds the working row
-    // in one state and the placeholder in the other.
+    // The rows from the block's first head down to the rule; the input below
+    // holds the working row in one state and the placeholder in the other.
     let block = |buf: &Buffer| -> Vec<String> {
         let text = render_snapshot(buf);
         let rows: Vec<&str> = text.lines().take(20).collect();
         let rule = rows.iter().rposition(|r| r.starts_with("|\u{2500}")).expect("rule");
-        rows[rule..rows.len() - 3].iter().map(|r| r.to_string()).collect()
+        let top = rows.iter().position(|r| r.starts_with("| 1 monitor")).expect("head");
+        rows[top..=rule].iter().map(|r| r.to_string()).collect()
     };
     assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
-    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 14));
+    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 20));
+    assert_buffer("background_work_very_narrow", &frame(&mut app, DARK, 24, 20));
+    // Under `BACKGROUND_CHILD_MIN_NAME` columns of name: heads alone.
+    let heads = pinned(DARK, || lines_buffer(background_rows(&mut app, 12, 20, now), 12));
+    assert_buffer("background_work_heads_only", &heads);
 }
 
 /// Each way a child can be not-running reads distinctly: running, queued for

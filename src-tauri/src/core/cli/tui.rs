@@ -22377,15 +22377,37 @@ fn message_text(msg: &serde_json::Value) -> String {
     super::thread_message_text(msg)
 }
 
-/// Whitespace-collapsed, char-truncated one-liner for checkpoint/rewind labels.
+/// Whitespace-collapsed one-liner for checkpoint/rewind labels, at most 60
+/// columns.
 fn truncate_preview(text: &str) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() > 60 {
-        let head: String = collapsed.chars().take(57).collect();
-        format!("{head}...")
-    } else {
-        collapsed
+    ellipsize(&collapsed, 60)
+}
+
+/// `s` cut to `max` display columns with a trailing `...` when it does not
+/// fit, so a cut always shows. Measured in cells, not chars: a CJK name is
+/// two cells a glyph, and a wide glyph that would straddle the cut is dropped
+/// rather than half-drawn. Under four columns there is no room for a glyph
+/// and the mark both, so the mark alone (as much of it as fits) stands in.
+fn ellipsize(s: &str, max: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    if s.width() <= max {
+        return s.to_string();
     }
+    let room = max.saturating_sub(3);
+    let mut out = String::new();
+    let mut used = 0usize;
+    for c in s.chars() {
+        let w = c.width().unwrap_or(0);
+        if used + w > room {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.push_str(&"..."[..max.min(3)]);
+    out
 }
 
 /// Blank lines to prepend so a transcript shorter than the body viewport pins
@@ -22642,21 +22664,26 @@ fn draw(f: &mut Frame, app: &mut App) {
     // transient key hints share the single row *below* the input, so the whole
     // "where am I, what's happening" block reads as one unit at the bottom edge
     // next to where the user types, instead of being split across both ends and
-    // spending two rows on it. The panel sits directly above the input box --
-    // the last thing in view right before where the user types, not competing
-    // with the header for attention. The separator rule is its own row *below*
-    // the panel (rather than the body's own bottom border) so the live state
-    // reads as part of the input dock, above the line, instead of stranded
-    // between the rule and the prompt. A zero-length slot collapses away, so a
-    // session with no plan and nothing in the background renders exactly as
-    // before.
+    // spending two rows on it. The live state -- the plan, then the background
+    // work -- is parked above the separator rule, so the rule sits directly on
+    // the `>` row and the input reads as one fixed line whatever is live: the
+    // block does not slide between the rule and the prompt as it grows, and a
+    // prompt docked over the input (a permission, an ask) covers the live
+    // state rather than splitting it from the rule. The plan goes above the
+    // background work because the work is what moves -- children start,
+    // finish and tick -- and the eye checks it most, so it sits nearest the
+    // input; the plan changes a step at a time and reads fine a row further
+    // up. The rule is its own row (rather than the body's bottom border) so
+    // it can sit under the live state instead of over it. A zero-length slot
+    // collapses away, so a session with no plan and nothing in the background
+    // renders exactly as before.
     let raw = Layout::vertical([
         Constraint::Length(1),                     // 0: header
         Constraint::Min(1),                        // 1: body
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
         Constraint::Length(panel_h),               // 3: plan dock
-        Constraint::Length(1),                     // 4: separator rule
-        Constraint::Length(background_h),          // 5: background work
+        Constraint::Length(background_h),          // 4: background work
+        Constraint::Length(1),                     // 5: separator rule
         Constraint::Length(input_h),               // 6: input
         Constraint::Length(1),                     // 7: path + key hints
     ])
@@ -22664,12 +22691,12 @@ fn draw(f: &mut Frame, app: &mut App) {
     let panel_area = raw[3];
     let chunks = [raw[0], raw[1], raw[6], raw[7]];
     if !background.is_empty() {
-        f.render_widget(Paragraph::new(background), raw[5]);
+        f.render_widget(Paragraph::new(background), raw[4]);
     }
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
-    f.render_widget(Block::default().borders(Borders::TOP), raw[4]);
+    f.render_widget(Block::default().borders(Borders::TOP), raw[5]);
 
     // Top border only, so wrapping uses the full width; the border row reduces
     // the vertical viewport.
@@ -24838,6 +24865,11 @@ fn push_fitting_hint(spans: &mut Vec<Span<'static>>, hints: &[&'static str], wid
 /// that lists them, so the count does not repeat it.
 const BACKGROUND_GROUP_ROWS: usize = 3;
 
+/// Fewest columns of name a child row of the background-work block must be
+/// able to show. Narrower than that, every name reads as `ab...`, which says
+/// less than the head's count does, so the group collapses to its head.
+const BACKGROUND_CHILD_MIN_NAME: usize = 10;
+
 /// A head row of the background-work block: counts by state, the noun riding
 /// on the first (`2 subagents running . 1 queued`), then the commands that
 /// view or stop the group, each with its words.
@@ -24866,8 +24898,15 @@ struct WorkGroup {
 /// with its counts and hints muted, its commands in the accent and `.` between
 /// every part; then up to `cap` children on the transcript's own tree prefix
 /// (`child_prefix`), name in the accent and facts muted behind the same `.`,
-/// and a `+N more` row for the rest. Hints are dropped whole, words first,
-/// rather than cut mid-word, and every row is clipped to `max`.
+/// and a `+N more` row for the rest.
+///
+/// Every row fits `max` display columns, and gives way in the order that
+/// keeps the most meaning per column, so nothing is cut mid-word without a
+/// mark: the head drops its hint words, then its commands, then every count
+/// but the first; a child drops its facts from the last in (activity before
+/// elapsed before status); only then is the remaining text cut, with `...`.
+/// Under `BACKGROUND_CHILD_MIN_NAME` columns of name the group is its head
+/// alone, whatever `cap` allows.
 fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let accent = Style::new().fg(theme::accent());
@@ -24884,9 +24923,9 @@ fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'stat
         })
         .collect();
     let counts = format!(" {}", parts.join(" \u{b7} "));
-    let room = max.saturating_sub(counts.chars().count());
+    let first = format!(" {}", parts.first().map_or("", String::as_str));
     let hints = |words: bool| {
-        let mut spans = Vec::new();
+        let mut spans = vec![Span::styled(counts.clone(), dim)];
         for (command, tail) in group.head.hints {
             spans.push(sep());
             spans.push(Span::styled(*command, accent));
@@ -24896,34 +24935,46 @@ fn work_group_lines(group: &WorkGroup, cap: usize, max: usize) -> Vec<Line<'stat
         }
         spans
     };
-    let mut head = vec![Span::styled(counts, dim)];
-    if let Some(tail) = [hints(true), hints(false)]
-        .into_iter()
-        .find(|h| spans_width(h) <= room)
-    {
-        head.extend(tail);
-    }
-    let mut out = vec![Line::from(clip_spans(head, max))];
+    let head = [
+        hints(true),
+        hints(false),
+        vec![Span::styled(counts.clone(), dim)],
+        vec![Span::styled(first.clone(), dim)],
+    ]
+    .into_iter()
+    .find(|h| spans_width(h) <= max)
+    .unwrap_or_else(|| vec![Span::styled(ellipsize(&first, max), dim)]);
+    let mut out = vec![Line::from(head)];
+    let prefix_w = child_prefix(true).width();
+    let cap = if max < prefix_w + BACKGROUND_CHILD_MIN_NAME { 0 } else { cap };
     let total = group.children.len();
     let shown = if total > cap { cap.saturating_sub(1) } else { total };
     for (i, child) in group.children.iter().take(shown).enumerate() {
-        let mut spans = vec![
-            child_prefix(i == 0),
-            Span::styled(child.name.clone(), accent.bold()),
-        ];
-        for fact in child.facts.iter().filter(|f| !f.is_empty()) {
-            spans.push(sep());
-            spans.extend(fact.iter().cloned());
-        }
-        out.push(Line::from(clip_spans(spans, max)));
+        // An empty fact (a status word a running child does not carry) would
+        // leave a dangling separator.
+        let facts: Vec<&Vec<Span<'static>>> = child.facts.iter().filter(|f| !f.is_empty()).collect();
+        let row = |kept: usize, name: String| {
+            let mut spans = vec![child_prefix(i == 0), Span::styled(name, accent.bold())];
+            for fact in &facts[..kept] {
+                spans.push(sep());
+                spans.extend(fact.iter().cloned());
+            }
+            spans
+        };
+        let spans = (0..=facts.len())
+            .rev()
+            .map(|kept| row(kept, child.name.clone()))
+            .find(|spans| spans_width(spans) <= max)
+            .unwrap_or_else(|| row(0, ellipsize(&child.name, max.saturating_sub(prefix_w))));
+        out.push(Line::from(spans));
     }
     // At `cap` 0 the group is its head alone, which already carries the count.
     if shown < total && cap > 0 {
-        let more = vec![
+        let more = format!("+{} more", total - shown);
+        out.push(Line::from(vec![
             child_prefix(shown == 0),
-            Span::styled(format!("+{} more", total - shown), dim),
-        ];
-        out.push(Line::from(clip_spans(more, max)));
+            Span::styled(ellipsize(&more, max.saturating_sub(prefix_w)), dim),
+        ]));
     }
     out
 }
@@ -43899,20 +43950,34 @@ mod tests {
         assert!(lines[3].contains("☑ gamma"), "{lines:?}");
     }
 
-    /// The panel belongs to the input dock: it must render ABOVE the horizontal
-    /// rule that separates the transcript from the input, not stranded between
-    /// that rule and the prompt.
+    /// The live state belongs to the input dock: the plan, then the background
+    /// work, both ABOVE the rule that separates the transcript from the input,
+    /// and the rule directly on the input row.
     #[test]
     fn status_panel_sits_above_the_input_separator_rule() {
         use crate::core::agent::todo::TodoStatus::*;
         let mut app = test_app();
         app.todos = todos_from(vec![("only", vec![("alpha", InProgress)])]);
+        app.bg_shells = vec![tauri_plugin_agent_tools::tools::proc::ShellInfo {
+            pid: 4242,
+            command: "npm run dev".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
         let rows = render_rows(&mut app, 60, 20);
 
         let todo_row = rows
             .iter()
             .position(|r| r.contains("Todos"))
             .expect("todos");
+        let shells_row = rows
+            .iter()
+            .position(|r| r.contains("1 background shell running"))
+            .expect("background head");
+        let child_row = rows
+            .iter()
+            .position(|r| r.contains("npm run dev"))
+            .expect("background child");
         let input_row = rows
             .iter()
             .position(|r| r.contains("Type here to chat with agent"))
@@ -43924,13 +43989,81 @@ mod tests {
             .expect("separator rule above the input");
 
         assert!(
-            todo_row < rule_row,
-            "the panel must be above the rule (todos={todo_row}, rule={rule_row}): {rows:#?}"
+            todo_row < shells_row,
+            "the plan sits above the background work: {rows:#?}"
         );
-        assert!(
-            rule_row < input_row,
+        assert_eq!(
+            child_row + 1,
+            rule_row,
+            "the background work sits directly on the rule: {rows:#?}"
+        );
+        assert_eq!(
+            rule_row + 1,
+            input_row,
             "the rule must sit directly above the input: {rows:#?}"
         );
+    }
+
+    /// The background-work block holds its place on the rule whatever the
+    /// input row is showing: idle, a running turn, a compaction, a retry wait,
+    /// or a permission prompt docked over the input.
+    #[test]
+    fn the_background_block_stays_pinned_on_the_rule_in_every_state() {
+        let mut app = test_app();
+        app.bg_shells = vec![tauri_plugin_agent_tools::tools::proc::ShellInfo {
+            pid: 4242,
+            command: "npm run dev".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
+        // (head row, child row, rule row) for the current state.
+        let place = |app: &mut App| {
+            let rows = render_rows(app, 80, 24);
+            let head = rows.iter().position(|r| r.contains("1 background shell running"));
+            let child = rows.iter().position(|r| r.contains("\u{2514} npm run dev"));
+            let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}'));
+            (head, child, rule, rows)
+        };
+        let (head, child, rule, rows) = place(&mut app);
+        let (head, child, rule) = (head.unwrap(), child.unwrap(), rule.unwrap());
+        assert_eq!((head + 1, child + 1), (child, rule), "{rows:#?}");
+        assert!(rows[rule + 1].contains("Type here to chat"), "{rows:#?}");
+
+        let check = |app: &mut App, what: &str, input: &str| {
+            let (h, c, r, rows) = place(app);
+            assert_eq!((h, c, r), (Some(head), Some(child), Some(rule)), "{what}: {rows:#?}");
+            assert!(rows[rule + 1].contains(input), "{what}: {rows:#?}");
+        };
+        app.submit_user("go".into());
+        check(&mut app, "running", "Esc to cancel");
+        app.compacting = Some(CompactKind::Manual);
+        check(&mut app, "compacting", "conversation");
+        app.compacting = None;
+        app.retrying = Some(RetryWait {
+            attempt: 1,
+            max_attempts: 3,
+            at: Instant::now() + Duration::from_secs(5),
+            reason: "rate limited".into(),
+        });
+        check(&mut app, "retrying", "retrying");
+        app.retrying = None;
+        app.apply(StreamEvent::PermissionRequest {
+            request_id: "perm-1".into(),
+            tool_name: "bash".into(),
+            capability: "exec".into(),
+            path: None,
+            command: Some("ls".into()),
+            diff: None,
+            prompt_kind: "exec".into(),
+            offers_always: true,
+            justification: None,
+        });
+        // The prompt docks over the rows above the input, the block included,
+        // and the block comes back on the same rows once it is answered.
+        let rows = render_rows(&mut app, 80, 24);
+        assert!(rows.iter().any(|r| r.contains("ls")), "{rows:#?}");
+        app.pending_queue.clear();
+        check(&mut app, "after the prompt", "Esc to cancel");
     }
 
     /// A session with nothing live keeps the original look: one rule directly
@@ -44711,6 +44844,110 @@ mod tests {
         assert!(rows[0].contains("4 subagents running \u{b7} 1 waiting"), "{rows:#?}");
         assert_eq!(rows[3], "    +3 more", "{rows:#?}");
         assert_eq!(rows.join("\n").matches("/agents").count(), 1, "{rows:#?}");
+    }
+
+    /// A one-child group for the width tests: `name` with `facts`, in order.
+    fn work_group(name: &str, facts: &[&str]) -> super::WorkGroup {
+        super::WorkGroup {
+            head: super::WorkHead {
+                noun: "subagent",
+                counts: vec![("running", 2), ("queued", 1)],
+                hints: &[("/agents", " to view or stop")],
+            },
+            children: vec![super::WorkChild {
+                name: name.into(),
+                facts: facts
+                    .iter()
+                    .map(|f| vec![ratatui::text::Span::raw(f.to_string())])
+                    .collect(),
+            }],
+        }
+    }
+
+    fn group_text(group: &super::WorkGroup, max: usize) -> Vec<String> {
+        super::work_group_lines(group, 3, max).iter().map(line_text).collect()
+    }
+
+    /// A child row too wide for the terminal gives up its facts from the last
+    /// one in, whole, before its name is touched; the name is cut only once
+    /// it alone does not fit, and then with a visible `...`.
+    #[test]
+    fn a_narrow_child_row_drops_facts_before_cutting_its_name() {
+        let group = work_group("kv-review", &["Queued (1)", "1m 05s", "Read src/kv.rs"]);
+        let at = |max: usize| group_text(&group, max)[1].clone();
+        let full = "  \u{2514} kv-review \u{b7} Queued (1) \u{b7} 1m 05s \u{b7} Read src/kv.rs";
+        assert_eq!(at(80), full);
+        assert_eq!(at(full.width() - 1), "  \u{2514} kv-review \u{b7} Queued (1) \u{b7} 1m 05s");
+        assert_eq!(at(30), "  \u{2514} kv-review \u{b7} Queued (1)");
+        assert_eq!(at(20), "  \u{2514} kv-review", "every fact goes before the name");
+
+        let long = work_group("npm run dev -- --port 3000", &["1m 05s"]);
+        let row = group_text(&long, 20)[1].clone();
+        assert_eq!(row, "  \u{2514} npm run dev -...");
+        assert!(!row.contains("1m 05s"), "{row}");
+    }
+
+    /// The head sheds its hint words, then its commands, then every count
+    /// but the first, and only then cuts the first with `...`.
+    #[test]
+    fn a_narrow_head_sheds_hints_then_counts_then_cuts() {
+        let group = work_group("a", &[]);
+        let head = |max: usize| group_text(&group, max)[0].clone();
+        assert_eq!(head(80), " 2 subagents running \u{b7} 1 queued \u{b7} /agents to view or stop");
+        assert_eq!(head(45), " 2 subagents running \u{b7} 1 queued \u{b7} /agents");
+        assert_eq!(head(35), " 2 subagents running \u{b7} 1 queued");
+        assert_eq!(head(25), " 2 subagents running");
+        assert_eq!(head(15), " 2 subagents...");
+    }
+
+    /// Below `BACKGROUND_CHILD_MIN_NAME` columns of name a child row would be
+    /// noise, so the group is its head alone, whatever height it was given.
+    #[test]
+    fn a_very_narrow_group_collapses_to_its_head() {
+        let group = work_group("kv-review", &["12s"]);
+        let min = super::child_prefix(true).width() + super::BACKGROUND_CHILD_MIN_NAME;
+        assert_eq!(group_text(&group, min - 1).len(), 1, "{:?}", group_text(&group, min - 1));
+        assert_eq!(group_text(&group, min).len(), 2, "{:?}", group_text(&group, min));
+    }
+
+    /// Measured in display columns: a wide-glyph name or fact cannot push a
+    /// row past the terminal, and nothing is ever cut without a `...`.
+    #[test]
+    fn work_group_rows_fit_any_width_in_display_columns() {
+        let groups = [
+            work_group(
+                "\u{6771}\u{4eac}-build-\u{6771}\u{4eac}-watch",
+                &["\u{5f85}\u{3061} 3", "1m 05s"],
+            ),
+            work_group("tail -f /var/log/a-very-long-file-name.log", &["7s"]),
+        ];
+        for group in &groups {
+            for max in 1..120 {
+                for line in super::work_group_lines(group, 3, max) {
+                    assert!(spans_width(&line.spans) <= max, "{max}: {line:?}");
+                    let text = line_text(&line);
+                    let name = &group.children[0].name;
+                    if text.starts_with("  \u{2514}") && !text.contains(name.as_str()) {
+                        assert!(text.ends_with("..."), "{max}: cut without a mark: {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A frame with room for the heads alone shows them, still on the rule,
+    /// and the conversation keeps its rows.
+    #[test]
+    fn a_short_frame_keeps_the_heads_on_the_rule() {
+        let mut app = test_app();
+        for (i, name) in ["a", "b", "c"].iter().enumerate() {
+            start_subagent(&mut app, &format!("r{i}"), name);
+        }
+        let rows = render_rows(&mut app, 80, 11);
+        let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}')).expect("rule");
+        assert!(rows[rule - 1].starts_with(" 3 subagents running"), "{rows:#?}");
+        assert!(!rows.iter().any(|r| r.contains("\u{2514} a")), "heads only: {rows:#?}");
+        assert!(rows[rule + 1].starts_with('>'), "{rows:#?}");
     }
 
     /// No row outgrows the terminal, however narrow.
