@@ -446,6 +446,11 @@ fn remove_if_empty(_wt: &ChildWorktree) -> bool {
     false
 }
 
+/// How long a `{"ref": ...}` dispatch waits on `origin` before failing, so
+/// an unreachable or hung remote cannot hold the dispatch forever.
+#[cfg(feature = "cli")]
+const REF_FETCH_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// A fresh worktree for `name`, or the parent's checkout when the project
 /// cannot have one (the reason is kept for the dispatch note).
 #[cfg(feature = "cli")]
@@ -469,7 +474,7 @@ fn create(
     let base = match git_ref {
         Some(r) => match git::resolve_commit(&repo, r) {
             Some(sha) => sha,
-            None => git::fetch_commit(&repo, r)
+            None => git::fetch_commit(&repo, r, REF_FETCH_LIMIT)
                 .map_err(|e| format!("could not find or fetch ref '{r}': {e}"))?,
         },
         None => match git::head_sha(&repo) {

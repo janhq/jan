@@ -1788,7 +1788,9 @@ impl CompositeToolInvoker {
                     // Unconfined means no scratch: the tools see the real
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
-                ) {
+                )
+                .await
+                {
                     Ok(d) => format_dispatched_plan(&d),
                     Err(e) => {
                         ctx.bg.release_names(&reserved);
@@ -4301,7 +4303,9 @@ async fn orchestrate_inner(
         // worktrees, here rather than when the function returns so the kept
         // notice precedes `SessionEnd`. A session-owned registry has no guard;
         // its owner sweeps it.
-        drop(bg_guard);
+        if let Some(guard) = bg_guard {
+            guard.finish().await;
+        }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
         // answers cannot reach the model (the run is over) and are logged by
@@ -13295,6 +13299,12 @@ mod tests {
 
         run.abort();
         assert!(run.await.unwrap_err().is_cancelled());
+        // The drop hands the sweep to the blocking pool, so it lands shortly
+        // after the abort returns rather than inside it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !leftover_worktrees(&root).0.is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
         while let Ok(event) = rx.try_recv() {
             if let StreamEvent::Notice { text } = event {
                 assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
