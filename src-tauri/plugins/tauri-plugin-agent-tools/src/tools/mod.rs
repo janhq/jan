@@ -776,6 +776,39 @@ pub fn renamed_shell_notice(name: &str, where_: &str) -> Option<String> {
     })
 }
 
+/// The memory tools' names before they became the one [`MEMORY_TOOL`].
+const LEGACY_MEMORY_TOOLS: [&str; 3] = ["memory_write", "memory_read", "memory_list"];
+
+/// Whether a user-written tool name or glob meant the old memory tools: it
+/// starts with `memory_` (any case) and matches one of their names. Unlike
+/// `bash`, such an entry is carried over to `memory` -- a deny on
+/// `memory_write` that stopped matching would hand the agent every op it used
+/// to refuse -- and the whole tool is meant, since one tool now does what the
+/// three did. A glob that merely happened to catch one (`*write*`) is left as
+/// written.
+pub fn names_legacy_memory(pattern: &str) -> bool {
+    let lower = pattern.trim().to_ascii_lowercase();
+    lower.starts_with("memory_")
+        && glob::Pattern::new(&lower)
+            .is_ok_and(|p| LEGACY_MEMORY_TOOLS.iter().any(|name| p.matches(name)))
+}
+
+/// The notice for a user-written tool name or pattern that names a tool by a
+/// name it no longer has: the shell's `bash` (which now matches nothing) or an
+/// old memory tool (which now applies to all of `memory`). Reported once, at
+/// load. `where_` names the setting, e.g. "[tools] deny".
+pub fn renamed_tool_notice(name: &str, where_: &str) -> Option<String> {
+    renamed_shell_notice(name, where_).or_else(|| {
+        names_legacy_memory(name).then(|| {
+            format!(
+                "{where_} names `{}`, an old memory tool name: it now applies to the whole \
+                 `{MEMORY_TOOL}` tool (every op). Rename it to `{MEMORY_TOOL}`.",
+                name.trim()
+            )
+        })
+    })
+}
+
 pub fn lookup(name: &str) -> Option<&'static BuiltinTool> {
     BUILTIN_TOOLS.iter().find(|t| t.name == name)
 }
@@ -817,6 +850,23 @@ mod tests {
         for other in ["shell", "ba*", "*", "mcp__x__bash", "read"] {
             assert!(renamed_shell_notice(other, "x").is_none(), "{other}");
         }
+    }
+
+    /// A pattern that meant the old memory tools maps to `memory`; one that
+    /// already matches `memory`, or never named memory, does not.
+    #[test]
+    fn old_memory_tool_names_map_to_memory_and_are_reported() {
+        for old in ["memory_write", "memory_read", "memory_list", "Memory_Write", "memory_*", " memory_read "] {
+            assert!(names_legacy_memory(old), "{old}");
+            let notice = renamed_tool_notice(old, "[tools] deny").expect("flagged");
+            assert!(notice.contains(&format!("[tools] deny names `{}`", old.trim())), "{notice}");
+            assert!(notice.contains("`memory`"), "{notice}");
+        }
+        for other in ["memory", "memory*", "*", "*write*", "skill_write", "mcp__x__memory_write", "read"] {
+            assert!(!names_legacy_memory(other), "{other}");
+            assert!(renamed_tool_notice(other, "x").is_none(), "{other}");
+        }
+        assert!(renamed_tool_notice("bash", "x").expect("shell").contains("now `shell`"));
     }
 
     #[test]

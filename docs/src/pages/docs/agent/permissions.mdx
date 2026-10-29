@@ -94,6 +94,11 @@ each such `[tools]` entry when a run starts (the desktop app does not read `[too
 surface refuses a subagent whose `allowed_tools` still says `bash`. `jan mcp serve --tool bash`
 says so too.
 
+The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. An old
+name in `allow`, `deny` or a hook matcher keeps applying, to the whole `memory` tool: a
+`deny = ["memory_write"]` now denies every memory op, reads included. The `jan` CLI reports each
+such entry when a run starts; rename it to `memory`.
+
 ## The shell sandbox
 
 Jan can run shell commands under OS confinement - bubblewrap on Linux, Seatbelt on macOS,
