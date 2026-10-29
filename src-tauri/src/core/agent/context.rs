@@ -466,7 +466,15 @@ struct CompositionInputs<'a> {
 /// for one that does not (a subagent): no memory instructions for a tool the
 /// run was not given.
 fn skill_guide(memory: bool) -> String {
-    let guide = DEFAULT_SKILL_GUIDE.trim();
+    skill_guide_from(DEFAULT_SKILL_GUIDE, memory)
+}
+
+/// [`skill_guide`] over a given guide text. Line endings are normalized first:
+/// a Windows checkout with `core.autocrlf` hands `include_str!` CRLF, and the
+/// section split and heading swap below match on `\n`.
+fn skill_guide_from(raw: &str, memory: bool) -> String {
+    let normalized = raw.replace("\r\n", "\n");
+    let guide = normalized.trim();
     if memory {
         return guide.to_string();
     }
@@ -769,6 +777,18 @@ mod tests {
         assert!(block.contains("`memory` op `view`"));
         assert!(!block.contains("ignored.txt"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A CRLF checkout (Windows, `core.autocrlf`) strips the memory half of the
+    /// guide exactly like an LF one: the split and heading swap match on `\n`.
+    #[test]
+    fn the_memoryless_skill_guide_ignores_line_endings() {
+        let lf = skill_guide_from(DEFAULT_SKILL_GUIDE, false);
+        let crlf = skill_guide_from(&DEFAULT_SKILL_GUIDE.replace('\n', "\r\n"), false);
+        assert_eq!(lf, crlf);
+        assert!(crlf.starts_with("# Skills\n"), "{crlf}");
+        assert!(!crlf.contains("## Memory"), "{crlf}");
+        assert!(!crlf.contains('\r'));
     }
 
     /// P0 of #497: a note written mid-session leaves the composed prompt
