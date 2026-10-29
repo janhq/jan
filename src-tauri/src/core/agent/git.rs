@@ -420,17 +420,24 @@ pub(crate) fn commits_since(worktree: &Path, base: &str) -> Option<u64> {
         .ok()
 }
 
-/// Remove the checkout at `path` and delete `branch`, the inverse of
-/// [`worktree_add`]. Forced, because the caller has already decided the
-/// checkout holds nothing worth keeping.
+/// Remove the checkout at `path` and delete its `branch` (none for a detached
+/// one), the inverse of [`worktree_add`]. Forced, because the caller has
+/// already decided the checkout holds nothing worth keeping.
 #[cfg(feature = "cli")]
-pub(crate) fn worktree_remove(repo: &Path, path: &Path, branch: &str) -> Result<(), String> {
+pub(crate) fn worktree_remove(
+    repo: &Path,
+    path: &Path,
+    branch: Option<&str>,
+) -> Result<(), String> {
     run(
         repo,
         None,
         &["worktree", "remove", "--force", "--", &path.to_string_lossy()],
     )?;
-    run(repo, None, &["branch", "-D", "--", branch]).map(|_| ())
+    match branch {
+        Some(branch) => run(repo, None, &["branch", "-D", "--", branch]).map(|_| ()),
+        None => Ok(()),
+    }
 }
 
 /// Forget worktree registrations whose directory the user has deleted. Without
@@ -801,7 +808,7 @@ mod tests {
         run(&wt, None, &["commit", "-q", "-m", "b", "--no-gpg-sign"]).unwrap();
         assert_eq!(commits_since(&wt, &head), Some(1));
 
-        worktree_remove(&root, &wt, "jan/agent/child-1").unwrap();
+        worktree_remove(&root, &wt, Some("jan/agent/child-1")).unwrap();
         assert!(!wt.exists());
         assert!(!worktree_registered(&root, &wt));
         assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "branch deleted");

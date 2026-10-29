@@ -220,6 +220,10 @@ pub(crate) struct OrchestrationArgs {
     /// subagent (`subagent::spawn_memory_tidy`), which shares it with the TUI
     /// so a hit cap is reported; `None` everywhere else.
     pub memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// Set only on a dispatched child: whether its `project_root` is
+    /// read-only, the extra paths its sandboxed shell may write and the
+    /// environment it gets (see [`crate::core::agent::child_workspace`]).
+    pub child_scope: Option<crate::core::agent::child_workspace::ChildScope>,
 }
 
 #[async_trait]
@@ -873,6 +877,42 @@ struct CompositeToolInvoker {
     memory_changes: Option<MemoryChangesTracker>,
     /// See [`OrchestrationArgs::memory_change_budget`].
     memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// What a child's workspace adds to its tools: a read-only root, the paths
+    /// its shell may also write, and its shell env. A top-level run gets the
+    /// default plus, on the CLI, read access to its subagents' worktrees.
+    workspace: RunWorkspace,
+}
+
+/// The per-run additions to [`CompositeToolInvoker`]'s tool context that come
+/// from where the run works (see [`crate::core::agent::child_workspace`]).
+#[derive(Debug, Clone, Default)]
+struct RunWorkspace {
+    read_only: bool,
+    read_roots: Vec<std::path::PathBuf>,
+    write_roots: Vec<std::path::PathBuf>,
+}
+
+impl RunWorkspace {
+    /// A child runs under its scope; a parent may read its children's
+    /// worktrees. Write roots are also read roots: the tools require it.
+    fn resolve(
+        scope: Option<&crate::core::agent::child_workspace::ChildScope>,
+        root: &std::path::Path,
+    ) -> Self {
+        match scope {
+            Some(scope) => Self {
+                read_only: scope.read_only,
+                read_roots: scope.write_roots.clone(),
+                write_roots: scope.write_roots.clone(),
+            },
+            None => Self {
+                read_roots: crate::core::agent::child_workspace::parent_read_root(root)
+                    .into_iter()
+                    .collect(),
+                ..Self::default()
+            },
+        }
+    }
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1161,8 +1201,11 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         .first_phase
         .iter()
         .map(|c| match &d.blackboard_dir {
-            Some(dir) => format!("  - {} (run_id: {}) -> {dir}/{}.md", c.name, c.run_id, c.name),
-            None => format!("  - {} (run_id: {})", c.name, c.run_id),
+            Some(dir) => format!(
+                "  - {} (run_id: {}) -> {dir}/{}.md; {}",
+                c.name, c.run_id, c.name, c.workspace
+            ),
+            None => format!("  - {} (run_id: {}); {}", c.name, c.run_id, c.workspace),
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1263,6 +1306,9 @@ impl CompositeToolInvoker {
         let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_workspace_readonly(self.workspace.read_only)
+        .with_read_roots(&self.workspace.read_roots)
+        .with_write_roots(&self.workspace.write_roots)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
@@ -2694,10 +2740,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 &tauri_plugin_agent_tools::tools::gate::GateContext {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
-                    // The CLI works *in* the project, so it has no separate
-                    // read-only or writable root to attach.
-                    read_roots: &[],
-                    write_roots: &[],
+                    // The CLI works *in* the project; what is attached is
+                    // its subagents' worktrees (a parent) or the shared git
+                    // and build dirs (a child).
+                    read_roots: &self.workspace.read_roots,
+                    write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
@@ -2735,6 +2782,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 let web_search = self.web_search.clone();
+                let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
                 // to be batched concurrently would be no policy at all.
@@ -2759,6 +2807,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -2991,6 +3040,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
         memory_change_budget: None,
+        child_scope: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -3674,6 +3724,7 @@ async fn orchestrate_inner(
         session_start,
         // Read through `args` where the invoker is built.
         memory_change_budget: _,
+        child_scope,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -4087,7 +4138,11 @@ async fn orchestrate_inner(
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
-            env_set: settings.env_set,
+            // A child's workspace adds its build and cache dirs on top.
+            env_set: merge_env_set(
+                settings.env_set,
+                child_scope.as_ref().map(|c| c.env_set.clone()).unwrap_or_default(),
+            ),
             web_search: resolve_web_search(),
             project_root: root.clone(),
             allowed_names: allowed_names.clone(),
@@ -4128,6 +4183,7 @@ async fn orchestrate_inner(
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
             memory_changes,
             memory_change_budget: args.memory_change_budget.clone(),
+            workspace: RunWorkspace::resolve(child_scope.as_ref(), root),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -4239,6 +4295,18 @@ async fn orchestrate_inner(
         // exists to outlive it.
         if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
+        }
+        // A run-owned registry's children are done with this run, so its end
+        // is their session's end: sweep the worktrees that hold nothing and
+        // name the rest. A session-owned registry is swept by its owner.
+        #[cfg(feature = "cli")]
+        if session_subagent_bg.is_none() {
+            let kept = bg.workspaces.finish_session();
+            if !kept.is_empty() {
+                let _ = events.send(StreamEvent::Notice {
+                    text: crate::core::agent::child_workspace::kept_notice(&kept),
+                });
+            }
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
@@ -8947,6 +9015,7 @@ mod tests {
             shell_detach: None,
             memory_changes: None,
             memory_change_budget: None,
+            workspace: RunWorkspace::default(),
         }
     }
 
@@ -12286,10 +12355,12 @@ mod tests {
                 DispatchedChild {
                     name: "explorer-a".to_string(),
                     run_id: "sub-explorer-a-1".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
                 DispatchedChild {
                     name: "explorer-b".to_string(),
                     run_id: "sub-explorer-b-2".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
@@ -12312,6 +12383,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "researcher".to_string(),
                 run_id: "sub-researcher-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["researcher".to_string(), "writer".to_string()],
@@ -12603,6 +12675,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "w".to_string(),
                 run_id: "sub-w-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["w".to_string()],
