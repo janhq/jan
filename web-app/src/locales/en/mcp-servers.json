@@ -49,6 +49,7 @@
   "findMore": "Find more MCP servers at",
   "allowPermissions": "Allow All MCP Tool Permissions",
   "allowPermissionsDesc": "When enabled, all MCP tool calls will be automatically approved without showing permission dialogs. This setting applies globally to all conversations, including new chats.",
+  "autoApproveServer": "Auto-approve this server's tools",
   "noServers": "No MCP servers found",
   "args": "Args",
   "env": "Env",
