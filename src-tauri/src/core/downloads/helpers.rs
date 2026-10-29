@@ -278,40 +278,9 @@ pub fn create_proxy_from_config(config: &ProxyConfig) -> Result<reqwest::Proxy, 
     Ok(proxy)
 }
 
-pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
-    if no_proxy.is_empty() {
-        return false;
-    }
-
-    // Parse the URL to get the host
-    let parsed_url = match Url::parse(url) {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-
-    let host = match parsed_url.host_str() {
-        Some(h) => h,
-        None => return false,
-    };
-
-    // Check if host matches any no_proxy entry
-    for entry in no_proxy {
-        if entry == "*" {
-            return true;
-        }
-
-        // Simple wildcard matching
-        if let Some(domain) = entry.strip_prefix("*.") {
-            if host.ends_with(domain) {
-                return true;
-            }
-        } else if host == entry {
-            return true;
-        }
-    }
-
-    false
-}
+/// Single implementation shared with the rest of the app. It also honors the
+/// `NO_PROXY` / `no_proxy` environment variables (#8565).
+pub use jan_utils::network::should_bypass_proxy;
 
 pub fn _get_client_for_item(
     item: &DownloadItem,
