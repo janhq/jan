@@ -10,6 +10,7 @@ import {
   coworkToolSignature,
   allowedToolNames,
   PLAN_DENIED_TOOLS,
+  PLAN_DENIED_MEMORY_OPS,
   TODO_TOOL_NAME,
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
@@ -143,8 +144,18 @@ describe('web tools', () => {
 describe('allowedToolNames', () => {
   it('refuses the same set plan mode withholds', () => {
     const out = allowedToolNames([...ALL, TASK_TOOL_NAME], opts({ planMode: true }))
-    // Memory is the agent's own notes, not the project: plan mode keeps it.
+    // Memory stays for its reads (view, search); the dispatcher refuses the
+    // ops that change the store.
     expect(out).toEqual(['read', 'ls', 'grep', 'memory'])
+  })
+
+  it('names the memory ops plan mode refuses', () => {
+    expect([...PLAN_DENIED_MEMORY_OPS].sort()).toEqual([
+      'delete',
+      'edit',
+      'move',
+      'write',
+    ])
   })
 
   it('refuses task past the subagent depth cap', () => {

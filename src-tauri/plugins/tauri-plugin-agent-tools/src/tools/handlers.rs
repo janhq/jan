@@ -246,7 +246,7 @@ async fn execute_text(
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         crate::tools::MEMORY_TOOL => {
-            memory_tool(args, ctx.memory_scopes(), ctx.memory_change_budget).await
+            memory_tool(args, ctx.memory_scopes(), ctx.memory_change_budget, ctx.plan_mode).await
         }
         // Skills go through the skills module so the tool honors the folder form
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
@@ -520,17 +520,31 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 /// The `memory` tool delegates every op to `crate::memory`, so the built-in
 /// and the management commands share one implementation. A `budget` (Jan's
 /// tidy subagent) caps the mutations: each write, edit, delete and move takes
-/// one change before it runs and gives it back if it changed nothing.
+/// one change before it runs and gives it back if it changed nothing. In
+/// `plan_mode` only `view` and `search` run: plan mode is read-only, and the
+/// tool is classed `Read` (so the loop's capability check lets it through),
+/// which makes this the one place that knows which ops change the store.
 async fn memory_tool(
     args: &serde_json::Value,
     scopes: memory::Scopes<'_>,
     budget: Option<&memory::ChangeBudget>,
+    plan_mode: bool,
 ) -> String {
     let need = |key: &str| {
         arg_str(args, key).ok_or_else(|| format!("ERROR: op needs the '{key}' argument"))
     };
     let op = arg_str(args, "op");
-    if matches!(op, Some("write" | "edit" | "delete" | "move")) {
+    let mutates = matches!(op, Some("write" | "edit" | "delete" | "move"));
+    if mutates && plan_mode {
+        // Worded like the loop's plan-mode refusal, which telemetry reads as
+        // a config refusal.
+        return format!(
+            "ERROR: tool 'memory' op '{}' unavailable in plan_mode_read_only (plan mode is read-only). \
+             Only `view` and `search` work in plan mode; stage the memory change in the plan.",
+            op.unwrap_or_default()
+        );
+    }
+    if mutates {
         if let Some(Err(e)) = budget.map(memory::ChangeBudget::take) {
             return e;
         }
@@ -564,7 +578,7 @@ async fn memory_tool(
     };
     // A refused or no-op change (a missing note to delete) spends nothing.
     let changed = matches!(&result, Ok(text) if !text.starts_with("No note"));
-    if !changed && matches!(op, Some("write" | "edit" | "delete" | "move")) {
+    if !changed && mutates {
         if let Some(budget) = budget {
             budget.refund();
         }
@@ -4179,6 +4193,36 @@ mod tests {
         assert_eq!(budget.refused(), 4);
         // Reads are never capped.
         assert!(run(json!({"op": "view", "name": "shipped-01"})).await.starts_with("PR 9101"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode keeps memory readable and refuses every op that changes it,
+    /// whatever surface called the tool.
+    #[tokio::test]
+    async fn plan_mode_refuses_memory_changes_but_not_reads() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fact.md"), "A fact").unwrap();
+        let hooks = crate::tools::hooks::HookSet::new();
+        let memory = lookup("memory").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]).with_hooks(&hooks, true, None);
+        for args in [
+            json!({"op": "write", "name": "new", "content": "x"}),
+            json!({"op": "edit", "name": "fact", "old": "A", "new": "B"}),
+            json!({"op": "delete", "name": "fact"}),
+            json!({"op": "move", "name": "fact", "to": "moved"}),
+        ] {
+            let out = super::execute_builtin(memory, &args, &ctx).await.0;
+            assert!(out.starts_with("ERROR:") && out.contains("plan mode is read-only"), "{out}");
+            assert!(out.contains("view") && out.contains("search"), "{out}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("fact.md")).unwrap(), "A fact");
+        assert!(!dir.join("new.md").exists());
+        assert_eq!(super::execute_builtin(memory, &json!({"op": "view", "name": "fact"}), &ctx).await.0, "A fact");
+        let found = super::execute_builtin(memory, &json!({"op": "search", "query": "fact"}), &ctx).await.0;
+        assert!(found.contains("`fact`"), "{found}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

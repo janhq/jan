@@ -8758,7 +8758,13 @@ impl App {
     /// session only through the `Memory Changes` tail block. Off with
     /// `memory_auto_tidy = false`.
     fn maybe_auto_tidy(&mut self) {
-        if self.auto_tidy_checked || self.tidy_running.is_some() || self.tidy_request.is_some() {
+        // Plan mode is read-only, memory included; the check resumes at the
+        // first turn end after it.
+        if self.auto_tidy_checked
+            || self.tidy_running.is_some()
+            || self.tidy_request.is_some()
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+        {
             return;
         }
         let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
@@ -44190,6 +44196,22 @@ mod tests {
             std::fs::write(dir.join("later.md"), "Another note").unwrap();
             app.maybe_auto_tidy();
             assert_eq!(app.tidy_request, None, "still at most once per session");
+        });
+    }
+
+    /// Plan mode is read-only, so auto-tidy waits it out rather than spending
+    /// the session's one automatic tidy.
+    #[test]
+    fn auto_tidy_waits_out_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
         });
     }
 

@@ -61,7 +61,9 @@ the prompt, so it is denied and the run stalls on its first write.
 
 ## Plan mode
 
-Read-only. The agent investigates and proposes, but every write and command is blocked.
+Read-only. The agent investigates and proposes, but every write and command is blocked. That
+includes memory: the agent can `view` and `search` its notes, but writing, editing, moving or
+deleting one is refused until you leave plan mode, and an automatic memory tidy waits too.
 
 ```bash
 jan --plan

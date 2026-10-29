@@ -7,6 +7,7 @@ import {
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
+  PLAN_DENIED_MEMORY_OPS,
   PLAN_DENIED_TOOLS,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
@@ -63,6 +64,16 @@ function planRefusal(toolName: string): ToolOutcome {
   }
 }
 
+/** Refusal text for a `memory` op that changes the store in plan mode. */
+function planMemoryRefusal(op: string): ToolOutcome {
+  return {
+    output:
+      `The \`memory\` op \`${op}\` is disabled in plan mode, which is read-only. ` +
+      'Only `view` and `search` work; stage the memory change in the plan.',
+    isError: true,
+  }
+}
+
 // A model may try to create a missing file through `read` when write is
 // withheld. Keep the filesystem error, but explain the approval path at the
 // failure itself so the next step can recover instead of repeating the read.
@@ -109,6 +120,12 @@ async function toolFailure(
     }
   }
   return { output, isError: true }
+}
+
+function memoryOp(input: unknown): string {
+  if (!input || typeof input !== 'object') return ''
+  const op = (input as { op?: unknown }).op
+  return typeof op === 'string' ? op : ''
 }
 
 function readPath(input: unknown): string | undefined {
@@ -173,6 +190,10 @@ export async function dispatchCoworkTool(
 
   if (ctx.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
     return planRefusal(toolName)
+  }
+  if (ctx.planMode && toolName === 'memory') {
+    const op = memoryOp(call.input)
+    if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
 
   try {

@@ -27,6 +27,10 @@ export const PLAN_DENIED_TOOLS = new Set([
   MONITOR_TOOL_NAME,
 ])
 
+/** `memory` ops that change the store. Plan mode keeps the tool for its
+ * reads (`view`, `search`) and refuses these, as the Rust tool does. */
+export const PLAN_DENIED_MEMORY_OPS = new Set(['write', 'edit', 'delete', 'move'])
+
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
  * model to call `todo` by name, so renaming it here breaks that prompt. */
 export const TODO_TOOL_NAME = 'todo'

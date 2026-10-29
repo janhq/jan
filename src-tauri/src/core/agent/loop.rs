@@ -9232,6 +9232,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Plan mode is read-only for memory too: `view` and `search` run, every
+    /// op that changes the store is refused before it touches a note.
+    #[tokio::test]
+    async fn plan_mode_reads_memory_but_refuses_to_change_it() {
+        let root = hooks_root("planmemory");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let note = invoker.store_root.join("memory").join("fact.md");
+        std::fs::create_dir_all(note.parent().unwrap()).unwrap();
+        std::fs::write(&note, "A fact").unwrap();
+        for args in [
+            r#"{"op":"write","name":"new","content":"x"}"#,
+            r#"{"op":"edit","name":"fact","old":"A","new":"B"}"#,
+            r#"{"op":"delete","name":"fact"}"#,
+            r#"{"op":"move","name":"fact","to":"moved"}"#,
+        ] {
+            let out = invoker.invoke(&[hooked_tool_call("memory", args)]).await.unwrap();
+            assert!(out[0].content.contains(PLAN_MODE_UNAVAILABLE), "{args}: {}", out[0].content);
+        }
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), "A fact", "nothing changed");
+        assert!(!invoker.store_root.join("memory").join("new.md").exists());
+        let view = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"view","name":"fact"}"#)]).await.unwrap();
+        assert_eq!(view[0].content, "A fact");
+        let search = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"search","query":"fact"}"#)]).await.unwrap();
+        assert!(search[0].content.contains("`fact`"), "{}", search[0].content);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The hooks cover plugin tools too: a third party's command is exactly
     /// where a PreToolUse policy most needs to apply.
     #[tokio::test]

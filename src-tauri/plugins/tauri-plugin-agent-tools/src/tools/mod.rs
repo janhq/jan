@@ -704,8 +704,10 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     // by name (never a path), so they are always workspace-scoped and never
     // prompt. `path_args` is empty: there is no path to sandbox-check.
     // One `memory` tool with an `op` (view/search/write/edit/delete/move). Classed
-    // `Read` so plan mode and the parallel read path keep it: it writes only
-    // the agent's own notes, which the user does not manage (janhq/jan-internal#497).
+    // `Read` so plan mode keeps its reads and the parallel read path takes it: it
+    // writes only the agent's own notes, which the user does not manage
+    // (janhq/jan-internal#497). Plan mode's refusal of the changing ops is per
+    // op, in the handler.
     BuiltinTool {
         name: MEMORY_TOOL,
         capability: Capability::Read,
