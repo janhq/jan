@@ -10,7 +10,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { coworkModelContext, formatContextSize } from '@/lib/coworkModelControls'
 
 /**
- * Opens the model rail, and only when there is something to configure -- a
+ * Opens the model settings sheet, and only when there is something to configure -- a
  * local llamacpp/mlx model with settings. Remote providers have no local knobs,
  * so the chip stays hidden there like the diff/tasks chips do when empty.
  */
@@ -36,7 +36,7 @@ export function CoworkModelChip({
         <Button
           variant="ghost"
           size="xs"
-          aria-pressed={open}
+          aria-haspopup="dialog"
           aria-label={t('common:modelPanel.a11y')}
           onClick={onToggle}
           className={cn(

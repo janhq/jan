@@ -164,8 +164,7 @@
   },
   "modelPanel": {
     "title": "Model settings",
-    "a11y": "Open model settings",
-    "contextTooltip": "Context window: {{value}} of {{max}} tokens"
+    "a11y": "Open model settings"
   },
   "coworkSlash": {
     "skillUnavailable": "Skill '{{name}}' is not available",
