@@ -189,13 +189,14 @@ auto-compacted 84 -> 31 messages (ctx 96K/128K)
 compacted 84 messages into a summary: the prompt neared the context window
 ```
 
-A run also compacts when it uses up its [session token budget](#budgets), and after a provider
-rejects a prompt as too long (see [Context overflow](#context-overflow)). Both report the same
-way, and so does a subagent's compaction, prefixed with its name.
+A run also compacts after a provider rejects a prompt as too long (see
+[Context overflow](#context-overflow)). That reports the same way, and so does a subagent's
+compaction, prefixed with its name. Using up the [session token budget](#budgets) does not compact:
+spend is not context size.
 
 Headless and RPC clients get a `compaction` event: `phase` is `started`, then `finished` (with
-`messages`, the number summarized) or `failed`, and `reason` is `preflight`, `context_overflow` or
-`session_budget`.
+`messages`, the number summarized) or `failed`, and `reason` is `preflight` or `context_overflow`
+(`session_budget` is still in the schema but no longer sent).
 
 ## Compacting on purpose
 
@@ -214,8 +215,8 @@ preserves the thread of the conversation, including the parts that sent it off c
 ## Context overflow
 
 If a request overflows anyway, the loop compacts and retries rather than erroring out. That path is
-still needed: a route served by a local engine carries no window the loop can read, and an estimate
-is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
+still needed: a route served by a local engine carries no window the loop can read, so this is the
+only compaction it gets, and an estimate is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
 conversation at all, it gives up rather than looping.
 
 ## Capping output

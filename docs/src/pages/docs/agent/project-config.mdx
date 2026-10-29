@@ -200,8 +200,9 @@ A marker for how far one run has gone, distinct from the per-request context win
 run's marginal token spend (replayed context is not recharged each turn).
 
 <Callout type="warning">
-Passing this ceiling does not stop a run. The agent compacts its history, records a note that the
-ceiling was crossed, and carries on, tool calls included. For a hard bound on an unattended run use
+Passing this ceiling does not stop a run. The agent records a note that the ceiling was crossed and
+carries on, tool calls included. It does not compact the history: spend is not context size, and
+only the context window triggers [compaction](/docs/agent/context). For a hard bound on an unattended run use
 `--max-turns` (see the [CLI reference](/docs/agent/cli)), or cancel it.
 </Callout>
 

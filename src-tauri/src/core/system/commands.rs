@@ -893,18 +893,6 @@ pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> 
     }
 }
 
-// check if a system library is available
-#[tauri::command]
-pub fn is_library_available(library: &str) -> bool {
-    match unsafe { libloading::Library::new(library) } {
-        Ok(_) => true,
-        Err(e) => {
-            log::info!("Library {library} is not available: {e}");
-            false
-        }
-    }
-}
-
 #[tauri::command]
 pub fn launch_claude_code_with_config(
     api_url: String,

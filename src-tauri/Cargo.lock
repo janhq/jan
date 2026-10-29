@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Jan"
-version = "0.8.5"
+version = "0.8.8"
 dependencies = [
  "aes-gcm",
  "agent-client-protocol",
@@ -39,7 +39,6 @@ dependencies = [
  "jan-utils",
  "keyring",
  "libc",
- "libloading 0.8.9",
  "log",
  "machine-uid",
  "nix 0.30.1",

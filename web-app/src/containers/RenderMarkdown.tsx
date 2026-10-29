@@ -18,6 +18,8 @@ import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { mermaid } from '@streamdown/mermaid'
 
+import { SKIP, visit } from 'unist-util-visit'
+import type { Root } from 'hast'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -27,6 +29,51 @@ import { CitationLink } from '@/components/CitationLink'
 import { WebCitationChip } from '@/components/WebCitationChip'
 import { MarkdownTable } from '@/components/MarkdownTable'
 import { externalHref, openExternalUrl } from '@/lib/externalLink'
+
+// Do not resolve model-generated links against the app's own origin.
+function isWebLink(href: string | undefined): boolean {
+  if (!href || !/^https?:\/\//i.test(href)) return false
+  try {
+    const { protocol } = new URL(href)
+    return protocol === 'http:' || protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// Citation fragments are model-controlled too: decode defensively and apply the
+// same absolute HTTP(S) policy before letting a chip create its own anchors.
+function webCitationUrl(href: string | undefined): string | undefined {
+  if (!href?.startsWith('#webcite-')) return undefined
+  try {
+    const url = decodeURIComponent(href.slice('#webcite-'.length))
+    return isWebLink(url) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The hardener normalizes URLs (including repairing incomplete HTTP schemes)
+// and annotates rejected anchors with " [blocked]". Unwrap them first so only
+// their original, formatted label survives.
+function restrictChatLinks() {
+  return (tree: Root) => {
+    visit(tree, 'element', (node, index, parent) => {
+      if (node.tagName !== 'a') return
+      const href = node.properties.href
+      if (
+        typeof href === 'string' &&
+        (href.startsWith('#cite-') || webCitationUrl(href) || isWebLink(href))
+      ) {
+        return
+      }
+      if (parent && index !== undefined) {
+        parent.children.splice(index, 1, ...node.children)
+        return [SKIP, index]
+      }
+    })
+  }
+}
 
 const WEB_CITE_MARKER = /\[\[cite:\s*([^\]\s]+?)\s*\]\]/g
 
@@ -60,7 +107,7 @@ interface MarkdownProps {
 // with a shallow prop compare, and fresh literals here would defeat it, forcing
 // a full re-parse + re-highlight on every streamed token.
 const REMARK_PLUGINS = [remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]
-const REHYPE_PLUGINS = [rehypeKatex, defaultRehypePlugins.harden]
+const REHYPE_PLUGINS = [rehypeKatex, restrictChatLinks, defaultRehypePlugins.harden]
 const STREAMDOWN_PLUGINS = { code, mermaid, cjk }
 const STREAMDOWN_CONTROLS = { mermaid: { fullscreen: false } }
 const LINK_SAFETY = { enabled: false }
@@ -244,12 +291,17 @@ function RenderMarkdownComponent({
         )
       }
       if (typeof href === 'string' && href.startsWith('#webcite-')) {
-        const url = decodeURIComponent(href.slice('#webcite-'.length))
-        return <WebCitationChip messageId={messageId} url={url} />
+        const url = webCitationUrl(href)
+        return url ? (
+          <WebCitationChip messageId={messageId} url={url} />
+        ) : (
+          <>{children}</>
+        )
       }
-      // Model and tool output decides these hrefs, so a click must never
-      // navigate the app window: web and mail links open outside the app,
-      // in-page fragments stay, and anything else is inert text.
+      // Keep the HTTP(S)-only chat policy even if the hardener repairs a URL.
+      if (!isWebLink(href)) return <>{children}</>
+      // Model and tool output must never navigate the app window. Open
+      // allowed web links outside the app, without a second new-window request.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { node: _node, href: _href, target: _target, ...rest } = props as typeof props & {
         node?: unknown
@@ -271,14 +323,7 @@ function RenderMarkdownComponent({
           </a>
         )
       }
-      if (typeof href === 'string' && href.startsWith('#')) {
-        return (
-          <a {...rest} href={href}>
-            {children}
-          </a>
-        )
-      }
-      return <a {...rest}>{children}</a>
+      return <>{children}</>
     }
     return { a: Anchor, table: MarkdownTable, ...(components ?? {}) } as Components
   }, [components, messageId])

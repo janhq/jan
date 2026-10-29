@@ -109,7 +109,7 @@ cd e2e && yarn test
 | Variable | Effect |
 | --- | --- |
 | `JAN_E2E_KEEP=1` | Keep the throwaway profile after the run instead of deleting it. |
-| `JAN_E2E_HOME=<dir>` | Use `<dir>` as the profile instead of a fresh temp dir. A directory supplied this way is never deleted — only a profile the harness created is cleaned up. Primarily how the launcher hands the path to its workers. |
+| `JAN_E2E_HOME=<dir>` | Use a validated `<dir>` strictly inside the OS temp root as the profile instead of a fresh temp dir. A directory supplied this way is never deleted — only a profile the harness created is cleaned up. Primarily how the launcher hands the path to its workers. |
 
 This package is **not** a yarn workspace of the root project. It has its own
 lockfile, because it shares no code with `core`/`web-app` and adding it to the
@@ -121,7 +121,8 @@ the release-build jobs that never run this suite.
 Two workflows, deliberately split by cost:
 
 - `.github/workflows/e2e-check.yml` runs on every PR that touches `e2e/**`. It
-  type-checks this package and enforces `--immutable` against its lockfile. It
+  runs focused launch-guard unit tests and type-checks this package on Linux,
+  macOS and Windows, and enforces `--immutable` against its lockfile. It
   does not build the app, so it cannot run the suite.
 - `.github/workflows/e2e-suite.yml` builds the app and runs the suite on
   ubuntu-latest, macos-latest, windows-latest and windows-11-arm. Nightly on
@@ -179,8 +180,9 @@ server ever bound.
 
 ## Isolation
 
-Each run gets a throwaway profile in a temp dir, so tests never touch real Jan
-data. The desktop app resolves its data folder from
+Each run gets a throwaway profile in a temp dir to redirect Jan application
+data. This is not complete isolation: macOS WebKit storage and the other gaps
+below can still touch the real user profile. The desktop app resolves its data folder from
 `core::app::paths::data_dir()`; which variables that leaves you needing to
 override depends on the platform.
 
@@ -189,6 +191,65 @@ override depends on the platform.
 | macOS | `$HOME/Library/Application Support` | `HOME` |
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
 | Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
+
+### Known macOS WebKit gap — follow-up
+
+HOME redirection does **not** isolate WKWebView localStorage. In native macOS
+arm64 validation on [#9457](https://github.com/janhq/jan/pull/9457) and
+[#9464](https://github.com/janhq/jan/pull/9464), thinhlpg observed writes under the
+real `~/Library/WebKit/<bundle id>/WebsiteData/Default/.../LocalStorage/`
+(`jan.ai.app`), shared with an installed Jan. The redirected profile contained
+no `Library/WebKit`; `Library/Caches/jan.ai.app` did redirect. Therefore both
+normal and migration launches may read or modify installed-Jan browser state;
+a passing migration smoke does not prove browser-storage isolation or migration.
+Use a disposable macOS account/VM for separation, not merely `JAN_E2E_HOME`.
+
+**Follow-up ([jan-internal#496](https://github.com/janhq/jan-internal/issues/496),
+not fixed here):** isolate macOS e2e WebKit storage, evaluating a
+distinct e2e bundle identifier, and verify with real installed-Jan storage that
+launches do not touch it. The possible connection to a missing setup wizard on
+an already-used Mac is unproven. This PR changes neither bundle IDs nor WebKit
+storage behavior.
+
+### Launch guard (limited guarantee)
+
+Before profile seeding, recursive cleanup registration, or launch,
+`launch-guard.ts` validates `JAN_E2E_HOME`. Inherited paths are checked before
+mkdir; generated profiles require an initial `mkdtemp` allocation, preceded by
+the environment check. It must be strictly inside the OS temp root; CI and local launches
+allocate profiles with `mkdtemp` under Node’s `os.tmpdir()` (which may differ
+from GitHub’s `runner.temp`). Real homes and
+ancestors/descendants of known user Jan paths are rejected, including inherited
+XDG/AppData locations. Existing prefixes are canonicalized (also for not-yet-created
+paths) so symlink aliases cannot disguise overlap; sibling names are accepted.
+Redirected seed/scratch roots, desktop configuration paths, and their
+`data_folder` values outside the profile are rejected. This includes legacy
+migration sources: Rust checks canonical `Jan/settings.json` first, then (only
+if absent) copies and removes the first file found among bundle-id
+`settings.json` and then, on Linux, `.config/Jan/settings.json`. The guard conservatively
+validates all these sources even when shadowed by a higher-priority config,
+including known nightly/beta bundle IDs (Rust's current migration constant is
+`jan.ai.app`), and checks their directory/file symlinks before reading them.
+Inherited profiles are never recursively deleted.
+
+Unset nonempty `JAN_DATA_ROOT` on Unix: the WDIO service merges
+`{ ...process.env, ...options.env }`, so omitting it from the Unix overrides
+would otherwise preserve it and bypass native HOME/XDG lookup. Even a relative
+value is rejected rather than relying on fallback behavior. Windows explicitly
+overrides it. Nonempty `JAN_DATA_FOLDER`, `CI=e2e`, and `APP_NAME` values other
+than `Jan` (including empty) are rejected too.
+
+This is an accidental-launch guard, **not a filesystem sandbox** or a proof of
+complete confinement. It does not prevent concurrent symlink changes, hard-link
+aliases, every possible legacy/plugin/config escape, Windows registry folder
+redirection, the macOS WebKit gap, or the Windows CLI/updater gaps below. Use a disposable OS account
+or VM if stronger separation is needed. Existing profiles should be disposable;
+the harness merges a bootstrap seed into their backend settings.
+
+Run `cd e2e && yarn test:unit && yarn typecheck` without an app build. The focused
+`node:test` tests run via the existing `tsx`, use only temporary fixture homes,
+and check rejection without writes, containment siblings, environment bypasses,
+and symlink aliases (Windows skips only if privilege is unavailable).
 
 On Linux the harness pins **every** XDG base directory
 (`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`) rather
@@ -262,7 +323,9 @@ in `isolation.ts` next to `XDG_RUNTIME_DIR`:
   base with Tauri's own resolver rather than `core/app/paths.rs`, landing it in
   the real `%APPDATA%\jan.ai.app\`. Created only when absent.
 
-Both are residue or reads. The one Windows escape that was destructive —
+These are known desktop-suite residue or reads, not a full isolation guarantee.
+Windows CLI/global-config callers and explicit saves are not covered; this
+harness does not fix their known-folder escapes. The one Windows escape that was destructive —
 deep-link registration, which rewrites the `HKCU` `jan://` handler to point at
 whichever binary is running — is compiled out under the `e2e` feature instead of
 being documented, since no environment variable reaches the registry.
@@ -273,12 +336,13 @@ Two things that look like they'd work but don't:
   `JAN_DATA_ROOT` above: it names the data folder itself rather than the OS root
   it sits under, and only `resolve_jan_data_folder()` reads it, which is the CLI
   path. The desktop build ignores it.
-- `CI=e2e` short-circuits `get_app_configurations()` to a hardcoded `"./data"`,
+- `CI=e2e` (now rejected by the launch guard) short-circuits `get_app_configurations()` to a hardcoded `"./data"`,
   which would skip the config resolution these tests exist to cover.
 
-Because the profile is always fresh, **every run is a first launch** — no
+With the default generated fresh profile, **every run is a first launch** — no
 providers are configured, so `/` renders `SetupScreen`. The suite asserts that
-rather than working around it.
+rather than working around it. Reusing an inherited profile can retain providers
+and other state, so it may not satisfy these first-launch assertions.
 
 A first launch used to **download**: Jan fetches its embedding model
 `sentence-transformer-mini` (~45MB) on a profile it has not bootstrapped before,
@@ -632,3 +696,63 @@ Those lines no longer reach the terminal at all: `outputDir` sends the driver
 log to `logs/<spec>-<cid>.log` instead of the console, so what you see live is
 the spec reporter alone. The lines are still worth reading when something does
 fail — that file is where the last attempt before the give-up is recorded.
+
+## Migration smoke (separate scenario)
+
+After building the same debug `e2e` binary described above:
+
+```bash
+cd e2e
+xvfb-run -a yarn test:migration # Linux; omit xvfb-run on macOS/Windows
+```
+
+This copies the committed `src-tauri/tests/fixtures/upgrade/0.8.3` contents
+(store, MCP config and two threads) into its own fresh guarded temporary
+profile. It requires schema 3 and an Exa entry before starting. It launches
+**two sequential WDIO commands / real desktop processes**, with the same
+profile and no reseeding between them. The embedded driver port must be closed
+before the first launch and after each launch; a still-listening process is
+never killed by name or by port. A failed first phase stops the run.
+
+Both starts assert on disk: schema 5, exactly the fixture MCP config minus Exa
+(all other servers and settings unchanged), and all fixture thread IDs,
+metadata, message IDs and content preserved. Both navigate to historical thread
+`784952d3-dc72-474e-ab24-0d78e7035280` and assert its user and assistant text.
+There is no provider setup, model download or inference request. The embedder
+bootstrap suppression flag is seeded once; incidental app metadata requests
+are not blocked, so this is not an offline/network-isolation test.
+
+`JAN_E2E_SCENARIO` accepts only `default` (the existing five specs) or `migration`
+(only `migration.e2e.ts`); use the runner, not a hand-exported migration scenario.
+`test:migration` rejects inherited `JAN_E2E_HOME` and
+`JAN_E2E_EMBEDDER_DOWNLOAD`. It uses the same launch safety guard as the default
+suite. On failure/interruption the owned profile and phase-specific runner and
+WDIO logs remain under the printed temporary path. On success it removes them
+unless `JAN_E2E_KEEP=1`. The migration runner directly spawns and retains handles
+for the app and WDIO; the migration config disables the service launcher to avoid
+a second app. It waits for the embedded `/status` readiness before starting WDIO.
+The spec then waits for the historical sidebar row (thread-store hydration), not
+merely `#root`, before navigating to the historical conversation.
+
+SIGINT/SIGTERM and the ten-minute phase deadline cancel startup or execution and
+await cleanup of both owned roots. Unix sends TERM then KILL after five seconds;
+Windows invokes bounded `taskkill /PID <owned-live-root> /T /F` before the root
+exits, rather than force-killing WDIO and losing its tree. No PID is discovered
+from a port, log, process name, or PID file; no detached processes/groups or broad
+image-name kills are used. Each phase also requires the driver port to close.
+Any failure or uncertain teardown retains the profile. This is a guarantee for
+tracked roots and driver closure, **not** proof that every Unix grandchild has
+exited: Unix app/worker descendants are not independently enumerated. SIGKILL of
+the runner, machine shutdown, or already-orphaned Windows descendants cannot be
+reliably cleaned up by this harness. Retained profiles are evidence, not a claim
+that every possible orphan was terminated. Injectable lifecycle tests cover
+startup/run cancellation, real short-deadline automatic cancellation, escalation,
+and cleanup failure. Work and teardown failures are retained together (including
+the driver-port closure barrier), rather than cleanup masking the original error.
+
+This covers startup migrations and persistence across a second process start,
+not an installer upgrade, old binary execution, browser localStorage migration,
+provider credential migration, or an exhaustive upgrade matrix. The fixture is
+not a copy of an OS browser profile. `yarn test:unit` exercises fixture comparison,
+strict scenario selection, and launch/barrier ordering without starting Jan;
+it does not substitute for the desktop smoke.

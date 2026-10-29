@@ -73,7 +73,6 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
-        core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
         core::system::commands::clear_claude_code_env,
         // Server commands
