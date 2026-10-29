@@ -119,6 +119,10 @@ pub(crate) struct ChildWorkspace {
     /// Whether the parent's checkout had uncommitted changes the new worktree
     /// does not carry.
     pub(crate) left_changes: bool,
+    /// Whether the `assign` that returned this made `worktree` for it, rather
+    /// than handing out an earlier child's: only then may [`Ledger::undo`]
+    /// remove it.
+    fresh: bool,
 }
 
 impl ChildWorkspace {
@@ -130,6 +134,7 @@ impl ChildWorkspace {
             worktree: None,
             fallback: None,
             left_changes: false,
+            fresh: false,
         }
     }
 
@@ -370,6 +375,7 @@ impl Ledger {
                 })?;
                 ws.read_only = read_only;
                 ws.left_changes = false;
+                ws.fresh = false;
                 ws
             }
             Some(WorkspaceRequest::New) => create(parent_root, name, None, read_only)?,
@@ -405,6 +411,39 @@ impl Ledger {
         state.by_name.insert(name.to_string(), ws.clone());
         Ok((ws, lease))
     }
+
+    /// Take back the assignment `ws` that `name`'s dispatch got and never
+    /// used (the run was torn down before the child could start): forget the
+    /// name, and remove the worktree only when that `assign` made it and it
+    /// holds nothing. Everything else the session made stays, since a later
+    /// dispatch may still name it. Call after the dispatch's lease is gone.
+    pub(crate) fn undo(&self, name: &str, ws: &ChildWorkspace) {
+        let mut state = self.state.lock().unwrap();
+        state.by_name.remove(name);
+        let Some(wt) = ws.worktree.as_ref().filter(|_| ws.fresh) else {
+            return;
+        };
+        if !state.busy.contains(&wt.path) && remove_if_empty(wt) {
+            state.created.retain(|c| c.path != wt.path);
+        }
+    }
+}
+
+/// Remove `wt` and its branch when it holds nothing: no commit past its base
+/// and no uncommitted change. One git cannot read counts as holding work,
+/// since removal is forced and deletes the branch. Returns whether it went.
+#[cfg(feature = "cli")]
+fn remove_if_empty(wt: &ChildWorktree) -> bool {
+    use crate::core::agent::git;
+    git::commits_since(&wt.path, &wt.base) == Some(0)
+        && git::try_changed_paths(&wt.path).is_ok_and(|c| c.is_empty())
+        && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
+}
+
+/// The desktop makes no worktrees, so there is never one to remove.
+#[cfg(not(feature = "cli"))]
+fn remove_if_empty(_wt: &ChildWorktree) -> bool {
+    false
 }
 
 /// A fresh worktree for `name`, or the parent's checkout when the project
@@ -480,6 +519,7 @@ fn create(
                         repo: repo.clone(),
                     }),
                     fallback: None,
+                    fresh: true,
                 });
             }
             Err(e) => last = e,
@@ -521,7 +561,6 @@ impl Ledger {
     /// so is one git cannot read: removal is forced and deletes the branch,
     /// so "unknown" must never count as "clean".
     pub(crate) fn finish_session(&self) -> Vec<String> {
-        use crate::core::agent::git;
         let mut state = self.state.lock().unwrap();
         let created = std::mem::take(&mut state.created);
         let mut kept = Vec::new();
@@ -529,13 +568,7 @@ impl Ledger {
             if !wt.path.is_dir() {
                 continue;
             }
-            let busy = state.busy.contains(&wt.path);
-            let empty = git::commits_since(&wt.path, &wt.base) == Some(0)
-                && git::try_changed_paths(&wt.path).is_ok_and(|c| c.is_empty());
-            if !busy
-                && empty
-                && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
-            {
+            if !state.busy.contains(&wt.path) && remove_if_empty(&wt) {
                 continue;
             }
             kept.push(kept_line(&wt));
@@ -865,6 +898,47 @@ mod git_tests {
         assert_eq!(ledger.live().len(), 2);
         let _ = std::fs::remove_dir_all(&committed.root);
         let _ = std::fs::remove_dir_all(&dirty.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Undoing a dispatch the run never started takes back only what that
+    /// dispatch got: its name, and the worktree its own `assign` made. An
+    /// earlier reader's fresh worktree (which holds no lease) and an earlier
+    /// writer's stay, and so do their names, for a later `workspace` to reuse.
+    #[test]
+    fn undo_removes_only_the_worktree_that_assignment_made() {
+        let Some(root) = repo("undo") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let new = WorkspaceRequest::New;
+        let (reader, _) = ledger.assign(&root, "explore", false, Some(&new)).unwrap();
+        let (writer, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+
+        let (late, lease) = ledger.assign(&root, "late", true, None).unwrap();
+        drop(lease);
+        ledger.undo("late", &late);
+        let late_wt = late.worktree.as_ref().unwrap();
+        assert!(!late_wt.path.exists(), "the undone dispatch's worktree is removed");
+        assert_eq!(crate::core::agent::git::resolve_commit(&root, &late_wt.branch), None);
+        assert!(reader.root.is_dir() && writer.root.is_dir());
+        assert_eq!(ledger.live().len(), 2, "{:?}", ledger.live());
+
+        // An undone reuse hands nothing back: the worktree was not its own.
+        let reuse = WorkspaceRequest::Reuse("general".to_string());
+        let (borrowed, lease) = ledger.assign(&root, "late-2", true, Some(&reuse)).unwrap();
+        drop(lease);
+        ledger.undo("late-2", &borrowed);
+        assert!(writer.root.is_dir(), "an earlier child's worktree survives");
+
+        for earlier in ["explore", "general"] {
+            let reuse = WorkspaceRequest::Reuse(earlier.to_string());
+            assert!(ledger.assign(&root, "next", false, Some(&reuse)).is_ok(), "{earlier}");
+        }
+        for gone in ["late", "late-2"] {
+            let reuse = WorkspaceRequest::Reuse(gone.to_string());
+            assert!(ledger.assign(&root, "next", false, Some(&reuse)).is_err(), "{gone}");
+        }
+        let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
 
