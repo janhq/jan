@@ -212,10 +212,21 @@ the cap by being rejected. `JanRpcError` is an answer (`code`, `retryable`), and
 `JanRuntimeError` is the channel (spawn failure, protocol mismatch, exit), with
 the runtime's own stderr attached.
 
+A session's host tools follow it. `fork()` answers for the source's tools with
+the same handlers (`fork(tools=[...])` replaces them, `fork(tools=[])` drops
+them), and `resume_session(id)` returns the session this client already holds,
+with its turns, listeners and handlers, rather than a second object for the
+same id. A host tool's name is stripped of surrounding whitespace, as the
+runtime does.
+
 Listeners registered with `session.on(...)` run on the ADK's own dispatch
 thread, in the order the runtime emitted the events, so a listener may call back
 into the runtime - answering a permission request from one is the case that
 matters - but it must not block for long: the dispatch thread is shared.
+
+A listener that raises fails the runtime rather than being skipped: every open
+turn settles with a `JanRuntimeError` naming what it raised, so a listener that
+was answering permission requests cannot leave a turn parked behind it.
 
 ## Types
 

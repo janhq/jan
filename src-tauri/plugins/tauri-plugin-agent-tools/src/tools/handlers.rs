@@ -13,10 +13,12 @@ use crate::memory;
 use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
+use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_scratch, lexical_normalize, refuse_windows_name,
-    resolve_path, scratch_display_path, symlink_escapes_any_root,
+    escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
+    refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
 };
+use crate::screenshot_pages::PageScope;
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
@@ -95,6 +97,14 @@ fn cap_output(s: &str, max_lines: usize, max_bytes: usize, note: &str) -> String
         out.push_str(note);
     }
     out
+}
+
+/// Command output as it should be shown to the model or a person: carriage-return
+/// redraws collapsed to their final frame, then control characters dropped. The
+/// one sanitizer for the tool result, the `/shells` live tail and the TUI's
+/// streamed view, so all three show the same text.
+pub fn sanitize_output(s: &str) -> String {
+    sanitize_control(&collapse_carriage_returns(s))
 }
 
 /// Collapse carriage-return redraws (`git`/`curl`-style progress lines) to what
@@ -244,8 +254,8 @@ async fn execute_text(
         "skill_read" => skill_read(args, ctx),
         "skill_write" => skill_write(args, ctx),
         // Native web tools: compiled into the agent core, not an MCP server.
-        "web_search" => crate::tools::web::web_search(args).await,
-        "web_fetch" => crate::tools::web::web_fetch(args).await,
+        "web_search" => crate::tools::web::web_search(args, ctx.web_search).await,
+        "web_fetch" => crate::tools::web::web_fetch(args, ctx.web_search).await,
         other => format!("ERROR: unknown built-in tool '{other}'"),
     }
 }
@@ -255,7 +265,7 @@ async fn execute_text(
 /// its position in the file; `None` for other tools or when nothing would
 /// change. Used to show the change in the permission prompt. Both variants read
 /// the prior file: `write` to show its `created`/`overwrote` header, `edit` to
-/// locate `old_string` and number the hunk against real file lines.
+/// apply the batch and number the hunks against real file lines.
 pub async fn preview_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -301,9 +311,9 @@ pub async fn preview_diff(
 /// Returns `(content, diff)`. The diff is line-prefixed (`-`/`+`) hunk text for
 /// **display only**: the model gets the concise summary in `content`, since the
 /// hunk merely replays an edit it just authored and would cost context on every
-/// mutating call. Diffs are computed against the pre-execution file so line
-/// numbers match the file as the model saw it. `None` for non-mutating tools
-/// and on error.
+/// mutating call. The diff compares the file before and after the call, so
+/// deleted lines carry their original numbers and kept or inserted lines their
+/// numbers in the result. `None` for non-mutating tools and on error.
 pub async fn execute_builtin_with_diff(
     tool: &BuiltinTool,
     args: &serde_json::Value,
@@ -326,79 +336,34 @@ pub async fn execute_builtin_with_diff(
     }
 }
 
-/// 1-based line number of the start of `pos` within `text`.
-fn line_number_at(text: &str, pos: usize) -> usize {
-    text[..pos].matches('\n').count() + 1
-}
-
 /// Lines of surrounding file context kept around a change, and the threshold
-/// past which one edit's hunk is split with a `...` gap. Matches the feel of a
-/// unified diff without the `@@ -a,b +c,d @@` range header (the existing
-/// `@@ edit i/n @@` marker already identifies the hunk).
+/// past which distant changes are split with a `...` gap. Matches the feel of a
+/// unified diff without the `@@ -a,b +c,d @@` range header.
 const DIFF_CONTEXT: usize = 2;
 
-/// Per-edit hunks computed with a real line-level diff (`similar`), so a
-/// one-line change inside a large `old_string`/`new_string` pair shows only the
-/// lines that actually differ instead of the whole block as removed and
-/// re-added. The compared blocks are widened from the raw arguments to whole
-/// lines plus up to `DIFF_CONTEXT` unchanged lines taken from the file, so a
-/// change is shown in place even when `old_string` carries no context of its
-/// own. Deleted lines are numbered against the file before the edit, kept and
-/// inserted lines against the file after it. Multiple edits are separated by
-/// `@@ edit i/n @@` and applied in order so later edits number against the
-/// state left by earlier ones, matching what `edit()` does.
+/// One line-level diff (`similar`) of the file before and after the whole
+/// batch, so hunks come out in file order however the edits are listed,
+/// overlapping edits show only their net change, and a one-line change inside
+/// a large `old_string`/`new_string` pair shows only the lines that differ.
+/// Deleted lines are numbered against the file before the batch, kept and
+/// inserted lines against the file after it. When the batch would be rejected
+/// (an `old_string` missing or not unique) there is no file position to number
+/// against, so each edit's arguments are shown on their own, numbered from 1.
 fn render_edit_diff(edits: &[serde_json::Value], prior: &str) -> String {
-    let n = edits.len();
-    let mut working = prior.to_string();
-    let mut out = String::new();
-    for (i, e) in edits.iter().enumerate() {
-        let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
-        let new = e.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
-        if n > 1 {
-            out.push_str(&format!("@@ edit {}/{} @@\n", i + 1, n));
-        }
-        let (old, new) = line_endings_of_file(&working, old, new);
-        match working.find(&*old) {
-            Some(pos) => {
-                let (old_block, new_block, start) = expand_hunk(&working, pos, &old, &new);
-                out.push_str(&render_hunk_diff(&old_block, &new_block, start));
-                working.replace_range(pos..pos + old.len(), &new);
-            }
-            // `edit()` will reject this call, but the arguments are still worth
-            // showing; there is no file position to number them against.
-            None => out.push_str(&render_hunk_diff(&old, &new, 1)),
-        }
-    }
+    let out = match apply_edits(prior, edits) {
+        Ok(updated) => render_hunk_diff(prior, &updated, 1),
+        Err(_) => edits
+            .iter()
+            .map(|e| {
+                let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                let new = e.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let (old, new) = line_endings_of_file(prior, old, new);
+                render_hunk_diff(&old, &new, 1)
+            })
+            .collect::<Vec<_>>()
+            .join("      ...\n"),
+    };
     out.trim_end().to_string()
-}
-
-/// Widen the replacement of `old` at `pos` in `text` to whole lines plus
-/// `DIFF_CONTEXT` lines of surrounding file context, returning the before and
-/// after blocks and the 1-based line the blocks start at. Both blocks share the
-/// context verbatim, so the diff renders it as unchanged lines; whole-line
-/// bounds keep a match that starts or ends mid-line from being diffed against a
-/// line fragment.
-fn expand_hunk(text: &str, pos: usize, old: &str, new: &str) -> (String, String, usize) {
-    let end = pos + old.len();
-    let mut ctx_start = text[..pos].rfind('\n').map_or(0, |i| i + 1);
-    for _ in 0..DIFF_CONTEXT {
-        if ctx_start == 0 {
-            break;
-        }
-        ctx_start = text[..ctx_start - 1].rfind('\n').map_or(0, |i| i + 1);
-    }
-    let mut ctx_end = text[end..].find('\n').map_or(text.len(), |i| end + i);
-    for _ in 0..DIFF_CONTEXT {
-        if ctx_end >= text.len() {
-            break;
-        }
-        ctx_end = text[ctx_end + 1..]
-            .find('\n')
-            .map_or(text.len(), |i| ctx_end + 1 + i);
-    }
-    let old_block = text[ctx_start..ctx_end].to_string();
-    let new_block = format!("{}{new}{}", &text[ctx_start..pos], &text[end..ctx_end]);
-    (old_block, new_block, line_number_at(text, ctx_start))
 }
 
 /// Line-diff `old` against `new`, rendering each changed/context line with its
@@ -421,7 +386,11 @@ fn render_hunk_diff(old: &str, new: &str, start: usize) -> String {
         }
     };
     let (old, new) = (pad(old), pad(new));
-    let diff = TextDiff::from_lines(&old, &new);
+    // Bounded so a large rewrite of a big file cannot stall the async thread;
+    // past the deadline `similar` falls back to a coarser but valid diff.
+    let diff = TextDiff::configure()
+        .timeout(std::time::Duration::from_secs(1))
+        .diff_lines(&old, &new);
     let mut out = String::new();
     for (gi, group) in diff.grouped_ops(DIFF_CONTEXT).iter().enumerate() {
         if gi > 0 {
@@ -740,31 +709,53 @@ async fn write(
     // Report the resolved location, not the raw argument: an absolute or `../`
     // path lands outside the project and the model must see where it went.
     let shown = display_path(root, scratch, &target);
-    // Re-validate before `create_dir_all`, not just before the write: a
-    // concurrent sandboxed process can swap a path component between the gate
-    // decision and this call, and creating the parents first would already have
-    // made directories through the swapped link. Fail closed.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
-        return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
-    }
-    if let Some(parent) = target.parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return format!("ERROR: {shown}: {e}");
+    // Resolve once, before any directory is created, and open only what that
+    // resolution approved: a concurrent sandboxed process can swap a path
+    // component for a link at any point, and both `create_dir_all` and a
+    // by-name write would follow it.
+    let real = match write_landing(root, scratch, write_roots, &target) {
+        Ok(real) => real,
+        Err(()) => {
+            return format!("ERROR: refused to write through a symlink out of the workspace: {path}")
         }
-    }
-    // Existence decides created/overwrote; a non-UTF8 file still exists, so it
-    // must not be read_to_string's error path that answers that question.
-    let existed = tokio::fs::try_exists(&target).await.unwrap_or(false);
-    let unchanged = existed
-        && tokio::fs::read_to_string(&target)
-            .await
-            .is_ok_and(|prior| prior == content);
-    let bytes = content.len();
-    match tokio::fs::write(&target, content).await {
-        Ok(()) if unchanged => format!("No change: {shown} already had these {bytes} bytes"),
-        Ok(()) if existed => format!("Overwrote {shown} ({bytes} bytes)"),
-        Ok(()) => format!("Created {shown} ({bytes} bytes)"),
+    };
+    let content = content.to_string();
+    let outcome = tokio::task::spawn_blocking(move || {
+        // Existence decides created/overwrote; a non-UTF8 file still exists, so
+        // it must not be a failed UTF-8 decode that answers that question.
+        let prior = nofollow::read(&real);
+        let existed = !matches!(&prior, Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+        let unchanged = prior.is_ok_and(|p| p == content.as_bytes());
+        nofollow::write(&real, content.as_bytes()).map(|()| (existed, unchanged, content.len()))
+    })
+    .await;
+    match outcome {
+        Ok(Ok((_, true, bytes))) => format!("No change: {shown} already had these {bytes} bytes"),
+        Ok(Ok((true, _, bytes))) => format!("Overwrote {shown} ({bytes} bytes)"),
+        Ok(Ok((false, _, bytes))) => format!("Created {shown} ({bytes} bytes)"),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to write through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
+    }
+}
+
+/// The link-free path a `write`/`edit` must open, or `Err` to refuse.
+///
+/// A target under a trusted root must resolve inside one. A target outside
+/// every root was already put to the user by the gate as an escape, so it is
+/// written where it really lands; one that cannot be resolved at all is
+/// refused rather than handed to a by-name open.
+fn write_landing(
+    root: &Path,
+    scratch: Option<&Path>,
+    write_roots: &[PathBuf],
+    target: &Path,
+) -> Result<PathBuf, ()> {
+    match landing(root, scratch, write_roots, target) {
+        Landing::Inside(real) | Landing::Outside(Some(real)) => Ok(real),
+        Landing::Escapes | Landing::Outside(None) => Err(()),
     }
 }
 
@@ -795,6 +786,35 @@ fn line_endings_of_file<'a>(
     }
 }
 
+/// Apply an `edit` call's replacements to `content` in order, so a later edit
+/// may target text an earlier one inserted. Each `old_string` must match
+/// exactly once in the text as it stands at that point. Shared by `edit()` and
+/// its diff preview so the preview always shows the change that is applied.
+fn apply_edits(content: &str, edits: &[serde_json::Value]) -> Result<String, String> {
+    let mut content = content.to_string();
+    for (i, e) in edits.iter().enumerate() {
+        let Some(old_string) = e.get("old_string").and_then(|v| v.as_str()) else {
+            return Err(format!("edit {}: missing 'old_string'", i + 1));
+        };
+        let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
+            return Err(format!("edit {}: missing 'new_string'", i + 1));
+        };
+        let (old_string, new_string) = line_endings_of_file(&content, old_string, new_string);
+        let count = content.matches(&*old_string).count();
+        if count == 0 {
+            return Err(format!("edit {}: old_string not found", i + 1));
+        }
+        if count > 1 {
+            return Err(format!(
+                "edit {}: old_string not unique ({count} matches)",
+                i + 1
+            ));
+        }
+        content = content.replacen(&*old_string, &new_string, 1);
+    }
+    Ok(content)
+}
+
 async fn edit(
     args: &serde_json::Value,
     root: &Path,
@@ -819,39 +839,37 @@ async fn edit(
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
-    // Re-validate before the final read+write pair so a swapped symlink cannot
-    // redirect either the read or the later write.
-    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
+    // Resolve once and use that path for both the read and the write, each
+    // opened without following links, so a swapped component redirects neither.
+    let Ok(real) = write_landing(root, scratch, write_roots, &target) else {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
-    }
-    let mut content = match tokio::fs::read_to_string(&target).await {
+    };
+    let read_path = real.clone();
+    let read = tokio::task::spawn_blocking(move || nofollow::read(&read_path)).await;
+    let content = match read {
+        Ok(Ok(bytes)) => match String::from_utf8(bytes) {
+            Ok(c) => c,
+            Err(_) => return format!("ERROR: {shown}: stream did not contain valid UTF-8"),
+        },
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            return format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
+        }
+        Ok(Err(e)) => return format!("ERROR: {shown}: {e}"),
+        Err(e) => return format!("ERROR: {shown}: {e}"),
+    };
+
+    let content = match apply_edits(&content, edits) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };
 
-    for (i, e) in edits.iter().enumerate() {
-        let Some(old_string) = e.get("old_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: {shown}: edit {}: missing 'old_string'", i + 1);
-        };
-        let Some(new_string) = e.get("new_string").and_then(|v| v.as_str()) else {
-            return format!("ERROR: {shown}: edit {}: missing 'new_string'", i + 1);
-        };
-        let (old_string, new_string) = line_endings_of_file(&content, old_string, new_string);
-        let count = content.matches(&*old_string).count();
-        if count == 0 {
-            return format!("ERROR: {shown}: edit {}: old_string not found", i + 1);
+    let written = tokio::task::spawn_blocking(move || nofollow::write(&real, content.as_bytes()));
+    match written.await {
+        Ok(Ok(())) => format!("Applied {} edit(s) to {shown}", edits.len()),
+        Ok(Err(e)) if nofollow::is_link_refused(&e) => {
+            format!("ERROR: refused to edit through a symlink out of the workspace: {path}")
         }
-        if count > 1 {
-            return format!(
-                "ERROR: {shown}: edit {}: old_string not unique ({count} matches)",
-                i + 1
-            );
-        }
-        content = content.replacen(&*old_string, &new_string, 1);
-    }
-
-    match tokio::fs::write(&target, content).await {
-        Ok(()) => format!("Applied {} edit(s) to {shown}", edits.len()),
+        Ok(Err(e)) => format!("ERROR: {shown}: {e}"),
         Err(e) => format!("ERROR: {shown}: {e}"),
     }
 }
@@ -962,8 +980,11 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
     let escalation = ctx.escalation;
+    // Fed from the first byte, so a command the user opens in `/shells` after it
+    // backgrounded still shows what it printed before the timeout.
+    let tail = pid.and_then(proc::output_handle);
     tokio::spawn(async move {
-        let mut out = collect_and_format(child, spill_scratch, sink).await;
+        let mut out = collect_and_format(child, spill_scratch, sink, tail).await;
         // Appended inside the task so a backgrounded job carries the hint too.
         if sandboxed {
             out.push_str(&sandbox_denial_note(&out, &policy, escalation));
@@ -976,14 +997,24 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
     tokio::select! {
         res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
-        _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
-            // The command outran its timeout. Rather than killing it or blocking
-            // this call, let it keep running and have the detached task's result
-            // land in a file the agent reads when it is ready -- no second tool
-            // mode, no job registry. `None` means the background file could not
+        by_user = hand_off_after(timeout_secs, ctx.detach_signal.clone()) => {
+            // The command outran its timeout, or the user wants the agent back
+            // sooner. Rather than killing it or blocking this call, let it keep
+            // running and have the detached task's result land in a file the
+            // agent reads when it is ready -- no second tool mode, no job
+            // registry. `None` means the background file could not
             // be created; the command still runs, its output just isn't captured.
             // Flag it in the process registry so the `/shells` inspector lists it
             // as a detached shell the user can stop.
+            let lead = if by_user {
+                format!(
+                    "{DETACHED_PREFIX}after {}s because the user sent a message, and is \
+                     still running",
+                    started.elapsed().as_secs()
+                )
+            } else {
+                format!("{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the background")
+            };
             if let Some(pid) = pid {
                 proc::mark_backgrounded(ctx.thread_id, pid);
             }
@@ -1034,8 +1065,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         ""
                     };
                     format!(
-                        "Command exceeded {timeout_secs}s and is still running in the \
-                         background. Its result will be written to {display} once it \
+                        "{lead}. Its result will be written to {display} once it \
                          finishes; read that file to collect it (if the output was large \
                          that file keeps a tail and points to the full log).{ping}"
                     )
@@ -1056,13 +1086,38 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         }
                     });
                     format!(
-                        "Command exceeded {timeout_secs}s and is still running in the \
-                         background, but a file to capture its output could not be created, \
+                        "{lead}, but a file to capture its output could not be created, \
                          so the output will not be collected."
                     )
                 }
             }
         }
+    }
+}
+
+/// How long a command runs before a detach request moves it to the background,
+/// so a quick command started beside a typed message still answers inline.
+const DETACH_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Resolves once a running command is to be handed to the background: when its
+/// timeout passes (`false`) or, sooner, when `detach` turns true after
+/// [`DETACH_GRACE`] (`true`). A closed channel leaves only the timeout.
+async fn hand_off_after(
+    timeout_secs: u64,
+    detach: Option<tokio::sync::watch::Receiver<bool>>,
+) -> bool {
+    let requested = async move {
+        let Some(mut detach) = detach else {
+            return std::future::pending::<()>().await;
+        };
+        tokio::time::sleep(DETACH_GRACE).await;
+        if detach.wait_for(|on| *on).await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => false,
+        _ = requested => true,
     }
 }
 
@@ -1111,6 +1166,7 @@ async fn collect_and_format(
     mut child: tokio::process::Child,
     scratch: Option<PathBuf>,
     sink: Option<crate::tools::OutputSink>,
+    tail: Option<proc::OutputTail>,
 ) -> String {
     use tokio::io::AsyncReadExt;
     let mut stdout = child.stdout.take();
@@ -1125,6 +1181,9 @@ async fn collect_and_format(
     // enough to straddle one. Hold the incomplete tail back for the next chunk.
     let mut carry: Vec<u8> = Vec::new();
     let tee = |bytes: &[u8], carry: &mut Vec<u8>| {
+        if let Some(tail) = tail.as_ref() {
+            tail.push(bytes);
+        }
         let Some(sink) = sink.as_ref() else { return };
         carry.extend_from_slice(bytes);
         let text = match std::str::from_utf8(carry) {
@@ -1222,7 +1281,7 @@ impl BashCapture {
             let _ = w.flush();
         }
         let retained = String::from_utf8_lossy(self.tail.make_contiguous()).into_owned();
-        let collapsed = sanitize_control(&collapse_carriage_returns(&retained));
+        let collapsed = sanitize_output(&retained);
         let capped = tail_cap(&collapsed, BASH_MAX_LINES, BASH_MAX_BYTES);
         let shown_lines = capped.matches('\n').count();
         // Truncated when the model-facing output lost real lines (front dropped)
@@ -1310,16 +1369,40 @@ const ESCALATION_HINT: &str = "\n[If this command is needed for the task, rerun 
 /// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
 /// the display-only `is_error` flag so the TUI marks the call failed.
 pub fn bash_result_failed(content: &str) -> bool {
-    content.lines().any(|line| {
-        let l = line.trim();
-        if l == "[terminated by signal]" {
-            return true;
-        }
-        l.strip_prefix("[exit ")
-            .and_then(|r| r.strip_suffix(']'))
-            .and_then(|n| n.parse::<i32>().ok())
-            .is_some_and(|code| code != 0)
-    })
+    content
+        .lines()
+        .any(|line| matches!(exit_marker(line), Some(code) if code != Some(0)))
+}
+
+/// The exit marker [`BashCapture::finish`] writes, read off one line: `Some`
+/// with the code for `[exit N]`, `Some(None)` for a signal, `None` for any
+/// other line. Public so a renderer splits the marker off by the same rule.
+pub fn exit_marker(line: &str) -> Option<Option<i32>> {
+    let l = line.trim();
+    if l == "[terminated by signal]" {
+        return Some(None);
+    }
+    l.strip_prefix("[exit ")
+        .and_then(|r| r.strip_suffix(']'))
+        .and_then(|n| n.parse::<i32>().ok())
+        .map(Some)
+}
+
+/// How the result of a command that outran its timeout starts. Private: callers
+/// ask [`bash_result_backgrounded`], which also rules out real output that
+/// happens to begin with the same words.
+const BACKGROUNDED_PREFIX: &str = "Command exceeded ";
+
+/// How the result of a command the user's message moved to the background
+/// starts (see [`hand_off_after`]).
+const DETACHED_PREFIX: &str = "Command moved to the background ";
+
+/// True when a shell tool result is the hand-off of a command that outran its
+/// timeout and kept running in the background, rather than its output. Such a
+/// result carries no exit marker: the command has not finished.
+pub fn bash_result_backgrounded(content: &str) -> bool {
+    (content.starts_with(BACKGROUNDED_PREFIX) || content.starts_with(DETACHED_PREFIX))
+        && !content.lines().any(|l| exit_marker(l).is_some())
 }
 
 impl Drop for BashCapture {
@@ -1341,13 +1424,26 @@ fn bytecount_newlines(bytes: &[u8]) -> usize {
 /// Drop control characters that would corrupt the model's view of the output
 /// (NUL, bell, ANSI escapes, etc.), keeping only tab and newline. Carriage
 /// returns are already resolved by [`collapse_carriage_returns`] beforehand.
+/// A CSI sequence (colour, cursor movement) goes whole: dropping only its ESC
+/// would leave `[31m` in the text.
 fn sanitize_control(s: &str) -> String {
     if !s.chars().any(|c| c.is_control() && c != '\t' && c != '\n') {
         return s.to_string();
     }
-    s.chars()
-        .filter(|&c| !c.is_control() || c == '\t' || c == '\n')
-        .collect()
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.next_if_eq(&'[').is_some() {
+            // Parameter and intermediate bytes, then one final byte. Anything
+            // else means the sequence was cut off: stop there and keep it, so
+            // a broken escape cannot eat the lines after it.
+            while chars.next_if(|b| (' '..='?').contains(b)).is_some() {}
+            chars.next_if(|b| ('@'..='~').contains(b));
+        } else if !c.is_control() || c == '\t' || c == '\n' {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Keep the last `max_lines` lines and last `max_bytes` bytes of `s` (trimming
@@ -1457,9 +1553,11 @@ fn chrome_binary() -> Option<PathBuf> {
 /// Render a local HTML/SVG file to PNG bytes.
 ///
 /// `backend`, when present, renders through the desktop's own webview (no Chrome
-/// needed); on any backend failure this falls back to headless Chrome so nothing
-/// regresses. `None` goes straight to Chrome. Either way the viewport clamping
-/// and output cap are identical.
+/// needed), and its result is final: the webview checks every frame the page
+/// loads against the screenshot's own folder, and headless Chrome has no such
+/// check, so a page that makes the webview fail must not get a second render
+/// through Chrome. `None` (no desktop webview, e.g. the CLI) goes to Chrome.
+/// Either way the viewport clamping and output cap are identical.
 ///
 /// `width`/`height` are the viewport in CSS pixels; `scale` is the device pixel
 /// ratio, so the PNG comes out `width*scale` pixels wide with the layout
@@ -1469,6 +1567,7 @@ pub async fn render_html_png(
     width: u64,
     height: u64,
     scale: f64,
+    scope: PageScope,
     backend: Option<&ScreenshotBackend>,
 ) -> Result<Vec<u8>, String> {
     let ext = target
@@ -1493,14 +1592,11 @@ pub async fn render_html_png(
         1.0
     };
 
-    // Try the injected backend (the desktop's webview capture) first, so the tool
-    // works without Chrome; on any failure fall through to Chrome so nothing
-    // regresses.
+    // The desktop's webview capture, when injected, is the only renderer: see
+    // the doc comment for why a failure here does not fall through to Chrome.
     if let Some(backend) = backend {
-        match backend(target.to_path_buf(), width, height, scale).await {
-            Ok(png) => return finalize_screenshot_png(png),
-            Err(_) => { /* fall through to Chrome */ }
-        }
+        let png = backend(target.to_path_buf(), width, height, scale, scope).await?;
+        return finalize_screenshot_png(png);
     }
 
     let Some(chrome) = chrome_binary() else {
@@ -1633,13 +1729,21 @@ async fn screenshot(
     let width = arg_u64(args, "width").unwrap_or(1280).clamp(320, 4096);
     let height = arg_u64(args, "height").unwrap_or(960).clamp(240, 4096);
     let target = resolve_path(root, scratch, path);
-    if symlink_escapes_any_root(root, scratch, read_roots, &target) {
-        return (
-            format!("ERROR: refused to screenshot through a symlink out of the workspace: {path}"),
-            None,
-        );
-    }
-    let png = match render_html_png(&target, width, height, 1.0, backend).await {
+    // A page the user approved outside the trusted roots gets no neighbours:
+    // its directory was never part of what they approved.
+    let scope = match landing(root, scratch, read_roots, &target) {
+        Landing::Escapes => {
+            return (
+                format!(
+                    "ERROR: refused to screenshot through a symlink out of the workspace: {path}"
+                ),
+                None,
+            );
+        }
+        Landing::Inside(_) => PageScope::Directory,
+        Landing::Outside(_) => PageScope::FileOnly,
+    };
+    let png = match render_html_png(&target, width, height, 1.0, scope, backend).await {
         Ok(b) => b,
         Err(e) => return (format!("ERROR: {e}"), None),
     };
@@ -2255,8 +2359,10 @@ mod tests {
         assert_eq!(d, "-    1 | foo\n+    1 | bar");
     }
 
+    /// A batch renders as one diff of the file before and after all its edits,
+    /// with no per-edit headers.
     #[test]
-    fn edit_diff_multi_hunk_is_numbered_and_multiline() {
+    fn edit_diff_merges_a_batch_into_one_numbered_diff() {
         let d = render_edit_diff(
             &[
                 json!({"old_string": "a\nb", "new_string": "A"}),
@@ -2266,7 +2372,7 @@ mod tests {
         );
         assert_eq!(
             d,
-            "@@ edit 1/2 @@\n-    1 | a\n-    2 | b\n+    1 | A\n     2 | c\n@@ edit 2/2 @@\n     1 | A\n-    2 | c\n+    2 | C\n+    3 | D"
+            "-    1 | a\n-    2 | b\n-    3 | c\n+    1 | A\n+    2 | C\n+    3 | D"
         );
     }
 
@@ -2282,9 +2388,10 @@ mod tests {
         );
     }
 
-    /// Two edits far apart in one call: each hunk carries its own file context
-    /// and nothing in between, and the second is numbered against the state the
-    /// first left behind (edit 1 adds a line, so `eight` is renumbered 8 -> 9).
+    /// Two edits far apart in one call: one diff of the final file, split by a
+    /// gap. Deleted lines keep their old number and the rest take the final
+    /// one, so `eight` (old line 8) becomes `EIGHT` on line 9 after the
+    /// insertion above it.
     #[test]
     fn edit_diff_numbers_later_edits_against_earlier_ones() {
         let d = render_edit_diff(
@@ -2294,28 +2401,69 @@ mod tests {
             ],
             "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
         );
+        assert_eq!(d, SPREAD_EDITS_DIFF);
+    }
+
+    const SPREAD_EDITS_DIFF: &str = concat!(
+        "     1 | one\n",
+        "-    2 | two\n",
+        "+    2 | TWO\n",
+        "+    3 | TWO.5\n",
+        "     4 | three\n",
+        "     5 | four\n",
+        "      ...\n",
+        "     7 | six\n",
+        "     8 | seven\n",
+        "-    8 | eight\n",
+        "+    9 | EIGHT\n",
+        "    10 | nine",
+    );
+
+    /// The edits array need not follow file order: the diff is still listed
+    /// top to bottom with ascending line numbers.
+    #[test]
+    fn edit_diff_lists_out_of_order_edits_in_file_order() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+                json!({"old_string": "two", "new_string": "TWO"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
         assert_eq!(
             d,
             concat!(
-                "@@ edit 1/2 @@\n",
                 "     1 | one\n",
                 "-    2 | two\n",
                 "+    2 | TWO\n",
-                "+    3 | TWO.5\n",
-                "     4 | three\n",
-                "     5 | four\n",
-                "@@ edit 2/2 @@\n",
-                "     7 | six\n",
-                "     8 | seven\n",
-                "-    9 | eight\n",
-                "+    9 | EIGHT\n",
-                "    10 | nine",
+                "     3 | three\n",
+                "     4 | four\n",
+                "      ...\n",
+                "     6 | six\n",
+                "     7 | seven\n",
+                "-    8 | eight\n",
+                "+    8 | EIGHT\n",
+                "     9 | nine",
             )
         );
     }
 
-    /// A later edit may target text an earlier one inserted, since both run
-    /// against the same `working` copy that `edit()` mutates in order.
+    /// An insertion listed after an edit further down still shifts that edit's
+    /// final line numbers, exactly as when the edits come in file order.
+    #[test]
+    fn edit_diff_shifts_an_earlier_listed_edit_below_a_later_insertion() {
+        let d = render_edit_diff(
+            &[
+                json!({"old_string": "eight", "new_string": "EIGHT"}),
+                json!({"old_string": "two", "new_string": "TWO\nTWO.5"}),
+            ],
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\n",
+        );
+        assert_eq!(d, SPREAD_EDITS_DIFF);
+    }
+
+    /// A later edit may target text an earlier one inserted, as `edit()`
+    /// applies them in order; the diff shows only the net change.
     #[test]
     fn edit_diff_lets_a_later_edit_target_inserted_text() {
         let d = render_edit_diff(
@@ -2327,19 +2475,7 @@ mod tests {
         );
         assert_eq!(
             d,
-            concat!(
-                "@@ edit 1/2 @@\n",
-                "     1 | a\n",
-                "     2 | b\n",
-                "+    3 | BETA\n",
-                "     4 | c\n",
-                "@@ edit 2/2 @@\n",
-                "     1 | a\n",
-                "     2 | b\n",
-                "-    3 | BETA\n",
-                "+    3 | GAMMA\n",
-                "     4 | c",
-            )
+            "     1 | a\n     2 | b\n+    3 | GAMMA\n     4 | c"
         );
     }
 
@@ -2593,6 +2729,59 @@ mod tests {
             "must name the real destination, got: {out}"
         );
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A write through a dangling link out of the project must not create the
+    /// link's target, confined or not: the handler's symlink re-check is what
+    /// stands between an approved in-project name and the host file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_through_dangling_symlink_is_refused() {
+        let root = unique_root();
+        let outside = unique_root();
+        let target = outside.join("authorized_keys");
+        std::os::unix::fs::symlink(&target, root.join("notes.md")).unwrap();
+        let store = crate::workspace::project_store(&root);
+        for confine in [false, true] {
+            let ctx = ToolContext::new(&root, &store, &[]).with_confined_writes(confine);
+            let out = super::execute_builtin(
+                lookup("write").unwrap(),
+                &json!({"path": "notes.md", "content": "ATTACKER"}),
+                &ctx,
+            )
+            .await
+            .0;
+            assert!(out.starts_with("ERROR: refused to write"), "confine={confine}: {out}");
+            assert!(!target.exists(), "confine={confine}: target was created");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// Links that stay inside the project (a yarn workspace's shape) keep
+    /// working for both `write` and `edit`, landing on the real file.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_and_edit_follow_an_in_project_link() {
+        let root = unique_root();
+        std::fs::create_dir_all(root.join("pkg")).unwrap();
+        std::os::unix::fs::symlink(root.join("pkg"), root.join("linked")).unwrap();
+        let w = execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": "linked/new/a.txt", "content": "one"}),
+            &root,
+        )
+        .await;
+        assert_eq!(w, "Created linked/new/a.txt (3 bytes)");
+        let e = execute_builtin(
+            lookup("edit").unwrap(),
+            &json!({"path": "linked/new/a.txt", "edits": [{"old_string": "one", "new_string": "two"}]}),
+            &root,
+        )
+        .await;
+        assert_eq!(e, "Applied 1 edit(s) to linked/new/a.txt");
+        assert_eq!(std::fs::read_to_string(root.join("pkg/new/a.txt")).unwrap(), "two");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3308,6 +3497,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A detach request moves a long command to the background well before
+    /// its timeout, through the same hand-off, while a quick command started
+    /// under the same request still answers inline.
+    // POSIX command text.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_detach_request_backgrounds_a_long_command_but_not_a_quick_one() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = events.clone();
+        let (_detach, signal) = tokio::sync::watch::channel(true);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_detach_signal(signal)
+            .with_shell_done_sink(std::sync::Arc::new(move |e: crate::tools::ShellEvent| {
+                seen.lock().unwrap().push(e)
+            }));
+        let quick = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "echo quick", "timeout": 600}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(quick.contains("quick") && quick.contains("[exit 0]"), "{quick}");
+        let command = format!("sleep 30; echo detach-{}", std::process::id());
+        let started = std::time::Instant::now();
+        let out = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": command, "timeout": 600}),
+            &ctx,
+        )
+        .await
+        .0;
+        let waited = started.elapsed();
+        if let Some(shell) = proc::snapshot().into_iter().find(|s| s.command == command) {
+            proc::kill(shell.pid);
+        }
+        assert!(waited < std::time::Duration::from_secs(10), "{waited:?}");
+        assert!(waited >= DETACH_GRACE, "{waited:?}");
+        assert!(bash_result_backgrounded(&out), "{out}");
+        assert!(out.contains("because the user sent a message"), "{out}");
+        assert!(out.contains("notified automatically"), "{out}");
+        assert!(matches!(
+            events.lock().unwrap().as_slice(),
+            [crate::tools::ShellEvent::Backgrounded(_)]
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Without a sink the tool must not promise a ping that will never come.
     #[tokio::test]
     async fn backgrounding_without_a_doorbell_still_tells_the_model_to_read_the_file() {
@@ -3324,6 +3564,58 @@ mod tests {
             "no sink, no promise of a ping: {out}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A backgrounded command's live tail holds what it printed before the
+    /// timeout as well as after, and the registry lets go of it once the
+    /// command ends.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_backgrounded_command_feeds_its_live_tail() {
+        let root = unique_root();
+        let marker = format!("tail-{}", std::process::id());
+        let command = format!("printf 'early {marker}\\n'; sleep 1.5; printf 'late\\n'; sleep 0.5");
+        let out = execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": command, "timeout": 1}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("still running in the background"), "{out}");
+        let pid = proc::snapshot()
+            .into_iter()
+            .find(|s| s.command == command && s.backgrounded)
+            .expect("listed as a background shell")
+            .pid;
+        let tail = proc::output_handle(pid).expect("tail while running");
+        let (early, _) = tail.read();
+        assert!(early.contains(&format!("early {marker}")), "{early:?}");
+        // Polled rather than slept for a fixed time: a loaded machine can run
+        // the command well past its nominal two seconds.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while proc::output_handle(pid).is_some() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(proc::output_handle(pid).is_none(), "the registry let go when it ended");
+        let (all, bytes) = tail.read();
+        assert!(all.ends_with("late\n") && all.contains("early"), "{all:?}");
+        assert_eq!(bytes, all.len() as u64);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hand-off is recognisable as such, while finished output that
+    /// happens to start with the same words is not.
+    #[test]
+    fn only_the_hand_off_reads_as_backgrounded() {
+        assert!(bash_result_backgrounded(&format!(
+            "{BACKGROUNDED_PREFIX}5s and is still running in the background."
+        )));
+        assert!(bash_result_backgrounded(&format!(
+            "{DETACHED_PREFIX}after 5s because the user sent a message, and is still running."
+        )));
+        assert!(!bash_result_backgrounded("Command exceeded quota\n[exit 1]"));
+        assert!(!bash_result_backgrounded("ok\n[exit 0]"));
     }
 
     #[tokio::test]
@@ -3741,7 +4033,15 @@ mod tests {
         assert!(!out.contains('\u{0}'), "NUL must be stripped");
         assert!(!out.contains('\u{7}'), "bell must be stripped");
         assert!(!out.contains('\u{1b}'), "escape must be stripped");
+        assert!(out.contains("abred\n"), "the whole colour sequence goes: {out:?}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cut-off or malformed `ESC[` ends at the first byte that cannot belong
+    /// to it, so the text after it survives.
+    #[test]
+    fn a_broken_escape_does_not_swallow_what_follows() {
+        assert_eq!(sanitize_control("\u{1b}[\n12\n34\nok"), "\n12\n34\nok");
     }
 
     // POSIX command text: Windows runs PowerShell.
@@ -4119,6 +4419,58 @@ mod tests {
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A page in a trusted root may load the files beside it; one the user
+    /// approved outside every root may load only itself.
+    #[cfg(feature = "tauri")]
+    #[tokio::test]
+    async fn screenshot_confines_a_page_outside_the_roots_to_itself() {
+        let root = unique_root();
+        let outside = unique_root();
+        std::fs::write(root.join("in.html"), b"<h1>in</h1>").unwrap();
+        let out_page = outside.join("out.html");
+        std::fs::write(&out_page, b"<h1>out</h1>").unwrap();
+        let out_page = out_page.to_str().unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_by_backend = seen.clone();
+        let backend: ScreenshotBackend = std::sync::Arc::new(move |_, _, _, _, scope| {
+            seen_by_backend.lock().unwrap().push(scope);
+            Box::pin(async { Ok(b"png".to_vec()) })
+        });
+
+        for (path, read_roots) in [
+            ("in.html", vec![]),
+            (out_page, vec![]),
+            (out_page, vec![outside.clone()]),
+        ] {
+            let (out, _) =
+                screenshot(&json!({"path": path}), &root, None, &read_roots, Some(&backend)).await;
+            assert!(!out.starts_with("ERROR"), "{out}");
+        }
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [PageScope::Directory, PageScope::FileOnly, PageScope::Directory]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A failing desktop renderer is the answer: the page is not rendered a
+    /// second time through Chrome, which would not check its frames.
+    #[tokio::test]
+    async fn a_failing_screenshot_backend_does_not_fall_back_to_chrome() {
+        let root = unique_root();
+        let page = root.join("page.html");
+        std::fs::write(&page, b"<h1>page</h1>").unwrap();
+        let backend: ScreenshotBackend = std::sync::Arc::new(|_, _, _, _, _| {
+            Box::pin(async { Err("webview capture timed out".to_string()) })
+        });
+
+        let result =
+            render_html_png(&page, 800, 600, 1.0, PageScope::Directory, Some(&backend)).await;
+        assert_eq!(result, Err("webview capture timed out".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Renders for real when a browser is present, and returns an image part

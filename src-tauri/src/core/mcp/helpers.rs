@@ -995,7 +995,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut cmd = Command::new("taskkill");
+    let mut cmd = Command::new(jan_utils::windows_system_tool("taskkill.exe"));
     cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
 
     #[cfg(windows)]

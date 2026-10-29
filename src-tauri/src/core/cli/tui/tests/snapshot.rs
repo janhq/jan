@@ -30,7 +30,8 @@ use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
 use crate::core::cli::tui::{
-    input_box, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+    background_rows, input_box_height, subagent_group, turn_stats_line, work_group_lines, Level,
+    TRANSCRIPT_BOTTOM_PAD,
 };
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
@@ -205,42 +206,6 @@ fn header_running_thinking_reduced_motion() {
         "header_running_thinking_reduced_motion",
         &header_buffer(&app, DARK),
     );
-}
-
-#[test]
-fn header_parked_waiting_and_watching() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.apply(StreamEvent::Parked);
-    let waiting = header_buffer(&app, DARK);
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "ok", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let watching = header_buffer(&app, DARK);
-    assert_buffer("header_parked_waiting", &waiting);
-    assert_buffer("header_parked_watching", &watching);
-}
-
-/// The input box while a run is parked on two agents and a monitor: what it
-/// waits on, the stop hint, and the dim tree of names under it.
-#[test]
-fn parked_waiting_on_agents() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "go");
-    app.subagents = fan_out().into_iter().take(2).collect();
-    app.apply(StreamEvent::Monitors {
-        monitors: vec![monitor("mon-1", "build", "grep OK build.log", 1)],
-    });
-    app.apply(StreamEvent::Parked);
-    let h = input_box_height(&app, 80);
-    let buf = pinned(DARK, || {
-        let area = Rect::new(0, 0, 80, h);
-        let mut buf = Buffer::empty(area);
-        ratatui::widgets::Widget::render(input_box(&app, 80), area, &mut buf);
-        buf
-    });
-    assert_buffer("parked_waiting_on_agents", &buf);
 }
 
 #[test]
@@ -437,7 +402,7 @@ fn todo_panel_single_phase() {
 }
 
 #[test]
-fn todo_panel_multi_phase_beside_the_agents() {
+fn todo_panel_multi_phase() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![
@@ -447,32 +412,27 @@ fn todo_panel_multi_phase_beside_the_agents() {
         ),
         ("frontend", vec![("ui", Open)]),
     ]);
-    app.subagents = vec![cached_panel("api-review", 6, 12_000, 9_000, true)];
     assert_buffer(
-        "todo_panel_split_with_agents",
+        "todo_panel_multi_phase",
         &frame(&mut app, DARK, 100, 18),
     );
 }
 
 #[test]
-fn todo_panel_stacks_above_the_agents_when_narrow() {
+fn todo_panel_narrow() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
     app.todos = todos_from(vec![(
         "",
         vec![("routes", InProgress), ("auth", Open)],
     )]);
-    app.subagents = vec![cached_panel("api-review", 2, 0, 0, false)];
     assert_buffer(
-        "todo_panel_stacked_narrow",
+        "todo_panel_narrow",
         &frame(&mut app, DARK, 60, 18),
     );
 }
 
-// ---- Subagent panel and /agents --------------------------------------------
-
-/// The reduced-motion throbber, as `motion::spinner` returns it.
-const THROBBER: &str = "\u{2022}";
+// ---- Subagents and /agents ------------------------------------------------
 
 /// A running child with `calls` calls and, when `reported`, a prompt-cache
 /// history of `cached` out of `prompt` tokens.
@@ -509,24 +469,6 @@ fn fan_out() -> Vec<SubagentPanel> {
         queued,
         waiting,
     ]
-}
-
-#[test]
-fn subagent_dock_shows_stats_and_cache_rates() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 12, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_cache_rates", &buf);
-}
-
-#[test]
-fn subagent_dock_overflow_points_at_agents() {
-    let mut panels = fan_out();
-    let buf = pinned(DARK, || {
-        lines_buffer(agents_column(&mut panels, 128_000, 72, 4, THROBBER), 72)
-    });
-    assert_buffer("subagent_dock_overflow", &buf);
 }
 
 #[test]
@@ -568,12 +510,15 @@ fn monitors_inspector_empty() {
 }
 
 #[test]
-fn monitor_dock_overflow_points_at_monitors() {
-    let monitors: Vec<MonitorSnapshot> = (1..=4)
+fn monitor_group_overflow_counts_the_rest() {
+    let mut app = snapshot_app();
+    app.monitors = (1..=4)
         .map(|n| monitor(&format!("mon-{n}"), "build", "grep OK build.log", n))
         .collect();
-    let buf = pinned(DARK, || lines_buffer(monitors_column(&monitors, 40, 3), 40));
-    assert_buffer("monitor_dock_overflow", &buf);
+    let buf = pinned(DARK, || {
+        lines_buffer(background_rows(&mut app, 60, 8, Instant::now()), 60)
+    });
+    assert_buffer("monitor_group_overflow", &buf);
 }
 
 #[test]
@@ -584,12 +529,166 @@ fn shells_inspector_lists_the_shells() {
     assert_buffer("shells_inspector_list", &frame(&mut app, DARK, 80, 10));
 }
 
-/// The idle dock with two background shells: the dim row over the input.
+/// Enter on a `/shells` row: the shell's command and status over the newest
+/// lines of its output.
 #[test]
-fn bg_shells_row_over_the_input() {
+fn shells_inspector_detail() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    open_background_shells_picker(&mut app);
+    let output: String = (1..=12).map(|i| format!("[vite] hmr update /src/App.tsx ({i})\n")).collect();
+    app.shell_detail = Some(crate::core::cli::tui::ShellDetail {
+        pid: 4242,
+        command: "npm run dev".into(),
+        elapsed_secs: 65,
+        tail: None,
+        output,
+        seen: 0,
+        finished: false,
+    });
+    if let Some(picker) = app.picker.as_mut() {
+        picker.kind = PickerKind::ShellDetail;
+    }
+    assert_buffer("shells_inspector_detail", &frame(&mut app, DARK, 80, 14));
+}
+
+/// A call that outran its timeout, open and folded: running in the
+/// background, pointing at `/shells`, never a green `Ran`.
+#[test]
+fn transcript_backgrounded_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "start the dev server");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "npm run dev" }));
+    tool_result(
+        &mut app,
+        "b1",
+        "Command exceeded 120s and is still running in the background. Its result will be \
+         written to /tmp/jan-bash/out-1.txt once it finishes.",
+        false,
+        None,
+    );
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_backgrounded_shell_command_open", &open);
+    assert_buffer("transcript_backgrounded_shell_command", &body(&mut app));
+}
+
+/// Two background shells on an idle session: their group over the input.
+#[test]
+fn background_shells_over_the_input() {
     let mut app = snapshot_app();
     app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
-    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+    assert_buffer("background_shells", &frame(&mut app, DARK, 80, 13));
+}
+
+/// Two subagents running and one queued after the main turn ended: the block
+/// over the idle input, at `now` so the elapsed times are fixed.
+fn idle_fan_out(now: Instant) -> TestApp {
+    let mut app = snapshot_app();
+    let mut kv = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    kv.started = Some(now - Duration::from_secs(65));
+    let mut perf = cached_panel("perf-scan", 0, 0, 0, false);
+    perf.started = Some(now - Duration::from_secs(12));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    app.subagents = vec![kv, perf, queued];
+    app
+}
+
+fn background_rows_buffer(app: &mut App, w: u16, now: Instant) -> Buffer {
+    pinned(DARK, || lines_buffer(background_rows(app, w, 8, now), w))
+}
+
+#[test]
+fn subagents_running_after_the_turn() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    assert_buffer("subagents_idle_running", &background_rows_buffer(&mut app, 80, now));
+    assert_buffer("subagents_idle_narrow", &background_rows_buffer(&mut app, 36, now));
+    app.apply(StreamEvent::SubagentEnd {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        error: None,
+    });
+    assert_buffer("subagents_idle_one_finished", &background_rows_buffer(&mut app, 80, now));
+}
+
+/// Where the block sits: over the rule, subagents over shells, the rule on
+/// the input.
+#[test]
+fn subagents_and_shells_over_the_idle_input() {
+    let mut app = idle_fan_out(Instant::now());
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    app.bg_shells = vec![shell(4242, "npm run dev", 65)];
+    assert_buffer("subagents_idle_frame", &frame(&mut app, DARK, 80, 16));
+}
+
+/// Monitors, subagents and shells at once: one block, one grammar, parked on
+/// the rule over the input on the same rows whether the turn is idle or
+/// running; a narrow terminal sheds hints and facts before it cuts a name,
+/// and a very narrow one keeps the heads alone.
+#[test]
+fn background_work_block_idle_running_and_narrow() {
+    let now = Instant::now();
+    let mut app = idle_fan_out(now);
+    app.monitors = vec![monitor("mon-3", "CI done #9487", "gh pr checks 9487 --json bucket", 25)];
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    for panel in &mut app.subagents {
+        panel.started = None;
+    }
+    let idle = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_idle", &idle);
+    start_turn(&mut app, "keep going");
+    let running = frame(&mut app, DARK, 80, 20);
+    assert_buffer("background_work_running", &running);
+    // The rows from the block's first head down to the rule; the input below
+    // holds the working row in one state and the placeholder in the other.
+    let block = |buf: &Buffer| -> Vec<String> {
+        let text = render_snapshot(buf);
+        let rows: Vec<&str> = text.lines().take(20).collect();
+        let rule = rows.iter().rposition(|r| r.starts_with("|\u{2500}")).expect("rule");
+        let top = rows.iter().position(|r| r.starts_with("| 1 monitor")).expect("head");
+        rows[top..=rule].iter().map(|r| r.to_string()).collect()
+    };
+    assert_eq!(block(&idle), block(&running), "the block does not move with the turn");
+    assert_buffer("background_work_narrow", &frame(&mut app, DARK, 40, 20));
+    assert_buffer("background_work_very_narrow", &frame(&mut app, DARK, 24, 20));
+    // Under `BACKGROUND_CHILD_MIN_NAME` columns of name: heads alone.
+    let heads = pinned(DARK, || lines_buffer(background_rows(&mut app, 12, 20, now), 12));
+    assert_buffer("background_work_heads_only", &heads);
+}
+
+/// Each way a child can be not-running reads distinctly: running, queued for
+/// a slot, waiting on an earlier phase, and parked on its own background
+/// work, in the block and in `/agents`.
+#[test]
+fn subagent_states_read_distinctly() {
+    let now = Instant::now();
+    let mut app = snapshot_app();
+    let mut running = cached_panel("kv-review", 4, 64_000, 48_000, true);
+    running.started = Some(now - Duration::from_secs(65));
+    let mut queued = cached_panel("docs-writer", 0, 0, 0, false);
+    queued.queued = true;
+    queued.waiting = 1;
+    let mut phased = cached_panel("collector", 0, 0, 0, false);
+    phased.pending = true;
+    phased.phase = Some(2);
+    let mut parked = cached_panel("builder", 2, 8_000, 0, false);
+    parked.started = Some(now - Duration::from_secs(30));
+    parked.parked = true;
+    app.subagents = vec![running, queued, phased, parked];
+    // Through the block's own helper with room for all four; the live block
+    // caps a group at `BACKGROUND_GROUP_ROWS` and counts the rest.
+    let buf = pinned(DARK, || {
+        let group = subagent_group(&mut app.subagents, now).expect("children");
+        lines_buffer(work_group_lines(&group, 4, 80), 80)
+    });
+    assert_buffer("subagent_states", &buf);
+    open_agents_picker(&mut app);
+    assert_buffer("subagent_states_inspector", &frame(&mut app, DARK, 100, 13));
 }
 
 /// Background pings, each as the row its kind calls for.
@@ -822,7 +921,7 @@ fn body(app: &mut App) -> Buffer {
     let full = frame(app, DARK, BODY_WIDTH, BODY_HEIGHT);
     let input_h = pinned(DARK, || input_box_height(app, BODY_WIDTH));
     // Header and the body's top border above; the air row, the rule, the
-    // input and the dock line below. No fixture docks a status panel.
+    // input and the dock line below. No fixture docks a plan.
     let last = BODY_HEIGHT - TRANSCRIPT_BOTTOM_PAD - 1 - input_h - 1;
     let blank = |y: u16| {
         (0..BODY_WIDTH).all(|x| {
@@ -991,6 +1090,98 @@ fn transcript_running_shell_command() {
     assert_buffer("transcript_running_shell_command", &body(&mut app));
 }
 
+/// The three commands of the run the grouped fixtures share, one failing.
+fn run_three_commands(app: &mut App) {
+    start_turn(app, "check and test the cli");
+    tool_call(app, "b1", "bash", json!({ "command": "cargo check --features cli" }));
+    tool_call(app, "b2", "bash", json!({ "command": "git status --short" }));
+    tool_call(app, "b3", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_result(app, "b1", "Finished dev profile in 2.1s\n[exit 0]", false, None);
+    tool_result(app, "b2", " M src/foo.rs\n[exit 0]", false, None);
+    let failed: String = std::iter::once("test a ... FAILED\n".to_string())
+        .chain((0..40).map(|i| format!("line {i}\n")))
+        .chain(std::iter::once("[exit 101]".to_string()))
+        .collect();
+    tool_result(app, "b3", &failed, true, None);
+}
+
+/// Consecutive commands, open and folded: one `Shell` row listing each command
+/// as its own `Ran <cmd>` with its own bullet and a short preview, the failed
+/// one naming its code, its bullet and the header's red.
+#[test]
+fn transcript_grouped_shell_commands() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    let open = body(&mut app);
+    app.transcript.finalize_tool_group();
+    assert_buffer("transcript_grouped_shell_commands_open", &open);
+    assert_buffer("transcript_grouped_shell_commands", &body(&mut app));
+}
+
+/// A run with one command finished and one still streaming: `Running 2
+/// commands`, the live one with its clock over its newest lines.
+#[test]
+fn transcript_grouped_shell_commands_running() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "git pull --ff-only" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "make build" }));
+    tool_result(&mut app, "b1", "Already up to date.\n[exit 0]", false, None);
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b2".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The clock reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.transcript.tool_group.as_mut() {
+        for call in &mut group.calls {
+            call.started = Instant::now();
+        }
+    }
+    assert_buffer("transcript_grouped_shell_commands_running", &body(&mut app));
+}
+
+/// The folded run on a narrow terminal: every row is cut to the width rather
+/// than wrapped, multi-line commands included.
+#[test]
+fn grouped_shell_commands_narrow() {
+    let mut app = snapshot_app();
+    run_three_commands(&mut app);
+    tool_call(
+        &mut app,
+        "b4",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo clippy --all-targets -- -D warnings" }),
+    );
+    tool_result(&mut app, "b4", "warning: unused variable `width_of_the_row`\n[exit 0]", false, None);
+    app.transcript.finalize_tool_group();
+    let group = app.transcript.groups.last().expect("folded group");
+    let lines = pinned(DARK, || group.row(super::super::GroupRow::Closed).lines(30));
+    assert_buffer("grouped_shell_commands_narrow", &lines_buffer(lines, 30));
+}
+
+/// A finished turn folds its steps under `Worked`, with what the tools did
+/// hung under the header.
+#[test]
+fn transcript_folded_worked_summary() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "why does the cli test fail?");
+    app.apply(StreamEvent::Reasoning { text: "Look at the parser first.".into() });
+    tool_call(&mut app, "r1", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_call(&mut app, "r2", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_result(&mut app, "r1", "pub mod tui;", false, None);
+    tool_result(&mut app, "r2", "fn main() {}", false, None);
+    app.apply(StreamEvent::Reasoning { text: "Now run it.".into() });
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test -- cli::" }));
+    tool_call(&mut app, "b2", "bash", json!({ "command": "git diff --stat" }));
+    tool_result(&mut app, "b1", "ok\n[exit 0]", false, None);
+    tool_result(&mut app, "b2", "1 file changed\n[exit 0]", false, None);
+    token(&mut app, "It passes now.");
+    finish_turn(&mut app, 4_000, 30);
+    assert_buffer("transcript_folded_worked_summary", &body(&mut app));
+}
+
 #[test]
 fn transcript_failed_tool_call() {
     let mut app = snapshot_app();
@@ -1017,14 +1208,13 @@ fn transcript_edit_with_diff() {
         "e1",
         "Applied 1 edit(s) to src/geometry.rs",
         false,
-        // The edit tool's own shape: numbered rows, one header per edit.
+        // The edit tool's own shape: numbered rows, distant hunks split by a gap.
         Some(concat!(
-            "@@ edit 1/2 @@\n",
             "     8 | use std::fmt;\n",
             "-    9 | fn area(w: u32, h: u32) -> u32 {\n",
             "+    9 | fn area(w: u64, h: u64) -> u64 {\n",
             "    10 |     w * h\n",
-            "@@ edit 2/2 @@\n",
+            "      ...\n",
             "-  112 |     let cells: u32 = area(4, 4);\n",
             "+  112 |     let cells: u64 = area(4, 4);",
         )),

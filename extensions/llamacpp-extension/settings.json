@@ -476,7 +476,7 @@
   {
     "key": "cache_ram",
     "title": "Prompt Cache RAM (MiB)",
-    "description": "Prompt cache size in MiB (default: 8192). -1 is unlimited, 0 disables it.",
+    "description": "Prompt cache size in MiB (default: 8192, or off for decision models unless changed). -1 is unlimited, 0 disables it.",
     "controllerType": "input",
     "controllerProps": {
       "value": 8192,

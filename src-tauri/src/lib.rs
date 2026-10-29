@@ -70,11 +70,9 @@ macro_rules! invoke_commands_with_extras {
         // System commands
         core::system::commands::relaunch,
         core::system::shutdown::shutdown_for_update,
-        core::system::commands::open_app_directory,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
         core::system::commands::read_logs,
-        core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
         core::system::commands::clear_claude_code_env,
         // Server commands
@@ -286,6 +284,8 @@ pub fn run() {
     }));
 
     let mut app_builder = builder
+        // First, so no other plugin's hook sees a navigation it refuses.
+        .plugin(core::navigation::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -356,7 +356,20 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
             mcp_last_known_tools: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(core::filesystem::grants::ReadGrants::with_home(
+            dirs::home_dir(),
+        ))
         .setup(|app| {
+            // The agent-tools commands take a data folder from the webview; the
+            // sandbox, the mask over settings and keys, and the store all hang
+            // off it, so they use the configured one instead. Installed here,
+            // before the event loop delivers any IPC.
+            {
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
+                    move || get_jan_data_folder_path(handle.clone()),
+                ));
+            }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)
@@ -372,12 +385,25 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            // Load the read grants before the event loop delivers any IPC, so a
+            // read of a path the user picked in an earlier session is allowed.
+            core::filesystem::grants::init(app.handle());
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            // A Jan up to 0.8.4 leaves its llama-server router running across an
-            // in-app update; that version cannot be fixed, so reap it here.
+            // A factory reset only moves data aside and restarts; deleting it,
+            // which can take a while for a big models folder, happens here.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    core::system::commands::sweep_reset_trash(&handle);
+                });
+            }
+
+            // Reap engines a previous Jan left running: the llama-server router of
+            // a 0.8.4 that was updated in place, or an mlx-server whose app was
+            // killed. Neither can be stopped by the version that started it.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 let data_folder = get_jan_data_folder_path(app.handle().clone());
@@ -386,6 +412,25 @@ pub fn run() {
                     if killed > 0 {
                         log::warn!("Reaped {killed} engine process(es) left by a previous Jan");
                     }
+                });
+            }
+
+            // A SIGTERM ends the process without RunEvent::Exit, so the exit
+            // cleanup never ran and mlx-server, which does not watch its
+            // parent, was left running. Turn the signal into a normal exit.
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let Ok(mut term) = signal(SignalKind::terminate()) else {
+                        log::warn!("Could not listen for SIGTERM");
+                        return;
+                    };
+                    term.recv().await;
+                    log::info!("Received SIGTERM; shutting down");
+                    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+                    handle.exit(0);
                 });
             }
 
@@ -490,12 +535,20 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = &event {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            core::system::commands::show_main_window(app);
         }
         if let RunEvent::ExitRequested { api, code, .. } = &event {
+            // Quitting mid-reset would drop the reset and its restart; it ends
+            // in its own restart. A native macOS quit never gets here, which
+            // is why the reset stages its deletion atomically.
+            if core::system::commands::exit_blocked_by_reset(
+                core::system::commands::factory_reset_in_progress(),
+                *code,
+            ) {
+                log::warn!("Ignoring exit request while a factory reset is running");
+                api.prevent_exit();
+                return;
+            }
             if SHUTTING_DOWN.load(Ordering::SeqCst) || !is_llamacpp_engine_running(app) {
                 return;
             }

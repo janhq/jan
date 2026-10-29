@@ -126,6 +126,8 @@ env:
   NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
   JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
   JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  # engine-build.yml's prebuilt-windows-arm64 copies this job's toolchain
+  # (MSVC, CUDA, Vulkan) to keep its prebuilt warm: change both together.
   CUDA_SHORT: '13.4'
   # Redistributable archives, as upstream llama.cpp provisions this same
   # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
@@ -152,7 +154,7 @@ jobs:
       - name: Replace Icons for Beta Build
         if: env.CHANNEL != 'stable'
         shell: bash
-        run: cp ".github/scripts/icon-${CHANNEL}.png" src-tauri/icons/icon.png
+        run: bash .github/scripts/use-channel-icons.sh "${CHANNEL}"
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -301,6 +303,8 @@ jobs:
           }
 
       # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      # Pinned because glslc's version is in the engine-prebuilt.sh key; bump it
+      # with the x64 one in setup-engine-toolchain and the copy in engine-build.yml.
       - name: Provision the Vulkan SDK
         if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
         shell: bash
@@ -308,7 +312,7 @@ jobs:
           curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
             --connect-timeout 30 --max-time 900 \
             -o "$RUNNER_TEMP/vulkan-sdk.exe" \
-            https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
+            https://sdk.lunarg.com/sdk/download/1.4.363.0/warm/vulkan_sdk.exe
           "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
             --accept-licenses --default-answer --confirm-command install
           echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
@@ -344,9 +348,7 @@ jobs:
       - name: Update app version and product name
         shell: bash
         run: |
-          jq --arg version "$NEW_VERSION" \
-             '.version = $version | .bundle.createUpdaterArtifacts = true' \
-             ./src-tauri/tauri.conf.json > /tmp/c.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/c.json
           mv /tmp/c.json ./src-tauri/tauri.conf.json
 
           jq '.bundle.targets = ["nsis"]
@@ -355,16 +357,8 @@ jobs:
              ./src-tauri/tauri.windows.conf.json > /tmp/w.json
           mv /tmp/w.json ./src-tauri/tauri.windows.conf.json
 
-          jq --arg version "$NEW_VERSION" '.version = $version' web-app/package.json > /tmp/p.json
-          mv /tmp/p.json web-app/package.json
-
-          for p in hardware llamacpp; do
-            jq --arg version "$NEW_VERSION" '.version = $version' \
-              "./src-tauri/plugins/tauri-plugin-$p/package.json" > /tmp/p.json
-            mv /tmp/p.json "./src-tauri/plugins/tauri-plugin-$p/package.json"
-            ctoml "./src-tauri/plugins/tauri-plugin-$p/Cargo.toml" package.version "$NEW_VERSION"
-          done
-          ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "$NEW_VERSION"
 
           if [ "$CHANNEL" != "stable" ]; then
             # Without this an arm64 nightly keeps tauri.conf.json's stable

@@ -1,0 +1,50 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 165
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ● [ready]                                    |
+|╭ subagents ───────────────────────────────────────────────────────────────────────────────────────╮|
+|│ ▶ • kv-review  4 tools · 4 req · 50% ctx · 75% cache hit  Running · Read mod_3.rs                │|
+|│   • docs-writer  Queued (1)                                                                      │|
+|│   • collector  Waiting (phase 2)                                                                 │|
+|│   • builder  2 tools · 2 req · 6% ctx  Waiting on background work                                │|
+|│                                                                                                  │|
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────╯|
+|                                                                                                    |
+|────────────────────────────────────────────────────────────────────────────────────────────────────|
+|selecting…                                                                                          |
+|                                                                                                    |
+|📂 /snapshot/repo                           ↑/↓ select   Enter view   m message   x stop   Esc close|
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#98C379
+ 1 0..100 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..98 fg=Cyan mod=BOLD
+ 2 99..100 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 4..6 fg=#808080
+ 3 6..17 fg=#56B6C2 mod=BOLD
+ 3 19..29 fg=#808080
+ 3 99..100 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 4..6 fg=#808080
+ 4 6..15 fg=#56B6C2 mod=BOLD
+ 4 17..34 fg=#808080
+ 4 99..100 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 4..6 fg=#808080
+ 5 6..13 fg=#56B6C2 mod=BOLD
+ 5 15..39 fg=#808080
+ 5 41..67 fg=#808080
+ 5 99..100 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 99..100 fg=#56B6C2
+ 7 0..100 fg=#56B6C2
+10 0..10 mod=DIM | ITALIC
+12 0..1 fg=#808080
+12 2..17 fg=#808080
+12 43..100 mod=DIM

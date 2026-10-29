@@ -29,9 +29,19 @@ A server that fails to come up says so in the transcript, with the reason:
 MCP: failed to connect to 'fetch': connection closed: initialize response
 ```
 
+A server that starts but never answers is given up on after the tool call timeout (30 seconds by
+default, set under `mcpSettings` in `mcp_config.json` or in Jan Desktop's MCP settings). It is
+reported the same way, and the turn goes on without it:
+
+```
+MCP: failed to connect to 'fetch': timed out after 30s waiting for it to answer
+```
+
 <Callout type="info">
 The first turn waits for the connecting servers, so the model sees the full toolset rather than a
-half-connected one. A slow stdio server delays that first turn, not the whole session.
+half-connected one. A slow stdio server delays that first turn, not the whole session, for up to
+the timeout above: one that needs longer, such as a first run that downloads its package with
+`npx`, needs a larger `toolCallTimeoutSeconds`.
 </Callout>
 
 If a connected server later fails to list its tools - a timeout, a transient error - Jan advertises

@@ -1,7 +1,7 @@
 //! Persistence of a thread's KV cache across sessions.
 //!
 //! llama.cpp can already write a slot's KV cache to disk
-//! (`POST /slots/{id}?action=save`, `server-context.cpp:2475`), but the file it
+//! (`POST /slots/{id}?action=save`, `server-context.cpp:2992`), but the file it
 //! writes carries no identity: `llama_state_seq_load_file` checks a magic and a
 //! version, and the restore path checks that the tokens fit the context and are
 //! in the vocab. None of that notices that the file was written by a *different
@@ -281,7 +281,7 @@ impl StateStore {
     }
 
     /// Creates the directory. llama.cpp's `--slot-save-path` handler *throws*
-    /// when the path is not a directory (`common/arg.cpp:3580`), and that
+    /// when the path is not a directory (`common/arg.cpp:3635`), and that
     /// unwinds out of engine startup, so a missing cache directory would take
     /// the whole engine down rather than disabling one feature.
     pub fn ensure_dir(&self) -> std::io::Result<()> {

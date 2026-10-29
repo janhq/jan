@@ -86,6 +86,15 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # to opt in; [] reads JAN.md only. A
 #                                     # project's agent.toml [context] wins
 #
+# [web_search]                        # backend for the web_search/web_fetch
+# provider = "tavily"                 # tools: "exa" (default, keyless),
+#                                     # "tavily" (needs a key), "searxng"
+#                                     # (needs endpoint) or "you". Keys are
+#                                     # kept in the secret store: set them
+#                                     # with /settings or `jan config
+#                                     # web-search --api-key`, not here
+# endpoint = "https://searx.example.com"
+#
 # [experimental]                      # features that may change or go away
 # acp = true                          # allow `jan acp`, the Agent Client
 #                                     # Protocol server editors such as Zed
@@ -208,8 +217,30 @@ struct GlobalConfigToml {
     /// graduating a feature is deleting its key rather than migrating it.
     #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
     experimental: ExperimentalSection,
+    /// `[web_search]` -- which backend answers the native `web_search` and
+    /// `web_fetch` tools. The API key is not here: it lives in the secret
+    /// store, under the record the desktop's Web Search settings use.
+    #[serde(default, skip_serializing_if = "WebSearchSection::is_empty")]
+    web_search: WebSearchSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[web_search]` in `~/.jan/config.toml`. Each key is `None` when unset.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct WebSearchSection {
+    /// Backend id (`exa`, `tavily`, `searxng`, `you`). `None` = Exa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Instance URL for a self-hosted backend (SearXNG).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+impl WebSearchSection {
+    fn is_empty(&self) -> bool {
+        self.provider.is_none() && self.endpoint.is_none()
+    }
 }
 
 /// `[tui]` in `~/.jan/config.toml`. Each key is `None` when unset.
@@ -325,8 +356,11 @@ pub(crate) struct ProviderUpdate {
 
 /// `~/.jan`, the user-wide config directory.
 pub(crate) fn global_jan_dir() -> Result<PathBuf, String> {
-    dirs::home_dir()
-        .map(|home| home.join(".jan"))
+    #[cfg(test)]
+    let home = TEST_HOME.with(|home| Some(home.borrow().path().to_path_buf()));
+    #[cfg(not(test))]
+    let home = dirs::home_dir();
+    home.map(|home| home.join(".jan"))
         .ok_or_else(|| "could not resolve the user's home directory".to_string())
 }
 
@@ -510,6 +544,76 @@ pub(crate) fn prune_threads_enabled() -> bool {
         .ok()
         .and_then(|config| config.prune_threads)
         .unwrap_or(false)
+}
+
+/// `[web_search]` in `~/.jan/config.toml`. Unset on an unreadable or malformed
+/// config: the default backend still works, and a preference file must never
+/// stop a session from starting.
+pub(crate) fn web_search_setting() -> WebSearchSection {
+    load_raw().map(|config| config.web_search).unwrap_or_default()
+}
+
+/// The web tools' backend for a CLI run: `[web_search]` plus the provider's API
+/// key from the secret store. The key is read only when the index says one is
+/// stored, so a run never opens a keychain prompt for a key that is not there.
+///
+/// With no provider chosen the secret store is not touched at all: the default
+/// stays keyless Exa upgraded by `EXA_API_KEY`, exactly as before this setting
+/// existed, rather than silently picking up a key the desktop stored. Once a
+/// provider is chosen its stored key wins over the env var.
+/// An unknown provider id is passed through as-is: building it then fails with
+/// a clear tool error instead of silently searching with a different backend.
+#[cfg(feature = "cli")]
+pub(crate) fn resolve_web_search() -> tauri_plugin_websearch::provider::WebSearchConfig {
+    use crate::core::server::provider_secrets::{has_stored_key, load_provider_keys};
+    let section = web_search_setting();
+    if section.provider.as_deref().is_none_or(|p| p.trim().is_empty()) {
+        return tauri_plugin_websearch::provider::WebSearchConfig::default();
+    }
+    let api_key = tauri_plugin_websearch::provider::provider_meta(section.provider.as_deref())
+        .and_then(|meta| meta.secret_key)
+        .filter(|record| has_stored_key(record))
+        .and_then(|record| load_provider_keys(record).into_iter().next());
+    tauri_plugin_websearch::provider::WebSearchConfig {
+        provider: section.provider,
+        api_key,
+        endpoint: section.endpoint,
+    }
+}
+
+/// Persist `[web_search]` into `~/.jan/config.toml`, format-preserving like
+/// [`set_global_key`]. A `None` field removes that key; the table goes too once
+/// it is empty, so resetting leaves no stray header behind.
+#[cfg(feature = "cli")]
+pub(crate) fn set_web_search(section: &WebSearchSection) -> Result<PathBuf, String> {
+    let path = ensure_global_config()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
+
+    let table = doc["web_search"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    if let Some(table) = table.as_table_like_mut() {
+        for (key, value) in [("provider", &section.provider), ("endpoint", &section.endpoint)] {
+            match value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                Some(v) => {
+                    table.insert(key, toml_edit::value(v));
+                }
+                None => {
+                    table.remove(key);
+                }
+            }
+        }
+    }
+    if doc["web_search"].as_table_like().is_some_and(|t| t.is_empty()) {
+        doc.remove("web_search");
+    }
+
+    std::fs::write(&path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
 }
 
 /// Host env-var names the sandboxed `bash` may inherit beyond the base
@@ -940,30 +1044,54 @@ pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Redirect `HOME` to a scratch dir for the duration of `f`. Every test that
-/// touches `~/.jan` must go through this one helper: `HOME` is process-wide, so
-/// a second lock elsewhere would let those tests race each other.
+// Resolve config paths independently of platform home APIs in unit tests. Each
+// thread starts with a fresh directory, including tests outside with_temp_home.
+#[cfg(test)]
+thread_local! {
+    static TEST_HOME: std::cell::RefCell<tempfile::TempDir> =
+        std::cell::RefCell::new(tempfile::tempdir().expect("test config home"));
+}
+
+/// Give config resolution a fresh scratch home on every platform. Keep HOME
+/// redirected for existing callers that also exercise HOME-based code. That
+/// environment variable is process-wide, so all such callers share this lock.
+/// Both overrides are restored on unwind; the scratch directory is RAII-owned.
+///
+/// All fixture config access must run on the calling OS thread: `TEST_HOME` is
+/// thread-local and is not inherited by spawned threads or runtime workers.
+/// A runtime's root `block_on` future stays on the caller and is safe; do not
+/// move fixture-dependent work into `std::thread::spawn`, `spawn_blocking`, or
+/// `tokio::spawn` tasks that may run on another OS thread.
 #[cfg(test)]
 pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
-    static COUNTER: AtomicU32 = AtomicU32::new(0);
-
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
-    std::fs::create_dir_all(&home).unwrap();
-    let prev = std::env::var_os("HOME");
-    std::env::set_var("HOME", &home);
-    let result = f(&home);
-    match prev {
-        Some(p) => std::env::set_var("HOME", p),
-        None => std::env::remove_var("HOME"),
+    let home = tempfile::tempdir().expect("test config home");
+    let path = home.path().to_path_buf();
+    let previous = TEST_HOME.with(|slot| slot.replace(home));
+    struct Restore {
+        home: Option<tempfile::TempDir>,
+        env: Option<std::ffi::OsString>,
     }
-    let _ = std::fs::remove_dir_all(&home);
-    result
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_HOME.with(|slot| {
+                slot.replace(self.home.take().unwrap());
+            });
+            match &self.env {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+    let _restore = Restore {
+        home: Some(previous),
+        env: std::env::var_os("HOME"),
+    };
+    std::env::set_var("HOME", &path);
+    f(&path)
 }
 
 // The suite covers the provider records and the TUI's settings writers, which
@@ -972,6 +1100,23 @@ pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_resolver_uses_fixture_and_restores_after_panic() {
+        let before = global_config_path().unwrap();
+        let mut scratch = None;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_temp_home(|home| {
+                scratch = Some(home.to_path_buf());
+                assert_eq!(global_config_path().unwrap(), home.join(".jan/config.toml"));
+                ensure_global_config().unwrap();
+                panic!("exercise fixture cleanup");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(global_config_path().unwrap(), before);
+        assert!(!scratch.unwrap().exists());
+    }
 
     #[test]
     fn missing_file_yields_empty_map() {
@@ -1261,6 +1406,34 @@ mod tests {
             );
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
+        });
+    }
+
+    /// `[web_search]` round-trips format-preserving, never lands inside a
+    /// provider table, and an emptied section removes its header.
+    #[test]
+    fn set_web_search_round_trips_and_clears_the_table() {
+        with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "# keep me\n[providers.p]\nbase_url = \"https://x\"\n")
+                .unwrap();
+            set_web_search(&WebSearchSection {
+                provider: Some("searxng".into()),
+                endpoint: Some("https://searx.example".into()),
+            })
+            .expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("# keep me"), "{raw}");
+            let section = web_search_setting();
+            assert_eq!(section.provider.as_deref(), Some("searxng"));
+            assert_eq!(section.endpoint.as_deref(), Some("https://searx.example"));
+            assert!(load_global_config().unwrap().contains_key("p"));
+
+            set_web_search(&WebSearchSection::default()).expect("reset");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(!raw.contains("[web_search]"), "{raw}");
+            assert_eq!(web_search_setting(), WebSearchSection::default());
         });
     }
 

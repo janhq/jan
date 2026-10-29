@@ -232,7 +232,7 @@ describe('useTokensCount', () => {
       expect(result.current.tokenCount).toBe(4242)
     })
 
-    // "Increase context" (Cowork's recovery chip, the model rail's settings
+    // "Increase context" (Cowork's recovery chip, the model settings sheet's
     // form) writes the new size and reloads the router with it. The meter
     // divides by the launched window, so it has to refetch or it keeps
     // reporting the previous one for the rest of the session.

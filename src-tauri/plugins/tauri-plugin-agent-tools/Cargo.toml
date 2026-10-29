@@ -21,6 +21,8 @@ default = ["tauri"]
 tauri = [
   "dep:tauri",
   "dep:tauri-plugin",
+  # `open_artifact` hands the checked file to the OS default app.
+  "dep:tauri-plugin-opener",
   # `wry` gives `WebviewWindow::with_webview`, which the screenshot renderer needs
   # to reach the platform webview. The desktop enables it anyway; the CLI never
   # turns on `tauri`, so this stays out of the CLI graph.
@@ -60,6 +62,7 @@ serde_yaml = "0.9.34"
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tauri = { version = "2.8.5", default-features = false, optional = true }
+tauri-plugin-opener = { version = "2.2.7", optional = true }
 # `provider` only; `default-features = false` keeps `tauri` out of the graph so
 # the headless CLI can use the web tools.
 tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features = false }
@@ -68,7 +71,7 @@ tauri-plugin-websearch = { path = "../tauri-plugin-websearch", default-features 
 tauri-plugin = { version = "2.3.1", features = ["build"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "=0.30.1", features = ["signal", "process"] }
+nix = { version = "=0.30.1", features = ["signal", "process", "fs"] }
 
 # Webview `screenshot` backend (see `webview_shot.rs`). All optional and enabled
 # by the `tauri` feature, so the headless CLI never pulls a GUI stack in.

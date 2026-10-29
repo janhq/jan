@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import type { MCPAuthStatus } from '@/services/mcp/types'
+import { ExternalAnchor } from '@/components/ExternalAnchor'
 
 /**
  * The `Auth:` line for one remote MCP server in the settings list: a badge for
@@ -108,14 +109,12 @@ export function McpServerAuth({
       {/* The flow is already waiting on the redirect by the time this shows, so
           a browser that failed to launch is still recoverable by hand. */}
       {authorizing && consentUrl && (
-        <a
+        <ExternalAnchor
           href={consentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
           className="text-xs text-blue-500 hover:underline"
         >
           {t('mcp-servers:auth.openSignInPage')}
-        </a>
+        </ExternalAnchor>
       )}
     </div>
   )

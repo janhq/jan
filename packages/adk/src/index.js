@@ -75,8 +75,8 @@ export class JanRpcError extends Error {
 // Distinct from [`JanRpcError`] on purpose - one is an answer, this is the
 // channel.
 export class JanRuntimeError extends Error {
-  constructor(message, { exitCode, signal, stderr } = {}) {
-    super(message)
+  constructor(message, { exitCode, signal, stderr, cause } = {}) {
+    super(message, cause === undefined ? undefined : { cause })
     this.name = 'JanRuntimeError'
     this.exitCode = exitCode
     this.signal = signal
@@ -238,6 +238,11 @@ export class JanSession {
   #calls = new Map();
   #late = new Map();
   #closed = false;
+  // Why the runtime failed this session, once it has: nothing it was still
+  // delivering may start a turn that no one will ever settle.
+  #failure = null;
+  // The tail of the session's tool and fork changes, which run one at a time.
+  #mutations = Promise.resolve();
 
   // Every event the session reports, including the ones raised by a subagent,
   // which arrive wrapped in a `subagent` event.
@@ -294,14 +299,31 @@ export class JanSession {
   // Replace the host tools of a session between turns. Refused while a turn is
   // active (`JanRpcError.code === -32001`).
   async setTools(tools) {
-    const view = await this.runtime.request('session/tools/set', {
-      sessionId: this.id,
-      tools: tools.map(toDeclaration),
+    // One at a time with a fork of this session: the runtime clones the tools it
+    // holds when it reads `session/fork`, so a replacement that lands between
+    // that read and the handlers being copied would leave the fork advertising a
+    // tool nothing here can run.
+    return this._exclusive(async () => {
+      const view = await this.runtime.request('session/tools/set', {
+        sessionId: this.id,
+        tools: tools.map(toDeclaration),
+      })
+      this._declare(tools)
+      this.tools = view.tools
+      this.toolSpecs = view.toolSpecs
+      return view
     })
-    this._declare(tools)
-    this.tools = view.tools
-    this.toolSpecs = view.toolSpecs
-    return view
+  }
+
+  // Run `work` after every earlier tool or fork change of this session has
+  // finished, whether it succeeded or not.
+  _exclusive(work) {
+    const run = this.#mutations.then(work, work)
+    this.#mutations = run.then(
+      () => {},
+      () => {},
+    )
+    return run
   }
 
   // Change the model between turns. Refused while a turn is active.
@@ -314,10 +336,12 @@ export class JanSession {
     return current
   }
 
-  // A new session with this one's history, addressable on its own. Its host
-  // tools are not inherited - a declaration belongs to the session that made
-  // it - so `fork({ tools })` re-declares them.
-  fork({ tools = [] } = {}) {
+  // A new session with this one's history, addressable on its own. It answers
+  // for the same host tools with the same handlers - the runtime copies the
+  // declarations, so the handlers have to come with them or the model would be
+  // offered tools that nothing here can run. `fork({ tools })` replaces them
+  // instead, and `fork({ tools: [] })` drops them.
+  fork({ tools } = {}) {
     return this.runtime.forkSession(this.id, { tools })
   }
 
@@ -339,17 +363,28 @@ export class JanSession {
   }
 
   // Attach the handlers a session's declarations carry. Called by the runtime
-  // when the session is created, and by `setTools` when they are replaced.
+  // when the session is created, and by `setTools` when they are replaced. The
+  // runtime trims a declared name, so it is keyed trimmed here: the host is
+  // told the name the runtime holds.
   _declare(tools) {
-    this.#decls = new Map(tools.map((tool) => [tool.name, tool]))
+    this.#decls = new Map(tools.map((tool) => [tool.name.trim(), tool]))
+  }
+
+  // The declarations this session answers for, handlers included.
+  _declarations() {
+    return [...this.#decls.values()]
   }
 
   // Called by the runtime on every frame addressed to this session.
   _deliver(tag, { turnId, event }) {
     this.#emit('event', event)
+    if (this.#failure) return
     // By tag as well, so `on('tool_request')` and `on('permission_request')`
     // hear what they were told they would.
     this.#notify(tag, event)
+    // A listener that raised has failed the runtime, and this session with it
+    // (see `JanRuntime._callListener`): no turn is left to push to.
+    if (this.#failure) return
     const turn = this.#turn(turnId, true)
     turn?._push(event)
     if (tag === 'tool_request') this.#answer(event)
@@ -374,6 +409,7 @@ export class JanSession {
 
   // The runtime is gone: every open turn fails rather than hangs.
   _fail(error) {
+    this.#failure = error
     for (const turn of this.#turns.values()) turn._fail(error)
     this.#turns.clear()
     this.#abort(error)
@@ -385,13 +421,22 @@ export class JanSession {
     if (existing) return existing
     if (!create) return null
     const turn = new JanTurn(this, turnId)
-    this.#turns.set(turnId, turn)
+    // A terminal record the runtime already sent is the turn's outcome, whatever
+    // happened to the runtime after it.
     const late = this.#late.get(turnId)
     if (late) {
       this.#late.delete(turnId)
-      this.#turns.delete(turnId)
       turn._finish(late)
+      return turn
     }
+    // The runtime failed while `prompt()` was still waiting for its reply: the
+    // turn it is about to return would never hear a terminal record, so it fails
+    // now with the reason the runtime did.
+    if (this.#failure) {
+      turn._fail(this.#failure)
+      return turn
+    }
+    this.#turns.set(turnId, turn)
     return turn
   }
 
@@ -405,7 +450,7 @@ export class JanSession {
   // Without the `'*'` fan-out, for a second tag on an event already emitted:
   // a tag listener hears it, and `'*'` does not hear it twice.
   #notify(kind, event) {
-    for (const listener of this.#listeners.get(kind) ?? []) listener(event)
+    for (const listener of this.#listeners.get(kind) ?? []) this.runtime._callListener(listener, event)
   }
 
   // A host tool was called. The handler runs without holding the reader: two
@@ -425,23 +470,27 @@ export class JanSession {
         })
         return
       }
-      let result
+      let response
       try {
-        result = await declaration.handler(event.args, {
+        const result = await declaration.handler(event.args, {
           requestId: event.request_id,
           toolName: event.tool_name,
           runId: event.run_id ?? null,
           session: this,
           signal: controller.signal,
         })
+        response = await normalizeResult(result)
       } catch (error) {
-        await this.#respond(event.request_id, {
-          content: error instanceof Error ? error.message : String(error),
+        // A handler that threw and a result that could not be shaped - an
+        // image file that is gone, a malformed part - are answered alike: the
+        // model is told, and the turn goes on rather than waiting on a call
+        // this client failed to answer.
+        response = {
+          content: describeError(error),
           isError: true,
-        })
-        return
+        }
       }
-      await this.#respond(event.request_id, await normalizeResult(result))
+      await this.#respond(event.request_id, response)
     }
     answer().catch(() => {})
   }
@@ -459,12 +508,24 @@ export class JanSession {
       this.#calls.delete(requestId)
       return
     }
-    this.#calls.delete(requestId)
     try {
       await this.runtime.request('tool/respond', { requestId, ...params })
-    } catch {
-      // The turn was interrupted or the channel closed: the request is already
-      // withdrawn, and there is no one left to tell.
+    } catch (error) {
+      // The runtime is still waiting on this request unless it is gone, so a
+      // failure to deliver the answer is itself answered, as a failed call. That
+      // covers the runtime refusing what the result carried (an unsupported
+      // part, an image over the caps) and the result failing to encode here
+      // before anything was sent (a BigInt, a circular reference, a `toJSON`
+      // that throws): which of them it was does not change what the model needs.
+      if (!requestIsGone(error) && !controller.signal.aborted) {
+        const why =
+          error instanceof JanRpcError ? 'the runtime refused this tool result' : 'the tool result could not be encoded'
+        await this.runtime
+          .request('tool/respond', { requestId, content: `${why}: ${describeError(error)}`, isError: true })
+          .catch(() => {})
+      }
+    } finally {
+      this.#calls.delete(requestId)
     }
   }
 
@@ -638,23 +699,40 @@ export class JanRuntime {
     return sessions
   }
 
-  // Reopen a session of this process from its id. Host tools are not
-  // inherited: re-declare them with `session.setTools`.
+  // Reopen a session of this process from its id. A session this client already
+  // holds is returned as it is, not rebuilt: it keeps its turns, listeners,
+  // host tool handlers and pending calls, so work in flight settles on the
+  // object the caller already has. The runtime only knows the sessions this
+  // process created, so an id this client has not seen is not expected; one
+  // that does arrive is attached without handlers.
   async resumeSession(sessionId) {
-    return this.#session(await this.request('session/resume', { sessionId }))
+    const view = await this.request('session/resume', { sessionId })
+    const known = this.#sessions.get(sessionId)
+    if (known) {
+      known.model = view.model ?? known.model
+      return known
+    }
+    return this.#session(view)
   }
 
-  // A new session with another session's history.
-  async forkSession(sessionId, { tools = [] } = {}) {
+  // A new session with another session's history. Without `tools` it takes the
+  // source's host tools and handlers; with them, those replace the set. It runs
+  // after the source's pending tool changes and before later ones, so the
+  // runtime clones the same tools whose handlers are copied here.
+  async forkSession(sessionId, { tools } = {}) {
     const source = this.#sessions.get(sessionId)
-    const { sessionId: forked } = await this.request('session/fork', { sessionId })
-    const view = await this.request('session/tools/get', { sessionId: forked })
-    // The tools view carries the tools and nothing else: the id and the model
-    // have to come from the fork itself and from the session it was forked
-    // from, which the runtime rebuilt it from.
-    const session = this.#session({ ...view, sessionId: forked, model: source?.model ?? null })
-    if (tools.length) await session.setTools(tools)
-    return session
+    const work = async () => {
+      const { sessionId: forked } = await this.request('session/fork', { sessionId })
+      const view = await this.request('session/tools/get', { sessionId: forked })
+      // The tools view carries the tools and nothing else: the id and the model
+      // have to come from the fork itself and from the session it was forked
+      // from, which the runtime rebuilt it from.
+      const session = this.#session({ ...view, sessionId: forked, model: source?.model ?? null })
+      if (tools !== undefined) await session.setTools(tools)
+      else if (source) session._declare(source._declarations())
+      return session
+    }
+    return source ? source._exclusive(work) : work()
   }
 
   // One JSON-RPC request, answered or refused. The escape hatch for a verb
@@ -759,6 +837,36 @@ export class JanRuntime {
     this.#sessions.delete(session.id)
   }
 
+  // Run one listener. A listener that throws, or returns a promise that
+  // rejects, fails the runtime: every open turn and call settles with a
+  // `JanRuntimeError` naming the cause (`error.cause`), and the process is
+  // stopped. The embedding application is not crashed by it, and it is not
+  // left with a runtime that silently stopped delivering to a listener that
+  // may have been the one answering a permission request.
+  _callListener(listener, payload) {
+    try {
+      const returned = listener(payload)
+      if (returned && typeof returned.then === 'function') {
+        returned.then(undefined, (error) => this.#listenerFailed(error))
+      }
+    } catch (error) {
+      this.#listenerFailed(error)
+    }
+  }
+
+  #listenerFailed(error) {
+    // Already failed or exited: the host has been told, and one more
+    // listener's complaint changes nothing.
+    if (this.#failure) return
+    this.#fail(
+      new JanRuntimeError(`an event listener raised: ${describeError(error)}`, {
+        stderr: this.#stderr,
+        cause: error,
+      }),
+    )
+    this.close({ force: true }).catch(() => {})
+  }
+
   // The runtime's own frame, routed. Everything that is not an answer or a
   // session event ends up on the `notification` listener.
   #onLine(line) {
@@ -816,7 +924,7 @@ export class JanRuntime {
   }
 
   #emit(kind, payload) {
-    for (const listener of this.#listeners.get(kind) ?? []) listener(payload)
+    for (const listener of this.#listeners.get(kind) ?? []) this._callListener(listener, payload)
   }
 
   #fail(error) {
@@ -832,29 +940,52 @@ export class JanRuntime {
   }
 }
 
+// Whether a failed `tool/respond` means the request is no longer waiting on the
+// runtime: the channel is gone, or the runtime says nothing is pending. Any
+// other failure leaves it waiting.
+function requestIsGone(error) {
+  if (error instanceof JanRuntimeError) return true
+  return error instanceof JanRpcError && error.data?.kind === 'not_pending'
+}
+
+// What a handler or listener threw, as text. Anything can be thrown, and reading
+// or converting it can throw too (an object with no prototype, a throwing
+// `toString`, an Error whose `message` getter throws or whose `message` is not
+// text): none of that may stop the failure being reported.
+function describeError(error) {
+  try {
+    return String(error instanceof Error ? error.message : error)
+  } catch {
+    return 'a thrown value that cannot be converted to text'
+  }
+}
+
 // A host tool declaration: what the model sees, minus the handler, which never
 // crosses the process boundary.
 function toDeclaration(tool) {
   if (!tool || typeof tool !== 'object') throw new TypeError('a host tool must be an object')
   const { name, description, parameters, capability, handler } = tool
-  if (typeof name !== 'string' || !name) throw new TypeError('a host tool needs a name')
+  if (typeof name !== 'string' || !name.trim()) throw new TypeError('a host tool needs a name')
   if (typeof handler !== 'function') throw new TypeError(`host tool '${name}' needs a handler`)
-  const declaration = { name }
+  // Trimmed, as the runtime trims it: the handler is found by the name the
+  // runtime reports, so an untrimmed key would advertise a tool nothing can run.
+  const declaration = { name: name.trim() }
   if (description !== undefined) declaration.description = description
   if (parameters !== undefined) declaration.parameters = parameters
   if (capability !== undefined) declaration.capability = capability
   return declaration
 }
 
-// `turn/start` takes the text, the parts, or the record a client would write
-// to a stream-json `user` line. All three are accepted here, normalized to the
-// shape the parser already handles.
+// `turn/start` takes the text, or the content parts as a bare array. A
+// `{ text }` or `{ content }` record is unwrapped to one of those; the
+// stream-json `{ type: 'user', content }` envelope is not what this verb
+// parses, and the runtime refuses it.
 function normalizeInput(input) {
   if (typeof input === 'string') return input
-  if (Array.isArray(input)) return { type: 'user', content: input }
+  if (Array.isArray(input)) return input
   if (input && typeof input === 'object') {
     if (typeof input.text === 'string') return input.text
-    if (Array.isArray(input.content)) return { type: 'user', content: input.content }
+    if (Array.isArray(input.content)) return input.content
   }
   throw new TypeError('prompt() takes a string, content parts, or a { text } / { content } record')
 }

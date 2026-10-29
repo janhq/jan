@@ -20,6 +20,9 @@ pub mod jail;
 /// The `monitor` tool's core: file watching + condition-script evaluation.
 /// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
 pub mod monitor;
+/// Opens a resolved path refusing every link on the way, so a write lands on
+/// exactly the path the containment check approved.
+pub mod nofollow;
 /// Tools an installed plugin declares in its `plugin.toml`. Loop-dispatched
 /// like the monitor tool, so they are not in `BUILTIN_TOOLS`.
 pub mod plugin_tools;
@@ -185,8 +188,9 @@ pub struct ToolContext<'a> {
     /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
     /// the one way to inject a secret-named variable on purpose.
     pub env_set: &'a [(String, String)],
-    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` falls back to
-    /// headless Chrome; the desktop injects a webview-backed renderer. See
+    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` renders through
+    /// headless Chrome; the desktop injects a webview-backed renderer, whose
+    /// failures are returned as-is rather than retried in Chrome. See
     /// [`ScreenshotBackend`].
     pub screenshot_backend: Option<ScreenshotBackend>,
     /// The run's lifecycle hooks. Carried on the context rather than passed to
@@ -206,6 +210,15 @@ pub struct ToolContext<'a> {
     /// `None` keeps the pull-only behaviour, which is right for a surface with
     /// no conversation to deliver into.
     pub shell_done_sink: Option<ShellDoneSink>,
+    /// While true, a running `bash` command is handed off to the background
+    /// before its timeout, the way the timeout itself does. Lets a surface free
+    /// the agent for a message the user typed mid-call instead of holding it
+    /// until the command ends. `None` leaves the timeout as the only hand-off.
+    pub detach_signal: Option<tokio::sync::watch::Receiver<bool>>,
+    /// The backend `web_search`/`web_fetch` use, as the host's settings chose
+    /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
+    /// in the environment.
+    pub web_search: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -241,6 +254,12 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("plan_mode", &self.plan_mode)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
+            .field("detach_signal", &self.detach_signal.is_some())
+            // The config can hold an API key, so only the backend id is shown.
+            .field(
+                "web_search",
+                &self.web_search.map(|c| c.provider.as_deref().unwrap_or("default")),
+            )
             .finish()
     }
 }
@@ -341,7 +360,8 @@ pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
         .clamp(MIN_PARK_SECS, MAX_PARK_SECS)
 }
 
-/// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
+/// Renders a local HTML/SVG file (path, width, height, scale, and what else the
+/// page may load) to PNG bytes.
 ///
 /// Injected by the desktop so `screenshot` can capture through the app's own
 /// webview instead of shelling out to Chrome. A boxed closure so this module
@@ -353,6 +373,7 @@ pub type ScreenshotBackend = std::sync::Arc<
             u64,
             u64,
             f64,
+            crate::screenshot_pages::PageScope,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + Send>,
         > + Send
@@ -390,13 +411,32 @@ impl<'a> ToolContext<'a> {
             plan_mode: false,
             hook_sink: None,
             shell_done_sink: None,
+            detach_signal: None,
+            web_search: None,
         }
+    }
+
+    /// Route the web tools to the host's chosen backend. See
+    /// [`Self::web_search`].
+    pub fn with_web_search(
+        mut self,
+        config: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
+    ) -> Self {
+        self.web_search = config;
+        self
     }
 
     /// Report finished background shells to `sink`. See
     /// [`Self::shell_done_sink`].
     pub fn with_shell_done_sink(mut self, sink: ShellDoneSink) -> Self {
         self.shell_done_sink = Some(sink);
+        self
+    }
+
+    /// Let `signal` background a running command early. See
+    /// [`Self::detach_signal`].
+    pub fn with_detach_signal(mut self, signal: tokio::sync::watch::Receiver<bool>) -> Self {
+        self.detach_signal = Some(signal);
         self
     }
 

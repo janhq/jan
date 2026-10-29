@@ -339,7 +339,7 @@ export interface SubagentPlanEvent {
   "type": "subagent_plan"
 }
 
-/** A backgrounded subagent's own internal event, tagged with its run so a consumer can attribute it to the right child even when several run concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/ ToolResult/PermissionRequest); the child's terminal Done/Error is never wrapped (its result is delivered via `await_subagent`). Never a `ToolRequest`: a client answers a request by `request_id` on stdin, and it is told nothing about this wrapper, so a nested request would be unanswerable. A child's host tool call is routed to the root channel unwrapped instead, attributed by `ToolRequest.run_id`. */
+/** A backgrounded subagent's own internal event, tagged with its run so a consumer can attribute it to the right child even when several run concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/ ToolResult/PermissionRequest/Parked); the child's terminal Done/Error is never wrapped (its result is delivered via `await_subagent`). A wrapped `Parked` describes that child alone and is display-only: the parent run is not parked by it. Never a `ToolRequest`: a client answers a request by `request_id` on stdin, and it is told nothing about this wrapper, so a nested request would be unanswerable. A child's host tool call is routed to the root channel unwrapped instead, attributed by `ToolRequest.run_id`. */
 export interface SubagentEvent {
   "run_id": string
   "name": string
@@ -376,7 +376,7 @@ export interface MonitorsEvent {
   "type": "monitors"
 }
 
-/** The model has finished its turn and the loop is parked on background work it started (a subagent still running, a monitor still watching). Nothing is being generated until a ping resumes the run, which the next `Step` marks. Lets a consumer say "watching" rather than "working". */
+/** The model has finished its turn and the loop is parked on background work it started (a subagent still running, a monitor still watching). Nothing is being generated until a ping resumes the run, which the next `Step` marks. Lets a consumer say "watching" rather than "working". Wrapped in `Subagent`, it describes that child instead and is display-only: the parent's own state is unchanged. */
 export interface ParkedEvent {
   "type": "parked"
 }

@@ -58,3 +58,12 @@ class JanRuntimeError(Exception):
         super().__init__(message)
         self.exit_code = exit_code
         self.stderr = stderr
+
+
+def describe_error(error: BaseException) -> str:
+    """What a handler or listener raised, as text, without trusting its
+    ``__str__`` not to raise: that must not stop the failure being reported."""
+    try:
+        return str(error)
+    except Exception:  # noqa: BLE001
+        return type(error).__name__

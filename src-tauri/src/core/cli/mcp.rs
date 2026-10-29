@@ -9,6 +9,7 @@
 //! the agent loop already consumes. No bundled-runtime rewriting, no Jan Browser
 //! MCP bridge, no auto-reconnect monitor -- the CLI relies on the user's PATH.
 
+use std::future::Future;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -78,6 +79,12 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
     obj.entry("mcpSettings").or_insert_with(|| serde_json::json!({}));
 
     let body = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    // A machine where the desktop app never ran has no data folder yet, and this
+    // is the first thing to write there.
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder)
+            .map_err(|e| format!("could not create {}: {e}", folder.display()))?;
+    }
     let tmp = path.with_extension("json.tmp");
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -86,7 +93,9 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(&tmp).map_err(|e| e.to_string())?;
+    let mut file = options
+        .open(&tmp)
+        .map_err(|e| format!("could not write {}: {e}", tmp.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -96,7 +105,7 @@ fn write_config(data_folder: &std::path::Path, cfg: &Value) -> Result<(), String
     // MCP env/header fields can contain keys entered during plugin setup.
     std::io::Write::write_all(&mut file, body.as_bytes()).map_err(|e| e.to_string())?;
     drop(file);
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("could not save {}: {e}", path.display()))?;
     Ok(())
 }
 
@@ -112,7 +121,11 @@ fn servers_map_mut(cfg: &mut Value) -> &mut serde_json::Map<String, Value> {
 
 /// Parsed `mcpSettings` block (tool-call timeout etc.), defaults when absent.
 pub fn read_settings() -> McpSettings {
-    read_config(&default_data_folder())
+    read_settings_in(&default_data_folder())
+}
+
+fn read_settings_in(data_folder: &std::path::Path) -> McpSettings {
+    read_config(data_folder)
         .get("mcpSettings")
         .cloned()
         .and_then(|v| serde_json::from_value(v).ok())
@@ -417,49 +430,67 @@ async fn connect_in(
     }
     let params = extract_command_args(config)
         .ok_or_else(|| ConnectError::Failed(format!("invalid MCP config for '{name}'")))?;
+    // Bounds how long a server may take to answer `initialize`, by the same
+    // setting that bounds its tool calls: one that starts and never answers
+    // would otherwise hold every agent run behind the connect.
+    let handshake_timeout = read_settings_in(data_folder).tool_call_timeout_duration();
 
     let service = match (params.transport_type.as_deref(), params.url.as_deref()) {
         (Some(transport @ ("http" | "sse")), Some(url)) => {
-            let base = http_client(&params.headers)?;
-            // A credential problem we can already name (expired with no refresh
-            // token, or issued for a different url) is `NeedsAuth` outright --
-            // there is no point attempting a connect we know is unauthorized.
-            let auth = oauth::authorized_client(data_folder, name, url, config, base.clone())
-                .await
-                .map_err(|detail| ConnectError::NeedsAuth {
-                    server: name.to_string(),
-                    detail,
-                })?;
-            let authorized = auth.is_some();
-            // rmcp 3.x dropped the SSE client transport (MCP deprecated HTTP+SSE
-            // for Streamable HTTP), so a legacy `sse` config connects over the
-            // streamable-http client instead.
-            if transport == "sse" {
-                log::warn!(
-                    "MCP server '{name}' uses the deprecated 'sse' transport; \
-                     connecting over Streamable HTTP instead"
-                );
-            }
-            let result = match auth {
-                Some(client) => serve_http(client, url, name).await,
-                None => serve_http(base, url, name).await,
-            };
-            match result {
-                Ok(service) => service,
-                // Only worth probing when we did not already send a token: a
-                // failure *with* credentials is either a real outage or tokens
-                // the provider revoked, and `advertises_oauth` cannot tell the
-                // difference. Re-authenticating is offered from `/mcp` anyway.
-                Err(e) if !authorized && oauth::advertises_oauth(url).await => {
-                    // The transport error is kept: a server can advertise OAuth
-                    // *and* have failed for an unrelated reason, and dropping
-                    // the cause would report that as "needs authentication".
-                    return Err(ConnectError::NeedsAuth {
+            // One deadline for the whole attempt - the credentials, the handshake
+            // and the OAuth probe that follows a failure - because a server that
+            // stalls in any of them blocks the run the same way.
+            let attempt = async {
+                let base = http_client(&params.headers)?;
+                // A credential problem we can already name (expired with no
+                // refresh token, or issued for a different url) is `NeedsAuth`
+                // outright -- there is no point attempting a connect we know is
+                // unauthorized.
+                let auth = oauth::authorized_client(data_folder, name, url, config, base.clone())
+                    .await
+                    .map_err(|detail| ConnectError::NeedsAuth {
                         server: name.to_string(),
-                        detail: format!("no credentials are stored ({e})"),
-                    });
+                        detail,
+                    })?;
+                let authorized = auth.is_some();
+                // rmcp 3.x dropped the SSE client transport (MCP deprecated
+                // HTTP+SSE for Streamable HTTP), so a legacy `sse` config
+                // connects over the streamable-http client instead.
+                if transport == "sse" {
+                    log::warn!(
+                        "MCP server '{name}' uses the deprecated 'sse' transport; \
+                         connecting over Streamable HTTP instead"
+                    );
                 }
-                Err(e) => return Err(ConnectError::Failed(e)),
+                let result = match auth {
+                    Some(client) => serve_http(client, url, name).await,
+                    None => serve_http(base, url, name).await,
+                };
+                Ok::<_, ConnectError>(match result {
+                    Ok(service) => service,
+                    // Only worth probing when we did not already send a token: a
+                    // failure *with* credentials is either a real outage or
+                    // tokens the provider revoked, and `advertises_oauth` cannot
+                    // tell the difference. Re-authenticating is offered from
+                    // `/mcp` anyway.
+                    Err(e) if !authorized && oauth::advertises_oauth(url).await => {
+                        // The transport error is kept: a server can advertise
+                        // OAuth *and* have failed for an unrelated reason, and
+                        // dropping the cause would report that as "needs
+                        // authentication".
+                        return Err(ConnectError::NeedsAuth {
+                            server: name.to_string(),
+                            detail: format!("no credentials are stored ({e})"),
+                        });
+                    }
+                    Err(e) => return Err(ConnectError::Failed(e)),
+                })
+            };
+            match tokio::time::timeout(handshake_timeout, attempt).await {
+                Ok(outcome) => outcome?,
+                Err(_) => {
+                    return Err(ConnectError::Failed(timed_out(name, handshake_timeout)));
+                }
             }
         }
         _ => {
@@ -468,12 +499,16 @@ async fn connect_in(
                 .stderr(Stdio::null())
                 .spawn()
                 .map_err(|e| ConnectError::Failed(format!("failed to spawn '{name}': {e}")))?;
-            RunningServiceEnum::NoInit(
-                ()
-                    .serve(process)
-                    .await
-                    .map_err(|e| ConnectError::Failed(format!("failed to connect to '{name}': {e}")))?,
-            )
+            let pid = process.id();
+            // A server that fails to start up, or never answers, is not left
+            // behind with what it started: the tree is killed first (see
+            // `bounded`), and the error is the one the caller reports.
+            let handshake = bounded(name, handshake_timeout, ().serve(process), || {
+                if let Some(pid) = pid {
+                    kill_process_tree(pid);
+                }
+            });
+            RunningServiceEnum::NoInit(handshake.await.map_err(ConnectError::Failed)?)
         }
     };
 
@@ -546,6 +581,63 @@ fn credential_vars(explicit_provider: Option<&str>, telemetry_on: bool) -> Vec<S
         names.extend(OTLP_HEADER_VARS.iter().map(|v| v.to_string()));
     }
     names
+}
+
+/// What a server that never answers is reported as: the same `failed to connect
+/// to '<name>'` as one that fails, so the caller treats both alike and the run
+/// goes on without it.
+fn timed_out(name: &str, timeout: std::time::Duration) -> String {
+    format!(
+        "failed to connect to '{name}': timed out after {}s waiting for it to answer",
+        timeout.as_secs()
+    )
+}
+
+/// Wait for a handshake no longer than `timeout`. On a timeout `cleanup` runs
+/// before the handshake is dropped, while it still owns the child: a child that
+/// is already gone cannot have its tree walked (`taskkill /T` follows parent
+/// links from a live root). After a failure the handshake has already let go of
+/// the child, so `cleanup` is best effort there.
+async fn bounded<T, E: std::fmt::Display>(
+    name: &str,
+    timeout: std::time::Duration,
+    handshake: impl Future<Output = Result<T, E>>,
+    cleanup: impl FnOnce(),
+) -> Result<T, String> {
+    tokio::pin!(handshake);
+    tokio::select! {
+        result = &mut handshake => match result {
+            Ok(service) => Ok(service),
+            Err(e) => {
+                cleanup();
+                Err(format!("failed to connect to '{name}': {e}"))
+            }
+        },
+        _ = tokio::time::sleep(timeout) => {
+            cleanup();
+            Err(timed_out(name, timeout))
+        }
+    }
+}
+
+/// Kill a stdio server and everything it started. The server was spawned as the
+/// leader of its own process group, so its pid names the group.
+fn kill_process_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{killpg, Signal};
+        use nix::unistd::Pid;
+        // Already gone is the common case and not a failure.
+        let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new(jan_utils::windows_system_tool("taskkill.exe"))
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output();
+    }
 }
 
 /// Serve the streamable-http transport over any client that implements it, so
@@ -837,6 +929,195 @@ mod tests {
         let entry = get_server_in(folder, "files").unwrap();
         assert!(entry.active, "editing must not clear the active flag");
         assert_eq!(entry.config["args"][1], "server2");
+    }
+
+    /// `config` saved under `name` with the smallest connect bound the setting
+    /// allows, so a test that expects the connect to give up does not wait.
+    fn save_with_a_one_second_bound(folder: &std::path::Path, name: &str, config: &Value) {
+        upsert_server_in(folder, name, config).unwrap();
+        let mut cfg = read_config(folder);
+        cfg["mcpSettings"] = serde_json::json!({ "toolCallTimeoutSeconds": 1 });
+        write_config(folder, &cfg).unwrap();
+    }
+
+    /// Run a connect that has to give up by itself, and return why it did.
+    async fn connect_that_gives_up(
+        folder: &std::path::Path,
+        name: &str,
+        config: &Value,
+    ) -> (String, SharedMcpServers) {
+        let servers: SharedMcpServers = Default::default();
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            connect_in(folder, name, config, &servers),
+        )
+        .await
+        .expect("the connect must give up by itself rather than wait on the server");
+        let message = outcome
+            .expect_err("a server that never answers did not connect")
+            .to_string();
+        assert!(
+            message.contains(&format!("failed to connect to '{name}'")),
+            "{message}"
+        );
+        assert!(message.contains("timed out after 1s"), "{message}");
+        (message, servers)
+    }
+
+    /// Whether `pid` has been killed, given a moment to be. A killed process whose
+    /// parent has not reaped it yet is a zombie: it still answers signal 0 until
+    /// whoever adopted it collects it, and where that is a PID 1 that never reaps
+    /// (a minimal container) it never stops answering. It is dead all the same.
+    #[cfg(unix)]
+    async fn process_is_gone(pid: i32) -> bool {
+        fn is_zombie(pid: i32) -> bool {
+            #[cfg(target_os = "linux")]
+            {
+                // "pid (comm) S ...": the state follows the last ')'.
+                std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                    .ok()
+                    .and_then(|stat| {
+                        stat.rsplit(')')
+                            .next()
+                            .map(|rest| rest.trim_start().starts_with('Z'))
+                    })
+                    .unwrap_or(false)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                std::process::Command::new("ps")
+                    .args(["-o", "stat=", "-p", &pid.to_string()])
+                    .output()
+                    .map(|out| String::from_utf8_lossy(&out.stdout).trim().starts_with('Z'))
+                    .unwrap_or(false)
+            }
+        }
+
+        for _ in 0..60 {
+            // Signal 0 only checks that the process exists.
+            let exists = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stderr(Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !exists || is_zombie(pid) {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// A stdio server that starts and then never answers `initialize` must fail
+    /// the connect after the tool-call timeout, like a server that exits, so the
+    /// run goes on without it. Unbounded, this awaited forever and blocked every
+    /// agent run behind the connect.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_server_that_never_answers_initialize_fails_the_connect() {
+        let data = temp_data();
+        let pid_file = data.path().join("server.pid");
+        let config = serde_json::json!({
+            "command": "sh",
+            // `exec` keeps the pid the file names.
+            "args": ["-c", format!("echo $$ > '{}'; exec sleep 600", pid_file.display())],
+            "active": true,
+        });
+        save_with_a_one_second_bound(data.path(), "silent", &config);
+
+        let (_, servers) = connect_that_gives_up(data.path(), "silent", &config).await;
+        assert!(
+            servers.lock().await.is_empty(),
+            "a failed connect leaves nothing behind"
+        );
+
+        let pid: i32 = std::fs::read_to_string(&pid_file)
+            .expect("the server started")
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            process_is_gone(pid).await,
+            "the silent server was left running"
+        );
+    }
+
+    /// A server that starts children of its own is reaped whole: dropping the
+    /// handshake kills the process it started, not what that started in turn.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn giving_up_on_a_server_takes_the_processes_it_started_with_it() {
+        let data = temp_data();
+        let pid_file = data.path().join("child.pid");
+        let config = serde_json::json!({
+            "command": "sh",
+            "args": ["-c", format!("sleep 600 & echo $! > '{}'; wait", pid_file.display())],
+            "active": true,
+        });
+        save_with_a_one_second_bound(data.path(), "forking", &config);
+
+        connect_that_gives_up(data.path(), "forking", &config).await;
+
+        let child: i32 = std::fs::read_to_string(&pid_file)
+            .expect("the server started its child")
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            process_is_gone(child).await,
+            "the server's child was left running"
+        );
+    }
+
+    /// An http server that accepts the connection and never answers is bounded
+    /// too, together with the credential lookup and OAuth probe around it.
+    #[tokio::test]
+    async fn an_http_server_that_never_answers_fails_the_connect() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        // Hold every connection open without ever replying.
+        let held = tokio::spawn(async move {
+            let mut open = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                open.push(socket);
+            }
+        });
+
+        let data = temp_data();
+        let config = serde_json::json!({ "type": "http", "url": url, "active": true });
+        save_with_a_one_second_bound(data.path(), "mute", &config);
+
+        let (_, servers) = connect_that_gives_up(data.path(), "mute", &config).await;
+        assert!(servers.lock().await.is_empty());
+        held.abort();
+    }
+
+    /// A machine where the desktop app never ran has no data folder yet, and the
+    /// CLI is the first thing to write there.
+    #[test]
+    fn upsert_creates_a_data_folder_that_does_not_exist_yet() {
+        let data = temp_data();
+        let folder = data.path().join("never").join("created");
+        let cfg = serde_json::json!({ "command": "echo", "args": [] });
+        upsert_server_in(&folder, "fx", &cfg).unwrap();
+
+        assert_eq!(get_server_in(&folder, "fx").unwrap().name, "fx");
+    }
+
+    /// When the folder cannot be created, the error says which one, rather than
+    /// a bare "No such file or directory".
+    #[test]
+    fn a_data_folder_that_cannot_be_created_is_named_in_the_error() {
+        let data = temp_data();
+        // A file where a directory has to go.
+        let blocker = data.path().join("blocker");
+        std::fs::write(&blocker, b"").unwrap();
+        let folder = blocker.join("data");
+        let cfg = serde_json::json!({ "command": "echo", "args": [] });
+
+        let err = upsert_server_in(&folder, "fx", &cfg).unwrap_err();
+        assert!(err.contains(&folder.display().to_string()), "{err}");
     }
 
     #[test]

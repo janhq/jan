@@ -230,14 +230,30 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     }
 }
 
+/// Save the app configuration from the frontend.
+///
+/// `data_folder` is kept as stored: the folder every data-folder check is
+/// measured against only moves through [`change_app_data_folder`], which
+/// validates the target and copies the data across.
 #[cfg(not(feature = "cli"))]
 #[tauri::command]
 pub fn update_app_configuration<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     configuration: AppConfiguration,
 ) -> Result<(), String> {
+    let mut configuration = configuration;
+    configuration.data_folder = get_app_configurations(app_handle.clone()).data_folder;
+    write_app_configuration(app_handle, configuration)
+}
+
+/// Write the app configuration as given, `data_folder` included. Backend only.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn write_app_configuration<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    configuration: AppConfiguration,
+) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
-    log::info!("update_app_configuration, configuration_file: {configuration_file:?}");
+    log::info!("write_app_configuration, configuration_file: {configuration_file:?}");
 
     fs::write(
         configuration_file,
@@ -330,6 +346,7 @@ pub fn change_app_data_folder<R: Runtime>(
     // Get current data folder path
     let current_data_folder = get_jan_data_folder_path(app_handle.clone());
     let new_data_folder_path = PathBuf::from(&new_data_folder);
+    validate_new_data_folder(&new_data_folder_path, dirs::home_dir().as_deref())?;
 
     // Create the new data folder if it doesn't exist
     if !new_data_folder_path.exists() {
@@ -362,7 +379,99 @@ pub fn change_app_data_folder<R: Runtime>(
     configuration.data_folder = new_data_folder;
 
     // Save the updated configuration
-    update_app_configuration(app_handle, configuration)
+    write_app_configuration(app_handle, configuration)
+}
+
+/// Folders that hold the OS or installed programs. A data folder at or inside
+/// one is refused.
+#[cfg(any(test, not(feature = "cli")))]
+fn system_dirs() -> Vec<PathBuf> {
+    if cfg!(windows) {
+        let mut dirs = Vec::new();
+        for (var, fallback) in [
+            ("SystemRoot", r"C:\Windows"),
+            ("ProgramFiles", r"C:\Program Files"),
+            ("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        ] {
+            dirs.push(PathBuf::from(fallback));
+            if let Some(v) = std::env::var_os(var) {
+                dirs.push(PathBuf::from(v));
+            }
+        }
+        dirs
+    } else {
+        [
+            "/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/dev",
+            "/proc", "/sys", "/boot", "/lib", "/lib64", "/private/etc",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+    }
+}
+
+/// `path` with symlinks resolved as far as it exists: the deepest existing
+/// ancestor is canonicalized and the rest appended, so a target that is still
+/// to be created is judged by where it will really land.
+#[cfg(any(test, not(feature = "cli")))]
+fn resolve_existing_prefix(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut cur = path;
+    loop {
+        if let Ok(real) = fs::canonicalize(cur) {
+            return rest.iter().rev().fold(real, |acc, c| acc.join(c));
+        }
+        match (cur.parent(), cur.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                cur = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Lower-cased on Windows, whose paths compare case-insensitively.
+#[cfg(any(test, not(feature = "cli")))]
+fn comparable(path: &Path) -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(path.to_string_lossy().to_lowercase())
+    } else {
+        path.to_path_buf()
+    }
+}
+
+/// Refuse a data folder that would make the data-folder checks meaningless:
+/// a filesystem root, the home folder or one of its ancestors, or a system
+/// folder. Anything else keeps working as before.
+#[cfg(any(test, not(feature = "cli")))]
+fn validate_new_data_folder(path: &Path, home: Option<&Path>) -> Result<(), String> {
+    use std::path::Component;
+    if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("The data folder must be an absolute path".to_string());
+    }
+    let refuse = || Err(format!("{} cannot be used as the data folder", path.display()));
+    for candidate in [path.to_path_buf(), resolve_existing_prefix(path)] {
+        if candidate.parent().is_none() {
+            return refuse();
+        }
+        let candidate = comparable(&candidate);
+        if let Some(home) = home {
+            for h in [home.to_path_buf(), resolve_existing_prefix(home)] {
+                if comparable(&h).starts_with(&candidate) {
+                    return refuse();
+                }
+            }
+        }
+        for dir in system_dirs() {
+            for d in [resolve_existing_prefix(&dir), dir] {
+                if candidate.starts_with(comparable(&d)) {
+                    return refuse();
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(not(feature = "cli"))]
@@ -376,6 +485,48 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use tempfile::tempdir;
+
+    #[test]
+    fn data_folder_refuses_roots_home_and_system_folders() {
+        let tmp = tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut bad = vec![
+            home.clone(),
+            home.parent().unwrap().to_path_buf(),
+            PathBuf::from("relative/data"),
+            home.join("x").join("..").join("..").join("y"),
+        ];
+        if cfg!(windows) {
+            bad.extend(
+                [r"C:\", r"D:\", r"C:\Windows", r"c:\windows\jan", r"C:\Program Files\Jan"]
+                    .map(PathBuf::from),
+            );
+        } else {
+            bad.extend(
+                ["/", "/usr", "/usr/local/jan", "/etc/jan", "/System", "/Library/Jan", "/bin"]
+                    .map(PathBuf::from),
+            );
+        }
+        for p in bad {
+            assert!(validate_new_data_folder(&p, Some(&home)).is_err(), "{p:?}");
+        }
+        for ok in [home.join("jan-data"), home.join("Documents").join("Jan"), tmp.path().join("elsewhere")] {
+            assert!(validate_new_data_folder(&ok, Some(&home)).is_ok(), "{ok:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn data_folder_follows_a_symlink_to_home() {
+        let tmp = tempdir().expect("temp dir");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&home, &link).unwrap();
+        assert!(validate_new_data_folder(&link, Some(&home)).is_err());
+        assert!(validate_new_data_folder(&link.join("jan"), Some(&home)).is_ok());
+    }
 
     #[test]
     fn migration_recovers_legacy_then_removes_stale_copy() {

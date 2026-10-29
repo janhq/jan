@@ -11,6 +11,7 @@ use tauri_plugin_hardware::vendor::nvidia::{nvidia_driver, CudaVersion, NvidiaDr
 
 use super::driver;
 use super::worker::{self, WorkerHandle};
+use crate::error::{ErrorCode, LlamacppError};
 use crate::state::LlamacppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +21,11 @@ pub struct EngineInfo {
     pub pid: u32,
     /// Registered model ids, from the preset the worker read.
     pub models: Vec<String>,
+    /// The devices this worker initialised, `None` when it did not say. Both
+    /// `start_engine` and `get_engine_info` read it off the running worker, so
+    /// a caller that attaches to an existing worker gets that worker's own
+    /// baseline rather than whatever the machine offers now.
+    pub devices: Option<Vec<worker::DeviceIdentity>>,
 }
 
 impl From<&WorkerHandle> for EngineInfo {
@@ -29,6 +35,7 @@ impl From<&WorkerHandle> for EngineInfo {
             api_key: h.api_key.clone(),
             pid: h.pid,
             models: h.models.clone(),
+            devices: h.devices.clone(),
         }
     }
 }
@@ -176,6 +183,26 @@ async fn record_nvidia_driver(versions: Arc<EngineVersions>) {
     let _ = versions.driver.set(driver);
 }
 
+/// A start failure as the `String` this command returns. A wrong-processor
+/// worker crosses as the structured error, which `parseEngineError` on the web
+/// side recovers from the message, so it is shown from its code. Every other
+/// failure keeps its plain text.
+fn worker_error_string(err: worker::WorkerError) -> String {
+    match err {
+        worker::WorkerError::WrongArchitecture(detail) => {
+            let structured = LlamacppError::new(
+                ErrorCode::UnsupportedCpu,
+                "The llama.cpp engine in this Jan build does not support this computer's \
+                 processor."
+                    .into(),
+                Some(detail),
+            );
+            serde_json::to_string(&structured).unwrap_or(structured.message)
+        }
+        other => other.to_string(),
+    }
+}
+
 /// Starts the worker. `slot_cache_mib` is the ceiling on the per-thread KV
 /// cache directory; 0 turns cross-session KV persistence off, which is a
 /// user-facing setting because a single saved conversation is hundreds of MiB.
@@ -210,7 +237,7 @@ pub async fn start_engine<R: tauri::Runtime>(
         Some(fault_emitter(app_handle.clone(), versions.clone())),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(worker_error_string)?;
     if let Some(v) = handle.cuda_toolkit {
         let _ = versions.toolkit.set(v);
     }
@@ -337,6 +364,10 @@ pub async fn engine_devices<R: tauri::Runtime>(
 ) -> Result<Vec<EngineDevice>, String> {
     let exe = resolve_worker_exe(&app_handle)?;
     let mut cmd = tokio::process::Command::new(&exe);
+    // Same pinned cwd as a serving worker: device listing loads the backends too.
+    if let Some(dir) = worker::worker_cwd(&exe) {
+        cmd.current_dir(dir);
+    }
     cmd.arg("--list-devices").envs(envs);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -459,6 +490,43 @@ pub async fn engine_slots_idle(
     })
 }
 
+/// Claims the engine for a restart, or says it cannot.
+///
+/// `false` means a request holds the worker (a native proxy or agent request
+/// that resolved its address and has not finished) or a generation is in
+/// flight: restarting now would cut it off. On `true` every new request waits
+/// until `end_engine_restart`, so none resolves the old worker's address after
+/// the caller's idle check, which is the gap the extension's own lease cannot
+/// close from JavaScript.
+#[tauri::command]
+pub async fn begin_engine_restart(
+    state: State<'_, Arc<LlamacppState>>,
+) -> Result<bool, String> {
+    if !state.begin_restart().await {
+        return Ok(false);
+    }
+    // Checked after the claim: nothing new can start from here, so what the
+    // worker reports is everything there will be.
+    let running = {
+        let guard = state.engine.lock().await;
+        guard.as_ref().map(|h| (h.port, h.api_key.clone()))
+    };
+    if let Some((port, api_key)) = running {
+        if !busy_models(port, &api_key).await.is_empty() {
+            state.end_restart().await;
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Lets requests through again. Safe to call without a restart in progress.
+#[tauri::command]
+pub async fn end_engine_restart(state: State<'_, Arc<LlamacppState>>) -> Result<(), String> {
+    state.end_restart().await;
+    Ok(())
+}
+
 /// Drops saved state without a worker, by editing the directory in this
 /// process.
 ///
@@ -576,9 +644,9 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.5.0`.
+    /// llama.cpp's own version, e.g. `0.7.0`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b11146`.
+    /// The upstream build tag the source was taken from, e.g. `b11669`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.
@@ -621,6 +689,22 @@ mod tests {
         assert_eq!(a.len(), 64, "32 bytes hex-encoded");
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b, "two keys must not collide");
+    }
+
+    // The UI shows an engine error from its code, and recovers the code from the
+    // message text, so the wrong-processor failure has to cross as that JSON.
+    // Any other spawn failure keeps its plain text.
+    #[test]
+    fn a_wrong_processor_reaches_the_ui_as_its_own_code() {
+        let text = worker_error_string(worker::WorkerError::WrongArchitecture(
+            "Bad CPU type in executable (os error 86)".into(),
+        ));
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["code"], "UNSUPPORTED_CPU");
+        assert_eq!(json["details"], "Bad CPU type in executable (os error 86)");
+
+        let plain = worker_error_string(worker::WorkerError::Spawn("no such file".into()));
+        assert_eq!(plain, "could not start jan-llama-worker: no such file");
     }
 
     // resolve_worker_exe now needs an AppHandle for the bundle lookup, so the

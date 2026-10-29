@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useThreads } from '../useThreads'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 vi.mock('@/services/threads', () => ({
   createThread: vi.fn(),
@@ -308,6 +309,36 @@ describe('useThreads - coverage', () => {
     expect(result.current.threads['t1']).toBeDefined()
     expect(result.current.threads['t2']).toBeUndefined()
     expect(result.current.threads['t3']).toBeDefined()
+  })
+
+  // Removing the chat session is what ends a turn still running in the
+  // background (#9311), so deleting a thread in bulk must remove it too.
+  it('removes the chat session of each thread deleted in bulk', () => {
+    const { result } = renderHook(() => useThreads())
+    const session = (id: string) =>
+      useChatSessions
+        .getState()
+        .ensureSession(
+          id,
+          {} as never,
+          () => ({ status: 'ready', stop: vi.fn() }) as never
+        )
+
+    act(() => {
+      result.current.setThreads([
+        { id: 't1', title: 'Fav', isFavorite: true } as any,
+        { id: 't2', title: 'Normal' } as any,
+      ])
+      session('t1')
+      session('t2')
+    })
+
+    act(() => {
+      result.current.deleteAllThreads()
+    })
+
+    expect(useChatSessions.getState().sessions['t2']).toBeUndefined()
+    expect(useChatSessions.getState().sessions['t1']).toBeDefined()
   })
 
   it('should clear all threads', () => {

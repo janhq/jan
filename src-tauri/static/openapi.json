@@ -117,7 +117,7 @@
     "/orchestrations": {
       "post": {
         "summary": "Run headless assistant orchestration with tool execution",
-        "description": "Optionally loads assistant settings by `assistant_id`, executes server-side MCP tool calls, and continues generation until the model returns a final response.",
+        "description": "Optionally loads assistant settings by `assistant_id`, executes server-side MCP tool calls, and continues generation until the model returns a final response. Returns 403 unless server-side tool execution is enabled in Settings > Local API Server.",
         "operationId": "createOrchestration",
         "tags": ["Inference"],
         "requestBody": {

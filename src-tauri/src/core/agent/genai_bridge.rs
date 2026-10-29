@@ -661,7 +661,7 @@ fn completion_json(
             // `cached_tokens: 0` (a prefix written every turn and never read --
             // the expensive case) arrives here looking like a route that reports
             // no cache field at all. Which of the two it was cannot be recovered
-            // at this layer; the console reads it as "not reported", so a
+            // at this layer; the console reads it as "no hits reported", so a
             // cold-prefix route on this bridge cannot raise the zero-hit alarm.
             //
             // Native providers do not come through here: `core::server

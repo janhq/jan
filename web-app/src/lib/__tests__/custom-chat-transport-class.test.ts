@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { UIMessage } from '@ai-sdk/react'
 import { CustomChatTransport, normalizeToolInputSchema } from '../custom-chat-transport'
 
 // Mock all the heavy dependencies
@@ -118,6 +119,29 @@ describe('CustomChatTransport', () => {
     const result = transport.mapUserInlineAttachments(messages)
     expect(result[0].parts[0].text).toContain('file.txt')
     expect(result[0].parts[0].text).toContain('hello world')
+  })
+
+  it('does not mutate reused messages when mapping inline file content', () => {
+    const messages = [
+      {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Check this' }],
+        metadata: {
+          inline_file_contents: [{ name: 'file.txt', content: 'hello world' }],
+        },
+      },
+    ] as UIMessage[]
+
+    // The chat passes the same message objects on every turn (#9022), so each
+    // mapping must inline the file exactly once.
+    for (let turn = 0; turn < 3; turn++) {
+      const mapped = transport.mapUserInlineAttachments(messages)
+      expect(mapped[0].parts).toEqual([
+        { type: 'text', text: 'Check this\n\nFile: file.txt\nhello world' },
+      ])
+    }
+    expect(messages[0].parts).toEqual([{ type: 'text', text: 'Check this' }])
   })
 
   it('mapUserInlineAttachments ignores entries without content', () => {

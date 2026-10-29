@@ -65,6 +65,19 @@ describe('parseEngineError', () => {
 
     expect(parsed?.missingLibraries).toBeUndefined()
   })
+
+  // #9270: start_engine hands the wrong-processor failure over as JSON inside
+  // the error text, and the UI must still recover its code from it.
+  it('recovers a wrong-processor engine start from the error text', () => {
+    const parsed = parseEngineError(
+      new Error(
+        'Failed to start model: {"code":"UNSUPPORTED_CPU","message":"The llama.cpp engine in this Jan build does not support this computer\'s processor.","details":"Bad CPU type in executable (os error 86)"}'
+      )
+    )
+
+    expect(parsed?.code).toBe('UNSUPPORTED_CPU')
+    expect(parsed?.details).toBe('Bad CPU type in executable (os error 86)')
+  })
 })
 
 describe('describeEngineError', () => {
@@ -126,6 +139,36 @@ describe('describeEngineError', () => {
     expect(detail).not.toContain('\n')
     expect(detail.length).toBeLessThan(250)
     expect(detail.endsWith('...')).toBe(true)
+  })
+
+  // `find_session_by_model` and `get_loaded_models` return String errors, so
+  // the plugin sends the structured error as JSON inside the string, and the
+  // extension rethrows it as `new Error(String(e))`. It has to come out as the
+  // localized sentence plus the evidence, not as the raw JSON.
+  it('describes an engine-stopped error that arrived inside an Error message', () => {
+    const fromRust = JSON.stringify({
+      code: 'ENGINE_STOPPED',
+      message: 'The llama.cpp engine stopped unexpectedly (exit code 0xC0000005).',
+      details: 'exit code 0xC0000005. Last output: CUDA error: unspecified launch failure',
+    })
+
+    const text = describeEngineError(new Error(fromRust))
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_STOPPED')
+    expect(text).toContain('0xC0000005')
+    expect(text).not.toContain('"code"')
+  })
+
+  it('describes a live but unreachable engine from its code', () => {
+    const text = describeEngineError(
+      JSON.stringify({
+        code: 'ENGINE_UNREACHABLE',
+        details: '127.0.0.1:51825: error sending request: connection refused',
+      })
+    )
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_UNREACHABLE')
+    expect(text).toContain('127.0.0.1:51825')
   })
 
   it('omits the detail wrapper when there is no detail', () => {
