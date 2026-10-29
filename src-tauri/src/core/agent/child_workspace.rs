@@ -119,6 +119,10 @@ pub(crate) struct ChildWorkspace {
     /// Whether the parent's checkout had uncommitted changes the new worktree
     /// does not carry.
     pub(crate) left_changes: bool,
+    /// The parent's subdirectory of the repository when the worktree lacks
+    /// it (untracked, ignored, or absent at the ref), so `root` is the
+    /// worktree's top level instead.
+    pub(crate) missing_subdir: Option<String>,
     /// Whether the `assign` that returned this made `worktree` for it, rather
     /// than handing out an earlier child's: only then may [`Ledger::undo`]
     /// remove it.
@@ -134,6 +138,7 @@ impl ChildWorkspace {
             worktree: None,
             fallback: None,
             left_changes: false,
+            missing_subdir: None,
             fresh: false,
         }
     }
@@ -157,8 +162,15 @@ impl ChildWorkspace {
                 } else {
                     ""
                 };
+                let subdir = match &self.missing_subdir {
+                    Some(rel) => format!(
+                        "; your directory {rel} is not in this checkout, so it starts at the \
+                         top level"
+                    ),
+                    None => String::new(),
+                };
                 format!(
-                    "working in {mode}worktree {} (branch {}, from {from}){left}",
+                    "working in {mode}worktree {} (branch {}, from {from}){left}{subdir}",
                     display(&self.root),
                     wt.branch
                 )
@@ -553,15 +565,20 @@ fn create(
                         r.strip_prefix(top).ok().map(Path::to_path_buf)
                     })
                     .unwrap_or_default();
-                let root = if rel.as_os_str().is_empty() {
-                    path.clone()
-                } else {
-                    path.join(rel)
-                };
+                // It may not exist there: untracked or ignored in the parent's
+                // checkout, or absent at the ref. A child must never be given a
+                // root that is not a directory, so it starts at the top level.
+                let sub = Some(&rel)
+                    .filter(|rel| !rel.as_os_str().is_empty())
+                    .map(|rel| path.join(rel));
+                let missing = sub.as_ref().is_some_and(|sub| !sub.is_dir());
+                let root = sub.filter(|_| !missing).unwrap_or_else(|| path.clone());
                 return Ok(ChildWorkspace {
                     root,
                     read_only,
                     left_changes: git_ref.is_none() && !git::changed_paths(&repo).is_empty(),
+                    missing_subdir: missing
+                        .then(|| rel.to_string_lossy().replace('\\', "/")),
                     worktree: Some(ChildWorktree {
                         path,
                         branch,
@@ -1078,6 +1095,39 @@ mod git_tests {
         assert_eq!(again.root, ws.root);
         assert!(!ledger.claim(&path), "a busy worktree is never claimed");
         drop(lease);
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A session in a subdirectory the new checkout lacks (untracked there, or
+    /// absent at the ref) starts its child at the worktree's top level and says
+    /// so, rather than handing it a `project_root` that does not exist.
+    #[test]
+    fn a_subdirectory_missing_from_the_worktree_falls_back_to_its_top_level() {
+        let Some(root) = repo("subdir") else { return };
+        assert!(git(&root, &["branch", "old"]));
+        std::fs::create_dir_all(root.join("tracked")).unwrap();
+        commit(&root.join("tracked"), "t.txt");
+        std::fs::create_dir_all(root.join("scratch")).unwrap();
+        std::fs::write(root.join("scratch/u.txt"), "u\n").unwrap();
+        let ledger = Arc::new(Ledger::default());
+
+        let (here, _l) = ledger.assign(&root.join("tracked"), "a", true, None).unwrap();
+        let wt = here.worktree.clone().unwrap();
+        assert_eq!(here.root, wt.path.join("tracked"), "a tracked subdirectory maps across");
+        assert!(!here.note().contains("not in this checkout"), "{}", here.note());
+
+        let (untracked, _l) = ledger.assign(&root.join("scratch"), "b", true, None).unwrap();
+        let wt = untracked.worktree.clone().unwrap();
+        assert_eq!(untracked.root, wt.path);
+        assert!(untracked.note().contains("scratch is not in this checkout"), "{}", untracked.note());
+
+        let old = WorkspaceRequest::Ref("old".to_string());
+        let (at_ref, _) = ledger.assign(&root.join("tracked"), "c", false, Some(&old)).unwrap();
+        let wt = at_ref.worktree.clone().unwrap();
+        assert_eq!(at_ref.root, wt.path);
+        assert!(at_ref.note().contains("tracked is not in this checkout"), "{}", at_ref.note());
+        drop(_l);
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
