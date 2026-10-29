@@ -18,7 +18,8 @@
 //! (the sandbox binds the session scratch over `/tmp`). The ledger here
 //! remembers every child's workspace for the session, so a later dispatch can
 //! name it, and at the session's end removes the worktrees that hold nothing:
-//! no commit past their base and no uncommitted change, plus every `ref` one.
+//! no commit past their base and no uncommitted change, `ref` ones included
+//! (a writer may have committed there). One git cannot read is kept.
 //!
 //! Only the CLI build creates worktrees; elsewhere every child works in its
 //! parent's checkout, read-only unless it is a writer.
@@ -101,8 +102,7 @@ pub(crate) struct ChildWorktree {
     pub(crate) branch: String,
     /// The commit it was branched from.
     pub(crate) base: String,
-    /// The `{"ref": ...}` it was made for, if any. Removed at session end
-    /// whatever it holds: it is a checkout of someone else's work.
+    /// The `{"ref": ...}` it was made for, if any.
     pub(crate) from_ref: Option<String>,
     /// The main checkout's top level, which owns the registration.
     repo: PathBuf,
@@ -510,9 +510,10 @@ fn git_common_dir(_path: &Path) -> Option<PathBuf> {
 #[cfg(feature = "cli")]
 impl Ledger {
     /// End of session: remove every worktree that holds nothing (no commit
-    /// past its base, no uncommitted change) and every `ref` worktree, and
-    /// return a line for each one kept. A worktree a writer is still in is
-    /// kept.
+    /// past its base, no uncommitted change), `ref` ones included, and return
+    /// a line for each one kept. A worktree a writer is still in is kept, and
+    /// so is one git cannot read: removal is forced and deletes the branch,
+    /// so "unknown" must never count as "clean".
     pub(crate) fn finish_session(&self) -> Vec<String> {
         use crate::core::agent::git;
         let mut state = self.state.lock().unwrap();
@@ -524,9 +525,9 @@ impl Ledger {
             }
             let busy = state.busy.contains(&wt.path);
             let empty = git::commits_since(&wt.path, &wt.base) == Some(0)
-                && git::changed_paths(&wt.path).is_empty();
+                && git::try_changed_paths(&wt.path).is_ok_and(|c| c.is_empty());
             if !busy
-                && (wt.from_ref.is_some() || empty)
+                && empty
                 && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
             {
                 continue;
@@ -562,13 +563,16 @@ pub(crate) fn kept_notice(kept: &[String]) -> String {
 #[cfg(feature = "cli")]
 fn kept_line(wt: &ChildWorktree) -> String {
     use crate::core::agent::git;
-    let commits = git::commits_since(&wt.path, &wt.base).unwrap_or(0);
-    let changed = git::changed_paths(&wt.path).len();
-    format!(
-        "{} on {} ({commits} commit(s), {changed} uncommitted file(s))",
-        display(&wt.path),
-        wt.branch
-    )
+    let held = match (
+        git::commits_since(&wt.path, &wt.base),
+        git::try_changed_paths(&wt.path),
+    ) {
+        (Some(commits), Ok(changed)) => {
+            format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
+        }
+        _ => "status unknown: git could not read it".to_string(),
+    };
+    format!("{} on {} ({held})", display(&wt.path), wt.branch)
 }
 
 #[cfg(test)]
@@ -748,10 +752,69 @@ mod git_tests {
         assert!(ws.root.join("feature.txt").is_file());
         assert!(ws.note().contains("feature at"), "{}", ws.note());
 
-        assert!(ledger.finish_session().is_empty(), "a ref worktree always goes");
+        assert!(ledger.finish_session().is_empty(), "an untouched ref worktree goes");
         assert!(!wt.path.exists());
         let _ = std::fs::remove_dir_all(&clone);
         let _ = std::fs::remove_dir_all(&upstream);
+    }
+
+    /// A writer working in a `ref` worktree commits on its `jan/agent/...`
+    /// branch; session end must not delete that branch and lose the commits,
+    /// nor drop uncommitted edits made there.
+    #[test]
+    fn a_ref_worktree_that_holds_work_is_kept_at_session_end() {
+        let Some(root) = repo("refwork") else { return };
+        assert!(git(&root, &["branch", "feature"]));
+        let ledger = Arc::new(Ledger::default());
+        let req = WorkspaceRequest::Ref("feature".to_string());
+        let (committed, l1) = ledger.assign(&root, "general", true, Some(&req)).unwrap();
+        let (dirty, l2) = ledger.assign(&root, "general-2", true, Some(&req)).unwrap();
+        let (idle, l3) = ledger.assign(&root, "general-3", true, Some(&req)).unwrap();
+        drop((l1, l2, l3));
+        commit(&committed.root, "b.txt");
+        let tip = crate::core::agent::git::head_sha(&committed.root).unwrap();
+        std::fs::write(dirty.root.join("a.txt"), "edited\n").unwrap();
+
+        let kept = ledger.finish_session();
+        assert_eq!(kept.len(), 2, "{kept:?}");
+        assert!(committed.root.is_dir() && dirty.root.is_dir());
+        assert!(!idle.root.exists(), "an untouched ref worktree still goes");
+        let branch = &committed.worktree.as_ref().unwrap().branch;
+        assert_eq!(
+            crate::core::agent::git::resolve_commit(&root, branch).as_deref(),
+            Some(tip.as_str()),
+            "the writer's commit is still on its branch"
+        );
+        let _ = std::fs::remove_dir_all(&committed.root);
+        let _ = std::fs::remove_dir_all(&dirty.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `git status` failing says nothing about whether the checkout is clean,
+    /// so the worktree is kept and the kept line says why.
+    #[test]
+    fn a_worktree_whose_status_cannot_be_read_is_kept() {
+        let Some(root) = repo("badstatus") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        std::fs::write(ws.root.join("a.txt"), "edited\n").unwrap();
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&ws.root)
+            .args(["rev-parse", "--git-path", "index"])
+            .output()
+            .unwrap();
+        let index = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+        let index = if index.is_absolute() { index } else { ws.root.join(index) };
+        std::fs::write(&index, "not an index").unwrap();
+
+        let kept = ledger.finish_session();
+        assert!(ws.root.join("a.txt").is_file(), "the edit survives");
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(kept[0].contains("status unknown"), "{kept:?}");
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -199,8 +199,8 @@ build. A sandboxed writer may write the repository's git directory, so `git comm
 worktree, and the main agent can read its subagents' worktrees.
 
 When the session ends, worktrees with no commits beyond their base and no uncommitted changes are
-removed with their branches, and so is every `ref` worktree. The rest are kept and named; `/worktree`
-lists them while the session runs.
+removed with their branches, `ref` worktrees included. The rest are kept and named, and so is any
+worktree git cannot read; `/worktree` lists them while the session runs.
 
 <Callout type="info">
 Because a subagent's context is separate, a long research task that would have crowded your session
