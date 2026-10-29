@@ -303,9 +303,8 @@ function RenderMarkdownComponent({
       // Model and tool output must never navigate the app window. Open
       // allowed web links outside the app, without a second new-window request.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { node: _node, href: _href, target: _target, ...rest } = props as typeof props & {
-        node?: unknown
-      }
+      const { node: _node, href: _href, target: _target, ...rest } = props as
+        typeof props & { node?: unknown }
       const external = externalHref(href)
       if (external) {
         return (
