@@ -21,8 +21,9 @@
 //! no commit past their base and no uncommitted change, `ref` ones included
 //! (a writer may have committed there). One git cannot read is kept.
 //!
-//! Only the CLI build creates worktrees; elsewhere every child works in its
-//! parent's checkout, read-only unless it is a writer.
+//! Only the CLI build creates worktrees and holds readers to a read-only
+//! checkout; on the desktop every child works in its parent's checkout as it
+//! always has (see [`READ_ONLY_READERS`]).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -308,6 +309,11 @@ pub(crate) fn parent_read_root(root: &Path) -> Option<PathBuf> {
     dir.canonicalize().ok()
 }
 
+/// Whether a reader's checkout is read-only. CLI-only: the desktop's Windows
+/// sandbox (AppContainer) has no read-only workspace, so enforcing one there
+/// would take the shell away from every reader child instead.
+const READ_ONLY_READERS: bool = cfg!(feature = "cli");
+
 #[derive(Debug, Default)]
 struct LedgerState {
     /// Every child's workspace, by worker name, for `workspace: "<name>"`.
@@ -348,7 +354,7 @@ impl Ledger {
         writer: bool,
         request: Option<&WorkspaceRequest>,
     ) -> Result<(ChildWorkspace, Option<WriterLease>), String> {
-        let read_only = !writer;
+        let read_only = !writer && READ_ONLY_READERS;
         let ws = match request {
             Some(WorkspaceRequest::Shared) => ChildWorkspace::shared(parent_root, read_only),
             Some(WorkspaceRequest::Reuse(earlier)) => {
@@ -605,6 +611,23 @@ mod tests {
         ] {
             assert!(parse_request(Some(&bad)).is_err(), "{bad}");
         }
+    }
+
+    /// The desktop has no read-only children: a reader there works in its
+    /// parent's checkout with nothing added to its tools, exactly as before
+    /// subagent workspaces (AppContainer has no read-only workspace, so
+    /// enforcing one would take the shell away from every reader on Windows).
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn a_desktop_reader_child_is_held_to_nothing_new() {
+        let root = std::env::temp_dir().join(format!("jan_child_ws_desk_{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "explore", false, None).unwrap();
+        assert!(lease.is_none());
+        assert!(!ws.read_only, "{ws:?}");
+        assert_eq!(scope_for(&ws, &root, Some(&root)), ChildScope::default());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
