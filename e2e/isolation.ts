@@ -1,7 +1,9 @@
 import { join } from 'node:path'
 
 /**
- * Environment that confines the app's on-disk state to `home`.
+ * Environment redirects for the desktop e2e profile, NOT a sandbox.
+ * The launch guard must validate inherited overrides before this is merged with
+ * process.env. In particular Unix JAN_DATA_ROOT must be unset or empty.
  *
  * Its own module, with no side effects, so specs can assert on it without
  * re-evaluating wdio.conf.ts (which creates the temp profile at import time).
@@ -93,6 +95,7 @@ import { join } from 'node:path'
  *   reads: the write at global_config.rs:469 is an explicit save no spec
  *   triggers, and user_subagents_dir's is gated behind prompt_subagent_create,
  *   which no spec reaches. So this is a read leak, not a destructive one.
+ *   CLI callers/writes are not covered by this desktop smoke-suite guarantee.
  *   Strictly weaker than the other two platforms, and an accepted gap rather
  *   than an oversight.
  *

@@ -14,6 +14,7 @@ import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service
 import { SevereServiceError } from 'webdriverio'
 import { janUserDataDir } from './helpers/paths.js'
 import { isolationEnv } from './isolation.js'
+import { assertSafeE2eHome, assertSafeLaunchEnvironment, canonicalPath, containsPath, launchContext } from './launch-guard.js'
 
 // The app resolves its data folder through `core::app::paths::data_dir()`, and
 // isolation is only sound where that call can be redirected by environment:
@@ -70,14 +71,17 @@ if (!existsSync(appBinary)) {
 // `ownsTestHome` is load-bearing for safety, not just tidiness: cleanup deletes
 // recursively, so it must only ever delete a directory this process created. A
 // JAN_E2E_HOME inherited from the environment (a stray export, a CI variable)
-// is used but never removed.
+// is validated before any writes and never removed.
+const context = launchContext()
+assertSafeLaunchEnvironment(context)
 const inheritedHome = process.env.JAN_E2E_HOME
 const ownsTestHome = !inheritedHome
-// resolve() because `dirs` silently ignores a relative XDG value and falls back
-// to its $HOME-relative default -- which, with a relative HOME, is also relative.
-const testHome = inheritedHome
-  ? resolve(inheritedHome)
-  : mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-'))
+// assertSafeE2eHome canonicalizes relative paths before they become HOME/XDG
+// values: `dirs` ignores relative XDG values and falls back to HOME defaults.
+const testHome = assertSafeE2eHome(
+  inheritedHome || mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-')),
+  context
+)
 process.env.JAN_E2E_HOME = testHome
 
 if (ownsTestHome) {
@@ -102,7 +106,9 @@ if (ownsTestHome) {
       return
     }
     // Belt and braces: never recurse outside the temp root.
-    if (!testHome.startsWith(realpathSync(tmpdir()))) return
+    const currentHome = canonicalPath(testHome)
+    const tempRoot = canonicalPath(context.tempRoot)
+    if (currentHome !== testHome || currentHome === tempRoot || !containsPath(tempRoot, currentHome)) return
     rmSync(testHome, {
       recursive: true,
       force: true,
@@ -172,7 +178,8 @@ if (process.platform === 'win32') {
 // variable, someone reusing a profile -- quietly take the download and the
 // toast back, with nothing in the log saying so, which is precisely the
 // nondeterminism this block exists to remove. Writing one key into a profile
-// we did not create is acceptable: it is the same key the product writes
+// we did not create is limited to a validated disposable temp profile; it is
+// the same key the product writes
 // itself after a successful bootstrap, it only adds to the file, and a caller
 // who wants the real download has the env var above.
 //
