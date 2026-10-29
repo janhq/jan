@@ -60,15 +60,15 @@ export async function deleteMemory(name: string): Promise<void> {
   invalidateMemory()
 }
 
+// The store refuses these stems: the harness builds the memory index itself
+// (`MEMORY.md`), and on a case-insensitive filesystem `memory.md` is that file.
+const RESERVED_MEMORY_NAMES = new Set(['index', 'memory'])
+
 /**
  * A filesystem-safe note name from a thread title. The store's names are file
  * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
  * falls back to a generic stem rather than failing the save.
  */
-// The store refuses these stems: the harness builds the memory index itself
-// (`MEMORY.md`), and on a case-insensitive filesystem `memory.md` is that file.
-const RESERVED_MEMORY_NAMES = new Set(['index', 'memory'])
-
 export function slugifyMemoryName(title: string): string {
   const slug = title
     .toLowerCase()

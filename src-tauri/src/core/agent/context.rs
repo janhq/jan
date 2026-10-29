@@ -383,8 +383,8 @@ const MAX_CHANGED_NAMES: usize = 20;
 /// (`upstream::set_system_prompt`), resending every byte of it. What changed
 /// since the snapshot is reported below the history instead (see
 /// [`MemorySnapshot::changes_block`]). Refreshed only where the conversation
-/// starts over anyway: `/new`, `/clear`, `/resume`, a fork, and after a
-/// compaction.
+/// starts over anyway: `/new`, `/clear`, `/resume`, and after a compaction. A
+/// fork continues its source session and keeps the source's snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MemorySnapshot {
     block: Option<String>,
