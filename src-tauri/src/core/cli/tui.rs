@@ -13233,8 +13233,13 @@ pub async fn run(
     // the real terminal, since they are what is left to merge. Children still
     // running are stopped first: a live writer holds its worktree, which would
     // otherwise be kept as busy and outlive the process even when empty.
+    // On the blocking pool, as every worktree sweep is: it runs git per
+    // worktree, and a runtime worker is no place to wait on that.
     app.subagent_set.abort_all();
-    let kept = app.subagent_set.workspaces.finish_session();
+    let workspaces = app.subagent_set.workspaces.clone();
+    let kept = tokio::task::spawn_blocking(move || workspaces.finish_session())
+        .await
+        .unwrap_or_default();
     if !kept.is_empty() {
         eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
     }
@@ -13691,7 +13696,7 @@ async fn chat_loop<B: Backend>(
         // the session is doing.
         if tidy_task.is_none() {
             if let Some(kind) = app.tidy_request.take() {
-                tidy_task = start_memory_tidy(app, kind, &session_events_tx);
+                tidy_task = start_memory_tidy(app, kind, &session_events_tx).await;
             }
         }
 
@@ -17282,7 +17287,7 @@ enum TidyKind {
 
 /// Start the requested tidy on the session's registry. Fire-and-forget from
 /// the caller's view: the result is collected off the render loop.
-fn start_memory_tidy(
+async fn start_memory_tidy(
     app: &mut App,
     kind: TidyKind,
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -17313,7 +17318,8 @@ fn start_memory_tidy(
         &parent,
         events,
         budget.clone(),
-    );
+    )
+    .await;
     match dispatched {
         Ok(dispatched) => {
             app.tidy_running = Some(kind);
@@ -44416,7 +44422,7 @@ mod tests {
         own_project(&mut app);
         app.args = Some(test_args(&app, providers));
         let (tx, _rx) = mpsc::unbounded_channel();
-        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).expect("tidy started");
+        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).await.expect("tidy started");
         assert_eq!(app.tidy_running, Some(TidyKind::Manual));
         assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
         run_command(&mut app, "plan", &no_mcp()).await;

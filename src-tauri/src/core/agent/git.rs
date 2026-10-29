@@ -60,16 +60,104 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// never triggers commit signing.
 #[cfg(feature = "cli")]
 fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    let mut cmd = repo_command(repo, args)?;
+    if let Some(idx) = index {
+        cmd.env("GIT_INDEX_FILE", idx);
+    }
+    let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+    outcome(&out, args)
+}
+
+/// `git -C <repo> <args>` with the fixed agent identity [`run`] describes.
+#[cfg(feature = "cli")]
+fn repo_command(repo: &Path, args: &[&str]) -> Result<Command, String> {
     let mut cmd = git_command()?;
     cmd.arg("-C").arg(repo).args(args);
     cmd.env("GIT_AUTHOR_NAME", "Jan Agent")
         .env("GIT_AUTHOR_EMAIL", "agent@jan.ai")
         .env("GIT_COMMITTER_NAME", "Jan Agent")
         .env("GIT_COMMITTER_EMAIL", "agent@jan.ai");
-    if let Some(idx) = index {
-        cmd.env("GIT_INDEX_FILE", idx);
+    Ok(cmd)
+}
+
+/// [`run`] for a command that talks to a remote, which may never answer:
+/// past `limit` the command and every helper it started (a remote helper, an
+/// `ext::` transport's shell) are killed and this errors. It never prompts,
+/// since nobody is at a terminal to answer.
+#[cfg(feature = "cli")]
+fn run_limited(repo: &Path, args: &[&str], limit: std::time::Duration) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut cmd = repo_command(repo, args)?;
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Its own process group, so a timeout reaches the helpers too: killing
+    // only git would leave them running, holding its pipes open.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().map_err(|e| format!("failed to launch git: {e}"))?;
+    // Drained while it runs, or a chatty command fills a pipe and never exits.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let deadline = std::time::Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            waited => {
+                kill_tree(&mut child);
+                // The drain threads are left to finish on their own: a helper
+                // outside the group could still hold a pipe open.
+                return Err(match waited {
+                    Err(e) => format!("failed to wait for git: {e}"),
+                    _ => format!(
+                        "git {} timed out after {}s",
+                        args.first().copied().unwrap_or(""),
+                        limit.as_secs()
+                    ),
+                });
+            }
+        }
+    };
+    let out = std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    };
+    outcome(&out, args)
+}
+
+/// Kill `child` and the process group it leads, then reap it.
+#[cfg(feature = "cli")]
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Ok(id) = i32::try_from(child.id()) {
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(id),
+            nix::sys::signal::Signal::SIGKILL,
+        );
     }
-    let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Trimmed stdout of a git that succeeded, else its trimmed stderr (or a
+/// generic message naming the subcommand).
+#[cfg(feature = "cli")]
+fn outcome(out: &std::process::Output, args: &[&str]) -> Result<String, String> {
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -404,16 +492,20 @@ pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
 /// the remote-tracking update a configured `remote.origin.fetch` would make:
 /// `FETCH_HEAD` is the only ref this writes.
 #[cfg(feature = "cli")]
-pub(crate) fn fetch_commit(repo: &Path, rev: &str) -> Result<String, String> {
+pub(crate) fn fetch_commit(
+    repo: &Path,
+    rev: &str,
+    limit: std::time::Duration,
+) -> Result<String, String> {
     if !is_plain_ref(rev) {
         return Err(format!("not a git ref: {rev:?}"));
     }
     run(repo, None, &["check-ref-format", "--allow-onelevel", rev])
         .map_err(|_| format!("not a git ref: {rev:?}"))?;
-    run(
+    run_limited(
         repo,
-        None,
         &["fetch", "--quiet", "--no-tags", "--refmap=", "origin", "--", rev],
+        limit,
     )?;
     resolve_commit(repo, "FETCH_HEAD").ok_or_else(|| format!("fetching {rev} named no commit"))
 }
@@ -505,6 +597,8 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.
@@ -838,19 +932,34 @@ mod tests {
             "x:",
             "x\u{7}",
         ] {
-            assert!(fetch_commit(&clone, bad).is_err(), "{bad:?} must be refused");
+            assert!(fetch_commit(&clone, bad, LIMIT).is_err(), "{bad:?} must be refused");
             assert_eq!(
                 resolve_commit(&clone, "refs/heads/victim").as_deref(),
                 Some(before.as_str()),
                 "{bad:?} moved a local branch"
             );
         }
-        assert_eq!(fetch_commit(&clone, "x").as_deref(), Ok(x.as_str()));
+        assert_eq!(fetch_commit(&clone, "x", LIMIT).as_deref(), Ok(x.as_str()));
         assert_eq!(resolve_commit(&clone, "refs/heads/x"), None, "no local branch made");
         assert_eq!(resolve_commit(&clone, "refs/remotes/origin/x"), None);
         assert_eq!(resolve_commit(&clone, "refs/heads/victim").as_deref(), Some(before.as_str()));
         let _ = std::fs::remove_dir_all(&clone);
         let _ = std::fs::remove_dir_all(&upstream);
+    }
+
+    /// A fetch from a remote that never answers gives up at its limit with an
+    /// error saying so, rather than holding the dispatch that asked for it.
+    #[test]
+    fn a_fetch_from_a_remote_that_never_answers_times_out() {
+        let Some(root) = init_repo() else { return };
+        run(&root, None, &["config", "protocol.ext.allow", "always"]).unwrap();
+        run(&root, None, &["remote", "add", "origin", "ext::sh -c sleep% 600"]).unwrap();
+        let started = std::time::Instant::now();
+        let err = fetch_commit(&root, "pull/1/head", std::time::Duration::from_secs(2))
+            .unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
+        assert!(err.contains("timed out after 2s"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The primitives a subagent worktree's life is built from: resolve a ref
