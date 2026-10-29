@@ -119,6 +119,9 @@ Memory names are scoped:
 `view` accepts all four. Writing, editing or deleting in another project is refused, so a session can only
 change its own project's notes and your user notes.
 
+In [plan mode](/docs/agent/run-modes#plan-mode) memory is read-only: `view` and `search` work, and
+`write`, `edit`, `move` and `delete` are refused.
+
 The system prompt's **Available Memories** block lists this project's notes, your user notes, and
 pointers to other projects that have memory, which the agent opens with `project:<slug>` only when
 relevant. To keep other projects out of the prompt and refuse `project:` reads, set this in

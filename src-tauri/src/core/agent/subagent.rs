@@ -2367,11 +2367,24 @@ pub(crate) fn spawn_memory_tidy(
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
     };
-    // The cap on the tidy's changes is enforced by its `memory` tool, so a
-    // tidy that misjudges the store cannot rewrite all of it in one run.
+    let args = memory_tidy_args(parent_args, budget);
+    launch(scope, &args, resolved, req, parent, events, None, false)
+}
+
+/// The tidy child's run args: the parent's, with the change cap its `memory`
+/// tool enforces (so a tidy that misjudges the store cannot rewrite all of
+/// it), and never in plan mode. A tidy only starts on the user's word
+/// (`/memory tidy`, or the auto trigger, which stands down in plan mode), so
+/// a session started with `--plan` must not hand it a read-only memory tool.
+#[cfg(feature = "cli")]
+fn memory_tidy_args(
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    budget: Arc<tauri_plugin_agent_tools::memory::ChangeBudget>,
+) -> crate::core::agent::r#loop::OrchestrationArgs {
     let mut args = parent_args.clone();
     args.memory_change_budget = Some(budget);
-    launch(scope, &args, resolved, req, parent, events, None, false)
+    args.run_mode = crate::core::agent::plan::RunMode::Normal;
+    args
 }
 
 /// The tidy subagent's resolved definition and request: the `smol` model, the
@@ -6178,6 +6191,19 @@ pub(crate) mod tests {
         for step in ["status: done", "Merge only clear duplicates", "explicitly supersedes", "report"] {
             assert!(prompt.contains(step), "{step}");
         }
+    }
+
+    /// The tidy child carries the change cap and is never in plan mode, even
+    /// when the session was started with `--plan`.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_tidy_child_is_capped_and_never_planning() {
+        let mut parent = max_par_args(&unique_root("tidy-plan"));
+        parent.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let budget = Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(3));
+        let args = memory_tidy_args(&parent, budget);
+        assert_eq!(args.run_mode, crate::core::agent::plan::RunMode::Normal);
+        assert!(args.memory_change_budget.is_some());
     }
 
     /// #497 bug 3: the tidy prompt is conservative (archive only what says it
