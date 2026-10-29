@@ -2403,10 +2403,9 @@ fn start_dispatch(
         // the teardown (Esc stops its children mid-session), and its earlier
         // children's worktrees and names are still the session's to reuse.
         lease.release();
-        // `undo` runs git (and holds the ledger's lock while it does), so it
-        // goes to the blocking pool rather than stalling this async worker and
-        // every lease drop waiting on that lock. Nothing waits on it: the
-        // dispatch is refused either way.
+        // `undo` runs git, so it goes to the blocking pool rather than
+        // stalling this async worker. Nothing waits on it: the dispatch is
+        // refused either way.
         let ledger = bg.workspaces.clone();
         let undo = move || ledger.undo(&name, &workspace);
         match tokio::runtime::Handle::try_current() {
