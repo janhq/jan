@@ -74,6 +74,15 @@ export type MessageItemProps = {
   highlightedPrefix?: string | null
 }
 
+/**
+ * How long a streaming reply may go without new output before it shows that
+ * Jan is still working: long enough not to flicker between tokens, short
+ * enough that a stall (a reasoning model thinking for minutes without
+ * streaming its reasoning, say) never leaves the user looking at a frozen
+ * answer.
+ */
+export const STALLED_STREAM_INDICATOR_DELAY_MS = 2_000
+
 export const MessageItem = memo(
   ({
     message,
@@ -188,6 +197,25 @@ export const MessageItem = memo(
         (status === CHAT_STATUS.STREAMING ||
           status === CHAT_STATUS.SUBMITTED)) ||
       hasPendingToolCall
+
+    // When a streaming reply last moved, once it has gone quiet: no new output
+    // for a moment. Every chunk replaces `message.parts`, so each one starts
+    // the wait again (and setting null again does not re-render).
+    const [stalledSince, setStalledSince] = useState<number | null>(null)
+    const stalled = stalledSince !== null
+    const replyStreaming =
+      isLastMessage &&
+      message.role === 'assistant' &&
+      status === CHAT_STATUS.STREAMING
+    useEffect(() => {
+      setStalledSince(null)
+      if (!replyStreaming) return
+      const timer = setTimeout(
+        () => setStalledSince(Date.now() - STALLED_STREAM_INDICATOR_DELAY_MS),
+        STALLED_STREAM_INDICATOR_DELAY_MS
+      )
+      return () => clearTimeout(timer)
+    }, [replyStreaming, message.parts])
 
     // Aggregate RAG citations in part order and record each rag tool part's
     // base offset, so its card numbers/anchors continue the same global
@@ -611,9 +639,16 @@ export const MessageItem = memo(
         {isLastMessage &&
           message.role === 'assistant' &&
           !awaitingApproval &&
-          (hasPendingToolCall || status === CHAT_STATUS.SUBMITTED) && (
+          (hasPendingToolCall ||
+            status === CHAT_STATUS.SUBMITTED ||
+            stalled) && (
             <div className="mt-3">
-              <PromptProgress hideIdle={hasPendingToolCall} />
+              {/* A running tool reports itself on its card, until the reply
+                  stalls: then the generic "Working…" shows too. */}
+              <PromptProgress
+                hideIdle={hasPendingToolCall && !stalled}
+                waitingSince={stalledSince ?? undefined}
+              />
             </div>
           )}
 
