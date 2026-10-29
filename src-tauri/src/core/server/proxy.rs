@@ -566,6 +566,7 @@ pub struct ProxyConfig {
     pub trusted_hosts: Vec<Vec<String>>,
     pub host: String,
     pub port: u16,
+    pub cors_enabled: bool,
     pub enable_server_tool_execution: bool,
 }
 
@@ -776,8 +777,13 @@ async fn proxy_request(
                 .unwrap());
         }
 
-        let mut response = Response::builder()
-            .status(StatusCode::OK)
+        let mut response = Response::builder().status(StatusCode::OK);
+
+        if !config.cors_enabled {
+            return Ok(response.body(empty()).unwrap());
+        }
+
+        response = response
             .header("Access-Control-Allow-Methods", allowed_methods.join(", "))
             .header("Access-Control-Allow-Headers", allowed_headers.join(", "))
             .header("Access-Control-Max-Age", "86400")
@@ -844,6 +850,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
                 return Ok(error_response.body(full("Invalid host header")).unwrap());
             }
@@ -854,6 +861,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
             return Ok(error_response.body(full("Missing host header")).unwrap());
         }
@@ -886,6 +894,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
             return Ok(error_response
                 .body(full("Invalid or missing authorization token"))
@@ -902,6 +911,7 @@ async fn proxy_request(
             &host_header,
             &origin_header,
             &config.trusted_hosts,
+            config.cors_enabled,
         );
         return Ok(error_response.body(full("Not Found")).unwrap());
     }
@@ -939,6 +949,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full("Failed to read request body"))
@@ -974,6 +985,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response
                                     .body(full("Invalid /messages payload for orchestration mode"))
@@ -1008,6 +1020,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(response_builder.body(full(body_str)).unwrap());
                             }
@@ -1019,6 +1032,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response.body(full(e)).unwrap());
                             }
@@ -1086,6 +1100,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response
                                     .body(full(format!(
@@ -1104,6 +1119,7 @@ async fn proxy_request(
                             &host_header,
                             &origin_header,
                             &config.trusted_hosts,
+                            config.cors_enabled,
                         );
                         return Ok(error_response.body(full(error_msg)).unwrap());
                     }
@@ -1116,6 +1132,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
                     return Ok(error_response.body(full(error_msg)).unwrap());
@@ -1142,6 +1159,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full("Failed to read request body"))
@@ -1158,6 +1176,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full(format!("Invalid JSON body: {e}")))
@@ -1183,6 +1202,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
                 return Ok(error_response
                     .body(full("stream=true is not supported for /orchestrations"))
@@ -1198,6 +1218,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full("Missing required field 'messages'"))
@@ -1214,6 +1235,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response.body(full(e)).unwrap());
                 }
@@ -1247,6 +1269,7 @@ async fn proxy_request(
                                 &host_header,
                                 &origin_header,
                                 &config.trusted_hosts,
+                                config.cors_enabled,
                             );
                             return Ok(error_response.body(full(e)).unwrap());
                         }
@@ -1297,6 +1320,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full("No running model sessions available"))
@@ -1316,6 +1340,7 @@ async fn proxy_request(
                             &host_header,
                             &origin_header,
                             &config.trusted_hosts,
+                            config.cors_enabled,
                         );
                         return Ok(error_response.body(full(e)).unwrap());
                     }
@@ -1337,6 +1362,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response.body(full(e)).unwrap());
                 }
@@ -1396,6 +1422,7 @@ async fn proxy_request(
                             &host_header,
                             &origin_header,
                             &config.trusted_hosts,
+                            config.cors_enabled,
                         );
                         return Ok(error_response.body(full(e)).unwrap());
                     }
@@ -1415,6 +1442,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(response_builder.body(full(body_str)).unwrap());
                 }
@@ -1464,6 +1492,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
             let payload = format!(
                 "{{\"error\":\"max_turns reached while resolving tool calls\",\"last_response\":{body_str}}}"
@@ -1488,6 +1517,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response
                         .body(full("Failed to read request body"))
@@ -1541,6 +1571,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(response_builder.body(full(body_str)).unwrap());
                             }
@@ -1552,6 +1583,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response.body(full(e)).unwrap());
                             }
@@ -1662,6 +1694,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response
                                     .body(full("No models are available"))
@@ -1689,6 +1722,7 @@ async fn proxy_request(
                                     &host_header,
                                     &origin_header,
                                     &config.trusted_hosts,
+                                    config.cors_enabled,
                                 );
                                 return Ok(error_response
                                     .body(full(format!(
@@ -1709,6 +1743,7 @@ async fn proxy_request(
                             &host_header,
                             &origin_header,
                             &config.trusted_hosts,
+                            config.cors_enabled,
                         );
                         return Ok(error_response.body(full(error_msg)).unwrap());
                     }
@@ -1721,6 +1756,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
                     return Ok(error_response.body(full(error_msg)).unwrap());
@@ -1802,6 +1838,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
 
             log::debug!(
@@ -1890,6 +1927,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
 
             return Ok(response_builder.body(full(html)).unwrap());
@@ -1933,6 +1971,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
                 return Ok(error_response.body(full("Not Found")).unwrap());
             } else {
@@ -1945,6 +1984,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
                 return Ok(error_response.body(full("Not Found")).unwrap());
             }
@@ -1963,6 +2003,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
             return Ok(error_response.body(full("Internal routing error")).unwrap());
         }
@@ -1983,6 +2024,7 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+                config.cors_enabled,
             );
             return Ok(error_response
                 .body(full("Internal server error: unhandled request path"))
@@ -2158,6 +2200,7 @@ async fn proxy_request(
                                 &host_header,
                                 &origin_header,
                                 &config.trusted_hosts,
+                                config.cors_enabled,
                             );
                             return Ok(error_response
                                 .body(full(fallback_error))
@@ -2175,6 +2218,7 @@ async fn proxy_request(
                             &host_header,
                             &origin_header,
                             &config.trusted_hosts,
+                            config.cors_enabled,
                         );
 
                         let is_streaming = openai_body
@@ -2213,6 +2257,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response.body(full(error_body)).unwrap());
                 } else if is_error {
@@ -2228,6 +2273,7 @@ async fn proxy_request(
                         &host_header,
                         &origin_header,
                         &config.trusted_hosts,
+                        config.cors_enabled,
                     );
                     return Ok(error_response.body(full(error_body)).unwrap());
                 }
@@ -2246,6 +2292,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
 
                 // When the provider fronts a non-chat/completions API, translate the
@@ -2304,6 +2351,7 @@ async fn proxy_request(
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
+                    config.cors_enabled,
                 );
                 return Ok(error_response.body(full(error_msg)).unwrap());
             }
@@ -2317,6 +2365,7 @@ async fn proxy_request(
         &host_header,
         &origin_header,
         &config.trusted_hosts,
+        config.cors_enabled,
     );
     Ok(error_response.body(full("Internal proxy error")).unwrap())
 }
@@ -2354,8 +2403,13 @@ pub(crate) fn add_cors_headers_with_host_and_origin(
     _host: &str,
     origin: &str,
     trusted_hosts: &[Vec<String>],
+    cors_enabled: bool,
 ) -> hyper::http::response::Builder {
     let mut builder = builder;
+
+    if !cors_enabled {
+        return builder;
+    }
 
     let origin_trusted = if !origin.is_empty() {
         let origin_host = extract_host_from_origin(origin);
@@ -2399,6 +2453,7 @@ pub async fn start_server(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
+    cors_enabled: bool,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
@@ -2416,6 +2471,7 @@ pub async fn start_server(
         proxy_api_key,
         trusted_hosts,
         proxy_timeout,
+        cors_enabled,
         provider_configs,
         model_param_defaults,
         mcp_servers,
@@ -2437,6 +2493,7 @@ async fn start_server_internal(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
+    cors_enabled: bool,
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     model_param_defaults: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     mcp_servers: SharedMcpServers,
@@ -2468,6 +2525,7 @@ async fn start_server_internal(
         trusted_hosts,
         host: host.clone(),
         port,
+        cors_enabled,
         enable_server_tool_execution,
     };
 
@@ -2988,8 +3046,92 @@ async fn forward_non_streaming(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_insecure_public_bind, map_bind_error};
-    use std::net::SocketAddr;
+    use super::{is_insecure_public_bind, map_bind_error, start_server, stop_server};
+    use crate::core::{
+        mcp::models::McpSettings,
+        server::MlxBackendSession,
+        state::{ProviderConfig, ServerHandle, SharedMcpServers},
+    };
+    use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+    use tauri_plugin_llamacpp::state::LlamacppState;
+    use tokio::sync::Mutex;
+
+    async fn preflight(cors_enabled: bool) -> reqwest::Response {
+        let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+
+        let server_handle: Arc<Mutex<Option<ServerHandle>>> = Arc::new(Mutex::new(None));
+        let mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let mcp_servers: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+
+        start_server(
+            server_handle.clone(),
+            Arc::new(LlamacppState::default()),
+            mlx_sessions,
+            "127.0.0.1".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec!["localhost".to_string()]],
+            60,
+            cors_enabled,
+            Arc::new(Mutex::new(HashMap::<String, ProviderConfig>::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            mcp_servers,
+            Arc::new(Mutex::new(McpSettings::default())),
+            String::new(),
+            false,
+        )
+        .await
+        .unwrap();
+
+        let response = reqwest::Client::new()
+            .request(
+                reqwest::Method::OPTIONS,
+                format!("http://127.0.0.1:{port}/v1/models"),
+            )
+            .header("Host", format!("localhost:{port}"))
+            .header("Origin", "http://localhost:3000")
+            .header("Access-Control-Request-Method", "GET")
+            .send()
+            .await
+            .unwrap();
+
+        stop_server(server_handle).await.unwrap();
+        response
+    }
+
+    #[tokio::test]
+    async fn cors_disabled_preflight_omits_cors_headers() {
+        let response = preflight(false).await;
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert!(!response
+            .headers()
+            .keys()
+            .any(|name| name.as_str().starts_with("access-control-")));
+        assert!(!response.headers().contains_key("vary"));
+    }
+
+    #[tokio::test]
+    async fn cors_enabled_preflight_keeps_cors_headers() {
+        let response = preflight(true).await;
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "http://localhost:3000"
+        );
+        assert!(response
+            .headers()
+            .contains_key("access-control-allow-methods"));
+        assert!(response.headers().contains_key("vary"));
+    }
 
     #[test]
     fn loopback_never_warns() {
