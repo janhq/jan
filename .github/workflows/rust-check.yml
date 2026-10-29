@@ -145,11 +145,12 @@ jobs:
 
   # `jan --version` on a build without JAN_CLI_BUILD_VERSION reports the
   # committed app version, so a bump that skips jan-cli or tauri.conf.json
-  # ships a CLI naming the wrong release (janhq/jan-internal#454). Release
-  # builds restamp all of them through the same script; this keeps the
-  # committed tree honest for source builds. jq only, no toolchain.
+  # ships a CLI naming the wrong release (janhq/jan-internal#454), and so does
+  # a tree whose manifests agree but lag the last tag (0.8.5 through v0.8.8).
+  # Release builds restamp all of them through the same script; this keeps the
+  # committed tree honest for source builds. jq and git ls-remote, no toolchain.
   versions:
-    name: manifest versions agree
+    name: manifest versions agree and are released
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

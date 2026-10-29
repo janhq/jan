@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Jan"
-version = "0.8.5"
+version = "0.8.8"
 dependencies = [
  "aes-gcm",
  "agent-client-protocol",
