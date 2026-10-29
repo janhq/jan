@@ -187,11 +187,22 @@ pub fn resolve_decision(
     // own permissions.
     if let Some(hidden) = ctx.hidden_root {
         // An attached root inside the home (a parent's view of its subagents'
-        // worktrees) is the one part of it a read may reach; a write never
-        // does, since only `write_roots` widen writes.
-        let carved = |p: &str| {
-            tool.capability != Capability::Write
-                && in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+        // worktrees) is the one part of it a read may reach. The read tools
+        // only read. The shell may name it only while it stays in the sandbox
+        // (`hidden_root` is set only then, and `escalate` leaves it) and the
+        // sandbox mounts that root read-only (it is not also a write root):
+        // otherwise `rm -rf` on a child's worktree would be one prompt away.
+        let shell_reads_only = tool.capability == Capability::Exec
+            && !requests_escalation(tool, args);
+        let carved = |p: &str| match tool.capability {
+            Capability::Read => {
+                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+            }
+            Capability::Exec if shell_reads_only => {
+                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                    && !in_attached_root(ctx.project_root, ctx.scratch, ctx.write_roots, p)
+            }
+            _ => false,
         };
         let hidden_hit = |p: &str| {
             in_hidden_root(ctx.project_root, ctx.scratch, hidden, p) && !carved(p)
@@ -1092,12 +1103,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
-    /// The Cowork opt-in at the gate layer: an attached root also passed as a
-    /// write root takes the ordinary in-project Write prompt, not WriteEscape,
-    /// while a path outside both roots keeps the escape classification.
     /// The parent may read its subagents' worktrees under `~/.jan/worktrees`
-    /// through a read root, by path and from the shell; the rest of the Jan
-    /// home stays hidden, and a read root still grants no write.
+    /// through a read root: by path with the read tools, and from the shell
+    /// only while it runs sandboxed, where the root is mounted read-only. The
+    /// rest of the Jan home stays hidden, a read root grants no write, and a
+    /// shell call that leaves the sandbox (`escalate`) or a root the sandbox
+    /// mounts writable gets no carve-out at all.
     #[test]
     fn a_read_root_inside_the_jan_home_is_readable_and_nothing_else_there_is() {
         let home = unique_root();
@@ -1150,9 +1161,36 @@ mod tests {
             &perms,
             &grants,
         );
-        assert_ne!(write, Decision::Allow, "a read root is not writable");
+        assert_eq!(write, Decision::HardDeny(DenyReason::Hidden), "a read root is not writable");
+        // Out of the sandbox nothing mounts the root read-only, so a command
+        // naming it is refused like any other path in the Jan home.
+        let rm = format!("rm -rf {}", file.parent().unwrap().display());
+        let unsandboxed = resolve_decision(
+            lookup(crate::tools::SHELL_TOOL).unwrap(),
+            &json!({"command": rm, ESCALATE_ARG: true}),
+            &ctx,
+            &perms,
+            &grants,
+        );
+        assert_eq!(unsandboxed, Decision::HardDeny(DenyReason::Hidden));
+        // Inside it, the same command meets a read-only mount.
+        assert_eq!(shell(rm.clone()), Decision::Prompt(PromptKind::Exec));
+        // A root the sandbox mounts writable is no read-only view.
+        let writable = GateContext { write_roots: &roots, ..ctx };
+        let in_writable = resolve_decision(
+            lookup(crate::tools::SHELL_TOOL).unwrap(),
+            &json!({"command": rm}),
+            &writable,
+            &perms,
+            &grants,
+        );
+        assert_eq!(in_writable, Decision::HardDeny(DenyReason::Hidden));
         let _ = std::fs::remove_dir_all(&home);
     }
+
+    /// The Cowork opt-in at the gate layer: an attached root also passed as a
+    /// write root takes the ordinary in-project Write prompt, not WriteEscape,
+    /// while a path outside both roots keeps the escape classification.
 
     #[test]
     fn a_write_root_downgrades_the_escape_to_an_ordinary_write() {
