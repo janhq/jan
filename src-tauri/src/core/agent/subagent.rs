@@ -1719,12 +1719,47 @@ impl Drop for SlotGuard {
 }
 
 /// RAII guard tying background children to the parent run's lifetime: dropping it
-/// (on normal return or when the parent future is cancelled) aborts every child.
-pub(crate) struct AbortOnDrop(pub Arc<BackgroundSubagents>);
+/// (on normal return or when the parent future is cancelled) aborts every child,
+/// then, in the CLI, ends the registry's workspace session: the worktrees that
+/// hold nothing are removed and the rest are named on the run's events.
+///
+/// Abort first: a writer still running holds its worktree, and a sweep before
+/// it was stopped would keep that worktree (and report it as holding work)
+/// just before the abort left it empty for good.
+pub(crate) struct AbortOnDrop {
+    bg: Arc<BackgroundSubagents>,
+    #[cfg(feature = "cli")]
+    events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+}
+
+impl AbortOnDrop {
+    pub(crate) fn new(
+        bg: Arc<BackgroundSubagents>,
+        events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> Self {
+        // The desktop has no subagent worktrees, so nothing is ever reported.
+        #[cfg(not(feature = "cli"))]
+        let _ = events;
+        Self {
+            bg,
+            #[cfg(feature = "cli")]
+            events: events.clone(),
+        }
+    }
+}
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
-        self.0.abort_all();
+        self.bg.abort_all();
+        #[cfg(feature = "cli")]
+        {
+            let kept = self.bg.workspaces.finish_session();
+            if !kept.is_empty() {
+                let _ = self.events.send(crate::core::agent::events::StreamEvent::Notice {
+                    text: crate::core::agent::child_workspace::kept_notice(&kept),
+                });
+            }
+        }
     }
 }
 
@@ -4686,7 +4721,7 @@ pub(crate) mod tests {
             "r1".to_string(),
             test_entry(rx, handle.abort_handle(), ev_tx),
         );
-        let guard = AbortOnDrop(bg.clone());
+        let guard = AbortOnDrop::new(bg.clone(), &tokio::sync::mpsc::unbounded_channel().0);
         drop(guard);
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
@@ -4780,7 +4815,8 @@ pub(crate) mod tests {
             "entry must remain registered while being awaited"
         );
 
-        AbortOnDrop(bg.clone()); // constructs + drops -> abort_all
+        // constructs + drops -> abort_all
+        AbortOnDrop::new(bg.clone(), &tokio::sync::mpsc::unbounded_channel().0);
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         assert!(
             matches!(awaiting.await.unwrap(), Err(SubagentError::Cancelled)),
@@ -5914,7 +5950,7 @@ pub(crate) mod tests {
         let r2 = dispatch_reviewer(&bg, &args, &events_tx);
         let r3 = dispatch_reviewer(&bg, &args, &events_tx);
 
-        AbortOnDrop(bg.clone()); // teardown with queued children parked
+        AbortOnDrop::new(bg.clone(), &events_tx); // teardown with queued children parked
 
         let mut ends = Vec::new();
         while let Ok(ev) = events_rx.try_recv() {
