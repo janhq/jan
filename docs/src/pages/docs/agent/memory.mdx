@@ -163,8 +163,10 @@ loads the notes, and the tidy never asks for permission. It is the only subagent
   hit the console note says `cap reached (30 changes)`; run `/memory tidy` again to continue.
 - **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
 - **Auto-tidy** runs one in the background when the index no longer fits its budget. It is checked
-  when a turn finishes, at most once per session (`/new`, `/clear` and `/resume` start a new
-  session), so a store a tidy cannot shrink is never retried in a loop. It never blocks your turn,
+  each time a turn finishes (cheaply: the index is only rebuilt when a note changed), so a store that
+  outgrows its budget mid-session is tidied at that turn's end. It runs at most once per session
+  (`/new`, `/clear` and `/resume` start a new session; a fork does not), so a store a tidy cannot
+  shrink is never retried in a loop. It never blocks your turn,
   never starts a model turn of its own, and never rewrites this session's prompt: what it changed
   shows up in the memory-changes block. An automatic tidy that changed nothing stays silent.
 
