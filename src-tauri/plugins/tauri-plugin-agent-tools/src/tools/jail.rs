@@ -99,6 +99,10 @@ pub struct Policy {
     /// read-only `$HOME`, inside the workspace (running in `$HOME`), or around
     /// it (a Jan worktree in `~/.jan/worktrees/`). See [`Policy::with_hide_root`].
     pub hide_root: Option<PathBuf>,
+    /// Bind the workspace read-only: a read-only subagent works in the user's
+    /// checkout and must not change it, `.git` included. The scratch and any
+    /// `write_roots` stay writable. See [`Policy::with_workspace_readonly`].
+    pub workspace_readonly: bool,
 }
 
 impl Policy {
@@ -112,7 +116,16 @@ impl Policy {
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             hide_root: None,
+            workspace_readonly: false,
         }
+    }
+
+    /// Keep the workspace readable but not writable. AppContainer grants its
+    /// workspace by a write ACE and has no read-only form, so [`wrap`] refuses
+    /// such a policy there: no shell rather than a writable one.
+    pub fn with_workspace_readonly(mut self, readonly: bool) -> Self {
+        self.workspace_readonly = readonly;
+        self
     }
 
     /// Hide `hide_root` from the sandboxed shell. The gate's token scan of the
@@ -267,6 +280,7 @@ pub fn wrap(cfg: &ShellConfig, policy: &Policy) -> Option<ShellConfig> {
         // a re-exec of this binary that performs the confined spawn itself. If
         // the running binary cannot be located there is no wrapper to run, and
         // returning `cfg` unchanged would run the command with no confinement.
+        Backend::AppContainer if policy.workspace_readonly => None,
         Backend::AppContainer => Some(ShellConfig {
             program: std::env::current_exe().ok()?,
             args: appcontainer::helper_args(
@@ -529,7 +543,8 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
         push(&mut args, &["--bind", &root, &root]);
     }
 
-    push(&mut args, &["--bind", &ws, &ws]);
+    let bind = if policy.workspace_readonly { "--ro-bind" } else { "--bind" };
+    push(&mut args, &[bind, &ws, &ws]);
     // And again after, when a bind contains it (running in `$HOME`): the
     // workspace bind would otherwise shadow the mask above and re-expose it.
     if let Some(hide) = policy.hide_root.as_deref().filter(|h| policy.hide_under_a_bind(h)) {
@@ -620,11 +635,15 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if policy.hide_root.is_some() && !hide_last {
         p.push_str(HIDE_RULES);
     }
+    p.push_str("(allow file-read* (subpath (param \"WORKSPACE\")))\n");
+    if !policy.workspace_readonly {
+        p.push_str(
+            "; Writes: the workspace and the temp dir, nothing else.\n\
+             (allow file-write* (subpath (param \"WORKSPACE\")))\n",
+        );
+    }
     p.push_str(
-        "(allow file-read* (subpath (param \"WORKSPACE\")))\n\
-         ; Writes: the workspace and the temp dir, nothing else.\n\
-         (allow file-write* (subpath (param \"WORKSPACE\")))\n\
-         (allow file-write* (subpath (param \"TMPDIR\")))\n\
+        "(allow file-write* (subpath (param \"TMPDIR\")))\n\
          (allow file-write* (subpath \"/private/tmp\"))\n",
     );
     // The session scratch by name, rather than trusting it to sit under TMPDIR:
@@ -1155,6 +1174,26 @@ mod tests {
         assert!(!p.contains("/Users/u/.jan"), "{p}");
         assert!(joined(&seatbelt_args(&wt, &cfg())).contains("-DHIDE_ROOT=/Users/u/.jan"));
         assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
+    }
+
+    /// A read-only subagent's checkout is bound read-only, `.git` included
+    /// (it is inside the bind), while the scratch stays the writable `/tmp`.
+    #[test]
+    fn bwrap_binds_a_read_only_workspace_read_only() {
+        let ws = "/data/agent-workspace/threads/t1";
+        let text = joined(&bwrap_args(&policy().with_workspace_readonly(true), &cfg()));
+        assert!(text.contains(&format!("--ro-bind {ws} {ws}")), "{text}");
+        assert!(!text.contains(&format!("--bind {ws} {ws}")), "{text}");
+        assert!(text.contains(&format!("--chdir {ws}")), "{text}");
+    }
+
+    #[test]
+    fn seatbelt_never_allows_writes_to_a_read_only_workspace() {
+        let write = "(allow file-write* (subpath (param \"WORKSPACE\")))";
+        assert!(seatbelt_policy(&policy()).contains(write));
+        let p = seatbelt_policy(&policy().with_workspace_readonly(true));
+        assert!(!p.contains(write), "{p}");
+        assert!(p.contains("(allow file-read* (subpath (param \"WORKSPACE\")))"), "{p}");
     }
 
     #[test]
@@ -1822,6 +1861,76 @@ mod enforcement_tests {
         let (ok, _) = run(&ws, false, "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected").await;
         let _ = std::fs::remove_dir_all(&ws);
         assert!(!ok, "network must be denied by default");
+    }
+
+    /// A read-only subagent cannot change its checkout from the shell, not even
+    /// its `.git`, while the scratch it was given stays writable.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn a_read_only_workspace_refuses_writes_but_the_scratch_does_not() {
+        require_backend!();
+        let ws = workspace();
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        std::fs::write(ws.join("kept.txt"), b"original").unwrap();
+        let scratch = workspace();
+        let policy = Policy::new(&ws, false)
+            .with_scratch_root(&scratch)
+            .with_workspace_readonly(true);
+        let (ok, out) = run_policy(policy.clone(), &ws, "echo changed > kept.txt").await;
+        assert!(!ok, "{out}");
+        let (ok, out) = run_policy(policy.clone(), &ws, "touch .git/index.lock").await;
+        assert!(!ok, "{out}");
+        let (ok, out) = run_policy(policy, &ws, "cat kept.txt && echo s > /tmp/s.txt").await;
+        let kept = std::fs::read_to_string(ws.join("kept.txt")).unwrap();
+        let scratched = scratch.join("s.txt").exists();
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(ok && out.contains("original"), "reads still work: {out}");
+        assert_eq!(kept, "original");
+        assert!(scratched, "the scratch stays writable");
+    }
+
+    /// A writer in a linked worktree commits into the main repository's git
+    /// dir, which is outside its checkout: granted as a write root, the commit
+    /// lands.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn a_worktree_writer_can_commit_with_the_common_git_dir_writable() {
+        require_backend!();
+        let git = |dir: &Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        let repo = workspace();
+        if !git(&repo, &["init", "-q"]) {
+            eprintln!("skipping: no git");
+            return;
+        }
+        std::fs::write(repo.join("a.txt"), b"a").unwrap();
+        assert!(git(&repo, &["add", "a.txt"]));
+        assert!(git(&repo, &["commit", "-q", "--no-gpg-sign", "-m", "a"]));
+        let wt = workspace();
+        std::fs::remove_dir(&wt).unwrap();
+        assert!(git(&repo, &["worktree", "add", "-q", "-b", "child", &wt.to_string_lossy()]));
+        let common = repo.join(".git");
+        let commit = "echo b > b.txt && git add b.txt && git -c user.name=t -c user.email=t@t \
+                      commit -q --no-gpg-sign -m b";
+        let (landed, _) = run_policy(Policy::new(&wt, false), &wt, commit).await;
+        let with = Policy::new(&wt, false).with_write_roots(vec![common]);
+        let (ok, out) = run_policy(with, &wt, commit).await;
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&repo);
+        assert!(!landed, "without the git dir the commit cannot land");
+        assert!(ok, "with it, it does: {out}");
     }
 
     /// A relocated store root (e.g. `JAN_DATA_FOLDER` outside `$HOME`) must not

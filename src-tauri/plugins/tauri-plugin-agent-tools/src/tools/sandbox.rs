@@ -296,6 +296,25 @@ fn tmp_relative(raw: &str) -> Option<String> {
     Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
+/// True iff a write to `raw` would land in a read-only `project_root`: inside
+/// it and not in the session scratch (which a read-only subagent still writes
+/// to). Fails closed: a path that cannot be resolved counts as inside.
+pub fn in_read_only_root(project_root: &Path, scratch: Option<&Path>, raw: &str) -> bool {
+    let target = resolve_path(project_root, scratch, raw);
+    let Ok(resolved) = canonicalize_lenient(&target) else {
+        return true;
+    };
+    if let Some(scratch) = scratch.and_then(|s| s.canonicalize().ok()) {
+        if resolved.starts_with(&scratch) {
+            return false;
+        }
+    }
+    match project_root.canonicalize() {
+        Ok(root) => resolved.starts_with(root),
+        Err(_) => true,
+    }
+}
+
 /// True iff `raw` resolves inside `hidden` (the Jan home, `~/.jan`), which holds
 /// `config.toml` with provider keys and hooks plus every project's store. The
 /// memory/skill tools reach the store by name and never come through here.

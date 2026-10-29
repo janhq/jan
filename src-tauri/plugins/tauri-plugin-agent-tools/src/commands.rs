@@ -619,6 +619,7 @@ pub async fn start_monitor(
         allow_network: allow_network.unwrap_or(false),
         home_readonly: false,
         sandbox: true,
+        workspace_readonly: false,
     };
     let set = {
         let mut sets = session_monitors().lock().unwrap();
