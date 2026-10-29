@@ -2121,6 +2121,9 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("jan_handlers_test_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&dir).expect("create test root");
+        // The root's store lives in the Jan home, outside the root a test
+        // removes, and a reused pid reuses the root: start it empty.
+        let _ = std::fs::remove_dir_all(crate::workspace::project_store(&dir));
         dir
     }
 
@@ -4260,8 +4263,6 @@ mod tests {
     async fn a_tidy_never_clobbers_a_note_changed_since_it_viewed_it() {
         let root = unique_root();
         let store = crate::workspace::project_store(&root);
-        // The store outlives the temp root, and a reused pid reuses the root.
-        let _ = std::fs::remove_dir_all(&store);
         let dir = store.join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         for name in ["a", "b", "c"] {
@@ -4312,8 +4313,6 @@ mod tests {
     async fn plan_mode_refuses_memory_changes_but_not_reads() {
         let root = unique_root();
         let store = crate::workspace::project_store(&root);
-        // The store outlives the temp root, and a reused pid reuses the root.
-        let _ = std::fs::remove_dir_all(&store);
         let dir = store.join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("fact.md"), "A fact").unwrap();
