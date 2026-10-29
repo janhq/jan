@@ -83,3 +83,60 @@ describe('createStepMetadata', () => {
     expect(meta.onPart({ type: 'finish-step' })).toBeUndefined()
   })
 })
+
+// One reply can take several calls to the model: Jan sends a new request after
+// each tool it runs. The speed and token count describe the whole reply, while
+// `usage` stays the last request's, which is how big the context now is.
+describe('createStepMetadata across the calls of one reply', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('adds this call to the earlier ones, weighting the speed by time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(START)
+    // Earlier: 100 tokens at 10 tokens/s (10 s). This call: 5,000 at 50 (100 s).
+    const meta = createStepMetadata({ tokenSpeed: 10, tokenCount: 100, durationMs: 10_000 })
+    meta.onPart({ type: 'text-start' })
+    vi.advanceTimersByTime(100_000)
+
+    const out = meta.onPart(finish({ inputTokens: 40_000, outputTokens: 5_000, totalTokens: 45_000 }))
+
+    expect(out?.tokenSpeed.tokenCount).toBe(5_100)
+    expect(out?.tokenSpeed.durationMs).toBe(110_000)
+    expect(out?.tokenSpeed.tokenSpeed).toBe(46.36) // 5,100 / 110 s, not (10 + 50) / 2
+    expect(out?.usage).toEqual({ inputTokens: 40_000, outputTokens: 5_000, totalTokens: 45_000 })
+  })
+
+  it('counts earlier tokens whose speed was never measured, without guessing their time', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(START)
+    const meta = createStepMetadata({ tokenSpeed: 0, tokenCount: 50, durationMs: 0 })
+    meta.onPart({ type: 'text-start' })
+    vi.advanceTimersByTime(2_000)
+
+    const out = meta.onPart(finish({ outputTokens: 100, totalTokens: 100 }))
+
+    expect(out?.tokenSpeed.tokenCount).toBe(150)
+    expect(out?.tokenSpeed.tokenSpeed).toBe(50)
+  })
+
+  it("combines the engine's own rates the same way", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(START)
+    // Earlier: 60 tokens at 30 tokens/s (2 s). This call: 40 at 20 (2 s).
+    const meta = createStepMetadata({ tokenSpeed: 30, tokenCount: 60, durationMs: 2_500 })
+    meta.onPart({ type: 'text-start' })
+    meta.onPart({
+      type: 'finish-step',
+      providerMetadata: { providerMetadata: { tokensPerSecond: 20 } },
+    })
+    vi.advanceTimersByTime(3_000)
+
+    const out = meta.onPart(finish({ outputTokens: 40, totalTokens: 40 }))
+
+    expect(out?.tokenSpeed.tokenCount).toBe(100)
+    expect(out?.tokenSpeed.tokenSpeed).toBe(25) // 100 / (2 s + 2 s)
+  })
+})
+
