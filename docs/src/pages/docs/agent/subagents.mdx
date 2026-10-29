@@ -163,6 +163,9 @@ labelled with which subagent asked.
 
 ## Where a subagent works
 
+This applies to the `jan` CLI and TUI; in the desktop app a subagent works in its parent's
+workspace as before.
+
 Each subagent's working directory is decided when it is dispatched. There is no tool for it: the
 dispatch result says where each one works, for example
 `working in worktree ~/.jan/worktrees/jan-582afba2/general-3f2a (branch jan/agent/general-3f2a, from 587e06393); uncommitted changes in your checkout are not in it`
@@ -189,7 +192,7 @@ A dispatch entry can choose with its optional `workspace` field:
 | omitted | The default above |
 | `"new"` | A fresh worktree |
 | `"shared"` | Your checkout (read-only for a reader) |
-| `"<earlier subagent name>"` | That subagent's workspace, for follow-ups or a reviewer of its work. Only one writer may be in a worktree at a time; a second concurrent writer is refused |
+| `"<earlier subagent name>"` | That subagent's workspace, for follow-ups or a reviewer of its work. Only one writer may be in a worktree at a time: a writer naming one that another writer is still in is refused, not queued, so dispatch it again once that one has finished |
 | `{"ref": "<git ref>"}` | A fresh worktree at that ref, fetched from `origin` when it is not local (for example `pull/9486/head`) |
 
 Saved subagent definitions cannot set a workspace; it is chosen per dispatch.
