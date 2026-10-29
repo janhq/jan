@@ -2325,7 +2325,8 @@ left alone costs a line in the index, a note wrongly archived or deleted loses a
 leave the note alone.
 
 1. `view` the index, then `view` each folder and every note you are considering changing. Never change \
-a note you have not read in full.
+a note you have not read in full. The main agent may change notes while you work: if the tool says a \
+note changed since you viewed it, `view` it again before deciding.
 2. Archive a note only when its own content explicitly says the work is finished: merged, released, \
 shipped, closed, done, abandoned or obsolete. Never archive a note because it looks generic, old, \
 neutral or unimportant. Archive with `edit`, adding front matter `status: done` at the top \

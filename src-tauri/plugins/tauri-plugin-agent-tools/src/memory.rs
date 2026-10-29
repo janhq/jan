@@ -119,11 +119,18 @@ pub const TIDY_MAX_CHANGES: usize = 30;
 /// A run's allowance of memory mutations, enforced by the tool rather than
 /// asked of the model. Shared by every call of one run; counts what it let
 /// through and what it refused, so the caller can report a cap that was hit.
+///
+/// It also remembers what the run last saw of each note (a content hash per
+/// file), because the run that holds one -- a tidy -- works in the background
+/// beside the main agent on the same store: a whole-file `write`, a `move` or
+/// a `delete` made from a copy the main agent has since changed would lose
+/// that change, so it is refused until the note is viewed again.
 #[derive(Debug)]
 pub struct ChangeBudget {
     max: usize,
     used: std::sync::atomic::AtomicUsize,
     refused: std::sync::atomic::AtomicUsize,
+    seen: std::sync::Mutex<HashMap<PathBuf, u64>>,
 }
 
 impl ChangeBudget {
@@ -132,7 +139,37 @@ impl ChangeBudget {
             max,
             used: Default::default(),
             refused: Default::default(),
+            seen: Default::default(),
         }
+    }
+
+    fn seen(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, u64>> {
+        self.seen.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Record that the run now knows `path` as `content`.
+    pub(crate) fn saw(&self, path: &Path, content: &str) {
+        self.seen().insert(path.to_path_buf(), content_hash(content));
+    }
+
+    /// Forget `path`: it was deleted or moved away.
+    pub(crate) fn forget(&self, path: &Path) {
+        self.seen().remove(path);
+    }
+
+    /// Ok when the note at `path` is missing (nothing to clobber) or is still
+    /// what the run last saw; else the refusal asking it to view `name` again.
+    pub(crate) fn check_fresh(&self, path: &Path, name: &str) -> Result<(), String> {
+        let Ok(current) = std::fs::read_to_string(path) else {
+            return Ok(());
+        };
+        if self.seen().get(path) == Some(&content_hash(&current)) {
+            return Ok(());
+        }
+        Err(format!(
+            "ERROR: '{name}' changed since you last viewed it (or you have not viewed it), so this change \
+             could overwrite newer content. `view` it again and base the change on what it says now."
+        ))
     }
 
     /// Take one change, or the refusal the tool returns once the cap is spent.
@@ -870,6 +907,15 @@ impl<'a> Scopes<'a> {
                 "ERROR: '{name}' is read-only: change this project's notes (`name`) or your own (`user:name`)"
             )),
         }
+    }
+
+    /// The file a note name resolves to, when it names a single note (not a
+    /// folder or a project index). It may not exist.
+    pub(crate) fn note_file(&self, name: &str) -> Option<PathBuf> {
+        let target = self.resolve(name).ok()?;
+        let note = target.note.filter(|n| !n.ends_with('/'))?;
+        let path = memory_dir(&target.store).join(note_relpath(&note).ok()?);
+        (!path.is_dir() && !path.with_extension("").is_dir()).then_some(path)
     }
 
     /// `view`: no name is the full index; a folder (`tui/` or `tui`) lists its

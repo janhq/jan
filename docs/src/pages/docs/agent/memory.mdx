@@ -164,6 +164,9 @@ loads the notes, and the tidy never asks for permission. It is the only subagent
 - **At most 30 changes per tidy.** The tidy's `memory` tool refuses any write, edit, delete or move
   past the 30th, so a tidy that misjudges the store can only misjudge that many notes. When the cap is
   hit the console note says `cap reached (30 changes)`; run `/memory tidy` again to continue.
+- **No lost edits.** A tidy works in the background while you and the agent keep going. Its `memory`
+  tool refuses to overwrite, move or delete a note that changed since the tidy last viewed it, so
+  it must read the note again first and an edit made meanwhile is never overwritten.
 - **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
 - **Auto-tidy** runs one in the background when the index no longer fits its budget. It is checked
   each time a turn finishes (cheaply: the index is only rebuilt when a note changed), so a store that
