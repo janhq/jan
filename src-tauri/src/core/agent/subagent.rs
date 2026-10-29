@@ -2194,6 +2194,32 @@ pub(crate) fn spawn_subagent(
     scratch: Option<&Path>,
     notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
+    let prepared = prepare_dispatch(scope, parent_args, req, parent)?;
+    start_dispatch(scope, parent_args, prepared, events, scratch, notify_on_finish)
+}
+
+/// A dispatch resolved and given its workspace, not yet registered. Dropping
+/// it gives a writer's worktree back.
+pub(crate) struct PreparedDispatch {
+    name: String,
+    description: String,
+    resolved: ResolvedDispatch,
+    /// The dispatching run's inheritance, re-priced for the child's model.
+    parent: ParentRun,
+    /// See [`SubagentRequest::memory_access`].
+    memory_access: bool,
+    workspace: crate::core::agent::child_workspace::ChildWorkspace,
+    lease: LeaseSlot,
+}
+
+/// The half of [`spawn_subagent`] that can fail on the request: resolve it,
+/// price it, and assign the child its workspace.
+fn prepare_dispatch(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    req: SubagentRequest,
+    parent: &ParentRun,
+) -> Result<PreparedDispatch, SubagentError> {
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -2224,26 +2250,19 @@ pub(crate) fn spawn_subagent(
         )?,
         ..resolved
     };
-    launch(scope, parent_args, resolved, req, parent, events, scratch, notify_on_finish)
+    assign_dispatch(scope, parent_args, resolved, req, parent)
 }
 
-/// Start an already-resolved child on a background task: the half of
-/// [`spawn_subagent`] after its definition and tools are settled, shared with
-/// Jan's internal subagents, which are not in the registry.
-#[allow(clippy::too_many_arguments)]
-fn launch(
+/// Give an already-resolved child its workspace: the part of
+/// [`prepare_dispatch`] after its definition and tools are settled, shared
+/// with Jan's internal subagents, which are not in the registry.
+fn assign_dispatch(
     scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     resolved: ResolvedDispatch,
     req: SubagentRequest,
     parent: &ParentRun,
-    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
-    scratch: Option<&Path>,
-    notify_on_finish: bool,
-) -> Result<Dispatched, SubagentError> {
-    use crate::core::agent::events::StreamEvent;
-    use std::sync::atomic::Ordering;
-
+) -> Result<PreparedDispatch, SubagentError> {
     let bg = &scope.bg;
     let project_root = parent_args
         .project_root
@@ -2266,8 +2285,41 @@ fn launch(
         .workspaces
         .assign(project_root, &name, writer, req.workspace.as_ref())
         .map_err(SubagentError::Upstream)?;
+    Ok(PreparedDispatch {
+        name,
+        description: req.description,
+        resolved,
+        parent: parent.clone(),
+        memory_access: req.memory_access,
+        workspace,
+        lease: LeaseSlot::new(lease),
+    })
+}
+
+/// The half of [`spawn_subagent`] that registers the prepared child and
+/// starts its task, or refuses it when its run was torn down meanwhile.
+fn start_dispatch(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    prepared: PreparedDispatch,
+    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    scratch: Option<&Path>,
+    notify_on_finish: bool,
+) -> Result<Dispatched, SubagentError> {
+    use crate::core::agent::events::StreamEvent;
+    use std::sync::atomic::Ordering;
+
+    let bg = &scope.bg;
+    let PreparedDispatch {
+        name,
+        description,
+        resolved,
+        parent,
+        memory_access,
+        workspace,
+        lease,
+    } = prepared;
     let workspace_note = workspace.note();
-    let lease = LeaseSlot::new(lease);
     let task_lease = lease.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -2285,10 +2337,12 @@ fn launch(
     if scope.is_stale() {
         drop(entries);
         // Torn down between the check above and here: give the worktree back
-        // and sweep it, since the teardown's own sweep may already have run.
+        // and take back this assignment, since the teardown's own sweep may
+        // already have run. Only this one: a session-owned registry outlives
+        // the teardown (Esc stops its children mid-session), and its earlier
+        // children's worktrees and names are still the session's to reuse.
         lease.release();
-        #[cfg(feature = "cli")]
-        let _ = bg.workspaces.finish_session();
+        bg.workspaces.undo(&name, &workspace);
         return Err(SubagentError::Cancelled);
     }
 
@@ -2308,7 +2362,7 @@ fn launch(
         let _ = events.send(StreamEvent::SubagentQueued {
             run_id: run_id.clone(),
             name: name.clone(),
-            task: Some(req.description.clone()),
+            task: Some(description.clone()),
             waiting,
         });
     }
@@ -2318,9 +2372,7 @@ fn launch(
     // child outliving this run keeps reporting somewhere that is still read.
     let task_events = bg.child_events(events);
     let entry_events = bg.child_events(events);
-    let inherited = parent.clone();
-    let description = req.description.clone();
-    let memory_access = req.memory_access;
+    let inherited = parent;
     let run_id_task = run_id.clone();
     let name_task = name.clone();
     let registry = bg.clone();
@@ -2498,7 +2550,8 @@ pub(crate) fn spawn_memory_tidy(
         ..parent.clone()
     };
     let args = memory_tidy_args(parent_args, budget);
-    launch(scope, &args, resolved, req, parent, events, None, false)
+    let prepared = assign_dispatch(scope, &args, resolved, req, parent)?;
+    start_dispatch(scope, &args, prepared, events, None, false)
 }
 
 /// The tidy child's run args: the parent's, with the change cap its `memory`
@@ -5234,6 +5287,88 @@ pub(crate) mod tests {
             .output()
             .unwrap();
         assert!(branches.stdout.is_empty(), "{}", String::from_utf8_lossy(&branches.stdout));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A teardown landing between a dispatch's workspace assignment and its
+    /// registration takes back that dispatch's worktree and nothing else. A
+    /// session-owned registry outlives the teardown (Esc stops its children
+    /// mid-session), so an earlier reader's fresh worktree, which holds no
+    /// lease, and an earlier writer's stay on disk and nameable.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_stale_dispatch_takes_back_only_its_own_worktree() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let root = unique_root("stale-own");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        write_def(&project_subagents_dir(&root), "reader", "allowed_tools = [\"read\"]\n");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        bg.install_session_events(events_tx.clone());
+        let earlier = [
+            SubagentRequest {
+                workspace: Some(WorkspaceRequest::New),
+                ..req("reader", None)
+            },
+            req("writer", None),
+        ];
+        for r in earlier {
+            let d = spawn_subagent(&bg.scope(), &args, r, &parent_run(), &events_tx, None, false)
+                .unwrap();
+            assert!(d.workspace.contains("worktree"), "{}", d.workspace);
+            let _ = await_subagent(&bg, &d.run_id).await;
+        }
+        let before = bg.workspaces.live();
+        assert_eq!(before.len(), 2, "{before:?}");
+
+        let scope = bg.scope();
+        // Its own worker name, as `plan_dispatch` would have reserved.
+        let late = SubagentRequest {
+            agent: "writer".to_string(),
+            ..req("late", None)
+        };
+        let late = prepare_dispatch(&scope, &args, late, &parent_run()).unwrap();
+        let late_wt = late.workspace.worktree.clone().expect("a writer gets a worktree");
+        bg.abort_all(); // Esc: the session's registry lives on
+        let refused = start_dispatch(&scope, &args, late, &events_tx, None, false);
+        assert!(matches!(refused, Err(SubagentError::Cancelled)));
+
+        assert!(!late_wt.path.exists(), "the stale dispatch's worktree is removed");
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let branches = String::from_utf8_lossy(&branches.stdout).into_owned();
+        assert!(!branches.contains(&late_wt.branch), "{branches}");
+        assert_eq!(bg.workspaces.live(), before, "the earlier worktrees stay");
+        for name in ["reader", "writer"] {
+            let reuse = WorkspaceRequest::Reuse(name.to_string());
+            let again = bg.workspaces.assign(&root, "next", false, Some(&reuse));
+            assert!(again.is_ok(), "{name}: {:?}", again.err());
+        }
+        let _ = bg.workspaces.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
 
