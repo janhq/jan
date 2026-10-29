@@ -161,6 +161,47 @@ itself. That keeps one curator for memory instead of several writers it never se
 They *can* request permission for a write or a command. Those prompts surface in your console,
 labelled with which subagent asked.
 
+## Where a subagent works
+
+Each subagent's working directory is decided when it is dispatched. There is no tool for it: the
+dispatch result says where each one works, for example
+`working in worktree ~/.jan/worktrees/jan-582afba2/general-3f2a (branch jan/agent/general-3f2a, from 587e06393); uncommitted changes in your checkout are not in it`
+or `working read-only in /home/you/src/jan`.
+
+- **Writers get their own worktree.** A subagent whose tools include `write` or `edit` gets a fresh
+  git worktree on a `jan/agent/<name>-<id>` branch, started from `HEAD`, under
+  `~/.jan/worktrees/<project>/`. Two writers dispatched together never edit the same checkout, and
+  none of them sees your uncommitted changes. Its final answer names its branch; merging it is up to
+  you or the main agent.
+- **Readers are read-only.** Any other subagent (`explore`, `review`, `research`, ...) works in
+  your checkout with it read-only: `write` and `edit` refuse paths in it, and its shell always runs
+  in the sandbox with the checkout (including `.git`) mounted read-only, even when your own session
+  runs unsandboxed. If no sandbox can start on the machine, a reader gets no shell at all. The
+  session scratch stays writable, and package caches (`YARN_CACHE_FOLDER`, `COREPACK_HOME`) point
+  into it.
+- Not a git repository, or no commits yet: every subagent works in your checkout (readers still
+  read-only), and the dispatch result says so.
+
+A dispatch entry can choose with its optional `workspace` field:
+
+| `workspace` | Meaning |
+| --- | --- |
+| omitted | The default above |
+| `"new"` | A fresh worktree |
+| `"shared"` | Your checkout (read-only for a reader) |
+| `"<earlier subagent name>"` | That subagent's workspace, for follow-ups or a reviewer of its work. Only one writer may be in a worktree at a time; a second concurrent writer is refused |
+| `{"ref": "<git ref>"}` | A fresh worktree at that ref, fetched from `origin` when it is not local (for example `pull/9486/head`) |
+
+Saved subagent definitions cannot set a workspace; it is chosen per dispatch.
+
+Worktrees share one `CARGO_TARGET_DIR` per project, so a new one does not start with a cold Rust
+build. A sandboxed writer may write the repository's git directory, so `git commit` works in its
+worktree, and the main agent can read its subagents' worktrees.
+
+When the session ends, worktrees with no commits beyond their base and no uncommitted changes are
+removed with their branches, and so is every `ref` worktree. The rest are kept and named; `/worktree`
+lists them while the session runs.
+
 <Callout type="info">
 Because a subagent's context is separate, a long research task that would have crowded your session
 costs you only its final answer.
