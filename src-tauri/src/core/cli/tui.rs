@@ -13230,7 +13230,10 @@ pub async fn run(
         let _ = workspace::remove_scratch_dir(session).await;
     }
     // And its subagents' worktrees that hold nothing; the rest are named on
-    // the real terminal, since they are what is left to merge.
+    // the real terminal, since they are what is left to merge. Children still
+    // running are stopped first: a live writer holds its worktree, which would
+    // otherwise be kept as busy and outlive the process even when empty.
+    app.subagent_set.abort_all();
     let kept = app.subagent_set.workspaces.finish_session();
     if !kept.is_empty() {
         eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
