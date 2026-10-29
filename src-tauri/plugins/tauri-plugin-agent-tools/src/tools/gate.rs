@@ -1191,7 +1191,6 @@ mod tests {
     /// The Cowork opt-in at the gate layer: an attached root also passed as a
     /// write root takes the ordinary in-project Write prompt, not WriteEscape,
     /// while a path outside both roots keeps the escape classification.
-
     #[test]
     fn a_write_root_downgrades_the_escape_to_an_ordinary_write() {
         let root = unique_root();
