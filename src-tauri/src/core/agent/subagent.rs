@@ -837,8 +837,11 @@ fn resolve_dispatch(
 /// Child stream events are folded into the parent's own stream, except the
 /// child's terminal `Done`/`Error`: the parent must not see the child terminate
 /// its stream. Dispatch turns the child's result into a synthetic tool result
-/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child's monitor set
-/// and its parked state describe the child alone, so they stay with it too.
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child never has a
+/// monitor (`never_delegated`), so its always-empty monitor set stays with it.
+/// Its `Parked` is forwarded: wrapped in `Subagent` it is display-only, and it
+/// is the one sign a child has stopped generating to wait on a command it
+/// backgrounded, which otherwise reads as a child still running.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
     !matches!(
@@ -847,7 +850,6 @@ fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
             | StreamEvent::Error { .. }
             | StreamEvent::MessagesUpdated { .. }
             | StreamEvent::Monitors { .. }
-            | StreamEvent::Parked
     )
 }
 
@@ -1938,6 +1940,9 @@ async fn run_subagent(
     // could deliver their output, so they stay run-owned and it parks on them
     // rather than handing the session a command nobody is reading for.
     child_args.bg_shells = None;
+    // A message the user types is for the main agent, so it must not hurry a
+    // child's shell into the background.
+    child_args.shell_detach = None;
     // A child cannot dispatch subagents at all (`subagents_enabled = false`
     // above), so it has no registry to share; clearing this keeps it from
     // inheriting the parent session's by accident.
@@ -4287,6 +4292,17 @@ pub(crate) mod tests {
         }));
     }
 
+    /// A child parked on its own background work says so to the parent's
+    /// screen; its monitor set, empty by construction, does not travel.
+    #[test]
+    fn forward_carries_a_childs_park_but_not_its_monitor_set() {
+        use crate::core::agent::events::StreamEvent;
+        assert!(forward_to_parent(&StreamEvent::Parked));
+        assert!(!forward_to_parent(&StreamEvent::Monitors {
+            monitors: Vec::new(),
+        }));
+    }
+
     /// Cancellation contract: `dispatch_subagent` is awaited inline inside the
     /// parent's run future, which the command layer drops via `tokio::select!` on
     /// cancel. This test encodes that guarantee: an in-flight child future nested
@@ -4664,6 +4680,7 @@ pub(crate) mod tests {
             bg_shells: None,
             subagent_bg: None,
             parent_link: None,
+            shell_detach: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
@@ -4692,6 +4709,18 @@ pub(crate) mod tests {
     #[cfg(feature = "cli")]
     pub(crate) fn hold_running(bg: &Arc<BackgroundSubagents>) {
         bg.running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// End a child held by [`hold_running`] the way a real one ends: its ping
+    /// is queued before the run count drops, then any parked waiter is woken.
+    #[cfg(feature = "cli")]
+    pub(crate) fn finish_held_child(bg: &Arc<BackgroundSubagents>, run_id: &str, name: &str) {
+        bg.push_notice(
+            run_id,
+            completion_notice(name, run_id, None, &Ok("done".to_string())),
+        );
+        bg.running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        bg.wake.notify_waiters();
     }
 
     #[cfg(feature = "cli")]

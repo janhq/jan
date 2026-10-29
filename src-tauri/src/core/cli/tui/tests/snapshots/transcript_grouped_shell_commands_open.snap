@@ -6,12 +6,12 @@ expression: render_snapshot(buf)
 |› check and test the cli                                                        |
 |                                                                                |
 |                                                                                |
-|• Ran 3 commands                                                                |
-|  └ cargo check --features cli                                                  |
+|• Shell                                                                         |
+|  └ • Ran cargo check --features cli                                            |
 |      Finished dev profile in 2.1s                                              |
-|    git status --short                                                          |
+|    • Ran git status --short                                                    |
 |       M src/foo.rs                                                             |
-|    cargo test -- cli:: (exit 101)                                              |
+|    • Ran cargo test -- cli:: (exit 101)                                        |
 |      test a ... FAILED                                                         |
 |      line 0                                                                    |
 |      … +39 lines (Ctrl-O to expand)                                            |
@@ -22,13 +22,19 @@ expression: render_snapshot(buf)
  1 24..80 bg=#282C3A
  2 0..80 bg=#282C3A
  4 0..2 fg=Red mod=BOLD
- 4 2..5 mod=BOLD
+ 4 2..7 mod=BOLD
  5 0..4 fg=DarkGray
+ 5 4..6 fg=#98C379 mod=BOLD
+ 5 6..9 mod=BOLD
  6 6..34 mod=DIM
  7 0..4 fg=DarkGray
+ 7 4..6 fg=#98C379 mod=BOLD
+ 7 6..9 mod=BOLD
  8 6..19 mod=DIM
  9 0..4 fg=DarkGray
- 9 23..34 fg=DarkGray
+ 9 4..6 fg=Red mod=BOLD
+ 9 6..9 mod=BOLD
+ 9 29..40 fg=DarkGray
 10 6..23 mod=DIM
 11 6..12 mod=DIM
 12 6..36 fg=DarkGray

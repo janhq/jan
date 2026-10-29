@@ -997,14 +997,24 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
     tokio::select! {
         res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
-        _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
-            // The command outran its timeout. Rather than killing it or blocking
-            // this call, let it keep running and have the detached task's result
-            // land in a file the agent reads when it is ready -- no second tool
-            // mode, no job registry. `None` means the background file could not
+        by_user = hand_off_after(timeout_secs, ctx.detach_signal.clone()) => {
+            // The command outran its timeout, or the user wants the agent back
+            // sooner. Rather than killing it or blocking this call, let it keep
+            // running and have the detached task's result land in a file the
+            // agent reads when it is ready -- no second tool mode, no job
+            // registry. `None` means the background file could not
             // be created; the command still runs, its output just isn't captured.
             // Flag it in the process registry so the `/shells` inspector lists it
             // as a detached shell the user can stop.
+            let lead = if by_user {
+                format!(
+                    "{DETACHED_PREFIX}after {}s because the user sent a message, and is \
+                     still running",
+                    started.elapsed().as_secs()
+                )
+            } else {
+                format!("{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the background")
+            };
             if let Some(pid) = pid {
                 proc::mark_backgrounded(ctx.thread_id, pid);
             }
@@ -1055,8 +1065,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         ""
                     };
                     format!(
-                        "{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the \
-                         background. Its result will be written to {display} once it \
+                        "{lead}. Its result will be written to {display} once it \
                          finishes; read that file to collect it (if the output was large \
                          that file keeps a tail and points to the full log).{ping}"
                     )
@@ -1077,13 +1086,38 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         }
                     });
                     format!(
-                        "{BACKGROUNDED_PREFIX}{timeout_secs}s and is still running in the \
-                         background, but a file to capture its output could not be created, \
+                        "{lead}, but a file to capture its output could not be created, \
                          so the output will not be collected."
                     )
                 }
             }
         }
+    }
+}
+
+/// How long a command runs before a detach request moves it to the background,
+/// so a quick command started beside a typed message still answers inline.
+const DETACH_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Resolves once a running command is to be handed to the background: when its
+/// timeout passes (`false`) or, sooner, when `detach` turns true after
+/// [`DETACH_GRACE`] (`true`). A closed channel leaves only the timeout.
+async fn hand_off_after(
+    timeout_secs: u64,
+    detach: Option<tokio::sync::watch::Receiver<bool>>,
+) -> bool {
+    let requested = async move {
+        let Some(mut detach) = detach else {
+            return std::future::pending::<()>().await;
+        };
+        tokio::time::sleep(DETACH_GRACE).await;
+        if detach.wait_for(|on| *on).await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => false,
+        _ = requested => true,
     }
 }
 
@@ -1359,11 +1393,16 @@ pub fn exit_marker(line: &str) -> Option<Option<i32>> {
 /// happens to begin with the same words.
 const BACKGROUNDED_PREFIX: &str = "Command exceeded ";
 
+/// How the result of a command the user's message moved to the background
+/// starts (see [`hand_off_after`]).
+const DETACHED_PREFIX: &str = "Command moved to the background ";
+
 /// True when a shell tool result is the hand-off of a command that outran its
 /// timeout and kept running in the background, rather than its output. Such a
 /// result carries no exit marker: the command has not finished.
 pub fn bash_result_backgrounded(content: &str) -> bool {
-    content.starts_with(BACKGROUNDED_PREFIX) && !content.lines().any(|l| exit_marker(l).is_some())
+    (content.starts_with(BACKGROUNDED_PREFIX) || content.starts_with(DETACHED_PREFIX))
+        && !content.lines().any(|l| exit_marker(l).is_some())
 }
 
 impl Drop for BashCapture {
@@ -3458,6 +3497,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A detach request moves a long command to the background well before
+    /// its timeout, through the same hand-off, while a quick command started
+    /// under the same request still answers inline.
+    // POSIX command text.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_detach_request_backgrounds_a_long_command_but_not_a_quick_one() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = events.clone();
+        let (_detach, signal) = tokio::sync::watch::channel(true);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_sandbox(false)
+            .with_detach_signal(signal)
+            .with_shell_done_sink(std::sync::Arc::new(move |e: crate::tools::ShellEvent| {
+                seen.lock().unwrap().push(e)
+            }));
+        let quick = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": "echo quick", "timeout": 600}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(quick.contains("quick") && quick.contains("[exit 0]"), "{quick}");
+        let command = format!("sleep 30; echo detach-{}", std::process::id());
+        let started = std::time::Instant::now();
+        let out = super::execute_builtin(
+            lookup("shell").unwrap(),
+            &json!({"command": command, "timeout": 600}),
+            &ctx,
+        )
+        .await
+        .0;
+        let waited = started.elapsed();
+        if let Some(shell) = proc::snapshot().into_iter().find(|s| s.command == command) {
+            proc::kill(shell.pid);
+        }
+        assert!(waited < std::time::Duration::from_secs(10), "{waited:?}");
+        assert!(waited >= DETACH_GRACE, "{waited:?}");
+        assert!(bash_result_backgrounded(&out), "{out}");
+        assert!(out.contains("because the user sent a message"), "{out}");
+        assert!(out.contains("notified automatically"), "{out}");
+        assert!(matches!(
+            events.lock().unwrap().as_slice(),
+            [crate::tools::ShellEvent::Backgrounded(_)]
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Without a sink the tool must not promise a ping that will never come.
     #[tokio::test]
     async fn backgrounding_without_a_doorbell_still_tells_the_model_to_read_the_file() {
@@ -3520,6 +3610,9 @@ mod tests {
     fn only_the_hand_off_reads_as_backgrounded() {
         assert!(bash_result_backgrounded(&format!(
             "{BACKGROUNDED_PREFIX}5s and is still running in the background."
+        )));
+        assert!(bash_result_backgrounded(&format!(
+            "{DETACHED_PREFIX}after 5s because the user sent a message, and is still running."
         )));
         assert!(!bash_result_backgrounded("Command exceeded quota\n[exit 1]"));
         assert!(!bash_result_backgrounded("ok\n[exit 0]"));

@@ -1461,6 +1461,8 @@ fn build_cli_orchestration_args(
         subagent_bg: None,
         // A top-level run: there is no agent above it to message.
         parent_link: None,
+        // Headless: nobody types mid-run. The TUI installs its own.
+        shell_detach: None,
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,

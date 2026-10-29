@@ -1,0 +1,26 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 165
+expression: render_snapshot(buf)
+---
+| 1 subagent running · 1 queued · 2 waiting · /agents to view or stop            |
+|  └ kv-review · 1m 05s · Read mod_3.rs                                          |
+|    docs-writer · Queued (1)                                                    |
+|    collector · Waiting (phase 2)                                               |
+|    builder · Waiting on background work · 30s                                  |
+
+ 0 0..45 fg=#808080
+ 0 45..52 fg=#56B6C2
+ 0 52..68 fg=#808080
+ 1 0..4 fg=DarkGray
+ 1 4..13 fg=#56B6C2 mod=BOLD
+ 1 13..38 fg=#808080
+ 2 0..4 fg=DarkGray
+ 2 4..15 fg=#56B6C2 mod=BOLD
+ 2 15..28 fg=#808080
+ 3 0..4 fg=DarkGray
+ 3 4..13 fg=#56B6C2 mod=BOLD
+ 3 13..33 fg=#808080
+ 4 0..4 fg=DarkGray
+ 4 4..11 fg=#56B6C2 mod=BOLD
+ 4 11..46 fg=#808080
