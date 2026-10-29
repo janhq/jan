@@ -1562,11 +1562,11 @@ impl PhaseGate {
 }
 
 impl BackgroundSubagents {
-    /// A dispatch scope for a caller that will outlive the dispatch it takes
-    /// now. Production callers hold one from run start ([`DispatchScope`] is
-    /// built from the run's own generation); the CLI's tests take one on the
-    /// spot, which is the only config whose tests dispatch at all.
-    #[cfg(all(test, feature = "cli"))]
+    /// A dispatch scope taken now. A run holds one from its start
+    /// ([`DispatchScope`] is built from the run's own generation); the TUI
+    /// takes one on the spot for a memory tidy, which belongs to the session
+    /// rather than a run, and so do the CLI's tests.
+    #[cfg(feature = "cli")]
     pub(crate) fn scope(self: &Arc<Self>) -> DispatchScope {
         DispatchScope {
             bg: self.clone(),
@@ -2100,10 +2100,6 @@ pub(crate) fn spawn_subagent(
     scratch: Option<&Path>,
     notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
-    use crate::core::agent::events::StreamEvent;
-    use std::sync::atomic::Ordering;
-
-    let bg = &scope.bg;
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -2134,7 +2130,27 @@ pub(crate) fn spawn_subagent(
         )?,
         ..resolved
     };
+    launch(scope, parent_args, resolved, req, parent, events, scratch, notify_on_finish)
+}
 
+/// Start an already-resolved child on a background task: the half of
+/// [`spawn_subagent`] after its definition and tools are settled, shared with
+/// Jan's internal subagents, which are not in the registry.
+#[allow(clippy::too_many_arguments)]
+fn launch(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    resolved: ResolvedDispatch,
+    req: SubagentRequest,
+    parent: &ParentRun,
+    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    scratch: Option<&Path>,
+    notify_on_finish: bool,
+) -> Result<Dispatched, SubagentError> {
+    use crate::core::agent::events::StreamEvent;
+    use std::sync::atomic::Ordering;
+
+    let bg = &scope.bg;
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -2290,6 +2306,85 @@ pub(crate) fn spawn_subagent(
     );
     drop(entries);
     Ok(Dispatched { run_id })
+}
+
+/// The name Jan's memory-tidy subagent runs under. Not a registry entry: the
+/// model cannot dispatch it, and a saved definition of the same name does not
+/// replace it.
+#[cfg(feature = "cli")]
+pub(crate) const MEMORY_TIDY_AGENT: &str = "memory-tidy";
+
+/// The tidy subagent's instructions. It reads the notes in its own context, so
+/// the main conversation never loads them.
+#[cfg(feature = "cli")]
+const MEMORY_TIDY_PROMPT: &str = "You are Jan's memory tidier. You curate the agent's long-term memory \
+with the `memory` tool and nothing else; no change you make asks the user. Your goal is a small, \
+accurate index.
+
+1. `view` the index, then `view` each folder and every note you are considering changing. Never change \
+a note you have not read.
+2. Archive finished work: a merged PR, a closed issue, a shipped or abandoned plan. Archive with `edit`, \
+adding front matter `status: done` at the top (`---\\nstatus: done\\n---\\n`); keep its content.
+3. Merge duplicates: when two notes cover one topic, `write` the combined note under the clearer name \
+and `delete` the other.
+4. Delete stale notes: a fact a newer note supersedes, or a note that only says something is obsolete.
+5. Move closely related loose notes into a folder (`write` `folder/name`, then `delete` the old name) \
+only when that clearly shortens the index.
+
+Only change this project's notes and `user:` notes; other projects are read-only. Keep every durable, \
+still-true fact. When unsure, leave the note alone.
+
+Finish with a short report, one line per change: `archived <name>`, `merged <a> into <b>`, \
+`deleted <name>: <why>`, `moved <a> to <b>`; or `no changes` when nothing needed doing.";
+
+/// Start the memory-tidy subagent on the session's registry, returning its run
+/// id. It runs on the `smol` model with only the `memory` tool -- the one child
+/// that keeps memory (see [`without_memory`]) -- and in the background: the
+/// caller collects it with [`await_subagent`]. It never rings the parent's
+/// doorbell, so a tidy never starts a model turn of its own.
+#[cfg(feature = "cli")]
+pub(crate) fn spawn_memory_tidy(
+    scope: &DispatchScope,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    parent: &ParentRun,
+    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+) -> Result<Dispatched, SubagentError> {
+    if parent_args.project_root.is_none() {
+        return Err(SubagentError::Upstream("memory tidy needs an active project".to_string()));
+    }
+    let (resolved, req) = memory_tidy_dispatch();
+    let parent = &ParentRun {
+        cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
+        ..parent.clone()
+    };
+    launch(scope, parent_args, resolved, req, parent, events, None, false)
+}
+
+/// The tidy subagent's resolved definition and request: the `smol` model, the
+/// `memory` tool alone, and the internal memory-access flag.
+#[cfg(feature = "cli")]
+fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
+    let tools = vec![tauri_plugin_agent_tools::tools::MEMORY_TOOL.to_string()];
+    let definition = SubagentDefinition {
+        name: MEMORY_TIDY_AGENT.to_string(),
+        description: "Tidies the agent's memory".to_string(),
+        system_prompt: MEMORY_TIDY_PROMPT.to_string(),
+        allowed_tools: Some(tools.clone()),
+        model: Some(SMOL_ROLE.to_string()),
+        scope: SubagentScope::Builtin,
+    };
+    let resolved = ResolvedDispatch {
+        definition,
+        allowed_tools: Some(tools),
+    };
+    let req = SubagentRequest {
+        name: MEMORY_TIDY_AGENT.to_string(),
+        description: "Tidy the memory now.".to_string(),
+        allowed_tools: None,
+        agent: MEMORY_TIDY_AGENT.to_string(),
+        memory_access: true,
+    };
+    (resolved, req)
 }
 
 /// What a phased dispatch reports back to the model.
@@ -6049,6 +6144,25 @@ pub(crate) mod tests {
             .find(|s| s["function"]["name"] == "create_subagent")
             .unwrap();
         assert!(create["function"]["parameters"]["properties"].get("allowed_tools").is_none());
+    }
+
+    /// The tidy subagent is the one child with memory: the `memory` tool and
+    /// nothing else, on the cheap model, and not a name the model can dispatch.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_tidy_subagent_keeps_memory_and_nothing_else() {
+        let (resolved, req) = memory_tidy_dispatch();
+        assert!(req.memory_access);
+        assert_eq!(resolved.allowed_tools, Some(vec!["memory".to_string()]));
+        assert_eq!(resolved.definition.model.as_deref(), Some(SMOL_ROLE));
+        let child = without_memory(max_par_args(&unique_root("tidy-child")), req.memory_access);
+        assert!(!child.permissions.is_denied("memory"));
+        let reg = SubagentRegistry::load(&unique_root("tidy-not-dispatchable"));
+        assert!(!reg.dispatchable_names().contains(&MEMORY_TIDY_AGENT));
+        let prompt = &resolved.definition.system_prompt;
+        for step in ["status: done", "Merge duplicates", "Delete stale", "report"] {
+            assert!(prompt.contains(step), "{step}");
+        }
     }
 
     /// Subagents have no memory, so `memory` is never a name a dispatch or a

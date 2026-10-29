@@ -1,7 +1,7 @@
 ---
 title: Memory
-description: Durable facts the agent keeps about your project, stored as files you can read and edit.
-keywords: [Jan, Jan Agent, memory, durable facts, project memory, recall]
+description: Durable facts the agent keeps and curates about your project, stored as files you can read and edit.
+keywords: [Jan, Jan Agent, memory, durable facts, project memory, recall, memory tidy, auto-tidy]
 ---
 
 import { Callout } from 'nextra/components'
@@ -50,12 +50,52 @@ delete them. Nothing is hidden in an opaque store.
 |-- memory/<name>.md           # user-wide notes, every project
 `-- projects/<slug>/
     |-- MEMORY.md              # index of this project's notes
-    `-- memory/<name>.md       # this project's notes
+    `-- memory/
+        |-- <name>.md          # this project's notes
+        |-- <folder>/<name>.md # grouped notes, one folder level
+        `-- .meta.json         # last read / last written times (drives index order)
 ```
+
+A note's first line is its **title**, the only part of it the index shows. A note may open with
+front matter; `status: done` there **archives** it:
+
+```markdown
+---
+status: done
+---
+PR 9102 merged: subagent steering
+...
+```
+
+An archived note stays readable and searchable but is never listed, which is how finished work
+(merged PRs, closed issues, past reviews) leaves the prompt without being lost.
 
 Each `MEMORY.md` is generated: it is rebuilt on every write, edit and delete, so don't edit it by
 hand - your changes would be overwritten. See [Project Config](/docs/agent/project-config) for how
 `<slug>` is chosen.
+
+Notes written by an older Jan are migrated once, the first time a session starts on the store: a
+note whose first line starts with `DONE` or `OBSOLETE` is archived, recency is seeded from file
+times, and nothing is renamed or deleted.
+
+## The index in the prompt
+
+The system prompt's **Available Memories** block is the index, titles only, and it is capped at
+about **1,500 tokens** however many notes a project has:
+
+1. This project's notes, most recently used first. A folder takes one line (`tui/ (18 notes)`).
+2. Your user notes, then one pointer per other project with memory.
+3. Whatever does not fit becomes a single line: `+N more ... memory view lists everything`.
+
+The agent opens a note (or a folder) by name with `view`, so the index only has to say what exists.
+When a write leaves the index near its budget, the tool result says so, which is the agent's cue to
+archive or merge.
+
+The index is a **snapshot taken when the session starts**. Writing, editing or deleting a note
+mid-session never changes the system prompt, so the cached prompt prefix survives memory updates.
+Changes made since the snapshot, by the agent or by a tidy, are listed in a short
+`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead. The
+snapshot is retaken on `/new`, `/clear`, `/resume`, a fork, and after a compaction.
 
 ## Scopes
 
@@ -94,8 +134,32 @@ vice versa.
 Memory works when it's small and specific. A note that restates what any reader would see from the
 README is noise; a note about the thing that surprised someone is worth keeping.
 
-If the agent has stored something wrong, delete the file. There's no special command for it - they
-are just files.
+The tool tells the agent to reconcile rather than append: search for an existing note before
+writing, update it instead of adding a near-duplicate, delete a note a newer fact supersedes, and
+archive finished work. If the agent has stored something wrong, tell it, or delete the file yourself -
+they are just files.
+
+## Tidying
+
+A tidy is a cheap subagent (on the [`smol` model](/docs/agent/subagents#choosing-a-subagents-model))
+that reads the notes in its own context, archives finished work, merges duplicates, deletes stale
+notes, and reports what it changed as one line in the console, for example
+`memory tidied: archived pr-9102; merged tui-scroll into tui/scroll`. The main conversation never
+loads the notes, and the tidy never asks for permission. It is the only subagent with memory.
+
+- **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
+- **Auto-tidy** runs one in the background when the index no longer fits its budget. It is checked
+  when a turn finishes, at most once per session (`/new`, `/clear` and `/resume` start a new
+  session), so a store a tidy cannot shrink is never retried in a loop. It never blocks your turn,
+  never starts a model turn of its own, and never rewrites this session's prompt: what it changed
+  shows up in the memory-changes block. An automatic tidy that changed nothing stays silent.
+
+Auto-tidy is on by default. To turn it off, use `/settings` (`memory_auto_tidy`) or set this in
+`~/.jan/config.toml`; `/memory tidy` keeps working either way:
+
+```toml
+memory_auto_tidy = false   # default: true
+```
 
 ## Memory and AGENTS.md
 
