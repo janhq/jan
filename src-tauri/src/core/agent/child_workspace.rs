@@ -330,8 +330,9 @@ pub(crate) struct Ledger {
     state: Mutex<LedgerState>,
 }
 
-/// A writer's hold on its worktree, released when the child's task ends
-/// (finished, failed or aborted).
+/// A writer's hold on its worktree, released when the child is done (it
+/// finished, failed, was stopped or was torn down), before the child counts
+/// as finished.
 #[derive(Debug)]
 pub(crate) struct WriterLease {
     ledger: Arc<Ledger>,
@@ -346,7 +347,8 @@ impl Drop for WriterLease {
 
 impl Ledger {
     /// Assign `name` its workspace and record it. A writer in a worktree gets
-    /// the lease that keeps a second writer out until it is done.
+    /// the lease that keeps a second writer out until it is done: a second
+    /// writer naming a busy worktree is refused, not queued.
     pub(crate) fn assign(
         self: &Arc<Self>,
         parent_root: &Path,
@@ -380,8 +382,10 @@ impl Ledger {
             Some(wt) => {
                 if !state.busy.insert(wt.path.clone()) {
                     return Err(format!(
-                        "another subagent is still writing in {} (branch {}); wait for it to \
-                         finish, or give this one workspace \"new\"",
+                        "refused: another subagent is still writing in {} (branch {}), and \
+                         only one writer may work in a worktree at a time. This subagent was \
+                         not started. Dispatch it again once that one has finished, or give \
+                         it workspace \"new\"",
                         display(&wt.path),
                         wt.branch
                     ));
@@ -721,7 +725,7 @@ mod git_tests {
     }
 
     #[test]
-    fn two_concurrent_writers_never_share_and_reuse_by_name_waits_its_turn() {
+    fn two_concurrent_writers_never_share_and_reuse_of_a_busy_worktree_is_refused() {
         let Some(root) = repo("lease") else { return };
         let ledger = Arc::new(Ledger::default());
         let (a, lease_a) = ledger.assign(&root, "general", true, None).unwrap();
@@ -730,7 +734,7 @@ mod git_tests {
 
         let reuse = WorkspaceRequest::Reuse("general".to_string());
         let err = ledger.assign(&root, "general-3", true, Some(&reuse)).unwrap_err();
-        assert!(err.contains("still writing"), "{err}");
+        assert!(err.contains("still writing") && err.contains("not started"), "{err}");
         // A reader may look at it meanwhile, read-only.
         let (look, _) = ledger.assign(&root, "review", false, Some(&reuse)).unwrap();
         assert_eq!(look.root, a.root);

@@ -1094,6 +1094,9 @@ pub(crate) fn stop_subagent(
     }
     entry.abort.abort();
     entry.slot.release(bg);
+    // Under the lock the phase barrier reads `finished` under, so no next
+    // phase can see this child done while its worktree is still held.
+    entry.lease.release();
     let _ = entry.events.send(StreamEvent::SubagentEnd {
         run_id: entry.run_id.clone(),
         name: entry.name.clone(),
@@ -1135,6 +1138,30 @@ struct BackgroundEntry {
     /// Parent messages this child has not picked up yet. Registry-owned so a
     /// child queued on the semaphore can be addressed before it starts.
     inbox: Arc<ChildInbox>,
+    /// A writer's hold on its worktree, given up before the child is marked
+    /// finished, by its task or by whoever stops it. See [`LeaseSlot`].
+    lease: LeaseSlot,
+}
+
+/// A writer child's [`WriterLease`](crate::core::agent::child_workspace::WriterLease),
+/// shared by its task and its registry entry so either can give it up. The
+/// task's own drop is too late: an aborted task is dropped whenever the
+/// runtime gets to it, and by then a phase barrier may already have read the
+/// child as finished and dispatched the next writer into the same worktree.
+#[derive(Clone, Default)]
+struct LeaseSlot(
+    Arc<std::sync::Mutex<Option<crate::core::agent::child_workspace::WriterLease>>>,
+);
+
+impl LeaseSlot {
+    fn new(lease: Option<crate::core::agent::child_workspace::WriterLease>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(lease)))
+    }
+
+    /// Give the worktree up now (a no-op once done, or for a reader).
+    fn release(&self) {
+        drop(self.0.lock().unwrap().take());
+    }
 }
 
 /// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
@@ -1454,6 +1481,7 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            entry.lease.release();
             // Release the counters here rather than leaving it to the aborted
             // tasks: a cancelled run must owe nothing the moment its teardown
             // returns, and a session-owned registry outlives this call. Exactly
@@ -1499,6 +1527,7 @@ impl BackgroundSubagents {
             return false;
         };
         entry.abort.abort();
+        entry.lease.release();
         // Exactly once, whether the child finished or is cut off here: see
         // `ChildSlot::release`.
         entry.slot.release(self);
@@ -2197,6 +2226,8 @@ fn launch(
         .assign(project_root, &name, writer, req.workspace.as_ref())
         .map_err(SubagentError::Upstream)?;
     let workspace_note = workspace.note();
+    let lease = LeaseSlot::new(lease);
+    let task_lease = lease.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result_file = scratch.and_then(|s| {
@@ -2295,8 +2326,6 @@ fn launch(
             }
         };
         let _permit = permit;
-        // Held until the child is done, so no second writer joins it.
-        let _lease = lease;
         let end_events = task_events.clone();
         let result = run_subagent(
             parent_args,
@@ -2312,6 +2341,9 @@ fn launch(
             Some(workspace),
         )
         .await;
+        // Before `finished` below: a next phase may reuse this worktree as
+        // soon as the barrier sees the child done.
+        task_lease.release();
         if let Some((_, path)) = &result_file {
             fill_subagent_result(path, &spilled_text(&result));
         }
@@ -2350,6 +2382,7 @@ fn launch(
             finished,
             slot,
             inbox,
+            lease,
         },
     );
     drop(entries);
@@ -4617,6 +4650,7 @@ pub(crate) mod tests {
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             slot: ChildSlot::new(),
             inbox: Arc::new(ChildInbox::default()),
+            lease: LeaseSlot::default(),
         }
     }
 
@@ -5093,6 +5127,65 @@ pub(crate) mod tests {
 
         drop(held);
         let _ = await_subagent(&bg, &queued_id).await;
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A stopped writer gives its worktree up the moment the stop returns, not
+    /// when the runtime gets round to dropping its aborted task: a phase
+    /// barrier opens on `finished`, and a next-phase item reusing that
+    /// worktree would otherwise be refused as "still writing" and fail the
+    /// whole phase.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_stopped_writer_releases_its_worktree_before_the_stop_returns() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let root = unique_root("lease-stop");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Queued behind the only permit, so it is still holding its lease.
+        let held = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let d = spawn_subagent(
+            &bg.scope(),
+            &args,
+            req("writer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .unwrap();
+        assert!(d.workspace.contains("worktree"), "{}", d.workspace);
+        let reuse = WorkspaceRequest::Reuse("writer".to_string());
+        let busy = bg.workspaces.assign(&root, "next", true, Some(&reuse)).unwrap_err();
+        assert!(busy.contains("still writing"), "{busy}");
+
+        stop_subagent(&bg, "writer").unwrap();
+        let next = bg.workspaces.assign(&root, "next", true, Some(&reuse));
+        assert!(next.is_ok(), "{:?}", next.err());
+        drop(next);
+        drop(held);
+        let _ = bg.workspaces.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -6661,6 +6754,7 @@ pub(crate) mod tests {
                 finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 slot: ChildSlot::new(),
                 inbox: inbox.clone(),
+                lease: LeaseSlot::default(),
             },
             inbox,
         )
