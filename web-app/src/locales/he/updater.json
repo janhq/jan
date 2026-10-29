@@ -1,0 +1,10 @@
+{
+  "newVersion": "גרסה חדשה {{version}}",
+  "updateAvailable": "יש עדכון זמין",
+  "nightlyBuild": "בנייה לילית (Nightly)",
+  "showReleaseNotes": "הצגת הערות גרסה",
+  "hideReleaseNotes": "הסתרת הערות גרסה",
+  "remindMeLater": "הזכירו לי מאוחר יותר",
+  "downloading": "מוריד...",
+  "updateNow": "עדכון עכשיו"
+}
