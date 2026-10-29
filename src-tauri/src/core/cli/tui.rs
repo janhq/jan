@@ -8757,6 +8757,16 @@ impl App {
     /// starts a model turn, so it cannot block or loop; its changes reach this
     /// session only through the `Memory Changes` tail block. Off with
     /// `memory_auto_tidy = false`.
+    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
+    /// the parent's permissions, so with `memory` denied it could change
+    /// nothing: no tidy is started.
+    fn memory_denied(&self) -> bool {
+        self.args.as_ref().is_some_and(|a| {
+            a.permissions
+                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        })
+    }
+
     fn maybe_auto_tidy(&mut self) {
         // Plan mode is read-only, memory included; the check resumes at the
         // first turn end after it.
@@ -8770,7 +8780,7 @@ impl App {
         let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
             return;
         };
-        if !crate::core::agent::global_config::memory_auto_tidy_enabled() {
+        if !crate::core::agent::global_config::memory_auto_tidy_enabled() || self.memory_denied() {
             return;
         }
         let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
@@ -17172,6 +17182,10 @@ fn memory_command(app: &mut App, arg: &str) {
     };
     match arg.trim() {
         "tidy" => {
+            if app.memory_denied() {
+                app.note("memory tidy is unavailable: this project's rules deny the memory tool");
+                return;
+            }
             if app.tidy_running.is_some() || app.tidy_request.is_some() {
                 app.note("a memory tidy is already running");
                 return;
@@ -44196,6 +44210,28 @@ mod tests {
             std::fs::write(dir.join("later.md"), "Another note").unwrap();
             app.maybe_auto_tidy();
             assert_eq!(app.tidy_request, None, "still at most once per session");
+        });
+    }
+
+    /// With `memory` denied a tidy child could change nothing, so neither the
+    /// automatic nor the manual tidy starts one.
+    #[test]
+    fn no_tidy_starts_when_the_project_denies_memory() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            let mut args = (**app.args.as_ref().unwrap()).clone();
+            args.permissions = tauri_plugin_agent_tools::permissions::ToolPermissions::new(
+                tauri_plugin_agent_tools::permissions::PermissionDefault::Allow,
+                &[],
+                &["memory".to_string()],
+                &[],
+            );
+            app.args = Some(Arc::new(args));
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "no automatic tidy");
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "no manual tidy");
         });
     }
 
