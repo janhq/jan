@@ -783,8 +783,11 @@ mod tests {
     /// guide exactly like an LF one: the split and heading swap match on `\n`.
     #[test]
     fn the_memoryless_skill_guide_ignores_line_endings() {
-        let lf = skill_guide_from(DEFAULT_SKILL_GUIDE, false);
-        let crlf = skill_guide_from(&DEFAULT_SKILL_GUIDE.replace('\n', "\r\n"), false);
+        // From an LF base: on a CRLF checkout the constant already has `\r\n`,
+        // and replacing `\n` again would produce `\r\r\n`.
+        let base = DEFAULT_SKILL_GUIDE.replace("\r\n", "\n");
+        let lf = skill_guide_from(&base, false);
+        let crlf = skill_guide_from(&base.replace('\n', "\r\n"), false);
         assert_eq!(lf, crlf);
         assert!(crlf.starts_with("# Skills\n"), "{crlf}");
         assert!(!crlf.contains("## Memory"), "{crlf}");
