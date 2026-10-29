@@ -103,7 +103,8 @@ Changes made since the snapshot, by the agent or by a tidy, are listed in a shor
 The block is sent with the first request of every run and again after any successful `memory` call
 that changed it, so a note written mid-run (in a headless `jan cli agent run` too, including
 follow-ups sent with `--input-format stream-json`) reaches the model's next request. The
-snapshot is retaken on `/new`, `/clear`, `/resume`, a fork, and after a compaction.
+snapshot is retaken on `/new`, `/clear`, `/resume`, and after a compaction. A fork continues its
+source session, so it keeps the source's snapshot.
 
 ## Scopes
 
