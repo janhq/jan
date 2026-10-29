@@ -2250,6 +2250,12 @@ fn launch(
         .as_ref()
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let name = resolved.definition.name.clone();
+    // A run already torn down has swept its worktrees and will not sweep
+    // again, so a worktree made for it now would leak. Checked again under the
+    // registry lock below, where a teardown racing this dispatch is caught.
+    if scope.is_stale() {
+        return Err(SubagentError::Cancelled);
+    }
     // Assigned now, before the child can queue: the dispatch result names it,
     // and a second writer onto a busy worktree is refused here.
     let writer = crate::core::agent::child_workspace::is_writer(
@@ -2277,6 +2283,12 @@ fn launch(
     // a child reports its progress through `notices`.
     let mut entries = bg.inner.lock().unwrap();
     if scope.is_stale() {
+        drop(entries);
+        // Torn down between the check above and here: give the worktree back
+        // and sweep it, since the teardown's own sweep may already have run.
+        lease.release();
+        #[cfg(feature = "cli")]
+        let _ = bg.workspaces.finish_session();
         return Err(SubagentError::Cancelled);
     }
 
@@ -5171,6 +5183,60 @@ pub(crate) mod tests {
     /// barrier opens on `finished`, and a next-phase item reusing that
     /// worktree would otherwise be refused as "still writing" and fail the
     /// whole phase.
+    /// A dispatch that resolves after its run was torn down (a later plan
+    /// phase, an in-flight tool call) is refused without leaving a worktree or
+    /// `jan/agent/*` branch behind: nothing would sweep it again.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_dispatch_after_teardown_leaves_no_worktree_behind() {
+        let root = unique_root("stale-wt");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return;
+        }
+        write_def(&project_subagents_dir(&root), "writer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // The scope is taken, then the run is torn down before it dispatches.
+        let scope = bg.scope();
+        bg.abort_all();
+        let refused = spawn_subagent(
+            &scope,
+            &args,
+            req("writer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        );
+        assert!(matches!(refused, Err(SubagentError::Cancelled)));
+        assert!(bg.workspaces.live().is_empty(), "{:?}", bg.workspaces.live());
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        assert!(branches.stdout.is_empty(), "{}", String::from_utf8_lossy(&branches.stdout));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn a_stopped_writer_releases_its_worktree_before_the_stop_returns() {
