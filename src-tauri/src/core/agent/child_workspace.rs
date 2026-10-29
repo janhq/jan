@@ -435,9 +435,21 @@ impl Ledger {
 #[cfg(feature = "cli")]
 fn remove_if_empty(wt: &ChildWorktree) -> bool {
     use crate::core::agent::git;
-    git::commits_since(&wt.path, &wt.base) == Some(0)
+    // The branch is force-deleted below, so its own commits count too: a
+    // writer may have committed and then moved HEAD back to the base.
+    commits_held(wt) == Some(0)
         && git::try_changed_paths(&wt.path).is_ok_and(|c| c.is_empty())
         && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
+}
+
+/// Commits the worktree holds past its base, on HEAD or on its branch,
+/// whichever is more. `None` when git cannot say.
+#[cfg(feature = "cli")]
+fn commits_held(wt: &ChildWorktree) -> Option<u64> {
+    use crate::core::agent::git;
+    let head = git::commits_since(&wt.path, &wt.base)?;
+    let branch = git::commits_on(&wt.path, &wt.base, &format!("refs/heads/{}", wt.branch))?;
+    Some(head.max(branch))
 }
 
 /// The desktop makes no worktrees, so there is never one to remove.
@@ -607,10 +619,7 @@ pub(crate) fn kept_notice(kept: &[String]) -> String {
 #[cfg(feature = "cli")]
 fn kept_line(wt: &ChildWorktree) -> String {
     use crate::core::agent::git;
-    let held = match (
-        git::commits_since(&wt.path, &wt.base),
-        git::try_changed_paths(&wt.path),
-    ) {
+    let held = match (commits_held(wt), git::try_changed_paths(&wt.path)) {
         (Some(commits), Ok(changed)) => {
             format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
         }
@@ -903,6 +912,28 @@ mod git_tests {
         assert_eq!(ledger.live().len(), 2);
         let _ = std::fs::remove_dir_all(&committed.root);
         let _ = std::fs::remove_dir_all(&dirty.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A writer that committed on its branch and then moved HEAD away (back to
+    /// the base, detached) still holds that work on the branch: the sweep
+    /// must not force-delete it.
+    #[test]
+    fn a_branch_holding_commits_is_kept_even_when_head_moved_away() {
+        let Some(root) = repo("head-moved") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let wt = ws.worktree.as_ref().unwrap();
+        commit(&ws.root, "b.txt");
+        assert!(git(&ws.root, &["switch", "-q", "--detach", &wt.base]));
+
+        let kept = ledger.finish_session();
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(kept[0].contains("1 commit(s)"), "{kept:?}");
+        assert!(ws.root.is_dir());
+        assert!(crate::core::agent::git::resolve_commit(&root, &wt.branch).is_some());
+        let _ = std::fs::remove_dir_all(&ws.root);
         let _ = std::fs::remove_dir_all(&root);
     }
 

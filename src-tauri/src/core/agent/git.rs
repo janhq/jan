@@ -525,8 +525,18 @@ pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
 /// git cannot say (then the caller must assume there is work to keep).
 #[cfg(feature = "cli")]
 pub(crate) fn commits_since(worktree: &Path, base: &str) -> Option<u64> {
+    commits_on(worktree, base, "HEAD")
+}
+
+/// Commits reachable from `tip` (a branch or `HEAD`) but not from `base`.
+/// `None` when git cannot say, which callers must never read as zero.
+#[cfg(feature = "cli")]
+pub(crate) fn commits_on(worktree: &Path, base: &str, tip: &str) -> Option<u64> {
     require_object_id(base).ok()?;
-    run(worktree, None, &["rev-list", "--count", &format!("{base}..HEAD")])
+    if tip.starts_with('-') {
+        return None;
+    }
+    run(worktree, None, &["rev-list", "--count", &format!("{base}..{tip}"), "--"])
         .ok()?
         .parse()
         .ok()
