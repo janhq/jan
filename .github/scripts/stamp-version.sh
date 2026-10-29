@@ -7,8 +7,10 @@
 #                              `jan` CLI report their version from disagree;
 #                              warn if they are older than the latest release
 #                              tag
-#   stamp-version.sh --check --lag-fatal
+#   stamp-version.sh --check --base REV
 #                              same, but a lag behind the latest tag fails too
+#                              when a checked version differs between REV and
+#                              the working tree
 #
 # Every desktop build template calls this instead of carrying its own list.
 #
@@ -21,9 +23,11 @@
 #
 # Lag policy: a release tag is pushed before anyone commits the matching bump,
 # so a fatal lag check would turn every main push and every unrelated open PR
-# red until that bump lands. Lag is therefore a warning by default, and CI
-# passes --lag-fatal only when the change under test touches one of the checked
-# manifests: a change that edits the versions has to leave them current.
+# red until that bump lands. Lag is therefore a warning by default. CI passes
+# --base with the commit the change starts from, and lag becomes fatal only if
+# a checked version value differs from that commit: a change that edits the
+# versions has to leave them current, while one that merely touches a manifest
+# (a new dependency, a tauri.conf.json setting) must not go red in that window.
 # Disagreement between the manifests always fails.
 #
 # Stamping needs jq and ctoml; --check needs only jq and git, so a plain runner
@@ -84,6 +88,24 @@ check() {
   fi
 }
 
+# Exits 0 when any checked manifest's version at $1 differs from the working
+# tree's. A manifest absent at $1 counts as changed: adding one introduces a
+# version just as much as editing it does. Reads through the same readers as
+# check(), so the comparison cannot parse differently from the check itself.
+version_changed() {
+  local base="$1" f
+  for f in $CHECKED_TOML $CHECKED_JSON; do
+    git cat-file -e "$base:$f" 2>/dev/null || return 0
+  done
+  for f in $CHECKED_TOML; do
+    [ "$(toml_version <(git show "$base:$f"))" = "$(toml_version "$f")" ] || return 0
+  done
+  for f in $CHECKED_JSON; do
+    [ "$(json_version <(git show "$base:$f"))" = "$(json_version "$f")" ] || return 0
+  done
+  return 1
+}
+
 # Reports a lag finding: an error when $LAG_FATAL is 1, otherwise a warning
 # (an Actions annotation on a runner, plain stderr locally) that keeps exit 0.
 lag() {
@@ -136,11 +158,29 @@ stamp() {
   check "$version"
 }
 
+usage() {
+  echo "usage: $0 VERSION | --check [--base REV]" >&2
+  exit 2
+}
+
 LAG_FATAL=0
-case "${1:-}:${2:-}" in
-  --check:) ;;
-  --check:--lag-fatal) LAG_FATAL=1 ;;
-  --check:*|:*|-*) echo "usage: $0 VERSION | --check [--lag-fatal]" >&2; exit 2 ;;
+case "$#:${1:-}:${2:-}" in
+  1:--check:) ;;
+  3:--check:--base)
+    # An unknown REV is a caller bug, not "no range": failing beats silently
+    # downgrading the lag to a warning.
+    git rev-parse --quiet --verify "$3^{commit}" > /dev/null ||
+      { echo "--base $3: not a commit in this repository" >&2; exit 2; }
+    if version_changed "$3"; then
+      echo "a checked version differs from $3; a lag behind the latest tag is fatal"
+      LAG_FATAL=1
+    else
+      echo "no checked version differs from $3; a lag behind the latest tag is a warning"
+    fi
+    ;;
+  *:--check:*|*:-*|0:*) usage ;;
+  1:*) ;;
+  *) usage ;;
 esac
 
 case "$1" in

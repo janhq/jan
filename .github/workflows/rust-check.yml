@@ -151,9 +151,10 @@ jobs:
   # committed tree honest for source builds. jq and git ls-remote, no toolchain.
   #
   # Disagreement always fails. A lag behind the latest tag fails only when the
-  # change under test edits one of those manifests, and is a warning otherwise:
-  # a tag is pushed before its bump is committed, and that window must not turn
-  # main and every unrelated open PR red.
+  # change under test changes one of those version values (the script compares
+  # them against --base), and is a warning otherwise: a tag is pushed before
+  # its bump is committed, and that window must not turn main and every
+  # unrelated open PR red, including one that only adds a dependency.
   versions:
     name: manifest versions agree and are released
     runs-on: ubuntu-latest
@@ -164,8 +165,8 @@ jobs:
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
-      # Diffing two trees needs no history between them, so a push only has to
-      # fetch its `before` commit. With no usable range (a new branch, a force
+      # Reading the manifests at the base needs no history between it and
+      # HEAD, so a push only has to fetch its `before` commit. With no usable range (a new branch, a force
       # push whose old tip is gone, a manual dispatch) lag stays a warning.
       - name: Compare the app, CLI and Tauri manifest versions
         env:
@@ -182,19 +183,12 @@ jobs:
               fi
               ;;
           esac
-          flag=""
           if [ -n "$base" ]; then
-            changed="$(git diff --name-only "$base" HEAD)"
-            for f in src-tauri/Cargo.toml src-tauri/jan-cli/Cargo.toml src-tauri/tauri.conf.json; do
-              if printf '%s\n' "$changed" | grep -qxF "$f"; then
-                echo "$f changed in $base..HEAD; a lag behind the latest tag is fatal"
-                flag=--lag-fatal
-              fi
-            done
+            bash .github/scripts/stamp-version.sh --check --base "$base"
           else
             echo "no diff range for this $EVENT event; a lag behind the latest tag is a warning"
+            bash .github/scripts/stamp-version.sh --check
           fi
-          bash .github/scripts/stamp-version.sh --check $flag
 
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
