@@ -3707,6 +3707,18 @@ async fn orchestrate_inner(
             }
         }
     }
+    // The index above the cache line is the session's snapshot, so a note
+    // written since (by this run, a subagent, a tidy) is reported here instead.
+    // Not gated on `project_memory`: that is about recall and indexing, and an
+    // ephemeral session still has the index and the tool.
+    if jan_owns_prompt && system_prompt_override.is_none() {
+        let snapshot = session_start.as_ref().and_then(|s| s.memory());
+        if let (Some(root), Some(snapshot)) = (project_root.as_deref(), snapshot) {
+            if let Some(block) = snapshot.changes_block(root) {
+                volatile_parts.push((Composer::MemoryChanges, block));
+            }
+        }
+    }
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.

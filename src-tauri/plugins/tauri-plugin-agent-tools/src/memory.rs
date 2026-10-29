@@ -178,6 +178,31 @@ pub async fn delete(store: &Path, name: &str) -> Result<(), String> {
     }
 }
 
+fn content_hash(content: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut h);
+    h.finish()
+}
+
+fn note_hashes(store: &Path, prefix: &str, out: &mut std::collections::BTreeMap<String, u64>) {
+    let Ok(rd) = std::fs::read_dir(memory_dir(store)) else {
+        return;
+    };
+    for path in rd.flatten().map(|e| e.path()) {
+        if path.extension().and_then(|x| x.to_str()) != Some("md") {
+            continue;
+        }
+        let (Some(stem), Ok(body)) = (
+            path.file_stem().and_then(|s| s.to_str()),
+            std::fs::read_to_string(&path),
+        ) else {
+            continue;
+        };
+        out.insert(format!("{prefix}{stem}"), content_hash(&body));
+    }
+}
+
 /// `- `<prefix><name>` - summary` rows, one per note.
 fn note_rows(prefix: &str, notes: &[CatalogEntry]) -> Vec<String> {
     notes
@@ -419,6 +444,19 @@ impl<'a> Scopes<'a> {
             names.extend(list(home).await.into_iter().map(|n| format!("{USER_PREFIX}{n}")));
         }
         names
+    }
+
+    /// A content hash per note this scope can write: this project's notes by
+    /// name, the user's as `user:<name>`. Comparing two fingerprints tells
+    /// what was added, changed or deleted between them without keeping the
+    /// notes themselves.
+    pub fn fingerprint(&self) -> std::collections::BTreeMap<String, u64> {
+        let mut out = std::collections::BTreeMap::new();
+        note_hashes(self.store, "", &mut out);
+        if let Some(home) = self.home {
+            note_hashes(home, USER_PREFIX, &mut out);
+        }
+        out
     }
 
     /// The prompt's memory block: this project's index, then the user's notes
