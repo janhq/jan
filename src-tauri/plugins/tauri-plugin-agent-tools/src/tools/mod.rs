@@ -104,6 +104,10 @@ pub struct ToolContext<'a> {
     /// Whether other projects' memory is listed in the prompt and readable as
     /// `project:<slug>`. Only meaningful with `memory_home`.
     pub cross_project: bool,
+    /// The cap on memory mutations for this run: set only for Jan's memory
+    /// tidy subagent, so a tidy that misjudges the store is bounded by the
+    /// harness rather than by its prompt. `None` leaves memory uncapped.
+    pub memory_change_budget: Option<&'a crate::memory::ChangeBudget>,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
     /// When set, `write`/`edit` re-canonicalize the target and refuse a path
@@ -390,6 +394,7 @@ impl<'a> ToolContext<'a> {
             skill_user_root: None,
             memory_home: None,
             cross_project: false,
+            memory_change_budget: None,
             enabled_skills,
             allow_network: false,
             confine_writes: false,
@@ -505,6 +510,15 @@ impl<'a> ToolContext<'a> {
     pub fn with_memory_home(mut self, home: &'a Path, cross_project: bool) -> Self {
         self.memory_home = Some(home);
         self.cross_project = cross_project;
+        self
+    }
+
+    /// Cap this context's memory mutations (see [`Self::memory_change_budget`]).
+    pub fn with_memory_change_budget(
+        mut self,
+        budget: Option<&'a crate::memory::ChangeBudget>,
+    ) -> Self {
+        self.memory_change_budget = budget;
         self
     }
 
@@ -689,7 +703,7 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     // Dedicated skill/memory tools. They operate on the store's `{skills,memory}/`
     // by name (never a path), so they are always workspace-scoped and never
     // prompt. `path_args` is empty: there is no path to sandbox-check.
-    // One `memory` tool with an `op` (view/search/write/edit/delete). Classed
+    // One `memory` tool with an `op` (view/search/write/edit/delete/move). Classed
     // `Read` so plan mode and the parallel read path keep it: it writes only
     // the agent's own notes, which the user does not manage (janhq/jan-internal#497).
     BuiltinTool {

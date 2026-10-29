@@ -2063,6 +2063,8 @@ pub(crate) fn without_memory(
         args.permissions = args
             .permissions
             .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        // A tidy's cap is the tidy's; nothing else inherits it.
+        args.memory_change_budget = None;
     }
     args.project_memory = false;
     args
@@ -2318,24 +2320,31 @@ pub(crate) const MEMORY_TIDY_AGENT: &str = "memory-tidy";
 /// the main conversation never loads them.
 #[cfg(feature = "cli")]
 const MEMORY_TIDY_PROMPT: &str = "You are Jan's memory tidier. You curate the agent's long-term memory \
-with the `memory` tool and nothing else; no change you make asks the user. Your goal is a small, \
-accurate index.
+with the `memory` tool and nothing else; no change you make asks the user. Be conservative: a note \
+left alone costs a line in the index, a note wrongly archived or deleted loses a fact. When unsure, \
+leave the note alone.
 
 1. `view` the index, then `view` each folder and every note you are considering changing. Never change \
-a note you have not read.
-2. Archive finished work: a merged PR, a closed issue, a shipped or abandoned plan. Archive with `edit`, \
-adding front matter `status: done` at the top (`---\\nstatus: done\\n---\\n`); keep its content.
-3. Merge duplicates: when two notes cover one topic, `write` the combined note under the clearer name \
-and `delete` the other.
-4. Delete stale notes: a fact a newer note supersedes, or a note that only says something is obsolete.
-5. Move closely related loose notes into a folder (`write` `folder/name`, then `delete` the old name) \
-only when that clearly shortens the index.
+a note you have not read in full.
+2. Archive a note only when its own content explicitly says the work is finished: merged, released, \
+shipped, closed, done, abandoned or obsolete. Never archive a note because it looks generic, old, \
+neutral or unimportant. Archive with `edit`, adding front matter `status: done` at the top \
+(`---\\nstatus: done\\n---\\n`); keep its content.
+3. Merge only clear duplicates: two notes stating the same fact. `edit` or `write` the clearer one with \
+the combined content, then `delete` the other.
+4. Delete a note only when a newer note explicitly supersedes it.
+5. Use `move` (`name`, `to`) to rename a note or put it in a folder; never `write` a copy and \
+`delete` the original. Group notes only when many clearly share one topic.
+6. Never create index, overview, summary or list-of-links notes (no `index`, `MEMORY`, `README`): the \
+harness builds the index itself.
 
 Only change this project's notes and `user:` notes; other projects are read-only. Keep every durable, \
-still-true fact. When unsure, leave the note alone.
+still-true fact. You have a budget of 30 changes (write, edit, delete or move) per tidy, enforced by \
+the tool: spend them on the clearest cases first, and stop when the tool says the cap is reached.
 
 Finish with a short report, one line per change: `archived <name>`, `merged <a> into <b>`, \
-`deleted <name>: <why>`, `moved <a> to <b>`; or `no changes` when nothing needed doing.";
+`deleted <name>: <why>`, `moved <a> to <b>`; add `cap reached` if the tool refused a change; or \
+`no changes` when nothing needed doing.";
 
 /// Start the memory-tidy subagent on the session's registry, returning its run
 /// id. It runs on the `smol` model with only the `memory` tool -- the one child
@@ -2348,6 +2357,7 @@ pub(crate) fn spawn_memory_tidy(
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    budget: Arc<tauri_plugin_agent_tools::memory::ChangeBudget>,
 ) -> Result<Dispatched, SubagentError> {
     if parent_args.project_root.is_none() {
         return Err(SubagentError::Upstream("memory tidy needs an active project".to_string()));
@@ -2357,7 +2367,11 @@ pub(crate) fn spawn_memory_tidy(
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
     };
-    launch(scope, parent_args, resolved, req, parent, events, None, false)
+    // The cap on the tidy's changes is enforced by its `memory` tool, so a
+    // tidy that misjudges the store cannot rewrite all of it in one run.
+    let mut args = parent_args.clone();
+    args.memory_change_budget = Some(budget);
+    launch(scope, &args, resolved, req, parent, events, None, false)
 }
 
 /// The tidy subagent's resolved definition and request: the `smol` model, the
@@ -4814,6 +4828,7 @@ pub(crate) mod tests {
             allow_escalation: None,
             compaction: None,
             session_start: None,
+            memory_change_budget: None,
         }
     }
 
@@ -6160,9 +6175,35 @@ pub(crate) mod tests {
         let reg = SubagentRegistry::load(&unique_root("tidy-not-dispatchable"));
         assert!(!reg.dispatchable_names().contains(&MEMORY_TIDY_AGENT));
         let prompt = &resolved.definition.system_prompt;
-        for step in ["status: done", "Merge duplicates", "Delete stale", "report"] {
+        for step in ["status: done", "Merge only clear duplicates", "explicitly supersedes", "report"] {
             assert!(prompt.contains(step), "{step}");
         }
+    }
+
+    /// #497 bug 3: the tidy prompt is conservative (archive only what says it
+    /// is finished, never index notes, `move` rather than write+delete) and
+    /// names the harness's cap, which a child inherits only from a tidy.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn the_tidy_prompt_is_conservative_and_names_the_cap() {
+        let prompt = MEMORY_TIDY_PROMPT;
+        for rule in [
+            "explicitly says the work is finished",
+            "Never archive a note because it looks generic",
+            "never `write` a copy and",
+            "Never create index, overview",
+            "When unsure",
+            "`cap reached`",
+        ] {
+            assert!(prompt.contains(rule), "{rule}: {prompt}");
+        }
+        let cap = tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES;
+        assert!(prompt.contains(&format!("budget of {cap} changes")), "{prompt}");
+        let mut parent = max_par_args(&unique_root("tidy-cap"));
+        parent.memory_change_budget =
+            Some(Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(cap)));
+        assert!(without_memory(parent.clone(), true).memory_change_budget.is_some());
+        assert!(without_memory(parent, false).memory_change_budget.is_none());
     }
 
     /// Subagents have no memory, so `memory` is never a name a dispatch or a

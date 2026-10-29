@@ -33,6 +33,7 @@ approval, in the TUI, headless runs or ACP:
 | `write` | `name`, `title`, `content` | Create or overwrite; the title is the note's first line |
 | `edit` | `name`, `old`, `new` | Replace one exact, unique piece of text |
 | `delete` | `name` | Remove the note and its index line |
+| `move` | `name`, `to` | Rename a note or move it into (or out of) a folder in one step; content, front matter and recency are kept. Fails if `to` exists |
 
 A `deny = ["memory"]` entry in `agent.toml` turns the tool off.
 
@@ -70,6 +71,9 @@ PR 9102 merged: subagent steering
 An archived note stays readable and searchable but is never listed, which is how finished work
 (merged PRs, closed issues, past reviews) leaves the prompt without being lost.
 
+Because the index is built for you, `index` and `MEMORY` are reserved note names (in any folder, any
+case): a new note named like that is refused.
+
 Each `MEMORY.md` is generated: it is rebuilt on every write, edit and delete, so don't edit it by
 hand - your changes would be overwritten. See [Project Config](/docs/agent/project-config) for how
 `<slug>` is chosen.
@@ -94,7 +98,8 @@ archive or merge.
 The index is a **snapshot taken when the session starts**. Writing, editing or deleting a note
 mid-session never changes the system prompt, so the cached prompt prefix survives memory updates.
 Changes made since the snapshot, by the agent or by a tidy, are listed in a short
-`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead.
+`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead
+(a `move` shows as `- old` plus `+ new`).
 The block is sent with the first request of every run and again after any successful `memory` call
 that changed it, so a note written mid-run (in a headless `jan cli agent run` too, including
 follow-ups sent with `--input-format stream-json`) reaches the model's next request. The
@@ -145,12 +150,17 @@ they are just files.
 ## Tidying
 
 A tidy is a cheap subagent (on the [`smol` model](/docs/agent/subagents#choosing-a-subagents-model))
-that reads the notes in its own context, archives finished work, merges duplicates, deletes stale
-notes, and reports what it changed as one line in the console, for example
+that reads the notes in its own context and is deliberately conservative: it archives only notes whose
+own content says the work is finished (merged, released, closed, obsolete), merges only clear
+duplicates, deletes only notes a newer one supersedes, groups notes with `move`, never writes index
+or overview notes, and leaves a note alone when unsure. It reports what it changed as one line in the console, for example
 `memory tidied: archived pr-9102; merged tui-scroll into tui/scroll` (with more than three changes,
 counts instead: `memory tidied: archived 12, moved 5`; the full list is in the tidy's subagent row). The main conversation never
 loads the notes, and the tidy never asks for permission. It is the only subagent with memory.
 
+- **At most 30 changes per tidy.** The tidy's `memory` tool refuses any write, edit, delete or move
+  past the 30th, so a tidy that misjudges the store can only misjudge that many notes. When the cap is
+  hit the console note says `cap reached (30 changes)`; run `/memory tidy` again to continue.
 - **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
 - **Auto-tidy** runs one in the background when the index no longer fits its budget. It is checked
   when a turn finishes, at most once per session (`/new`, `/clear` and `/resume` start a new

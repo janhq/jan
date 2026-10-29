@@ -54,9 +54,9 @@ skill folders are followed. Run `jan cli agent status --project .` to scaffold
 the store. A project that still has a `.jan/` folder from an older Jan is moved into
 `~/.jan/projects/` automatically the next time Jan starts in it.
 `memory_cross_project = false` in `config.toml` hides other projects' memory from the agent.
-Memory is curated by the agent with one `memory` tool (view/search/write/edit/delete; no prompts).
+Memory is curated by the agent with one `memory` tool (view/search/write/edit/delete/move; no prompts).
 The in-prompt index is capped at ~1,500 tokens; `status: done` front matter archives a note.
-`/memory tidy` tidies it in a background subagent, and `memory_auto_tidy = false` in `config.toml`
+`/memory tidy` tidies it in a background subagent (at most 30 changes per tidy), and `memory_auto_tidy = false` in `config.toml`
 turns off the automatic tidy that runs once a session when the index is over budget.
 
 Jan Desktop stores its settings and shared MCP configuration under the platform support folder:

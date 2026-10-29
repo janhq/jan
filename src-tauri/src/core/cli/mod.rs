@@ -1479,7 +1479,8 @@ fn build_cli_orchestration_args(
         // every turn of a session composes the same system prompt.
         session_start: Some(crate::core::agent::context::SessionStart::capture(Some(
             &project_root,
-        ))),
+        ))),        // Only Jan's memory tidy subagent has one.
+        memory_change_budget: None,
     }
 }
 

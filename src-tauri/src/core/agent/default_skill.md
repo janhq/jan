@@ -46,6 +46,8 @@ Use the `memory` tool with an `op`:
   first line and what the index shows.
 - `edit` (name, old, new) - replace one exact, unique piece of text.
 - `delete` (name) - remove a note.
+- `move` (name, to) - rename a note or move it into a folder, content and
+  front matter kept.
 
 Names are scoped. A plain `name` (or `folder/name`) is this project's note.
 `user:name` is a user-wide note for personal preferences and conventions that
@@ -56,7 +58,9 @@ Keep memory small and current. Before writing, search for an existing note on
 the topic and update it instead of adding another. Delete a note a new fact
 supersedes. When work a note tracks is finished (a merged PR, a closed issue),
 archive it with front matter `status: done`: it stays readable and searchable
-but leaves the index. Group related notes in folders. Do not record transient
+but leaves the index. Group related notes in folders with `move`. Never write an
+index or overview note: the index is built for you (`index` and `MEMORY` are
+reserved names). Do not record transient
 details that only matter to the current turn.
 
 The "Available Memories" section of your system prompt is the index as it was
