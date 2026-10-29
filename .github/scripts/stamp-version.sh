@@ -4,8 +4,11 @@
 #   stamp-version.sh VERSION   write VERSION into every manifest a release
 #                              build reads it from, then verify the result
 #   stamp-version.sh --check   fail if the committed manifests the app and the
-#                              `jan` CLI report their version from disagree,
-#                              or are older than the latest release tag
+#                              `jan` CLI report their version from disagree;
+#                              warn if they are older than the latest release
+#                              tag
+#   stamp-version.sh --check --lag-fatal
+#                              same, but a lag behind the latest tag fails too
 #
 # Every desktop build template calls this instead of carrying its own list.
 #
@@ -15,6 +18,13 @@
 # committed manifests in step with each other and with the latest release;
 # bumping them is still a commit (see `chore(release): bump app version to
 # 0.8.5`).
+#
+# Lag policy: a release tag is pushed before anyone commits the matching bump,
+# so a fatal lag check would turn every main push and every unrelated open PR
+# red until that bump lands. Lag is therefore a warning by default, and CI
+# passes --lag-fatal only when the change under test touches one of the checked
+# manifests: a change that edits the versions has to leave them current.
+# Disagreement between the manifests always fails.
 #
 # Stamping needs jq and ctoml; --check needs only jq and git, so a plain runner
 # can guard the committed tree.
@@ -74,6 +84,21 @@ check() {
   fi
 }
 
+# Reports a lag finding: an error when $LAG_FATAL is 1, otherwise a warning
+# (an Actions annotation on a runner, plain stderr locally) that keeps exit 0.
+lag() {
+  local title="$1" msg="$2"
+  if [ "$LAG_FATAL" = 1 ]; then
+    echo "::error title=$title::$msg"
+    return 1
+  fi
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then
+    echo "::warning title=$title::$msg"
+  else
+    echo "warning: $title: $msg" >&2
+  fi
+}
+
 # Agreeing manifests can still all lag: v0.8.6 to v0.8.8 shipped with every one
 # at 0.8.5. Compare with the newest vX.Y.Z tag on origin; ls-remote needs no
 # history, so a shallow CI checkout works. A pre-release bump (main ahead of
@@ -81,8 +106,8 @@ check() {
 check_released() {
   local have="$1" tags latest
   if ! tags="$(git ls-remote --tags --refs origin 'refs/tags/v*')"; then
-    echo "::error title=version check::could not list origin's tags to compare against the latest release"
-    return 1
+    lag "version check" "could not list origin's tags to compare against the latest release"
+    return
   fi
   latest="$(printf '%s\n' "$tags" |
     sed -n 's#.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)"
@@ -92,8 +117,7 @@ check_released() {
   fi
   echo "latest release tag: v$latest"
   if [ "$(printf '%s\n%s\n' "$latest" "$have" | sort -V | head -n 1)" != "$latest" ]; then
-    echo "::error title=version behind release::committed version $have is older than v$latest; bump the manifests (or run .github/scripts/stamp-version.sh $latest)"
-    return 1
+    lag "version behind release" "committed version $have is older than v$latest; bump the manifests (or run .github/scripts/stamp-version.sh $latest)"
   fi
 }
 
@@ -112,8 +136,14 @@ stamp() {
   check "$version"
 }
 
-case "${1:-}" in
+LAG_FATAL=0
+case "${1:-}:${2:-}" in
+  --check:) ;;
+  --check:--lag-fatal) LAG_FATAL=1 ;;
+  --check:*|:*|-*) echo "usage: $0 VERSION | --check [--lag-fatal]" >&2; exit 2 ;;
+esac
+
+case "$1" in
   --check) check && check_released "$(toml_version src-tauri/Cargo.toml)" ;;
-  ""|-*) echo "usage: $0 VERSION | --check" >&2; exit 2 ;;
   *) stamp "$1" ;;
 esac

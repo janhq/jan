@@ -149,14 +149,52 @@ jobs:
   # a tree whose manifests agree but lag the last tag (0.8.5 through v0.8.8).
   # Release builds restamp all of them through the same script; this keeps the
   # committed tree honest for source builds. jq and git ls-remote, no toolchain.
+  #
+  # Disagreement always fails. A lag behind the latest tag fails only when the
+  # change under test edits one of those manifests, and is a warning otherwise:
+  # a tag is pushed before its bump is committed, and that window must not turn
+  # main and every unrelated open PR red.
   versions:
     name: manifest versions agree and are released
     runs-on: ubuntu-latest
     steps:
+      # A PR's checkout is the merge commit, so depth 2 brings its first
+      # parent, the base tip it merges into.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
+      # Diffing two trees needs no history between them, so a push only has to
+      # fetch its `before` commit. With no usable range (a new branch, a force
+      # push whose old tip is gone, a manual dispatch) lag stays a warning.
       - name: Compare the app, CLI and Tauri manifest versions
-        run: bash .github/scripts/stamp-version.sh --check
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base=""
+          case "$EVENT" in
+            pull_request) base="$(git rev-parse HEAD^1)" ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+                git fetch --quiet --depth=1 origin "$BEFORE"; then
+                base="$BEFORE"
+              fi
+              ;;
+          esac
+          flag=""
+          if [ -n "$base" ]; then
+            changed="$(git diff --name-only "$base" HEAD)"
+            for f in src-tauri/Cargo.toml src-tauri/jan-cli/Cargo.toml src-tauri/tauri.conf.json; do
+              if printf '%s\n' "$changed" | grep -qxF "$f"; then
+                echo "$f changed in $base..HEAD; a lag behind the latest tag is fatal"
+                flag=--lag-fatal
+              fi
+            done
+          else
+            echo "no diff range for this $EVENT event; a lag behind the latest tag is a warning"
+          fi
+          bash .github/scripts/stamp-version.sh --check $flag
 
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
