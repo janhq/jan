@@ -5300,11 +5300,6 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A stopped writer gives its worktree up the moment the stop returns, not
-    /// when the runtime gets round to dropping its aborted task: a phase
-    /// barrier opens on `finished`, and a next-phase item reusing that
-    /// worktree would otherwise be refused as "still writing" and fail the
-    /// whole phase.
     /// A dispatch that resolves after its run was torn down (a later plan
     /// phase, an in-flight tool call) is refused without leaving a worktree or
     /// `jan/agent/*` branch behind: nothing would sweep it again.
@@ -5505,6 +5500,11 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A stopped writer gives its worktree up the moment the stop returns, not
+    /// when the runtime gets round to dropping its aborted task: a phase
+    /// barrier opens on `finished`, and a next-phase item reusing that
+    /// worktree would otherwise be refused as "still writing" and fail the
+    /// whole phase.
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn a_stopped_writer_releases_its_worktree_before_the_stop_returns() {
