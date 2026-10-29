@@ -4429,6 +4429,47 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A note may share its name with a folder (`tui.md` beside `tui/`, as a
+    /// tidy grouping notes under a topic leaves it). The tidy's freshness
+    /// guard still covers the note: `view` of `tui` opens the note (`tui/` is
+    /// the folder), and a whole-file change from a copy the main agent has
+    /// since edited is refused.
+    #[tokio::test]
+    async fn a_tidy_never_clobbers_a_note_that_shares_a_folders_name() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(dir.join("tui")).unwrap();
+        std::fs::write(dir.join("tui.md"), "TUI overview").unwrap();
+        std::fs::write(dir.join("tui/scroll.md"), "Scroll fix").unwrap();
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let tidy = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let main = ToolContext::new(&root, &store, &[]);
+        async fn run(ctx: &ToolContext<'_>, args: serde_json::Value) -> String {
+            let memory = lookup("memory").unwrap();
+            super::execute_builtin(memory, &args, ctx).await.0
+        }
+        assert_eq!(run(&tidy, json!({"op": "view", "name": "tui"})).await, "TUI overview");
+        assert_eq!(run(&tidy, json!({"op": "view", "name": "tui/"})).await, "- `tui/scroll` - Scroll fix");
+        let e = run(&main, json!({"op": "edit", "name": "tui", "old": "overview", "new": "overview, edited"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        for args in [
+            json!({"op": "write", "name": "tui", "content": "Stale merge"}),
+            json!({"op": "move", "name": "tui", "to": "tui-old"}),
+            json!({"op": "delete", "name": "tui"}),
+        ] {
+            let r = run(&tidy, args.clone()).await;
+            assert!(r.starts_with("ERROR") && r.contains("changed"), "{args}: {r}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("tui.md")).unwrap(), "TUI overview, edited");
+        assert_eq!(budget.used(), 0);
+        // Viewed again, the tidy may change it.
+        run(&tidy, json!({"op": "view", "name": "tui"})).await;
+        assert!(run(&tidy, json!({"op": "delete", "name": "tui"})).await.starts_with("Deleted"));
+        assert!(dir.join("tui/scroll.md").exists(), "the folder is untouched");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Without a budget (the main agent) nothing is capped, and `move` works.
     #[tokio::test]
     async fn the_main_agent_moves_notes_uncapped() {
