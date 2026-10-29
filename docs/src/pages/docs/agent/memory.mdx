@@ -147,7 +147,8 @@ they are just files.
 A tidy is a cheap subagent (on the [`smol` model](/docs/agent/subagents#choosing-a-subagents-model))
 that reads the notes in its own context, archives finished work, merges duplicates, deletes stale
 notes, and reports what it changed as one line in the console, for example
-`memory tidied: archived pr-9102; merged tui-scroll into tui/scroll`. The main conversation never
+`memory tidied: archived pr-9102; merged tui-scroll into tui/scroll` (with more than three changes,
+counts instead: `memory tidied: archived 12, moved 5`; the full list is in the tidy's subagent row). The main conversation never
 loads the notes, and the tidy never asks for permission. It is the only subagent with memory.
 
 - **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
