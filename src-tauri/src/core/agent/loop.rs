@@ -143,7 +143,7 @@ pub(crate) struct OrchestrationArgs {
     /// subagents via the cloned parent args.
     pub auto_approve: bool,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
-    /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
+    /// skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,

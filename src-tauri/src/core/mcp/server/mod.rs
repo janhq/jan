@@ -72,7 +72,7 @@ impl ServedTools {
         match tool.capability {
             Capability::Exec => self.allow_exec,
             // A `Write` tool with no path argument is a workspace tool
-            // (`memory_write`, `skill_write`): it writes into the agent's own
+            // (`skill_write`): it writes into the agent's own
             // store by sanitized name and can never reach a project file, so it
             // belongs to the memory/skill set rather than the mutating one.
             Capability::Write => self.allow_write || tool.path_args.is_empty(),

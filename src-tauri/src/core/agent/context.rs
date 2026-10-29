@@ -342,7 +342,7 @@ Shell: `{shell}`{shell_note}{scratch_line}"
 }
 
 /// The memory index (names + one-line summaries), injected so the model can
-/// read a note on demand with `memory_read`: this project's notes, the user's
+/// view a note on demand with the `memory` tool: this project's notes, the user's
 /// `user:` notes, and pointers to other projects when cross-project memory is
 /// on. The same content as the generated `MEMORY.md` files, rendered from the
 /// notes. None when there is nothing to show. Progressive disclosure, not
@@ -391,7 +391,16 @@ pub(crate) struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Render the index and fingerprint the notes of `project_root` now.
+    ///
+    /// Session start is also where a store written by an older Jan is brought
+    /// to the titled format, once (a marker file makes later calls free), so
+    /// the first index a session shows is already archived and titled.
     pub(crate) fn capture(project_root: &Path) -> Self {
+        let (store, home, _) = crate::core::agent::project::memory_roots(project_root);
+        memory::migrate(&store);
+        if let Some(home) = home.as_deref() {
+            memory::migrate(home);
+        }
         Self {
             block: load_memory_catalog(project_root),
             fingerprint: memory_fingerprint(project_root),
@@ -728,9 +737,9 @@ mod tests {
         assert!(block.contains("- `decisions` - We use Yarn not npm."));
         assert!(block.contains("- `prefs` - Keep it minimal."));
         // Progressive disclosure: only the first line is advertised; the rest
-        // of the body stays out until memory_read.
+        // of the body stays out until it is viewed.
         assert!(!block.contains("SECRET_BODY_MARKER"));
-        assert!(block.contains("memory_read"));
+        assert!(block.contains("`memory` op `view`"));
         assert!(!block.contains("ignored.txt"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -865,7 +874,8 @@ mod tests {
         let out = default_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
-        assert!(out.contains("memory_write"));
+        assert!(out.contains("`memory` tool"));
+        assert!(!out.contains("memory_write"), "the old tools are gone");
 
         // Base is preserved and precedes the guide.
         let with_base = default_prompt(Some("base"), &root, None, false).expect("prompt");

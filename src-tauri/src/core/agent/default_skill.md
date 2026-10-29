@@ -33,23 +33,32 @@ runs. Refine an existing skill instead of duplicating it.
 
 ## Memory
 
-Memory holds durable facts about this project that should outlive the current
-session: decisions made, conventions agreed, user preferences, and context you
-would otherwise forget.
+Memory holds durable facts that should outlive the current session: decisions
+made, conventions agreed, user preferences, and context you would otherwise
+forget. It is yours to keep accurate; no memory operation asks the user.
 
-- `memory_list` - see which memory notes exist.
-- `memory_read` (name) - read a specific note.
-- `memory_write` (name, content) - create or update a note (same name
-  overwrites). Prefer one topic per note with a descriptive name; keep it short.
+Use the `memory` tool with an `op`:
 
-Names are scoped. A plain `name` is this project's note. `user:name` is a
-user-wide note that applies to every project: use it for personal preferences
-and conventions that are not specific to this codebase. `project:<slug>` reads
-another project's index and `project:<slug>/name` one of its notes; those are
-read-only, so open one only when it is relevant.
+- `view` - no name: the full index. `folder/`: that folder's notes. A note name:
+  its content.
+- `search` (query) - keyword search over titles and bodies, archived notes too.
+- `write` (name, title, content) - create or overwrite a note; the title is its
+  first line and what the index shows.
+- `edit` (name, old, new) - replace one exact, unique piece of text.
+- `delete` (name) - remove a note.
 
-Record a memory when you learn something durable and non-obvious. Remove facts
-that become wrong by overwriting the note. Do not record transient details that
-only matter to the current turn. The "Available Memories" section of your
-system prompt is a catalog of these notes; call `memory_read` to load a note's
-full contents when it is relevant to the current task.
+Names are scoped. A plain `name` (or `folder/name`) is this project's note.
+`user:name` is a user-wide note for personal preferences and conventions that
+are not specific to this codebase. `project:<slug>` views another project's
+index and `project:<slug>/name` one of its notes; those are read-only.
+
+Keep memory small and current. Before writing, search for an existing note on
+the topic and update it instead of adding another. Delete a note a new fact
+supersedes. When work a note tracks is finished (a merged PR, a closed issue),
+archive it with front matter `status: done`: it stays readable and searchable
+but leaves the index. Group related notes in folders. Do not record transient
+details that only matter to the current turn.
+
+The "Available Memories" section of your system prompt is the index as it was
+when this session started, titles only and capped in size; view a note by name
+to load its content. Changes made since are listed in a "Memory Changes" block.

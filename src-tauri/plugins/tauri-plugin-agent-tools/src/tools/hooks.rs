@@ -697,7 +697,7 @@ mod tests {
         let matched = set.matching(HookEvent::PreToolUse, Some("edit"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "a");
-        let matched = set.matching(HookEvent::PreToolUse, Some("memory_write"));
+        let matched = set.matching(HookEvent::PreToolUse, Some("skill_write"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "b");
     }

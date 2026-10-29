@@ -97,7 +97,7 @@ pub struct ToolContext<'a> {
     /// the target of `skill_write` with `scope: "user"`. `None` on surfaces
     /// with no user scope, where that scope is refused.
     pub skill_user_root: Option<&'a Path>,
-    /// `~/.jan`, reached by the `memory_*` tools as the `user:` scope and as
+    /// `~/.jan`, reached by the `memory` tool as the `user:` scope and as
     /// the parent of other projects' stores. `None` (the desktop) confines
     /// memory to `store_root`.
     pub memory_home: Option<&'a Path>,
@@ -500,7 +500,7 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// Give the `memory_*` tools the user scope and, when `cross_project`, the
+    /// Give the `memory` tool the user scope and, when `cross_project`, the
     /// other projects under `home`. See [`crate::memory::Scopes`].
     pub fn with_memory_home(mut self, home: &'a Path, cross_project: bool) -> Self {
         self.memory_home = Some(home);
@@ -508,7 +508,7 @@ impl<'a> ToolContext<'a> {
         self
     }
 
-    /// The memory scopes this context's `memory_*` tools resolve names in.
+    /// The memory scopes this context's `memory` tool resolves names in.
     pub fn memory_scopes(&self) -> crate::memory::Scopes<'a> {
         crate::memory::Scopes {
             store: self.store_root,
@@ -689,19 +689,12 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     // Dedicated skill/memory tools. They operate on the store's `{skills,memory}/`
     // by name (never a path), so they are always workspace-scoped and never
     // prompt. `path_args` is empty: there is no path to sandbox-check.
+    // One `memory` tool with an `op` (view/search/write/edit/delete). Classed
+    // `Read` so plan mode and the parallel read path keep it: it writes only
+    // the agent's own notes, which the user does not manage (janhq/jan-internal#497).
     BuiltinTool {
-        name: "memory_list",
+        name: MEMORY_TOOL,
         capability: Capability::Read,
-        path_args: &[],
-    },
-    BuiltinTool {
-        name: "memory_read",
-        capability: Capability::Read,
-        path_args: &[],
-    },
-    BuiltinTool {
-        name: "memory_write",
-        capability: Capability::Write,
         path_args: &[],
     },
     BuiltinTool {
@@ -740,14 +733,15 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn is_workspace_tool(name: &str) -> bool {
     matches!(
         name,
-        "memory_list"
-            | "memory_read"
-            | "memory_write"
-            | "skill_list"
+        MEMORY_TOOL | "skill_list"
             | "skill_read"
             | "skill_write"
     )
 }
+
+/// The single memory tool's name. Agent memory is the agent's to curate, so no
+/// op on it ever prompts.
+pub const MEMORY_TOOL: &str = "memory";
 
 /// The shell tool's name. Not `bash`: on Windows it runs PowerShell or cmd
 /// (janhq/jan#9128).
@@ -819,10 +813,10 @@ mod tests {
 
     #[test]
     fn builtin_count_matches_expected() {
-        // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
+        // 8 coding tools + 3 skill tools + 1 memory tool + 2 native web tools.
         // `screenshot` (one of the coding tools) is desktop-only, so the headless
         // CLI build (`feature = "tauri"` off) has one fewer.
-        let expected = if cfg!(feature = "tauri") { 16 } else { 15 };
+        let expected = if cfg!(feature = "tauri") { 14 } else { 13 };
         assert_eq!(BUILTIN_TOOLS.len(), expected);
     }
 
@@ -838,7 +832,10 @@ mod tests {
 
     #[test]
     fn workspace_tools_are_classified() {
-        assert!(is_workspace_tool("memory_write"));
+        assert!(is_workspace_tool("memory"));
+        for gone in ["memory_list", "memory_read", "memory_write"] {
+            assert!(lookup(gone).is_none(), "{gone} has no alias");
+        }
         assert!(is_workspace_tool("skill_list"));
         assert!(!is_workspace_tool("write"));
         assert!(!is_workspace_tool("shell"));

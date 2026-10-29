@@ -83,7 +83,7 @@ export type RememberResult = {
 
 /**
  * The chat surface's "Remember" action: save `content` as a note named after
- * the thread title. `memory_write` replaces a note by name, and this is a new
+ * the thread title. A memory write replaces a note by name, and this is a new
  * fact rather than a curated topic, so an existing name gets a `-2`, `-3`, ...
  * suffix instead of silently overwriting it. A sibling that already holds this
  * exact content is returned instead of being copied again, so a second click

@@ -245,9 +245,7 @@ async fn execute_text(
         "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
-        "memory_list" => memory_list(ctx.memory_scopes()).await,
-        "memory_read" => memory_read(args, ctx.memory_scopes()).await,
-        "memory_write" => memory_write(args, ctx.memory_scopes()).await,
+        crate::tools::MEMORY_TOOL => memory_tool(args, ctx.memory_scopes()).await,
         // Skills go through the skills module so the tool honors the folder form
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
         "skill_list" => skill_list(ctx),
@@ -517,33 +515,36 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// The memory tools delegate to `crate::memory` so the built-ins and the
-/// management commands share one implementation.
-async fn memory_list(scopes: memory::Scopes<'_>) -> String {
-    scopes.list().await.join("\n")
-}
-
-async fn memory_read(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
-    let Some(name) = arg_str(args, "name") else {
-        return "ERROR: missing required argument 'name'".to_string();
+/// The `memory` tool delegates every op to `crate::memory`, so the built-in
+/// and the management commands share one implementation.
+async fn memory_tool(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
+    let need = |key: &str| {
+        arg_str(args, key).ok_or_else(|| format!("ERROR: op needs the '{key}' argument"))
     };
-    match scopes.read(name).await {
-        Ok(content) => content,
-        Err(e) => e,
-    }
-}
-
-async fn memory_write(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
-    let Some(name) = arg_str(args, "name") else {
-        return "ERROR: missing required argument 'name'".to_string();
+    let result = match arg_str(args, "op") {
+        Some("view") => scopes.view(arg_str(args, "name")).await,
+        Some("search") => match need("query") {
+            Ok(query) => scopes.search(query),
+            Err(e) => Err(e),
+        },
+        Some("write") => match (need("name"), need("content")) {
+            (Ok(name), Ok(content)) => scopes.write(name, arg_str(args, "title"), content).await,
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        },
+        Some("edit") => match (need("name"), need("old"), need("new")) {
+            (Ok(name), Ok(old), Ok(new)) => scopes.edit(name, old, new).await,
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => Err(e),
+        },
+        Some("delete") => match need("name") {
+            Ok(name) => scopes.delete(name).await,
+            Err(e) => Err(e),
+        },
+        Some(other) => Err(format!(
+            "ERROR: unknown memory op '{other}' (expected view, search, write, edit or delete)"
+        )),
+        None => Err("ERROR: missing required argument 'op'".to_string()),
     };
-    let Some(content) = arg_str(args, "content") else {
-        return "ERROR: missing required argument 'content'".to_string();
-    };
-    match scopes.write(name, content).await {
-        Ok(file) => format!("Wrote {} bytes to memory/{file}", content.len()),
-        Err(e) => e,
-    }
+    result.unwrap_or_else(|e| e)
 }
 
 async fn read(
@@ -4078,32 +4079,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn memory_write_read_list_roundtrip() {
+    async fn the_memory_tool_runs_every_op() {
         let root = unique_root();
-        let w = execute_builtin(
-            lookup("memory_write").unwrap(),
-            &json!({"name": "drift", "content": "553 behind"}),
-            &root,
-        )
-        .await;
+        let memory = lookup("memory").unwrap();
+        let run = |args: serde_json::Value| {
+            let root = root.clone();
+            async move { execute_builtin(memory, &args, &root).await }
+        };
+        let w = run(json!({"op": "write", "name": "drift", "title": "Drift", "content": "553 behind"})).await;
         assert!(w.starts_with("Wrote"), "unexpected: {w}");
-        // Landed at the canonical workspace path.
+        // Landed at the canonical workspace path, title first.
         assert_eq!(
             std::fs::read_to_string(crate::workspace::project_store(&root).join("memory/drift.md"))
                 .unwrap(),
-            "553 behind"
+            "Drift\n\n553 behind"
         );
-
-        let r = execute_builtin(
-            lookup("memory_read").unwrap(),
-            &json!({"name": "drift"}),
-            &root,
-        )
-        .await;
-        assert_eq!(r, "553 behind");
-
-        let l = execute_builtin(lookup("memory_list").unwrap(), &json!({}), &root).await;
-        assert_eq!(l, "drift");
+        assert_eq!(run(json!({"op": "view", "name": "drift"})).await, "Drift\n\n553 behind");
+        assert!(run(json!({"op": "view"})).await.contains("- `drift` - Drift"));
+        assert!(run(json!({"op": "search", "query": "553"})).await.contains("`drift`"));
+        assert!(run(json!({"op": "edit", "name": "drift", "old": "553", "new": "554"})).await.starts_with("Edited"));
+        assert!(run(json!({"op": "view", "name": "drift"})).await.ends_with("554 behind"));
+        assert!(run(json!({"op": "delete", "name": "drift"})).await.starts_with("Deleted"));
+        assert!(run(json!({"op": "view", "name": "drift"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "write", "name": "x"})).await.contains("'content'"));
+        assert!(run(json!({"op": "rename"})).await.contains("unknown memory op"));
+        assert!(run(json!({})).await.contains("'op'"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -4351,10 +4351,10 @@ mod tests {
     #[tokio::test]
     async fn workspace_name_rejects_traversal() {
         let root = unique_root();
-        for bad in ["../escape", "sub/x", "..", ""] {
+        for bad in ["../escape", "a/b/c", "..", ""] {
             let out = execute_builtin(
-                lookup("memory_write").unwrap(),
-                &json!({"name": bad, "content": "x"}),
+                lookup("memory").unwrap(),
+                &json!({"op": "write", "name": bad, "content": "x"}),
                 &root,
             )
             .await;

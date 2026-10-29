@@ -107,8 +107,8 @@ command = "logger -t jan 'agent session finished'"
 | `timeout_secs` | Seconds before the hook is killed. Defaults to 60 |
 
 `matcher` is only consulted for the two tool events - a session-lifecycle hook has no tool name to
-match and always fires. It is an ordinary glob, so `*write*` catches `write`, `memory_write` and
-`skill_write`, while `edit` catches only `edit`. An invalid glob is dropped at load with a notice
+match and always fires. It is an ordinary glob, so `*write*` catches `write` and `skill_write`,
+while `edit` catches only `edit`. An invalid glob is dropped at load with a notice
 rather than kept: a pattern that cannot parse can only ever answer "no", which reads exactly like a
 hook written for a tool that was never called.
 

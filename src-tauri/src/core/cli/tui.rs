@@ -11200,11 +11200,19 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
             query: s("pattern"),
             scope: scope(),
         }),
-        "memory_read" => Some(named("memory")),
+        "memory" => match args.get("op").and_then(|v| v.as_str()) {
+            Some("view") if !s("name").is_empty() => Some(named("memory")),
+            Some("view") => Some(Explore::List {
+                target: "memory notes".to_string(),
+            }),
+            Some("search") => Some(Explore::Search {
+                query: s("query"),
+                scope: Some("memory".to_string()),
+            }),
+            // write/edit/delete change memory: not an exploration.
+            _ => None,
+        },
         "skill_read" => Some(named("skill")),
-        "memory_list" => Some(Explore::List {
-            target: "memory notes".to_string(),
-        }),
         "skill_list" => Some(Explore::List {
             target: "skills".to_string(),
         }),
@@ -16925,7 +16933,7 @@ it wholesale.\n\n\
 3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
 migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
 multi-step recipe exists. Do not invent skills to fill space.\n\n\
-4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
+4. Record durable project facts with the `memory` tool (search first, update rather than duplicate): decisions, constraints, and gotchas that are \
 true beyond this session and not already stated in the code.\n\n\
 Then report what you wrote and why, briefly."
     )
@@ -29782,7 +29790,7 @@ mod tests {
             "Reading main.rs"
         );
         assert_eq!(
-            tool_activity("memory_write", &json!({ "name": "decisions" })),
+            tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
     }
@@ -32434,7 +32442,7 @@ mod tests {
         assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
         assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
         assert!(sent.contains("skill_write"), "{sent}");
-        assert!(sent.contains("memory_write"), "{sent}");
+        assert!(sent.contains("`memory` tool"), "{sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -36705,10 +36713,10 @@ mod tests {
     fn consecutive_collapsible_tools_fold_into_one_summary_row() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_list", json!({})),
+            ("c1", "memory", json!({ "op": "view" })),
             ("c2", "skill_list", json!({})),
-            ("c3", "memory_read", json!({ "name": "project-overview" })),
-            ("c4", "memory_read", json!({ "name": "top-p" })),
+            ("c3", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c4", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36760,8 +36768,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_keybinding() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36800,8 +36808,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_click() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -37382,8 +37390,8 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
-            name: "memory_read".into(),
-            args: json!({ "name": "x" }),
+            name: "memory".into(),
+            args: json!({ "op": "view", "name": "x" }),
         });
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),

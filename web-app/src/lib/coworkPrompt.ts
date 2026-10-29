@@ -70,7 +70,7 @@ export type CoworkPromptOptions = {
   environment?: CoworkEnvironment | null
   /**
    * Progressive-disclosure recall: one line per note, dereferenced on demand
-   * with `memory_read`. Snapshotted at the run boundary alongside the frozen
+   * with the `memory` tool. Snapshotted at the run boundary alongside the frozen
    * tool set, so the prompt prefix is stable for the run.
    */
   memoryCatalog: { name: string; summary: string }[]
@@ -86,9 +86,10 @@ function memoryBlock(catalog: { name: string; summary: string }[]): string {
   return [
     '# Available Memories',
     '',
-    'Durable facts recorded in earlier sessions. Read a note in full with',
-    '`memory_read` when it is relevant to the current task, and record new',
-    'durable facts (not session state) with `memory_write`.',
+    'Durable facts recorded in earlier sessions. Read a note in full with the',
+    '`memory` tool (op `view`) when it is relevant to the current task. Record',
+    'new durable facts (not session state) with op `write`, after a `search`',
+    'shows no note on the topic to update instead.',
     '',
     list,
   ].join('\n')

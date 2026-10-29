@@ -21,7 +21,6 @@ export const PLAN_DENIED_TOOLS = new Set([
   'write',
   'edit',
   'shell',
-  'memory_write',
   'skill_write',
   'task',
   // Starting one schedules shell scripts, which is exec-class work.
