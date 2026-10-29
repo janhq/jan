@@ -27,9 +27,10 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 }
 
 /// The user-wide skill store root: `~/.jan` (skills live in its `skills/`,
-/// beside the user memory scope `~/.jan/memory`). Resolved through
-/// [`crate::core::agent::project::jan_home`], so test builds point at a
-/// per-process temp home. `None` when there is no usable home directory.
+/// beside the user memory scope `~/.jan/memory`). Resolve through
+/// [`crate::core::agent::project::jan_home`] in every build so sandbox hiding
+/// and plugin install workers agree on the root. Unit tests use that resolver's
+/// shared process scratch home and must run serially when mutating user skills.
 pub(crate) fn user_store_root() -> Option<PathBuf> {
     crate::core::agent::project::jan_home()
 }
@@ -993,6 +994,15 @@ pub(crate) fn delete(root: &Path, name: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_skill_store_matches_sandbox_hidden_root() {
+        let home = crate::core::agent::project::jan_home().unwrap();
+        assert_eq!(user_store_root(), Some(home.clone()));
+        assert_eq!(user_skills_dir(), Some(home.join("skills")));
+        assert_eq!(crate::core::agent::project::hidden_root(true), Some(home));
+        assert_eq!(crate::core::agent::project::hidden_root(false), None);
+    }
 
     #[test]
     fn parse_extracts_description_and_strips_frontmatter() {
