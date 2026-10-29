@@ -5,9 +5,8 @@ use super::helpers::{
     write_messages_to_file,
 };
 use super::utils::{
-    validate_thread_id,
     ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path, get_thread_dir,
-    get_thread_metadata_path,
+    get_thread_metadata_path, validate_thread_id,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::future;

@@ -485,8 +485,7 @@ function HubModelDetailContent() {
                   </div>
                 ) : readmeContent ? (
                   <div className="prose prose-invert max-w-none">
-                    <RenderMarkdown content={readmeContent}
-                    />
+                    <RenderMarkdown content={readmeContent} />
                   </div>
                 ) : (
                   <div className="flex items-center justify-center py-8">

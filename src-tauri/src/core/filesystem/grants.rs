@@ -235,7 +235,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
 /// Whether a typed `@path` reference may read `canonical`: the home folder
 /// itself (the `@` picker starts there and lists it) or anything under
 /// `canonical_home`, never through a dot-prefixed folder or file and never
-/// inside a [`CREDENTIAL_DIRS`] folder. Components compare case-insensitively,
+/// inside a [`PRIVATE_APP_DATA`] folder. Components compare case-insensitively,
 /// as the macOS and Windows default file systems do.
 pub fn home_read_allowed(canonical: &Path, canonical_home: &Path) -> bool {
     let Ok(relative) = canonical.strip_prefix(canonical_home) else {
