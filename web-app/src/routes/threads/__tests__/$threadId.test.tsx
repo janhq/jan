@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type * as WebSearchConfigModule from '@/hooks/useWebSearchConfig'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -484,6 +485,16 @@ const webTool = vi.hoisted(() => ({ executeWebTool: vi.fn() }))
 vi.mock('@/lib/webSearchTool', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/webSearchTool')>()),
   executeWebTool: webTool.executeWebTool,
+}))
+
+// The real store persists through localStorage on every write, which this
+// environment does not provide; the route only reads the on/off switch.
+const webConfig = vi.hoisted(() => ({ enabled: true }))
+vi.mock('@/hooks/useWebSearchConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof WebSearchConfigModule>()),
+  useWebSearchConfig: {
+    getState: () => ({ webSearchEnabled: webConfig.enabled }),
+  },
 }))
 
 // -----------------------------------------------------------------------------
@@ -1586,6 +1597,99 @@ describe('ThreadDetail route', () => {
       expect(shell.execute).not.toHaveBeenCalled()
       expect(h.mockAddToolOutput).not.toHaveBeenCalledWith(
         expect.objectContaining({ toolCallId: 'sh4', state: 'output-error' })
+      )
+    })
+  })
+
+  // #9458: search servers such as Parallel Search expose tools named
+  // `web_search` / `web_fetch`, the built-ins' own names. Execution used to
+  // route on the name alone, so the built-in provider answered (and failed)
+  // even after the user switched web search off to use their own server.
+  describe('built-in web tool names at execution time', () => {
+    interface WebCall {
+      toolCall: {
+        toolCallId: string
+        toolName: string
+        input: { query: string }
+      }
+    }
+    const webCall = (id: string, toolName = 'web_search'): WebCall => ({
+      toolCall: { toolCallId: id, toolName, input: { query: 'jan' } },
+    })
+    const finish = () =>
+      (h as any).capturedOnFinish({
+        message: {
+          id: 'a-web',
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          metadata: { finishReason: 'tool-calls' },
+        },
+        isAbort: false,
+      })
+    const run = async (call: WebCall) => {
+      renderComponent()
+      await act(async () => {
+        await (h as any).capturedOnToolCall(call)
+      })
+      await act(async () => {
+        await finish()
+      })
+    }
+    const serveMcp = () => {
+      const callTool = vi.fn().mockResolvedValue({ error: '', content: [] })
+      hub.mcp = () =>
+        ({
+          callToolWithCancellation: (args: unknown) => ({
+            promise: callTool(args),
+            cancel: vi.fn().mockResolvedValue(undefined),
+            token: 't',
+          }),
+        }) as never
+      return callTool
+    }
+
+    beforeEach(() => {
+      webConfig.enabled = true
+      webTool.executeWebTool.mockReset()
+      webTool.executeWebTool.mockResolvedValue({ content: 'page' })
+      h.toolApprovalState.requestApproval = vi.fn().mockResolvedValue(true)
+    })
+    afterEach(() => {
+      webConfig.enabled = true
+    })
+
+    it('serves the call with the built-in, without a prompt, while web search is on', async () => {
+      await run(webCall('w1'))
+      expect(webTool.executeWebTool).toHaveBeenCalledTimes(1)
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+    })
+
+    it.each(['web_search', 'web_fetch'])(
+      'serves an MCP tool named %s through MCP, with a prompt, while web search is off',
+      async (name) => {
+        webConfig.enabled = false
+        h.appStateState.mcpToolNames = new Set([name])
+        const callTool = serveMcp()
+        await run(webCall('w2', name))
+        expect(webTool.executeWebTool).not.toHaveBeenCalled()
+        expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
+        expect(callTool).toHaveBeenCalledTimes(1)
+        expect(callTool.mock.calls[0][0]).toMatchObject({ toolName: name })
+      }
+    )
+
+    it('refuses the call, before any prompt, when web search is off and no server provides the tool', async () => {
+      webConfig.enabled = false
+      h.appStateState.mcpToolNames = new Set(['fetch'])
+      await run(webCall('w3'))
+      expect(webTool.executeWebTool).not.toHaveBeenCalled()
+      expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
+      expect(h.mockAddToolOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolCallId: 'w3',
+          state: 'output-error',
+          errorText: expect.stringMatching(/turned off.*Do not call web_search/s),
+        })
       )
     })
   })
