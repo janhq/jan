@@ -457,8 +457,15 @@ pub(crate) fn worktree_prune(repo: &Path) {
 /// eat the first character of that one path.
 #[cfg(feature = "cli")]
 pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
-    run(worktree, None, &["status", "--porcelain"])
-        .unwrap_or_default()
+    try_changed_paths(worktree).unwrap_or_default()
+}
+
+/// [`changed_paths`], but a `git status` that fails is an error rather than
+/// an empty list: a caller deciding whether a checkout may be deleted must not
+/// read "git could not tell" as "clean".
+#[cfg(feature = "cli")]
+pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> {
+    Ok(run(worktree, None, &["status", "--porcelain"])?
         .lines()
         .filter_map(|l| l.trim_start().split_once(' '))
         // A rename reads `R old -> new`; the new name is the path on disk, and
@@ -468,7 +475,7 @@ pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
             None => path.trim().to_string(),
         })
         .filter(|s| !s.is_empty())
-        .collect()
+        .collect())
 }
 
 #[cfg(all(test, feature = "cli"))]
