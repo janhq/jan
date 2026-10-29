@@ -8744,6 +8744,16 @@ impl App {
         self.persist();
     }
 
+    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
+    /// the parent's permissions, so with `memory` denied it could change
+    /// nothing: no tidy is started.
+    fn memory_denied(&self) -> bool {
+        self.args.as_ref().is_some_and(|a| {
+            a.permissions
+                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        })
+    }
+
     /// Queue an automatic memory tidy when the index has outgrown its prompt
     /// budget, at most once per session.
     ///
@@ -8757,16 +8767,6 @@ impl App {
     /// starts a model turn, so it cannot block or loop; its changes reach this
     /// session only through the `Memory Changes` tail block. Off with
     /// `memory_auto_tidy = false`.
-    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
-    /// the parent's permissions, so with `memory` denied it could change
-    /// nothing: no tidy is started.
-    fn memory_denied(&self) -> bool {
-        self.args.as_ref().is_some_and(|a| {
-            a.permissions
-                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
-        })
-    }
-
     fn maybe_auto_tidy(&mut self) {
         // Plan mode is read-only, memory included; the check resumes at the
         // first turn end after it.
