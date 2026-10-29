@@ -13,7 +13,7 @@ expression: render_snapshot(buf)
 |  └ npm run dev · 1m 05s                                                        |
 |    tail -f app.log · 7s                                                        |
 |────────────────────────────────────────────────────────────────────────────────|
-|>   Type here to chat with agent                                                |
+|›   Type here to chat with agent                                                |
 |                                                                                |
 |📂 /snapshot/repo                                                               |
 

@@ -24719,13 +24719,13 @@ fn input_box_height(app: &App, width: u16) -> u16 {
     content + 1
 }
 
-/// Visible input as styled lines: `> ` on the first line, 2-space hang on
+/// Visible input as styled lines: `USER_GLYPH` on the first line, 2-space hang on
 /// continuations, and a solid block cursor at the byte offset `cursor` (the
 /// character under the cursor is drawn in reverse video; at end of line a
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("> ", Style::new().fg(theme::accent()).bold());
+    let arrow = Span::styled(format!("{USER_GLYPH} "), Style::new().fg(theme::accent()).bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -24839,12 +24839,13 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The `> ` prompt and the fixed block cursor that open an empty input row.
+/// The `USER_GLYPH` prompt (the transcript's user gutter, so typed and sent
+/// text read alike) and the fixed block cursor that open an empty input row.
 /// Shared by the idle placeholder and the working row so their text starts in
 /// the same column.
 fn empty_prompt_prefix() -> [Span<'static>; 3] {
     [
-        Span::styled("> ", Style::new().fg(theme::accent()).bold()),
+        Span::styled(format!("{USER_GLYPH} "), Style::new().fg(theme::accent()).bold()),
         Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
         Span::raw(" "),
     ]
@@ -35387,14 +35388,14 @@ mod tests {
     fn input_lines_single_line_has_arrow_and_cursor() {
         let lines = input_content_lines("hello", 5);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "> hello▏");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} hello▏");
     }
 
     #[test]
     fn input_lines_multiline_hangs_and_cursor_on_last() {
         let lines = input_content_lines("one\ntwo\nthree", "one\ntwo\nthree".len());
         assert_eq!(lines.len(), 3);
-        assert_eq!(line_text(&lines[0]), "> one");
+        assert_eq!(line_text(&lines[0]), "\u{203a} one");
         assert_eq!(line_text(&lines[1]), "  two");
         assert_eq!(caret_text(&lines[2]), "  three▏");
     }
@@ -35403,7 +35404,7 @@ mod tests {
     fn input_lines_trailing_newline_gives_empty_cursor_row() {
         let lines = input_content_lines("hi\n", 3);
         assert_eq!(lines.len(), 2);
-        assert_eq!(line_text(&lines[0]), "> hi");
+        assert_eq!(line_text(&lines[0]), "\u{203a} hi");
         assert_eq!(caret_text(&lines[1]), "  ▏");
     }
 
@@ -35412,14 +35413,14 @@ mod tests {
         // Caret sits between "he" and "llo" on a single line.
         let lines = input_content_lines("hello", 2);
         assert_eq!(lines.len(), 1);
-        assert_eq!(caret_text(&lines[0]), "> he▏llo");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} he▏llo");
     }
 
     #[test]
     fn input_lines_caret_on_earlier_line_only() {
         // Cursor inside the first segment: caret there, none on later lines.
         let lines = input_content_lines("one\ntwo", 1);
-        assert_eq!(caret_text(&lines[0]), "> o▏ne");
+        assert_eq!(caret_text(&lines[0]), "\u{203a} o▏ne");
         assert_eq!(line_text(&lines[1]), "  two");
     }
 
@@ -40457,7 +40458,7 @@ mod tests {
                     .into_iter()
                     .find(|r| r.contains("(Esc to cancel, type to steer"))
                     .expect("running row");
-                assert!(row.starts_with("> "), "{row:?}");
+                assert!(row.starts_with("\u{203a} "), "{row:?}");
                 let words = if think { &THINKING_WORDS } else { &WORKING_WORDS };
                 let word = words.iter().find(|w| row.contains(*w)).expect("word");
                 assert_eq!(col(&row, word), Some(idle_text), "{row:?}");
@@ -44947,7 +44948,7 @@ mod tests {
         let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}')).expect("rule");
         assert!(rows[rule - 1].starts_with(" 3 subagents running"), "{rows:#?}");
         assert!(!rows.iter().any(|r| r.contains("\u{2514} a")), "heads only: {rows:#?}");
-        assert!(rows[rule + 1].starts_with('>'), "{rows:#?}");
+        assert!(rows[rule + 1].starts_with('\u{203a}'), "{rows:#?}");
     }
 
     /// No row outgrows the terminal, however narrow.

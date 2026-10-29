@@ -16,7 +16,7 @@ expression: render_snapshot(buf)
 | 1 background shell running · /shells to view · /stop to close                  |
 |  └ npm run dev · 1m 05s                                                        |
 |────────────────────────────────────────────────────────────────────────────────|
-|>   Type here to chat with agent                                                |
+|›   Type here to chat with agent                                                |
 |                                                                                |
 |📂 /snapshot/repo                                                               |
 

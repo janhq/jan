@@ -20,7 +20,7 @@ expression: render_snapshot(buf)
 |  └ npm run dev · 1m 05s                                                        |
 |    tail -f app.log · 7s                                                        |
 |────────────────────────────────────────────────────────────────────────────────|
-|>   working…       (Esc to cancel, type to steer the agent)                     |
+|›   working…       (Esc to cancel, type to steer the agent)                     |
 |                                                                                |
 |📂 /snapshot/repo       Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all|
 

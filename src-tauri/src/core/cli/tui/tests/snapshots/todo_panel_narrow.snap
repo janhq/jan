@@ -1,6 +1,6 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 164
+assertion_line: 165
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [wo|
@@ -18,7 +18,7 @@ expression: render_snapshot(buf)
 | ☐ routes                                                   |
 | ☐ auth                                                     |
 |────────────────────────────────────────────────────────────|
-|>   working…       (Esc to cancel, type to steer the agent) |
+|›   working…       (Esc to cancel, type to steer the agent) |
 |                                                            |
 | Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all   |
 
