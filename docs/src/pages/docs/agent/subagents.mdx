@@ -175,7 +175,10 @@ or `working read-only in /home/you/src/jan`.
   git worktree on a `jan/agent/<name>-<id>` branch, started from `HEAD`, under
   `~/.jan/worktrees/<project>/`. Two writers dispatched together never edit the same checkout, and
   none of them sees your uncommitted changes. Its final answer names its branch; merging it is up to
-  you or the main agent.
+  you or the main agent. When your session runs in a subdirectory of the repository, the subagent
+  starts in the same subdirectory of its worktree; if that directory is not in the worktree
+  (untracked or ignored in your checkout, or absent at the `ref`), it starts at the worktree's top
+  level instead and the dispatch result says so.
 - **Readers are read-only.** Any other subagent (`explore`, `review`, `research`, ...) works in
   your checkout with it read-only: `write` and `edit` refuse paths in it, and its shell always runs
   in the sandbox with the checkout (including `.git`) mounted read-only, even when your own session
