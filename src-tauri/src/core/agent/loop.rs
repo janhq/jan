@@ -216,6 +216,10 @@ pub(crate) struct OrchestrationArgs {
     /// turn composes the same bytes. `None` for a one-off run with no session to
     /// freeze across, which snapshots at the start of that run instead.
     pub session_start: Option<crate::core::agent::context::SessionStart>,
+    /// The cap on this run's memory mutations. Set only for Jan's memory tidy
+    /// subagent (`subagent::spawn_memory_tidy`), which shares it with the TUI
+    /// so a hit cap is reported; `None` everywhere else.
+    pub memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
 }
 
 #[async_trait]
@@ -867,6 +871,8 @@ struct CompositeToolInvoker {
     /// block. `None` where the run's tail carries none (a child run, a
     /// host-owned prompt, no snapshot).
     memory_changes: Option<MemoryChangesTracker>,
+    /// See [`OrchestrationArgs::memory_change_budget`].
+    memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1252,7 +1258,8 @@ impl CompositeToolInvoker {
                 &self.project_root,
                 &self.enabled_skills,
             ))
-            .with_skill_user_root(self.memory_home.as_deref());
+            .with_skill_user_root(self.memory_home.as_deref())
+            .with_memory_change_budget(self.memory_change_budget.as_deref());
         let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
@@ -2734,6 +2741,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let hooks = self.hooks.clone();
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
+                let change_budget = self.memory_change_budget.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled);
                     let ctx = match memory_home.as_deref() {
@@ -2745,6 +2753,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             &root, &enabled,
                         ))
                         .with_skill_user_root(memory_home.as_deref())
+                        .with_memory_change_budget(change_budget.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
@@ -2981,6 +2990,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         compaction: None,
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
+        memory_change_budget: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -3662,6 +3672,8 @@ async fn orchestrate_inner(
         allow_escalation,
         compaction,
         session_start,
+        // Read through `args` where the invoker is built.
+        memory_change_budget: _,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -4107,6 +4119,7 @@ async fn orchestrate_inner(
             // same; so the signal only applies where the session owns shells.
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
             memory_changes,
+            memory_change_budget: args.memory_change_budget.clone(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -8925,6 +8938,7 @@ mod tests {
             parent_link: None,
             shell_detach: None,
             memory_changes: None,
+            memory_change_budget: None,
         }
     }
 

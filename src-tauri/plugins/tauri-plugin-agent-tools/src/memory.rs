@@ -93,6 +93,80 @@ fn note_relpath(name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Note stems the harness's own index files would be confused with: a note
+/// named `index` or `MEMORY` reads as an index the agent maintains, and the
+/// harness builds the index itself (`MEMORY.md`, the prompt section).
+const RESERVED_STEMS: [&str; 2] = ["index", "memory"];
+
+/// [`note_relpath`] for a note about to be created: also refuses a name that
+/// collides with the harness index ([`RESERVED_STEMS`], any case, any folder).
+fn new_note_relpath(name: &str) -> Result<PathBuf, String> {
+    let rel = note_relpath(name)?;
+    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+    if RESERVED_STEMS.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
+        return Err(format!(
+            "ERROR: '{name}' is reserved: the harness builds the memory index itself, so do not write index or overview notes"
+        ));
+    }
+    Ok(rel)
+}
+
+/// Most mutations (write, edit, delete, move) one memory tidy may make. Past
+/// it the tool refuses further changes, so a tidy that misjudges the store
+/// can only misjudge this many notes.
+pub const TIDY_MAX_CHANGES: usize = 30;
+
+/// A run's allowance of memory mutations, enforced by the tool rather than
+/// asked of the model. Shared by every call of one run; counts what it let
+/// through and what it refused, so the caller can report a cap that was hit.
+#[derive(Debug)]
+pub struct ChangeBudget {
+    max: usize,
+    used: std::sync::atomic::AtomicUsize,
+    refused: std::sync::atomic::AtomicUsize,
+}
+
+impl ChangeBudget {
+    pub fn new(max: usize) -> Self {
+        Self {
+            max,
+            used: Default::default(),
+            refused: Default::default(),
+        }
+    }
+
+    /// Take one change, or the refusal the tool returns once the cap is spent.
+    pub(crate) fn take(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let taken = self
+            .used
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < self.max).then_some(n + 1));
+        if taken.is_ok() {
+            return Ok(());
+        }
+        self.refused.fetch_add(1, Ordering::SeqCst);
+        Err(format!(
+            "ERROR: this tidy has reached its cap of {} memory changes; no further write, edit, delete or move is allowed. Stop changing notes and write your report, ending it with `cap reached`.",
+            self.max
+        ))
+    }
+
+    /// Give back a change whose operation failed after it was taken.
+    pub(crate) fn refund(&self) {
+        self.used.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Changes made so far.
+    pub fn used(&self) -> usize {
+        self.used.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Changes refused because the cap was spent.
+    pub fn refused(&self) -> usize {
+        self.refused.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 fn target(store_root: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(memory_dir(store_root).join(note_relpath(name)?))
 }
@@ -386,7 +460,11 @@ pub fn catalog(store: &Path) -> Vec<CatalogEntry> {
 /// path written relative to `memory/`, so callers can phrase their own result
 /// message. Its folder is created as needed.
 pub async fn write(store: &Path, name: &str, content: &str) -> Result<String, String> {
-    let rel = note_relpath(name)?;
+    let rel = if target(store, name)?.is_file() {
+        note_relpath(name)?
+    } else {
+        new_note_relpath(name)?
+    };
     let path = memory_dir(store).join(&rel);
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -419,6 +497,44 @@ pub async fn delete(store: &Path, name: &str) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("ERROR: {e}")),
     }
+}
+
+/// Rename a note, into or out of a folder, in one step: the file is renamed
+/// (content and front matter untouched) and its recency moves with it, so
+/// reorganizing is not a write+delete pair that resets either. Refuses a
+/// missing source, an existing destination and a reserved destination name.
+/// Returns the destination relative to `memory/`, like [`write`].
+pub async fn rename(store: &Path, from: &str, to: &str) -> Result<String, String> {
+    let source = target(store, from)?;
+    let rel = new_note_relpath(to)?;
+    let dest = memory_dir(store).join(&rel);
+    if !source.is_file() {
+        return Err(format!("ERROR: no note '{from}' to move"));
+    }
+    if dest.exists() {
+        return Err(format!(
+            "ERROR: '{to}' already exists; merge with `edit` or `write`, then `delete` the other"
+        ));
+    }
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("ERROR: {e}"))?;
+    }
+    tokio::fs::rename(&source, &dest)
+        .await
+        .map_err(|e| format!("ERROR: {e}"))?;
+    if let Some(parent) = source.parent().filter(|p| *p != memory_dir(store)) {
+        // Fails while anything is left in it, which is the point.
+        let _ = tokio::fs::remove_dir(parent).await;
+    }
+    let mut meta = load_meta(store);
+    if let Some(recency) = meta.notes.remove(&canonical(from)) {
+        meta.notes.insert(canonical(to), recency);
+        save_meta(store, &meta);
+    }
+    write_index(store);
+    Ok(rel.to_string_lossy().replace('\\', "/"))
 }
 
 /// One line of an index: a note, or a folder collapsed to its count.
@@ -904,6 +1020,28 @@ impl<'a> Scopes<'a> {
         } else {
             format!("No note '{name}' to delete")
         })
+    }
+
+    /// `move`: rename `name` to `to` (see [`rename`]). Both must be in the
+    /// same writable scope: a move between this project and `user:` is a
+    /// `write` there and a `delete` here.
+    pub async fn rename(&self, name: &str, to: &str) -> Result<String, String> {
+        let (store, note, prefix) = self.writable(name)?;
+        let (to_store, to_note, _) = self.writable(to)?;
+        if to_store != store {
+            return Err(format!(
+                "ERROR: '{name}' and '{to}' are in different scopes; `write` the note there and `delete` it here"
+            ));
+        }
+        let file = rename(&store, &note, &to_note).await?;
+        if let Some(home) = self.home {
+            write_root_index(home, self.cross_project);
+        }
+        Ok(format!(
+            "Moved memory/{prefix}{} to memory/{prefix}{}",
+            canonical(&note),
+            file.trim_end_matches(".md")
+        ))
     }
 
     /// `" Index: N/B tokens ..."` when the index is near or past its budget,

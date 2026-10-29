@@ -245,7 +245,9 @@ async fn execute_text(
         "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
-        crate::tools::MEMORY_TOOL => memory_tool(args, ctx.memory_scopes()).await,
+        crate::tools::MEMORY_TOOL => {
+            memory_tool(args, ctx.memory_scopes(), ctx.memory_change_budget).await
+        }
         // Skills go through the skills module so the tool honors the folder form
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
         "skill_list" => skill_list(ctx),
@@ -516,12 +518,24 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 }
 
 /// The `memory` tool delegates every op to `crate::memory`, so the built-in
-/// and the management commands share one implementation.
-async fn memory_tool(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
+/// and the management commands share one implementation. A `budget` (Jan's
+/// tidy subagent) caps the mutations: each write, edit, delete and move takes
+/// one change before it runs and gives it back if it changed nothing.
+async fn memory_tool(
+    args: &serde_json::Value,
+    scopes: memory::Scopes<'_>,
+    budget: Option<&memory::ChangeBudget>,
+) -> String {
     let need = |key: &str| {
         arg_str(args, key).ok_or_else(|| format!("ERROR: op needs the '{key}' argument"))
     };
-    let result = match arg_str(args, "op") {
+    let op = arg_str(args, "op");
+    if matches!(op, Some("write" | "edit" | "delete" | "move")) {
+        if let Some(Err(e)) = budget.map(memory::ChangeBudget::take) {
+            return e;
+        }
+    }
+    let result = match op {
         Some("view") => scopes.view(arg_str(args, "name")).await,
         Some("search") => match need("query") {
             Ok(query) => scopes.search(query),
@@ -539,11 +553,22 @@ async fn memory_tool(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> St
             Ok(name) => scopes.delete(name).await,
             Err(e) => Err(e),
         },
+        Some("move") => match (need("name"), need("to")) {
+            (Ok(name), Ok(to)) => scopes.rename(name, to).await,
+            (Err(e), _) | (_, Err(e)) => Err(e),
+        },
         Some(other) => Err(format!(
-            "ERROR: unknown memory op '{other}' (expected view, search, write, edit or delete)"
+            "ERROR: unknown memory op '{other}' (expected view, search, write, edit, delete or move)"
         )),
         None => Err("ERROR: missing required argument 'op'".to_string()),
     };
+    // A refused or no-op change (a missing note to delete) spends nothing.
+    let changed = matches!(&result, Ok(text) if !text.starts_with("No note"));
+    if !changed && matches!(op, Some("write" | "edit" | "delete" | "move")) {
+        if let Some(budget) = budget {
+            budget.refund();
+        }
+    }
     result.unwrap_or_else(|e| e)
 }
 
@@ -4078,6 +4103,99 @@ mod tests {
         );
     }
 
+    /// #497 bug 3: the harness side of a conservative tidy, on a store modeled
+    /// on the smoke test (neutral notes plus explicitly finished ones). The
+    /// model's choices cannot be unit-tested; what is tested is what the
+    /// harness enforces whatever the model does: `move` keeps a note's front
+    /// matter and recency, an `index`/`MEMORY` note is refused, and a run with
+    /// a change budget stops mutating at the cap and says so.
+    #[tokio::test]
+    async fn a_capped_tidy_moves_archives_and_stops_at_the_cap() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..70 {
+            std::fs::write(
+                dir.join(format!("note-{i:03}.md")),
+                format!("Note {i:03} about area {i} with a fairly long descriptive title\n\nBody {i}.\n"),
+            )
+            .unwrap();
+        }
+        for i in 0..10 {
+            std::fs::write(
+                dir.join(format!("shipped-{i:02}.md")),
+                format!("PR {} merged and released, work finished\n\nNothing left.\n", 9100 + i),
+            )
+            .unwrap();
+        }
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let memory = lookup("memory").unwrap();
+        let ctx = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let run = |args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(memory, &args, &ctx).await.0 }
+        };
+
+        // An archived note moved into a folder keeps its front matter.
+        let a = run(json!({"op": "edit", "name": "shipped-00", "old": "PR 9100", "new": "---\nstatus: done\n---\nPR 9100"})).await;
+        assert!(a.contains("archived"), "{a}");
+        let m = run(json!({"op": "move", "name": "shipped-00", "to": "shipped/9100"})).await;
+        assert_eq!(m, "Moved memory/shipped-00 to memory/shipped/9100", "{m}");
+        let moved = std::fs::read_to_string(dir.join("shipped/9100.md")).unwrap();
+        assert!(moved.starts_with("---\nstatus: done\n---\nPR 9100"), "{moved}");
+        assert!(!dir.join("shipped-00.md").exists());
+        let meta = std::fs::read_to_string(dir.join(".meta.json")).unwrap();
+        assert!(meta.contains("shipped/9100") && !meta.contains("\"shipped-00\""), "{meta}");
+        // A move onto an existing note, or of a missing one, changes nothing.
+        assert!(run(json!({"op": "move", "name": "note-001", "to": "note-002"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "move", "name": "nope", "to": "x"})).await.starts_with("ERROR"));
+        assert!(run(json!({"op": "move", "name": "note-001"})).await.contains("'to'"));
+
+        // The harness builds the index; a note named like it is refused.
+        for bad in ["index", "subsystems/index", "MEMORY", "tui/Memory", "INDEX.md"] {
+            let w = run(json!({"op": "write", "name": bad, "content": "links"})).await;
+            assert!(w.starts_with("ERROR") && w.contains("index"), "{bad}: {w}");
+            let mv = run(json!({"op": "move", "name": "note-003", "to": bad})).await;
+            assert!(mv.starts_with("ERROR"), "{bad}: {mv}");
+        }
+
+        // 2 changes so far; 28 more fit, then every mutation is refused.
+        for i in 10..38 {
+            let r = run(json!({"op": "move", "name": format!("note-{i:03}"), "to": format!("area/{i:03}")})).await;
+            assert!(r.starts_with("Moved"), "{i}: {r}");
+        }
+        assert_eq!(budget.used(), 30);
+        for args in [
+            json!({"op": "edit", "name": "shipped-01", "old": "PR", "new": "---\nstatus: done\n---\nPR"}),
+            json!({"op": "write", "name": "x", "content": "y"}),
+            json!({"op": "delete", "name": "note-040"}),
+            json!({"op": "move", "name": "note-041", "to": "area/041"}),
+        ] {
+            let r = run(args).await;
+            assert!(r.starts_with("ERROR") && r.contains("30"), "{r}");
+        }
+        assert!(dir.join("note-040.md").exists() && dir.join("note-041.md").exists());
+        assert_eq!(budget.refused(), 4);
+        // Reads are never capped.
+        assert!(run(json!({"op": "view", "name": "shipped-01"})).await.starts_with("PR 9101"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Without a budget (the main agent) nothing is capped, and `move` works.
+    #[tokio::test]
+    async fn the_main_agent_moves_notes_uncapped() {
+        let root = unique_root();
+        let memory = lookup("memory").unwrap();
+        for i in 0..40 {
+            let w = execute_builtin(memory, &json!({"op": "write", "name": format!("n{i}"), "content": "x"}), &root).await;
+            assert!(w.starts_with("Wrote"), "{w}");
+        }
+        let m = execute_builtin(memory, &json!({"op": "move", "name": "n1", "to": "grp/n1"}), &root).await;
+        assert!(m.starts_with("Moved"), "{m}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn the_memory_tool_runs_every_op() {
         let root = unique_root();
@@ -4103,6 +4221,7 @@ mod tests {
         assert!(run(json!({"op": "view", "name": "drift"})).await.starts_with("ERROR"));
         assert!(run(json!({"op": "write", "name": "x"})).await.contains("'content'"));
         assert!(run(json!({"op": "rename"})).await.contains("unknown memory op"));
+        assert!(run(json!({"op": "rename"})).await.contains("move"));
         assert!(run(json!({})).await.contains("'op'"));
         let _ = std::fs::remove_dir_all(&root);
     }

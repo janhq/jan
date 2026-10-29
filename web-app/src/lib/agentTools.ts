@@ -44,7 +44,7 @@ export const AGENT_TOOL_NAMES = new Set([
   'write',
   'edit',
   'shell',
-  // One tool for every memory op (view/search/write/edit/delete).
+  // One tool for every memory op (view/search/write/edit/delete/move).
   'memory',
   'skill_list',
   'skill_read',

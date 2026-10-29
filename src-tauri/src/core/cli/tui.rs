@@ -17211,7 +17211,17 @@ fn start_memory_tidy(
         known_tools: Vec::new(),
     };
     let set = app.subagent_set.clone();
-    match crate::core::agent::subagent::spawn_memory_tidy(&set.scope(), &args, &parent, events) {
+    let budget = Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(
+        tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES,
+    ));
+    let dispatched = crate::core::agent::subagent::spawn_memory_tidy(
+        &set.scope(),
+        &args,
+        &parent,
+        events,
+        budget.clone(),
+    );
+    match dispatched {
         Ok(dispatched) => {
             app.tidy_running = Some(kind);
             let label = match kind {
@@ -17220,10 +17230,11 @@ fn start_memory_tidy(
             };
             app.note(label);
             Some(tokio::spawn(async move {
-                crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
+                let report = crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
                     .await
                     .map(|collected| collected.text)
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok(with_cap_note(report, &budget))
             }))
         }
         Err(e) => {
@@ -17254,8 +17265,22 @@ fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
     }
 }
 
+/// The tidy's report, with a closing line when the harness refused changes
+/// past the cap: the model may not say so, and the user should know the store
+/// was only partly tidied.
+fn with_cap_note(report: String, budget: &tauri_plugin_agent_tools::memory::ChangeBudget) -> String {
+    if budget.refused() == 0 {
+        return report;
+    }
+    format!(
+        "{}\ncap reached ({} changes); run /memory tidy again to continue",
+        report.trim_end(),
+        budget.used()
+    )
+}
+
 /// Verbs a tidy report's lines start with (see `MEMORY_TIDY_PROMPT`).
-const TIDY_VERBS: [&str; 5] = ["archived", "merged", "deleted", "moved", "refused"];
+const TIDY_VERBS: [&str; 4] = ["archived", "merged", "deleted", "moved"];
 
 /// A tidy report as one line. The report has a line per change, and a note
 /// that carried all of them grew taller than the screen, pushing its own
@@ -17267,21 +17292,25 @@ fn tidy_summary(report: &str) -> String {
         .map(|l| l.trim().trim_start_matches(['-', '*', ' ']))
         .filter(|l| TIDY_VERBS.iter().any(|v| l.starts_with(v)))
         .collect();
-    if changes.is_empty() {
+    let summary = if changes.is_empty() {
         let first = report.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
-        return first.chars().take(160).collect();
+        first.chars().take(160).collect()
+    } else if changes.len() <= 3 {
+        changes.join("; ")
+    } else {
+        TIDY_VERBS
+            .iter()
+            .filter_map(|verb| {
+                let n = changes.iter().filter(|l| l.starts_with(verb)).count();
+                (n > 0).then(|| format!("{verb} {n}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match report.lines().find(|l| l.starts_with("cap reached (")) {
+        Some(cap) if !summary.contains("cap reached") => format!("{summary}; {cap}"),
+        _ => summary,
     }
-    if changes.len() <= 3 {
-        return changes.join("; ");
-    }
-    TIDY_VERBS
-        .iter()
-        .filter_map(|verb| {
-            let n = changes.iter().filter(|l| l.starts_with(verb)).count();
-            (n > 0).then(|| format!("{verb} {n}"))
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 async fn await_memory_tidy(
@@ -25670,7 +25699,7 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
-        finish_memory_tidy, memory_command, TidyKind,
+        finish_memory_tidy, memory_command, TidyKind, with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
@@ -33221,6 +33250,7 @@ mod tests {
             shell_detach: None,
             compaction: None,
             session_start: None,
+            memory_change_budget: None,
         })
     }
 
@@ -44256,6 +44286,32 @@ mod tests {
             .collect();
         assert!(frame.contains("memory tidied: archived 70"), "{frame}");
         assert!(!frame.contains("archived note-030"), "one line, not the full list: {frame}");
+    }
+
+    /// A tidy the harness stopped at its cap says so in its note, even when
+    /// the model's report does not.
+    #[test]
+    fn a_capped_tidy_reports_the_cap() {
+        let budget = tauri_plugin_agent_tools::memory::ChangeBudget::new(2);
+        assert_eq!(with_cap_note("archived a".into(), &budget), "archived a");
+        let dir = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(dir.path(), dir.path(), &[])
+            .with_memory_change_budget(Some(&budget));
+        let memory = tauri_plugin_agent_tools::tools::lookup("memory").unwrap();
+        for i in 0..3 {
+            rt.block_on(tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+                memory,
+                &json!({"op": "write", "name": format!("n{i}"), "content": "x"}),
+                &ctx,
+            ));
+        }
+        let report = with_cap_note("archived a\narchived b".into(), &budget);
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok(report));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived a; archived b; cap reached (2 changes)"), "{text}");
     }
 
     /// A tidy never touches the conversation: no turn is started and the
