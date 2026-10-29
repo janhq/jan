@@ -239,28 +239,24 @@ const TOOL_ICONS: Record<string, typeof IconFile> = {
   grep: IconSearch,
   write: IconFilePencil,
   edit: IconFilePencil,
-  memory_list: IconNotebook,
-  memory_read: IconNotebook,
-  memory_write: IconNotebook,
+  memory: IconNotebook,
   skill_list: IconBook,
   skill_read: IconBook,
   skill_write: IconBook,
 }
 
 /** Tools whose whole call is the verb: there is no argument worth a bar. */
-const LISTING_TOOLS = new Set(['memory_list', 'skill_list', 'ls'])
+const LISTING_TOOLS = new Set(['skill_list', 'ls'])
 
 // A workspace call is not always a read: `Reading...` under a `write` is simply
 // wrong, and the verb is the only progress signal the widget has.
 const RUNNING_KEYS: Record<string, string> = {
   write: 'tools:toolCall.writing',
-  memory_write: 'tools:toolCall.writing',
   skill_write: 'tools:toolCall.writing',
   edit: 'tools:toolCall.editing',
   find: 'tools:toolCall.searching',
   grep: 'tools:toolCall.searching',
   ls: 'tools:toolCall.listing',
-  memory_list: 'tools:toolCall.listing',
   skill_list: 'tools:toolCall.listing',
 }
 
@@ -269,8 +265,7 @@ const RUNNING_KEYS: Record<string, string> = {
 const PLACEHOLDER_KEYS: Record<string, string> = {
   find: 'tools:toolCall.patternPlaceholder',
   grep: 'tools:toolCall.patternPlaceholder',
-  memory_read: 'tools:toolCall.namePlaceholder',
-  memory_write: 'tools:toolCall.namePlaceholder',
+  memory: 'tools:toolCall.namePlaceholder',
   skill_read: 'tools:toolCall.namePlaceholder',
   skill_write: 'tools:toolCall.namePlaceholder',
 }

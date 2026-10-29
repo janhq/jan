@@ -23,15 +23,18 @@ The agent writes memory itself when it learns something durable, and reads it ba
 prompt on later runs. It's scoped per project, with a separate user scope for notes that apply
 everywhere (see [Scopes](#scopes)).
 
-Three tools drive it, and only the write prompts for approval:
+One `memory` tool drives it, with an `op`. Memory belongs to the agent, so no op asks for
+approval, in the TUI, headless runs or ACP:
 
-| Tool | Approval |
-| --- | --- |
-| `memory_list` | No |
-| `memory_read` | No |
-| `memory_write` | Yes |
+| `op` | Arguments | What it does |
+| --- | --- | --- |
+| `view` | `name`? | No name: the full index. A folder (`tui/`): its notes. A note: its content |
+| `search` | `query` | Keyword search over titles and bodies, archived notes included |
+| `write` | `name`, `title`, `content` | Create or overwrite; the title is the note's first line |
+| `edit` | `name`, `old`, `new` | Replace one exact, unique piece of text |
+| `delete` | `name` | Remove the note and its index line |
 
-Because writes prompt, nothing enters memory without you seeing it.
+A `deny = ["memory"]` entry in `agent.toml` turns the tool off.
 
 ## Where it lives
 
@@ -47,7 +50,7 @@ delete them. Nothing is hidden in an opaque store.
     `-- memory/<name>.md       # this project's notes
 ```
 
-Each `MEMORY.md` is generated: it is rebuilt on every `memory_write` and delete, so don't edit it by
+Each `MEMORY.md` is generated: it is rebuilt on every write, edit and delete, so don't edit it by
 hand - your changes would be overwritten. See [Project Config](/docs/agent/project-config) for how
 `<slug>` is chosen.
 
@@ -62,7 +65,7 @@ Memory names are scoped:
 | `project:<slug>` | Another project's `MEMORY.md` index | No |
 | `project:<slug>/name` | One note from another project | No |
 
-`memory_read` accepts all four. `memory_write` to another project is refused, so a session can only
+`view` accepts all four. Writing, editing or deleting in another project is refused, so a session can only
 change its own project's notes and your user notes.
 
 The system prompt's **Available Memories** block lists this project's notes, your user notes, and

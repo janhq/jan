@@ -99,7 +99,7 @@ describe('agentWorkspace', () => {
       name: 'chat-notes-3',
       duplicate: false,
     })
-    // Suffixing, never overwriting: memory_write replaces by name, and the
+    // Suffixing, never overwriting: a memory write replaces by name, and the
     // existing notes are not this action's to replace.
     expect(api.memoryWrite).toHaveBeenCalledWith(
       '/data',

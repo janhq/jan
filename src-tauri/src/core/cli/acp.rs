@@ -982,8 +982,8 @@ fn plan(list: &TodoList) -> Plan {
 /// What kind of work a tool does, for the client's icon and grouping.
 fn tool_kind(name: &str) -> ToolKind {
     match name {
-        "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
-        "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
+        "read" | "ls" | "skill_read" | "skill_list" => ToolKind::Read,
+        "edit" | "write" | "memory" | "skill_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
         // `bash` is the shell's pre-rename name, still in replayed history.
         "bash" | tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,

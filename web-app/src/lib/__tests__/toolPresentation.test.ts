@@ -182,9 +182,9 @@ describe('describeNativeToolCall for agent tools', () => {
   })
 
   it('leads with the name for memory and skill tools', () => {
-    expect(describeNativeToolCall(agent, 'memory_read', { name: 'prefs' })).toEqual({
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view', name: 'prefs' })).toEqual({
       variant: 'workspace',
-      tool: 'memory_read',
+      tool: 'memory',
       target: 'prefs',
     })
   })

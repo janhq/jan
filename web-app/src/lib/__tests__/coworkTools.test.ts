@@ -20,7 +20,7 @@ const schema = (name: string) => ({
   function: { name, description: name, parameters: { type: 'object' } },
 })
 
-const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory_write']
+const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory']
 
 const opts = (over: Partial<Parameters<typeof buildCoworkTools>[0]> = {}) => ({
   planMode: false,
@@ -143,7 +143,8 @@ describe('web tools', () => {
 describe('allowedToolNames', () => {
   it('refuses the same set plan mode withholds', () => {
     const out = allowedToolNames([...ALL, TASK_TOOL_NAME], opts({ planMode: true }))
-    expect(out).toEqual(['read', 'ls', 'grep'])
+    // Memory is the agent's own notes, not the project: plan mode keeps it.
+    expect(out).toEqual(['read', 'ls', 'grep', 'memory'])
   })
 
   it('refuses task past the subagent depth cap', () => {
