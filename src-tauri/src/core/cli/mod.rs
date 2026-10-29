@@ -1482,6 +1482,8 @@ fn build_cli_orchestration_args(
         ))),
         // Only Jan's memory tidy subagent has one.
         memory_change_budget: None,
+        // A top-level run works in its own checkout as given.
+        child_scope: None,
     }
 }
 
@@ -3326,9 +3328,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             };
             eprintln!("\x1b[2m[{tag}] {content}\x1b[0m");
         }
-        StreamEvent::SubagentStart { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m")
-        }
+        StreamEvent::SubagentStart {
+            name, workspace, ..
+        } => match workspace {
+            Some(ws) => eprintln!("\x1b[2m[subagent:{name}] started (background) in {ws}\x1b[0m"),
+            None => eprintln!("\x1b[2m[subagent:{name}] started (background)\x1b[0m"),
+        },
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }

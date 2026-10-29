@@ -8,6 +8,8 @@
 
 /// Completion pings for backgrounded `bash` commands.
 pub mod bg_shell;
+/// Where each dispatched subagent works: its own worktree or a read-only root.
+pub mod child_workspace;
 // Tauri IPC surface for the desktop agent; the CLI drives the loop directly.
 #[cfg(not(feature = "cli"))]
 pub mod commands;

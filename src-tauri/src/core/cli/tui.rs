@@ -5208,6 +5208,9 @@ struct SubagentPanel {
     /// When the child's `SubagentStart` arrived, for the elapsed time beside
     /// it once the main turn has ended. `None` while it is queued or pending.
     started: Option<Instant>,
+    /// Where the child works, from its `SubagentStart` (see
+    /// `child_workspace::ChildWorkspace::label`). Shown in `/agents`.
+    workspace: Option<String>,
     /// The child's run as rows, built from its own stream by the same code
     /// that builds the main transcript, for the `/agents` detail view and the
     /// finished summary row's expand. A child's stream never reaches the
@@ -5258,6 +5261,7 @@ impl SubagentPanel {
             phase: None,
             parked: false,
             started: None,
+            workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
@@ -8387,7 +8391,12 @@ impl App {
                     });
                 }
             }
-            StreamEvent::SubagentStart { run_id, name, task } => {
+            StreamEvent::SubagentStart {
+                run_id,
+                name,
+                task,
+                workspace,
+            } => {
                 // A child with no model of its own runs on the parent's, so it
                 // starts on the parent's tag setting; its first request moves it
                 // to its own provider's if that differs.
@@ -8400,6 +8409,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -8410,6 +8420,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     if let Some(t) = task {
                         panel.task = t;
                     }
@@ -8419,6 +8430,7 @@ impl App {
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     self.subagents.push(panel);
                 }
             }
@@ -13503,6 +13515,12 @@ pub async fn run(
     // that its turns shared.
     if let Some(session) = session_scratch.as_deref() {
         let _ = workspace::remove_scratch_dir(session).await;
+    }
+    // And its subagents' worktrees that hold nothing; the rest are named on
+    // the real terminal, since they are what is left to merge.
+    let kept = app.subagent_set.workspaces.finish_session();
+    if !kept.is_empty() {
+        eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
     }
     res
 }
@@ -20933,6 +20951,13 @@ fn agent_detail_header(
         row.extend(agent_activity(panel));
     }
     out.push(Line::from(row));
+    if let Some(workspace) = &panel.workspace {
+        out.extend(
+            wrap_text(&format!("workspace {workspace}"), dim, max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
         out.push(Line::from(""));
         out.extend(
@@ -22362,6 +22387,13 @@ fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
 /// Read-only on purpose. Getting the work out is the user's own git: this
 /// session must never write to the branch they left behind.
 fn worktree_command(app: &mut App) {
+    let children = app.subagent_set.workspaces.live();
+    if !children.is_empty() {
+        app.note("subagent worktrees:");
+        for line in &children {
+            app.system_detail_text(&format!("        {line}"));
+        }
+    }
     let Some(workspace) = app.workspace.clone() else {
         app.note(
             "working in the project directory; start with --worktree for a dedicated checkout",
@@ -26565,6 +26597,22 @@ mod tests {
         assert!(text.contains("5 tools · 0 req  Running · ⚠ looping ×5"), "{text}");
     }
 
+    /// `/agents` names where a child works: its worktree and branch, or the
+    /// checkout it was given read-only.
+    #[test]
+    fn agent_detail_names_the_childs_workspace() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-1".into(),
+            name: "general".into(),
+            task: Some("fix it".into()),
+            workspace: Some("~/.jan/worktrees/jan-1/general-3f2a (jan/agent/general-3f2a)".into()),
+        });
+        let text = agent_detail_text(&mut app, "sub-general-1", 120, 20);
+        assert!(text.contains("workspace ~/.jan/worktrees/jan-1/general-3f2a"), "{text}");
+        assert!(text.contains("jan/agent/general-3f2a"), "{text}");
+    }
+
     #[test]
     fn agent_detail_notes_a_child_it_no_longer_has() {
         let mut app = test_app();
@@ -26598,6 +26646,7 @@ mod tests {
             run_id: "sub-collector-1".to_string(),
             name: "collector".to_string(),
             task: Some("synthesize".to_string()),
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
         assert!(!app.subagents[0].pending);
@@ -26619,6 +26668,7 @@ mod tests {
             run_id: "sub-a-1".to_string(),
             name: "a".to_string(),
             task: Some("do it".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
@@ -26639,6 +26689,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count things".to_string()),
+            workspace: None,
         });
         let child = |event: StreamEvent| StreamEvent::Subagent {
             run_id: "sub-counter-1".to_string(),
@@ -26842,6 +26893,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26889,6 +26941,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26912,6 +26965,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
@@ -26935,6 +26989,7 @@ mod tests {
             run_id: "sub-waster-1".to_string(),
             name: "waster".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
@@ -33410,6 +33465,7 @@ mod tests {
             run_id: "sub-a-1".into(),
             name: "a".into(),
             task: None,
+            workspace: None,
         });
         if let Some((provider, model)) = child_on {
             app.apply(child_request_on(provider, model));
@@ -33491,6 +33547,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 app.apply(child_request_on("tokamak", "tk-1"));
                 app.submit_user("go".into());
@@ -33529,6 +33586,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 let rt = tokio::runtime::Runtime::new().expect("runtime");
                 let held = rt.block_on(args.provider_configs.lock());
@@ -33626,6 +33684,7 @@ mod tests {
             compaction: None,
             session_start: None,
             memory_change_budget: None,
+            child_scope: None,
         })
     }
 
@@ -33748,6 +33807,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         let call = |i: u32, offset: u64| {
             wrap(
@@ -33776,6 +33836,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -33841,11 +33902,13 @@ mod tests {
             run_id: "r1".into(),
             name: "alpha".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r2",
@@ -33890,6 +33953,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
         let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
@@ -35994,6 +36058,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -36053,6 +36118,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -36087,6 +36153,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
@@ -36151,6 +36218,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -36175,6 +36243,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -36209,11 +36278,13 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -36703,6 +36774,7 @@ mod tests {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -40757,6 +40829,7 @@ mod tests {
             run_id: run_id.into(),
             name: name.into(),
             task: task.map(str::to_string),
+            workspace: None,
         });
     }
 

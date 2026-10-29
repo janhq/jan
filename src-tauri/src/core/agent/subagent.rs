@@ -772,6 +772,9 @@ pub struct SubagentRequest {
     /// Jan's own tidy subagent sets this. It is never read from a tool call, so
     /// neither the model nor a definition can ask for it.
     pub memory_access: bool,
+    /// Where it works, when the dispatch said (see
+    /// [`crate::core::agent::child_workspace`]); `None` takes the default.
+    pub workspace: Option<crate::core::agent::child_workspace::WorkspaceRequest>,
 }
 
 /// A group of subagents that run concurrently. The next phase starts only once
@@ -1204,6 +1207,10 @@ pub(crate) struct BackgroundSubagents {
     session_events: std::sync::Mutex<
         Option<tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>>,
     >,
+    /// Where each child of this registry works, kept for the registry's life
+    /// so a later dispatch can name an earlier child's workspace, and swept
+    /// when the session ends.
+    pub(crate) workspaces: Arc<crate::core::agent::child_workspace::Ledger>,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -1269,6 +1276,7 @@ impl BackgroundSubagents {
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
             generation: std::sync::atomic::AtomicU64::new(0),
             session_events: std::sync::Mutex::new(None),
+            workspaces: Arc::default(),
         }
     }
 
@@ -1921,12 +1929,26 @@ async fn run_subagent(
     parent_link: ParentLink,
     transcript_dir: Option<PathBuf>,
     memory_access: bool,
+    workspace: Option<crate::core::agent::child_workspace::ChildWorkspace>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::r#loop::run_orchestration_steered;
 
     let name = resolved.definition.name.clone();
     let mut child_args = without_memory(parent_args, memory_access);
+    // Where it works: its own worktree, or the parent's checkout read-only.
+    if let (Some(ws), Some(parent_root)) = (&workspace, child_args.project_root.clone()) {
+        let scratch = child_args
+            .session_id
+            .as_deref()
+            .map(tauri_plugin_agent_tools::workspace::scratch_dir);
+        crate::core::agent::child_workspace::apply(
+            &mut child_args,
+            ws,
+            &parent_root,
+            scratch.as_deref(),
+        );
+    }
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     // The host wrote its prompt for the conversation it drives, not for a
     // delegate with a task of its own; left in place it would also replace the
@@ -1988,6 +2010,7 @@ async fn run_subagent(
         run_id: run_id.clone(),
         name: name.clone(),
         task: Some(description.clone()),
+        workspace: workspace.as_ref().map(|ws| ws.label()),
     });
 
     let (child_tx, mut child_rx) = tokio::sync::mpsc::unbounded_channel::<StreamEvent>();
@@ -2039,8 +2062,13 @@ async fn run_subagent(
     let recorder = forwarder.await.ok().flatten();
     let _ = postman.await;
 
+    let footer = workspace.as_ref().and_then(|ws| ws.answer_footer());
     let outcome = match result {
-        Ok(completion) => Ok(final_assistant_text(&completion)),
+        // The parent merges a writer's branch, so its answer names it.
+        Ok(completion) => Ok(match footer {
+            Some(footer) => format!("{}\n\n{footer}", final_assistant_text(&completion)),
+            None => final_assistant_text(&completion),
+        }),
         Err(message) => Err(SubagentError::Upstream(message)),
     };
     if let Some(recorder) = recorder {
@@ -2153,7 +2181,22 @@ fn launch(
     use std::sync::atomic::Ordering;
 
     let bg = &scope.bg;
+    let project_root = parent_args
+        .project_root
+        .as_ref()
+        .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let name = resolved.definition.name.clone();
+    // Assigned now, before the child can queue: the dispatch result names it,
+    // and a second writer onto a busy worktree is refused here.
+    let writer = crate::core::agent::child_workspace::is_writer(
+        resolved.allowed_tools.as_deref(),
+        &parent_args.permissions,
+    );
+    let (workspace, lease) = bg
+        .workspaces
+        .assign(project_root, &name, writer, req.workspace.as_ref())
+        .map_err(SubagentError::Upstream)?;
+    let workspace_note = workspace.note();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
     let result_file = scratch.and_then(|s| {
@@ -2252,6 +2295,8 @@ fn launch(
             }
         };
         let _permit = permit;
+        // Held until the child is done, so no second writer joins it.
+        let _lease = lease;
         let end_events = task_events.clone();
         let result = run_subagent(
             parent_args,
@@ -2264,6 +2309,7 @@ fn launch(
             parent_link,
             transcript_dir,
             memory_access,
+            Some(workspace),
         )
         .await;
         if let Some((_, path)) = &result_file {
@@ -2307,7 +2353,10 @@ fn launch(
         },
     );
     drop(entries);
-    Ok(Dispatched { run_id })
+    Ok(Dispatched {
+        run_id,
+        workspace: workspace_note,
+    })
 }
 
 /// The name Jan's memory-tidy subagent runs under. Not a registry entry: the
@@ -2412,6 +2461,9 @@ fn memory_tidy_dispatch() -> (ResolvedDispatch, SubagentRequest) {
         allowed_tools: None,
         agent: MEMORY_TIDY_AGENT.to_string(),
         memory_access: true,
+        // Never a worktree: with no write or edit tool the tidy is a reader,
+        // so it gets the default, the parent's checkout read-only.
+        workspace: None,
     };
     (resolved, req)
 }
@@ -2463,6 +2515,8 @@ pub(crate) fn worker_names_in(result: &str) -> Option<Vec<String>> {
 pub(crate) struct DispatchedChild {
     pub(crate) name: String,
     pub(crate) run_id: String,
+    /// Where it works (see [`Dispatched::workspace`]).
+    pub(crate) workspace: String,
 }
 
 /// `<scratch>/blackboard`.
@@ -2694,6 +2748,7 @@ fn spawn_first_phase(
                 started.children.push(DispatchedChild {
                     name,
                     run_id: d.run_id.clone(),
+                    workspace: d.workspace,
                 });
                 started.ids.push(d.run_id);
             }
@@ -2909,6 +2964,9 @@ fn completion_notice(
 /// file is the child's blackboard entry, reported by the plan as a whole.
 pub(crate) struct Dispatched {
     pub(crate) run_id: String,
+    /// Where it works, as the dispatch result says (see
+    /// [`crate::core::agent::child_workspace::ChildWorkspace::note`]).
+    pub(crate) workspace: String,
 }
 
 /// Block until the background subagent `run_id` finishes and return its final
@@ -3188,6 +3246,17 @@ pub fn subagent_tool_schemas(
                                         "type": "array",
                                         "items": { "type": "string" },
                                         "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
+                                    },
+                                    "workspace": {
+                                        "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh git worktree on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
+                                        "anyOf": [
+                                            { "type": "string" },
+                                            {
+                                                "type": "object",
+                                                "properties": { "ref": { "type": "string" } },
+                                                "required": ["ref"]
+                                            }
+                                        ]
                                     }
                                 },
                                 "required": ["agent", "task"]
@@ -3318,6 +3387,8 @@ pub fn parse_dispatch_plan(
     let names = number_workers(agents.iter().map(String::as_str), taken);
     for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names.iter().cloned()) {
         let description = required_str(sub, "task")?;
+        let workspace = crate::core::agent::child_workspace::parse_request(sub.get("workspace"))
+            .map_err(|e| SubagentError::Upstream(format!("subagent '{name}': {e}")))?;
         let phase = match sub.get("phase") {
             None | Some(serde_json::Value::Null) => 0,
             Some(v) => v
@@ -3336,6 +3407,7 @@ pub fn parse_dispatch_plan(
             allowed_tools: optional_tool_list(sub),
             agent,
             memory_access: false,
+            workspace,
         });
     }
     let phases = by_phase
@@ -4041,6 +4113,7 @@ pub(crate) mod tests {
             allowed_tools: allowed,
             agent: name.to_string(),
             memory_access: false,
+            workspace: None,
         }
     }
 
@@ -4844,6 +4917,7 @@ pub(crate) mod tests {
             compaction: None,
             session_start: None,
             memory_change_budget: None,
+            child_scope: None,
         }
     }
 
@@ -6129,6 +6203,54 @@ pub(crate) mod tests {
             agent["enum"],
             serde_json::json!(["debug", "explore", "general", "research", "review"])
         );
+    }
+
+    /// The optional per-item `workspace` takes a keyword or an earlier
+    /// worker's name as a string, or a `{ref}` object; it is never required,
+    /// and the schema is the same bytes every time it is built.
+    #[test]
+    fn the_dispatch_schema_offers_an_optional_workspace() {
+        let reg = SubagentRegistry::load(&unique_root("workspace_schema"));
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        let ws = &item["properties"]["workspace"];
+        let shapes = ws["anyOf"].as_array().expect("anyOf");
+        assert_eq!(shapes[0]["type"], "string");
+        assert_eq!(shapes[1]["type"], "object");
+        assert_eq!(shapes[1]["required"], serde_json::json!(["ref"]));
+        assert!(ws["description"].as_str().unwrap().contains("\"shared\""));
+        assert_eq!(item["required"], serde_json::json!(["agent", "task"]));
+        assert_eq!(
+            schemas,
+            subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS),
+            "stable across turns"
+        );
+    }
+
+    #[test]
+    fn a_dispatch_item_carries_its_workspace_and_a_bad_one_fails_the_plan() {
+        use crate::core::agent::child_workspace::WorkspaceRequest;
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": "new" },
+            { "agent": "review", "task": "b", "workspace": { "ref": "pull/1/head" } },
+            { "agent": "explore", "task": "c" },
+        ]}))
+        .unwrap();
+        let ws: Vec<_> = plan.phases[0].subagents.iter().map(|s| s.workspace.clone()).collect();
+        assert_eq!(
+            ws,
+            vec![
+                Some(WorkspaceRequest::New),
+                Some(WorkspaceRequest::Ref("pull/1/head".to_string())),
+                None
+            ]
+        );
+        let err = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": 7 },
+        ]}))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("general") && err.contains("workspace"), "{err}");
     }
 
     /// Every `allowed_tools` array is pinned to the names the run offers, minus
