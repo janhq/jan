@@ -55,6 +55,7 @@ describe('toolActivityText', () => {
   it('formats memory tools without a path', () => {
     expect(toolActivityText('memory', { op: 'write' })).toBe('Saving memory')
     expect(toolActivityText('memory', { op: 'delete' })).toBe('Saving memory')
+    expect(toolActivityText('memory', { op: 'move' })).toBe('Saving memory')
     expect(toolActivityText('memory', { op: 'search' })).toBe('Searching memory')
     expect(toolActivityText('memory', { op: 'view' })).toBe('Reading memory')
     expect(toolActivityText('memory', {})).toBe('Reading memory')

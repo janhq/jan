@@ -471,6 +471,7 @@ fn memory_label(args: &serde_json::Value) -> (&'static str, &'static str, String
     let verb = match args.get("op").and_then(|v| v.as_str()) {
         Some("write") | Some("edit") => "Updating",
         Some("delete") => "Deleting",
+        Some("move") => "Moving",
         Some("search") => "Searching",
         _ => "Reading",
     };
@@ -945,6 +946,10 @@ pub(crate) mod tests {
         assert_eq!(
             describe_tool_call("memory", &json!({"op": "search", "query": "yarn"})),
             "Searching memory: yarn"
+        );
+        assert_eq!(
+            describe_tool_call("memory", &json!({"op": "move", "name": "old", "to": "tui/old"})),
+            "Moving memory: old"
         );
     }
 

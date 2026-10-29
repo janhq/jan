@@ -40,6 +40,7 @@ const MEMORY_ACTIVITY: Record<string, string> = {
   write: 'Saving memory',
   edit: 'Saving memory',
   delete: 'Saving memory',
+  move: 'Saving memory',
   search: 'Searching memory',
 }
 
