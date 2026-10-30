@@ -156,10 +156,19 @@ fn read_zip_entry_capped(
     String::from_utf8(bytes).map_err(|e| RagError::ParseError(e.to_string()))
 }
 
-/// For formats `calamine` unpacks itself (xlsx, ods): refuse a zip whose XML
-/// parts declare more than the caps before handing it over. Only `.xml` parts
-/// count: they are what `calamine` inflates and parses, while media and
-/// embedded objects are never read, however large. A file that is not a zip
+/// Parts of an xlsx/ods zip that `calamine` never reads, however large:
+/// pictures, embedded objects and thumbnails. Everything else may be inflated
+/// and parsed (sheet parts are found through relationship targets, which can
+/// have any name), so it counts toward the caps.
+fn is_unread_spreadsheet_part(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["xl/media/", "xl/embeddings/", "pictures/", "thumbnails/"]
+        .iter()
+        .any(|dir| name.starts_with(dir))
+}
+
+/// For formats `calamine` unpacks itself (xlsx, ods): refuse a zip whose parts
+/// declare more than the caps before handing it over. A file that is not a zip
 /// (xls) passes through; `calamine` reports its own errors.
 fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
     let Ok(mut zip) = ZipArchive::new(std::fs::File::open(file_path)?) else {
@@ -170,7 +179,7 @@ fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
         let Ok(entry) = zip.by_index_raw(i) else {
             continue;
         };
-        if !entry.name().map_or(true, |n| n.ends_with(".xml")) {
+        if entry.name().is_ok_and(|n| is_unread_spreadsheet_part(&n)) {
             continue;
         }
         if entry.size() > MAX_ZIP_ENTRY_SIZE {
@@ -757,7 +766,7 @@ mod tests {
     #[test]
     fn pptx_slides_that_together_inflate_past_the_total_are_refused_naming_the_total() {
         const SLIDE: u64 = 90 * 1024 * 1024;
-        assert!(SLIDE < MAX_ZIP_ENTRY_SIZE && 3 * SLIDE > MAX_ZIP_TOTAL_SIZE);
+        const _: () = assert!(SLIDE < MAX_ZIP_ENTRY_SIZE && 3 * SLIDE > MAX_ZIP_TOTAL_SIZE);
         let path = bomb_zip_entries(
             "total.pptx",
             &[
@@ -773,6 +782,18 @@ mod tests {
             matches!(&out, Err(RagError::ParseError(m)) if m.contains(&format!("{total_mb} MB"))),
             "{out:?}"
         );
+    }
+
+    #[test]
+    fn spreadsheet_part_without_an_xml_extension_still_counts() {
+        // Sheet parts are found through relationship targets and may have any
+        // name, so only known media paths are exempt.
+        for name in ["xl/worksheets/sheet1", "xl/worksheets/sheet1.XML"] {
+            let path = bomb_zip("noext.xlsx", name, MAX_ZIP_ENTRY_SIZE + 1);
+            let out = parse_spreadsheet(path.to_str().unwrap());
+            let _ = fs::remove_file(&path);
+            assert!(refused_as_too_large(out), "{name}");
+        }
     }
 
     #[test]
