@@ -542,6 +542,27 @@ pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
     dir.canonicalize().ok()
 }
 
+/// The admin dir `common` keeps for the linked worktree at `worktree`
+/// (`<common>/worktrees/<name>`, `<name>` deduplicated by git), found by the
+/// `gitdir` file git wrote there pointing back at the checkout. Read from
+/// the shared git dir rather than from the checkout's own `.git` file, which
+/// whoever works in the checkout can rewrite.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_admin_dir(common: &Path, worktree: &Path) -> Option<PathBuf> {
+    let want = worktree.join(".git");
+    let want = want.canonicalize().unwrap_or(want);
+    std::fs::read_dir(common.join("worktrees"))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|admin| {
+            std::fs::read_to_string(admin.join("gitdir")).is_ok_and(|raw| {
+                let back = PathBuf::from(raw.trim());
+                back.canonicalize().unwrap_or(back) == want
+            })
+        })
+}
+
 /// Commits on `HEAD` of `worktree` that `base` does not have, or `None` when
 /// git cannot say (then the caller must assume there is work to keep).
 #[cfg(feature = "cli")]

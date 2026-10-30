@@ -894,6 +894,7 @@ struct RunWorkspace {
     read_only: bool,
     read_roots: Vec<std::path::PathBuf>,
     write_roots: Vec<std::path::PathBuf>,
+    carve_outs: Vec<tauri_plugin_agent_tools::tools::jail::CarveOut>,
 }
 
 impl RunWorkspace {
@@ -908,6 +909,7 @@ impl RunWorkspace {
                 read_only: scope.read_only,
                 read_roots: scope.write_roots.clone(),
                 write_roots: scope.write_roots.clone(),
+                carve_outs: scope.carve_outs.clone(),
             },
             None => Self {
                 read_roots: crate::core::agent::child_workspace::parent_read_root(root)
@@ -1313,6 +1315,7 @@ impl CompositeToolInvoker {
         .with_workspace_readonly(self.workspace.read_only)
         .with_read_roots(&self.workspace.read_roots)
         .with_write_roots(&self.workspace.write_roots)
+        .with_carve_outs(&self.workspace.carve_outs)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)

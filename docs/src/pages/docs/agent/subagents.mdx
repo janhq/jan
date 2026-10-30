@@ -202,7 +202,8 @@ Saved subagent definitions cannot set a workspace; it is chosen per dispatch.
 
 Worktrees share one `CARGO_TARGET_DIR` per project, so a new one does not start with a cold Rust
 build. A sandboxed writer may write the repository's git directory, so `git commit` works in its
-worktree. The main agent can read its subagents' worktrees with the file tools (`read`, `ls`,
+worktree, but its hooks, config, `info/`, submodule git dirs and the other worktrees' admin dirs stay
+read-only, so nothing it writes there runs outside the sandbox. The main agent can read its subagents' worktrees with the file tools (`read`, `ls`,
 `find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
 read-only (`git -C <worktree> diff` works; an escalated command naming them is refused).
 
