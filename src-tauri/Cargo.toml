@@ -278,7 +278,7 @@ gtk = { version = "0.18", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
-windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem", "Win32_System_LibraryLoader"] }
 
 # MLX runs only on Apple Silicon, so the plugin is built solely for macOS.
 [target.'cfg(target_os = "macos")'.dependencies]
