@@ -417,6 +417,20 @@ impl Ledger {
             None => ChildWorkspace::shared(parent_root, read_only),
         };
         let mut state = self.state.lock().unwrap();
+        // A reuse was looked up under an earlier hold of the lock: a sweep may
+        // have removed that worktree since (dropping it from `created`). Only
+        // a worktree the ledger still records, and that is still on disk, is
+        // handed out; never a path git has already deleted.
+        if let (Some(WorkspaceRequest::Reuse(earlier)), Some(wt)) = (request, ws.worktree.as_ref()) {
+            let recorded = state.created.iter().any(|c| c.path == wt.path);
+            if !recorded || !wt.path.is_dir() {
+                return Err(format!(
+                    "refused: the worktree of '{earlier}' ({}) was removed, as it held no \
+                     work. This subagent was not started. Give it workspace \"new\" instead",
+                    display(&wt.path)
+                ));
+            }
+        }
         if let Some(wt) = ws.worktree.as_ref().filter(|wt| state.removing.contains(&wt.path)) {
             return Err(format!(
                 "refused: {} (branch {}) is being removed, as it held no work. This \
@@ -1114,6 +1128,29 @@ mod git_tests {
         assert!(!ledger.claim(&path), "a busy worktree is never claimed");
         drop(lease);
         let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A reuse looked up just before a sweep removed that worktree (the name
+    /// still maps to it, but git deleted it and the ledger dropped it) is
+    /// refused, never re-recorded or handed out as a missing directory.
+    #[test]
+    fn a_reuse_of_a_worktree_swept_meanwhile_is_refused() {
+        let Some(root) = repo("swept") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let wt = ws.worktree.clone().unwrap();
+        // The sweep's effect, landing between the lookup and the record.
+        assert!(remove_if_empty(&wt));
+        ledger.state.lock().unwrap().created.retain(|c| c.path != wt.path);
+
+        let reuse = WorkspaceRequest::Reuse("general".to_string());
+        for writer in [true, false] {
+            let err = ledger.assign(&root, "next", writer, Some(&reuse)).unwrap_err();
+            assert!(err.contains("was removed"), "{err}");
+        }
+        assert!(ledger.live().is_empty(), "{:?}", ledger.live());
         let _ = std::fs::remove_dir_all(&root);
     }
 
