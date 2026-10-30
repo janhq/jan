@@ -2032,7 +2032,10 @@ async fn run_subagent(
     parent_link: ParentLink,
     transcript_dir: Option<PathBuf>,
     memory_access: bool,
-    workspace: Option<crate::core::agent::child_workspace::ChildWorkspace>,
+    placed: Option<(
+        crate::core::agent::child_workspace::ChildWorkspace,
+        crate::core::agent::child_workspace::Placement,
+    )>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::r#loop::run_orchestration_steered;
@@ -2040,18 +2043,11 @@ async fn run_subagent(
     let name = resolved.definition.name.clone();
     let mut child_args = without_memory(parent_args, memory_access);
     // Where it works: its own worktree, or the parent's checkout read-only.
-    if let (Some(ws), Some(parent_root)) = (&workspace, child_args.project_root.clone()) {
-        let scratch = child_args
-            .session_id
-            .as_deref()
-            .map(tauri_plugin_agent_tools::workspace::scratch_dir);
-        crate::core::agent::child_workspace::apply(
-            &mut child_args,
-            ws,
-            &parent_root,
-            scratch.as_deref(),
-        );
-    }
+    // The git behind it was read at dispatch, on the blocking pool.
+    let workspace = placed.map(|(ws, placement)| {
+        crate::core::agent::child_workspace::apply(&mut child_args, &ws, placement);
+        ws
+    });
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
     // The host wrote its prompt for the conversation it drives, not for a
     // delegate with a task of its own; left in place it would also replace the
@@ -2248,6 +2244,8 @@ struct PreparedDispatch {
     /// See [`SubagentRequest::memory_access`].
     memory_access: bool,
     workspace: crate::core::agent::child_workspace::ChildWorkspace,
+    /// What the child's args take from `workspace`, read from git with it.
+    placement: crate::core::agent::child_workspace::Placement,
     lease: LeaseSlot,
 }
 
@@ -2320,9 +2318,14 @@ async fn assign_dispatch(
         &parent_args.permissions,
     );
     // On the blocking pool: assigning runs `git worktree add`, `git status`
-    // and for a ref possibly a network fetch, which would otherwise stall
-    // every other task on this runtime worker until git returns.
-    let (workspace, lease) = {
+    // and for a ref possibly a network fetch, and placing the child reads its
+    // branch and git dir, which would otherwise stall every other task on
+    // this runtime worker until git returns.
+    let scratch = parent_args
+        .session_id
+        .as_deref()
+        .map(tauri_plugin_agent_tools::workspace::scratch_dir);
+    let (workspace, placement, lease) = {
         let scope = scope.clone();
         let root = project_root.clone();
         let name = name.clone();
@@ -2341,7 +2344,9 @@ async fn assign_dispatch(
                 scope.bg.workspaces.undo(&name, &ws);
                 return Err(SubagentError::Cancelled);
             }
-            Ok((ws, lease))
+            let placement =
+                crate::core::agent::child_workspace::place(&ws, &root, scratch.as_deref());
+            Ok((ws, placement, lease))
         })
         .await
         .map_err(|e| SubagentError::Upstream(format!("assigning a workspace failed: {e}")))??
@@ -2353,6 +2358,7 @@ async fn assign_dispatch(
         parent: parent.clone(),
         memory_access: req.memory_access,
         workspace,
+        placement,
         lease: LeaseSlot::new(lease),
     })
 }
@@ -2378,6 +2384,7 @@ fn start_dispatch(
         parent,
         memory_access,
         workspace,
+        placement,
         lease,
     } = prepared;
     let workspace_note = workspace.note();
@@ -2506,7 +2513,7 @@ fn start_dispatch(
             parent_link,
             transcript_dir,
             memory_access,
-            Some(workspace),
+            Some((workspace, placement)),
         )
         .await;
         // Before `finished` below: a next phase may reuse this worktree as
