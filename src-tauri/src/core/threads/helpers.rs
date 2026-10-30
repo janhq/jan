@@ -87,6 +87,28 @@ pub fn update_thread_metadata(
 ) -> Result<(), String> {
     let path = get_thread_metadata_path(data_folder, thread_id)?;
     let data = serde_json::to_string_pretty(thread).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())?;
-    Ok(())
+    write_file_atomic(&path, data.as_bytes())
+}
+
+/// Write a file by writing a uniquely named sibling temp file and renaming it
+/// over the target, so a crash mid-write leaves the old contents (or nothing),
+/// never a truncated file. The name is unique per call rather than guarded by
+/// the thread lock, because some callers already hold that lock.
+pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = path.with_file_name(format!("{name}.{}.{n}.tmp", std::process::id()));
+    if let Err(e) = fs::write(&tmp, data) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
 }

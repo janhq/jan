@@ -27,6 +27,7 @@ function makeBackend(opts: { failCreateFor?: string; failWriteFor?: string } = {
       case 'write_thread_extra':
         if (args.threadId === opts.failWriteFor) throw new Error('disk full')
         // Mimic serde_json (sorted keys) by round-tripping through JSON.
+        if (!args.create && !threads.has(args.threadId)) throw new Error('no thread.json')
         extras.set(`${args.threadId}/${args.name}`, JSON.parse(JSON.stringify(args.value)))
         return
       case 'read_thread_extra':
@@ -126,6 +127,16 @@ describe('migrateCoworkSessionsToThreads', () => {
     expect(r.status).toBe('complete')
     expect(r.skipped).toContain('s1')
     expect(b.calls).not.toContain('write_thread_extra')
+    expect(b.calls).not.toContain('create_thread')
+  })
+
+  it('treats a thread written through by the Cowork store (no migratedFrom) as migrated and settles', async () => {
+    b.threads.set('s1', { id: 's1', title: 'Session s1', metadata: { mode: 'cowork' } })
+    b.settings.set(CODE_SESSIONS_KEY, envelope([session('s1')]))
+    const r = await migrateCoworkSessionsToThreads(b.invoke)
+    expect(r.status).toBe('complete')
+    expect(r.skipped).toContain('s1')
+    expect(b.settings.get(COWORK_MIGRATION_FLAG_KEY)).toBe('true')
     expect(b.calls).not.toContain('create_thread')
   })
 

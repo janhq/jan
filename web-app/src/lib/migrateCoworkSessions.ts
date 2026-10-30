@@ -46,7 +46,7 @@ export type CoworkSidecar = {
 
 type StoredThread = {
   id?: unknown
-  metadata?: { mode?: unknown; migratedFrom?: unknown } | null
+  metadata?: { mode?: unknown } | null
 }
 
 // Key-order-insensitive serialization: the backend may reorder object keys.
@@ -165,7 +165,10 @@ export async function migrateCoworkSessionsToThreads(
       try {
         const committed = existing.get(session.id)
         if (committed) {
-          if (committed.metadata?.mode === 'cowork' && committed.metadata.migratedFrom) {
+          // A cowork thread with this id is already ours: it was either copied
+          // by an earlier run or written through by the Cowork store (same id
+          // by construction). Anything else is a different conversation.
+          if (committed.metadata?.mode === 'cowork') {
             result.skipped.push(session.id)
             continue
           }
@@ -177,6 +180,8 @@ export async function migrateCoworkSessionsToThreads(
           threadId: session.id,
           name: COWORK_SIDECAR,
           value: sidecar,
+          // The thread directory does not exist yet; creating it is allowed here.
+          create: true,
         })
         const back = await invoke<unknown>('read_thread_extra', {
           threadId: session.id,
