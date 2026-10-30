@@ -351,7 +351,7 @@ pub(crate) fn parent_read_root(root: &Path) -> Option<PathBuf> {
     }
     let dir = project_worktrees_dir(root)?;
     std::fs::create_dir_all(&dir).ok()?;
-    dir.canonicalize().ok()
+    dunce::canonicalize(&dir).ok()
 }
 
 /// Whether a reader's checkout is read-only. CLI-only: the desktop's Windows
@@ -596,14 +596,15 @@ fn create(
         let branch = format!("jan/agent/{id}");
         match git::worktree_add(&repo, &path, &branch, &base) {
             Ok(()) => {
-                let path = path.canonicalize().unwrap_or(path);
+                // dunce, not std: Windows' `\\?\` form is what `worktree add`
+                // refuses, and every later git call is handed this path.
+                let path = dunce::canonicalize(&path).unwrap_or(path);
                 // A subdirectory of the checkout maps to the same one in the
                 // worktree, so relative paths mean what they did.
-                let rel = parent_root
-                    .canonicalize()
+                let rel = dunce::canonicalize(parent_root)
                     .ok()
                     .and_then(|r| {
-                        let top = repo.canonicalize().ok()?;
+                        let top = dunce::canonicalize(&repo).ok()?;
                         r.strip_prefix(top).ok().map(Path::to_path_buf)
                     })
                     .unwrap_or_default();
@@ -859,7 +860,7 @@ mod git_tests {
         assert!(!writer.read_only);
         assert_eq!(writer.root, wt.path);
         assert!(wt.branch.starts_with("jan/agent/general-"), "{}", wt.branch);
-        assert!(wt.path.starts_with(project_worktrees_dir(&root).unwrap().canonicalize().unwrap()));
+        assert!(wt.path.starts_with(dunce::canonicalize(project_worktrees_dir(&root).unwrap()).unwrap()));
         assert_eq!(
             crate::core::agent::git::current_branch(&wt.path).as_deref(),
             Some(wt.branch.as_str())
@@ -1278,6 +1279,25 @@ mod git_tests {
         assert_eq!(args.project_root.as_deref(), Some(root.as_path()));
         assert_eq!(args.session_start, parent_start, "a reader keeps the parent's start");
         assert!(args.child_scope.as_ref().unwrap().read_only);
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A project root that went through `std::fs::canonicalize` (on Windows
+    /// the `\\?\C:\...` form) still gets a worktree, and the path the ledger
+    /// keeps and hands to git carries no such prefix. Only Windows has the
+    /// prefix; elsewhere this checks the same flow with a plain path.
+    #[test]
+    fn a_verbatim_project_root_still_gets_a_plain_worktree_path() {
+        let Some(root) = repo("verbatim") else { return };
+        let verbatim = std::fs::canonicalize(&root).unwrap();
+        let ledger = Arc::new(Ledger::default());
+        let (ws, _lease) = ledger.assign(&verbatim, "general", true, None).unwrap();
+        let wt = ws.worktree.clone().expect("a writer gets a worktree");
+        assert!(!wt.path.to_string_lossy().starts_with(r"\\?\"), "{wt:?}");
+        assert!(crate::core::agent::git::worktree_registered(&root, &wt.path), "{wt:?}");
+        let scope = scope_for(&ws, &verbatim, None);
+        assert!(scope.write_roots.contains(&root.join(".git")), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -452,12 +452,12 @@ pub(crate) fn worktree_paths(repo: &Path) -> Vec<PathBuf> {
 /// copy came from a config file or a thread record.
 #[cfg(feature = "cli")]
 pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
-    let Ok(want) = path.canonicalize() else {
+    let Ok(want) = dunce::canonicalize(path) else {
         return false;
     };
     worktree_paths(repo)
         .iter()
-        .filter_map(|p| p.canonicalize().ok())
+        .filter_map(|p| dunce::canonicalize(p).ok())
         .any(|p| p == want)
 }
 
@@ -539,7 +539,7 @@ pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
     let raw = run(repo, None, &["rev-parse", "--git-common-dir"]).ok()?;
     let dir = PathBuf::from(raw);
     let dir = if dir.is_absolute() { dir } else { repo.join(dir) };
-    dir.canonicalize().ok()
+    dunce::canonicalize(dir).ok()
 }
 
 /// The admin dir `common` keeps for the linked worktree at `worktree`
@@ -550,7 +550,7 @@ pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
 #[cfg(feature = "cli")]
 pub(crate) fn worktree_admin_dir(common: &Path, worktree: &Path) -> Option<PathBuf> {
     let want = worktree.join(".git");
-    let want = want.canonicalize().unwrap_or(want);
+    let want = dunce::canonicalize(&want).unwrap_or(want);
     std::fs::read_dir(common.join("worktrees"))
         .ok()?
         .filter_map(Result::ok)
@@ -558,7 +558,7 @@ pub(crate) fn worktree_admin_dir(common: &Path, worktree: &Path) -> Option<PathB
         .find(|admin| {
             std::fs::read_to_string(admin.join("gitdir")).is_ok_and(|raw| {
                 let back = PathBuf::from(raw.trim());
-                back.canonicalize().unwrap_or(back) == want
+                dunce::canonicalize(&back).unwrap_or(back) == want
             })
         })
 }
@@ -1063,7 +1063,7 @@ mod tests {
         assert_eq!(resolve_commit(&root, "--output=x"), None);
 
         let common = git_common_dir(&root).expect("a repo has a common dir");
-        assert_eq!(common, root.join(".git").canonicalize().unwrap());
+        assert_eq!(common, dunce::canonicalize(root.join(".git")).unwrap());
 
         let wt = root.parent().unwrap().join(format!(
             "{}-child",
