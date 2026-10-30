@@ -837,7 +837,10 @@ mod git_tests {
         }
         std::fs::write(dir.join("a.txt"), "a\n").ok()?;
         git(&dir, &["add", "a.txt"]);
-        git(&dir, &["commit", "-q", "--no-gpg-sign", "-m", "a"]).then(|| dir.canonicalize().ok())?
+        // Not `std::fs::canonicalize`: on Windows its `\\?\` form reaches git
+        // as a clone URL ("hostname contains invalid characters").
+        git(&dir, &["commit", "-q", "--no-gpg-sign", "-m", "a"])
+            .then(|| dunce::canonicalize(&dir).ok())?
     }
 
     fn commit(dir: &Path, file: &str) {
@@ -916,7 +919,7 @@ mod git_tests {
             upstream.parent().unwrap(),
             &["clone", "-q", "--single-branch", "-b", "main", &upstream.to_string_lossy(), &clone.to_string_lossy()]
         ));
-        let clone = clone.canonicalize().unwrap();
+        let clone = dunce::canonicalize(&clone).unwrap();
         assert_eq!(crate::core::agent::git::resolve_commit(&clone, "feature"), None);
 
         let ledger = Arc::new(Ledger::default());
