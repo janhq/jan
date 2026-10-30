@@ -2054,8 +2054,12 @@ const ChatInput = memo(function ChatInput({
 
           <div
             className={cn(
-              'relative z-20 px-0 border rounded-3xl border-input bg-white dark:bg-input/30',
-              isFocused && 'ring-1 ring-ring/50',
+              'relative z-20 px-0 border rounded-3xl border-input bg-white dark:bg-input/30 transition-[border-color,box-shadow] duration-200 ease-out',
+              // Focus brightens the single 1px border instead of adding a
+              // ring outside it, which doubled the edge to a heavy 2px.
+              // Full strength in light, where the resting border is already
+              // pale; softened in dark so it doesn't glare.
+              isFocused && 'border-ring dark:border-ring/60',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
             data-drop-zone={dropAcceptsAnything ? 'true' : undefined}

@@ -40,6 +40,8 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
       role="button"
       tabIndex={0}
       data-testid="delete-message-trigger"
+      aria-label={t('common:deleteMessage')}
+      title={t('common:deleteMessage')}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
@@ -47,7 +49,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
         }
       }}
     >
-      <IconTrash size={16} />
+      <IconTrash size={16} aria-hidden="true" />
     </Button>
   )
 

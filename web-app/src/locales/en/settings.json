@@ -92,7 +92,7 @@
     "notificationPositionBottomRight": "Bottom right",
     "notificationPositionBottomLeft": "Bottom left",
     "showTokenSpeed": "Show token speed",
-    "showTokenSpeedDesc": "Display tokens/sec and token count inline below assistant messages. When off, a compact icon shows the details on click.",
+    "showTokenSpeedDesc": "Display tokens/s and token count in the assistant message footer (shown on hover). When off, a compact icon shows the details on click.",
     "coloredUserBubble": "Colored user message bubble",
     "coloredUserBubbleDesc": "Use the accent color as the background of your messages. When off, they match assistant messages with plain text on a neutral background.",
     "renderHtmlArtifacts": "Render HTML & SVG artifacts",

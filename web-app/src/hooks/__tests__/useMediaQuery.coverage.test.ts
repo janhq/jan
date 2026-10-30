@@ -54,10 +54,10 @@ describe('useMediaQuery screen size hooks', () => {
     expect(mockMatchMedia).toHaveBeenCalledWith('(orientation: landscape)')
   })
 
-  it('useTouchDevice should query pointer: coarse', () => {
+  it('useTouchDevice should query hover: none', () => {
     mockMatchMedia.mockReturnValue(setup())
     const { result } = renderHook(() => useTouchDevice())
     expect(result.current).toBe(true)
-    expect(mockMatchMedia).toHaveBeenCalledWith('(pointer: coarse)')
+    expect(mockMatchMedia).toHaveBeenCalledWith('(hover: none)')
   })
 })

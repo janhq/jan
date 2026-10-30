@@ -52,11 +52,15 @@ export const TokenSpeedIndicator = memo(
 
     if (showTokenSpeed) {
       return (
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
+        // The footer needs ~400px with the inline stats; in a narrower column
+        // (small window, Cowork's docked rail) they are the first thing to go
+        // rather than wrapping it. Queries the footer's @container. The
+        // compact gauge below stays, so the numbers remain reachable.
+        <div className="flex items-center gap-2 text-muted-foreground text-xs @max-md:hidden">
           {displaySpeed > 0 && (
             <div className="flex items-center gap-1">
               <Gauge size={16} />
-              <span>{displaySpeed} tokens/sec</span>
+              <span>{displaySpeed} tokens/s</span>
             </div>
           )}
           {displayTokenCount > 0 && (
