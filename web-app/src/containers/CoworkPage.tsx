@@ -66,6 +66,12 @@ import {
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
+import {
+  claimCoworkHandoff,
+  clearCoworkHandoff,
+  peekCoworkHandoff,
+  releaseCoworkHandoff,
+} from '@/lib/coworkHandoff'
 import { usePrompt } from '@/hooks/usePrompt'
 import { awaitsModel } from '@/lib/agentActivity'
 import { artifactsFromParts, artifactsFromTurns } from '@/lib/coworkArtifacts'
@@ -1070,6 +1076,49 @@ export function CoworkPage() {
   // while still calling the current render's closure.
   const runRequestRef = useRef(runRequest)
   runRequestRef.current = runRequest
+
+  // First prompt handed over from the home composer. Read without removing,
+  // run it, and clear only once the run was accepted: runRequest refuses
+  // silently (no usable model, no tool support), and a refused first prompt
+  // must stay available instead of vanishing. `claim` makes the effect safe to
+  // run twice (StrictMode) so the prompt is never sent twice.
+  const sessionId = session?.id
+  useEffect(() => {
+    if (!sessionId) return
+    const handoff = peekCoworkHandoff(sessionId)
+    if (!handoff || !claimCoworkHandoff(sessionId)) return
+    void (async () => {
+      await runRequestRef.current(
+        handoff.text,
+        {
+          media: handoff.files,
+          files: handoff.documents
+            ?.filter((d): d is Attachment & { path: string } => !!d.path)
+            .map((d) => ({
+              name: d.name,
+              path: d.path,
+              fileType: d.fileType,
+              size: d.size,
+            })),
+        },
+        sessionId
+      )
+      const accepted =
+        !!useCoworkRun.getState().runId[sessionId] ||
+        (useCoworkSessions
+          .getState()
+          .sessions.find((x) => x.id === sessionId)?.turns.length ?? 0) > 0
+      if (accepted) {
+        clearCoworkHandoff(sessionId)
+      } else {
+        // Refused (e.g. no tool-capable model): put the text in the composer so
+        // nothing is lost, and let a later attempt try again.
+        usePrompt.getState().setPrompt(handoff.draft ?? handoff.text)
+        clearCoworkHandoff(sessionId)
+        releaseCoworkHandoff(sessionId)
+      }
+    })()
+  }, [sessionId])
 
   /**
    * `/compact`: summarize everything but the recent tail into one system
