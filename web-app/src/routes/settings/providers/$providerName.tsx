@@ -39,6 +39,9 @@ import { useModelLoad } from '@/hooks/useModelLoad'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import { SortModelsByNameToggle } from '@/containers/SortModelsByNameToggle'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { sortModelsByName } from '@/lib/modelOrder'
 import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
@@ -91,7 +94,11 @@ function ProviderDetail() {
     () => predefinedProviders.some((p) => p.provider === providerName),
     [providerName]
   )
-  const allModels = useMemo(() => provider?.models ?? [], [provider?.models])
+  const sortModels = useInterfaceSettings((s) => s.sortModelsByName)
+  const allModels = useMemo(() => {
+    const models = provider?.models ?? []
+    return sortModels ? sortModelsByName(models) : models
+  }, [provider?.models, sortModels])
   const embeddingModels = useMemo(
     () =>
       isLlamacpp
@@ -998,9 +1005,12 @@ function ProviderDetail() {
               <Card
                 header={
                   <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-foreground font-medium text-base">
-                      {t('providers:models')}
-                    </h1>
+                    <div className="flex items-center gap-1">
+                      <h1 className="text-foreground font-medium text-base">
+                        {t('providers:models')}
+                      </h1>
+                      <SortModelsByNameToggle />
+                    </div>
                     <div className="flex items-center gap-2">
                       {provider && provider.provider !== 'llamacpp' && provider.provider !== 'mlx' && (
                         <>

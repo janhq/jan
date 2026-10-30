@@ -137,6 +137,8 @@ interface InterfaceSettingsState {
   coloredUserBubble: boolean
   renderHtmlArtifacts: boolean
   autoGenerateTitle: boolean
+  /** List each provider's models by name instead of their stored order. */
+  sortModelsByName: boolean
   setFontSize: (size: FontSize) => void
   zoomInMessages: () => void
   zoomOutMessages: () => void
@@ -147,6 +149,7 @@ interface InterfaceSettingsState {
   setColoredUserBubble: (colored: boolean) => void
   setRenderHtmlArtifacts: (render: boolean) => void
   setAutoGenerateTitle: (auto: boolean) => void
+  setSortModelsByName: (sort: boolean) => void
   resetInterface: () => void
 }
 
@@ -163,6 +166,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setColoredUserBubble'
   | 'setRenderHtmlArtifacts'
   | 'setAutoGenerateTitle'
+  | 'setSortModelsByName'
 >
 
 export const fontSizeOptions = [
@@ -185,6 +189,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     coloredUserBubble: true,
     renderHtmlArtifacts: false,
     autoGenerateTitle: true,
+    sortModelsByName: true,
   }
 }
 
@@ -225,6 +230,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             coloredUserBubble: true,
             renderHtmlArtifacts: false,
             autoGenerateTitle: true,
+            sortModelsByName: true,
           })
         },
 
@@ -274,6 +280,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         setAutoGenerateTitle: (auto) => {
           set({ autoGenerateTitle: auto })
         },
+
+        setSortModelsByName: (sort) => {
+          set({ sortModelsByName: sort })
+        },
       }
     },
     {
@@ -289,6 +299,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         coloredUserBubble: state.coloredUserBubble,
         renderHtmlArtifacts: state.renderHtmlArtifacts,
         autoGenerateTitle: state.autoGenerateTitle,
+        sortModelsByName: state.sortModelsByName,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
