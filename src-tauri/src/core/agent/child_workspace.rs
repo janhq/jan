@@ -248,7 +248,7 @@ const CARGO_TARGET: &str = "cargo-target";
 /// child outside the plain writable checkout, the shared git dir for a writer
 /// in a worktree (so its sandboxed `git commit` lands), and package caches in
 /// the session scratch for a reader. `scratch` is that scratch, when the
-/// session has one.
+/// session has one. Runs git, so call it off the async workers.
 pub(crate) fn scope_for(
     ws: &ChildWorkspace,
     parent_root: &Path,
@@ -284,23 +284,41 @@ pub(crate) fn scope_for(
     scope
 }
 
+/// What a child's args take from its workspace beyond `project_root`, read
+/// from git by [`place`] when the child is dispatched.
+#[derive(Debug, Clone)]
+pub(crate) struct Placement {
+    /// The child's own Session Start, when it is not in the parent's checkout.
+    session_start: Option<crate::core::agent::context::SessionStart>,
+    scope: ChildScope,
+}
+
+/// Resolve the [`Placement`] of a child in `ws`: its worktree's branch and the
+/// shared git dir its scope may write. Runs git, so the dispatch calls it on
+/// the blocking pool and [`apply`], on the async child task, runs none.
+pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path, scratch: Option<&Path>) -> Placement {
+    Placement {
+        session_start: ws
+            .worktree
+            .as_ref()
+            .map(|_| crate::core::agent::context::SessionStart::capture(Some(&ws.root))),
+        scope: scope_for(ws, parent_root, scratch),
+    }
+}
+
 /// Point a child's run at its workspace: `project_root` (and so its prompt's
 /// Working Directory and Runtime Environment blocks), its own Session Start
-/// capture when it is not in the parent's checkout, and the scope its tools
-/// enforce.
+/// when it is not in the parent's checkout, and the scope its tools enforce.
 pub(crate) fn apply(
     args: &mut crate::core::agent::r#loop::OrchestrationArgs,
     ws: &ChildWorkspace,
-    parent_root: &Path,
-    scratch: Option<&Path>,
+    placement: Placement,
 ) {
-    if ws.worktree.is_some() {
-        args.session_start = Some(crate::core::agent::context::SessionStart::capture(Some(
-            &ws.root,
-        )));
+    if let Some(start) = placement.session_start {
+        args.session_start = Some(start);
     }
     args.project_root = Some(ws.root.clone());
-    args.child_scope = Some(scope_for(ws, parent_root, scratch));
+    args.child_scope = Some(placement.scope);
 }
 
 /// Package-manager caches a read-only child keeps in its scratch, since it
@@ -1159,7 +1177,7 @@ mod git_tests {
         let wt = ws.worktree.clone().unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
         args.session_start = Some(crate::core::agent::context::SessionStart::capture(Some(&root)));
-        apply(&mut args, &ws, &root, None);
+        apply(&mut args, &ws, place(&ws, &root, None));
         assert_eq!(args.project_root.as_deref(), Some(wt.path.as_path()));
         let start = args.session_start.as_ref().unwrap().block();
         assert!(start.contains(&wt.branch), "{start}");
@@ -1181,8 +1199,10 @@ mod git_tests {
 
         let (reader, _) = ledger.assign(&root, "explore", false, None).unwrap();
         let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
-        apply(&mut args, &reader, &root, None);
+        let parent_start = args.session_start.clone();
+        apply(&mut args, &reader, place(&reader, &root, None));
         assert_eq!(args.project_root.as_deref(), Some(root.as_path()));
+        assert_eq!(args.session_start, parent_start, "a reader keeps the parent's start");
         assert!(args.child_scope.as_ref().unwrap().read_only);
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
