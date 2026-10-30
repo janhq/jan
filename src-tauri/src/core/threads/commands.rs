@@ -13,7 +13,7 @@ use super::{
     constants::THREADS_FILE,
     utils::{
         ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path,
-        get_thread_dir, get_thread_metadata_path,
+        get_thread_dir, get_thread_metadata_path, validate_thread_id,
     },
 };
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -76,7 +76,23 @@ pub async fn create_thread<R: Runtime>(
     // Use file-based storage on desktop
     let data_folder = get_jan_data_folder_path(app_handle);
     ensure_data_dirs(&data_folder)?;
-    let uuid = Uuid::new_v4().to_string();
+    // A caller-supplied id is kept when it is a valid thread id (a migrated
+    // Cowork session keeps its id so its sandbox stays linked). A missing or
+    // invalid id gets a fresh UUID, as before. Creation is idempotent: if
+    // thread.json already exists for the id, it is returned untouched.
+    let supplied = thread
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|id| validate_thread_id(id).is_ok())
+        .map(str::to_string);
+    if let Some(id) = &supplied {
+        let existing = get_thread_metadata_path(&data_folder, id)?;
+        if existing.exists() {
+            let data = fs::read_to_string(&existing).map_err(|e| e.to_string())?;
+            return serde_json::from_str(&data).map_err(|e| e.to_string());
+        }
+    }
+    let uuid = supplied.unwrap_or_else(|| Uuid::new_v4().to_string());
     thread["id"] = serde_json::Value::String(uuid.clone());
     let thread_dir = get_thread_dir(&data_folder, &uuid)?;
     if !thread_dir.exists() {
@@ -86,6 +102,57 @@ pub async fn create_thread<R: Runtime>(
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
     Ok(thread)
+}
+
+/// Sidecar files a thread directory may hold besides thread.json/messages.jsonl.
+/// Allowlisted so the command can never address an arbitrary file name.
+const THREAD_EXTRA_NAMES: &[&str] = &["cowork"];
+
+fn thread_extra_path(
+    data_folder: &std::path::Path,
+    thread_id: &str,
+    name: &str,
+) -> Result<std::path::PathBuf, String> {
+    if !THREAD_EXTRA_NAMES.contains(&name) {
+        return Err(format!("Unsupported thread extra: {name:?}"));
+    }
+    Ok(get_thread_dir(data_folder, thread_id)?.join(format!("{name}.json")))
+}
+
+/// Reads a per-thread sidecar (e.g. the Cowork transcript). `Ok(None)` when absent.
+#[tauri::command]
+pub async fn read_thread_extra<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    thread_id: String,
+    name: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = thread_extra_path(&data_folder, &thread_id, &name)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&data).map(Some).map_err(|e| e.to_string())
+}
+
+/// Writes a per-thread sidecar atomically (temp file + rename) under the
+/// thread's lock, creating the thread directory if needed.
+#[tauri::command]
+pub async fn write_thread_extra<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    thread_id: String,
+    name: String,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = thread_extra_path(&data_folder, &thread_id, &name)?;
+    let lock = get_lock_for_thread(&thread_id).await;
+    let _guard = lock.lock().await;
+    ensure_thread_dir_exists(&data_folder, &thread_id)?;
+    let tmp = path.with_extension("json.tmp");
+    let data = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+    fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 /// Modifies an existing thread's metadata by overwriting its thread.json file.
