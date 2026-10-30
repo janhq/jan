@@ -1486,4 +1486,73 @@ mod server_tests {
         assert!(handle.lock().await.is_none());
         assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
     }
+
+    /// A `*` in Trusted Hosts opens the API to any web page (CORS), but the
+    /// Host header must still name this server: a DNS-rebinding page reaches
+    /// it under its own hostname.
+    #[tokio::test]
+    async fn wildcard_trusted_hosts_still_refuse_a_foreign_host_header() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "127.0.0.1".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec!["*".to_string()]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            false,
+            true,
+        )
+        .await
+        .expect("server starts");
+
+        let get = |host: String, origin: Option<&'static str>| async move {
+            let mut req = reqwest::Client::new()
+                .get(format!("http://127.0.0.1:{port}/v1/models"))
+                .header("Host", host);
+            if let Some(o) = origin {
+                req = req.header("Origin", o);
+            }
+            req.send().await.expect("request sent").status()
+        };
+
+        // The rebinding shape: attacker hostname in Host and as Origin.
+        assert_eq!(
+            get("attacker.example".into(), Some("http://attacker.example")).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            get("attacker.example:1337".into(), None).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        // `*` keeps its CORS meaning: a page on another origin may call the
+        // API through the server's own address.
+        assert_ne!(
+            get(format!("127.0.0.1:{port}"), Some("https://any-web-app.example")).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+        assert_ne!(
+            get(format!("127.0.0.1:{port}"), None).await,
+            reqwest::StatusCode::FORBIDDEN
+        );
+
+        proxy::stop_server(handle).await.unwrap();
+    }
 }

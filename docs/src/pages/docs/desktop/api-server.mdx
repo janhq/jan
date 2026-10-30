@@ -76,6 +76,8 @@ A secret key used to authenticate requests.
 
 ### Trusted Hosts
 A comma-separated list of hostnames allowed to access the server. This provides an additional layer of security when the server is exposed on your network.
+- Entries are matched against the `Host` header and against the web page that sends a request. Your own computer (`127.0.0.1`, `localhost`) and private network addresses are always accepted as the `Host`.
+- `*` lets a web page from any origin call the API. It does not accept any other `Host`: to reach Jan by a hostname such as `my-mac.local`, list that hostname too.
 
 ### Request Timeout
 How long (in seconds) the server waits for a response from the local model before giving up. Increase this if you are running large models on slow hardware and see request timeouts.
