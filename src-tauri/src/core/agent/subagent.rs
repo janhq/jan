@@ -3432,7 +3432,7 @@ pub fn subagent_tool_schemas(
     let dispatch_desc = format!(
         "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} Every subagent gets your full toolset unless its agent's definition or allowed_tools restricts it, except memory: subagents have no memory tool and no memory index, so put any remembered fact a subagent needs into its task."
     );
-    vec![
+    let mut tools = vec![
         json!({
             "type": "function",
             "function": {
@@ -3454,17 +3454,6 @@ pub fn subagent_tool_schemas(
                                         "type": "array",
                                         "items": { "type": "string" },
                                         "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
-                                    },
-                                    "workspace": {
-                                        "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh git worktree on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
-                                        "anyOf": [
-                                            { "type": "string" },
-                                            {
-                                                "type": "object",
-                                                "properties": { "ref": { "type": "string" } },
-                                                "required": ["ref"]
-                                            }
-                                        ]
                                     }
                                 },
                                 "required": ["agent", "task"]
@@ -3522,7 +3511,24 @@ pub fn subagent_tool_schemas(
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
-    ]
+    ];
+    // Only the CLI build gives a child a worktree or a read-only checkout, so
+    // only there is the field offered (and read: see `parse_dispatch_plan`).
+    if cfg!(feature = "cli") {
+        tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]["properties"]
+            ["workspace"] = json!({
+            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh git worktree on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
+            "anyOf": [
+                { "type": "string" },
+                {
+                    "type": "object",
+                    "properties": { "ref": { "type": "string" } },
+                    "required": ["ref"]
+                }
+            ]
+        });
+    }
+    tools
 }
 
 fn required_str(args: &serde_json::Value, key: &str) -> Result<String, SubagentError> {
@@ -3595,8 +3601,14 @@ pub fn parse_dispatch_plan(
     let names = number_workers(agents.iter().map(String::as_str), taken);
     for ((sub, agent), name) in subs_val.iter().zip(agents).zip(names.iter().cloned()) {
         let description = required_str(sub, "task")?;
-        let workspace = crate::core::agent::child_workspace::parse_request(sub.get("workspace"))
-            .map_err(|e| SubagentError::Upstream(format!("subagent '{name}': {e}")))?;
+        // The desktop schema has no `workspace`, so one sent there is ignored
+        // like any other unknown field: every child shares the checkout anyway.
+        let workspace = if cfg!(feature = "cli") {
+            crate::core::agent::child_workspace::parse_request(sub.get("workspace"))
+                .map_err(|e| SubagentError::Upstream(format!("subagent '{name}': {e}")))?
+        } else {
+            None
+        };
         let phase = match sub.get("phase") {
             None | Some(serde_json::Value::Null) => 0,
             Some(v) => v
@@ -6705,6 +6717,7 @@ pub(crate) mod tests {
     /// The optional per-item `workspace` takes a keyword or an earlier
     /// worker's name as a string, or a `{ref}` object; it is never required,
     /// and the schema is the same bytes every time it is built.
+    #[cfg(feature = "cli")]
     #[test]
     fn the_dispatch_schema_offers_an_optional_workspace() {
         let reg = SubagentRegistry::load(&unique_root("workspace_schema"));
@@ -6724,6 +6737,26 @@ pub(crate) mod tests {
         );
     }
 
+    /// The desktop makes no worktrees, so it neither offers `workspace` nor
+    /// acts on one: a model that sends it anyway (even a malformed one) gets
+    /// the plain shared checkout rather than a failed plan.
+    #[cfg(not(feature = "cli"))]
+    #[test]
+    fn the_desktop_dispatch_schema_has_no_workspace_and_ignores_one() {
+        let reg = SubagentRegistry::load(&unique_root("workspace_schema_desktop"));
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        let item = &schemas[0]["function"]["parameters"]["properties"]["subagents"]["items"];
+        assert!(item["properties"].get("workspace").is_none(), "{item}");
+        assert!(!schemas[0].to_string().contains("worktree"), "{}", schemas[0]);
+        let plan = parse_dispatch_plan_fresh(&serde_json::json!({ "subagents": [
+            { "agent": "general", "task": "a", "workspace": "new" },
+            { "agent": "explore", "task": "b", "workspace": 7 },
+        ]}))
+        .unwrap();
+        assert!(plan.phases[0].subagents.iter().all(|s| s.workspace.is_none()));
+    }
+
+    #[cfg(feature = "cli")]
     #[test]
     fn a_dispatch_item_carries_its_workspace_and_a_bad_one_fails_the_plan() {
         use crate::core::agent::child_workspace::WorkspaceRequest;
