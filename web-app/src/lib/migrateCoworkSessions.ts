@@ -20,8 +20,11 @@ import type { CoworkSession } from '@/hooks/useCoworkSessions'
 export const CODE_SESSIONS_KEY = 'code-sessions'
 export const COWORK_MIGRATION_FLAG_KEY = 'cowork_threads_migrated_v1'
 export const COWORK_SIDECAR = 'cowork'
+/** Ids the user deleted while the migration was unsettled, so the untouched
+ * legacy blob can never resurrect them. */
+export const COWORK_DELETED_IDS_KEY = 'cowork_deleted_ids'
 
-type Invoke = <T = unknown>(
+export type Invoke = <T = unknown>(
   cmd: string,
   args?: Record<string, unknown>
 ) => Promise<T>
@@ -60,6 +63,18 @@ function canonical(v: unknown): string {
         )
       : val
   )
+}
+
+export async function readDeletedIds(invoke: Invoke): Promise<Set<string>> {
+  try {
+    const raw = await invoke<string | null>('settings_get', {
+      key: COWORK_DELETED_IDS_KEY,
+    })
+    const parsed = raw ? JSON.parse(raw) : []
+    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [])
+  } catch {
+    return new Set()
+  }
 }
 
 const toErrorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -145,7 +160,10 @@ export async function migrateCoworkSessionsToThreads(
     const sessions = readCoworkSessions(
       await invoke<string | null>('settings_get', { key: CODE_SESSIONS_KEY })
     )
-    const candidates = sessions.filter((s) => !isEmptySession(s))
+    const deleted = await readDeletedIds(invoke)
+    const candidates = sessions.filter(
+      (s) => !isEmptySession(s) && !deleted.has(s.id)
+    )
     result.skipped = sessions.filter(isEmptySession).map((s) => s.id)
 
     if (candidates.length === 0) {
