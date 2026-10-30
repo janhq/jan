@@ -1,4 +1,3 @@
-import { isCoworkThread } from '@/lib/threadMode'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -114,9 +113,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery) return { withProject: [], withoutProject: [] }
 
-    const filteredThreads = getFilteredThreads(searchQuery).filter(
-      (thread) => !isCoworkThread(thread)
-    )
+    // Chat and Cowork conversations are searched together; a Cowork hit opens
+    // its own view through the /threads/$threadId redirect.
+    const filteredThreads = getFilteredThreads(searchQuery)
     const withProject: Array<{
       thread: Thread
       projectName: string

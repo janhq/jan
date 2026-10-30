@@ -27,11 +27,10 @@ vi.mock('@/stores/titlebar-layout-store', () => ({
 vi.mock('@/containers/DownloadManegement', () => ({
   DownloadManagement: () => null,
 }))
-vi.mock('../NavCowork', () => ({ NavCowork: () => null }))
+vi.mock('../NavCoworkTools', () => ({ NavCoworkTools: () => null }))
+vi.mock('../NavHistory', () => ({ NavHistory: () => null }))
 vi.mock('../NavMain', () => ({ NavMain: () => null }))
-vi.mock('../NavChats', () => ({ NavChats: () => null }))
 vi.mock('../NavProjects', () => ({ NavProjects: () => null }))
-vi.mock('../NavTabs', () => ({ NavTabs: () => null }))
 vi.mock('@/components/ui/sidebar', () => {
   const Box = ({ children }: { children: ReactNode }) => <div>{children}</div>
   return {

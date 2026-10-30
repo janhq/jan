@@ -34,10 +34,11 @@ describe('Cowork is hidden on a build that does not ship it', () => {
     // passes for the wrong reason (see "Writing specs" in e2e/README.md).
     await $(CHAT_SIDEBAR).waitForDisplayed({ timeout: 30_000 })
 
-    // The tab and the Home/Cowork switcher are the same element: with Cowork
-    // gone, the switcher has one surface left and NavTabs renders nothing at
-    // all, so no Home pill survives without it.
+    // There is no Home/Cowork switcher any more; a link to /cowork would only
+    // come from a Cowork entry, and none may exist on this channel.
     expect(await $(COWORK_TAB).isExisting()).toBe(false)
+    // The Chat | Cowork selector is part of the home composer and hidden too.
+    expect(await $('[data-testid="home-mode-toggle"]').isExisting()).toBe(false)
   })
 
   it('leaves the Cowork settings entry out of the settings menu', async () => {
@@ -64,6 +65,13 @@ describe('Cowork is hidden on a build that does not ship it', () => {
     // itself from a broken state, so assert the surface is not mounted.
     expect(await $('[data-testid="cowork-surface"]').isExisting()).toBe(false)
     await $(CHAT_SIDEBAR).waitForDisplayed({ timeout: 30_000 })
+  })
+
+  it('sends a bookmarked per-conversation Cowork URL to Home', async () => {
+    await pushRoute('/cowork/00000000-0000-4000-8000-000000000000')
+    await waitForPath('/')
+
+    expect(await $('[data-testid="cowork-surface"]').isExisting()).toBe(false)
   })
 
   it('sends a bookmarked artifacts URL to Home', async () => {

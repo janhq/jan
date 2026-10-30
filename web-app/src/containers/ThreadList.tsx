@@ -1,4 +1,4 @@
-import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import { Folder, Loader2, MessageSquare, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useIsThreadActive } from '@/hooks/useAppState'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -31,15 +31,18 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
 
-const ThreadItem = memo(
+export const ThreadItem = memo(
   ({
     thread,
     isMobile,
     currentProjectId,
+    showModeIcon,
   }: {
     thread: Thread
     isMobile: boolean
     currentProjectId?: string
+    /** Unified history: mark chat rows so they line up with Cowork rows. */
+    showModeIcon?: boolean
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
@@ -170,8 +173,12 @@ const ThreadItem = memo(
           :
           <SidebarMenuButton asChild isActive={isSelected}>
             <Link to="/threads/$threadId" params={{ threadId: thread.id }} data-testid={`thread-row-${thread.id}`}>
-              {isActive && (
+              {isActive ? (
                 <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                showModeIcon && (
+                  <MessageSquare className="size-3.5 shrink-0 text-foreground/50" aria-label={t('common:homeMode.chat')} />
+                )
               )}
               <span className={cn("block truncate", isSelected && "font-medium")} title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
             </Link>
