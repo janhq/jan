@@ -585,9 +585,13 @@ pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
 /// [`changed_paths`], but a `git status` that fails is an error rather than
 /// an empty list: a caller deciding whether a checkout may be deleted must not
 /// read "git could not tell" as "clean".
+///
+/// `--untracked-files=all` overrides a user's `status.showUntrackedFiles=no`,
+/// under which a checkout holding only new files would read as clean and be
+/// force-deleted with them.
 #[cfg(feature = "cli")]
 pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> {
-    Ok(run(worktree, None, &["status", "--porcelain"])?
+    Ok(run(worktree, None, &["status", "--porcelain", "--untracked-files=all"])?
         .lines()
         .filter_map(|l| l.trim_start().split_once(' '))
         // A rename reads `R old -> new`; the new name is the path on disk, and
