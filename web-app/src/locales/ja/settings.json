@@ -49,6 +49,8 @@
   "others": {
     "spellCheck": "スペルチェック",
     "spellCheckDesc": "スレッドのスペルチェックを有効にします。",
+    "enterKeyNewline": "Enter キーで改行する",
+    "enterKeyNewlineDesc": "チャット入力で Enter キーを押すと、送信せずに改行します。送信は送信ボタンで行います。IME（日本語入力など）で変換を確定する Enter による誤送信を防げます。",
     "resetFactory": "工場出荷時の設定にリセット",
     "resetFactoryDesc": "アプリケーションを初期状態に戻し、すべてのモデルとチャット履歴を消去します。この操作は元に戻すことができず、アプリケーションが破損している場合にのみ推奨されます。"
   },

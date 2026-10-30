@@ -60,11 +60,13 @@ vi.mock('@/hooks/useAppState', () => ({
   },
 }))
 
+let enterKeyInsertsNewline = false
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: (selector: any) =>
     selector({
       spellCheckChatInput: false,
       tokenCounterCompact: false,
+      enterKeyInsertsNewline,
     }),
 }))
 
@@ -331,6 +333,7 @@ import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 
 const resetAll = () => {
   promptState = ''
+  enterKeyInsertsNewline = false
   appStateOverrides = {}
   attachmentsList = []
   attachmentsByKey = {}
@@ -427,6 +430,40 @@ describe('ChatInput', () => {
     renderInput({ onSubmit })
     fireEvent.keyDown(getTextarea(), { key: 'Enter', shiftKey: true })
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  // For IME users (Japanese and others), Enter confirms a conversion; with
+  // this setting a stray Enter must never send a half-written message.
+  describe('with Enter set to add a new line', () => {
+    beforeEach(() => {
+      enterKeyInsertsNewline = true
+    })
+
+    it('adds a new line on Enter instead of sending', async () => {
+      promptState = 'hello'
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+
+      // Not prevented: the textarea inserts the new line itself.
+      expect(fireEvent.keyDown(getTextarea(), { key: 'Enter' })).toBe(true)
+      expect(
+        fireEvent.keyDown(getTextarea(), { key: 'Enter', ctrlKey: true })
+      ).toBe(true)
+      await act(async () => {})
+      expect(onSubmit).not.toHaveBeenCalled()
+    })
+
+    it('still sends with the send button', async () => {
+      promptState = 'hello world'
+      const onSubmit = vi.fn()
+      renderInput({ onSubmit })
+
+      fireEvent.click(screen.getByTestId('send-message-button'))
+
+      await waitFor(() =>
+        expect(onSubmit).toHaveBeenCalledWith('hello world', undefined, undefined)
+      )
+    })
   })
 
   it('does nothing when Enter pressed with empty/whitespace prompt', async () => {
