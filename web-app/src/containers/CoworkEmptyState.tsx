@@ -1,6 +1,7 @@
 import { Handshake } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { basenameOf } from '@/lib/coworkPreview'
+import { COWORK_IDEAS } from '@/lib/coworkIdeas'
 
 type Props = {
   /** Attached project folder, or null when nothing is attached. */
@@ -10,7 +11,7 @@ type Props = {
   onPick: (text: string) => void
 }
 
-const EXAMPLE_KEYS = ['first', 'second', 'third'] as const
+const EXAMPLE_KEYS = COWORK_IDEAS
 
 /**
  * The first thing a new session shows.

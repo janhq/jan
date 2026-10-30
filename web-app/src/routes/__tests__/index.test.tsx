@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
 
 const h = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  coworkEnabled: false,
   providers: [] as any[],
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
@@ -20,6 +22,18 @@ const h = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: any) => ({ ...config, id: '/' }),
   useSearch: () => h.search,
+  useNavigate: () => h.navigate,
+}))
+
+vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceHub: () => ({ dialog: () => ({ open: vi.fn() }) }),
+}))
+vi.mock('@/hooks/useCoworkRun', () => ({
+  useCoworkRun: { getState: () => ({ runId: {} }) },
+}))
+vi.mock('@/hooks/usePrompt', () => ({
+  usePrompt: { getState: () => ({ setPrompt: vi.fn() }) },
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -39,9 +53,14 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ model, initialMessage }: any) => (
+  default: ({ model, initialMessage, onSubmit, surfaceControls }: any) => (
     <div data-testid="chat-input" data-initial={String(initialMessage)}>
       {model ? model.id : 'no-model'}
+      <div data-testid="surface-controls">{surfaceControls}</div>
+      <button
+        data-testid="submit"
+        onClick={() => (onSubmit ?? (() => {}))('do the thing', undefined, undefined, 'do the thing')}
+      />
     </div>
   ),
 }))
@@ -73,10 +92,13 @@ vi.mock('@/constants/providers', () => ({
 }))
 
 vi.mock('@/constants/routes', () => ({
-  route: { home: '/' },
+  route: { home: '/', coworkSession: '/cowork/$sessionId' },
 }))
 
 import { Route } from '../index'
+import { useHomeMode } from '@/hooks/useHomeMode'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { COWORK_HANDOFF_PREFIX } from '@/lib/coworkHandoff'
 
 const renderComponent = () => {
   const Component = Route.component as React.ComponentType
@@ -89,6 +111,11 @@ describe('Index route', () => {
     h.providers = []
     h.search = { threadModel: undefined }
     h.providerHasRemoteApiKeys.mockReturnValue(false)
+    h.coworkEnabled = false
+    h.navigate.mockClear()
+    sessionStorage.clear()
+    useHomeMode.setState({ mode: 'chat' })
+    useCoworkSessions.setState({ sessions: [], currentId: null })
   })
 
   it('validateSearch returns threadModel from search params', () => {
@@ -167,5 +194,56 @@ describe('Index route', () => {
     renderComponent()
     expect(h.setCurrentThreadId).toHaveBeenCalledWith(undefined)
     expect(h.useTools).toHaveBeenCalled()
+  })
+
+  describe('Chat | Cowork selector', () => {
+    beforeEach(() => {
+      h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
+    })
+
+    it('is hidden where Cowork is not available', () => {
+      h.coworkEnabled = false
+      renderComponent()
+      expect(screen.queryByTestId('home-mode-toggle')).not.toBeInTheDocument()
+    })
+
+    it('is shown where Cowork is available, defaulting to Chat with no Cowork extras', () => {
+      h.coworkEnabled = true
+      renderComponent()
+      expect(screen.getByTestId('home-mode-toggle')).toBeInTheDocument()
+      expect(screen.getByTestId('home-mode-chat')).toHaveAttribute('aria-checked', 'true')
+      expect(screen.queryByTestId('home-cowork-folder')).not.toBeInTheDocument()
+    })
+
+    it('Cowork mode shows the folder control and the ideas', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      expect(screen.getByTestId('home-cowork-folder')).toBeInTheDocument()
+      expect(screen.getByText('common:homeMode.ideas')).toBeInTheDocument()
+    })
+
+    it('submitting in Cowork mode creates a session, hands off the prompt and opens its URL', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      fireEvent.click(screen.getByTestId('submit'))
+      const [session] = useCoworkSessions.getState().sessions
+      expect(session).toBeTruthy()
+      expect(JSON.parse(sessionStorage.getItem(`${COWORK_HANDOFF_PREFIX}${session.id}`)!).text).toBe('do the thing')
+      expect(h.navigate).toHaveBeenCalledWith({
+        to: '/cowork/$sessionId',
+        params: { sessionId: session.id },
+      })
+    })
+
+    it('ignores a stored Cowork mode where Cowork is not available', () => {
+      h.coworkEnabled = false
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(h.navigate).not.toHaveBeenCalled()
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+    })
   })
 })

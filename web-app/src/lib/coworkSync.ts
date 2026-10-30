@@ -13,6 +13,7 @@ import {
   type Invoke,
 } from '@/lib/migrateCoworkSessions'
 import { cleanupThreadWorkspace, sweepSessionWorkspaces } from '@/lib/agentTools'
+import { discardStaleCoworkHandoffs } from '@/lib/coworkHandoff'
 
 /**
  * Connects the Cowork session store to thread storage (see
@@ -124,6 +125,16 @@ async function doStart() {
   // Cowork conversations also live in the shared thread list so search and the
   // sidebar see them. Do this once; later writes upsert through onThreadWritten.
   for (const t of loaded.threads) upsertThread(t)
+
+  // A first prompt handed over for a session that no longer exists (reload
+  // before its first commit) must not linger.
+  try {
+    discardStaleCoworkHandoffs(
+      new Set(useCoworkSessions.getState().sessions.map((x) => x.id))
+    )
+  } catch {
+    /* sessionStorage unavailable */
+  }
 
   // 4. Sandboxes of conversations that no longer exist. Only once the migration
   //    settled: while it is partial the live-id list is incomplete.
