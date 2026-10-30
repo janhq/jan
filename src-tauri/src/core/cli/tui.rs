@@ -31329,7 +31329,7 @@ mod tests {
             let catalog = crate::core::cli::auth::provider_catalog();
             // Expected picker order: Tokamak pinned to the top (the default
             // provider), then the remaining providers in name order:
-            // Claude, Codex, DeepSeek, OpenCode. (catalog keeps its own order.)
+            // Claude, Codex, DeepSeek, OpenCode, UberLLM. (catalog keeps its own order.)
             let ordered = |catalog: &Vec<crate::core::cli::auth::ProviderDefinition>| {
                 let mut providers = catalog.clone();
                 providers.sort_by(|a, b| match (a.id == "tokamak", b.id == "tokamak") {

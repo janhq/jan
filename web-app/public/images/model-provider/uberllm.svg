@@ -1,0 +1,8 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>UberLLM</title>
+<rect width="512" height="512" fill="#111111"/>
+<g transform="translate(60 60) scale(17.818) translate(-6.3 -6)" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<path d="M9 16h4m0 0 5-5m-5 5 5 5m5-11a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm0 8a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/>
+<circle cx="10" cy="16" r="2.2" fill="#FFFFFF" stroke="none"/>
+</g>
+</svg>
