@@ -1,9 +1,5 @@
 import type { UIMessage } from 'ai'
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStorageKey } from '@/constants/localStorage'
-import { backendStorage } from '@/lib/backendStorage'
-import { coworkTurnsToUIMessages } from '@/lib/coworkTurns'
 import { isPingOnly } from '@/lib/coworkPing'
 import type {
   CoworkTurn,
@@ -145,7 +141,6 @@ function lastQuestionIndex(items: RoleLike[]): number {
 }
 
 export const useCoworkSessions = create<CoworkSessionsState>()(
-  persist(
     (set, get) => ({
       sessions: [],
       currentId: null,
@@ -204,13 +199,15 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
       setGoal: (id, goal) =>
         set((s) => ({
           sessions: s.sessions.map((x) =>
-            x.id === id ? { ...x, goal: goal ?? undefined } : x
+            x.id === id ? { ...x, goal: goal ?? undefined, updated: now() } : x
           ),
         })),
 
       setTodos: (id, todos) =>
         set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, todos } : x)),
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, todos, updated: now() } : x
+          ),
         })),
 
       setPlanMode: (id, planMode) =>
@@ -222,7 +219,9 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
 
       setTitle: (id, title) =>
         set((s) => ({
-          sessions: s.sessions.map((x) => (x.id === id ? { ...x, title } : x)),
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, title, updated: now() } : x
+          ),
         })),
 
       commitLegacyTurns: (id, turns, history) =>
@@ -322,40 +321,7 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
           )
           return sessions.length === s.sessions.length ? {} : { sessions }
         }),
-    }),
-    {
-      name: localStorageKey.coworkSessions,
-      // Persist through the Rust settings store (see backendStorage) so sessions
-      // live in <jan_data>/settings.json instead of webview localStorage.
-      // Async storage requires skipHydration + explicit rehydrate in
-      // hydrateBackendStores() once the ServiceHub is ready.
-      storage: createJSONStorage(() => backendStorage),
-      skipHydration: true,
-      version: 1,
-      // v0 persisted an OpenAI-shaped `history` that could not represent tool
-      // calls, so replaying it dropped every tool turn. Rebuild the message
-      // list from `turns`, which did record them, and leave `history` in place
-      // untouched rather than mutating a blob a rollback would still read.
-      migrate: (persisted, version) => {
-        const state = persisted as { sessions?: CoworkSession[] } | undefined
-        if (version >= 1 || !state?.sessions) return persisted
-        return {
-          ...state,
-          sessions: state.sessions.map((session) =>
-            session.messages
-              ? session
-              : {
-                  ...session,
-                  messages: coworkTurnsToUIMessages(
-                    session.turns ?? [],
-                    session.id
-                  ),
-                }
-          ),
-        }
-      },
-    }
-  )
+    })
 )
 
 /**
