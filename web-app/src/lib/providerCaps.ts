@@ -91,6 +91,11 @@ const MINIMAX: ProviderCaps = {
   maybe: new Set(),
 }
 
+const WALLY: ProviderCaps = {
+  supported: set('penalties'),
+  maybe: new Set(),
+}
+
 const LLAMACPP: ProviderCaps = {
   supported: set(
     'penalties',
@@ -159,6 +164,7 @@ const BUILTIN_CAPS: Record<string, ProviderCaps> = {
   huggingface: HUGGINGFACE,
   nvidia: NVIDIA,
   minimax: MINIMAX,
+  wally: WALLY,
   llamacpp: LLAMACPP,
   mlx: MLX,
 }
