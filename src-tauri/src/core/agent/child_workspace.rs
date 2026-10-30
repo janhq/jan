@@ -1,27 +1,35 @@
-//! Where a dispatched subagent works: its own git worktree, or the parent's
+//! Where a dispatched subagent works: its own checkout, or the parent's
 //! checkout, read-only unless it is a writer.
 //!
 //! Decided by the harness when the child is dispatched, never by a tool the
 //! model calls. A child whose tool set can change files (`write`/`edit`) is a
-//! *writer* and gets a fresh worktree on `jan/agent/<name>-<id>`, so parallel
+//! *writer* and gets a fresh checkout on `jan/agent/<name>-<id>`, so parallel
 //! writers never edit one checkout and none of them mixes its edits with the
 //! user's uncommitted work. Every other child is a *reader*: it runs in the
 //! checkout it was given with that checkout read-only, enforced by the file
 //! tools and by a sandbox that is always on for it.
 //!
-//! A dispatch item's optional `workspace` overrides the default: `"new"`, a
-//! fresh worktree; `"shared"`, the parent's checkout; the name of an earlier
-//! subagent, that subagent's workspace; `{"ref": "<git ref>"}`, a fresh
-//! worktree at that ref (fetched from `origin` when it is not local).
+//! A child's checkout (a "worktree" to the user) is a repository of its own,
+//! made by `git clone --shared`: it borrows the user's objects read-only and
+//! keeps its refs, index, config and hooks to itself, so a sandboxed child
+//! never writes the user's `.git` (which git reads, unsandboxed, the next time
+//! the user works). Its branch comes back as `jan/agent/<name>-<id>` in the
+//! user's repository when the child finishes, by a fetch that runs none of
+//! the child's config (see [`Checkout`](crate::core::agent::git::Checkout)).
 //!
-//! Worktrees live under `~/.jan/worktrees/<project-slug>/`, never under `/tmp`
+//! A dispatch item's optional `workspace` overrides the default: `"new"`, a
+//! fresh checkout; `"shared"`, the parent's checkout; the name of an earlier
+//! subagent, that subagent's workspace; `{"ref": "<git ref>"}`, a fresh
+//! checkout at that ref (fetched from `origin` when it is not local).
+//!
+//! Checkouts live under `~/.jan/worktrees/<project-slug>/`, never under `/tmp`
 //! (the sandbox binds the session scratch over `/tmp`). The ledger here
 //! remembers every child's workspace for the session, so a later dispatch can
-//! name it, and at the session's end removes the worktrees that hold nothing:
+//! name it, and at the session's end removes the checkouts that hold nothing:
 //! no commit past their base and no uncommitted change, `ref` ones included
 //! (a writer may have committed there). One git cannot read is kept.
 //!
-//! Only the CLI build creates worktrees and holds readers to a read-only
+//! Only the CLI build creates checkouts and holds readers to a read-only
 //! checkout; on the desktop every child works in its parent's checkout as it
 //! always has (see [`READ_ONLY_READERS`]).
 
@@ -91,7 +99,7 @@ pub(crate) fn is_writer(
     })
 }
 
-/// A worktree the ledger created.
+/// A checkout the ledger created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ChildWorktree {
     /// The checkout's top level.
@@ -101,8 +109,11 @@ pub(crate) struct ChildWorktree {
     pub(crate) base: String,
     /// The `{"ref": ...}` it was made for, if any.
     pub(crate) from_ref: Option<String>,
-    /// The main checkout's top level, which owns the registration.
+    /// The main checkout's top level, which its branch is fetched back into.
     repo: PathBuf,
+    /// The user's object directory it borrows, as recorded when it was made:
+    /// its own alternates file is the child's to rewrite.
+    objects: PathBuf,
 }
 
 /// Where one child works.
@@ -189,15 +200,27 @@ impl ChildWorkspace {
         }
     }
 
-    /// The line appended to the child's answer, so the parent reading it later
-    /// knows which branch to merge.
-    pub(crate) fn answer_footer(&self) -> Option<String> {
+    /// Bring a writer's branch from its checkout into the user's repository,
+    /// where the parent merges it. `Some(why)` when it could not be. Runs git.
+    pub(crate) fn bring_back(&self) -> Option<String> {
         let wt = self.worktree.as_ref().filter(|_| !self.read_only)?;
-        Some(format!(
-            "[worked in {} on branch {}]",
-            display(&wt.path),
-            wt.branch
-        ))
+        bring_back(wt).err()
+    }
+
+    /// The line appended to the child's answer, so the parent reading it later
+    /// knows which branch to merge, or why that branch is not in the user's
+    /// repository (`problem`, from [`Self::bring_back`]).
+    pub(crate) fn answer_footer(&self, problem: Option<&str>) -> Option<String> {
+        let wt = self.worktree.as_ref().filter(|_| !self.read_only)?;
+        let path = display(&wt.path);
+        Some(match problem {
+            None => format!("[worked in {path} on branch {}]", wt.branch),
+            Some(why) => format!(
+                "[worked in {path} on branch {}, which is only there: it could not be brought \
+                 into your repository ({why})]",
+                wt.branch
+            ),
+        })
     }
 }
 
@@ -224,10 +247,10 @@ fn display(path: &Path) -> String {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ChildScope {
     pub(crate) read_only: bool,
+    /// Directories its tools may read besides its workspace and write roots:
+    /// the user's objects its checkout borrows.
+    pub(crate) read_roots: Vec<PathBuf>,
     pub(crate) write_roots: Vec<PathBuf>,
-    /// What stays read-only inside `write_roots`: all of the shared git dir but
-    /// what a commit writes (see [`tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs`]).
-    pub(crate) carve_outs: Vec<tauri_plugin_agent_tools::tools::jail::CarveOut>,
     pub(crate) env_set: Vec<(String, String)>,
 }
 
@@ -248,11 +271,10 @@ pub(crate) fn project_worktrees_dir(root: &Path) -> Option<PathBuf> {
 const CARGO_TARGET: &str = "cargo-target";
 
 /// The scope a child in `ws` runs under: the shared build directory for any
-/// child outside the plain writable checkout, the shared git dir for a writer
-/// in a worktree (so its sandboxed `git commit` lands) reduced to what a
-/// commit writes, and package caches in the
-/// session scratch for a reader. `scratch` is that scratch, when the session
-/// has one. Runs git, so call it off the async workers.
+/// child outside the plain writable checkout, and package caches in the
+/// session scratch for a reader. A writer is granted nothing of the user's
+/// `.git`: its commits go to its own, inside its workspace. `scratch` is the
+/// session scratch, when the session has one.
 pub(crate) fn scope_for(
     ws: &ChildWorkspace,
     parent_root: &Path,
@@ -280,16 +302,8 @@ pub(crate) fn scope_for(
             }
         }
     }
-    // Both dirs come from the main checkout, never from the worktree's own
-    // `.git` file: the writer can rewrite that, and a grant that followed it
-    // would hand out whatever directory it names. No admin dir found, no
-    // grant: the writer then edits but cannot commit.
-    if let Some(wt) = ws.worktree.as_ref().filter(|_| !ws.read_only) {
-        if let Some((common, admin)) = git_dirs(&wt.repo, &wt.path) {
-            scope.carve_outs =
-                tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs(&common, &admin);
-            scope.write_roots.push(common);
-        }
+    if let Some(wt) = &ws.worktree {
+        scope.read_roots.push(wt.objects.clone());
     }
     scope
 }
@@ -303,8 +317,8 @@ pub(crate) struct Placement {
     scope: ChildScope,
 }
 
-/// Resolve the [`Placement`] of a child in `ws`: its worktree's branch and the
-/// shared git dir its scope may write. Runs git, so the dispatch calls it on
+/// Resolve the [`Placement`] of a child in `ws`: its checkout's branch and the
+/// scope its tools enforce. Runs git, so the dispatch calls it on
 /// the blocking pool and [`apply`], on the async child task, runs none.
 pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path, scratch: Option<&Path>) -> Placement {
     Placement {
@@ -516,35 +530,45 @@ impl Ledger {
     }
 }
 
-/// Remove `wt` and its branch when it holds nothing: no commit past its base
-/// and no uncommitted change. One git cannot read counts as holding work,
-/// since removal is forced and deletes the branch. Returns whether it went.
+/// Remove the checkout `wt` when it holds nothing: no commit past its base on
+/// any ref and no uncommitted change. One git cannot read counts as holding
+/// work, since removal deletes it. Returns whether it went.
 #[cfg(feature = "cli")]
 fn remove_if_empty(wt: &ChildWorktree) -> bool {
-    use crate::core::agent::git;
-    // A checkout whose `.git` no longer points home is never removed: what
-    // it holds cannot be read without following the redirect.
-    let Ok(linked) = linked(wt) else { return false };
-    // The branch is force-deleted below, so its own commits count too: a
-    // writer may have committed and then moved HEAD back to the base.
-    commits_held(wt, &linked) == Some(0)
-        && linked.try_changed_paths().is_ok_and(|c| c.is_empty())
-        && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
+    // A checkout that is no longer what Jan made is never removed: what it
+    // holds cannot be read without trusting it.
+    let Ok(checkout) = checkout(wt) else { return false };
+    checkout.commits_anywhere(&wt.base) == Some(0)
+        && checkout.try_changed_paths().is_ok_and(|c| c.is_empty())
+        && std::fs::remove_dir_all(&wt.path).is_ok()
 }
 
-/// Commits the worktree holds past its base, on HEAD or on its branch,
-/// whichever is more. `None` when git cannot say.
+/// How long bringing a branch into the user's repository may take.
 #[cfg(feature = "cli")]
-fn commits_held(wt: &ChildWorktree, linked: &crate::core::agent::git::Linked) -> Option<u64> {
-    let head = linked.commits_on(&wt.base, "HEAD")?;
-    let branch = linked.commits_on(&wt.base, &format!("refs/heads/{}", wt.branch))?;
-    Some(head.max(branch))
+const BRING_BACK_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Fetch `wt`'s branch into the user's repository when it holds commits, so
+/// the parent can merge it. Nothing is created for a branch with none.
+#[cfg(feature = "cli")]
+fn bring_back(wt: &ChildWorktree) -> Result<(), String> {
+    let checkout = checkout(wt)?;
+    match checkout.commits_on(&wt.base, &format!("refs/heads/{}", wt.branch)) {
+        Some(0) => Ok(()),
+        Some(_) => checkout.fetch_branch(&wt.repo, &wt.branch, BRING_BACK_LIMIT),
+        None => Err(format!("git could not read its branch {}", wt.branch)),
+    }
 }
 
-/// The branch checked out in `wt`, read without trusting its `.git` file.
+/// The desktop makes no checkouts, so there is never a branch to bring back.
+#[cfg(not(feature = "cli"))]
+fn bring_back(_wt: &ChildWorktree) -> Result<(), String> {
+    Ok(())
+}
+
+/// The branch checked out in `wt`, read without trusting its `.git`.
 #[cfg(feature = "cli")]
 fn worktree_branch(wt: &ChildWorktree) -> Option<String> {
-    linked(wt).ok()?.current_branch()
+    checkout(wt).ok()?.current_branch()
 }
 
 /// The desktop makes no worktrees.
@@ -553,16 +577,13 @@ fn worktree_branch(_wt: &ChildWorktree) -> Option<String> {
     None
 }
 
-/// `wt` as git must be run in it: through the main checkout's records, and
-/// only while its `.git` file still points at them. Every git call Jan makes
-/// in a child's worktree goes through here, unsandboxed, so it never follows
-/// a `.git` file the child rewrote. The error says why not, for the user.
+/// `wt` as Jan's git must be run in it: opened only while it is still the
+/// repository Jan made. Every git call Jan makes in a child's checkout goes
+/// through here, unsandboxed, so it never honors what the child rewrote. The
+/// error says why not, for the user.
 #[cfg(feature = "cli")]
-fn linked(wt: &ChildWorktree) -> Result<crate::core::agent::git::Linked, String> {
-    use crate::core::agent::git;
-    let common = git::git_common_dir(&wt.repo)
-        .ok_or_else(|| format!("{} is no longer a git repository", wt.repo.display()))?;
-    git::Linked::find(&common, &wt.path)
+fn checkout(wt: &ChildWorktree) -> Result<crate::core::agent::git::Checkout, String> {
+    crate::core::agent::git::Checkout::open(&wt.path, &wt.objects)
 }
 
 /// The desktop makes no worktrees, so there is never one to remove.
@@ -576,7 +597,7 @@ fn remove_if_empty(_wt: &ChildWorktree) -> bool {
 #[cfg(feature = "cli")]
 const REF_FETCH_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// A fresh worktree for `name`, or the parent's checkout when the project
+/// A fresh checkout for `name`, or the parent's checkout when the project
 /// cannot have one (the reason is kept for the dispatch note).
 #[cfg(feature = "cli")]
 fn create(
@@ -609,7 +630,6 @@ fn create(
     };
     let dir = project_worktrees_dir(parent_root)
         .ok_or_else(|| "could not resolve the Jan home for worktrees".to_string())?;
-    git::worktree_prune(&repo);
     let mut last = String::new();
     for _ in 0..4 {
         let hex: String = uuid::Uuid::new_v4().simple().to_string()[..4].to_string();
@@ -619,10 +639,10 @@ fn create(
             continue;
         }
         let branch = format!("jan/agent/{id}");
-        match git::worktree_add(&repo, &path, &branch, &base) {
-            Ok(()) => {
-                // dunce, not std: Windows' `\\?\` form is what `worktree add`
-                // refuses, and every later git call is handed this path.
+        match git::clone_shared(&repo, &path, &branch, &base) {
+            Ok(objects) => {
+                // dunce, not std: Windows' `\\?\` form is what git refuses as a
+                // clone URL, and every later git call is handed this path.
                 let path = dunce::canonicalize(&path).unwrap_or(path);
                 // A subdirectory of the checkout maps to the same one in the
                 // worktree, so relative paths mean what they did.
@@ -653,6 +673,7 @@ fn create(
                         base,
                         from_ref: git_ref.map(str::to_string),
                         repo: repo.clone(),
+                        objects,
                     }),
                     fallback: None,
                     fresh: true,
@@ -661,7 +682,7 @@ fn create(
             Err(e) => last = e,
         }
     }
-    Err(format!("could not create a worktree: {last}"))
+    Err(format!("could not create a checkout: {last}"))
 }
 
 /// The desktop has no subagent worktrees: a child keeps its parent's
@@ -679,28 +700,19 @@ fn create(
     })
 }
 
-/// The shared git dir of the main checkout `repo` and the admin dir it keeps
-/// for the linked worktree at `worktree`.
-#[cfg(feature = "cli")]
-fn git_dirs(repo: &Path, worktree: &Path) -> Option<(PathBuf, PathBuf)> {
-    use crate::core::agent::git;
-    let common = git::git_common_dir(repo)?;
-    let admin = git::worktree_admin_dir(&common, worktree)?;
-    Some((common, admin))
-}
-
-#[cfg(not(feature = "cli"))]
-fn git_dirs(_repo: &Path, _worktree: &Path) -> Option<(PathBuf, PathBuf)> {
-    None
-}
-
 #[cfg(feature = "cli")]
 impl Ledger {
-    /// End of session: remove every worktree that holds nothing (no commit
+    /// Whether a writer is in `path` right now.
+    fn is_busy(&self, path: &Path) -> bool {
+        self.state.lock().unwrap().busy.contains(path)
+    }
+
+    /// End of session: remove every checkout that holds nothing (no commit
     /// past its base, no uncommitted change), `ref` ones included, and return
-    /// a line for each one kept. A worktree a writer is still in is kept, and
-    /// so is one git cannot read: removal is forced and deletes the branch,
-    /// so "unknown" must never count as "clean".
+    /// a line for each one kept, after bringing its branch into the user's
+    /// repository. A checkout a writer is still in is kept, and so is one git
+    /// cannot read: removal deletes it, so "unknown" must never count as
+    /// "clean".
     ///
     /// The ledger's lock is held only to snapshot and to record each removal,
     /// never across git, so leases and dispatches carry on meanwhile.
@@ -717,7 +729,10 @@ impl Ledger {
                 continue;
             }
             if !self.remove_unless_busy(&wt) {
-                kept.push(kept_line(&wt));
+                // Whatever the child committed before it was stopped, so the
+                // user has the branch to merge; not while a writer is in it.
+                let brought = (!self.is_busy(&wt.path)).then(|| bring_back(&wt).err()).flatten();
+                kept.push(kept_line(&wt, brought.as_deref()));
             }
         }
         kept
@@ -730,7 +745,7 @@ impl Ledger {
         created
             .iter()
             .filter(|wt| wt.path.is_dir())
-            .map(kept_line)
+            .map(|wt| kept_line(wt, None))
             .collect()
     }
 }
@@ -745,18 +760,25 @@ pub(crate) fn kept_notice(kept: &[String]) -> String {
 }
 
 #[cfg(feature = "cli")]
-fn kept_line(wt: &ChildWorktree) -> String {
-    let held = match linked(wt) {
+fn kept_line(wt: &ChildWorktree, not_brought: Option<&str>) -> String {
+    let held = match checkout(wt) {
         Err(why) => format!(
-            "not read and not removed: {why}. Do not run git in it; inspect its .git \
-             file, or delete the directory and run `git worktree prune`"
+            "not read and not removed: {why}. Do not run git in it; inspect its .git, or \
+             delete the directory"
         ),
-        Ok(linked) => match (commits_held(wt, &linked), linked.try_changed_paths()) {
-            (Some(commits), Ok(changed)) => {
-                format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
+        Ok(checkout) => {
+            let mut held = match (checkout.commits_anywhere(&wt.base), checkout.try_changed_paths())
+            {
+                (Some(commits), Ok(changed)) => {
+                    format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
+                }
+                _ => "status unknown: git could not read it".to_string(),
+            };
+            if let Some(why) = not_brought {
+                held.push_str(&format!("; its branch is not in your repository: {why}"));
             }
-            _ => "status unknown: git could not read it".to_string(),
-        },
+            held
+        }
     };
     format!("{} on {} ({held})", display(&wt.path), wt.branch)
 }
@@ -897,7 +919,7 @@ mod git_tests {
         );
         let note = writer.note();
         assert!(note.contains(&wt.branch) && note.contains("worktree"), "{note}");
-        assert_eq!(writer.answer_footer().map(|f| f.contains(&wt.branch)), Some(true));
+        assert_eq!(writer.answer_footer(None).map(|f| f.contains(&wt.branch)), Some(true));
 
         let (reader, lease) = ledger.assign(&root, "explore", false, None).unwrap();
         assert!(lease.is_none());
@@ -1133,18 +1155,29 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Make every `git status` in `root`'s worktrees take seconds, through a
-    /// `core.fsmonitor` hook, so a sweep is slow without any test seam.
+    /// Make `git status` in the checkout at `path` block for two seconds, so a
+    /// sweep is slow without any test seam: `info/exclude`, which status reads,
+    /// is a FIFO nobody opens until then. `false` where there is no `mkfifo`.
     #[cfg(unix)]
-    fn slow_status(root: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-        let hook = root.with_extension("fsmonitor.sh");
-        std::fs::write(&hook, "#!/bin/sh\nsleep 2\nexit 1\n").unwrap();
-        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(git(root, &["config", "core.fsmonitor", &hook.to_string_lossy()]));
+    fn slow_status(path: &Path) -> bool {
+        let exclude = path.join(".git/info/exclude");
+        let _ = std::fs::remove_file(&exclude);
+        if !Command::new("mkfifo").arg(&exclude).status().is_ok_and(|s| s.success()) {
+            return false;
+        }
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            // Opening it for writing is what lets status's read through; a
+            // plain empty file after that serves any later read.
+            let held = std::fs::OpenOptions::new().write(true).open(&exclude);
+            let _ = std::fs::remove_file(&exclude);
+            let _ = std::fs::write(&exclude, "");
+            drop(held);
+        });
+        true
     }
 
-    /// The sweep runs git per worktree; a writer finishing meanwhile (its
+    /// The sweep runs git per checkout; a writer finishing meanwhile (its
     /// lease dropping, from an async task) must not wait for that git.
     #[cfg(unix)]
     #[test]
@@ -1156,7 +1189,9 @@ mod git_tests {
         let (busy, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
         drop(l1);
         commit(&busy.root, "b.txt");
-        slow_status(&root);
+        if !slow_status(&idle.root) {
+            return;
+        }
         let sweep = {
             let ledger = ledger.clone();
             std::thread::spawn(move || ledger.finish_session())
@@ -1170,7 +1205,6 @@ mod git_tests {
         assert!(!idle.root.exists(), "the idle worktree still goes");
         assert_eq!(kept.len(), 1, "the one holding a commit is kept: {kept:?}");
         let _ = std::fs::remove_dir_all(&busy.root);
-        let _ = std::fs::remove_file(root.with_extension("fsmonitor.sh"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1313,13 +1347,13 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A writer can rewrite its worktree's `.git` file, which is inside its
-    /// checkout, to `gitdir: <a dir it made>` whose config runs a program
-    /// (`core.fsmonitor`). Jan's own git in that worktree runs unsandboxed,
-    /// so it must neither follow the redirect nor remove the worktree, and
-    /// the session-end line must say why it was kept.
+    /// A writer can swap its checkout's `.git` for a file `gitdir: <a dir it
+    /// made>` whose config runs a program (`core.fsmonitor`). Jan's own git in
+    /// that checkout runs unsandboxed, so it must neither follow the redirect
+    /// nor remove the checkout, and the session-end line must say why it was
+    /// kept.
     #[test]
-    fn a_redirected_worktree_git_file_is_never_followed() {
+    fn a_checkout_whose_git_dir_was_swapped_for_a_pointer_is_never_followed() {
         let Some(root) = repo("redirect") else { return };
         let ledger = Arc::new(Ledger::default());
         let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
@@ -1327,9 +1361,9 @@ mod git_tests {
         let wt = ws.worktree.clone().unwrap();
         let marker = root.with_extension("pwned");
         let _ = std::fs::remove_file(&marker);
-        let evil = wt.path.join("evil.git");
+        let evil = wt.path.with_extension("evil.git");
         assert!(git(&wt.path, &["init", "-q", "--bare", &evil.to_string_lossy()]));
-        let hook = wt.path.join("fsmonitor.sh");
+        let hook = wt.path.with_extension("fsmonitor.sh");
         std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()))
             .unwrap();
         #[cfg(unix)]
@@ -1344,6 +1378,7 @@ mod git_tests {
         {
             assert!(git(&evil, &["config", k, v]));
         }
+        std::fs::rename(wt.path.join(".git"), wt.path.with_extension("orig.git")).unwrap();
         std::fs::write(wt.path.join(".git"), format!("gitdir: {}\n", evil.display())).unwrap();
 
         let live = ledger.live();
@@ -1351,13 +1386,16 @@ mod git_tests {
         let ran = marker.exists();
         let still_there = wt.path.is_dir();
         let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_file(&hook);
+        let _ = std::fs::remove_dir_all(&evil);
+        let _ = std::fs::remove_dir_all(wt.path.with_extension("orig.git"));
         let _ = std::fs::remove_dir_all(&wt.path);
         let _ = std::fs::remove_dir_all(&root);
         assert!(!ran, "Jan's git ran the redirected repository's fsmonitor");
-        assert!(still_there, "a tampered worktree is never removed");
+        assert!(still_there, "a tampered checkout is never removed");
         assert_eq!(kept.len(), 1, "{kept:?}");
         for line in live.iter().chain(&kept) {
-            assert!(line.contains(".git file was changed"), "{line}");
+            assert!(line.contains(".git was replaced"), "{line}");
         }
     }
 
@@ -1373,44 +1411,25 @@ mod git_tests {
         let (ws, _lease) = ledger.assign(&verbatim, "general", true, None).unwrap();
         let wt = ws.worktree.clone().expect("a writer gets a worktree");
         assert!(!wt.path.to_string_lossy().starts_with(r"\\?\"), "{wt:?}");
-        assert!(crate::core::agent::git::worktree_registered(&root, &wt.path), "{wt:?}");
+        assert!(wt.path.join(".git").is_dir(), "{wt:?}");
         let scope = scope_for(&ws, &verbatim, None);
-        assert!(scope.write_roots.contains(&root.join(".git")), "{scope:?}");
+        assert!(scope.read_roots.contains(&root.join(".git/objects")), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn a_worktree_writer_may_write_the_shared_git_dir_and_build_dir() {
-        use tauri_plugin_agent_tools::tools::jail::carved_read_only;
+    fn a_writer_is_granted_the_build_dir_and_read_access_to_the_borrowed_objects_only() {
         let Some(root) = repo("scope") else { return };
         let ledger = Arc::new(Ledger::default());
         let (w, _lease) = ledger.assign(&root, "general", true, None).unwrap();
         let scope = scope_for(&w, &root, None);
         assert!(!scope.read_only);
-        let git = root.join(".git");
-        assert!(scope.write_roots.contains(&git), "{scope:?}");
-        // ...but only the allowlist a commit writes, never what in it runs
-        // code, configures git or points it elsewhere in the user's checkout.
-        let name = w.worktree.as_ref().unwrap().path.file_name().unwrap().to_owned();
-        let admin = git.join("worktrees").join(&name);
-        assert!(admin.is_dir(), "{admin:?}");
-        let ro = |p: PathBuf| carved_read_only(&scope.carve_outs, &p);
-        for p in ["hooks/pre-commit", "config", "config.worktree", "info/attributes", "modules/m"] {
-            assert!(ro(git.join(p)), "{p} must stay read-only: {scope:?}");
-        }
-        for p in ["commondir", "objects/info/alternates", "packed-refs.lock"] {
-            assert!(ro(git.join(p)), "{p} must stay read-only: {scope:?}");
-        }
-        assert!(ro(git.join("worktrees/other/HEAD")), "{scope:?}");
-        assert!(ro(admin.join("gitdir")) && ro(admin.join("commondir")));
-        assert!(ro(admin.join("config.worktree")), "{scope:?}");
-        for p in ["objects/ab/cd", "refs/heads/jan/agent/x", "logs/HEAD"] {
-            assert!(!ro(git.join(p)), "{p} must stay writable: {scope:?}");
-        }
-        assert!(!ro(admin.join("index.lock")) && !ro(admin.join("HEAD")), "{scope:?}");
+        // Its commits go to the repository it is, inside its workspace: none
+        // of the user's `.git` is writable, only its objects readable.
         let target = project_worktrees_dir(&root).unwrap().join(CARGO_TARGET);
-        assert!(scope.write_roots.contains(&target), "{scope:?}");
+        assert_eq!(scope.write_roots, vec![target.clone()], "{scope:?}");
+        assert_eq!(scope.read_roots, vec![root.join(".git/objects")], "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, v)| k == "CARGO_TARGET_DIR" && Path::new(v) == target));
 
         let (r, _) = ledger.assign(&root, "explore", false, None).unwrap();
@@ -1418,11 +1437,354 @@ mod git_tests {
         let scope = scope_for(&r, &root, Some(&scratch));
         assert!(scope.read_only);
         assert_eq!(scope.write_roots, vec![target], "a reader never gets the git dir");
-        assert!(scope.carve_outs.is_empty(), "{scope:?}");
+        assert!(scope.read_roots.is_empty(), "{scope:?}");
         let yarn = scope.env_set.iter().find(|(k, _)| k == "YARN_CACHE_FOLDER");
         assert!(yarn.is_some_and(|(_, v)| v.ends_with("/yarn-cache")), "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, _)| k == "COREPACK_HOME"), "{scope:?}");
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Run `command` in `ws` the way its child's shell runs: sandboxed, under
+    /// the scope [`scope_for`] gives it. `None` when no sandbox can start here.
+    fn child_shell(ws: &ChildWorkspace, parent_root: &Path, command: &str) -> Option<String> {
+        child_shell_seeing(ws, parent_root, &[], command)
+    }
+
+    /// [`child_shell`] with `visible` also mounted read-only, as the user's
+    /// home is for a run with `home_readonly`.
+    fn child_shell_seeing(
+        ws: &ChildWorkspace,
+        parent_root: &Path,
+        visible: &[PathBuf],
+        command: &str,
+    ) -> Option<String> {
+        use tauri_plugin_agent_tools::tools::{handlers::execute_builtin, jail, lookup, ToolContext};
+        if !jail::backend().enforces() {
+            eprintln!("skipping: no sandbox backend on this host");
+            return None;
+        }
+        let scope = scope_for(ws, parent_root, None);
+        let reads: Vec<PathBuf> = scope
+            .write_roots
+            .iter()
+            .chain(&scope.read_roots)
+            .chain(visible)
+            .cloned()
+            .collect();
+        let store = std::env::temp_dir().join(format!("jan_child_store_{}", std::process::id()));
+        let ctx = ToolContext::new(&ws.root, &store, &[])
+            .with_sandbox(true)
+            .with_read_roots(&reads)
+            .with_write_roots(&scope.write_roots)
+            .with_env_set(&scope.env_set);
+        let args = serde_json::json!({"command": command, "timeout": 120});
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        Some(rt.block_on(execute_builtin(lookup("shell").unwrap(), &args, &ctx)).0)
+    }
+
+    /// Every entry under `dir` but those `skip` names: a file's contents, a
+    /// symlink's target, a directory as itself.
+    fn tree(dir: &Path, skip: &dyn Fn(&str) -> bool) -> std::collections::BTreeMap<String, String> {
+        fn walk(
+            top: &Path,
+            dir: &Path,
+            skip: &dyn Fn(&str) -> bool,
+            out: &mut std::collections::BTreeMap<String, String>,
+        ) {
+            for entry in std::fs::read_dir(dir).unwrap().map(Result::unwrap) {
+                let path = entry.path();
+                let rel = path.strip_prefix(top).unwrap().to_string_lossy().replace('\\', "/");
+                if skip(&rel) {
+                    continue;
+                }
+                let meta = std::fs::symlink_metadata(&path).unwrap();
+                if meta.file_type().is_symlink() {
+                    let to = std::fs::read_link(&path).unwrap();
+                    out.insert(rel, format!("-> {}", to.display()));
+                } else if meta.is_dir() {
+                    out.insert(rel, "dir".to_string());
+                    walk(top, &path, skip, out);
+                } else {
+                    let bytes = std::fs::read(&path).unwrap();
+                    out.insert(rel, String::from_utf8_lossy(&bytes).into_owned());
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(dir, dir, skip, &mut out);
+        out
+    }
+
+    /// A writer's checkout is a repository of its own, so every git operation
+    /// works there under the sandbox, the ones that rewrite `packed-refs` or
+    /// repack included.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_writer_can_run_any_git_operation_in_its_checkout() {
+        let Some(root) = repo("anyop") else { return };
+        assert!(git(&root, &["tag", "v1"]));
+        let ledger = Arc::new(Ledger::default());
+        let (ws, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let id = "-c user.name=t -c user.email=t@t -c commit.gpgSign=false -c tag.gpgSign=false";
+        let steps = [
+            format!("echo b > b.txt && git add b.txt && git {id} commit -q -m b"),
+            "git branch side && git branch -d side".to_string(),
+            format!("git {id} tag -a -m t t1 && git tag -d t1"),
+            "echo s >> b.txt && git stash -q && git stash pop -q && \
+             ! git rev-parse -q --verify refs/stash && grep -q s b.txt"
+                .to_string(),
+            "git gc -q && git pack-refs --all && git repack -q -a -d".to_string(),
+        ];
+        let mut failed = Vec::new();
+        for step in &steps {
+            let Some(out) = child_shell(&ws, &root, step) else { return };
+            if !out.contains("[exit 0]") {
+                failed.push(format!("{step}: {out}"));
+            }
+        }
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&ws.worktree.as_ref().unwrap().path);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(failed.is_empty(), "{failed:#?}");
+    }
+
+    /// Nothing a sandboxed writer does reaches the user's `.git`: not a
+    /// pointer file, not a symlink planted where the user's git appends a
+    /// reflog or writes packs, not a replace ref, config or hook.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_sandboxed_writer_cannot_write_the_users_git_dir() {
+        let Some(root) = repo("nouser") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, _lease) = ledger.assign(&root, "general", true, None).unwrap();
+        let dot = root.join(".git");
+        let outside = root.with_extension("outside");
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(&outside).unwrap();
+        let head = crate::core::agent::git::head_sha(&root).unwrap();
+        let g = dot.display();
+        let o = outside.display();
+        let attempts = [
+            format!("echo /tmp/evil > {g}/commondir"),
+            format!("mkdir -p {g}/logs && ln -sf {o}/bashrc {g}/logs/HEAD"),
+            format!("ln -sf {o}/bashrc {g}/logs/refs/heads/main"),
+            format!("mv {g}/objects/pack {g}/objects/pack.old"),
+            format!("ln -s {o} {g}/objects/pack/evil"),
+            format!("mkdir -p {g}/refs/replace && echo {head} > {g}/refs/replace/{head}"),
+            format!("git --git-dir={g} update-ref refs/heads/evil {head}"),
+            format!("echo '[core] fsmonitor = touch {o}/pwned' >> {g}/config"),
+            format!("mkdir -p {g}/hooks && echo 'touch {o}/pwned' > {g}/hooks/post-commit"),
+            format!("echo {o} > {g}/objects/info/alternates"),
+        ];
+        let before = tree(&dot, &|_| false);
+        let mut wrote = Vec::new();
+        for cmd in &attempts {
+            // The user's repository visible to it, read-only: the most a
+            // child is ever shown of it.
+            let Some(out) = child_shell_seeing(&ws, &root, std::slice::from_ref(&root), cmd) else { return };
+            if out.contains("[exit 0]") {
+                wrote.push(format!("{cmd}: {out}"));
+            }
+        }
+        let after = tree(&dot, &|_| false);
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&ws.worktree.as_ref().unwrap().path);
+        let _ = std::fs::remove_dir_all(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(wrote.is_empty(), "these wrote the user's .git: {wrote:#?}");
+        assert_eq!(after, before, "the user's .git changed");
+    }
+
+    /// Make `path` an executable script that touches `marker` when run.
+    fn trap(path: &Path, marker: &Path) {
+        std::fs::write(path, format!("#!/bin/sh\ntouch '{}'\ncat\n", marker.display())).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    /// Whatever a writer leaves in its own checkout's config, attributes,
+    /// hooks or a repository nested in it, Jan's own git (the listing, the
+    /// session-end sweep, bringing the branch back) runs none of it, and the
+    /// user's repository gains the branch and nothing else.
+    #[cfg(unix)]
+    #[test]
+    fn a_tampered_checkout_runs_nothing_when_jan_inspects_and_fetches_it() {
+        let Some(root) = repo("tamper") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let wt = ws.worktree.clone().unwrap();
+        let c = wt.path.clone();
+        let marker = root.with_extension("ran");
+        let _ = std::fs::remove_file(&marker);
+        let hook = root.with_extension("trap.sh");
+        trap(&hook, &marker);
+        let h = hook.display().to_string();
+        // The child's own work, and a repository nested in it, committed.
+        commit(&c, "b.txt");
+        let sub = c.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert!(git(&sub, &["init", "-q"]));
+        commit(&sub, "s.txt");
+        assert!(git(&sub, &["config", "core.fsmonitor", &h]));
+        assert!(git(&c, &["add", "sub"]));
+        assert!(git(&c, &["commit", "-q", "--no-gpg-sign", "-m", "sub"]));
+        std::fs::write(sub.join("s.txt"), "dirty\n").unwrap();
+        let tip = crate::core::agent::git::head_sha(&c).unwrap();
+        // Then config that runs a program the next time git looks.
+        for (k, v) in [
+            ("core.fsmonitor", h.as_str()),
+            ("filter.jan.process", h.as_str()),
+            ("filter.jan.clean", h.as_str()),
+            ("filter.jan.required", "true"),
+            ("core.hooksPath", root.parent().unwrap().to_str().unwrap()),
+            ("remote.evil.url", root.to_str().unwrap()),
+            ("remote.evil.uploadpack", h.as_str()),
+            ("uploadpack.packObjectsHook", h.as_str()),
+            ("core.alternateRefsCommand", h.as_str()),
+        ] {
+            let config = c.join(".git/config");
+            let out = Command::new("git")
+                .args(["config", "--file", &config.to_string_lossy(), k, v])
+                .status()
+                .unwrap();
+            assert!(out.success(), "{k}");
+        }
+        std::fs::write(c.join(".gitattributes"), "* filter=jan\n").unwrap();
+        std::fs::write(c.join("a.txt"), "edited\n").unwrap();
+        // The branch's own ref, its reflog and the directories they sit in.
+        let skip = |rel: &str| {
+            rel.starts_with("objects/") || rel.ends_with("heads/jan") || rel.contains("jan/agent")
+                || rel == "index"
+        };
+        let before = tree(&root.join(".git"), &skip);
+
+        let live = ledger.live();
+        let kept = ledger.finish_session();
+        let after = tree(&root.join(".git"), &skip);
+        let ran = marker.exists();
+        let branch = crate::core::agent::git::resolve_commit(&root, &wt.branch);
+        let main_ok = git(&root, &["status", "--short"])
+            && git(&root, &["log", "-1", "--oneline", &wt.branch])
+            && git(&root, &["commit", "-q", "--allow-empty", "--no-gpg-sign", "-m", "m"]);
+        let _ = std::fs::remove_dir_all(&c);
+        let _ = std::fs::remove_file(&hook);
+        let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!ran, "Jan's git ran a program the child configured");
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(live[0].contains("2 commit(s)"), "{live:?}");
+        assert_eq!(branch.as_deref(), Some(tip.as_str()), "the branch is in the user's repo");
+        assert_eq!(after, before, "the user's .git changed beyond the branch");
+        assert!(main_ok, "the user's checkout still works");
+    }
+
+    /// A finished writer's branch is in the user's repository, and its answer
+    /// names it. A branch with no commits is not created there, and one the
+    /// user has since moved is never overwritten: the footer says so instead.
+    #[test]
+    fn a_writers_branch_is_brought_back_and_never_overwrites_the_users() {
+        let Some(root) = repo("bring") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (idle, l1) = ledger.assign(&root, "general", true, None).unwrap();
+        let (done, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        let (clash, l3) = ledger.assign(&root, "general-3", true, None).unwrap();
+        drop((l1, l2, l3));
+        commit(&done.root, "b.txt");
+        commit(&clash.root, "c.txt");
+        let branch = |ws: &ChildWorkspace| ws.worktree.as_ref().unwrap().branch.clone();
+        // The user got there first, on a branch of the same name.
+        assert!(git(&root, &["branch", &branch(&clash)]));
+        commit(&root, "u.txt");
+        assert!(git(&root, &["branch", "-f", &branch(&clash), "HEAD"]));
+        let user_tip = crate::core::agent::git::resolve_commit(&root, &branch(&clash));
+
+        let none = idle.bring_back();
+        let brought = done.bring_back();
+        let refused = clash.bring_back();
+        let git_head = |ws: &ChildWorkspace| crate::core::agent::git::head_sha(&ws.root);
+        let in_repo = crate::core::agent::git::resolve_commit(&root, &branch(&done));
+        let footer = done.answer_footer(brought.as_deref()).unwrap();
+        let clash_footer = clash.answer_footer(refused.as_deref()).unwrap();
+        let clash_now = crate::core::agent::git::resolve_commit(&root, &branch(&clash));
+        let idle_branch = crate::core::agent::git::resolve_commit(&root, &branch(&idle));
+        let reader = ChildWorkspace::shared(&root, true);
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(none, None);
+        assert_eq!(idle_branch, None, "a branch with no commits is not created");
+        assert_eq!(brought, None);
+        assert_eq!(in_repo, git_head(&done));
+        assert!(footer.contains(&branch(&done)) && !footer.contains("could not"), "{footer}");
+        assert!(refused.is_some(), "a branch the user moved is not overwritten");
+        assert_eq!(clash_now, user_tip);
+        assert!(clash_footer.contains("could not be brought"), "{clash_footer}");
+        assert_eq!(reader.answer_footer(None), None);
+        assert_eq!(reader.bring_back(), None);
+    }
+
+    /// Config git reads beyond the repository's own file (an `include`, the
+    /// `extensions` a format version 1 turns on) cannot be emptied by an
+    /// override, so such a checkout is neither read nor removed.
+    #[test]
+    fn a_checkout_whose_config_reaches_other_files_is_not_read() {
+        for (key, value) in [
+            ("include.path", "/etc/hostname"),
+            ("includeIf.gitdir:/.path", "/etc/hostname"),
+            ("extensions.partialClone", "evil"),
+            ("core.repositoryformatversion", "1"),
+        ] {
+            let Some(root) = repo("config") else { return };
+            let ledger = Arc::new(Ledger::default());
+            let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+            drop(lease);
+            let wt = ws.worktree.clone().unwrap();
+            commit(&wt.path, "b.txt");
+            let config = wt.path.join(".git/config");
+            let set = Command::new("git")
+                .args(["config", "--file", &config.to_string_lossy(), key, value])
+                .status()
+                .unwrap();
+            assert!(set.success(), "{key}");
+
+            let kept = ledger.finish_session();
+            let fetched = crate::core::agent::git::resolve_commit(&root, &wt.branch);
+            let still_there = wt.path.is_dir();
+            let _ = std::fs::remove_dir_all(&wt.path);
+            let _ = std::fs::remove_dir_all(&root);
+            assert!(still_there && fetched.is_none(), "{key}");
+            assert_eq!(kept.len(), 1, "{key}: {kept:?}");
+            assert!(kept[0].contains("not read and not removed"), "{key}: {kept:?}");
+        }
+    }
+
+    /// A checkout whose alternates no longer name only the user's objects is
+    /// neither fetched from nor removed, and the kept line says why.
+    #[test]
+    fn a_checkout_with_rewritten_alternates_is_not_fetched_from() {
+        let Some(root) = repo("alternates") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let wt = ws.worktree.clone().unwrap();
+        commit(&wt.path, "b.txt");
+        let alternates = wt.path.join(".git/objects/info/alternates");
+        let mut text = std::fs::read_to_string(&alternates).unwrap_or_default();
+        text.push_str("/etc\n");
+        std::fs::write(&alternates, text).unwrap();
+
+        let kept = ledger.finish_session();
+        let fetched = crate::core::agent::git::resolve_commit(&root, &wt.branch);
+        let still_there = wt.path.is_dir();
+        let _ = std::fs::remove_dir_all(&wt.path);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(still_there);
+        assert_eq!(fetched, None, "nothing fetched from it");
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(kept[0].contains("alternates"), "{kept:?}");
     }
 }

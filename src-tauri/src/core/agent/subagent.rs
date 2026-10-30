@@ -1153,6 +1153,28 @@ fn end_child_shells(run_id: &str) {
     tauri_plugin_agent_tools::tools::proc::kill_thread(run_id);
 }
 
+/// A writer's answer with the line naming its branch, which this first brings
+/// into the user's repository (git, so on the blocking pool) for the parent to
+/// merge; a failed run's branch is left to the session's sweep. A reader's
+/// answer is returned as it is.
+async fn with_branch_footer(
+    ws: crate::core::agent::child_workspace::ChildWorkspace,
+    result: Result<String, SubagentError>,
+) -> Result<String, SubagentError> {
+    let Ok(answer) = result else { return result };
+    let footer = tokio::task::spawn_blocking(move || {
+        let problem = ws.bring_back();
+        ws.answer_footer(problem.as_deref())
+    })
+    .await
+    .ok()
+    .flatten();
+    Ok(match footer {
+        Some(footer) => format!("{answer}\n\n{footer}"),
+        None => answer,
+    })
+}
+
 /// A writer child's [`WriterLease`](crate::core::agent::child_workspace::WriterLease),
 /// shared by its task and its registry entry so either can give it up. The
 /// task's own drop is too late: an aborted task is dropped whenever the
@@ -2173,13 +2195,8 @@ async fn run_subagent(
     let recorder = forwarder.await.ok().flatten();
     let _ = postman.await;
 
-    let footer = workspace.as_ref().and_then(|ws| ws.answer_footer());
     let outcome = match result {
-        // The parent merges a writer's branch, so its answer names it.
-        Ok(completion) => Ok(match footer {
-            Some(footer) => format!("{}\n\n{footer}", final_assistant_text(&completion)),
-            None => final_assistant_text(&completion),
-        }),
+        Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
     };
     if let Some(recorder) = recorder {
@@ -2329,10 +2346,10 @@ async fn assign_dispatch(
         resolved.allowed_tools.as_deref(),
         &parent_args.permissions,
     );
-    // On the blocking pool: assigning runs `git worktree add`, `git status`
-    // and for a ref possibly a network fetch, and placing the child reads its
-    // branch and git dir, which would otherwise stall every other task on
-    // this runtime worker until git returns.
+    // On the blocking pool: assigning runs `git clone`, `git status` and for
+    // a ref possibly a network fetch, and placing the child reads its branch,
+    // which would otherwise stall every other task on this runtime worker
+    // until git returns.
     let scratch = parent_args
         .session_id
         .as_deref()
@@ -2400,6 +2417,7 @@ fn start_dispatch(
         lease,
     } = prepared;
     let workspace_note = workspace.note();
+    let ws_done = workspace.clone();
     let task_lease = lease.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -2532,6 +2550,9 @@ fn start_dispatch(
         // soon as the barrier sees the child done. A shell the run abandoned
         // at its park budget would still be writing in it.
         end_child_shells(&run_id_task);
+        // Still holding the lease, with no shell of the child's left: nothing
+        // writes the checkout while its branch is read.
+        let result = with_branch_footer(ws_done, result).await;
         task_lease.release();
         if let Some((_, path)) = &result_file {
             fill_subagent_result(path, &spilled_text(&result));
@@ -3538,7 +3559,7 @@ pub fn subagent_tool_schemas(
     if cfg!(feature = "cli") {
         tools[0]["function"]["parameters"]["properties"]["subagents"]["items"]["properties"]
             ["workspace"] = json!({
-            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh git worktree on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
+            "description": "Optional; where the subagent works. OMIT for the default: one that can write or edit gets a fresh worktree (a clone of its own) on its own branch, any other works read-only in your checkout. \"new\": a fresh worktree. \"shared\": your checkout. The name of an earlier subagent: that subagent's workspace (one writer at a time). {\"ref\": \"<git ref>\"}: a fresh worktree at that ref, fetched if needed (e.g. pull/123/head).",
             "anyOf": [
                 { "type": "string" },
                 {

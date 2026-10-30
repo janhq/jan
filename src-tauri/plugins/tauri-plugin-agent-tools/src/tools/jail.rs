@@ -103,107 +103,6 @@ pub struct Policy {
     /// checkout and must not change it, `.git` included. The scratch and any
     /// `write_roots` stay writable. See [`Policy::with_workspace_readonly`].
     pub workspace_readonly: bool,
-    /// Paths inside the write roots whose write access is set again, in
-    /// order, after every grant. A worktree writer must write the shared git
-    /// dir to commit, but not what in it configures git or runs code (hooks,
-    /// config), which git runs unsandboxed the next time the user works in
-    /// their checkout. See [`Policy::with_carve_outs`].
-    pub carve_outs: Vec<CarveOut>,
-}
-
-/// One entry of [`Policy::carve_outs`]: `path` made read-only, or writable
-/// again inside an earlier read-only one. Later entries win, so an outer path
-/// comes before what is carved back out of it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CarveOut {
-    pub path: PathBuf,
-    /// Whether `path` is (or, when it does not exist yet, would be) a
-    /// directory: a missing read-only one is still kept from being created.
-    pub dir: bool,
-    pub writable: bool,
-}
-
-impl CarveOut {
-    /// `path`, kept read-only.
-    pub fn read_only(path: PathBuf, dir: bool) -> Self {
-        Self { path, dir, writable: false }
-    }
-
-    /// The directory `path`, writable again.
-    pub fn writable(path: PathBuf) -> Self {
-        Self { path, dir: true, writable: true }
-    }
-}
-
-/// The write access a writer in the linked worktree whose admin dir is `admin`
-/// (`<common>/worktrees/<name>`) gets to its repository's shared git dir
-/// `common`, when `common` itself is a write root so its commits land there.
-///
-/// An allowlist, because git reads more of the shared dir than code ever
-/// lists: whatever the writer leaves there, git obeys unsandboxed the next
-/// time the user (or an unconfined parent) works in the checkout. `hooks/`
-/// and `config` run programs, but so does a `commondir` file, which no
-/// repository has at its top level and which, once created, sends git in the
-/// user's checkout to a git dir (and config) of the writer's making. So all
-/// of `common` is read-only, and only what a commit, a new branch or a stash
-/// writes is opened again: `objects/` (minus `objects/info/`, whose
-/// `alternates` and `http-alternates` add another directory's objects to the
-/// repository; only gc and repack write there), `refs/`, `logs/` and the
-/// writer's own admin dir (its index, HEAD, logs and lock files), minus the
-/// admin files that point git elsewhere (`commondir`, `gitdir`) or configure
-/// it (`config.worktree`, read once `extensions.worktreeConfig` is on, which
-/// can happen later).
-///
-/// What that costs: `packed-refs` stays read-only, and git rewrites it (under
-/// a `packed-refs.lock` beside the config) to delete any ref, loose or not, so
-/// a writer cannot delete a branch or a tag (dropping the last stash entry
-/// leaves `refs/stash` behind), nor gc, repack or pack refs.
-///
-/// A path bubblewrap binds must exist: a missing read-only one gets a
-/// placeholder mount whose mount point stays behind on the host (an empty
-/// `commondir` there stops git cold), and a missing writable one cannot be
-/// bound at all. So every path listed here exists before the shell starts:
-/// the dirs to reopen are created (empty, as `git init` makes them), the
-/// admin dir is reopened only while its `commondir` and `gitdir` exist, and
-/// a missing `config.worktree` is created empty, which git reads like an
-/// absent one (where a `/dev/null` placeholder could not be read at all).
-pub fn git_dir_carve_outs(common: &Path, admin: &Path) -> Vec<CarveOut> {
-    for dir in ["objects", "objects/info", "refs", "logs"] {
-        let _ = std::fs::create_dir_all(common.join(dir));
-    }
-    let mut carve = vec![
-        CarveOut::read_only(common.to_path_buf(), true),
-        CarveOut::writable(common.join("objects")),
-        CarveOut::read_only(common.join("objects/info"), true),
-        CarveOut::writable(common.join("refs")),
-        CarveOut::writable(common.join("logs")),
-    ];
-    if admin.join("commondir").is_file() && admin.join("gitdir").is_file() {
-        let _ = std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(admin.join("config.worktree"));
-        carve.extend([
-            CarveOut::writable(admin.to_path_buf()),
-            CarveOut::read_only(admin.join("commondir"), false),
-            CarveOut::read_only(admin.join("gitdir"), false),
-            CarveOut::read_only(admin.join("config.worktree"), false),
-        ]);
-    }
-    carve
-}
-
-/// Whether the resolved `path` lies under a read-only entry of `carve_outs`
-/// that no later entry makes writable again: the file tools' side of what the
-/// sandbox enforces for the shell.
-pub fn carved_read_only(carve_outs: &[CarveOut], path: &Path) -> bool {
-    carve_outs
-        .iter()
-        .rev()
-        .find(|c| {
-            path.starts_with(&c.path) || real_form(&c.path).is_some_and(|r| path.starts_with(r))
-        })
-        .is_some_and(|c| !c.writable)
 }
 
 impl Policy {
@@ -218,18 +117,7 @@ impl Policy {
             write_roots: Vec::new(),
             hide_root: None,
             workspace_readonly: false,
-            carve_outs: Vec::new(),
         }
-    }
-
-    /// Set [`Policy::carve_outs`]. Applied after every grant: bubblewrap
-    /// binds each over the writable binds (a missing read-only path gets an
-    /// empty read-only placeholder, so it cannot be created either), Seatbelt
-    /// denies or re-allows writes by subpath, which also covers a missing
-    /// path. AppContainer grants no write roots, so there is nothing to carve.
-    pub fn with_carve_outs(mut self, carve_outs: Vec<CarveOut>) -> Self {
-        self.carve_outs = carve_outs;
-        self
     }
 
     /// Keep the workspace readable but not writable. AppContainer grants its
@@ -662,28 +550,6 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(hide) = policy.hide_root.as_deref().filter(|h| policy.hide_under_a_bind(h)) {
         push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
     }
-    // Last and in order, so no grant above can shadow them and a writable
-    // entry re-opens only what lies inside an earlier read-only one. A
-    // read-only path that does not exist yet still gets a mount, or the shell
-    // could create it: an empty read-only tmpfs for a directory, `/dev/null`
-    // for a file. bubblewrap leaves the empty mount point behind on the host,
-    // which git reads like an absent one (an empty config sets nothing).
-    // A writable entry that does not exist cannot be bound; left out, it stays
-    // read-only under the entry it was carved from, rather than failing the run.
-    for carve in &policy.carve_outs {
-        let path = carve.path.to_string_lossy();
-        if carve.writable && !carve.path.exists() {
-            continue;
-        } else if carve.writable {
-            push(&mut args, &["--bind", &path, &path]);
-        } else if carve.path.exists() {
-            push(&mut args, &["--ro-bind", &path, &path]);
-        } else if carve.dir {
-            push(&mut args, &["--tmpfs", &path, "--remount-ro", &path]);
-        } else {
-            push(&mut args, &["--ro-bind", "/dev/null", &path]);
-        }
-    }
     push(&mut args, &["--chdir", &ws]);
 
     // Drops the network, pid, ipc, uts and cgroup namespaces along with the
@@ -737,9 +603,6 @@ struct SeatbeltPaths {
     scratch_real: Option<PathBuf>,
     /// The read-only checkout and read roots, each in every form it has.
     deny_write: Vec<PathBuf>,
-    /// [`Policy::carve_outs`] in order, each in every form it has, with
-    /// whether it is writable.
-    carve_outs: Vec<(PathBuf, bool)>,
 }
 
 impl SeatbeltPaths {
@@ -757,19 +620,9 @@ impl SeatbeltPaths {
                 }
             }
         }
-        let carve_outs = policy
-            .carve_outs
-            .iter()
-            .flat_map(|c| {
-                std::iter::once(c.path.clone())
-                    .chain(real_form(&c.path))
-                    .map(move |form| (form, c.writable))
-            })
-            .collect();
         Self {
             scratch_real: policy.scratch_root.as_deref().and_then(real_form),
             deny_write,
-            carve_outs,
         }
     }
 }
@@ -882,13 +735,6 @@ fn seatbelt_profile(policy: &Policy, paths: &SeatbeltPaths) -> String {
              (allow file-write* (subpath (param \"WRITE_ROOT_{i}\")))\n"
         ));
     }
-    // After every write allow, so none of them re-grants a carved-out path.
-    // A `subpath` rule also matches a path that does not exist yet, so a
-    // missing one cannot be created either.
-    for (i, (_, writable)) in paths.carve_outs.iter().enumerate() {
-        let verb = if *writable { "allow" } else { "deny" };
-        p.push_str(&format!("({verb} file-write* (subpath (param \"CARVE_{i}\")))\n"));
-    }
     if hide_last {
         p.push_str(HIDE_RULES);
     }
@@ -934,9 +780,6 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
     for (i, root) in paths.deny_write.iter().enumerate() {
         args.push(format!("-DDENY_WRITE_{i}={}", root.to_string_lossy()));
-    }
-    for (i, (path, _)) in paths.carve_outs.iter().enumerate() {
-        args.push(format!("-DCARVE_{i}={}", path.to_string_lossy()));
     }
     if let Some(scratch) = &policy.scratch_root {
         args.push(format!("-DSCRATCH={}", scratch.to_string_lossy()));
@@ -1042,27 +885,6 @@ pub fn denial_hint(policy: &Policy) -> String {
         }
         s
     };
-    // A write root carved read-only as a whole (a worktree writer's shared git
-    // dir) is writable only where reopened. Git's own message names just
-    // `packed-refs.lock`, which leaves a model retrying a branch deletion.
-    let mut attached = attached;
-    for root in policy.write_roots.iter().filter(|r| {
-        policy.carve_outs.iter().any(|c| !c.writable && c.path == **r)
-    }) {
-        let open: Vec<String> = policy
-            .carve_outs
-            .iter()
-            .filter(|c| c.writable && c.path.starts_with(root))
-            .map(|c| c.path.display().to_string())
-            .collect();
-        attached.push_str(&format!(
-            " In the git dir {} only {} are writable, so commits, new branches and \
-             stashes work, but deleting a branch or tag (or the last stash entry's \
-             ref) rewrites packed-refs there and is refused: leave it for the user.",
-            root.display(),
-            open.join(", ")
-        ));
-    }
     // A read-only workspace is not a place writes may go: naming it as one sends
     // the model straight back to retry there.
     if policy.workspace_readonly {
@@ -1791,184 +1613,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// The shared git dir's hooks and config are bound read-only after the
-    /// writable grant of the dir itself, in order, with the writer's own admin
-    /// dir re-opened inside a read-only `worktrees/` and its redirect files
-    /// closed again; a missing path gets a read-only placeholder.
-    #[test]
-    fn bwrap_binds_carve_outs_after_every_grant_in_order() {
-        let base = std::env::temp_dir().join(format!("jan-carve-bw-{}", std::process::id()));
-        let git = base.join("repo/.git");
-        std::fs::create_dir_all(git.join("hooks")).unwrap();
-        std::fs::create_dir_all(git.join("worktrees/w")).unwrap();
-        std::fs::write(git.join("config"), b"").unwrap();
-        let s = |p: &Path| p.to_string_lossy().into_owned();
-        let policy = Policy::new(&base.join("wt"), false)
-            .with_write_roots(vec![git.clone()])
-            .with_carve_outs(vec![
-                CarveOut::read_only(git.join("hooks"), true),
-                CarveOut::read_only(git.join("config"), false),
-                CarveOut::read_only(git.join("modules"), true),
-                CarveOut::read_only(git.join("config.worktree"), false),
-                CarveOut::read_only(git.join("worktrees"), true),
-                CarveOut::writable(git.join("worktrees/w")),
-                CarveOut::read_only(git.join("worktrees/w/gitdir"), false),
-            ]);
-        let text = joined(&bwrap_args(&policy, &cfg()));
-        let _ = std::fs::remove_dir_all(&base);
-        let at = |needle: String| text.find(&needle).unwrap_or_else(|| panic!("{needle}: {text}"));
-        let ws = at(format!("--bind {0} {0}", s(&base.join("wt"))));
-        let grant = at(format!("--bind {0} {0}", s(&git)));
-        let hooks = at(format!("--ro-bind {0} {0}", s(&git.join("hooks"))));
-        let config = at(format!("--ro-bind {0} {0}", s(&git.join("config"))));
-        let modules = s(&git.join("modules"));
-        let modules = at(format!("--tmpfs {modules} --remount-ro {modules}"));
-        let wtconfig = at(format!("--ro-bind /dev/null {}", s(&git.join("config.worktree"))));
-        let trees = at(format!("--ro-bind {0} {0}", s(&git.join("worktrees"))));
-        let own = at(format!("--bind {0} {0}", s(&git.join("worktrees/w"))));
-        let gitdir = at(format!("--ro-bind /dev/null {}", s(&git.join("worktrees/w/gitdir"))));
-        assert!(grant < ws && ws < hooks, "after the workspace bind too: {text}");
-        assert!(hooks < config && config < modules && modules < wtconfig, "{text}");
-        assert!(wtconfig < trees && trees < own && own < gitdir, "{text}");
-        assert!(gitdir < at("--chdir".to_string()), "{text}");
-    }
-
-    /// Seatbelt denies writes to the whole shared git dir after every write
-    /// allow, by subpath (which also matches a path that does not exist yet,
-    /// so `commondir` cannot be created), then re-allows the allowlist after
-    /// that denial and denies what is carved back out of it after those.
-    #[test]
-    fn seatbelt_denies_carve_outs_after_every_write_allow() {
-        let git = PathBuf::from("/Users/u/repo/.git");
-        let admin = git.join("worktrees/w");
-        let policy = Policy::new(Path::new("/Users/u/.jan/worktrees/r/w"), false)
-            .with_scratch_root(Path::new("/Users/u/.jan/scratch/s1"))
-            .with_write_roots(vec![git.clone()])
-            .with_carve_outs(vec![
-                CarveOut::read_only(git.clone(), true),
-                CarveOut::writable(git.join("objects")),
-                CarveOut::read_only(git.join("objects/info"), true),
-                CarveOut::writable(git.join("refs")),
-                CarveOut::writable(admin.clone()),
-                CarveOut::read_only(admin.join("commondir"), false),
-            ]);
-        let p = seatbelt_policy(&policy);
-        let at = |needle: &str| p.find(needle).unwrap_or_else(|| panic!("{needle}: {p}"));
-        let deny = |i: usize| at(&format!("(deny file-write* (subpath (param \"CARVE_{i}\")))"));
-        let allow = |i: usize| at(&format!("(allow file-write* (subpath (param \"CARVE_{i}\")))"));
-        for grant in ["WORKSPACE", "SCRATCH", "WRITE_ROOT_0"] {
-            let g = at(&format!("(allow file-write* (subpath (param \"{grant}\")))"));
-            assert!(g < deny(0), "{grant}: {p}");
-        }
-        assert!(deny(0) < allow(1) && allow(1) < deny(2) && deny(2) < allow(3), "{p}");
-        assert!(allow(3) < allow(4) && allow(4) < deny(5), "{p}");
-        let args = seatbelt_args(&policy, &cfg());
-        assert!(args.iter().any(|a| a == "-DCARVE_0=/Users/u/repo/.git"), "{args:?}");
-        assert!(args.iter().any(|a| a == "-DCARVE_2=/Users/u/repo/.git/objects/info"), "{args:?}");
-        assert!(args.iter().any(|a| a == "-DCARVE_4=/Users/u/repo/.git/worktrees/w"), "{args:?}");
-        assert!(!seatbelt_policy(&Policy::new(Path::new("/w"), false)).contains("CARVE"));
-    }
-
-    /// The shared git dir is read-only except for an allowlist: objects (minus
-    /// `objects/info`, whose alternates would inject objects into the user's
-    /// repo), refs, logs and the writer's own admin dir (minus the files that
-    /// point git elsewhere or configure it). Everything else at its top level,
-    /// `commondir`, `gitdir` and `packed-refs` included, is covered, and the
-    /// reopened dirs are created when missing so they can be bound.
-    #[test]
-    fn git_dir_carve_outs_reopen_only_an_allowlist_of_the_shared_git_dir() {
-        let base = std::env::temp_dir().join(format!("jan-carve-allow-{}", std::process::id()));
-        let common = base.join("repo/.git");
-        let admin = common.join("worktrees/w");
-        std::fs::create_dir_all(&admin).unwrap();
-        std::fs::write(admin.join("commondir"), b"../..\n").unwrap();
-        std::fs::write(admin.join("gitdir"), b"/w/.git\n").unwrap();
-        let carve = git_dir_carve_outs(&common, &admin);
-        let logs = common.join("logs").is_dir() && common.join("refs").is_dir();
-        let ro = |p: &str| carved_read_only(&carve, &common.join(p));
-        for p in [
-            "commondir", "gitdir", "config", "config.worktree", "packed-refs",
-            "packed-refs.lock", "HEAD", "hooks/pre-commit", "info/attributes", "modules/m",
-            "remotes/o", "branches/b", "anything-new", "objects/info/alternates",
-            "objects/info/http-alternates", "worktrees/other/HEAD", "worktrees/w/commondir",
-            "worktrees/w/gitdir", "worktrees/w/config.worktree",
-        ] {
-            assert!(ro(p), "{p} must stay read-only: {carve:#?}");
-        }
-        for p in [
-            "objects/ab/cd", "objects/pack/p.pack", "refs/heads/jan/agent/x", "refs/stash",
-            "logs/HEAD", "logs/refs/heads/x", "worktrees/w/index.lock", "worktrees/w/HEAD",
-        ] {
-            assert!(!ro(p), "{p} must stay writable: {carve:#?}");
-        }
-        // An admin dir missing a pointer file is not reopened: binding it
-        // read-only would leave an empty one behind, which git fails to parse.
-        std::fs::remove_file(admin.join("commondir")).unwrap();
-        let carve = git_dir_carve_outs(&common, &admin);
-        let _ = std::fs::remove_dir_all(&base);
-        assert!(logs, "the reopened dirs exist on the host");
-        assert!(carved_read_only(&carve, &admin.join("index.lock")), "{carve:#?}");
-        assert!(!carve.iter().any(|c| c.path.starts_with(&admin)), "{carve:#?}");
-    }
-
-    /// A reopened dir that is missing on the host cannot be bound, so it is
-    /// left out (staying read-only under the dir it was carved from) rather
-    /// than failing the whole shell.
-    #[test]
-    fn bwrap_skips_a_writable_carve_out_that_does_not_exist() {
-        let base = std::env::temp_dir().join(format!("jan-carve-miss-{}", std::process::id()));
-        let git = base.join("repo/.git");
-        std::fs::create_dir_all(git.join("refs")).unwrap();
-        let s = |p: &Path| p.to_string_lossy().into_owned();
-        let policy = Policy::new(&base.join("wt"), false)
-            .with_write_roots(vec![git.clone()])
-            .with_carve_outs(vec![
-                CarveOut::read_only(git.clone(), true),
-                CarveOut::writable(git.join("refs")),
-                CarveOut::writable(git.join("logs")),
-            ]);
-        let text = joined(&bwrap_args(&policy, &cfg()));
-        let _ = std::fs::remove_dir_all(&base);
-        assert!(text.contains(&format!("--bind {0} {0}", s(&git.join("refs")))), "{text}");
-        assert!(!text.contains(&s(&git.join("logs"))), "{text}");
-    }
-
-    /// A denied write in a worktree writer's shell says what of the git dir is
-    /// writable, so a failed branch or stash deletion is not retried.
-    #[test]
-    fn denial_hint_explains_the_git_dir_allowlist() {
-        let git = PathBuf::from("/r/.git");
-        let plain = denial_hint(&policy().with_write_roots(vec![git.clone()]));
-        assert!(!plain.contains("packed-refs"), "{plain}");
-        let hint = denial_hint(
-            &policy()
-                .with_write_roots(vec![git.clone()])
-                .with_carve_outs(vec![
-                    CarveOut::read_only(git.clone(), true),
-                    CarveOut::writable(git.join("refs")),
-                ]),
-        );
-        assert!(hint.contains("packed-refs") && hint.contains("/r/.git/refs"), "{hint}");
-        assert!(hint.contains("deleting a branch or tag"), "{hint}");
-    }
-
-    /// The file tools ask the same question the sandbox enforces: the last
-    /// carve-out over a path decides.
-    #[test]
-    fn carved_read_only_follows_the_last_matching_carve_out() {
-        let carve = [
-            CarveOut::read_only(PathBuf::from("/r/.git/hooks"), true),
-            CarveOut::read_only(PathBuf::from("/r/.git/worktrees"), true),
-            CarveOut::writable(PathBuf::from("/r/.git/worktrees/w")),
-            CarveOut::read_only(PathBuf::from("/r/.git/worktrees/w/gitdir"), false),
-        ];
-        let ro = |p: &str| carved_read_only(&carve, Path::new(p));
-        assert!(ro("/r/.git/hooks/pre-commit") && ro("/r/.git/worktrees/other/HEAD"));
-        assert!(ro("/r/.git/worktrees/w/gitdir"));
-        assert!(!ro("/r/.git/worktrees/w/index.lock") && !ro("/r/.git/objects/ab"));
-        assert!(!ro("/r/.git/hooksy"), "a component match, not a string prefix");
-    }
-
     /// bubblewrap layers in order, so a read-only checkout under `/tmp` is
     /// bound read-only after the scratch takes `/tmp`, never shadowed by it.
     #[test]
@@ -2456,137 +2100,6 @@ mod enforcement_tests {
         assert!(ok && out.contains("original"), "reads still work: {out}");
         assert_eq!(kept, "original");
         assert!(scratched, "the scratch stays writable");
-    }
-
-    /// A writer in a linked worktree commits into the main repository's git
-    /// dir, which is outside its checkout: granted as a write root, the commit
-    /// lands, while what configures git or runs code in the user's checkout
-    /// stays read-only under the carve-outs.
-    #[tokio::test]
-    #[cfg(target_os = "linux")]
-    async fn a_worktree_writer_can_commit_but_not_touch_git_hooks_or_config() {
-        require_backend!();
-        let git = |dir: &Path, args: &[&str]| {
-            std::process::Command::new("git")
-                .arg("-C")
-                .arg(dir)
-                .args(args)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        };
-        let repo = workspace();
-        if !git(&repo, &["init", "-q"]) {
-            eprintln!("skipping: no git");
-            return;
-        }
-        std::fs::write(repo.join("a.txt"), b"a").unwrap();
-        assert!(git(&repo, &["add", "a.txt"]));
-        assert!(git(&repo, &["commit", "-q", "--no-gpg-sign", "-m", "a"]));
-        let wt = workspace();
-        std::fs::remove_dir(&wt).unwrap();
-        assert!(git(&repo, &["worktree", "add", "-q", "-b", "child", &wt.to_string_lossy()]));
-        let common = repo.join(".git");
-        // A repository without reflogs has no `logs/`: it is created so it can
-        // be reopened, or the commit could not write one.
-        std::fs::remove_dir_all(common.join("logs")).unwrap();
-        // On, so a `config.worktree` the writer managed to write would be read.
-        assert!(git(&repo, &["config", "extensions.worktreeConfig", "true"]));
-        let top = |dir: &Path| {
-            let mut names: Vec<String> = std::fs::read_dir(dir)
-                .unwrap()
-                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-                .collect();
-            names.sort();
-            names
-        };
-        let commit = "echo b > b.txt && git add b.txt && git -c user.name=t -c user.email=t@t \
-                      commit -q --no-gpg-sign -m b";
-        let (landed, _) = run_policy(Policy::new(&wt, false), &wt, commit).await;
-        let admin = common.join("worktrees").join(wt.file_name().unwrap());
-        assert!(admin.is_dir(), "{admin:?}");
-        let with = Policy::new(&wt, false)
-            .with_write_roots(vec![common.clone()])
-            .with_carve_outs(git_dir_carve_outs(&common, &admin));
-        let before = top(&common);
-        let admin_before = top(&admin);
-        let (ok, out) = run_policy(with.clone(), &wt, commit).await;
-        // New branches and stash entries are loose refs, so they work; so does
-        // popping one, whose changes apply though the emptied stash's ref,
-        // a deletion, is refused.
-        let stash = "git checkout -q -b side && git checkout -q - && echo s >> b.txt && \
-                     git stash -q && git stash list | grep -q . && ! grep -q s b.txt && \
-                     git stash pop -q; grep -q s b.txt && git checkout -q b.txt";
-        let (stashed, s_out) = run_policy(with.clone(), &wt, stash).await;
-        // Deleting any ref rewrites `packed-refs` beside the config: refused,
-        // and in words the denial hint recognises.
-        let (deleted, d_out) = run_policy(with.clone(), &wt, "git branch -d side").await;
-        // Nothing that configures or runs code in the user's checkout, by any
-        // spelling, and a hook that does not exist yet cannot be created.
-        let tamper = [
-            "echo x > \"$(git rev-parse --git-common-dir)/hooks/pre-commit\"".to_string(),
-            format!("printf '#!/bin/sh\\ntouch /tmp/p\\n' > {}/hooks/post-commit", common.display()),
-            format!("echo x >> {}/config", common.display()),
-            "git config core.fsmonitor 'touch /tmp/pwn'".to_string(),
-            "git config --worktree core.hooksPath /tmp".to_string(),
-            format!("mkdir -p {}/modules/m/hooks", common.display()),
-            format!("echo '* filter=x' > {}/info/attributes", common.display()),
-            format!("echo x > {}/config.worktree", common.display()),
-            format!("echo x > {}/config.worktree", admin.display()),
-            format!("echo /tmp > {}/commondir", admin.display()),
-            format!("echo x > {}/gitdir", admin.display()),
-            format!("mkdir {}/worktrees/evil", common.display()),
-            // Pointers git follows from the shared dir: a `commondir` there
-            // redirects the user's checkout to a repository the writer made,
-            // alternates add objects to it from anywhere.
-            format!("echo /tmp/evil > {}/commondir", common.display()),
-            format!("echo /tmp/evil > {}/gitdir", common.display()),
-            format!("echo /tmp/evil > {}/objects/info/alternates", common.display()),
-            format!("echo /tmp/evil > {}/objects/info/http-alternates", common.display()),
-            format!("echo x > {}/packed-refs", common.display()),
-            format!("echo x > {}/HEAD", common.display()),
-            format!("echo x > {}/FETCH_HEAD", common.display()),
-        ];
-        let mut changed = Vec::new();
-        for cmd in &tamper {
-            let (wrote, t_out) = run_policy(with.clone(), &wt, cmd).await;
-            if wrote {
-                changed.push(format!("{cmd}: {t_out}"));
-            }
-        }
-        let hook = common.join("hooks/post-commit").exists();
-        let config = std::fs::read_to_string(common.join("config")).unwrap_or_default();
-        let module = common.join("modules/m").exists();
-        // No mount point is left behind where git would parse it: the shared
-        // dir and the admin dir list what they did before, plus what git wrote.
-        let after = top(&common);
-        let admin_after = top(&admin);
-        // ...and the user's checkout, unconfined, still works.
-        let main_ok = git(&repo, &["status", "--short"])
-            && git(&repo, &["log", "-1", "--oneline", "child"])
-            && git(&repo, &["commit", "-q", "--allow-empty", "--no-gpg-sign", "-m", "m"])
-            && git(&wt, &["status", "--short"]);
-        let _ = std::fs::remove_dir_all(&wt);
-        let _ = std::fs::remove_dir_all(&repo);
-        assert!(!landed, "without the git dir the commit cannot land");
-        assert!(ok, "with it, it does: {out}");
-        assert!(stashed, "{s_out}");
-        assert!(!deleted && looks_denied(&d_out), "{d_out}");
-        assert!(changed.is_empty(), "these wrote the git dir: {changed:#?}");
-        assert!(!hook && !module, "nothing created");
-        assert!(!config.contains("fsmonitor") && !config.contains("\nx"), "{config}");
-        assert!(before.contains(&"logs".to_string()), "{before:?}");
-        assert_eq!(after, before, "nothing new in the shared git dir");
-        // What git itself writes there, and an empty `config.worktree`, made
-        // up front so it can be bound.
-        let written = ["COMMIT_EDITMSG", "ORIG_HEAD", "AUTO_MERGE", "logs", "config.worktree"];
-        let new: Vec<_> = admin_after.iter().filter(|n| !admin_before.contains(n)).collect();
-        assert!(new.iter().all(|n| written.contains(&n.as_str())), "{new:?}");
-        assert!(main_ok, "the main checkout still works");
     }
 
     /// A relocated store root (e.g. `JAN_DATA_FOLDER` outside `$HOME`) must not

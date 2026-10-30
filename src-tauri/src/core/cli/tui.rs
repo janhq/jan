@@ -46621,7 +46621,6 @@ mod tests {
             hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
-            carve_outs: Vec::new(),
             allow_network: false,
             home_readonly: false,
             // Bare shell: these exercise the TUI wiring, not the jail.

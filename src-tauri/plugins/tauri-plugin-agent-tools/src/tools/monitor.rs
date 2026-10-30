@@ -62,7 +62,6 @@ pub struct MonitorCtx {
     pub hidden_root: Option<PathBuf>,
     pub read_roots: Vec<PathBuf>,
     pub write_roots: Vec<PathBuf>,
-    pub carve_outs: Vec<crate::tools::jail::CarveOut>,
     pub allow_network: bool,
     pub home_readonly: bool,
     pub sandbox: bool,
@@ -78,7 +77,6 @@ impl MonitorCtx {
             hidden_root: ctx.hidden_root.map(Path::to_path_buf),
             read_roots: ctx.read_roots.to_vec(),
             write_roots: ctx.write_roots.to_vec(),
-            carve_outs: ctx.carve_outs.to_vec(),
             allow_network: ctx.allow_network,
             home_readonly: ctx.home_readonly,
             sandbox: ctx.sandbox,
@@ -96,7 +94,6 @@ impl MonitorCtx {
             .with_sandbox(self.sandbox)
             .with_read_roots(&self.read_roots)
             .with_write_roots(&self.write_roots)
-            .with_carve_outs(&self.carve_outs)
             .with_hidden_root(self.hidden_root.as_deref())
             .with_workspace_readonly(self.workspace_readonly);
         if let Some(mask) = &self.mask_root {
@@ -619,7 +616,6 @@ mod tests {
             hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
-            carve_outs: Vec::new(),
             allow_network: false,
             home_readonly: false,
             // Bare shell: these tests exercise the monitor loop, not the jail.
