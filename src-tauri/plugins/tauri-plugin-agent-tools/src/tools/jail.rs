@@ -707,8 +707,6 @@ fn real_form(path: &Path) -> Option<PathBuf> {
 /// out once so the profile and its `-D` arguments always agree: sandbox-exec
 /// refuses a profile referencing a parameter no argument supplies.
 struct SeatbeltPaths {
-    tmpdir: PathBuf,
-    tmpdir_real: Option<PathBuf>,
     scratch_real: Option<PathBuf>,
     /// The read-only checkout and read roots, each in every form it has.
     deny_write: Vec<PathBuf>,
@@ -719,7 +717,6 @@ struct SeatbeltPaths {
 
 impl SeatbeltPaths {
     fn of(policy: &Policy) -> Self {
-        let tmpdir = std::env::temp_dir();
         let readonly = policy
             .workspace_readonly
             .then_some(&policy.workspace)
@@ -743,8 +740,6 @@ impl SeatbeltPaths {
             })
             .collect();
         Self {
-            tmpdir_real: real_form(&tmpdir),
-            tmpdir,
             scratch_real: policy.scratch_root.as_deref().and_then(real_form),
             deny_write,
             carve_outs,
@@ -804,16 +799,15 @@ fn seatbelt_profile(policy: &Policy, paths: &SeatbeltPaths) -> String {
         p.push_str(HIDE_RULES);
     }
     p.push_str("(allow file-read* (subpath (param \"WORKSPACE\")))\n");
+    // Not the host temp dir (`$TMPDIR`, `/var/folders/...`): the shell's
+    // `TMPDIR` is the session scratch, granted by name below, and the host
+    // one holds other programs' files, which must not be writable here.
     p.push_str(
-        "; Writes: the workspace and the temp dir, nothing else.\n\
-         (allow file-write* (subpath (param \"TMPDIR\")))\n\
+        "; Writes: the workspace, the scratch and /private/tmp, nothing else.\n\
          (allow file-write* (subpath \"/private/tmp\"))\n",
     );
-    if paths.tmpdir_real.is_some() {
-        p.push_str("(allow file-write* (subpath (param \"TMPDIR_REAL\")))\n");
-    }
-    // The temp grants above are broad, so a read-only checkout or read root
-    // under one (a project in `/tmp`) would be writable through them. Denied
+    // The `/private/tmp` grant above is broad, so a read-only checkout or read
+    // root under it (a project in `/tmp`) would be writable through it. Denied
     // after them, and before the scratch and write-root allows below so those
     // stay writable even inside such a root.
     for i in 0..paths.deny_write.len() {
@@ -910,10 +904,6 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
     for (i, root) in policy.write_roots.iter().enumerate() {
         args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
-    }
-    args.push(format!("-DTMPDIR={}", paths.tmpdir.to_string_lossy()));
-    if let Some(real) = &paths.tmpdir_real {
-        args.push(format!("-DTMPDIR_REAL={}", real.to_string_lossy()));
     }
     for (i, root) in paths.deny_write.iter().enumerate() {
         args.push(format!("-DDENY_WRITE_{i}={}", root.to_string_lossy()));
@@ -1673,9 +1663,9 @@ mod tests {
         }
     }
 
-    /// The temp grants are broad, and in Seatbelt the later rule wins: a
-    /// read-only checkout under `/private/tmp` or `$TMPDIR` must be denied
-    /// writes after them, by every name it has, or it is writable after all.
+    /// The `/private/tmp` grant is broad, and in Seatbelt the later rule wins:
+    /// a read-only checkout under it must be denied writes after it, by every
+    /// name it has, or it is writable after all.
     #[test]
     fn seatbelt_denies_writes_to_a_read_only_checkout_under_the_temp_grants() {
         let ws = Path::new("/private/tmp/checkout");
@@ -1686,7 +1676,6 @@ mod tests {
         let deny = "(deny file-write* (subpath (param \"DENY_WRITE_0\")))";
         let at = p.find(deny).expect(&p);
         assert!(p.find("(allow file-write* (subpath \"/private/tmp\"))").unwrap() < at, "{p}");
-        assert!(p.find("(allow file-write* (subpath (param \"TMPDIR\")))").unwrap() < at);
         assert!(p.contains("(deny file-write* (subpath (param \"DENY_WRITE_1\")))"), "{p}");
         let args = seatbelt_args(&ro, &cfg());
         assert!(args.iter().any(|a| a == "-DDENY_WRITE_0=/private/tmp/checkout"), "{args:?}");
@@ -1862,9 +1851,48 @@ mod tests {
     fn seatbelt_confines_writes_to_the_workspace_and_temp() {
         let p = seatbelt_policy(&policy());
         assert!(p.contains("(allow file-write* (subpath (param \"WORKSPACE\")))"));
-        assert!(p.contains("(allow file-write* (subpath (param \"TMPDIR\")))"));
+        assert!(p.contains("(allow file-write* (subpath \"/private/tmp\"))"));
         // No blanket write rule anywhere.
         assert!(!p.contains("(allow file-write*)"));
+    }
+
+    /// The host temp dir is not the shell's: its `TMPDIR` is the session
+    /// scratch, granted by name. No write allow may name the host temp dir,
+    /// in its given or resolved form (`/var/folders/...` resolves to
+    /// `/private/var/folders/...` on macOS), or anything above it.
+    #[test]
+    fn seatbelt_never_grants_writes_to_the_host_temp_dir() {
+        let tmp = std::env::temp_dir();
+        let forms: Vec<PathBuf> = std::iter::once(tmp.clone()).chain(real_form(&tmp)).collect();
+        let scratch = tmp.join(format!("jan-agent-tmpgrant-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let ws = Path::new("/data/agent-workspace/threads/t1");
+        let policy = Policy::new(ws, false).with_scratch_root(&scratch);
+        let p = seatbelt_policy(&policy);
+        let args = seatbelt_args(&policy, &cfg());
+        let _ = std::fs::remove_dir_all(&scratch);
+        for line in p.lines().filter(|l| l.starts_with("(allow file-write*")) {
+            let granted = match line.split_once("(param \"") {
+                Some((_, rest)) => {
+                    let name = rest.split('"').next().unwrap();
+                    let value = args
+                        .iter()
+                        .find_map(|a| a.strip_prefix(&format!("-D{name}=")))
+                        .unwrap_or_else(|| panic!("{name} has no argument: {args:?}"));
+                    PathBuf::from(value)
+                }
+                None => match line.split_once("(subpath \"") {
+                    Some((_, rest)) => PathBuf::from(rest.split('"').next().unwrap()),
+                    None => continue,
+                },
+            };
+            for form in &forms {
+                assert!(!form.starts_with(&granted), "{line} grants {form:?}:\n{p}");
+            }
+        }
+        // The scratch inside it stays writable, by its resolved name too.
+        assert!(p.contains("(allow file-write* (subpath (param \"SCRATCH\")))"), "{p}");
+        assert!(!args.iter().any(|a| a.starts_with("-DTMPDIR")), "{args:?}");
     }
 
     /// The scratch is granted by name rather than relying on it happening to sit
