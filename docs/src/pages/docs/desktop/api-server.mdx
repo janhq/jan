@@ -76,7 +76,8 @@ A secret key used to authenticate requests.
 
 ### Trusted Hosts
 A comma-separated list of hostnames allowed to access the server. This provides an additional layer of security when the server is exposed on your network.
-- Entries are matched against the `Host` header and against the web page that sends a request. Your own computer (`127.0.0.1`, `localhost`) and private network addresses are always accepted as the `Host`.
+- Entries are matched against the `Host` header and against the web page that sends a request. These are always accepted as the `Host`: your own computer (`127.0.0.1`, `localhost`, `::1`), IPv4 private addresses (`10.x.x.x`, `172.16.x.x` to `172.31.x.x`, `192.168.x.x`) and IPv4 link-local addresses (`169.254.x.x`).
+- Other addresses are not accepted unless you list them, `*` or not. That includes IPv6 private and link-local addresses (list one in brackets, such as `[fd00::5]`) and the `100.64.0.0/10` range that Tailscale uses (for example `100.64.1.2`).
 - `*` lets a web page from any origin call the API. It does not accept any other `Host`: to reach Jan by a hostname such as `my-mac.local`, list that hostname too.
 
 ### Request Timeout
