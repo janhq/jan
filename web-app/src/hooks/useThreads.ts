@@ -9,6 +9,7 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
 import { cleanupThreadWorkspace } from '@/lib/agentTools'
+import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -85,10 +86,11 @@ const cleanupThreadCache = async (threadId: string) => {
 // vector DB collection, its saved prompt cache, and its ephemeral agent
 // sandbox. Fire-and-forget, since every caller runs inside a `set` reducer;
 // each logs its own failures.
-const cleanupThreadArtifacts = (threadId: string) => {
+const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
   cleanupVectorDB(threadId)
   cleanupThreadCache(threadId)
-  cleanupThreadWorkspace(threadId)
+  // Cowork conversations keep their sandbox in the session scope.
+  cleanupThreadWorkspace(threadId, workspaceScopeFor(thread))
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -197,7 +199,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupThreadArtifacts(threadId)
+      cleanupThreadArtifacts(threadId, state.threads[threadId])
       getServiceHub().threads().deleteThread(threadId)
 
       return {
@@ -221,14 +223,16 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const threadsToKeepIds = allThreadIds.filter(
         (threadId) =>
           state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project
+          state.threads[threadId].metadata?.project ||
+          isCoworkThread(state.threads[threadId])
       )
 
       // Identify threads to delete (non-favorites AND no project metadata)
       const threadsToDeleteIds = allThreadIds.filter(
         (threadId) =>
           !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project
+          !state.threads[threadId].metadata?.project &&
+          !isCoworkThread(state.threads[threadId])
       )
 
       // Delete threads and clean up their out-of-store artifacts. As in
@@ -238,7 +242,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
+        cleanupThreadArtifacts(threadId, state.threads[threadId])
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -272,7 +276,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
+        cleanupThreadArtifacts(threadId, state.threads[threadId])
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -298,7 +302,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
+        cleanupThreadArtifacts(threadId, state.threads[threadId])
         getServiceHub().threads().deleteThread(threadId)
       })
 

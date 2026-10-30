@@ -1,3 +1,4 @@
+import { isCoworkThread } from '@/lib/threadMode'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -25,7 +26,9 @@ export function NavChats() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const threadsWithoutProject = useMemo(() => {
-    return getFilteredThreads('').filter((thread) => !thread.metadata?.project)
+    return getFilteredThreads('').filter(
+      (thread) => !thread.metadata?.project && !isCoworkThread(thread)
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getFilteredThreads, threads])
 

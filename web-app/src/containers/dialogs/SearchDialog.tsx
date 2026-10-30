@@ -1,3 +1,4 @@
+import { isCoworkThread } from '@/lib/threadMode'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -113,7 +114,9 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery) return { withProject: [], withoutProject: [] }
 
-    const filteredThreads = getFilteredThreads(searchQuery)
+    const filteredThreads = getFilteredThreads(searchQuery).filter(
+      (thread) => !isCoworkThread(thread)
+    )
     const withProject: Array<{
       thread: Thread
       projectName: string

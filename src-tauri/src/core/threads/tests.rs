@@ -823,3 +823,80 @@ async fn test_thread_commands_refuse_ids_outside_threads_dir() {
     assert!(!outside.path().join("messages.jsonl").exists());
     assert!(!outside.path().join("thread.json").exists());
 }
+
+#[tokio::test]
+async fn test_create_thread_honours_valid_supplied_id() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Supplied id");
+    thread["id"] = json!("0b6f1c1e-5a0e-4a53-9c1e-7f7d2a3b4c5d");
+    let created = create_thread(app.handle().clone(), thread).await.unwrap();
+    assert_eq!(created["id"], "0b6f1c1e-5a0e-4a53-9c1e-7f7d2a3b4c5d");
+}
+
+#[tokio::test]
+async fn test_create_thread_invalid_or_missing_id_gets_uuid() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut bad = create_test_thread("Bad id");
+    bad["id"] = json!("../escape");
+    let created = create_thread(app.handle().clone(), bad).await.unwrap();
+    let id = created["id"].as_str().unwrap();
+    assert_ne!(id, "../escape");
+    assert!(validate_thread_id(id).is_ok());
+
+    let created = create_thread(app.handle().clone(), create_test_thread("No id"))
+        .await
+        .unwrap();
+    assert!(validate_thread_id(created["id"].as_str().unwrap()).is_ok());
+}
+
+#[tokio::test]
+async fn test_create_thread_with_existing_id_is_idempotent() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut first = create_test_thread("Original");
+    first["id"] = json!("idem-thread-1");
+    create_thread(app.handle().clone(), first).await.unwrap();
+
+    let mut second = create_test_thread("Overwrite attempt");
+    second["id"] = json!("idem-thread-1");
+    let again = create_thread(app.handle().clone(), second).await.unwrap();
+    assert_eq!(again["title"], "Original");
+}
+
+#[tokio::test]
+async fn test_thread_extra_roundtrip_and_allowlist() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Extra");
+    thread["id"] = json!("extra-thread-1");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+
+    let absent = read_thread_extra(app.handle().clone(), "extra-thread-1".into(), "cowork".into())
+        .await
+        .unwrap();
+    assert!(absent.is_none());
+
+    let value = json!({"turns": [{"role": "user", "content": "hi"}], "messages": [], "n": 1.5});
+    write_thread_extra(
+        app.handle().clone(),
+        "extra-thread-1".into(),
+        "cowork".into(),
+        value.clone(),
+    )
+    .await
+    .unwrap();
+    let back = read_thread_extra(app.handle().clone(), "extra-thread-1".into(), "cowork".into())
+        .await
+        .unwrap();
+    assert_eq!(back, Some(value));
+
+    // Not allowlisted, or a traversal attempt, is rejected.
+    assert!(
+        write_thread_extra(app.handle().clone(), "extra-thread-1".into(), "thread".into(), json!({}))
+            .await
+            .is_err()
+    );
+    assert!(
+        read_thread_extra(app.handle().clone(), "../x".into(), "cowork".into())
+            .await
+            .is_err()
+    );
+}
