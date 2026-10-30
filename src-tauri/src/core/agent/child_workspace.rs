@@ -308,10 +308,9 @@ pub(crate) struct Placement {
 /// the blocking pool and [`apply`], on the async child task, runs none.
 pub(crate) fn place(ws: &ChildWorkspace, parent_root: &Path, scratch: Option<&Path>) -> Placement {
     Placement {
-        session_start: ws
-            .worktree
-            .as_ref()
-            .map(|_| crate::core::agent::context::SessionStart::capture(Some(&ws.root))),
+        session_start: ws.worktree.as_ref().map(|wt| {
+            crate::core::agent::context::SessionStart::with_branch(worktree_branch(wt))
+        }),
         scope: scope_for(ws, parent_root, scratch),
     }
 }
@@ -523,21 +522,47 @@ impl Ledger {
 #[cfg(feature = "cli")]
 fn remove_if_empty(wt: &ChildWorktree) -> bool {
     use crate::core::agent::git;
+    // A checkout whose `.git` no longer points home is never removed: what
+    // it holds cannot be read without following the redirect.
+    let Ok(linked) = linked(wt) else { return false };
     // The branch is force-deleted below, so its own commits count too: a
     // writer may have committed and then moved HEAD back to the base.
-    commits_held(wt) == Some(0)
-        && git::try_changed_paths(&wt.path).is_ok_and(|c| c.is_empty())
+    commits_held(wt, &linked) == Some(0)
+        && linked.try_changed_paths().is_ok_and(|c| c.is_empty())
         && git::worktree_remove(&wt.repo, &wt.path, Some(&wt.branch)).is_ok()
 }
 
 /// Commits the worktree holds past its base, on HEAD or on its branch,
 /// whichever is more. `None` when git cannot say.
 #[cfg(feature = "cli")]
-fn commits_held(wt: &ChildWorktree) -> Option<u64> {
-    use crate::core::agent::git;
-    let head = git::commits_since(&wt.path, &wt.base)?;
-    let branch = git::commits_on(&wt.path, &wt.base, &format!("refs/heads/{}", wt.branch))?;
+fn commits_held(wt: &ChildWorktree, linked: &crate::core::agent::git::Linked) -> Option<u64> {
+    let head = linked.commits_on(&wt.base, "HEAD")?;
+    let branch = linked.commits_on(&wt.base, &format!("refs/heads/{}", wt.branch))?;
     Some(head.max(branch))
+}
+
+/// The branch checked out in `wt`, read without trusting its `.git` file.
+#[cfg(feature = "cli")]
+fn worktree_branch(wt: &ChildWorktree) -> Option<String> {
+    linked(wt).ok()?.current_branch()
+}
+
+/// The desktop makes no worktrees.
+#[cfg(not(feature = "cli"))]
+fn worktree_branch(_wt: &ChildWorktree) -> Option<String> {
+    None
+}
+
+/// `wt` as git must be run in it: through the main checkout's records, and
+/// only while its `.git` file still points at them. Every git call Jan makes
+/// in a child's worktree goes through here, unsandboxed, so it never follows
+/// a `.git` file the child rewrote. The error says why not, for the user.
+#[cfg(feature = "cli")]
+fn linked(wt: &ChildWorktree) -> Result<crate::core::agent::git::Linked, String> {
+    use crate::core::agent::git;
+    let common = git::git_common_dir(&wt.repo)
+        .ok_or_else(|| format!("{} is no longer a git repository", wt.repo.display()))?;
+    git::Linked::find(&common, &wt.path)
 }
 
 /// The desktop makes no worktrees, so there is never one to remove.
@@ -721,12 +746,17 @@ pub(crate) fn kept_notice(kept: &[String]) -> String {
 
 #[cfg(feature = "cli")]
 fn kept_line(wt: &ChildWorktree) -> String {
-    use crate::core::agent::git;
-    let held = match (commits_held(wt), git::try_changed_paths(&wt.path)) {
-        (Some(commits), Ok(changed)) => {
-            format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
-        }
-        _ => "status unknown: git could not read it".to_string(),
+    let held = match linked(wt) {
+        Err(why) => format!(
+            "not read and not removed: {why}. Do not run git in it; inspect its .git \
+             file, or delete the directory and run `git worktree prune`"
+        ),
+        Ok(linked) => match (commits_held(wt, &linked), linked.try_changed_paths()) {
+            (Some(commits), Ok(changed)) => {
+                format!("{commits} commit(s), {} uncommitted file(s)", changed.len())
+            }
+            _ => "status unknown: git could not read it".to_string(),
+        },
     };
     format!("{} on {} ({held})", display(&wt.path), wt.branch)
 }
@@ -1281,6 +1311,54 @@ mod git_tests {
         assert!(args.child_scope.as_ref().unwrap().read_only);
         let _ = ledger.finish_session();
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A writer can rewrite its worktree's `.git` file, which is inside its
+    /// checkout, to `gitdir: <a dir it made>` whose config runs a program
+    /// (`core.fsmonitor`). Jan's own git in that worktree runs unsandboxed,
+    /// so it must neither follow the redirect nor remove the worktree, and
+    /// the session-end line must say why it was kept.
+    #[test]
+    fn a_redirected_worktree_git_file_is_never_followed() {
+        let Some(root) = repo("redirect") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let wt = ws.worktree.clone().unwrap();
+        let marker = root.with_extension("pwned");
+        let _ = std::fs::remove_file(&marker);
+        let evil = wt.path.join("evil.git");
+        assert!(git(&wt.path, &["init", "-q", "--bare", &evil.to_string_lossy()]));
+        let hook = wt.path.join("fsmonitor.sh");
+        std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()))
+            .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let wt_dir = wt.path.to_string_lossy().into_owned();
+        let hook_cmd = hook.to_string_lossy().into_owned();
+        for (k, v) in [("core.bare", "false"), ("core.worktree", wt_dir.as_str()),
+            ("core.fsmonitor", hook_cmd.as_str())]
+        {
+            assert!(git(&evil, &["config", k, v]));
+        }
+        std::fs::write(wt.path.join(".git"), format!("gitdir: {}\n", evil.display())).unwrap();
+
+        let live = ledger.live();
+        let kept = ledger.finish_session();
+        let ran = marker.exists();
+        let still_there = wt.path.is_dir();
+        let _ = std::fs::remove_file(&marker);
+        let _ = std::fs::remove_dir_all(&wt.path);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!ran, "Jan's git ran the redirected repository's fsmonitor");
+        assert!(still_there, "a tampered worktree is never removed");
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        for line in live.iter().chain(&kept) {
+            assert!(line.contains(".git file was changed"), "{line}");
+        }
     }
 
     /// A project root that went through `std::fs::canonicalize` (on Windows
