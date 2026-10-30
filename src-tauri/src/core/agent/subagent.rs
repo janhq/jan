@@ -1094,6 +1094,7 @@ pub(crate) fn stop_subagent(
     }
     entry.abort.abort();
     entry.slot.release(bg);
+    end_child_shells(&entry.run_id);
     // Under the lock the phase barrier reads `finished` under, so no next
     // phase can see this child done while its worktree is still held.
     entry.lease.release();
@@ -1141,6 +1142,15 @@ struct BackgroundEntry {
     /// A writer's hold on its worktree, given up before the child is marked
     /// finished, by its task or by whoever stops it. See [`LeaseSlot`].
     lease: LeaseSlot,
+}
+
+/// End every shell the child `run_id` started and left running. Its run
+/// registers them under its own id (see `CompositeToolInvoker::shell_owner`)
+/// and runs each in a task of its own, which aborting the child does not
+/// reach: they must be gone before the child gives its worktree up, or they
+/// keep writing into a checkout the next writer or the sweep now owns.
+fn end_child_shells(run_id: &str) {
+    tauri_plugin_agent_tools::tools::proc::kill_thread(run_id);
 }
 
 /// A writer child's [`WriterLease`](crate::core::agent::child_workspace::WriterLease),
@@ -1481,6 +1491,7 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            end_child_shells(&entry.run_id);
             entry.lease.release();
             // Release the counters here rather than leaving it to the aborted
             // tasks: a cancelled run must owe nothing the moment its teardown
@@ -1527,6 +1538,7 @@ impl BackgroundSubagents {
             return false;
         };
         entry.abort.abort();
+        end_child_shells(&entry.run_id);
         entry.lease.release();
         // Exactly once, whether the child finished or is cut off here: see
         // `ChildSlot::release`.
@@ -2517,7 +2529,9 @@ fn start_dispatch(
         )
         .await;
         // Before `finished` below: a next phase may reuse this worktree as
-        // soon as the barrier sees the child done.
+        // soon as the barrier sees the child done. A shell the run abandoned
+        // at its park budget would still be writing in it.
+        end_child_shells(&run_id_task);
         task_lease.release();
         if let Some((_, path)) = &result_file {
             fill_subagent_result(path, &spilled_text(&result));
@@ -7450,6 +7464,37 @@ pub(crate) mod tests {
             other => panic!("expected SubagentEnd, got {other:?}"),
         }
         assert!(handle.await.unwrap_err().is_cancelled(), "the task was aborted");
+    }
+
+    /// A child's shells run in tasks its abort does not reach, so stopping it
+    /// must end them itself: a shell left writing after the worktree's lease
+    /// is released races the next writer, or the sweep that removes it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_a_child_ends_the_shells_it_started() {
+        use tauri_plugin_agent_tools::tools::proc;
+        let bg = Arc::new(BackgroundSubagents::default());
+        let run_id = format!("sub-shells-{}", std::process::id());
+        let (entry, _inbox) = live_entry(&run_id, "shells");
+        bg.inner.lock().unwrap().insert(run_id.clone(), entry);
+        let child = proc::spawn(
+            proc::shell(),
+            "sleep 300",
+            &std::env::temp_dir(),
+            None,
+            proc::ShellEnv::default(),
+            Some(&run_id),
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        // Held the way `bash` holds it: by a task of its own.
+        let waiter = tokio::spawn(child.wait_with_output());
+
+        stop_subagent(&bg, "shells").unwrap();
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), waiter).await;
+        proc::kill(pid);
+        assert!(ended.is_ok(), "the stopped child's shell is still running");
     }
 
     /// The counters a child holds are released exactly once: stopping it and then
