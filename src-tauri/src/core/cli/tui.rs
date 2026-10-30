@@ -17186,6 +17186,12 @@ fn memory_command(app: &mut App, arg: &str) {
                 app.note("memory tidy is unavailable: this project's rules deny the memory tool");
                 return;
             }
+            // The tidy child runs in normal mode, so without this it would
+            // change memory that plan mode keeps read-only.
+            if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+                app.note("memory tidy is unavailable in plan mode (read only); /plan exit to leave");
+                return;
+            }
             if app.tidy_running.is_some() || app.tidy_request.is_some() {
                 app.note("a memory tidy is already running");
                 return;
@@ -44248,6 +44254,24 @@ mod tests {
             app.run_mode = crate::core::agent::plan::RunMode::Normal;
             app.maybe_auto_tidy();
             assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+        });
+    }
+
+    /// A manual tidy changes memory, which plan mode refuses: it is turned
+    /// away with a pointer out of plan mode, and works once plan mode is left.
+    #[test]
+    fn manual_tidy_is_refused_in_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("plan mode") && text.contains("/plan exit"), "{text}");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
         });
     }
 
