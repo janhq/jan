@@ -496,7 +496,7 @@ pub fn landing(
 /// project. A link's target is spliced in place of its name instead, relative
 /// targets against the link's own directory, as the kernel does. Too many hops
 /// (a cycle) is an error, so callers fail closed.
-fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
     // Linux's MAXSYMLINKS: the most hops `open` itself would follow.
     const MAX_HOPS: usize = 40;

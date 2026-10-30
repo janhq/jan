@@ -225,6 +225,9 @@ fn display(path: &Path) -> String {
 pub(crate) struct ChildScope {
     pub(crate) read_only: bool,
     pub(crate) write_roots: Vec<PathBuf>,
+    /// What stays read-only inside `write_roots`: the shared git dir's hooks
+    /// and config (see [`tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs`]).
+    pub(crate) carve_outs: Vec<tauri_plugin_agent_tools::tools::jail::CarveOut>,
     pub(crate) env_set: Vec<(String, String)>,
 }
 
@@ -246,9 +249,10 @@ const CARGO_TARGET: &str = "cargo-target";
 
 /// The scope a child in `ws` runs under: the shared build directory for any
 /// child outside the plain writable checkout, the shared git dir for a writer
-/// in a worktree (so its sandboxed `git commit` lands), and package caches in
-/// the session scratch for a reader. `scratch` is that scratch, when the
-/// session has one. Runs git, so call it off the async workers.
+/// in a worktree (so its sandboxed `git commit` lands) minus what in it runs
+/// code or configures git in the user's checkout, and package caches in the
+/// session scratch for a reader. `scratch` is that scratch, when the session
+/// has one. Runs git, so call it off the async workers.
 pub(crate) fn scope_for(
     ws: &ChildWorkspace,
     parent_root: &Path,
@@ -276,8 +280,14 @@ pub(crate) fn scope_for(
             }
         }
     }
+    // Both dirs come from the main checkout, never from the worktree's own
+    // `.git` file: the writer can rewrite that, and a grant that followed it
+    // would hand out whatever directory it names. No admin dir found, no
+    // grant: the writer then edits but cannot commit.
     if let Some(wt) = ws.worktree.as_ref().filter(|_| !ws.read_only) {
-        if let Some(common) = git_common_dir(&wt.path) {
+        if let Some((common, admin)) = git_dirs(&wt.repo, &wt.path) {
+            scope.carve_outs =
+                tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs(&common, &admin);
             scope.write_roots.push(common);
         }
     }
@@ -643,13 +653,18 @@ fn create(
     })
 }
 
+/// The shared git dir of the main checkout `repo` and the admin dir it keeps
+/// for the linked worktree at `worktree`.
 #[cfg(feature = "cli")]
-fn git_common_dir(path: &Path) -> Option<PathBuf> {
-    crate::core::agent::git::git_common_dir(path)
+fn git_dirs(repo: &Path, worktree: &Path) -> Option<(PathBuf, PathBuf)> {
+    use crate::core::agent::git;
+    let common = git::git_common_dir(repo)?;
+    let admin = git::worktree_admin_dir(&common, worktree)?;
+    Some((common, admin))
 }
 
 #[cfg(not(feature = "cli"))]
-fn git_common_dir(_path: &Path) -> Option<PathBuf> {
+fn git_dirs(_repo: &Path, _worktree: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
@@ -1266,12 +1281,30 @@ mod git_tests {
 
     #[test]
     fn a_worktree_writer_may_write_the_shared_git_dir_and_build_dir() {
+        use tauri_plugin_agent_tools::tools::jail::carved_read_only;
         let Some(root) = repo("scope") else { return };
         let ledger = Arc::new(Ledger::default());
         let (w, _lease) = ledger.assign(&root, "general", true, None).unwrap();
         let scope = scope_for(&w, &root, None);
         assert!(!scope.read_only);
-        assert!(scope.write_roots.contains(&root.join(".git")), "{scope:?}");
+        let git = root.join(".git");
+        assert!(scope.write_roots.contains(&git), "{scope:?}");
+        // ...but not what in it runs code or configures git in the user's
+        // checkout, while its own admin dir, where a commit writes, stays open.
+        let name = w.worktree.as_ref().unwrap().path.file_name().unwrap().to_owned();
+        let admin = git.join("worktrees").join(&name);
+        assert!(admin.is_dir(), "{admin:?}");
+        let ro = |p: PathBuf| carved_read_only(&scope.carve_outs, &p);
+        for p in ["hooks/pre-commit", "config", "config.worktree", "info/attributes", "modules/m"] {
+            assert!(ro(git.join(p)), "{p} must stay read-only: {scope:?}");
+        }
+        assert!(ro(git.join("worktrees/other/HEAD")), "{scope:?}");
+        assert!(ro(admin.join("gitdir")) && ro(admin.join("commondir")));
+        assert!(ro(admin.join("config.worktree")), "{scope:?}");
+        for p in ["objects/ab/cd", "refs/heads/jan/agent/x", "logs/HEAD", "packed-refs.lock"] {
+            assert!(!ro(git.join(p)), "{p} must stay writable: {scope:?}");
+        }
+        assert!(!ro(admin.join("index.lock")) && !ro(admin.join("HEAD")), "{scope:?}");
         let target = project_worktrees_dir(&root).unwrap().join(CARGO_TARGET);
         assert!(scope.write_roots.contains(&target), "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, v)| k == "CARGO_TARGET_DIR" && Path::new(v) == target));
@@ -1281,6 +1314,7 @@ mod git_tests {
         let scope = scope_for(&r, &root, Some(&scratch));
         assert!(scope.read_only);
         assert_eq!(scope.write_roots, vec![target], "a reader never gets the git dir");
+        assert!(scope.carve_outs.is_empty(), "{scope:?}");
         let yarn = scope.env_set.iter().find(|(k, _)| k == "YARN_CACHE_FOLDER");
         assert!(yarn.is_some_and(|(_, v)| v.ends_with("/yarn-cache")), "{scope:?}");
         assert!(scope.env_set.iter().any(|(k, _)| k == "COREPACK_HOME"), "{scope:?}");
