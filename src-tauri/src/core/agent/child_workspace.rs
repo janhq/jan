@@ -225,8 +225,8 @@ fn display(path: &Path) -> String {
 pub(crate) struct ChildScope {
     pub(crate) read_only: bool,
     pub(crate) write_roots: Vec<PathBuf>,
-    /// What stays read-only inside `write_roots`: the shared git dir's hooks
-    /// and config (see [`tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs`]).
+    /// What stays read-only inside `write_roots`: all of the shared git dir but
+    /// what a commit writes (see [`tauri_plugin_agent_tools::tools::jail::git_dir_carve_outs`]).
     pub(crate) carve_outs: Vec<tauri_plugin_agent_tools::tools::jail::CarveOut>,
     pub(crate) env_set: Vec<(String, String)>,
 }
@@ -249,8 +249,8 @@ const CARGO_TARGET: &str = "cargo-target";
 
 /// The scope a child in `ws` runs under: the shared build directory for any
 /// child outside the plain writable checkout, the shared git dir for a writer
-/// in a worktree (so its sandboxed `git commit` lands) minus what in it runs
-/// code or configures git in the user's checkout, and package caches in the
+/// in a worktree (so its sandboxed `git commit` lands) reduced to what a
+/// commit writes, and package caches in the
 /// session scratch for a reader. `scratch` is that scratch, when the session
 /// has one. Runs git, so call it off the async workers.
 pub(crate) fn scope_for(
@@ -1390,8 +1390,8 @@ mod git_tests {
         assert!(!scope.read_only);
         let git = root.join(".git");
         assert!(scope.write_roots.contains(&git), "{scope:?}");
-        // ...but not what in it runs code or configures git in the user's
-        // checkout, while its own admin dir, where a commit writes, stays open.
+        // ...but only the allowlist a commit writes, never what in it runs
+        // code, configures git or points it elsewhere in the user's checkout.
         let name = w.worktree.as_ref().unwrap().path.file_name().unwrap().to_owned();
         let admin = git.join("worktrees").join(&name);
         assert!(admin.is_dir(), "{admin:?}");
@@ -1399,10 +1399,13 @@ mod git_tests {
         for p in ["hooks/pre-commit", "config", "config.worktree", "info/attributes", "modules/m"] {
             assert!(ro(git.join(p)), "{p} must stay read-only: {scope:?}");
         }
+        for p in ["commondir", "objects/info/alternates", "packed-refs.lock"] {
+            assert!(ro(git.join(p)), "{p} must stay read-only: {scope:?}");
+        }
         assert!(ro(git.join("worktrees/other/HEAD")), "{scope:?}");
         assert!(ro(admin.join("gitdir")) && ro(admin.join("commondir")));
         assert!(ro(admin.join("config.worktree")), "{scope:?}");
-        for p in ["objects/ab/cd", "refs/heads/jan/agent/x", "logs/HEAD", "packed-refs.lock"] {
+        for p in ["objects/ab/cd", "refs/heads/jan/agent/x", "logs/HEAD"] {
             assert!(!ro(git.join(p)), "{p} must stay writable: {scope:?}");
         }
         assert!(!ro(admin.join("index.lock")) && !ro(admin.join("HEAD")), "{scope:?}");

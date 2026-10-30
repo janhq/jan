@@ -201,9 +201,18 @@ A dispatch entry can choose with its optional `workspace` field:
 Saved subagent definitions cannot set a workspace; it is chosen per dispatch.
 
 Worktrees share one `CARGO_TARGET_DIR` per project, so a new one does not start with a cold Rust
-build. A sandboxed writer may write the repository's git directory, so `git commit` works in its
-worktree, but its hooks, config, `info/`, submodule git dirs and the other worktrees' admin dirs stay
-read-only, so nothing it writes there runs outside the sandbox. The main agent can read its subagents' worktrees with the file tools (`read`, `ls`,
+build. A sandboxed writer may write only part of the repository's git directory: `objects/` (but
+not `objects/info/`), `refs/`, `logs/` and its own worktree's admin dir. Everything else there
+(hooks, config, `info/`, `packed-refs`, submodule git dirs, the other worktrees' admin dirs, and
+any new file such as a `commondir` that would redirect git) stays read-only, so nothing it writes
+there runs or redirects git outside the sandbox. In its worktree, `git commit`, `git branch <new>`,
+`git checkout -b`, `git reset`, `git stash`, `git stash pop` and `git stash drop` work. Deleting a
+ref rewrites `packed-refs`, so `git branch -d`/`-D` and `git tag -d` fail; popping or dropping the
+last stash entry empties the list but prints a `packed-refs.lock` error and leaves `refs/stash`
+behind; `git gc`, `git repack` and `git pack-refs` fail too. You or the main session (unsandboxed,
+or by escalating) can delete such branches, tags and the leftover `refs/stash` afterwards.
+
+The main agent can read its subagents' worktrees with the file tools (`read`, `ls`,
 `find`, `grep`), and from its shell only while that shell is sandboxed, where they are mounted
 read-only (`git -C <worktree> diff` works; an escalated command naming them is refused).
 
