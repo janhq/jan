@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   Fragment,
@@ -149,11 +148,6 @@ import {
   skillCommandPrefix,
 } from '@/lib/skillCommands'
 
-export const Route = createFileRoute(route.cowork as any)({
-  beforeLoad: () => ensureCoworkEnabled(),
-  component: CoworkPage,
-})
-
 // Slash-menu rows share keyboard behavior but expose their category visually.
 type MenuItemKind = 'skill' | 'command' | 'model'
 
@@ -191,7 +185,7 @@ function sessionMonitorLane(sid: string): MonitorLane {
   }))
 }
 
-function CoworkPage() {
+export function CoworkPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -1626,9 +1620,13 @@ function CoworkPage() {
                     <CoworkBudgetNotice
                       kind="tokens"
                       onCompact={() => void handleCompact()}
-                      onNewSession={() =>
-                        useCoworkSessions.getState().createSession()
-                      }
+                      onNewSession={() => {
+                        const id = useCoworkSessions.getState().createSession()
+                        navigate({
+                          to: route.coworkSession,
+                          params: { sessionId: id },
+                        })
+                      }}
                     />
                   )}
                 </ConversationContent>
