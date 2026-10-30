@@ -563,26 +563,84 @@ pub(crate) fn worktree_admin_dir(common: &Path, worktree: &Path) -> Option<PathB
         })
 }
 
-/// Commits on `HEAD` of `worktree` that `base` does not have, or `None` when
-/// git cannot say (then the caller must assume there is work to keep).
+/// A linked worktree addressed through the main repository's records of it,
+/// never through the checkout's own `.git` file: whoever works in the
+/// checkout can rewrite that file to name a repository whose config runs a
+/// program (`core.fsmonitor`) the next time git looks at the checkout.
 #[cfg(feature = "cli")]
-pub(crate) fn commits_since(worktree: &Path, base: &str) -> Option<u64> {
-    commits_on(worktree, base, "HEAD")
+#[derive(Debug, Clone)]
+pub(crate) struct Linked {
+    /// The checkout's top level.
+    pub(crate) path: PathBuf,
+    /// Its admin dir, `<common>/worktrees/<name>`.
+    pub(crate) admin: PathBuf,
+    /// The repository's shared git dir.
+    pub(crate) common: PathBuf,
 }
 
-/// Commits reachable from `tip` (a branch or `HEAD`) but not from `base`.
-/// `None` when git cannot say, which callers must never read as zero.
 #[cfg(feature = "cli")]
-pub(crate) fn commits_on(worktree: &Path, base: &str, tip: &str) -> Option<u64> {
-    require_object_id(base).ok()?;
-    if tip.starts_with('-') {
-        return None;
+impl Linked {
+    /// `common`'s linked worktree at `path`, or an error naming why git must
+    /// not be run in it: no admin dir records it, or its `.git` file no
+    /// longer points at that admin dir.
+    pub(crate) fn find(common: &Path, path: &Path) -> Result<Self, String> {
+        let admin = worktree_admin_dir(common, path)
+            .ok_or_else(|| format!("{} is not a worktree of {}", path.display(), common.display()))?;
+        let dot_git = path.join(".git");
+        let points_back = std::fs::symlink_metadata(&dot_git).is_ok_and(|m| m.is_file())
+            && std::fs::read_to_string(&dot_git).is_ok_and(|raw| {
+                raw.trim().strip_prefix("gitdir:").is_some_and(|dir| {
+                    let dir = PathBuf::from(dir.trim());
+                    let dir = if dir.is_absolute() { dir } else { path.join(dir) };
+                    dunce::canonicalize(&dir).is_ok_and(|d| d == admin)
+                })
+            });
+        if !points_back {
+            return Err(format!(
+                "its .git file was changed to point away from {}",
+                admin.display()
+            ));
+        }
+        Ok(Self { path: path.to_path_buf(), admin, common: common.to_path_buf() })
     }
-    run(worktree, None, &["rev-list", "--count", &format!("{base}..{tip}"), "--"])
-        .ok()?
-        .parse()
-        .ok()
+
+    /// `git <args>` in the checkout, with its repository named explicitly.
+    fn run(&self, args: &[&str]) -> Result<String, String> {
+        let mut cmd = repo_command(&self.path, args)?;
+        cmd.env("GIT_DIR", &self.admin)
+            .env("GIT_COMMON_DIR", &self.common)
+            .env("GIT_WORK_TREE", &self.path);
+        let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+        outcome(&out, args)
+    }
+
+    /// The branch checked out there, `None` when detached or unreadable.
+    pub(crate) fn current_branch(&self) -> Option<String> {
+        self.run(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .ok()
+            .filter(|s| !s.is_empty() && s != "HEAD")
+    }
+
+    /// Commits reachable from `tip` (a branch or `HEAD`) but not from
+    /// `base`. `None` when git cannot say, which callers must never read as
+    /// zero.
+    pub(crate) fn commits_on(&self, base: &str, tip: &str) -> Option<u64> {
+        require_object_id(base).ok()?;
+        if tip.starts_with('-') {
+            return None;
+        }
+        self.run(&["rev-list", "--count", &format!("{base}..{tip}"), "--"])
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    /// [`try_changed_paths`] for this checkout.
+    pub(crate) fn try_changed_paths(&self) -> Result<Vec<String>, String> {
+        changed_paths_with(|args| self.run(args))
+    }
 }
+
 
 /// Remove the checkout at `path` and delete its `branch` (none for a detached
 /// one), the inverse of [`worktree_add`]. Forced, because the caller has
@@ -633,7 +691,14 @@ pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
 /// force-deleted with them.
 #[cfg(feature = "cli")]
 pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> {
-    Ok(run(worktree, None, &["status", "--porcelain", "--untracked-files=all"])?
+    changed_paths_with(|args| run(worktree, None, args))
+}
+
+#[cfg(feature = "cli")]
+fn changed_paths_with(
+    git: impl Fn(&[&str]) -> Result<String, String>,
+) -> Result<Vec<String>, String> {
+    Ok(git(&["status", "--porcelain", "--untracked-files=all"])?
         .lines()
         .filter_map(|l| l.trim_start().split_once(' '))
         // A rename reads `R old -> new`; the new name is the path on disk, and
@@ -1071,12 +1136,28 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&wt);
         worktree_add(&root, &wt, "jan/agent/child-1", &head).unwrap();
-        assert_eq!(git_common_dir(&wt), Some(common), "a linked worktree shares it");
-        assert_eq!(commits_since(&wt, &head), Some(0));
+        assert_eq!(git_common_dir(&wt).as_ref(), Some(&common), "a linked worktree shares it");
+        let wt = dunce::canonicalize(&wt).unwrap();
+        let linked = Linked::find(&common, &wt).unwrap();
+        assert_eq!(linked.admin, common.join("worktrees").join(wt.file_name().unwrap()));
+        assert_eq!(linked.current_branch().as_deref(), Some("jan/agent/child-1"));
+        assert_eq!(linked.commits_on(&head, "HEAD"), Some(0));
         std::fs::write(wt.join("b.txt"), "b\n").unwrap();
         run(&wt, None, &["add", "b.txt"]).unwrap();
         run(&wt, None, &["commit", "-q", "-m", "b", "--no-gpg-sign"]).unwrap();
-        assert_eq!(commits_since(&wt, &head), Some(1));
+        assert_eq!(linked.commits_on(&head, "HEAD"), Some(1));
+        assert_eq!(linked.commits_on(&head, "refs/heads/jan/agent/child-1"), Some(1));
+        assert_eq!(linked.commits_on(&head, "--all"), None, "never an option");
+        std::fs::write(wt.join("c.txt"), "c\n").unwrap();
+        assert_eq!(linked.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
+        std::fs::remove_file(wt.join("c.txt")).unwrap();
+        // A `.git` file pointing anywhere else, or replaced by a directory,
+        // is refused before any git runs.
+        std::fs::write(wt.join(".git"), "gitdir: /elsewhere\n").unwrap();
+        let err = Linked::find(&common, &wt).unwrap_err();
+        assert!(err.contains(".git file was changed"), "{err}");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", linked.admin.display())).unwrap();
+        assert!(Linked::find(&common, &wt).is_ok());
 
         worktree_remove(&root, &wt, Some("jan/agent/child-1")).unwrap();
         assert!(!wt.exists());

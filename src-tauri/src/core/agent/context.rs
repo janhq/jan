@@ -530,6 +530,17 @@ impl SessionStart {
         }
     }
 
+    /// Read the clock now, with a `branch` the caller already read. Takes no
+    /// memory snapshot: its caller places a worktree subagent, and subagents
+    /// have no memory.
+    pub(crate) fn with_branch(branch: Option<String>) -> Self {
+        Self {
+            date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+            branch,
+            memory: None,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn fixed(date: &str, branch: Option<&str>) -> Self {
         Self {
