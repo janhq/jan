@@ -567,6 +567,16 @@ async fn memory_tool(
             return e;
         }
     }
+    // An `edit` is safe from a stale copy, but its result is only the run's
+    // view when the run was up to date before it: otherwise the note also
+    // holds text the run never saw, and recording it would let a later
+    // whole-file change drop that text unseen.
+    let edit_was_fresh = match (budget, op, arg_str(args, "name")) {
+        (Some(budget), Some("edit"), Some(name)) => scopes
+            .note_file(name)
+            .is_some_and(|path| budget.check_fresh(&path, name).is_ok()),
+        _ => false,
+    };
     if mutates {
         if let Some(Err(e)) = budget.map(memory::ChangeBudget::take) {
             return e;
@@ -607,20 +617,24 @@ async fn memory_tool(
         }
     }
     if let (Some(budget), Ok(text)) = (budget, &result) {
-        remember_notes(budget, scopes, op, args, text);
+        remember_notes(budget, scopes, op, args, text, edit_was_fresh);
     }
     result.unwrap_or_else(|e| e)
 }
 
 /// Keep a budgeted run's view of the notes current after a successful op: a
 /// viewed note as returned, a changed one as now on disk (its own change must
-/// not read as someone else's), a moved or deleted one forgotten.
+/// not read as someone else's), a moved or deleted one forgotten. An edit of
+/// a note the run was not up to date with (`edit_was_fresh` false) leaves the
+/// stale view in place, so the run must view it again before a whole-file
+/// change.
 fn remember_notes(
     budget: &memory::ChangeBudget,
     scopes: memory::Scopes<'_>,
     op: Option<&str>,
     args: &serde_json::Value,
     text: &str,
+    edit_was_fresh: bool,
 ) {
     let file = |key: &str| arg_str(args, key).and_then(|name| scopes.note_file(name));
     let record = |path: &Path| match std::fs::read_to_string(path) {
@@ -633,7 +647,8 @@ fn remember_notes(
                 budget.saw(&path, text);
             }
         }
-        Some("write" | "edit") => file("name").iter().for_each(|p| record(p)),
+        Some("write") => file("name").iter().for_each(|p| record(p)),
+        Some("edit") if edit_was_fresh => file("name").iter().for_each(|p| record(p)),
         Some("move") => {
             file("name").iter().for_each(|p| budget.forget(p));
             file("to").iter().for_each(|p| record(p));
@@ -4216,7 +4231,9 @@ mod tests {
         for i in 0..70 {
             run(json!({"op": "view", "name": format!("note-{i:03}")})).await;
         }
-        // An archived note moved into a folder keeps its front matter.
+        // An archived note moved into a folder keeps its front matter. Viewed
+        // first: an edit alone does not count as a view (see the edit test).
+        run(json!({"op": "view", "name": "shipped-00"})).await;
         let a = run(json!({"op": "edit", "name": "shipped-00", "old": "PR 9100", "new": "---\nstatus: done\n---\nPR 9100"})).await;
         assert!(a.contains("archived"), "{a}");
         let m = run(json!({"op": "move", "name": "shipped-00", "to": "shipped/9100"})).await;
@@ -4467,6 +4484,45 @@ mod tests {
         run(&tidy, json!({"op": "view", "name": "tui"})).await;
         assert!(run(&tidy, json!({"op": "delete", "name": "tui"})).await.starts_with("Deleted"));
         assert!(dir.join("tui/scroll.md").exists(), "the folder is untouched");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An exact `edit` needs no fresh view, but it must not count as one: a
+    /// tidy that viewed `A`, then edited it after the main agent added `B`,
+    /// has still never seen `B`, so a whole-file change after that edit is
+    /// refused until it views the note again.
+    #[tokio::test]
+    async fn a_tidy_edit_never_marks_unseen_content_as_seen() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let dir = store.join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("log.md"), "Log\n\nA\n").unwrap();
+        let budget = crate::memory::ChangeBudget::new(crate::memory::TIDY_MAX_CHANGES);
+        let tidy = ToolContext::new(&root, &store, &[]).with_memory_change_budget(Some(&budget));
+        let main = ToolContext::new(&root, &store, &[]);
+        async fn run(ctx: &ToolContext<'_>, args: serde_json::Value) -> String {
+            let memory = lookup("memory").unwrap();
+            super::execute_builtin(memory, &args, ctx).await.0
+        }
+        run(&tidy, json!({"op": "view", "name": "log"})).await;
+        let e = run(&main, json!({"op": "edit", "name": "log", "old": "A\n", "new": "A\nB\n"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        let e = run(&tidy, json!({"op": "edit", "name": "log", "old": "A\n", "new": "A2\n"})).await;
+        assert!(e.starts_with("Edited"), "{e}");
+        for args in [
+            json!({"op": "delete", "name": "log"}),
+            json!({"op": "write", "name": "log", "content": "Log\n\nA2\n"}),
+            json!({"op": "move", "name": "log", "to": "old-log"}),
+        ] {
+            let r = run(&tidy, args.clone()).await;
+            assert!(r.starts_with("ERROR") && r.contains("changed"), "{args}: {r}");
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("log.md")).unwrap(), "Log\n\nA2\nB\n");
+        // A tidy that was up to date when it edited stays up to date.
+        run(&tidy, json!({"op": "view", "name": "log"})).await;
+        run(&tidy, json!({"op": "edit", "name": "log", "old": "A2", "new": "A3"})).await;
+        assert!(run(&tidy, json!({"op": "delete", "name": "log"})).await.starts_with("Deleted"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
