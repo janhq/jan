@@ -35,7 +35,7 @@ export function NavChats() {
   if (threadsWithoutProject.length === 0) {
     if (isLoadingThreads) {
       return (
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
           <div className="flex items-center justify-center py-2">
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -47,7 +47,7 @@ export function NavChats() {
   }
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
       {threadsWithoutProject.length > 1 && 
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>

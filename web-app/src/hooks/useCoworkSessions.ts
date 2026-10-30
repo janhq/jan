@@ -62,6 +62,10 @@ export type CoworkSession = {
   /** Plan mode: the agent reads and proposes, without writing. Absent means off. */
   planMode?: boolean
   updated: number
+  /** Set when the session's stored data cannot be used (missing/corrupt
+   * transcript, or its id collides with another conversation). It is shown but
+   * never written back, so the files on disk are preserved for recovery. */
+  unavailable?: 'missing-sidecar' | 'unreadable-sidecar' | 'id-collision'
 }
 
 type CoworkSessionsState = {

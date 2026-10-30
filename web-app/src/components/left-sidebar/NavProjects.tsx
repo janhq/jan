@@ -123,7 +123,7 @@ export function NavProjects() {
 
   return (
     <>
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroup className="px-1 group-data-[collapsible=icon]:hidden">
         <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
         <SidebarMenu>
           {folders.map((item) => (
