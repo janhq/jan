@@ -894,7 +894,6 @@ struct RunWorkspace {
     read_only: bool,
     read_roots: Vec<std::path::PathBuf>,
     write_roots: Vec<std::path::PathBuf>,
-    carve_outs: Vec<tauri_plugin_agent_tools::tools::jail::CarveOut>,
 }
 
 impl RunWorkspace {
@@ -907,9 +906,8 @@ impl RunWorkspace {
         match scope {
             Some(scope) => Self {
                 read_only: scope.read_only,
-                read_roots: scope.write_roots.clone(),
+                read_roots: scope.write_roots.iter().chain(&scope.read_roots).cloned().collect(),
                 write_roots: scope.write_roots.clone(),
-                carve_outs: scope.carve_outs.clone(),
             },
             None => Self {
                 read_roots: crate::core::agent::child_workspace::parent_read_root(root)
@@ -1315,7 +1313,6 @@ impl CompositeToolInvoker {
         .with_workspace_readonly(self.workspace.read_only)
         .with_read_roots(&self.workspace.read_roots)
         .with_write_roots(&self.workspace.write_roots)
-        .with_carve_outs(&self.workspace.carve_outs)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
@@ -2751,8 +2748,8 @@ impl ToolInvoker for CompositeToolInvoker {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
                     // The CLI works *in* the project; what is attached is
-                    // its subagents' worktrees (a parent) or the shared git
-                    // and build dirs (a child).
+                    // its subagents' worktrees (a parent) or the borrowed
+                    // objects and build dir (a child).
                     read_roots: &self.workspace.read_roots,
                     write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
@@ -13225,26 +13222,25 @@ mod tests {
         Some((root, args, second_rx))
     }
 
-    /// The subagent worktrees still registered with `root`'s repository and
-    /// the `jan/agent/*` branches still in it.
+    /// The subagent checkouts still on disk for `root`'s project and the
+    /// `jan/agent/*` branches still in its repository.
     #[cfg(feature = "cli")]
     fn leftover_worktrees(root: &std::path::Path) -> (Vec<String>, String) {
-        let out = |args: &[&str]| {
-            let o = std::process::Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(args)
-                .output()
-                .unwrap();
-            String::from_utf8_lossy(&o.stdout).into_owned()
-        };
-        let worktrees = out(&["worktree", "list", "--porcelain"])
-            .lines()
-            .filter_map(|l| l.strip_prefix("worktree "))
-            .skip(1)
-            .map(str::to_string)
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let dir = crate::core::agent::child_workspace::project_worktrees_dir(root).unwrap();
+        let checkouts = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name() != "cargo-target")
+            .map(|e| e.path().display().to_string())
             .collect();
-        (worktrees, out(&["branch", "--list", "jan/agent/*"]).trim().to_string())
+        (checkouts, String::from_utf8_lossy(&branches.stdout).trim().to_string())
     }
 
     /// A run that fails while a writer it dispatched is still working ends that

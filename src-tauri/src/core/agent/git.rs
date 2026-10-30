@@ -531,84 +531,219 @@ pub(crate) fn fetch_commit(
     fetched
 }
 
-/// The git directory every checkout of `repo` shares (objects, refs, the
-/// per-worktree admin dirs), canonicalized. A linked worktree's commit writes
-/// here, not into the checkout, which is why a sandboxed writer needs it.
+/// Forget worktree registrations whose directory the user has deleted. Without
+/// this, `worktree add` refuses a path that a stale registration still claims.
 #[cfg(feature = "cli")]
-pub(crate) fn git_common_dir(repo: &Path) -> Option<PathBuf> {
-    let raw = run(repo, None, &["rev-parse", "--git-common-dir"]).ok()?;
-    let dir = PathBuf::from(raw);
-    let dir = if dir.is_absolute() { dir } else { repo.join(dir) };
-    dunce::canonicalize(dir).ok()
+pub(crate) fn worktree_prune(repo: &Path) {
+    let _ = run(repo, None, &["worktree", "prune"]);
 }
 
-/// The admin dir `common` keeps for the linked worktree at `worktree`
-/// (`<common>/worktrees/<name>`, `<name>` deduplicated by git), found by the
-/// `gitdir` file git wrote there pointing back at the checkout. Read from
-/// the shared git dir rather than from the checkout's own `.git` file, which
-/// whoever works in the checkout can rewrite.
+/// Make `path` a repository of its own on a new `branch` at `base` (a full
+/// commit id) and return the object directory it borrows from `repo` (`git
+/// clone --shared`: its `objects/info/alternates` names it). Unlike a linked
+/// worktree it shares no git dir with `repo`, so whoever works in it never
+/// writes the user's `.git`; the branch reaches `repo` only through
+/// [`Checkout::fetch_branch`]. The parent directory is created first; `path`
+/// must not exist.
 #[cfg(feature = "cli")]
-pub(crate) fn worktree_admin_dir(common: &Path, worktree: &Path) -> Option<PathBuf> {
-    let want = worktree.join(".git");
-    let want = dunce::canonicalize(&want).unwrap_or(want);
-    std::fs::read_dir(common.join("worktrees"))
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .find(|admin| {
-            std::fs::read_to_string(admin.join("gitdir")).is_ok_and(|raw| {
-                let back = PathBuf::from(raw.trim());
-                dunce::canonicalize(&back).unwrap_or(back) == want
-            })
-        })
+pub(crate) fn clone_shared(
+    repo: &Path,
+    path: &Path,
+    branch: &str,
+    base: &str,
+) -> Result<PathBuf, String> {
+    require_object_id(base)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let made = run(
+        repo,
+        None,
+        &[
+            "clone",
+            "--shared",
+            "--no-checkout",
+            "--no-tags",
+            "--quiet",
+            "--",
+            &repo.to_string_lossy(),
+            &path.to_string_lossy(),
+        ],
+    )
+    .and_then(|_| run(path, None, &["checkout", "-q", "-b", branch, base, "--"]))
+    .and_then(|_| only_branch(path, branch))
+    .and_then(|_| match alternates(path)?.as_slice() {
+        [objects] => Ok(objects.clone()),
+        other => Err(format!("the clone borrows {} object directories, not one", other.len())),
+    });
+    if made.is_err() {
+        let _ = std::fs::remove_dir_all(path);
+    }
+    made
 }
 
-/// A linked worktree addressed through the main repository's records of it,
-/// never through the checkout's own `.git` file: whoever works in the
-/// checkout can rewrite that file to name a repository whose config runs a
-/// program (`core.fsmonitor`) the next time git looks at the checkout.
+/// Leave a fresh clone with `branch` and nothing else: the clone's copy of the
+/// user's current branch and its remote-tracking refs would read as work it
+/// holds once the user's repository moves on, and the remote would point the
+/// child back at the repository it must not write.
+#[cfg(feature = "cli")]
+fn only_branch(path: &Path, branch: &str) -> Result<(), String> {
+    let heads = run(path, None, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])?;
+    for other in heads.lines().filter(|b| *b != branch) {
+        run(path, None, &["branch", "-D", "--", other])?;
+    }
+    run(path, None, &["remote", "remove", "origin"]).map(|_| ())
+}
+
+/// The object directories the repository at `checkout` borrows, as its
+/// `objects/info/alternates` names them (canonicalized when they exist).
+#[cfg(feature = "cli")]
+fn alternates(checkout: &Path) -> Result<Vec<PathBuf>, String> {
+    let file = checkout.join(".git/objects/info/alternates");
+    match std::fs::read_to_string(&file) {
+        Ok(raw) => Ok(raw
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(|l| dunce::canonicalize(l).unwrap_or_else(|_| PathBuf::from(l)))
+            .collect()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(format!("could not read {}: {e}", file.display())),
+    }
+}
+
+/// Whether `key` (as `git config --list` spells it) is one a clone and
+/// everyday work in it leave behind and that cannot name a program. Every
+/// other key of a child's config is emptied for Jan's own git: whatever it is
+/// (`filter.*`, `diff.*`, `merge.*`, `credential.*`, `remote.*.uploadpack`,
+/// `core.sshCommand`, ...), it may be a command git would run.
+#[cfg(feature = "cli")]
+fn inert_config(key: &str) -> bool {
+    let Some((section, rest)) = key.split_once('.') else { return false };
+    let name = rest.rsplit_once('.').map_or(rest, |(_, name)| name);
+    match section {
+        "core" => matches!(
+            name,
+            "repositoryformatversion" | "filemode" | "bare" | "logallrefupdates" | "symlinks"
+                | "ignorecase" | "precomposeunicode" | "autocrlf" | "eol" | "safecrlf"
+        ),
+        "user" | "branch" => true,
+        "remote" => matches!(name, "url" | "pushurl" | "fetch" | "push" | "tagopt"),
+        _ => false,
+    }
+}
+
+/// A repository made by [`clone_shared`] that its child has worked in, opened
+/// only while it is still what Jan made. Jan's git runs unsandboxed where the
+/// child's was confined to this checkout, and the child controls everything
+/// in its `.git`: its config can name programs git then runs, its `.git` can
+/// be a file, or hold a `commondir`, pointing at another repository, and its
+/// alternates can pull in any directory's objects. [`Checkout::open`] refuses
+/// a checkout whose `.git` or alternates changed, or whose config reaches
+/// beyond itself, and every command of a checkout empties the rest of that
+/// config, names its git dir and work tree itself, honors no `replace` ref,
+/// starts only the `file` transport and never looks inside a nested
+/// repository.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone)]
-pub(crate) struct Linked {
-    /// The checkout's top level.
-    pub(crate) path: PathBuf,
-    /// Its admin dir, `<common>/worktrees/<name>`.
-    pub(crate) admin: PathBuf,
-    /// The repository's shared git dir.
-    pub(crate) common: PathBuf,
+pub(crate) struct Checkout {
+    path: PathBuf,
+    /// The `key=` overrides that empty every setting of the child's config
+    /// that could name a program, read once by [`Checkout::open`].
+    overrides: Vec<String>,
 }
 
 #[cfg(feature = "cli")]
-impl Linked {
-    /// `common`'s linked worktree at `path`, or an error naming why git must
-    /// not be run in it: no admin dir records it, or its `.git` file no
-    /// longer points at that admin dir.
-    pub(crate) fn find(common: &Path, path: &Path) -> Result<Self, String> {
-        let admin = worktree_admin_dir(common, path)
-            .ok_or_else(|| format!("{} is not a worktree of {}", path.display(), common.display()))?;
-        let dot_git = path.join(".git");
-        let points_back = std::fs::symlink_metadata(&dot_git).is_ok_and(|m| m.is_file())
-            && std::fs::read_to_string(&dot_git).is_ok_and(|raw| {
-                raw.trim().strip_prefix("gitdir:").is_some_and(|dir| {
-                    let dir = PathBuf::from(dir.trim());
-                    let dir = if dir.is_absolute() { dir } else { path.join(dir) };
-                    dunce::canonicalize(&dir).is_ok_and(|d| d == admin)
-                })
-            });
-        if !points_back {
+impl Checkout {
+    /// The clone at `path` (its top level) that borrows exactly `objects`, or
+    /// an error naming what changed, for the user.
+    pub(crate) fn open(path: &Path, objects: &Path) -> Result<Self, String> {
+        let dot = path.join(".git");
+        let plain = |p: &Path, dir: bool| {
+            std::fs::symlink_metadata(p).is_ok_and(|m| if dir { m.is_dir() } else { m.is_file() })
+        };
+        if !plain(&dot, true) || !plain(&dot.join("objects"), true) || !plain(&dot.join("config"), false)
+        {
+            return Err("its .git was replaced: it is no longer a plain directory".to_string());
+        }
+        // Each of these makes git read another repository's config or objects.
+        for pointer in ["commondir", "objects/info/http-alternates"] {
+            if dot.join(pointer).exists() {
+                return Err(format!("its .git has a {pointer} file, which redirects git"));
+            }
+        }
+        if alternates(path)? != [objects.to_path_buf()] {
             return Err(format!(
-                "its .git file was changed to point away from {}",
-                admin.display()
+                "its object alternates were rewritten: it must borrow only {}",
+                objects.display()
             ));
         }
-        Ok(Self { path: path.to_path_buf(), admin, common: common.to_path_buf() })
+        // `--file` reads that one file, follows no `include` and starts nothing.
+        let listed = git_command()?
+            .args(["config", "--file"])
+            .arg(dot.join("config"))
+            .args(["--list", "-z"])
+            .output()
+            .map_err(|e| format!("failed to launch git: {e}"))?;
+        if !listed.status.success() {
+            return Err("its git config cannot be read".to_string());
+        }
+        let mut overrides = Vec::new();
+        for entry in String::from_utf8_lossy(&listed.stdout).split('\0').filter(|e| !e.is_empty()) {
+            let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+            // These read more files (another config, `config.worktree`) than
+            // were looked at here.
+            if key.starts_with("include.")
+                || key.starts_with("includeif.")
+                || key.starts_with("extensions.")
+            {
+                return Err(format!("its git config sets {key}, which makes git read more"));
+            }
+            if key == "core.repositoryformatversion" && value != "0" {
+                return Err("its repository format is not the one Jan made".to_string());
+            }
+            if inert_config(key) {
+                continue;
+            }
+            // `-c key=value` splits at the first `=`, so such a key cannot be
+            // emptied.
+            if key.contains('=') {
+                return Err(format!("its git config sets {key}, which git cannot be told to ignore"));
+            }
+            let pair = format!("{key}=");
+            if !overrides.contains(&pair) {
+                overrides.push(pair);
+            }
+        }
+        Ok(Self { path: path.to_path_buf(), overrides })
     }
 
-    /// `git <args>` in the checkout, with its repository named explicitly.
+    /// The options every git of Jan's in the checkout takes, ahead of the
+    /// subcommand: the child's config emptied of anything that could run,
+    /// then what no config may turn back on.
+    fn hardened(&self) -> Vec<String> {
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        let mut opts = vec!["--no-replace-objects".to_string(), "--no-optional-locks".to_string()];
+        for pair in &self.overrides {
+            opts.extend(["-c".to_string(), pair.clone()]);
+        }
+        opts.extend([
+            "-c".to_string(),
+            "core.fsmonitor=false".to_string(),
+            "-c".to_string(),
+            format!("core.hooksPath={null}"),
+        ]);
+        opts
+    }
+
+    /// `git <args>` in the checkout, its git dir and work tree named
+    /// explicitly.
     fn run(&self, args: &[&str]) -> Result<String, String> {
-        let mut cmd = repo_command(&self.path, args)?;
-        cmd.env("GIT_DIR", &self.admin)
-            .env("GIT_COMMON_DIR", &self.common)
+        let opts = self.hardened();
+        let mut full: Vec<&str> = opts.iter().map(String::as_str).collect();
+        full.extend_from_slice(args);
+        let mut cmd = repo_command(&self.path, &full)?;
+        cmd.env("GIT_DIR", self.path.join(".git"))
             .env("GIT_WORK_TREE", &self.path);
         let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
         outcome(&out, args)
@@ -635,38 +770,62 @@ impl Linked {
             .ok()
     }
 
-    /// [`try_changed_paths`] for this checkout.
+    /// Commits any ref of the checkout (or `HEAD`) reaches that `base` does
+    /// not: everything the child committed, on whatever branch, stash or tag.
+    /// `None` when git cannot say.
+    pub(crate) fn commits_anywhere(&self, base: &str) -> Option<u64> {
+        require_object_id(base).ok()?;
+        self.run(&["rev-list", "--count", "--all", "--not", base, "--"]).ok()?.parse().ok()
+    }
+
+    /// [`try_changed_paths`] for this checkout. A nested repository (or a
+    /// recorded submodule) is never opened: its own config can name a program
+    /// (`core.fsmonitor`) that its status would run.
     pub(crate) fn try_changed_paths(&self) -> Result<Vec<String>, String> {
-        changed_paths_with(|args| self.run(args))
+        changed_paths_with(|args| {
+            let mut full = args.to_vec();
+            full.push("--ignore-submodules=all");
+            self.run(&full)
+        })
     }
-}
 
-
-/// Remove the checkout at `path` and delete its `branch` (none for a detached
-/// one), the inverse of [`worktree_add`]. Forced, because the caller has
-/// already decided the checkout holds nothing worth keeping.
-#[cfg(feature = "cli")]
-pub(crate) fn worktree_remove(
-    repo: &Path,
-    path: &Path,
-    branch: Option<&str>,
-) -> Result<(), String> {
-    run(
-        repo,
-        None,
-        &["worktree", "remove", "--force", "--", &path.to_string_lossy()],
-    )?;
-    match branch {
-        Some(branch) => run(repo, None, &["branch", "-D", "--", branch]).map(|_| ()),
-        None => Ok(()),
+    /// Fetch `branch` into `repo` under the same name: the child's commits
+    /// become a branch of the user's repository. Not forced, so a branch the
+    /// user has since built on is never overwritten (the fetch fails instead),
+    /// and only that one ref comes. Objects are checked as they arrive.
+    /// Bounded by `limit`, like any fetch.
+    pub(crate) fn fetch_branch(
+        &self,
+        repo: &Path,
+        branch: &str,
+        limit: std::time::Duration,
+    ) -> Result<(), String> {
+        let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        let dot = self.path.join(".git").to_string_lossy().into_owned();
+        let opts = self.hardened();
+        let mut args: Vec<&str> = opts.iter().map(String::as_str).collect();
+        // Only the `file` transport, so no helper (`ext::`, a remote helper)
+        // is ever started; the `-c`s reach the `upload-pack` git runs in the
+        // checkout through the environment.
+        args.extend([
+            "-c",
+            "protocol.allow=never",
+            "-c",
+            "protocol.file.allow=always",
+            "-c",
+            "transfer.fsckObjects=true",
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "--no-recurse-submodules",
+            "--",
+            &dot,
+            &spec,
+        ]);
+        run_limited(repo, &args, limit).map(|_| ())
     }
-}
-
-/// Forget worktree registrations whose directory the user has deleted. Without
-/// this, `worktree add` refuses a path that a stale registration still claims.
-#[cfg(feature = "cli")]
-pub(crate) fn worktree_prune(repo: &Path) {
-    let _ = run(repo, None, &["worktree", "prune"]);
 }
 
 /// Paths changed in a worktree relative to its own `HEAD`, staged, unstaged and
@@ -1114,12 +1273,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The primitives a subagent worktree's life is built from: resolve a ref
-    /// to the commit it names, count what was committed on top of a base, find
-    /// the shared git dir a sandboxed `git commit` writes into, and remove the
-    /// checkout plus its branch again.
+    /// The primitives a subagent checkout's life is built from: resolve a ref
+    /// to the commit it names, make a clone of its own that borrows only the
+    /// user's objects, count what was committed in it, and bring its branch
+    /// back into the user's repository.
     #[test]
-    fn a_child_worktree_can_be_resolved_counted_and_removed() {
+    fn a_child_checkout_can_be_made_counted_and_brought_back() {
         let Some(root) = init_repo() else { return };
         let head = head_sha(&root).unwrap();
         assert_eq!(resolve_commit(&root, "HEAD").as_deref(), Some(head.as_str()));
@@ -1127,42 +1286,65 @@ mod tests {
         // A ref is never read as an option, whatever it is spelled as.
         assert_eq!(resolve_commit(&root, "--output=x"), None);
 
-        let common = git_common_dir(&root).expect("a repo has a common dir");
-        assert_eq!(common, dunce::canonicalize(root.join(".git")).unwrap());
-
         let wt = root.parent().unwrap().join(format!(
             "{}-child",
             root.file_name().unwrap().to_string_lossy()
         ));
         let _ = std::fs::remove_dir_all(&wt);
-        worktree_add(&root, &wt, "jan/agent/child-1", &head).unwrap();
-        assert_eq!(git_common_dir(&wt).as_ref(), Some(&common), "a linked worktree shares it");
+        let objects = clone_shared(&root, &wt, "jan/agent/child-1", &head).unwrap();
+        assert_eq!(objects, dunce::canonicalize(root.join(".git/objects")).unwrap());
         let wt = dunce::canonicalize(&wt).unwrap();
-        let linked = Linked::find(&common, &wt).unwrap();
-        assert_eq!(linked.admin, common.join("worktrees").join(wt.file_name().unwrap()));
-        assert_eq!(linked.current_branch().as_deref(), Some("jan/agent/child-1"));
-        assert_eq!(linked.commits_on(&head, "HEAD"), Some(0));
+        assert!(wt.join(".git").is_dir(), "a repository of its own, not a linked worktree");
+        assert!(!wt.join(".git/commondir").exists());
+        let heads = run(&wt, None, &["for-each-ref", "--format=%(refname)"]).unwrap();
+        assert_eq!(heads, "refs/heads/jan/agent/child-1", "no other branch, no remote refs");
+        assert!(run(&wt, None, &["remote"]).unwrap().is_empty());
+
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.current_branch().as_deref(), Some("jan/agent/child-1"));
+        assert_eq!(child.commits_on(&head, "HEAD"), Some(0));
         std::fs::write(wt.join("b.txt"), "b\n").unwrap();
         run(&wt, None, &["add", "b.txt"]).unwrap();
         run(&wt, None, &["commit", "-q", "-m", "b", "--no-gpg-sign"]).unwrap();
-        assert_eq!(linked.commits_on(&head, "HEAD"), Some(1));
-        assert_eq!(linked.commits_on(&head, "refs/heads/jan/agent/child-1"), Some(1));
-        assert_eq!(linked.commits_on(&head, "--all"), None, "never an option");
+        assert_eq!(child.commits_on(&head, "HEAD"), Some(1));
+        assert_eq!(child.commits_on(&head, "refs/heads/jan/agent/child-1"), Some(1));
+        assert_eq!(child.commits_on(&head, "--all"), None, "never an option");
+        assert_eq!(child.commits_anywhere(&head), Some(1));
         std::fs::write(wt.join("c.txt"), "c\n").unwrap();
-        assert_eq!(linked.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
-        std::fs::remove_file(wt.join("c.txt")).unwrap();
-        // A `.git` file pointing anywhere else, or replaced by a directory,
-        // is refused before any git runs.
-        std::fs::write(wt.join(".git"), "gitdir: /elsewhere\n").unwrap();
-        let err = Linked::find(&common, &wt).unwrap_err();
-        assert!(err.contains(".git file was changed"), "{err}");
-        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", linked.admin.display())).unwrap();
-        assert!(Linked::find(&common, &wt).is_ok());
+        assert_eq!(child.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
 
-        worktree_remove(&root, &wt, Some("jan/agent/child-1")).unwrap();
-        assert!(!wt.exists());
-        assert!(!worktree_registered(&root, &wt));
-        assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "branch deleted");
+        assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "not there yet");
+        child.fetch_branch(&root, "jan/agent/child-1", LIMIT).unwrap();
+        let tip = head_sha(&wt).unwrap();
+        assert_eq!(resolve_commit(&root, "jan/agent/child-1").as_deref(), Some(tip.as_str()));
+        assert!(run(&root, None, &["for-each-ref", "refs/jan/"]).unwrap().is_empty());
+
+        // A `.git` swapped for a file, a `commondir`, rewritten alternates and
+        // a config that includes another file are each refused before any git
+        // runs in it.
+        let dot = wt.join(".git");
+        let elsewhere = wt.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let alternates = dot.join("objects/info/alternates");
+        let good = std::fs::read_to_string(&alternates).unwrap();
+        std::fs::write(&alternates, format!("{good}{}\n", elsewhere.display())).unwrap();
+        let err = Checkout::open(&wt, &objects).unwrap_err();
+        assert!(err.contains("alternates"), "{err}");
+        std::fs::write(&alternates, &good).unwrap();
+        std::fs::write(dot.join("commondir"), "/elsewhere\n").unwrap();
+        assert!(Checkout::open(&wt, &objects).unwrap_err().contains("commondir"));
+        std::fs::remove_file(dot.join("commondir")).unwrap();
+        run(&wt, None, &["config", "include.path", "/elsewhere"]).unwrap();
+        assert!(Checkout::open(&wt, &objects).unwrap_err().contains("include"));
+        run(&wt, None, &["config", "--unset", "include.path"]).unwrap();
+        assert!(Checkout::open(&wt, &objects).is_ok());
+        let moved = wt.with_extension("moved");
+        std::fs::rename(&dot, &moved).unwrap();
+        std::fs::write(&dot, "gitdir: /elsewhere\n").unwrap();
+        let err = Checkout::open(&wt, &objects).unwrap_err();
+        assert!(err.contains(".git was replaced"), "{err}");
+        let _ = std::fs::remove_dir_all(&moved);
+        let _ = std::fs::remove_dir_all(&wt);
         let _ = std::fs::remove_dir_all(&root);
     }
 

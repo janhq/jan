@@ -616,7 +616,6 @@ pub async fn start_monitor(
         hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
-        carve_outs: Vec::new(),
         allow_network: allow_network.unwrap_or(false),
         home_readonly: false,
         sandbox: true,

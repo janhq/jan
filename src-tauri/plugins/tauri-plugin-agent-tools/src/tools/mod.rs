@@ -169,11 +169,6 @@ pub struct ToolContext<'a> {
     /// is useless), and the default is empty -- attaching stays read-only unless
     /// a surface opts in.
     pub write_roots: &'a [PathBuf],
-    /// Paths inside `write_roots` kept read-only (or re-opened inside one),
-    /// for `write`/`edit` and the sandboxed shell alike: the hooks and config
-    /// of a shared git dir a worktree writer commits into. See
-    /// [`crate::tools::jail::Policy::carve_outs`].
-    pub carve_outs: &'a [crate::tools::jail::CarveOut],
     /// Correlation id echoed on every streamed output chunk.
     ///
     /// Needed because `bash` with `timeout: 0` backgrounds and keeps streaming
@@ -259,7 +254,6 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("on_output", &self.on_output.is_some())
             .field("read_roots", &self.read_roots)
             .field("write_roots", &self.write_roots)
-            .field("carve_outs", &self.carve_outs)
             .field("call_id", &self.call_id)
             .field("thread_id", &self.thread_id)
             .field("env_passthrough", &self.env_passthrough)
@@ -419,7 +413,6 @@ impl<'a> ToolContext<'a> {
             on_output: None,
             read_roots: &[],
             write_roots: &[],
-            carve_outs: &[],
             call_id: None,
             thread_id: None,
             env_passthrough: &[],
@@ -579,12 +572,6 @@ impl<'a> ToolContext<'a> {
     /// the same canonical paths they put in `read_roots`.
     pub fn with_write_roots(mut self, write_roots: &'a [PathBuf]) -> Self {
         self.write_roots = write_roots;
-        self
-    }
-
-    /// Keep parts of the write roots read-only. See [`Self::carve_outs`].
-    pub fn with_carve_outs(mut self, carve_outs: &'a [crate::tools::jail::CarveOut]) -> Self {
-        self.carve_outs = carve_outs;
         self
     }
 

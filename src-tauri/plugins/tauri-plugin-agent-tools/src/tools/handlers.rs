@@ -225,9 +225,6 @@ async fn execute_text(
         {
             read_only_refusal(args, project_root)
         }
-        "write" | "edit" if carved(ctx, arg_str(args, "path").unwrap_or("")) => {
-            carved_refusal(args)
-        }
         "write" => {
             write(
                 args,
@@ -999,28 +996,6 @@ async fn edit(
     }
 }
 
-/// Whether a write to `raw` lands in a carved-out read-only path. Fails closed:
-/// a path that cannot be resolved counts as carved when there are carve-outs.
-fn carved(ctx: &ToolContext<'_>, raw: &str) -> bool {
-    if ctx.carve_outs.is_empty() {
-        return false;
-    }
-    let target = resolve_path(ctx.project_root, ctx.scratch_root, raw);
-    match crate::tools::sandbox::canonicalize_lenient(&lexical_normalize(&target)) {
-        Ok(real) => jail::carved_read_only(ctx.carve_outs, &real),
-        Err(_) => true,
-    }
-}
-
-fn carved_refusal(args: &serde_json::Value) -> String {
-    let path = arg_str(args, "path").unwrap_or_default();
-    format!(
-        "ERROR: {path} is read-only: of the repository's git dir only objects, refs, logs \
-         and this worktree's own admin dir are writable, so nothing this agent writes \
-         there runs or redirects git outside its sandbox."
-    )
-}
-
 /// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
 /// here rather than left to the prompt, which auto-approval would answer.
 fn read_only_refusal(args: &serde_json::Value, root: &Path) -> String {
@@ -1063,9 +1038,6 @@ pub(crate) fn confined_shell(
     }
     if !ctx.write_roots.is_empty() {
         policy = policy.with_write_roots(ctx.write_roots.to_vec());
-    }
-    if !ctx.carve_outs.is_empty() {
-        policy = policy.with_carve_outs(ctx.carve_outs.to_vec());
     }
     policy = policy.with_workspace_readonly(ctx.workspace_readonly);
     // A read-only root is only read-only inside the sandbox, so it is never
@@ -2204,50 +2176,6 @@ mod tests {
         // removes, and a reused pid reuses the root: start it empty.
         let _ = std::fs::remove_dir_all(crate::workspace::project_store(&dir));
         dir
-    }
-
-    /// `write`/`edit` refuse what the sandbox keeps read-only inside a write
-    /// root (all of a shared git dir but its allowlist), and still write the
-    /// allowlist.
-    #[tokio::test]
-    async fn write_and_edit_refuse_carved_out_paths_in_a_write_root() {
-        let root = unique_root();
-        let git = unique_root().canonicalize().unwrap();
-        std::fs::create_dir_all(git.join("hooks")).unwrap();
-        std::fs::write(git.join("config"), "[core]\n").unwrap();
-        std::fs::create_dir_all(git.join("worktrees/w")).unwrap();
-        std::fs::write(git.join("worktrees/w/commondir"), "../..\n").unwrap();
-        std::fs::write(git.join("worktrees/w/gitdir"), "/w/.git\n").unwrap();
-        let store = crate::workspace::project_store(&root);
-        let roots = vec![git.clone()];
-        let carve = jail::git_dir_carve_outs(&git, &git.join("worktrees/w"));
-        let ctx = ToolContext::new(&root, &store, &[])
-            .with_confined_writes(true)
-            .with_read_roots(&roots)
-            .with_write_roots(&roots)
-            .with_carve_outs(&carve);
-        let write = |path: PathBuf| json!({"path": path.to_string_lossy(), "content": "x"});
-        let hook = git.join("hooks/pre-commit");
-        let out = super::execute_builtin(lookup("write").unwrap(), &write(hook.clone()), &ctx).await.0;
-        assert!(out.starts_with("ERROR") && !hook.exists(), "{out}");
-        let edit = json!({"path": git.join("config").to_string_lossy(),
-            "edits": [{"old_string": "[core]", "new_string": "[core]\nfsmonitor = x"}]});
-        let out = super::execute_builtin(lookup("edit").unwrap(), &edit, &ctx).await.0;
-        assert!(out.starts_with("ERROR"), "{out}");
-        assert_eq!(std::fs::read_to_string(git.join("config")).unwrap(), "[core]\n");
-        for p in ["commondir", "objects/info/alternates", "packed-refs", "worktrees/w/gitdir"] {
-            let args = write(git.join(p));
-            let out = super::execute_builtin(lookup("write").unwrap(), &args, &ctx).await.0;
-            assert!(out.starts_with("ERROR") && out.contains("only objects, refs"), "{p}: {out}");
-        }
-        assert!(!git.join("commondir").exists() && !git.join("packed-refs").exists());
-        for p in ["worktrees/w/note", "refs/heads/x", "logs/HEAD"] {
-            let args = write(git.join(p));
-            let out = super::execute_builtin(lookup("write").unwrap(), &args, &ctx).await.0;
-            assert!(git.join(p).exists(), "{p} stays writable: {out}");
-        }
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&git);
     }
 
     #[tokio::test]

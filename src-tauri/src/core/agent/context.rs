@@ -252,14 +252,14 @@ memory: no memory tool and no memory index. Put any fact from your memory that a
 task, and record anything worth keeping from its answer yourself.";
 
 /// Where a dispatched child works, appended to [`SUBAGENT_GUIDE`] only in the
-/// CLI build: the desktop makes no worktrees and keeps readers writable (see
+/// CLI build: the desktop makes no checkouts and keeps readers writable (see
 /// `child_workspace`), so there it would describe branches that never exist.
 /// A constant per build, so the prefix stays byte-stable.
 const SUBAGENT_WORKSPACE_GUIDE: &str = if cfg!(feature = "cli") {
     "\n\nEach subagent's workspace is set when you dispatch it. One that can write or edit files works in its own \
-git worktree on its own branch, started from HEAD, so parallel writers never share a checkout and your \
-uncommitted changes are not in it; merge its branch when it is done. Any other subagent works in your \
-checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
+checkout (a clone) on its own branch, started from HEAD, so parallel writers never share a checkout and \
+your uncommitted changes are not in it; its branch is in your repository when it is done, to merge. \
+Any other subagent works in your checkout read-only. The dispatch result says where each one works. Override with `workspace`: \"new\", \
 \"shared\", the name of an earlier subagent to continue in its worktree, or `workspace: {\"ref\": \"<git \
 ref>\"}` to review or test a branch or pull request in a checkout of its own."
 } else {
@@ -1230,7 +1230,8 @@ mod tests {
     fn the_cli_subagent_guide_explains_child_worktrees() {
         let root = scratch_project("subagent-worktrees");
         let with = default_prompt(None, &root, None, true).expect("prompt");
-        assert!(with.contains("own git worktree"), "{with}");
+        assert!(with.contains("own checkout"), "{with}");
+        assert!(with.contains("is in your repository"), "{with}");
         assert!(with.contains("read-only"), "{with}");
         assert!(with.contains("workspace: {\"ref\""), "{with}");
         let guide = with.find("Each subagent's workspace").expect("workspace paragraph");
@@ -1246,8 +1247,8 @@ mod tests {
         let root = scratch_project("subagent-desktop");
         let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("belongs to that subagent"), "{with}");
-        assert!(!with.contains("git worktree"), "{with}");
-        assert!(!with.contains("merge its branch"), "{with}");
+        assert!(!with.contains("own checkout"), "{with}");
+        assert!(!with.contains("is in your repository"), "{with}");
         assert!(!with.contains("`workspace`"), "{with}");
         let _ = std::fs::remove_dir_all(&root);
     }
