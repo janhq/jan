@@ -98,29 +98,29 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@ai-sdk/provider-utils@npm:3.0.18":
-  version: 3.0.18
-  resolution: "@ai-sdk/provider-utils@npm:3.0.18"
+"@ai-sdk/provider-utils@npm:3.0.28":
+  version: 3.0.28
+  resolution: "@ai-sdk/provider-utils@npm:3.0.28"
   dependencies:
-    "@ai-sdk/provider": "npm:2.0.0"
+    "@ai-sdk/provider": "npm:2.0.3"
     "@standard-schema/spec": "npm:^1.0.0"
     eventsource-parser: "npm:^3.0.6"
   peerDependencies:
     zod: ^3.25.76 || ^4.1.8
-  checksum: 10c0/209c15b0dceef0ba95a7d3de544be0a417ad4a0bd5143496b3966a35fedf144156d93a42ff8c3d7db56781b9836bafc8c132c98978c49240e55bc1a36e18a67f
+  checksum: 10c0/fcbcead985ebaa22fef548acce600ca65c343b13a92de808da5e5bd01a61c0f7856a19840bb3eeeb6b6ac808c4f6ca031524192085d21560cf78fa7d9833dda0
   languageName: node
   linkType: hard
 
-"@ai-sdk/provider-utils@npm:4.0.27":
-  version: 4.0.27
-  resolution: "@ai-sdk/provider-utils@npm:4.0.27"
+"@ai-sdk/provider-utils@npm:4.0.33":
+  version: 4.0.33
+  resolution: "@ai-sdk/provider-utils@npm:4.0.33"
   dependencies:
-    "@ai-sdk/provider": "npm:3.0.10"
+    "@ai-sdk/provider": "npm:3.0.12"
     "@standard-schema/spec": "npm:^1.1.0"
     eventsource-parser: "npm:^3.0.8"
   peerDependencies:
     zod: ^3.25.76 || ^4.1.8
-  checksum: 10c0/2202dedcbe8f58883ef37425111392c6b5b5c2f85dfbbd11b13173e9d349da3d977ba610586c4b5412720e07b09f63ba0e88dbc6e21f043441a67f6d51225020
+  checksum: 10c0/4f0842720010093e7950c798fccfa9616bbaae390a72adf91193721fa8c94336c6e4fe1e5ed3640d4e35846f4a23b5c0c9ecd5ae91941c77747604d26c71cc8c
   languageName: node
   linkType: hard
 
@@ -133,12 +133,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ai-sdk/provider@npm:2.0.3":
+  version: 2.0.3
+  resolution: "@ai-sdk/provider@npm:2.0.3"
+  dependencies:
+    json-schema: "npm:^0.4.0"
+  checksum: 10c0/f0f663a2d2226d3cb447a3bcc13c70333c1957953237c5583681f26b0d4109f7136ce234499ba730c63bba97243e127b7763d8d962571377d1d9b5193506232c
+  languageName: node
+  linkType: hard
+
 "@ai-sdk/provider@npm:3.0.10":
   version: 3.0.10
   resolution: "@ai-sdk/provider@npm:3.0.10"
   dependencies:
     json-schema: "npm:^0.4.0"
   checksum: 10c0/c9b162165c3fd4684e4f7a1c041db3ad75785c841d904bac577006b7b2299d1b465557b1d32e3f59b6d8536a0ef5741b195aad86fc3e0e1d2a39f077062a83c4
+  languageName: node
+  linkType: hard
+
+"@ai-sdk/provider@npm:3.0.12":
+  version: 3.0.12
+  resolution: "@ai-sdk/provider@npm:3.0.12"
+  dependencies:
+    json-schema: "npm:^0.4.0"
+  checksum: 10c0/6826ff91b64786eaec6b0bb847a59cc289ab6fccc1c76c81454403bbafc445251629d0e6fbb0b55c95e61e8be77b1441116b824dfcae1cb08716c56fe309ee28
   languageName: node
   linkType: hard
 
