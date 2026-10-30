@@ -877,6 +877,10 @@ struct CompositeToolInvoker {
     memory_changes: Option<MemoryChangesTracker>,
     /// See [`OrchestrationArgs::memory_change_budget`].
     memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// The bucket this run's shells register under (`proc::kill_thread`): a
+    /// child's own `run_id`, so stopping it can end the shells it left running
+    /// before its worktree goes to another writer. `None` on a top-level run.
+    shell_owner: Option<String>,
     /// What a child's workspace adds to its tools: a read-only root, the paths
     /// its shell may also write, and its shell env. A top-level run gets the
     /// default plus, on the CLI, read access to its subagents' worktrees.
@@ -1320,7 +1324,8 @@ impl CompositeToolInvoker {
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
         )
-        .with_shell_done_sink(self.shell_done_sink());
+        .with_shell_done_sink(self.shell_done_sink())
+        .with_thread_id(self.shell_owner.as_deref());
         match &self.shell_detach {
             Some(signal) => ctx.with_detach_signal(signal.clone()),
             None => ctx,
@@ -4179,6 +4184,8 @@ async fn orchestrate_inner(
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
             parent_link: args.parent_link.clone(),
+            // Only a child run has an id of its own.
+            shell_owner: run_id.clone(),
             // Without a session registry nothing would deliver the detached
             // command's end except a park, which holds the message just the
             // same; so the signal only applies where the session owns shells.
@@ -9013,6 +9020,7 @@ mod tests {
             shell_detach: None,
             memory_changes: None,
             memory_change_budget: None,
+            shell_owner: None,
             workspace: RunWorkspace::default(),
         }
     }
