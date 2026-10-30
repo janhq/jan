@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::workspace::{project_meta, projects_dir, store_dir};
+use crate::workspace::{is_windows_device_name, project_meta, projects_dir, store_dir};
 
 const KIND: &str = "memory";
 
@@ -72,26 +72,39 @@ pub fn memory_dir(store_root: &Path) -> PathBuf {
 /// Validate a note name and return its path relative to `memory/`. One
 /// optional folder level; each part non-empty, with no traversal, separators
 /// beyond the one `/`, or leading dot (which would hide it from listings).
+///
+/// The same rules hold on every OS, so a name accepted on one works on all and
+/// the Windows ones are testable anywhere: no `:` (a drive prefix such as
+/// `C:/x` makes `join` leave the store, and `note:s` names an NTFS stream), no
+/// NUL, no device name (`nul`, `com1`), and the result must be plain relative
+/// components only.
 fn note_relpath(name: &str) -> Result<PathBuf, String> {
     let trimmed = name.trim();
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
     let parts: Vec<&str> = stem.split('/').collect();
     let valid = |part: &str| {
         !part.is_empty()
-            && !part.contains('\\')
+            && !part.contains(['\\', ':', '\0'])
             && !part.contains("..")
             && !part.starts_with('.')
             && part.trim() == part
+            && !is_windows_device_name(part)
+    };
+    let invalid = || {
+        format!(
+            "ERROR: invalid name '{name}' (use `note` or `folder/note`: no `..`, no leading `.`, no `:` or `\\`, one folder level)"
+        )
     };
     if parts.len() > 2 || !parts.iter().all(|p| valid(p)) {
-        return Err(format!(
-            "ERROR: invalid name '{name}' (use `note` or `folder/note`: no `..`, no leading `.`, one folder level)"
-        ));
+        return Err(invalid());
     }
     // Appended, not `set_extension`: that replaces whatever follows the last
     // dot, so `release.v1` would land on (and overwrite) `release.md`.
     let mut path: PathBuf = parts[..parts.len() - 1].iter().collect();
     path.push(format!("{}.md", parts[parts.len() - 1]));
+    if !path.components().all(|c| matches!(c, std::path::Component::Normal(_))) {
+        return Err(invalid());
+    }
     Ok(path)
 }
 
@@ -937,7 +950,7 @@ impl<'a> Scopes<'a> {
             Some((slug, note)) => (slug, Some(note.to_string()).filter(|n| !n.is_empty())),
             None => (rest, None),
         };
-        if slug.is_empty() || slug.contains(['/', '\\']) || slug.contains("..") {
+        if slug.is_empty() || slug.contains(['/', '\\', ':', '\0']) || slug.contains("..") {
             return Err(format!("ERROR: invalid project '{slug}'"));
         }
         let store = projects_dir(self.home()?).join(slug);
@@ -1386,7 +1399,11 @@ mod tests {
 
     fn unique_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("jan_memory_test_{}_{}", std::process::id(), n))
+        let root = std::env::temp_dir().join(format!("jan_memory_test_{}_{}", std::process::id(), n));
+        // A test that panicked skips its cleanup and the sandbox reuses pids,
+        // so a later run could otherwise start on a stale store.
+        let _ = std::fs::remove_dir_all(&root);
+        root
     }
 
     fn put(store: &Path, name: &str, body: &str) {
@@ -1472,6 +1489,37 @@ mod tests {
         assert!(is_done(&std::fs::read_to_string(dir.join("pr.9.md")).unwrap()));
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// A name is confined to the store on every platform: no drive prefix,
+    /// no colon (an NTFS stream, or a drive on Windows), no NUL, no device
+    /// name. Checked on the name itself so the Windows rules hold everywhere.
+    #[tokio::test]
+    async fn names_that_could_leave_the_store_are_rejected_on_every_platform() {
+        let root = unique_root();
+        for bad in [
+            "C:/escape", "C:escape", "c:", "a:b", "grp/a:stream", "note:$DATA", "a\0b",
+            "nul", "CON", "com1", "grp/lpt1", "aux.v1", "//server/share",
+        ] {
+            assert!(note_relpath(bad).is_err(), "{bad:?}");
+            assert!(write(&root, bad, "x").await.is_err(), "write {bad:?}");
+            assert!(read(&root, bad).await.is_err(), "read {bad:?}");
+            assert!(delete(&root, bad).await.is_err(), "delete {bad:?}");
+            assert!(rename(&root, bad, "ok").await.is_err(), "move from {bad:?}");
+        }
+        put(&root, "ok", "fine");
+        assert!(rename(&root, "ok", "C:/escape").await.is_err());
+        assert_eq!(read(&root, "ok").await.unwrap(), "fine");
+        let home = unique_root();
+        let scopes = Scopes {
+            store: &root,
+            home: Some(&home),
+            cross_project: true,
+        };
+        for bad in ["project:C:", "project:C:/x", "project:a:b/x", "user:C:/x"] {
+            assert!(scopes.view(Some(bad)).await.unwrap_err().contains("invalid"), "{bad:?}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
