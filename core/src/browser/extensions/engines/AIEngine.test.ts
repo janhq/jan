@@ -8,8 +8,24 @@ vi.mock('./EngineManager')
 vi.mock('../../fs')
 
 class TestAIEngine extends AIEngine {
-  onUnload(): void {}
   provider = 'test-provider'
+  settings: any[] = [{ key: 'ctx', controllerProps: { value: 4096 } }]
+
+  async getSettings(): Promise<any[]> {
+    return this.settings
+  }
+
+  async updateSettings(): Promise<void> {}
+
+  async get(): Promise<undefined> {
+    return undefined
+  }
+
+  async update(): Promise<void> {}
+
+  async isToolSupported(): Promise<boolean> {
+    return false
+  }
 
   inference(data: any) {}
 
@@ -52,7 +68,7 @@ describe('AIEngine', () => {
   let engine: TestAIEngine
 
   beforeEach(() => {
-    engine = new TestAIEngine('', '')
+    engine = new TestAIEngine()
     vi.clearAllMocks()
   })
 
@@ -76,6 +92,11 @@ describe('AIEngine', () => {
     const result = await engine.list()
 
     expect(result).toEqual([])
+  })
+
+  it('reads one setting value, falling back to the default', async () => {
+    await expect(engine.getSetting('ctx', 0)).resolves.toBe(4096)
+    await expect(engine.getSetting('absent', 'dflt')).resolves.toBe('dflt')
   })
 
   it('should get loaded models', async () => {

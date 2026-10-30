@@ -13,8 +13,8 @@ import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
-import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
+import { FileStat, ServiceKeys } from '@janhq/core'
+import { getExtensionHost } from '@/lib/extensions/host'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
 import { useProjectUploads } from '@/stores/project-uploads-store'
 
@@ -320,11 +320,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
     try {
-      const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-        ExtensionTypeEnum.VectorDB
-      )
-      if (ext?.listAttachmentsForProject) {
-        const projectFiles = await ext.listAttachmentsForProject(projectId)
+      const vectorDB = getExtensionHost().services.get(ServiceKeys.VectorDB)
+      if (vectorDB) {
+        const projectFiles = await vectorDB.listAttachmentsForProject(projectId)
         setFiles(projectFiles)
       } else {
         setFiles([])
@@ -545,11 +543,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
   const handleDeleteFile = async (fileId: string) => {
     try {
-      const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-        ExtensionTypeEnum.VectorDB
-      )
-      if (ext?.deleteFileForProject) {
-        await ext.deleteFileForProject(projectId, fileId)
+      const vectorDB = getExtensionHost().services.get(ServiceKeys.VectorDB)
+      if (vectorDB) {
+        await vectorDB.deleteFileForProject(projectId, fileId)
         toast.success(
           t('common:toast.fileDeleted.title') ?? 'File deleted successfully'
         )

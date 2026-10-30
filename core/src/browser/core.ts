@@ -88,16 +88,6 @@ const showToast: (title: string, message: string) => void = (title, message) =>
   globalThis.core.api?.showToast(title, message)
 
 /**
- * Register extension point function type definition
- */
-export type RegisterExtensionPoint = (
-  extensionName: string,
-  extensionId: string,
-  method: Function,
-  priority?: number
-) => void
-
-/**
  * Functions exports
  */
 export {

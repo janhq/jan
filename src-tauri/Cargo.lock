@@ -67,6 +67,7 @@ dependencies = [
  "tauri-plugin-agent-tools",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
+ "tauri-plugin-extensions",
  "tauri-plugin-hardware",
  "tauri-plugin-http",
  "tauri-plugin-llamacpp",
@@ -7865,6 +7866,27 @@ dependencies = [
  "tauri-plugin",
  "tauri-plugin-fs",
  "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
+name = "tauri-plugin-extensions"
+version = "0.8.3"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "flate2",
+ "log",
+ "reqwest 0.12.28",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
+ "tokio",
  "url",
 ]
 

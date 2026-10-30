@@ -6,13 +6,11 @@ import { useAppState } from '../useAppState'
 
 const mockGetModelProps = vi.fn()
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: () => ({
-      getByName: () => ({ getModelProps: mockGetModelProps }),
-      listExtensions: () => [],
-    }),
-  },
+// Both local engines answer through their host service.
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => ({
+    services: { get: () => ({ getModelProps: mockGetModelProps }) },
+  }),
 }))
 
 const modelProviderState = {

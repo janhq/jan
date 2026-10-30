@@ -1,0 +1,200 @@
+{
+  "commands": "Commands",
+  "categorizedCommand": "{{category}}: {{title}}",
+  "commandFailed": "{{command}} ({{extension}}) failed",
+  "moreActions": "More actions",
+  "extensionLabel": "Extension: {{extension}}",
+  "statusItemTooltip": "Extension: {{extension}} - {{text}}",
+  "settingSaveFailed": "Could not save {{setting}}",
+  "activationFailed": "Failed to start: {{error}}",
+  "crashed": {
+    "reason": "Stopped: {{error}}",
+    "disabled": "It crashed 3 times in 10 minutes and stays off until Jan restarts.",
+    "safeMode": "Installed extensions kept Jan from starting, so safe mode is now on.",
+    "safeModeFailed": "Installed extensions kept Jan from starting, and safe mode could not be turned on. They are not loaded this time."
+  },
+  "state": {
+    "inactive": "Inactive",
+    "activating": "Starting",
+    "active": "Active",
+    "failed": "Failed",
+    "crashed": "Crashed"
+  },
+  "development": "Development",
+  "unload": "Unload",
+  "unloadFailed": "Could not unload {{extension}}: {{error}}",
+  "risk": {
+    "low": "Low risk",
+    "medium": "Medium risk",
+    "high": "High risk"
+  },
+  "devLoad": {
+    "button": "Load unpacked",
+    "title": "Load {{name}} from a folder?",
+    "description": "This development extension runs until Jan restarts. It is granted everything it requests:",
+    "proposals": "Proposed APIs: {{proposals}}",
+    "confirm": "Load",
+    "readFailed": "Could not read {{file}}: {{error}}",
+    "invalidJson": "package.json is not valid JSON: {{error}}",
+    "invalidManifest": "The manifest is invalid: {{errors}}",
+    "invalidBundle": "{{file}} is not a valid extension bundle: {{error}}",
+    "alreadyLoaded": "An extension with the id {{id}} is already loaded"
+  },
+  "permissions": {
+    "uiNotify": {
+      "title": "Show notifications",
+      "description": "Show short messages in the app, labelled with the extension's name."
+    },
+    "network": {
+      "title": "Connect to {{host}}",
+      "description": "Send requests to this host and read the replies.",
+      "localServers": "Includes servers on this computer on any port: localhost and 127.0.0.1 over http or https, other local addresses such as ::1 over https only. Jan's own local API server is always blocked.",
+      "localPorts": "Covers every port of this host, over http or https, except Jan's own local API server, which is always blocked."
+    },
+    "providers": {
+      "title": "Add model providers",
+      "description": "Add model providers that appear in the model picker."
+    },
+    "tools": {
+      "title": "Add tools for models",
+      "description": "Add tools that models can call during a chat. Each call still asks for your approval."
+    },
+    "conversationsRead": {
+      "title": "Read your conversations",
+      "description": "Read your threads and the messages in them."
+    },
+    "conversationsWrite": {
+      "title": "Change your conversations",
+      "description": "Create threads and add messages to them."
+    },
+    "chatHooks": {
+      "title": "Change messages before they are sent",
+      "description": "Rewrite the text of your messages before they reach the model."
+    }
+  },
+  "cancel": "Cancel",
+  "noPermissions": "It requests no permissions.",
+  "tabs": {
+    "installed": "Installed",
+    "catalog": "Catalog"
+  },
+  "sections": {
+    "builtin": "Built-in",
+    "installed": "Installed",
+    "development": "Loaded for development"
+  },
+  "noneInstalled": "No extensions installed yet.",
+  "enable": "Enable {{name}}",
+  "details": {
+    "open": "Details",
+    "back": "Back to extensions",
+    "version": "Version {{version}}",
+    "rollback": "Roll back to {{version}}",
+    "permissions": "Granted permissions",
+    "revoke": "Revoke",
+    "settings": "Settings",
+    "uninstall": "Uninstall",
+    "uninstallTitle": "Uninstall {{name}}?",
+    "uninstallDescription": "Its files are removed from this computer. This cannot be undone.",
+    "builtinFixed": "Built-in extensions are part of Jan and cannot be disabled or uninstalled.",
+    "notFound": "This extension is not installed."
+  },
+  "origin": {
+    "unverified": "Unverified",
+    "unverifiedHint": "This file did not come from an index you added. Install it only if you trust whoever gave it to you.",
+    "sha512": "SHA-512: {{hash}}",
+    "trustAuthor": "I trust the author of this file",
+    "fromSource": "From {{source}}",
+    "integrityChecked": "Integrity checked",
+    "integrityCheckedUnsigned": "Integrity checked (unsigned source)",
+    "verifiedBy": "Verified by {{source}}",
+    "unsignedSource": "Unsigned source",
+    "unsignedSourceHint": "This index has no pinned signing key, so nothing proves who published this listing. Install it only if you trust the index.",
+    "trustSource": "I trust the author and this index"
+  },
+  "install": {
+    "fromFile": "Install from file...",
+    "bundleFilter": "Extension bundle",
+    "title": "Install {{name}}?",
+    "description": "Version {{version}} by {{publisher}}. It will be granted these permissions:",
+    "confirm": "Install",
+    "done": "{{name}} {{version}} installed"
+  },
+  "update": {
+    "title": "Update {{name}} to {{version}}?",
+    "description": "You have version {{version}}. Permissions you already granted are kept.",
+    "confirm": "Update",
+    "added": "New permissions",
+    "removed": "No longer needed",
+    "nothingAdded": "This update asks for no new permissions."
+  },
+  "sourceChange": {
+    "indexWasIndex": "This update comes from {{next}}, but {{name}} was installed from {{previous}}.",
+    "indexWasFile": "This update comes from {{next}}, but {{name}} was installed from the file {{file}}.",
+    "fileWasIndex": "This update is a file from disk, but {{name}} was installed from {{previous}}.",
+    "unsigned": "{{name}} was verified by the signing key of {{previous}}, but this update is not signed."
+  },
+  "safeMode": {
+    "title": "Safe mode",
+    "description": "Start Jan without loading any installed extension. Built-in extensions still run.",
+    "banner": "Safe mode is on. Installed extensions are not loaded.",
+    "turnOff": "Turn off safe mode"
+  },
+  "sources": {
+    "title": "Index sources",
+    "description": "An index lists extensions you can install. Add only indexes you trust.",
+    "none": "No sources yet. Add an index URL to browse its extensions.",
+    "url": "Index URL",
+    "name": "Name",
+    "publicKey": "Public key (optional)",
+    "add": "Add source",
+    "remove": "Remove {{name}}",
+    "removeKeyed": {
+      "title": "Remove {{name}} and its signing key?",
+      "description": "Its pinned key is forgotten with it. If you add this index again without the key, its listings are no longer signature-checked. Installed extensions stay installed. Pinned key:",
+      "confirm": "Remove source"
+    },
+    "removedPin": {
+      "warning": "This index had a pinned signing key when you removed it. Without a key its listings are unsigned. Add it again with its key, or press Add source again to continue without one.",
+      "key": "Previously pinned key:"
+    },
+    "notice": {
+      "dropped": "Some saved sources failed a check and were removed: {{sources}}. The previous file was kept at {{path}}.",
+      "unreadable": "The saved sources could not be read, so none are listed. The previous file was kept at {{path}}."
+    },
+    "keyPinned": "Signing key pinned",
+    "unsignedHint": "No signing key pinned: installs from this index need your explicit trust.",
+    "rotate": {
+      "offer": "This index announces a new signing key.",
+      "review": "Review new key",
+      "title": "Change the signing key of {{name}}?",
+      "description": "The index, signed with the key you pinned, names a new key it will be signed with next. After you accept, only indexes signed with the new key are trusted. Accept only if you expected this change.",
+      "current": "Pinned key",
+      "next": "New key",
+      "confirm": "Pin the new key"
+    },
+    "errors": {
+      "invalidUrl": "Enter a valid URL.",
+      "notHttps": "Only https URLs are allowed.",
+      "credentials": "The URL must not contain a user name or password.",
+      "required": "Enter a name.",
+      "invalidKey": "Enter a base64 ed25519 public key."
+    }
+  },
+  "catalog": {
+    "loading": "Loading the catalog...",
+    "empty": "This index lists no extensions.",
+    "by": "by {{publisher}}",
+    "install": "Install",
+    "update": "Update to {{version}}",
+    "installed": "Installed",
+    "provenance": "Provenance reported by source"
+  },
+  "errors": {
+    "list": "Could not read the installed extensions: {{error}}",
+    "stage": "Could not open the extension: {{error}}",
+    "install": "Could not install {{name}}: {{error}}",
+    "change": "The change failed: {{error}}",
+    "catalog": "Could not load {{source}}: {{error}}"
+  }
+}

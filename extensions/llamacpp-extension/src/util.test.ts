@@ -9,6 +9,7 @@ import {
   estimateTokensFromText,
   getProxyConfig,
   truncateToTokenBudget,
+  fileName,
 } from './util'
 import { getBackendSetting } from './backend-settings'
 
@@ -775,5 +776,16 @@ describe('resolveSpecDraftKind', () => {
     expect(
       resolveSpecDraftKind({ 'general.architecture': 'dflash' }, { hint: 'mtp' })
     ).toBe('dflash')
+  })
+})
+
+describe('fileName', () => {
+  it('takes the last segment of a POSIX or Windows path', () => {
+    expect(fileName('/jan/models/imported/qwen.yml')).toBe('qwen.yml')
+    expect(fileName('C:\\jan\\models\\qwen.gguf')).toBe('qwen.gguf')
+  })
+
+  it('returns a bare name unchanged', () => {
+    expect(fileName('qwen.yml')).toBe('qwen.yml')
   })
 })

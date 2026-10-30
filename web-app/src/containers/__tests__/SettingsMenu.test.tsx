@@ -65,7 +65,7 @@ vi.mock('@/containers/dialogs', () => ({
 vi.mock('@/lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/utils')>()),
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
-  getProviderTitle: (provider: string) => provider,
+  getProviderTitle: (provider: { provider: string }) => provider.provider,
   isLocalProvider: (provider: string) =>
     provider === 'llama.cpp' || provider === 'mlx',
 }))
@@ -129,6 +129,14 @@ describe('SettingsMenu', () => {
     render(<SettingsMenu />)
     expect(screen.queryByText('common:cowork')).not.toBeInTheDocument()
     expect(screen.getByText('common:general')).toBeInTheDocument()
+  })
+
+  it('links to the Extensions settings page', () => {
+    render(<SettingsMenu />)
+    expect(screen.getByText('common:extensions').closest('a')).toHaveAttribute(
+      'href',
+      '/settings/extensions'
+    )
   })
 
   it('renders integrations links', () => {

@@ -52,6 +52,7 @@ macro_rules! invoke_commands_with_extras {
         core::filesystem::commands::decompress,
         core::filesystem::commands::open_dialog,
         core::filesystem::commands::save_dialog,
+        core::filesystem::asset_scope::asset_scope_allow_folder,
         // App configuration commands
         core::app::commands::get_app_configurations,
         core::app::commands::get_user_home_path,
@@ -319,6 +320,13 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
     }
 
+    #[cfg(feature = "extensions")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_extensions::init(
+            crate::core::app::paths::extensions_dir,
+        ));
+    }
+
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
@@ -429,6 +437,10 @@ pub fn run() {
                     SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
                     handle.exit(0);
                 });
+            }
+
+            if let Err(e) = core::filesystem::asset_scope::allow_cowork_sandboxes(app.handle()) {
+                log::error!("Failed to grant the Cowork sandboxes to the asset protocol: {e}");
             }
 
             // Start migration

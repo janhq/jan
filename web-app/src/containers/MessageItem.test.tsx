@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MessageItem } from './MessageItem'
 import type { UIMessage } from 'ai'
+import {
+  ContributionStore,
+  useContributions,
+} from '@/lib/extensions/contributions'
+import { manifest } from '@/lib/extensions/__tests__/fixtures'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -63,5 +68,49 @@ describe('what a turn shows besides its messages', () => {
     expect(screen.getByText(/finished/)).toBeInTheDocument()
     // No copy/remember/regenerate: nobody said it, so there is nothing to act on.
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+})
+
+describe('extension message actions', () => {
+  const reply = {
+    id: 'm2',
+    role: 'assistant',
+    parts: [{ type: 'text', text: 'hi' }],
+  } as UIMessage
+
+  it('offers contributed actions only when the thread is known', () => {
+    const registration = new ContributionStore(
+      useContributions
+    ).registerExtension(
+      manifest('acme.msg', {
+        contributes: {
+          commands: [{ id: 'explain', title: 'Explain' }],
+          menus: { 'message/actions': [{ command: 'explain' }] },
+        },
+      })
+    )
+    try {
+      const { rerender } = render(
+        <MessageItem
+          message={reply}
+          isFirstMessage={false}
+          isLastMessage={false}
+          status="ready"
+        />
+      )
+      expect(screen.queryByLabelText('extensions:moreActions')).toBeNull()
+      rerender(
+        <MessageItem
+          message={reply}
+          isFirstMessage={false}
+          isLastMessage={false}
+          status="ready"
+          threadId="t1"
+        />
+      )
+      expect(screen.getByLabelText('extensions:moreActions')).toBeInTheDocument()
+    } finally {
+      registration.dispose()
+    }
   })
 })

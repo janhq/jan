@@ -47,18 +47,14 @@ import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
-import { ExtensionManager } from '@/lib/extension'
+import { getExtensionHost } from '@/lib/extensions/host'
 import { getLlamacppExtension } from '@/lib/llamacppRouterProps'
 import {
   tokensForThinkingBudgetLevel,
   isThinkingBudgetLevelKey,
 } from '@/lib/thinkingBudget'
 import { buildReasoningProviderOptions } from '@/lib/reasoningProviderOptions'
-import {
-  ExtensionTypeEnum,
-  VectorDBExtension,
-  type MCPTool,
-} from '@janhq/core'
+import { ServiceKeys, type MCPTool } from '@janhq/core'
 import {
   trimMessages,
   compactMessages,
@@ -1094,11 +1090,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const projectId = thread?.metadata?.project?.id
         if (projectId) {
           try {
-            const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
-              ExtensionTypeEnum.VectorDB
+            const vectorDB = getExtensionHost().services.get(
+              ServiceKeys.VectorDB
             )
-            if (ext?.listAttachmentsForProject) {
-              const projectFiles = await ext.listAttachmentsForProject(projectId)
+            if (vectorDB) {
+              const projectFiles =
+                await vectorDB.listAttachmentsForProject(projectId)
               hasDocuments = hasThreadDocuments || projectFiles.length > 0
             }
           } catch (error) {
@@ -1221,6 +1218,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         toolsRecord['web_fetch'] = {
           description: WEB_FETCH_DESCRIPTION,
           inputSchema: jsonSchema(WEB_FETCH_INPUT_SCHEMA as Record<string, unknown>),
+        } as Tool
+      }
+
+      // Tools contributed by extensions, under their prefixed wire names so
+      // they can never shadow an MCP or built-in tool. Toggled per
+      // extension like an MCP server.
+      for (const tool of useAppState.getState().extensionTools) {
+        if (isToolDisabled(tool.server, tool.wireName)) continue
+        toolsRecord[tool.wireName] = {
+          description: tool.description,
+          inputSchema: jsonSchema(
+            normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
+          ),
         } as Tool
       }
 

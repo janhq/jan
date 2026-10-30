@@ -57,7 +57,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 vi.mock('@/lib/utils', () => ({
-  getProviderTitle: (provider: string) => `${provider} Provider`,
+  getProviderTitle: (provider: { provider: string }) =>
+    `${provider.provider} Provider`,
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
 }))
 

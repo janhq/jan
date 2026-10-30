@@ -1,0 +1,114 @@
+import { Emitter, toDisposable, type Disposable, type Event } from '@janhq/extension-api'
+import type { AssistantInterface } from '../../types'
+import type { DownloadItem } from '../download'
+import type { SessionInfo, UnloadResult } from '../extensions/engines/AIEngine'
+import type { RAGIngestService, VectorDBService } from './rag'
+
+/**
+ * A typed handle for a host service. `T` exists only at compile time; the
+ * phantom field makes `ServiceKey<A>` and `ServiceKey<B>` incompatible.
+ */
+export class ServiceKey<T> {
+  declare readonly _t?: T
+  constructor(readonly id: string) {}
+}
+
+/** Where built-ins publish services and the app looks them up. */
+export interface ServiceRegistry {
+  /**
+   * Publishes `impl` under `key` until the result is disposed. Throws when
+   * another provider holds the key: two silent providers would make lookups
+   * depend on activation order.
+   */
+  provide<T>(key: ServiceKey<T>, impl: T): Disposable
+  get<T>(key: ServiceKey<T>): T | undefined
+  /** Fires the key id whenever a provider appears or goes away. */
+  readonly onDidChange: Event<string>
+}
+
+export function createServiceRegistry(): ServiceRegistry {
+  const impls = new Map<string, unknown>()
+  const changes = new Emitter<string>()
+  return {
+    provide<T>(key: ServiceKey<T>, impl: T): Disposable {
+      if (impls.has(key.id)) throw new Error(`Service '${key.id}' is already provided`)
+      impls.set(key.id, impl)
+      changes.fire(key.id)
+      return toDisposable(() => {
+        // A newer provider may hold the key after this one was replaced.
+        if (impls.get(key.id) !== impl) return
+        impls.delete(key.id)
+        changes.fire(key.id)
+      })
+    },
+    get<T>(key: ServiceKey<T>): T | undefined {
+      return impls.get(key.id) as T | undefined
+    },
+    onDidChange: changes.event,
+  }
+}
+
+export type AssistantService = AssistantInterface
+
+/** File downloads with progress, as the download built-in provides them. */
+export interface DownloadService {
+  downloadFile(
+    url: string,
+    savePath: string,
+    taskId: string,
+    proxyConfig?: DownloadItem['proxy'],
+    onProgress?: (transferred: number, total: number) => void
+  ): Promise<void>
+  downloadFiles(
+    items: DownloadItem[],
+    taskId: string,
+    onProgress?: (transferred: number, total: number) => void
+  ): Promise<void>
+  cancelDownload(taskId: string): Promise<void>
+  pauseDownload(taskId: string): Promise<void>
+}
+
+/** What a local engine reports for a loaded model. */
+export interface LocalModelProps {
+  /** The context window the model was launched with. */
+  nCtx: number
+  totalSlots?: number
+  modelAlias?: string
+  isSleeping?: boolean
+  modalities?: { vision: boolean; video: boolean; audio: boolean }
+}
+
+/** The runtime queries the app makes of a local inference engine. */
+export interface LocalEngineService {
+  /** Undefined until the model is loaded. */
+  getModelProps(modelId: string): Promise<LocalModelProps | undefined>
+  unload(modelId: string): Promise<UnloadResult>
+}
+
+/** A compute device the llama.cpp engine can run on. */
+export interface EngineDevice {
+  id: string
+  name: string
+  mem: number
+  free: number
+}
+
+export interface LlamacppService extends LocalEngineService {
+  getDevices(): Promise<EngineDevice[]>
+  /** Restarts the engine when the machine's devices changed since it started. */
+  reconcileEngineDevices(): Promise<'unchanged' | 'restarted' | 'busy'>
+}
+
+export interface MlxService extends LocalEngineService {
+  /** The running server for a model, or null when it is not loaded. */
+  findSession(modelId: string): Promise<SessionInfo | null>
+}
+
+export const ServiceKeys = {
+  Assistants: new ServiceKey<AssistantService>('assistants'),
+  Downloads: new ServiceKey<DownloadService>('downloads'),
+  Llamacpp: new ServiceKey<LlamacppService>('llamacpp'),
+  Mlx: new ServiceKey<MlxService>('mlx'),
+  VectorDB: new ServiceKey<VectorDBService>('vector-db'),
+  RAG: new ServiceKey<RAGIngestService>('rag'),
+}

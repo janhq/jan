@@ -55,12 +55,6 @@ vi.mock('@/lib/predefined', () => ({
   },
 }))
 
-vi.mock('@/lib/extension', () => ({
-  ExtensionManager: {
-    getInstance: vi.fn(),
-  },
-}))
-
 vi.mock('@/lib/models', () => ({
   getModelCapabilities: vi.fn().mockReturnValue([]),
 }))
@@ -68,6 +62,11 @@ vi.mock('@/lib/models', () => ({
 vi.mock('@/lib/provider-api-keys', () => ({
   providerRemoteApiKeyChain: vi.fn().mockReturnValue([]),
   API_KEY_FALLBACKS_SETTING_KEY: 'api-key-fallbacks',
+}))
+
+const hostMock = vi.hoisted(() => ({ providerFetch: vi.fn() }))
+vi.mock('@/lib/extensions/host', () => ({
+  getExtensionHost: () => hostMock,
 }))
 
 const platform = vi.hoisted(() => ({ mac: false }))
@@ -80,7 +79,6 @@ vi.mock('@/lib/shortcuts/platform', () => ({
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { EngineManager } from '@janhq/core'
-import { ExtensionManager } from '@/lib/extension'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 import { TauriProvidersService } from '../tauri'
 import { ProviderUnreachableError } from '@/lib/provider-unreachable'
@@ -207,6 +205,43 @@ describe('TauriProvidersService', () => {
       base_url: 'https://api.test.com/v1',
       active: false,
     } as any
+
+    it("lists an extension provider's models only through its extension's fetch", async () => {
+      const extensionFetch = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'hello-1' }] }), {
+            status: 200,
+          })
+      )
+      hostMock.providerFetch.mockReturnValue(extensionFetch)
+      await expect(
+        svc.fetchModelsFromProvider({
+          ...baseProvider,
+          base_url: 'http://127.0.0.1:11999/v1',
+          source: { extensionId: 'acme.hello' },
+        })
+      ).resolves.toEqual(['hello-1'])
+      expect(hostMock.providerFetch).toHaveBeenCalledWith('acme.hello', 'whole')
+      expect(extensionFetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:11999/v1/models',
+        expect.objectContaining({ method: 'GET' })
+      )
+      // It does not present itself as the app to a local server.
+      const init = extensionFetch.mock.calls[0] as unknown as [string, RequestInit]
+      expect(init[1].headers).not.toHaveProperty('Origin')
+      expect(fetchTauri).not.toHaveBeenCalled()
+    })
+
+    it('refuses an extension provider whose extension has no network path', async () => {
+      hostMock.providerFetch.mockReturnValue(undefined)
+      await expect(
+        svc.fetchModelsFromProvider({
+          ...baseProvider,
+          source: { extensionId: 'acme.dev' },
+        })
+      ).rejects.toThrow()
+      expect(fetchTauri).not.toHaveBeenCalled()
+    })
 
     it('throws if no base_url', async () => {
       await expect(svc.fetchModelsFromProvider({ ...baseProvider, base_url: '' }))
@@ -550,8 +585,8 @@ describe('TauriProvidersService', () => {
   describe('updateSettings', () => {
     it('delegates to engine updateSettings', async () => {
       const mockUpdate = vi.fn()
-      vi.mocked(ExtensionManager.getInstance).mockReturnValue({
-        getEngine: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        get: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
       } as any)
 
       await svc.updateSettings('test', [
@@ -569,8 +604,8 @@ describe('TauriProvidersService', () => {
 
     it('defaults value to empty string when undefined', async () => {
       const mockUpdate = vi.fn()
-      vi.mocked(ExtensionManager.getInstance).mockReturnValue({
-        getEngine: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        get: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
       } as any)
 
       await svc.updateSettings('test', [
@@ -586,8 +621,8 @@ describe('TauriProvidersService', () => {
 
     it('blanks api-key and api-key-fallbacks so keys never reach settings.json', async () => {
       const mockUpdate = vi.fn()
-      vi.mocked(ExtensionManager.getInstance).mockReturnValue({
-        getEngine: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        get: vi.fn().mockReturnValue({ updateSettings: mockUpdate }),
       } as any)
 
       await svc.updateSettings('openai', [
@@ -603,8 +638,8 @@ describe('TauriProvidersService', () => {
     })
 
     it('rethrows on error', async () => {
-      vi.mocked(ExtensionManager.getInstance).mockReturnValue({
-        getEngine: vi.fn().mockReturnValue({
+      vi.mocked(EngineManager.instance).mockReturnValue({
+        get: vi.fn().mockReturnValue({
           updateSettings: vi.fn().mockRejectedValue(new Error('fail')),
         }),
       } as any)

@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useAppUpdateDownload } from '@/stores/app-update-download-store'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { events, AppEvent } from '@janhq/core'
+import { events, AppEvent, ServiceKeys } from '@janhq/core'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -15,6 +15,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBytes } from '@/lib/utils'
+import { getExtensionHost } from '@/lib/extensions/host'
 
 export function DownloadManagement() {
   const { t } = useTranslation()
@@ -171,10 +172,7 @@ export function DownloadManagement() {
       removeDownload(id)
       removeLocalDownloadingModel(id)
       if (id.startsWith('llamacpp') || id.startsWith('mlx')) {
-        const downloadManager = window.core.extensionManager.getByName(
-          '@janhq/download-extension'
-        )
-        downloadManager.cancelDownload(id)
+        getExtensionHost().services.get(ServiceKeys.Downloads)?.cancelDownload(id)
       } else {
         serviceHub
           .models()

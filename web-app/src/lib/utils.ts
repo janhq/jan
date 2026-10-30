@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
-import { ExtensionManager } from './extension'
+import { EngineManager } from '@janhq/core'
 import path from 'path'
 import type { VFile } from 'vfile'
 
@@ -164,7 +164,16 @@ export function getProviderLogo(provider: string) {
   }
 }
 
-export const getProviderTitle = (provider: string) => {
+/**
+ * The name the UI shows for a provider: its display name when it has one
+ * (an extension's provider, whose id is namespaced), else a title derived
+ * from its id.
+ */
+export const getProviderTitle = (
+  provider: string | Pick<ProviderObject, 'provider' | 'display_name'>
+): string => {
+  if (typeof provider !== 'string')
+    return provider.display_name || getProviderTitle(provider.provider)
   switch (provider) {
     case 'jan':
       return 'Jan'
@@ -230,8 +239,8 @@ export function getReadableLanguageName(language: string): string {
 }
 
 export const isLocalProvider = (provider: string) => {
-  const extension = ExtensionManager.getInstance().getEngine(provider)
-  return extension && 'load' in extension
+  const engine = EngineManager.instance().get(provider)
+  return !!engine && 'load' in engine
 }
 
 export const toGigabytes = (
