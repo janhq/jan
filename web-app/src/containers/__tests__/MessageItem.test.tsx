@@ -878,6 +878,25 @@ describe('MessageItem', () => {
       expect(prev.closest('[class*="opacity-0"]')).toBeNull()
     })
 
+    it('keeps Continue visible at rest on a stopped reply', () => {
+      render(
+        <MessageItem
+          message={makeMsg({ metadata: { createdAt: new Date(), stopped: true } }) as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onContinue={vi.fn()}
+          onRegenerate={vi.fn()}
+        />
+      )
+      // The only way to resume a stopped reply is not hidden behind hover...
+      const cont = screen.getByTestId('continue-message')
+      expect(cont.closest('[class*="opacity-0"]')).toBeNull()
+      // ...while regenerate stays with the other hover-revealed actions.
+      const regen = screen.getByTestId('regenerate-message')
+      expect(regen.closest('[class*="opacity-0"]')).not.toBeNull()
+    })
+
     it('shows every action on a touch device', () => {
       touchRef.current = true
       renderAssistant()

@@ -772,6 +772,24 @@ export const MessageItem = memo(
               )}
             >
               {copyButton}
+              {/* Shown at rest: it only appears on a stopped reply, and it is
+                  the one way to resume it. */}
+              {selectedModel &&
+                onContinue &&
+                !isStreaming &&
+                isLastMessage &&
+                canContinue && (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    data-testid="continue-message"
+                    onClick={handleContinue}
+                    title={t('chat:actions.continue')}
+                    aria-label={t('chat:actions.continue')}
+                  >
+                    <IconPlayerPlay size={16} aria-hidden="true" />
+                  </Button>
+                )}
               {/* Shown at rest when there are versions (copy is then shown
                   too, so the pair sits at the leading edge together). */}
               {versionNav}
@@ -788,22 +806,6 @@ export const MessageItem = memo(
                 {onDelete && !isStreaming && (
                   <DeleteMessageDialog onDelete={handleDelete} />
                 )}
-
-                {selectedModel &&
-                  onContinue &&
-                  !isStreaming &&
-                  isLastMessage &&
-                  canContinue && (
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      data-testid="continue-message"
-                      onClick={handleContinue}
-                      title={t('chat:actions.continue')}
-                    >
-                      <IconPlayerPlay size={16} />
-                    </Button>
-                  )}
 
                 {selectedModel &&
                   onRegenerate &&
