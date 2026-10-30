@@ -742,7 +742,7 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
 /// Names Windows maps to a device in every directory, in any case and also
 /// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
 /// works on all of them.
-fn is_windows_device_name(name: &str) -> bool {
+pub(crate) fn is_windows_device_name(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     match stem.as_bytes() {
         [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
