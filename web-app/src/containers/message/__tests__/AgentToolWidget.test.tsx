@@ -110,6 +110,40 @@ describe('AgentToolWidget', () => {
     expect(screen.queryByText(/\[hook config/)).not.toBeInTheDocument()
   })
 
+  // One `memory` tool covers reads and changes alike, so its op, not the tool
+  // name, decides the verb.
+  it.each([
+    ['write', 'prefs', 'tools:toolCall.writing'],
+    ['edit', 'prefs', 'tools:toolCall.writing'],
+    ['delete', 'prefs', 'tools:toolCall.writing'],
+    ['move', 'prefs', 'tools:toolCall.writing'],
+    ['search', 'cuda', 'tools:toolCall.searching'],
+    ['view', '', 'tools:toolCall.listing'],
+    ['view', 'prefs', 'tools:toolCall.reading'],
+  ])('names what memory %s (%s) is doing while it runs', (op, target, key) => {
+    render(
+      <AgentToolWidget
+        bar={{ variant: 'workspace', tool: 'memory', target, op }}
+        state="input-available"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.getByText(key)).toBeInTheDocument()
+  })
+
+  // A bare view lists the whole store; say so rather than leave an empty bar
+  // that reads as though the name failed to stream.
+  it('names the store on a memory view with no name', () => {
+    render(
+      <AgentToolWidget
+        bar={{ variant: 'workspace', tool: 'memory', target: '', op: 'view' }}
+        state="input-available"
+        toolCallId="tc1"
+      />
+    )
+    expect(screen.getByText('settings:cowork.memories')).toBeInTheDocument()
+  })
+
   it('prompts for a pattern rather than a path on grep', () => {
     renderRunning('grep')
     expect(
