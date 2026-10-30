@@ -7,7 +7,7 @@ use uuid::Uuid;
 use super::db;
 use super::helpers::{
     get_lock_for_thread, read_messages_from_file, should_use_sqlite, update_thread_metadata,
-    write_messages_to_file,
+    write_file_atomic, write_messages_to_file,
 };
 use super::{
     constants::THREADS_FILE,
@@ -100,7 +100,7 @@ pub async fn create_thread<R: Runtime>(
     }
     let path = get_thread_metadata_path(&data_folder, &uuid)?;
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())?;
+    write_file_atomic(&path, data.as_bytes())?;
     Ok(thread)
 }
 
@@ -136,23 +136,30 @@ pub async fn read_thread_extra<R: Runtime>(
 }
 
 /// Writes a per-thread sidecar atomically (temp file + rename) under the
-/// thread's lock, creating the thread directory if needed.
+/// thread's lock. It only creates the thread directory when `create` is true
+/// (migration and a session's first commit): a late write for a thread that was
+/// deleted must fail instead of resurrecting a directory holding a lone sidecar.
 #[tauri::command]
 pub async fn write_thread_extra<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread_id: String,
     name: String,
     value: serde_json::Value,
+    create: Option<bool>,
 ) -> Result<(), String> {
     let data_folder = get_jan_data_folder_path(app_handle);
     let path = thread_extra_path(&data_folder, &thread_id, &name)?;
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    ensure_thread_dir_exists(&data_folder, &thread_id)?;
-    let tmp = path.with_extension("json.tmp");
+    if create.unwrap_or(false) {
+        ensure_thread_dir_exists(&data_folder, &thread_id)?;
+    } else if !get_thread_metadata_path(&data_folder, &thread_id)?.exists() {
+        return Err(format!(
+            "Thread '{thread_id}' has no thread.json; refusing to create it from a sidecar write"
+        ));
+    }
     let data = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
-    fs::write(&tmp, data).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    write_file_atomic(&path, &data)
 }
 
 /// Modifies an existing thread's metadata by overwriting its thread.json file.
@@ -179,8 +186,7 @@ pub async fn modify_thread<R: Runtime>(
     }
     let path = get_thread_metadata_path(&data_folder, thread_id)?;
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())?;
-    Ok(())
+    write_file_atomic(&path, data.as_bytes())
 }
 
 /// Deletes a thread and all its associated files by removing its directory.

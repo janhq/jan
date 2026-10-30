@@ -880,6 +880,7 @@ async fn test_thread_extra_roundtrip_and_allowlist() {
         "extra-thread-1".into(),
         "cowork".into(),
         value.clone(),
+        None,
     )
     .await
     .unwrap();
@@ -890,7 +891,7 @@ async fn test_thread_extra_roundtrip_and_allowlist() {
 
     // Not allowlisted, or a traversal attempt, is rejected.
     assert!(
-        write_thread_extra(app.handle().clone(), "extra-thread-1".into(), "thread".into(), json!({}))
+        write_thread_extra(app.handle().clone(), "extra-thread-1".into(), "thread".into(), json!({}), None)
             .await
             .is_err()
     );
@@ -899,4 +900,77 @@ async fn test_thread_extra_roundtrip_and_allowlist() {
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn test_write_thread_extra_refuses_threads_without_thread_json() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    // No thread.json: a late write (e.g. after delete) must not recreate the dir.
+    let err = write_thread_extra(
+        app.handle().clone(),
+        "ghost-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("thread.json"), "{err}");
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    assert!(!get_thread_dir(&data_folder, "ghost-thread").unwrap().exists());
+
+    // create=true (migration / first commit) may create the directory.
+    write_thread_extra(
+        app.handle().clone(),
+        "ghost-thread".into(),
+        "cowork".into(),
+        json!({"turns": []}),
+        Some(true),
+    )
+    .await
+    .unwrap();
+    assert!(get_thread_dir(&data_folder, "ghost-thread").unwrap().exists());
+}
+
+#[tokio::test]
+async fn test_deleted_thread_cannot_be_resurrected_by_sidecar_write() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Doomed");
+    thread["id"] = json!("doomed-thread");
+    create_thread(app.handle().clone(), thread).await.unwrap();
+    delete_thread(app.handle().clone(), "doomed-thread".into())
+        .await
+        .unwrap();
+    assert!(write_thread_extra(
+        app.handle().clone(),
+        "doomed-thread".into(),
+        "cowork".into(),
+        json!({}),
+        None,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+async fn test_thread_json_writes_leave_no_temp_files() {
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let mut thread = create_test_thread("Atomic");
+    thread["id"] = json!("atomic-thread");
+    create_thread(app.handle().clone(), thread.clone())
+        .await
+        .unwrap();
+    thread["title"] = json!("Atomic 2");
+    modify_thread(app.handle().clone(), thread).await.unwrap();
+
+    let data_folder = get_jan_data_folder_path(app.handle().clone());
+    let dir = get_thread_dir(&data_folder, "atomic-thread").unwrap();
+    let names: Vec<String> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(names.iter().all(|n| !n.ends_with(".tmp")), "{names:?}");
+    let on_disk: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.join(THREADS_FILE)).unwrap()).unwrap();
+    assert_eq!(on_disk["title"], "Atomic 2");
 }
