@@ -133,24 +133,34 @@ fn too_large_unpacked(limit: u64) -> RagError {
     ))
 }
 
-/// Reads a zip entry as text, refusing to inflate more than `limit` bytes.
+/// Reads a zip entry as text, refusing to inflate more than `limit` bytes; the
+/// error names `reported_limit`, which differs from `limit` when a shared
+/// budget, not the per-entry cap, is what ran out.
 /// The size of the file on disk says little: deflate shrinks repeated bytes
 /// about a thousand to one, so a small file can unpack to gigabytes.
-fn read_zip_entry_capped(entry: impl Read, limit: u64) -> Result<String, RagError> {
-    let mut text = String::new();
+fn read_zip_entry_capped(
+    entry: impl Read,
+    limit: u64,
+    reported_limit: u64,
+) -> Result<String, RagError> {
+    // Bytes first: the cut at `limit + 1` can land inside a multi-byte
+    // character, and a UTF-8 error would hide that the entry was too large.
+    let mut bytes = Vec::new();
     entry
         .take(limit + 1)
-        .read_to_string(&mut text)
+        .read_to_end(&mut bytes)
         .map_err(|e| RagError::ParseError(e.to_string()))?;
-    if text.len() as u64 > limit {
-        return Err(too_large_unpacked(limit));
+    if bytes.len() as u64 > limit {
+        return Err(too_large_unpacked(reported_limit));
     }
-    Ok(text)
+    String::from_utf8(bytes).map_err(|e| RagError::ParseError(e.to_string()))
 }
 
-/// For formats `calamine` unpacks itself (xlsx, ods): refuse a zip whose
-/// entries declare more than the caps before handing it over. A file that is
-/// not a zip (xls) passes through; `calamine` reports its own errors.
+/// For formats `calamine` unpacks itself (xlsx, ods): refuse a zip whose XML
+/// parts declare more than the caps before handing it over. Only `.xml` parts
+/// count: they are what `calamine` inflates and parses, while media and
+/// embedded objects are never read, however large. A file that is not a zip
+/// (xls) passes through; `calamine` reports its own errors.
 fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
     let Ok(mut zip) = ZipArchive::new(std::fs::File::open(file_path)?) else {
         return Ok(());
@@ -160,6 +170,9 @@ fn check_zip_declared_sizes(file_path: &str) -> Result<(), RagError> {
         let Ok(entry) = zip.by_index_raw(i) else {
             continue;
         };
+        if !entry.name().map_or(true, |n| n.ends_with(".xml")) {
+            continue;
+        }
         if entry.size() > MAX_ZIP_ENTRY_SIZE {
             return Err(too_large_unpacked(MAX_ZIP_ENTRY_SIZE));
         }
@@ -184,7 +197,7 @@ fn parse_docx(file_path: &str) -> Result<String, RagError> {
         Ok(f) => f,
         Err(_) => return Err(RagError::ParseError("document.xml not found".into())),
     };
-    let xml_content = read_zip_entry_capped(doc_xml, MAX_ZIP_ENTRY_SIZE)?;
+    let xml_content = read_zip_entry_capped(doc_xml, MAX_ZIP_ENTRY_SIZE, MAX_ZIP_ENTRY_SIZE)?;
 
     // Parse XML and extract text from w:t nodes; add newlines on w:p boundaries
     let mut reader = Reader::from_str(&xml_content);
@@ -426,7 +439,14 @@ fn parse_pptx(file_path: &str) -> Result<String, RagError> {
     let mut budget = MAX_ZIP_TOTAL_SIZE;
     for slide_name in slides {
         let file = zip.by_name(&slide_name).map_err(|e| RagError::ParseError(e.to_string()))?;
-        let xml = read_zip_entry_capped(file, budget.min(MAX_ZIP_ENTRY_SIZE))?;
+        // Once less than a whole entry's worth is left, it is the total
+        // that a further slide would overrun, so that is the limit to report.
+        let (limit, reported) = if budget < MAX_ZIP_ENTRY_SIZE {
+            (budget, MAX_ZIP_TOTAL_SIZE)
+        } else {
+            (MAX_ZIP_ENTRY_SIZE, MAX_ZIP_ENTRY_SIZE)
+        };
+        let xml = read_zip_entry_capped(file, limit, reported)?;
         budget -= xml.len() as u64;
         output.push_str(&extract_pptx_text(&xml));
         output.push_str("\n\n");
@@ -673,22 +693,29 @@ mod tests {
         assert!(matches!(out, Err(RagError::ParseError(_))));
     }
 
-    /// A tiny zip whose one entry inflates to `len` bytes of spaces: the shape
-    /// of a decompression bomb (deflate shrinks it about a thousand to one).
-    fn bomb_zip(name: &str, entry: &str, len: u64) -> std::path::PathBuf {
+    /// A tiny zip whose entries each inflate to the given number of bytes of
+    /// spaces: the shape of a decompression bomb (deflate shrinks it about a
+    /// thousand to one).
+    fn bomb_zip_entries(name: &str, entries: &[(&str, u64)]) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("jan-rag-{}-{name}", std::process::id()));
         let mut zw = zip::ZipWriter::new(fs::File::create(&path).unwrap());
-        zw.start_file(entry, zip::write::SimpleFileOptions::default())
-            .unwrap();
         let chunk = vec![b' '; 1024 * 1024];
-        let mut left = len;
-        while left > 0 {
-            let n = left.min(chunk.len() as u64) as usize;
-            zw.write_all(&chunk[..n]).unwrap();
-            left -= n as u64;
+        for (entry, len) in entries {
+            zw.start_file(*entry, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            let mut left = *len;
+            while left > 0 {
+                let n = left.min(chunk.len() as u64) as usize;
+                zw.write_all(&chunk[..n]).unwrap();
+                left -= n as u64;
+            }
         }
         zw.finish().unwrap();
         path
+    }
+
+    fn bomb_zip(name: &str, entry: &str, len: u64) -> std::path::PathBuf {
+        bomb_zip_entries(name, &[(entry, len)])
     }
 
     fn refused_as_too_large(out: Result<String, RagError>) -> bool {
@@ -725,6 +752,43 @@ mod tests {
         let out = parse_docx(path.to_str().unwrap());
         let _ = fs::remove_file(&path);
         assert!(!refused_as_too_large(out));
+    }
+
+    #[test]
+    fn pptx_slides_that_together_inflate_past_the_total_are_refused_naming_the_total() {
+        const SLIDE: u64 = 90 * 1024 * 1024;
+        assert!(SLIDE < MAX_ZIP_ENTRY_SIZE && 3 * SLIDE > MAX_ZIP_TOTAL_SIZE);
+        let path = bomb_zip_entries(
+            "total.pptx",
+            &[
+                ("ppt/slides/slide1.xml", SLIDE),
+                ("ppt/slides/slide2.xml", SLIDE),
+                ("ppt/slides/slide3.xml", SLIDE),
+            ],
+        );
+        let out = parse_pptx(path.to_str().unwrap());
+        let _ = fs::remove_file(&path);
+        let total_mb = MAX_ZIP_TOTAL_SIZE / (1024 * 1024);
+        assert!(
+            matches!(&out, Err(RagError::ParseError(m)) if m.contains(&format!("{total_mb} MB"))),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn spreadsheet_media_that_inflates_past_the_cap_is_not_counted() {
+        // calamine never reads media, so a large one is no reason to refuse.
+        let path = bomb_zip("media.xlsx", "xl/media/image1.png", MAX_ZIP_ENTRY_SIZE + 1);
+        let out = parse_spreadsheet(path.to_str().unwrap());
+        let _ = fs::remove_file(&path);
+        assert!(!refused_as_too_large(out));
+    }
+
+    #[test]
+    fn an_oversize_entry_is_reported_as_too_large_even_when_the_cut_splits_a_character() {
+        // "é" is two bytes, so a cut after 3 bytes lands inside the second one.
+        let out = read_zip_entry_capped(std::io::Cursor::new("éééé".as_bytes()), 2, 2);
+        assert!(refused_as_too_large(out));
     }
 
     #[test]
