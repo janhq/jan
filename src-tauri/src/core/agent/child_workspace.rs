@@ -1002,6 +1002,25 @@ mod git_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A user who hides untracked files from `git status` must not lose a
+    /// writer's new, never-added files: they are its deliverables.
+    #[test]
+    fn an_untracked_only_worktree_is_kept_when_status_hides_untracked_files() {
+        let Some(root) = repo("untracked") else { return };
+        assert!(git(&root, &["config", "status.showUntrackedFiles", "no"]));
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        std::fs::create_dir_all(ws.root.join("out")).unwrap();
+        std::fs::write(ws.root.join("out/report.md"), "deliverable\n").unwrap();
+
+        let kept = ledger.finish_session();
+        assert_eq!(kept.len(), 1, "{kept:?}");
+        assert!(ws.root.join("out/report.md").is_file());
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A writer that committed on its branch and then moved HEAD away (back to
     /// the base, detached) still holds that work on the branch: the sweep
     /// must not force-delete it.
