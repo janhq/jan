@@ -88,8 +88,10 @@ fn note_relpath(name: &str) -> Result<PathBuf, String> {
             "ERROR: invalid name '{name}' (use `note` or `folder/note`: no `..`, no leading `.`, one folder level)"
         ));
     }
-    let mut path: PathBuf = parts.iter().collect();
-    path.set_extension("md");
+    // Appended, not `set_extension`: that replaces whatever follows the last
+    // dot, so `release.v1` would land on (and overwrite) `release.md`.
+    let mut path: PathBuf = parts[..parts.len() - 1].iter().collect();
+    path.push(format!("{}.md", parts[parts.len() - 1]));
     Ok(path)
 }
 
@@ -1440,6 +1442,36 @@ mod tests {
             assert!(delete(&root, bad).await.is_err(), "delete {bad:?}");
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dot inside a name is part of the name: `release.v1` is its own note,
+    /// never `release.md`, through every op and the migration.
+    #[tokio::test]
+    async fn dotted_names_never_collide_with_their_prefix() {
+        let root = unique_root();
+        write(&root, "release", "Release notes").await.unwrap();
+        assert_eq!(write(&root, "release.v1", "V1").await.unwrap(), "release.v1.md");
+        assert_eq!(write(&root, "grp/a.b", "AB").await.unwrap(), "grp/a.b.md");
+        assert_eq!(read(&root, "release").await.unwrap(), "Release notes");
+        assert_eq!(read(&root, "release.v1").await.unwrap(), "V1");
+        assert_eq!(read(&root, "release.v1.md").await.unwrap(), "V1");
+        assert_eq!(list(&root).await, vec!["grp/a.b", "release", "release.v1"]);
+        assert_eq!(rename(&root, "release.v1", "release.v2").await.unwrap(), "release.v2.md");
+        assert_eq!(read(&root, "release").await.unwrap(), "Release notes");
+        assert!(rename(&root, "release.v2", "release").await.is_err(), "no overwrite");
+        delete(&root, "release.v2").await.unwrap();
+        assert_eq!(read(&root, "release").await.unwrap(), "Release notes");
+        assert_eq!(list(&root).await, vec!["grp/a.b", "release"]);
+
+        let store = unique_root();
+        put(&store, "pr", "Open PR.");
+        put(&store, "pr.9", "DONE. PR 9 merged.");
+        migrate(&store);
+        let dir = memory_dir(&store);
+        assert_eq!(std::fs::read_to_string(dir.join("pr.md")).unwrap(), "Open PR.");
+        assert!(is_done(&std::fs::read_to_string(dir.join("pr.9.md")).unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&store);
     }
 
     #[tokio::test]
