@@ -420,8 +420,13 @@ pub type ChangeGuard = tokio::sync::OwnedMutexGuard<()>;
 /// would silently drop the earlier edit. Async, because it is held across the
 /// file I/O; reads never take it.
 pub async fn lock_changes(store: &Path) -> ChangeGuard {
+    change_lock(store).lock_owned().await
+}
+
+/// The lock [`lock_changes`] takes, for the sync [`migrate`] to try.
+fn change_lock(store: &Path) -> std::sync::Arc<tokio::sync::Mutex<()>> {
     static LOCKS: StoreLocks<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
-    store_lock(&LOCKS, store).lock_owned().await
+    store_lock(&LOCKS, store)
 }
 
 /// Read, change and save the side file under the store's lock. Best-effort:
@@ -477,9 +482,21 @@ fn save_meta(store: &Path, meta: &Meta) {
 /// matter. Seeds `.meta.json` from mtimes so recency survives the move. No note
 /// is renamed or deleted. Idempotent and best-effort; a marker file records
 /// that it ran.
+///
+/// It rewrites notes, so it holds the store's change lock like every other
+/// change; a change in flight defers it to a later session start rather than
+/// blocking this one. Another process shares no lock with this one, so each
+/// note is archived only while it still reads as scanned (see
+/// [`archive_if_unchanged`]).
 pub fn migrate(store: &Path) {
     let dir = memory_dir(store);
     if !dir.is_dir() || dir.join(MIGRATED_FILE).exists() {
+        return;
+    }
+    let Ok(_change_lock) = change_lock(store).try_lock_owned() else {
+        return;
+    };
+    if dir.join(MIGRATED_FILE).exists() {
         return;
     }
     let notes = scan(store);
@@ -503,12 +520,23 @@ pub fn migrate(store: &Path) {
         let finished = first.starts_with("DONE") || first.starts_with("OBSOLETE");
         if finished && !note.done {
             if let Ok(path) = target(store, &note.name) {
-                let _ = std::fs::write(&path, set_status_done(&note.body));
+                archive_if_unchanged(&path, &note.body);
             }
         }
     }
     let _ = std::fs::write(dir.join(MIGRATED_FILE), "1\n");
     write_index(store);
+}
+
+/// Archive the note at `path` when it still holds `scanned`; true when it
+/// was written. The re-read is what keeps a change another process made
+/// since the scan: writing the archived scanned copy would silently drop it.
+/// A note changed meanwhile stays unarchived, which only leaves it listed.
+fn archive_if_unchanged(path: &Path, scanned: &str) -> bool {
+    match std::fs::read_to_string(path) {
+        Ok(current) if current == scanned => std::fs::write(path, set_status_done(scanned)).is_ok(),
+        _ => false,
+    }
 }
 
 /// `content` with `status: done` in its front matter, added or replaced.
@@ -1825,6 +1853,48 @@ mod tests {
         put(&root, "later", "DONE. later");
         migrate(&root);
         assert!(!is_done(&std::fs::read_to_string(memory_dir(&root).join("later.md")).unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The migration rewrites notes, so it runs under the store's change lock
+    /// like every other change: while a change is in flight it waits for a
+    /// later session instead of writing the body it scanned over it.
+    #[tokio::test]
+    async fn migration_never_runs_beside_an_in_flight_change() {
+        let root = unique_root();
+        put(&root, "merged", "DONE. PR 9 merged.");
+        let held = lock_changes(&root).await;
+        put(&root, "merged", "DONE. PR 9 merged.\n\nFollow-up: PR 10.");
+        migrate(&root);
+        let path = memory_dir(&root).join("merged.md");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "DONE. PR 9 merged.\n\nFollow-up: PR 10.",
+            "untouched while a change holds the lock"
+        );
+        assert!(!memory_dir(&root).join(MIGRATED_FILE).exists(), "deferred, not done");
+        drop(held);
+        migrate(&root);
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(is_done(&body) && body.ends_with("Follow-up: PR 10."), "{body}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Another process (a second `jan`, the desktop) shares no lock with this
+    /// one, so a note changed on disk after the migration scanned it is left
+    /// as it is now rather than replaced with the archived scanned copy.
+    #[test]
+    fn migration_archives_only_a_note_still_as_scanned() {
+        let root = unique_root();
+        put(&root, "merged", "DONE. PR 9 merged.\n\nFollow-up: PR 10.");
+        let path = memory_dir(&root).join("merged.md");
+        assert!(!archive_if_unchanged(&path, "DONE. PR 9 merged."));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "DONE. PR 9 merged.\n\nFollow-up: PR 10."
+        );
+        assert!(archive_if_unchanged(&path, "DONE. PR 9 merged.\n\nFollow-up: PR 10."));
+        assert!(is_done(&std::fs::read_to_string(&path).unwrap()));
         let _ = std::fs::remove_dir_all(&root);
     }
 
