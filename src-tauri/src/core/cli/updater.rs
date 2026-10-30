@@ -375,7 +375,7 @@ fn extract_from_zip(archive: &Path, out: &mut impl Write) -> Result<bool, String
     let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let matches = entry.enclosed_name().map(is_binary_entry).unwrap_or(false);
+        let matches = entry.enclosed_name().is_some_and(|p| is_binary_entry(&p));
         if matches {
             io::copy(&mut entry, out).map_err(|e| e.to_string())?;
             return Ok(true);
@@ -662,7 +662,7 @@ mod tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         zip.start_file(
             format!("src-tauri/target/release/{BINARY_NAME}"),
-            zip::write::FileOptions::default(),
+            zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
         zip.write_all(b"MZ-payload").unwrap();
