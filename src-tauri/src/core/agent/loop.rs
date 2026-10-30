@@ -3725,6 +3725,14 @@ async fn orchestrate_inner(
         .as_ref()
         .map(|s| s.prompt.clone())
         .unwrap_or_default();
+    // The one snapshot this run composes with and reports memory changes
+    // against. A run with no session snapshot (the API server) takes its own
+    // here, and both halves must read that same one: the tracker below would
+    // otherwise have nothing to diff against, so the run's own writes never
+    // reached its next request. A host prompt carries neither, so none is taken.
+    let run_start = host_system_prompt
+        .is_none()
+        .then(|| run_session_start(session_start.as_ref(), project_root.as_deref()));
     // A host prompt replaces the composition outright: nothing Jan writes is
     // placed around it, above the cache line or below the history.
     let stable_system = match host_system_prompt.as_deref() {
@@ -3741,7 +3749,7 @@ async fn orchestrate_inner(
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
             // With no project, it still reaches the prompt, after the base.
-            Some(&run_session_start(session_start.as_ref(), project_root.as_deref())),
+            run_start.as_ref(),
         )?,
     };
     let jan_owns_prompt = host_system_prompt.is_none();
@@ -3779,7 +3787,7 @@ async fn orchestrate_inner(
     // next request rather than only the next run.
     let mut memory_changes: Option<MemoryChangesTracker> = None;
     if jan_owns_prompt && system_prompt_override.is_none() {
-        let snapshot = session_start.as_ref().and_then(|s| s.memory());
+        let snapshot = run_start.as_ref().and_then(|s| s.memory());
         if let (Some(root), Some(snapshot)) = (project_root.as_deref(), snapshot) {
             let block = snapshot.changes_block(root);
             if let Some(block) = &block {
@@ -11994,6 +12002,92 @@ mod tests {
         let last = second.last().unwrap();
         assert_eq!(last["role"], "user", "{second:?}");
         assert!(last["content"].as_str().unwrap().contains("+ build_cmd"));
+    }
+
+    /// A run with no session snapshot (the API server's orchestration, which
+    /// goes through `run_orchestration_streamed` with `session_start: None`)
+    /// takes one for its prompt; the same snapshot must back its
+    /// `# Memory Changes` tracker, or a note written mid-run never reaches the
+    /// run's next request. Driven end to end against a stub provider.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_run_without_a_session_snapshot_still_reports_its_memory_changes() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            let call = |id: &str, args: &str| {
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [{
+                        "index": 0, "id": id, "type": "function",
+                        "function": {"name": "memory", "arguments": args}}]},
+                    "finish_reason": "tool_calls"}]})
+            };
+            let chunks = [
+                call("w1", r#"{"op":"write","name":"build_cmd","title":"Build","content":"make foo"}"#),
+                call("v1", r#"{"op":"view","name":"build_cmd"}"#),
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"},
+                    "finish_reason": "stop"}]}),
+            ];
+            for (i, connection) in listener.incoming().enumerate() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = &chunks[i.min(chunks.len() - 1)];
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "stub".to_string(),
+                ProviderConfig {
+                    provider: "stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["m".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = json!({"model": "m", "messages": [{"role": "user", "content": "remember the build command"}]});
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let out = run_orchestration_streamed(&tx, &body, &args).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&root);
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3, "{sent:?}");
+        assert!(sent[0].contains("kept"), "the prompt carries the snapshot index: {}", sent[0]);
+        assert!(!sent[0].contains("# Memory Changes"), "{}", sent[0]);
+        let tail = |b: &str| b.chars().rev().take(600).collect::<Vec<_>>().into_iter().rev().collect::<String>();
+        assert!(sent[1].contains("# Memory Changes"), "{}", tail(&sent[1]));
+        assert!(sent[1].contains("+ build_cmd"), "{}", tail(&sent[1]));
     }
 
     /// A child that names `memory` anyway is refused at the gate.
