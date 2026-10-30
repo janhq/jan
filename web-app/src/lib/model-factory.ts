@@ -364,6 +364,28 @@ export function isSamplingParamRejection(message: string): boolean {
   )
 }
 
+/**
+ * Heuristic: does this upstream error say the model cannot take images?
+ * Catches OpenRouter's "No endpoints found that support image input",
+ * llama.cpp's "image input is not supported" (no mmproj), OpenAI's
+ * "image_url is only supported by certain models" and DeepSeek's
+ * "unknown variant `image_url`".
+ *
+ * Used to gate a one-shot retry with the request's images left out. A model
+ * marked as having vision when it has none would otherwise fail every turn:
+ * the image stays in the thread history and is resent each time.
+ */
+export function isImageInputRejection(message: string): boolean {
+  if (typeof message !== 'string') return false
+  return (
+    /support(s)? image input/i.test(message) ||
+    /(image|vision|multimodal)\b[^.\n]{0,40}\bnot supported/i.test(message) ||
+    /does not support (image|vision)/i.test(message) ||
+    /image_url is only supported/i.test(message) ||
+    /unknown variant [`'"]?image_url/i.test(message)
+  )
+}
+
 export function cleanUpstreamErrorMessage(raw: string): string {
   if (typeof raw !== 'string') return raw
   let msg = raw.replace(/\r\n/g, '\n').trim()
@@ -597,6 +619,33 @@ export function createCustomFetch(
 
     if (!innerMessage) return res
 
+    // Image-rejection auto-retry: a model marked as having vision that has
+    // none (or whose only reachable endpoints have none) rejects any request
+    // carrying an image. The image stays in the thread history, so without
+    // this every later turn in that thread fails the same way. Retry once
+    // with each image replaced by a short note and tell the user why.
+    if (
+      rawBody &&
+      res.status >= 400 &&
+      res.status < 500 &&
+      isImageInputRejection(innerMessage)
+    ) {
+      // A fresh parse of what was sent, so rawBody keeps its images for the
+      // sampling retry below.
+      const textOnlyBody = JSON.parse(init!.body as string) as Record<string, unknown>
+      if (stripImagePartsInBody(textOnlyBody) > 0) {
+        const retry = await baseFetch(input, {
+          ...init,
+          body: JSON.stringify(textOnlyBody),
+        })
+        if (retry.ok) {
+          notifyImagesStripped(innerMessage)
+          return retry
+        }
+        // Retry also failed — fall through to surface the cleaned original error.
+      }
+    }
+
     // Sampling-rejection auto-retry: when the upstream complains about an
     // injected parameter (top_k on OpenAI, temp+top_p on Anthropic, etc.),
     // retry once with all our injected params stripped, surface a toast so
@@ -649,6 +698,22 @@ function notifySamplingStripped(reason: string): void {
     })
     .catch(() => {
       console.warn('[sampling-retry]', reason)
+    })
+}
+
+let lastImageNoticeAt = 0
+function notifyImagesStripped(reason: string): void {
+  const now = Date.now()
+  if (now - lastImageNoticeAt < 3000) return
+  lastImageNoticeAt = now
+  void import('sonner')
+    .then(({ toast }) => {
+      toast.warning('Images left out', {
+        description: `${cleanUpstreamErrorMessage(reason)} — request retried without its images. If this model has no vision, turn off Vision in its model settings.`,
+      })
+    })
+    .catch(() => {
+      console.warn('[image-retry]', reason)
     })
 }
 
@@ -821,6 +886,82 @@ export function decodeToolImageSentinelsInBody(
     const split = splitToolImageSentinels(m.content)
     if (split) m.content = split
   }
+}
+
+export const IMAGE_REJECTED_STAND_IN =
+  '(image omitted: the model does not accept image input)'
+
+// The text part that takes an image part's place, in the image part's own
+// wire dialect. Null when `part` is not an image.
+function imageStandIn(part: unknown): Record<string, unknown> | null {
+  if (!part || typeof part !== 'object') return null
+  const p = part as Record<string, unknown>
+  // OpenAI chat completions.
+  if (p.type === 'image_url') return { type: 'text', text: IMAGE_REJECTED_STAND_IN }
+  // Anthropic messages, including inside a tool_result's content.
+  if (p.type === 'image' && p.source) {
+    return { type: 'text', text: IMAGE_REJECTED_STAND_IN }
+  }
+  // OpenAI Responses.
+  if (p.type === 'input_image') {
+    return { type: 'input_text', text: IMAGE_REJECTED_STAND_IN }
+  }
+  // Gemini.
+  const inline = (p.inlineData ?? p.inline_data) as
+    | { mimeType?: unknown; mime_type?: unknown }
+    | undefined
+  const mime = inline?.mimeType ?? inline?.mime_type
+  if (typeof mime === 'string' && mime.startsWith('image/')) {
+    return { text: IMAGE_REJECTED_STAND_IN }
+  }
+  return null
+}
+
+function replaceImageParts(node: unknown): number {
+  if (!node || typeof node !== 'object') return 0
+  let replaced = 0
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      const standIn = imageStandIn(node[i])
+      if (standIn) {
+        node[i] = standIn
+        replaced++
+      } else {
+        replaced += replaceImageParts(node[i])
+      }
+    }
+    return replaced
+  }
+  for (const value of Object.values(node)) replaced += replaceImageParts(value)
+  return replaced
+}
+
+/**
+ * Replaces every image part in an outgoing request body with a short text
+ * note, in whichever provider dialect the body uses. A `role: tool` message
+ * left with only text goes back to the plain string that
+ * `decodeToolImageSentinelsInBody` split. Mutates `body` in place; returns
+ * how many images it removed.
+ */
+export function stripImagePartsInBody(body: Record<string, unknown>): number {
+  let replaced = 0
+  for (const [key, value] of Object.entries(body)) {
+    if (key !== 'messages' || !Array.isArray(value)) {
+      replaced += replaceImageParts(value)
+      continue
+    }
+    for (const msg of value) {
+      const count = replaceImageParts(msg)
+      replaced += count
+      const m = msg as { role?: string; content?: unknown }
+      if (count === 0 || m.role !== 'tool' || !Array.isArray(m.content)) continue
+      const parts = m.content as Array<{ type?: unknown; text?: unknown }>
+      if (parts.every((part) => part?.type === 'text' && typeof part.text === 'string')) {
+        m.content = parts.map((part) => part.text).join(' ')
+      }
+    }
+  }
+  return replaced
 }
 
 type ApiKeyHeaderMode =
