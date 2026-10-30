@@ -64,6 +64,11 @@ export async function deleteMemory(name: string): Promise<void> {
 // (`MEMORY.md`), and on a case-insensitive filesystem `memory.md` is that file.
 const RESERVED_MEMORY_NAMES = new Set(['index', 'memory'])
 
+// Mirrors `is_windows_device_name` in the agent-tools plugin's workspace.rs,
+// which the store applies on every OS: the part before the first dot, in any
+// case, is CON/PRN/AUX/NUL or COM/LPT plus one digit.
+const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i
+
 /**
  * A filesystem-safe note name from a thread title. The store's names are file
  * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
@@ -77,7 +82,9 @@ export function slugifyMemoryName(title: string): string {
     .slice(0, 60)
     .replace(/-+$/, '')
   if (!slug) return 'note'
-  return RESERVED_MEMORY_NAMES.has(slug) ? `${slug}-note` : slug
+  return RESERVED_MEMORY_NAMES.has(slug) || WINDOWS_DEVICE_NAME.test(slug)
+    ? `${slug}-note`
+    : slug
 }
 
 export type RememberResult = {
