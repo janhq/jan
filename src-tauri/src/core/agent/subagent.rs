@@ -2376,7 +2376,8 @@ pub(crate) fn spawn_memory_tidy(
 /// tool enforces (so a tidy that misjudges the store cannot rewrite all of
 /// it), and never in plan mode. A tidy only starts on the user's word
 /// (`/memory tidy`, or the auto trigger, which stands down in plan mode), so
-/// a session started with `--plan` must not hand it a read-only memory tool.
+/// a session started with `--plan` must not hand it a read-only memory tool;
+/// entering plan mode stops a running tidy instead.
 #[cfg(feature = "cli")]
 fn memory_tidy_args(
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,

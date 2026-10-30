@@ -4564,6 +4564,8 @@ struct App {
     tidy_request: Option<TidyKind>,
     /// The tidy in flight, if any: one at a time.
     tidy_running: Option<TidyKind>,
+    /// The in-flight tidy's subagent run id, so entering plan mode can stop it.
+    tidy_run_id: Option<String>,
     /// Whether this session already queued an automatic tidy. Auto-tidy runs
     /// at most once per session, so a tidy that cannot get the index under
     /// budget never loops; `/new`, `/clear` and `/resume` reset it.
@@ -5363,6 +5365,7 @@ impl App {
             update_installing: false,
             tidy_request: None,
             tidy_running: None,
+            tidy_run_id: None,
             auto_tidy_checked: false,
             auto_tidy_stamp: None,
             compact_request: None,
@@ -8742,6 +8745,29 @@ impl App {
         self.maybe_inject_todo_reminder(normal, no_answer, &answer);
         self.maybe_auto_tidy();
         self.persist();
+    }
+
+    /// Switch to plan mode, the one way the TUI enters it once the session is
+    /// up. A tidy child runs in normal mode, so one already running would keep
+    /// changing memory under a mode that keeps memory read only: it is
+    /// aborted (the registry releases its slot; a note it was mid-way through
+    /// is written whole or not at all, and the index is rebuilt by the next
+    /// change), and a queued one is dropped. A stopped automatic tidy gets its
+    /// check back, so it runs again at the first turn end after plan mode.
+    fn enter_plan_mode(&mut self) {
+        self.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let queued = self.tidy_request.take();
+        let running = self.tidy_running.take();
+        if let Some(run_id) = self.tidy_run_id.take() {
+            self.subagent_set.abort_child(&run_id);
+        }
+        if queued.or(running) == Some(TidyKind::Auto) {
+            self.auto_tidy_checked = false;
+            self.auto_tidy_stamp = None;
+        }
+        if queued.is_some() || running.is_some() {
+            self.note("memory tidy stopped: plan mode is read only");
+        }
     }
 
     /// Whether this project's rules deny the `memory` tool. A tidy child keeps
@@ -13631,6 +13657,14 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // Entering plan mode stops the tidy and drops `tidy_running`; its
+        // collector would only report the cancellation as a failure.
+        if app.tidy_running.is_none() {
+            if let Some(task) = tidy_task.take() {
+                task.abort();
+            }
+        }
+
         // A memory tidy was asked for: start it in the background. It writes
         // only memory and never starts a turn, so it runs beside whatever else
         // the session is doing.
@@ -17262,6 +17296,7 @@ fn start_memory_tidy(
     match dispatched {
         Ok(dispatched) => {
             app.tidy_running = Some(kind);
+            app.tidy_run_id = Some(dispatched.run_id.clone());
             let label = match kind {
                 TidyKind::Manual => "tidying memory in the background",
                 TidyKind::Auto => "memory index is over its budget: tidying in the background",
@@ -17287,6 +17322,7 @@ fn start_memory_tidy(
 /// Report a finished tidy: its own summary of what it changed, as one note.
 fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
     let kind = app.tidy_running.take().unwrap_or(TidyKind::Manual);
+    app.tidy_run_id = None;
     match result {
         Ok(report) => {
             let report = report.trim();
@@ -19156,7 +19192,7 @@ fn plan_command(app: &mut App, arg: &str) {
         }
         return;
     }
-    app.run_mode = RunMode::Plan;
+    app.enter_plan_mode();
     app.persist();
     app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     if app.goal.is_some() {
@@ -21960,6 +21996,7 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     {
         app.run_mode = mode;
         if mode == RunMode::Plan {
+            app.enter_plan_mode();
             app.note("resumed in plan mode (read only); /plan exit to leave");
         }
     }
@@ -25737,7 +25774,7 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
-        finish_memory_tidy, memory_command, TidyKind, with_cap_note,
+        finish_memory_tidy, memory_command, start_memory_tidy, TidyKind, with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
@@ -44273,6 +44310,77 @@ mod tests {
             memory_command(&mut app, "tidy");
             assert_eq!(app.tidy_request, Some(TidyKind::Manual));
         });
+    }
+
+    /// A tidy already running when plan mode is entered is stopped, not left
+    /// to change memory under a read-only mode: its child is aborted, its
+    /// bookkeeping released, and the user is told. Driven with a real spawned
+    /// tidy against an upstream that never answers, so it is mid-run.
+    #[tokio::test]
+    async fn entering_plan_mode_stops_a_running_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let held: Vec<_> = listener.incoming().collect();
+            drop(held);
+        });
+        let providers = std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, providers));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).expect("tidy started");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual));
+        assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.subagent_set.live_run_ids().is_empty(), "the tidy child was aborted");
+        assert_eq!(app.tidy_running, None, "a later tidy may start once plan mode is left");
+        let collected = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(matches!(collected, Ok(Ok(Err(_)))), "the tidy produced no report");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// A queued tidy is dropped by entering plan mode, from `/plan` or by
+    /// resuming a thread saved in plan mode; with nothing to stop, nothing is
+    /// said.
+    #[tokio::test]
+    async fn entering_plan_mode_drops_a_queued_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.tidy_request = Some(TidyKind::Manual);
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.tidy_request, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+
+        let meta = json!({ "run_mode": "plan" });
+        let mut resumed = test_app();
+        resumed.tidy_request = Some(TidyKind::Auto);
+        resumed.tidy_running = Some(TidyKind::Auto);
+        restore_run_mode(&mut resumed, Some(&meta));
+        assert_eq!(resumed.run_mode, RunMode::Plan);
+        assert_eq!(resumed.tidy_request, None);
+        assert_eq!(resumed.tidy_running, None);
+        let text: String = resumed.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped"), "{text}");
+
+        let mut idle = test_app();
+        run_command(&mut idle, "plan", &no_mcp()).await;
+        let text: String = idle.transcript.rows.iter().map(row_text).collect();
+        assert!(!text.contains("memory tidy"), "{text}");
     }
 
     /// `memory_auto_tidy = false` turns the automatic trigger off; `/memory
