@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  redirect,
+  useParams,
+  useSearch,
+} from '@tanstack/react-router'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -368,6 +374,19 @@ type SearchParams = {
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
+  // A Cowork conversation has no chat transcript: its messages live in a
+  // sidecar the Cowork view reads. Decide before the chat view mounts (it would
+  // create a chat session and fetch an empty message list).
+  beforeLoad: ({ params }) => {
+    const { threadId } = params as { threadId: string }
+    if (useCoworkSessions.getState().sessions.some((s) => s.id === threadId)) {
+      throw redirect({
+        to: '/cowork/$sessionId',
+        params: { sessionId: threadId },
+        replace: true,
+      })
+    }
+  },
   component: ThreadDetail,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {

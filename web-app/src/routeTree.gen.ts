@@ -11,10 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
 import { Route as LogsRouteImport } from './routes/logs'
-import { Route as CoworkRouteImport } from './routes/cowork'
 import { Route as ArtifactsRouteImport } from './routes/artifacts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
+import { Route as CoworkIndexRouteImport } from './routes/cowork/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsWebSearchRouteImport } from './routes/settings/web-search'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
@@ -33,6 +33,7 @@ import { Route as SettingsAssistantRouteImport } from './routes/settings/assista
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
+import { Route as CoworkSessionIdRouteImport } from './routes/cowork/$sessionId'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
 
@@ -44,11 +45,6 @@ const SystemMonitorRoute = SystemMonitorRouteImport.update({
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CoworkRoute = CoworkRouteImport.update({
-  id: '/cowork',
-  path: '/cowork',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArtifactsRoute = ArtifactsRouteImport.update({
@@ -64,6 +60,11 @@ const IndexRoute = IndexRouteImport.update({
 const HubIndexRoute = HubIndexRouteImport.update({
   id: '/hub/',
   path: '/hub/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoworkIndexRoute = CoworkIndexRouteImport.update({
+  id: '/cowork/',
+  path: '/cowork/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
@@ -156,6 +157,11 @@ const HubModelIdRoute = HubModelIdRouteImport.update({
   path: '/hub/$modelId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CoworkSessionIdRoute = CoworkSessionIdRouteImport.update({
+  id: '/cowork/$sessionId',
+  path: '/cowork/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
   id: '/settings/providers/',
   path: '/settings/providers/',
@@ -171,9 +177,9 @@ const SettingsProvidersProviderNameRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/artifacts': typeof ArtifactsRoute
-  '/cowork': typeof CoworkRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/cowork/$sessionId': typeof CoworkSessionIdRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/cowork/': typeof CoworkIndexRoute
   '/hub/': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
@@ -199,9 +206,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/artifacts': typeof ArtifactsRoute
-  '/cowork': typeof CoworkRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/cowork/$sessionId': typeof CoworkSessionIdRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/cowork': typeof CoworkIndexRoute
   '/hub': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
@@ -228,9 +236,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/artifacts': typeof ArtifactsRoute
-  '/cowork': typeof CoworkRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/cowork/$sessionId': typeof CoworkSessionIdRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/web-search': typeof SettingsWebSearchRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/cowork/': typeof CoworkIndexRoute
   '/hub/': typeof HubIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
@@ -258,9 +267,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/artifacts'
-    | '/cowork'
     | '/logs'
     | '/system-monitor'
+    | '/cowork/$sessionId'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -279,6 +288,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/web-search'
     | '/threads/$threadId'
+    | '/cowork/'
     | '/hub/'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
@@ -286,9 +296,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/artifacts'
-    | '/cowork'
     | '/logs'
     | '/system-monitor'
+    | '/cowork/$sessionId'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/web-search'
     | '/threads/$threadId'
+    | '/cowork'
     | '/hub'
     | '/settings/providers/$providerName'
     | '/settings/providers'
@@ -314,9 +325,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/artifacts'
-    | '/cowork'
     | '/logs'
     | '/system-monitor'
+    | '/cowork/$sessionId'
     | '/hub/$modelId'
     | '/local-api-server/logs'
     | '/project/$projectId'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/web-search'
     | '/threads/$threadId'
+    | '/cowork/'
     | '/hub/'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
@@ -343,9 +355,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ArtifactsRoute: typeof ArtifactsRoute
-  CoworkRoute: typeof CoworkRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  CoworkSessionIdRoute: typeof CoworkSessionIdRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
@@ -364,6 +376,7 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsWebSearchRoute: typeof SettingsWebSearchRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  CoworkIndexRoute: typeof CoworkIndexRoute
   HubIndexRoute: typeof HubIndexRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
@@ -385,13 +398,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cowork': {
-      id: '/cowork'
-      path: '/cowork'
-      fullPath: '/cowork'
-      preLoaderRoute: typeof CoworkRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/artifacts': {
       id: '/artifacts'
       path: '/artifacts'
@@ -411,6 +417,13 @@ declare module '@tanstack/react-router' {
       path: '/hub'
       fullPath: '/hub/'
       preLoaderRoute: typeof HubIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cowork/': {
+      id: '/cowork/'
+      path: '/cowork'
+      fullPath: '/cowork/'
+      preLoaderRoute: typeof CoworkIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/threads/$threadId': {
@@ -539,6 +552,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubModelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cowork/$sessionId': {
+      id: '/cowork/$sessionId'
+      path: '/cowork/$sessionId'
+      fullPath: '/cowork/$sessionId'
+      preLoaderRoute: typeof CoworkSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/providers/': {
       id: '/settings/providers/'
       path: '/settings/providers'
@@ -559,9 +579,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ArtifactsRoute: ArtifactsRoute,
-  CoworkRoute: CoworkRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  CoworkSessionIdRoute: CoworkSessionIdRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
@@ -580,6 +600,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsWebSearchRoute: SettingsWebSearchRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  CoworkIndexRoute: CoworkIndexRoute,
   HubIndexRoute: HubIndexRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
