@@ -588,11 +588,59 @@ fn seatbelt_program() -> &'static str {
 const HIDE_RULES: &str = "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
                           (deny file-write* (subpath (param \"HIDE_ROOT\")))\n";
 
+/// The resolved form of `path` when it differs from `path` itself. Seatbelt
+/// matches a `subpath` against the real path, so a rule naming a path through
+/// a symlink (`/var/folders/...` and `/tmp` are links to `/private/...` on
+/// macOS) never fires unless the resolved form is named too.
+fn real_form(path: &Path) -> Option<PathBuf> {
+    path.canonicalize().ok().filter(|real| real != path)
+}
+
+/// The paths a Seatbelt profile names beyond the policy's own fields, worked
+/// out once so the profile and its `-D` arguments always agree: sandbox-exec
+/// refuses a profile referencing a parameter no argument supplies.
+struct SeatbeltPaths {
+    tmpdir: PathBuf,
+    tmpdir_real: Option<PathBuf>,
+    scratch_real: Option<PathBuf>,
+    /// The read-only checkout and read roots, each in every form it has.
+    deny_write: Vec<PathBuf>,
+}
+
+impl SeatbeltPaths {
+    fn of(policy: &Policy) -> Self {
+        let tmpdir = std::env::temp_dir();
+        let readonly = policy
+            .workspace_readonly
+            .then_some(&policy.workspace)
+            .into_iter()
+            .chain(policy.read_roots.iter().filter(|r| !policy.write_roots.contains(r)));
+        let mut deny_write: Vec<PathBuf> = Vec::new();
+        for root in readonly {
+            for form in std::iter::once(root.clone()).chain(real_form(root)) {
+                if !deny_write.contains(&form) {
+                    deny_write.push(form);
+                }
+            }
+        }
+        Self {
+            tmpdir_real: real_form(&tmpdir),
+            tmpdir,
+            scratch_real: policy.scratch_root.as_deref().and_then(real_form),
+            deny_write,
+        }
+    }
+}
+
 /// Seatbelt profile. `(deny default)` closes everything, then each section opens
 /// the narrowest thing that works. Later rules win, which is what lets the
 /// workspace be re-allowed after `$HOME` is denied (or, with `home_readonly`,
 /// lets the home stay readable while writes remain confined).
 pub fn seatbelt_policy(policy: &Policy) -> String {
+    seatbelt_profile(policy, &SeatbeltPaths::of(policy))
+}
+
+fn seatbelt_profile(policy: &Policy, paths: &SeatbeltPaths) -> String {
     let mut p = String::from(
         "(version 1)\n\
          (deny default)\n\
@@ -636,16 +684,28 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
         p.push_str(HIDE_RULES);
     }
     p.push_str("(allow file-read* (subpath (param \"WORKSPACE\")))\n");
-    if !policy.workspace_readonly {
-        p.push_str(
-            "; Writes: the workspace and the temp dir, nothing else.\n\
-             (allow file-write* (subpath (param \"WORKSPACE\")))\n",
-        );
-    }
     p.push_str(
-        "(allow file-write* (subpath (param \"TMPDIR\")))\n\
+        "; Writes: the workspace and the temp dir, nothing else.\n\
+         (allow file-write* (subpath (param \"TMPDIR\")))\n\
          (allow file-write* (subpath \"/private/tmp\"))\n",
     );
+    if paths.tmpdir_real.is_some() {
+        p.push_str("(allow file-write* (subpath (param \"TMPDIR_REAL\")))\n");
+    }
+    // The temp grants above are broad, so a read-only checkout or read root
+    // under one (a project in `/tmp`) would be writable through them. Denied
+    // after them, and before the scratch and write-root allows below so those
+    // stay writable even inside such a root.
+    for i in 0..paths.deny_write.len() {
+        p.push_str(&format!(
+            "(deny file-write* (subpath (param \"DENY_WRITE_{i}\")))\n"
+        ));
+    }
+    // After the denials, as bubblewrap binds the workspace after the read
+    // roots: a writable workspace inside a read root stays writable.
+    if !policy.workspace_readonly {
+        p.push_str("(allow file-write* (subpath (param \"WORKSPACE\")))\n");
+    }
     // The session scratch by name, rather than trusting it to sit under TMPDIR:
     // a relocated scratch must stay usable, and it is read back after the home
     // denial above, which would otherwise cover a scratch inside $HOME. Emitted
@@ -655,6 +715,12 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
         p.push_str(
             "(allow file-read* (subpath (param \"SCRATCH\")))\n\
              (allow file-write* (subpath (param \"SCRATCH\")))\n",
+        );
+    }
+    if paths.scratch_real.is_some() {
+        p.push_str(
+            "(allow file-read* (subpath (param \"SCRATCH_REAL\")))\n\
+             (allow file-write* (subpath (param \"SCRATCH_REAL\")))\n",
         );
     }
     // After the HOME/MASK denials, so an attached folder inside either is read
@@ -700,7 +766,8 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
 /// interpolated into the profile so a path containing profile syntax cannot
 /// rewrite the policy.
 pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
-    let mut args = vec!["-p".to_string(), seatbelt_policy(policy)];
+    let paths = SeatbeltPaths::of(policy);
+    let mut args = vec!["-p".to_string(), seatbelt_profile(policy, &paths)];
     args.push(format!(
         "-DWORKSPACE={}",
         policy.workspace.to_string_lossy()
@@ -717,12 +784,18 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     for (i, root) in policy.write_roots.iter().enumerate() {
         args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
     }
-    args.push(format!(
-        "-DTMPDIR={}",
-        std::env::temp_dir().to_string_lossy()
-    ));
+    args.push(format!("-DTMPDIR={}", paths.tmpdir.to_string_lossy()));
+    if let Some(real) = &paths.tmpdir_real {
+        args.push(format!("-DTMPDIR_REAL={}", real.to_string_lossy()));
+    }
+    for (i, root) in paths.deny_write.iter().enumerate() {
+        args.push(format!("-DDENY_WRITE_{i}={}", root.to_string_lossy()));
+    }
     if let Some(scratch) = &policy.scratch_root {
         args.push(format!("-DSCRATCH={}", scratch.to_string_lossy()));
+    }
+    if let Some(real) = &paths.scratch_real {
+        args.push(format!("-DSCRATCH_REAL={}", real.to_string_lossy()));
     }
     if let Some(home) = home_dir() {
         args.push(format!("-DHOME_ROOT={}", home.to_string_lossy()));
@@ -1468,6 +1541,103 @@ mod tests {
         if let Some(deny_home) = deny_home {
             assert!(allow_all < deny_home && deny_home < allow_ws);
         }
+    }
+
+    /// The temp grants are broad, and in Seatbelt the later rule wins: a
+    /// read-only checkout under `/private/tmp` or `$TMPDIR` must be denied
+    /// writes after them, by every name it has, or it is writable after all.
+    #[test]
+    fn seatbelt_denies_writes_to_a_read_only_checkout_under_the_temp_grants() {
+        let ws = Path::new("/private/tmp/checkout");
+        let ro = Policy::new(ws, false)
+            .with_workspace_readonly(true)
+            .with_read_roots(vec![PathBuf::from("/private/tmp/worktrees")]);
+        let p = seatbelt_policy(&ro);
+        let deny = "(deny file-write* (subpath (param \"DENY_WRITE_0\")))";
+        let at = p.find(deny).expect(&p);
+        assert!(p.find("(allow file-write* (subpath \"/private/tmp\"))").unwrap() < at, "{p}");
+        assert!(p.find("(allow file-write* (subpath (param \"TMPDIR\")))").unwrap() < at);
+        assert!(p.contains("(deny file-write* (subpath (param \"DENY_WRITE_1\")))"), "{p}");
+        let args = seatbelt_args(&ro, &cfg());
+        assert!(args.iter().any(|a| a == "-DDENY_WRITE_0=/private/tmp/checkout"), "{args:?}");
+        assert!(args.iter().any(|a| a == "-DDENY_WRITE_1=/private/tmp/worktrees"), "{args:?}");
+        // A writable workspace, and a read root also marked writable, get none.
+        let rw = Policy::new(ws, false)
+            .with_read_roots(vec![PathBuf::from("/r")])
+            .with_write_roots(vec![PathBuf::from("/r")]);
+        assert!(!seatbelt_policy(&rw).contains("DENY_WRITE"));
+        assert!(!seatbelt_args(&rw, &cfg()).iter().any(|a| a.contains("DENY_WRITE")));
+    }
+
+    /// The scratch and the write roots stay writable even inside a read-only
+    /// checkout: their allows come after its denial.
+    #[test]
+    fn seatbelt_keeps_the_scratch_and_write_roots_writable_past_the_denial() {
+        let ro = Policy::new(Path::new("/Users/u"), false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(Path::new("/Users/u/.jan/scratch/s1"))
+            .with_write_roots(vec![PathBuf::from("/Users/u/.jan/worktrees/r/cargo-target")]);
+        let p = seatbelt_policy(&ro);
+        let deny = p.find("(param \"DENY_WRITE_0\")").expect(&p);
+        assert!(deny < p.find("(allow file-write* (subpath (param \"SCRATCH\")))").unwrap(), "{p}");
+        assert!(deny < p.find("(allow file-write* (subpath (param \"WRITE_ROOT_0\")))").unwrap());
+        // A parent session in a Jan worktree reads its children's worktrees
+        // beside it: that read root's denial must not cover its own checkout.
+        let parent = Policy::new(Path::new("/Users/u/.jan/worktrees/r/feat"), false)
+            .with_read_roots(vec![PathBuf::from("/Users/u/.jan/worktrees/r")]);
+        let p = seatbelt_policy(&parent);
+        let deny = p.find("(param \"DENY_WRITE_0\")").expect(&p);
+        let ws = p.find("(allow file-write* (subpath (param \"WORKSPACE\")))").unwrap();
+        assert!(deny < ws, "{p}");
+    }
+
+    /// Seatbelt matches a `subpath` against the resolved path, so a path that
+    /// goes through a symlink (`/var` -> `/private/var` on macOS) is named in
+    /// both forms, or the rule never fires.
+    #[cfg(unix)]
+    #[test]
+    fn seatbelt_names_symlinked_paths_in_their_resolved_form_too() {
+        let base = std::env::temp_dir().join(format!("jan-sb-forms-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("real");
+        std::fs::create_dir_all(real.join("ws")).unwrap();
+        std::fs::create_dir_all(real.join("scratch")).unwrap();
+        std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+        let real = real.canonicalize().unwrap();
+        let (ws, scratch) = (base.join("link/ws"), base.join("link/scratch"));
+        let ro = Policy::new(&ws, false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(&scratch);
+        let p = seatbelt_policy(&ro);
+        let args = seatbelt_args(&ro, &cfg());
+        let has = |arg: String| args.contains(&arg);
+        assert!(has(format!("-DDENY_WRITE_0={}", ws.display())), "{args:?}");
+        assert!(has(format!("-DDENY_WRITE_1={}", real.join("ws").display())), "{args:?}");
+        assert!(p.contains("(deny file-write* (subpath (param \"DENY_WRITE_1\")))"), "{p}");
+        assert!(has(format!("-DSCRATCH_REAL={}", real.join("scratch").display())), "{args:?}");
+        assert!(p.contains("(allow file-write* (subpath (param \"SCRATCH_REAL\")))"), "{p}");
+        assert!(p.contains("(allow file-read* (subpath (param \"SCRATCH_REAL\")))"), "{p}");
+        // Unresolvable or already resolved: one form, and no stray parameter.
+        let plain = policy().with_scratch_root(Path::new("/var/scratch/jan-agent-s1"));
+        assert!(!seatbelt_policy(&plain).contains("SCRATCH_REAL"));
+        assert!(!seatbelt_args(&plain, &cfg()).iter().any(|a| a.contains("SCRATCH_REAL")));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// bubblewrap layers in order, so a read-only checkout under `/tmp` is
+    /// bound read-only after the scratch takes `/tmp`, never shadowed by it.
+    #[test]
+    fn bwrap_binds_a_read_only_checkout_under_tmp_after_the_scratch() {
+        let ws = "/tmp/checkout";
+        let ro = Policy::new(Path::new(ws), false)
+            .with_workspace_readonly(true)
+            .with_scratch_root(Path::new("/tmp/scratch-s1"))
+            .with_read_roots(vec![PathBuf::from("/tmp/worktrees")]);
+        let text = joined(&bwrap_args(&ro, &cfg()));
+        let scratch = text.find("--bind /tmp/scratch-s1 /tmp").expect(&text);
+        assert!(scratch < text.find(&format!("--ro-bind {ws} {ws}")).expect(&text), "{text}");
+        assert!(scratch < text.find("--ro-bind /tmp/worktrees /tmp/worktrees").unwrap());
+        assert!(!text.contains(&format!("--bind {ws} ")), "{text}");
     }
 
     #[test]
