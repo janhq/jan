@@ -11,6 +11,7 @@ import {
   StepRow,
 } from '@/components/ai-elements/reasoning-timeline'
 import { Button } from '@/components/ui/button'
+import { scrollToBottomButtonClassName } from '@/components/ai-elements/conversation'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
 import {
   isToolCallRunning,
@@ -236,13 +237,18 @@ export const ChainOfThoughtGroup = memo(
         </div>
         {!isReasoningAtBottom && (
           <Button
-            className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+            className={twMerge(
+              'absolute bottom-2 left-[50%] translate-x-[-50%] size-7 z-10',
+              scrollToBottomButtonClassName
+            )}
             onClick={onReasoningScrollToBottom}
             size="icon"
             type="button"
             variant="outline"
+            aria-label={t('common:scrollToBottom')}
+            title={t('common:scrollToBottom')}
           >
-            <IconArrowDown className="size-3" />
+            <IconArrowDown className="size-3" aria-hidden="true" />
           </Button>
         )}
       </div>

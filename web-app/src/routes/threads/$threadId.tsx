@@ -2305,7 +2305,7 @@ function ThreadDetail() {
         >
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
-              className={cn('mx-auto w-full px-6 md:w-4/5 xl:w-4/6')}
+              className={cn('mx-auto w-full px-6 pb-4 md:w-4/5 xl:w-4/6')}
             >
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
@@ -2454,8 +2454,10 @@ function ThreadDetail() {
           </Conversation>
         </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 px-6 mx-auto w-full md:w-4/5 xl:w-4/6">
+        {/* Chat Input - Fixed at bottom. No top padding: the scroll area (and
+            its fade) runs right up to the composer, with the resting gap kept
+            inside the scroll content as pb-4. */}
+        <div className="pb-4 px-6 mx-auto w-full md:w-4/5 xl:w-4/6">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
