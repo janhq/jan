@@ -1446,4 +1446,44 @@ mod server_tests {
         );
         proxy::stop_server(handle).await.unwrap();
     }
+
+    #[tokio::test]
+    async fn public_bind_without_api_key_is_refused_before_binding() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let handle = Arc::new(Mutex::new(None));
+        let err = proxy::start_server(
+            handle.clone(),
+            Arc::new(tauri_plugin_llamacpp::state::LlamacppState::default()),
+            Arc::new(Mutex::new(HashMap::new())),
+            "0.0.0.0".to_string(),
+            port,
+            "/v1".to_string(),
+            String::new(),
+            vec![vec![]],
+            30,
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::new(Mutex::new(crate::core::mcp::models::McpSettings::default())),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            false,
+            true,
+        )
+        .await
+        .expect_err("an open public bind must be refused");
+
+        let msg = err.to_string();
+        assert!(msg.contains("API key") && msg.contains("127.0.0.1"), "{msg}");
+        // Nothing was started and nothing is listening.
+        assert!(handle.lock().await.is_none());
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
+    }
 }
