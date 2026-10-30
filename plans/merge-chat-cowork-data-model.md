@@ -135,3 +135,25 @@ Adopted changes (override the P2 text above where they conflict):
 - A12 First-prompt handoff: attachments are transferred by session id through an in-memory map (not sessionStorage); text goes through sessionStorage; consumed only after `runRequest` accepts, with duplicate-send protection; a stale handoff for an unpersisted session is discarded on load.
 - A13 Sidebar: active row derives from the route; mixed s/ms `updated` normalised before sorting; running first-turn sessions get a row; artifacts pending-preview handoff tested through the new redirect.
 - A14 Extra tests: reordered/failed/retried writes, mutation during flush, delete during pending write and active run, clear-to-empty, crash between sidecar and thread.json, partial-migration delete+restart, collision/corrupt sidecar rows, cold deep link during hydration, refetch racing a write, back/forward and rapid switching, background run commits to its own session, handoff (attachments, rejected submit, reload, duplicate effect), search index sync, disabled-channel read-only.
+
+## Phase 2 review outcome: fable (approve with changes)
+Adopted (in addition to A1-A14):
+- F1 BUG in the plan: a write-through thread without `migratedFrom` makes `migrateCoworkSessionsToThreads` fail on that id forever (marker never set, sweep never runs). Fix both ways: stamp `migratedFrom` on write-through creates of legacy-sourced sessions AND relax the migration skip rule to "existing thread with the same id and `mode === 'cowork'` is already migrated". Test: migration after write-through settles.
+- F2 Flush mechanism is named, not assumed: Tauri window `CloseRequested` handler awaits `flush()` before closing, plus `beforeunload`/reload best effort. The 500 ms debounce is a new loss window versus today's per-`set()` persist, so keep it short and flush on `visibilitychange` hidden too.
+- F3 `write_thread_extra` must not create the thread directory for a thread that has no `thread.json` outside migration/first commit; delete cancels the id's timer (see A3). Rust: add `create` flag defaulting to false; migration and first commit pass true.
+- F4 Make `create_thread`/`modify_thread` writes atomic (tmp + rename) in Rust, and make hydration treat a dir with a valid sidecar but broken `thread.json` as recoverable (visible "unavailable" row, files kept, sandbox kept in the sweep keep-list).
+- F5 One loader: cowork hydration reads the same `list_threads` result as `DataProvider` (shared retry path), not a second fetch.
+- F6 `thread.json` writer is a read-modify-write that spreads existing metadata, bypasses `DefaultThreadsService`, and preserves `created`. Rename/todo/goal changes bump `updated`.
+- F7 `currentId` was persisted; keep it by storing it in a backend setting (`cowork_current_id`) so cold start still resumes the last session.
+- F8 `/cowork` redirect must not mutate the store in `beforeLoad` before hydration; hydration MERGES with sessions created in the meantime.
+- F9 Container extraction keeps the route-param and `currentId` in lockstep: the container sets `currentId` from the route on mount and all helpers read the route id.
+- F10 `/threads/$id` for an unknown-mode thread waits on the thread-list load or does a direct `get_thread` read before choosing a view.
+- F11 Enumerate `isCoworkRoute` consumers before deleting NavTabs; copy chat's StrictMode-safe handoff consumption.
+- F12 Extra tests: migration after write-through, delete during pending write (no dir resurrection), close-requested flush, crash between sidecar and first thread.json, `/threads/:id` before list load, cold-start currentId, StrictMode double-consume.
+
+## Implementation order (each step committed and tested separately)
+1. Rust: atomic thread.json writes; `write_thread_extra` create flag; tests.
+2. TS: relax migration skip rule (F1); cowork persistence module (write queue, tombstones, flush, hydration, model mapping) + tests, not yet connected.
+3. Connect: swap persist for the persistence module in `useCoworkSessions`, wire migration then hydration at startup, sweep gating, close handler.
+4. Routes + container extraction, thread redirect.
+5. Home selector + handoff, unified sidebar, remove NavTabs.
