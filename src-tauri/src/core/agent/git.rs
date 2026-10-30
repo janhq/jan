@@ -484,13 +484,16 @@ pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
         .filter(|sha| is_object_id(sha))
 }
 
-/// Fetch `rev` from `origin` into `FETCH_HEAD` and return the commit it named,
-/// for a ref the local repository does not have (`pull/9486/head`).
+/// Fetch `rev` from `origin` and return the commit it named, for a ref the
+/// local repository does not have (`pull/9486/head`).
 ///
 /// `rev` must be a [plain ref](is_plain_ref) that `git check-ref-format`
-/// accepts, so it is never a refspec with a destination. `--refmap=` turns off
-/// the remote-tracking update a configured `remote.origin.fetch` would make:
-/// `FETCH_HEAD` is the only ref this writes.
+/// accepts, so it is never a refspec with a destination of its own. The
+/// destination is a ref private to this call, read and deleted again:
+/// `FETCH_HEAD` is shared by every fetch in the repository, so a concurrent
+/// one could replace it between this fetch and its resolution, and
+/// `--no-write-fetch-head` leaves it to them. `--refmap=` turns off the
+/// remote-tracking update a configured `remote.origin.fetch` would make.
 #[cfg(feature = "cli")]
 pub(crate) fn fetch_commit(
     repo: &Path,
@@ -502,12 +505,30 @@ pub(crate) fn fetch_commit(
     }
     run(repo, None, &["check-ref-format", "--allow-onelevel", rev])
         .map_err(|_| format!("not a git ref: {rev:?}"))?;
-    run_limited(
+    static FETCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = FETCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dest = format!("refs/jan/fetch/{}-{seq}", std::process::id());
+    let spec = format!("{rev}:{dest}");
+    let fetched = run_limited(
         repo,
-        &["fetch", "--quiet", "--no-tags", "--refmap=", "origin", "--", rev],
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "origin",
+            "--",
+            &spec,
+        ],
         limit,
-    )?;
-    resolve_commit(repo, "FETCH_HEAD").ok_or_else(|| format!("fetching {rev} named no commit"))
+    )
+    .and_then(|_| {
+        resolve_commit(repo, &dest).ok_or_else(|| format!("fetching {rev} named no commit"))
+    });
+    // Also after a failure: a fetch cut off at its limit may have written it.
+    let _ = run(repo, None, &["update-ref", "-d", &dest]);
+    fetched
 }
 
 /// The git directory every checkout of `repo` shares (objects, refs, the
@@ -957,6 +978,37 @@ mod tests {
         assert_eq!(resolve_commit(&clone, "refs/heads/x"), None, "no local branch made");
         assert_eq!(resolve_commit(&clone, "refs/remotes/origin/x"), None);
         assert_eq!(resolve_commit(&clone, "refs/heads/victim").as_deref(), Some(before.as_str()));
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&upstream);
+    }
+
+    /// Concurrent fetches in one repository would share `FETCH_HEAD`, so one
+    /// could resolve the commit another fetched. A fetch therefore resolves
+    /// from a ref of its own and leaves `FETCH_HEAD`, and no ref, behind.
+    #[test]
+    fn fetch_commit_neither_reads_nor_writes_the_shared_fetch_head() {
+        let Some(upstream) = init_repo() else { return };
+        let trunk = current_branch(&upstream).unwrap();
+        let base = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", "-b", "x"]).unwrap();
+        std::fs::write(upstream.join("x.txt"), "x\n").unwrap();
+        run(&upstream, None, &["add", "x.txt"]).unwrap();
+        run(&upstream, None, &["commit", "-q", "-m", "x", "--no-gpg-sign"]).unwrap();
+        let x = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", &trunk]).unwrap();
+        let clone = upstream.with_extension("fetchhead");
+        let _ = std::fs::remove_dir_all(&clone);
+        let (from, to) = (upstream.to_string_lossy(), clone.to_string_lossy());
+        git(&["clone", "-q", "--single-branch", "-b", &trunk, &from, &to]).unwrap();
+        // What another fetch running alongside left there.
+        let other = format!("{base}\t\tbranch 'other' of elsewhere\n");
+        let fetch_head = clone.join(".git/FETCH_HEAD");
+        std::fs::write(&fetch_head, &other).unwrap();
+
+        assert_eq!(fetch_commit(&clone, "x", LIMIT).as_deref(), Ok(x.as_str()));
+        assert_eq!(std::fs::read_to_string(&fetch_head).unwrap(), other);
+        let left = run(&clone, None, &["for-each-ref", "refs/jan/"]).unwrap();
+        assert!(left.is_empty(), "{left}");
         let _ = std::fs::remove_dir_all(&clone);
         let _ = std::fs::remove_dir_all(&upstream);
     }
