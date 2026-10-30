@@ -382,9 +382,9 @@ describe('message actions', () => {
       // Not just "the stream ended" -- that is also what finishing looks like.
       // The Continue button renders only when metadata.stopped is true, so its
       // presence is what says the app recorded a stop rather than a
-      // completion. Exist, not displayed: it sits in the hover-revealed
-      // (opacity-0) footer group.
-      await $('[data-testid="continue-message"]').waitForExist({
+      // completion. Displayed, too: it is kept visible at rest so a stopped
+      // reply can be resumed without hovering.
+      await $('[data-testid="continue-message"]').waitForDisplayed({
         timeout: 30_000,
         timeoutMsg:
           'no Continue button appeared after stopping, so the reply was not ' +
