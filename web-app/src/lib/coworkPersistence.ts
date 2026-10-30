@@ -34,6 +34,7 @@ import {
 
 export const COWORK_CURRENT_ID_KEY = 'cowork_current_id'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = Record<string, any>
 
 const toSeconds = (ms: number) => (ms > 1e12 ? Math.floor(ms / 1000) : ms)

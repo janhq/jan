@@ -1,13 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-vi.mock('@/lib/backendStorage', () => ({
-  backendStorage: {
-    getItem: vi.fn().mockResolvedValue(null),
-    setItem: vi.fn().mockResolvedValue(undefined),
-    removeItem: vi.fn().mockResolvedValue(undefined),
-  },
-}))
-
 import { startNewSession, useCoworkSessions } from '../useCoworkSessions'
 import type { CoworkTurn, SubagentRun } from '@/types/coworkSession'
 
@@ -347,52 +339,5 @@ describe('useCoworkSessions pruneEmptySessions', () => {
     const before = useCoworkSessions.getState().sessions
     useCoworkSessions.getState().pruneEmptySessions([])
     expect(useCoworkSessions.getState().sessions).toBe(before)
-  })
-})
-
-describe('useCoworkSessions persist migration', () => {
-  // v0 sessions carry `turns` but no `messages`. Losing the tool turns on
-  // upgrade would leave the agent replaying a conversation with holes in it.
-  it('rebuilds messages from turns for a v0 session', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const out = migrate(
-      {
-        sessions: [
-          {
-            id: 's1',
-            turns: [
-              { role: 'user', content: 'build it' },
-              {
-                role: 'tool',
-                content: '',
-                name: 'write',
-                callId: 'c1',
-                args: { path: 'a.txt' },
-                result: 'Created a.txt (3 bytes)',
-                status: 'done',
-              },
-            ],
-          },
-        ],
-      },
-      0
-    ) as { sessions: Array<{ messages: unknown[] }> }
-
-    const parts = (out.sessions[0].messages as never[]).flatMap(
-      (m: { parts?: unknown[] }) => m.parts ?? []
-    )
-    expect(out.sessions[0].messages.length).toBeGreaterThan(0)
-    expect(parts.some((p: { type?: string }) => p.type === 'tool-write')).toBe(
-      true
-    )
-  })
-
-  it('leaves an already-migrated session alone', () => {
-    const migrate = useCoworkSessions.persist.getOptions().migrate!
-    const existing = [{ id: 's1', turns: [], messages: [{ id: 'keep' }] }]
-    const out = migrate({ sessions: existing }, 1) as {
-      sessions: Array<{ messages: Array<{ id: string }> }>
-    }
-    expect(out.sessions[0].messages[0].id).toBe('keep')
   })
 })

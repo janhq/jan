@@ -240,6 +240,8 @@ import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
 import { localStorageKey } from '@/constants/localStorage'
+import { sessionFromThread, sessionToThreadRecord } from '@/lib/coworkPersistence'
+import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 // The router mock returns the supplied component options directly.
 const routeOptions = Route as unknown as { component: () => ReactNode }
 const CoworkPage = routeOptions.component
@@ -461,7 +463,7 @@ it('retries the original question after request preparation fails', async () => 
   ])
 })
 
-it('restores each session model after switching and persisted-store rehydration', async () => {
+it('restores each session model after switching and a reload from thread storage', async () => {
   const a = useCoworkSessions.getState().createSession()
   useCoworkSessions
     .getState()
@@ -484,10 +486,13 @@ it('restores each session model after switching and persisted-store rehydration'
     expect(document.querySelector('header')).toHaveTextContent('second-model')
   )
   view.unmount()
-  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  // A reload: every session goes to its thread record + sidecar and comes back.
+  const reloaded = useCoworkSessions.getState().sessions.map((x) =>
+    sessionFromThread(sessionToThreadRecord(x), sessionToSidecar(x))
+  )
+  const currentId = useCoworkSessions.getState().currentId
   useCoworkSessions.setState({ sessions: [], currentId: null })
-  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
-  await useCoworkSessions.persist.rehydrate()
+  useCoworkSessions.setState({ sessions: reloaded, currentId })
   render(<CoworkPage />)
   await waitFor(() =>
     expect(document.querySelector('header')).toHaveTextContent('second-model')
