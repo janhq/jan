@@ -61,12 +61,13 @@ impl Session {
         }
     }
 
-    fn wait_stopped(&self) {
+    /// Wait for jan to stop, returning the signal that stopped it.
+    fn wait_stopped(&self) -> Signal {
         let deadline = Instant::now() + DEADLINE;
         loop {
             let flags = WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG;
             match waitpid(self.pid, Some(flags)).expect("waitpid") {
-                WaitStatus::Stopped(..) => return,
+                WaitStatus::Stopped(_, signal) => return signal,
                 WaitStatus::StillAlive => {}
                 other => panic!("jan did not stop: {other:?}: {:?}", self.text()),
             }
@@ -90,11 +91,19 @@ impl Session {
     /// Stop by `stop`, check the terminal is clean while stopped, resume, and
     /// check the modes and raw mode come back.
     fn cycle(&self, stop: impl FnOnce(), what: &str) {
+        self.cycle_with(stop, what, true);
+    }
+
+    /// `cycle`, optionally without the cooked-termios check while stopped;
+    /// returns the signal that stopped jan.
+    fn cycle_with(&self, stop: impl FnOnce(), what: &str, cooked_while_stopped: bool) -> Signal {
         let before = self.text().len();
         stop();
-        self.wait_stopped();
+        let signal = self.wait_stopped();
         self.wait_for(before, &LEAVE, &format!("{what}: modes restored before stopping"));
-        assert!(!self.raw(), "{what}: the shell got a raw-mode terminal");
+        if cooked_while_stopped {
+            assert!(!self.raw(), "{what}: the shell got a raw-mode terminal");
+        }
         let stopped_at = self.text().len();
         kill(self.pid, Signal::SIGCONT).expect("SIGCONT");
         self.wait_for(stopped_at, &ENTER, &format!("{what}: modes re-entered on resume"));
@@ -103,6 +112,7 @@ impl Session {
             assert!(Instant::now() < deadline, "{what}: raw mode not re-enabled");
             std::thread::sleep(Duration::from_millis(50));
         }
+        signal
     }
 }
 
@@ -203,6 +213,29 @@ fn ctrl_z_and_sigtstp_suspend_and_resume_cleanly() {
         || kill(session.pid, Signal::SIGTSTP).expect("SIGTSTP"),
         "external SIGTSTP",
     );
+    assert!(session.alive(), "jan exited after resuming: {:?}", session.text());
+}
+
+/// A read from the background (another group took the terminal's foreground)
+/// stops jan with SIGTTIN; the modes must be off before it stops and back on
+/// after SIGCONT, twice over, since the handler reinstalls itself. The kernel
+/// only sends SIGTTIN for a controlling terminal, which this PTY is not (that
+/// needs a session of jan's own), so the signal is sent directly: the same
+/// handler either way. Raw mode is not checked while stopped: the handler
+/// cannot `tcsetattr` from the background, and a job-control shell restores
+/// its own termios when it takes the terminal back.
+#[test]
+fn sigttin_restores_the_modes_and_resume_re_arms_them() {
+    let session = spawn();
+    session.wait_for(0, &ENTER, "the TUI to start");
+    for round in 1..=2 {
+        let signal = session.cycle_with(
+            || kill(session.pid, Signal::SIGTTIN).expect("SIGTTIN"),
+            &format!("SIGTTIN #{round}"),
+            false,
+        );
+        assert_eq!(signal, Signal::SIGTTIN, "round {round}: stopped for the real reason");
+    }
     assert!(session.alive(), "jan exited after resuming: {:?}", session.text());
 }
 

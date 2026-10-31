@@ -1653,7 +1653,12 @@ pub async fn render_html_png(
         c.args(&chrome_args);
         c
     };
+    // Chrome gets no stdin and no controlling terminal: left alone it would sit
+    // in Jan's foreground process group holding the TUI's terminal.
+    #[cfg(unix)]
+    proc::detach_from_terminal(&mut launcher);
     let mut child = match launcher
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -1674,7 +1679,19 @@ pub async fn render_html_png(
         }
         String::from_utf8_lossy(&buf).into_owned()
     });
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let pid = child.id();
+    let waited = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    // Still running: Chrome leads its own process group, so take its helper
+    // processes down with it. Only while unreaped -- once `wait` returns, the
+    // pid (and so the group id) may be reused.
+    #[cfg(unix)]
+    if waited.is_err() {
+        if let Some(pid) = pid {
+            proc::kill_tree(pid);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (waited, pid);
     let _ = child.kill().await;
     let stderr = drain.await.unwrap_or_default();
     let _ = tokio::fs::remove_dir_all(&profile).await;

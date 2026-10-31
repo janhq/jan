@@ -221,11 +221,36 @@ fn suspend_to_shell(mouse: bool) -> io::Result<()> {
             "no job-control shell above jan (ssh -t, docker exec); nothing could resume it",
         ));
     }
-    restore_terminal_modes();
+    // After a SIGTTIN stop the modes are already off (an external SIGTSTP can
+    // land while jan sits in the background): restoring again would pop the
+    // shell's own kitty entry. This path re-enters the modes itself, so the
+    // render loop must not re-arm them a second time.
+    let modes_off = TTY_REARM.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if !modes_off {
+        restore_terminal_modes();
+    }
     let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
-    enable_raw_mode()?;
+    // Resumed with `bg`, the `tcsetattr`s below stop jan with SIGTTOU; after
+    // `fg` they fail with EINTR, which must not leave the TUI in cooked mode.
+    if modes_off {
+        // crossterm's enable is a no-op while it believes raw mode is on.
+        let _ = retry_interrupted(disable_raw_mode);
+    }
+    retry_interrupted(enable_raw_mode)?;
     enter_terminal_modes(&mut io::stdout(), mouse)?;
     stopped
+}
+
+/// Run a terminal call again while it fails with EINTR. A `tcsetattr` from the
+/// background stops jan with SIGTTOU and, once continued, returns EINTR on
+/// macOS. Bounded in practice: each retry needs another stop and continue.
+fn retry_interrupted(mut f: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    loop {
+        match f() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => return other,
+        }
+    }
 }
 
 /// POSIX: a process group is orphaned when no member has a parent in another
@@ -333,6 +358,220 @@ async fn await_stop_signal(signal: &mut StopSignal) {
     pending().await
 }
 
+/// Set by `on_tty_input_stop` when it writes the restore bytes; cleared by
+/// whatever turns the modes back on (`rearm_after_tty_stop`, `suspend_to_shell`).
+/// While set the modes are off, so a second stop writes nothing: a second
+/// kitty pop would pop the shell's own entry.
+#[cfg(unix)]
+static TTY_REARM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `on_tty_input_stop` is running, possibly stopped inside: the render loop
+/// must not re-arm under it.
+#[cfg(unix)]
+static TTY_STOPPING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The SIGTTIN disposition jan inherited, while its own handler is installed.
+#[cfg(unix)]
+static TTY_INHERITED_TTIN: std::sync::Mutex<Option<nix::sys::signal::SigAction>> =
+    std::sync::Mutex::new(None);
+
+/// A read from the background (another group took the terminal's foreground)
+/// stops jan with SIGTTIN, and by default with every mode still on: the shell
+/// prompt then fills with mouse reports. A plain `sigaction` handler rather
+/// than a tokio stream like SIGTSTP's: that registration is permanent, and a
+/// caught SIGTTIN no longer stops anything, so a background read outside
+/// `chat_loop` (startup, shutdown) would re-raise it in a tight loop forever.
+/// Installed once the modes are on, so a stop before then has nothing to
+/// restore and nothing to re-arm; `release_terminal` puts the inherited
+/// disposition back. A parent that ignores SIGTTIN (a background read then
+/// fails with EIO instead of stopping) is left alone.
+#[cfg(unix)]
+fn install_tty_input_stop_handler() {
+    use nix::sys::signal::{sigaction, SigHandler, Signal};
+    // SAFETY: the handler only makes async-signal-safe calls.
+    let Ok(old) = (unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) }) else {
+        return;
+    };
+    if old.handler() == SigHandler::SigIgn {
+        // SAFETY: putting back what was there a moment ago.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &old) };
+        return;
+    }
+    *TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()) = Some(old);
+}
+
+#[cfg(unix)]
+fn tty_input_stop_action() -> nix::sys::signal::SigAction {
+    use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet};
+    SigAction::new(
+        SigHandler::Handler(on_tty_input_stop),
+        SaFlags::SA_RESTART,
+        SigSet::empty(),
+    )
+}
+
+#[cfg(unix)]
+fn reset_tty_input_stop_handler() {
+    let old = TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some(old) = old {
+        // SAFETY: restoring the disposition jan started with.
+        let _ = unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTIN, &old) };
+    }
+}
+
+#[cfg(unix)]
+fn tty_input_stop_installed() -> bool {
+    TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
+/// Whether jan's group is, positively, the terminal's foreground. Async-signal-
+/// safe (`tcgetpgrp`, `getpgrp`); an unreadable answer is a no, so the handler
+/// only skips the stop on evidence.
+#[cfg(unix)]
+fn tty_foreground_is_ours() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: plain queries.
+    unsafe {
+        let fg = nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO);
+        fg >= 0 && fg == nix::libc::getpgrp()
+    }
+}
+
+/// Async-signal-safe only: one write of the restore bytes, then the real stop.
+/// No `disable_raw_mode`: from the background a `tcsetattr` raises SIGTTOU, and
+/// the termios is the new foreground's anyway -- a job-control shell restores
+/// its own when it takes the terminal back. SIGTTOU is ignored around the
+/// write, so under `stty tostop` the restore still lands before the stop
+/// instead of the write stopping jan first. `raise`, not the group-wide `kill`
+/// Ctrl-Z uses: the SIGTTIN that got here (the kernel's on a background read,
+/// or `stop_if_terminal_taken`'s) already went to the whole group, so a
+/// wrapper got its own copy; only this process caught it. The shell still
+/// reports `suspended (tty input)`. Once jan is back in the foreground the
+/// render loop re-arms the modes.
+#[cfg(unix)]
+extern "C" fn on_tty_input_stop(_: nix::libc::c_int) {
+    use nix::errno::Errno;
+    use nix::sys::signal::{
+        pthread_sigmask, raise, sigaction, SaFlags, SigAction, SigHandler, SigSet, SigmaskHow,
+        Signal,
+    };
+    use std::sync::atomic::Ordering;
+    let saved = Errno::last_raw();
+    // The foreground came back before the handler ran, or the signal did not
+    // come from a background read at all: nothing to hand back.
+    if tty_foreground_is_ours() {
+        Errno::set_raw(saved);
+        return;
+    }
+    TTY_STOPPING.store(true, Ordering::SeqCst);
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; put back right after the write.
+        let ttou = unsafe { sigaction(Signal::SIGTTOU, &ignore) };
+        let mut rest: &[u8] = &RESTORE_BYTES;
+        // Bounded: an EIO or a closed terminal ends it rather than looping.
+        for _ in 0..8 {
+            if rest.is_empty() {
+                break;
+            }
+            // SAFETY: writes from a static buffer.
+            let n = unsafe {
+                nix::libc::write(nix::libc::STDOUT_FILENO, rest.as_ptr().cast(), rest.len())
+            };
+            if n > 0 {
+                // Modes are (being) turned off: a re-arm is owed. Not before
+                // the first byte lands -- on a terminal that refuses every
+                // write nothing was restored, and a re-arm would stack the
+                // modes a second time.
+                TTY_REARM.store(true, Ordering::SeqCst);
+                rest = &rest[n as usize..];
+            } else if n == 0 || Errno::last() != Errno::EINTR {
+                break;
+            }
+        }
+        if let Ok(ttou) = ttou {
+            // SAFETY: as above.
+            let _ = unsafe { sigaction(Signal::SIGTTOU, &ttou) };
+        }
+    }
+    // Re-checked: the foreground may have come back during the write, and a
+    // stop then would need a second `fg` for nothing.
+    if !tty_foreground_is_ours() {
+        let default = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; the default action is what stops the process.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &default) };
+        let _ = raise(Signal::SIGTTIN);
+        // SIGTTIN is blocked while its handler runs; unblocking delivers the
+        // pending one, and the process stops here until SIGCONT.
+        let mut ttin = SigSet::empty();
+        ttin.add(Signal::SIGTTIN);
+        let _ = pthread_sigmask(SigmaskHow::SIG_UNBLOCK, Some(&ttin), None);
+        // SAFETY: as above.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) };
+    }
+    TTY_STOPPING.store(false, Ordering::SeqCst);
+    Errno::set_raw(saved);
+}
+
+/// After a SIGTTIN stop, take the modes back as `suspend_to_shell` does after
+/// its SIGSTOP, but only once jan is the terminal's foreground again: a resume
+/// into the background (`bg`) leaves it pending. Returns whether the terminal
+/// is still not jan's, so the caller neither reads (that would only stop again)
+/// nor paints over the shell.
+#[cfg(unix)]
+fn rearm_after_tty_stop(app: &mut App, mouse: bool) -> bool {
+    use std::sync::atomic::Ordering;
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        return false;
+    }
+    if TTY_STOPPING.load(Ordering::SeqCst) || !owns_terminal_foreground() {
+        return true;
+    }
+    TTY_REARM.store(false, Ordering::SeqCst);
+    // crossterm's enable is a no-op while it believes raw mode is on, and the
+    // handler could not turn it off; disable first so the termios is re-read.
+    let _ = retry_interrupted(disable_raw_mode);
+    if let Err(e) = retry_interrupted(enable_raw_mode)
+        .and_then(|()| enter_terminal_modes(&mut io::stdout(), mouse))
+    {
+        app.note(&format!("could not restore the terminal after a stop: {e}"));
+    }
+    app.request_repaint();
+    false
+}
+
+/// Another group holds the terminal's foreground: stop now, from the render
+/// loop, instead of on the next read. A stop inside crossterm's blocking read
+/// resumes into that same read, so after `fg` the TUI would stay off-screen
+/// until a key arrived; stopped here, the next pass re-arms at once. Sent to
+/// the whole group, as the kernel's own SIGTTIN is, so a wrapper stops too;
+/// jan's copy goes through the handler, so the same restore and the same
+/// `suspended (tty input)`. Returns whether it stopped (or tried to: in an
+/// orphaned group the stop is discarded, and `TTY_REARM` keeps the loop from
+/// trying again).
+#[cfg(unix)]
+fn stop_if_terminal_taken() -> bool {
+    use nix::sys::signal::{kill, Signal};
+    // Without the handler (an ignored SIGTTIN) the signal would do nothing,
+    // every tick.
+    if !tty_input_stop_installed() || owns_terminal_foreground() {
+        return false;
+    }
+    let _ = kill(nix::unistd::Pid::from_raw(0), Signal::SIGTTIN);
+    true
+}
+
+/// Whether jan's group is the foreground of the terminal it draws to. An
+/// unreadable answer counts as yes: re-arming wrongly only means the next read
+/// stops again, where waiting wrongly would freeze the session.
+#[cfg(unix)]
+fn owns_terminal_foreground() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: a plain query on stdout's descriptor.
+    let fg = unsafe { nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO) };
+    fg < 0 || fg == nix::unistd::getpgrp().as_raw()
+}
+
 /// Raw escape sequences standing in for the `crossterm::Command` types used
 /// elsewhere (`DisableBracketedPaste`, `DisableMouseCapture`,
 /// `LeaveAlternateScreen`, cursor show): `restore_terminal_modes` has no
@@ -348,6 +587,46 @@ const DISABLE_BRACKETED_PASTE: &str = "\x1b[?2004l";
 const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
+
+/// What `write_restore` writes, as one static buffer for the SIGTTIN handler,
+/// which cannot format or allocate. Built from the same constants; a test
+/// pins the two together. Unix only, like the handler (Windows omits the
+/// alternate-scroll restore).
+#[cfg(unix)]
+const RESTORE_PARTS: [&str; 7] = [
+    END_SYNC_UPDATE,
+    DISABLE_BRACKETED_PASTE,
+    DISABLE_MOUSE_CAPTURE,
+    KITTY_KEYS_OFF,
+    ALT_SCROLL_RESTORE,
+    LEAVE_ALT_SCREEN,
+    SHOW_CURSOR,
+];
+#[cfg(unix)]
+const RESTORE_LEN: usize = {
+    let (mut n, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        n += RESTORE_PARTS[i].len();
+        i += 1;
+    }
+    n
+};
+#[cfg(unix)]
+static RESTORE_BYTES: [u8; RESTORE_LEN] = {
+    let mut out = [0u8; RESTORE_LEN];
+    let (mut at, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        let part = RESTORE_PARTS[i].as_bytes();
+        let mut j = 0;
+        while j < part.len() {
+            out[at] = part[j];
+            at += 1;
+            j += 1;
+        }
+        i += 1;
+    }
+    out
+};
 
 /// The thread running the render loop while it owns the terminal's modes, or
 /// `None` once they have been restored. Panic hooks are process-wide, but only
@@ -366,6 +645,10 @@ fn release_terminal() -> bool {
     let mut owner = TERMINAL_OWNER.lock().unwrap_or_else(|e| e.into_inner());
     if *owner == Some(std::thread::current().id()) {
         *owner = None;
+        // Back to the default stop, so whatever runs after the session (the
+        // resume hint, a panic message) behaves like any other program.
+        #[cfg(unix)]
+        reset_tty_input_stop_handler();
         true
     } else {
         false
@@ -12898,7 +13181,9 @@ pub async fn run(
     let prev_log_level = log::max_level();
     log::set_max_level(log::LevelFilter::Off);
 
-    enable_raw_mode().map_err(|e| e.to_string())?;
+    // Started in the background (`jan &`), the `tcsetattr` stops jan with
+    // SIGTTOU and, once `fg` continues it, fails with EINTR; try again then.
+    retry_interrupted(enable_raw_mode).map_err(|e| e.to_string())?;
     // From here a panic must not leave the shell in raw mode / the alternate
     // screen / mouse-tracking / Kitty keys: install before anything else that
     // can panic runs, so every failure from this point is caught by it.
@@ -12924,6 +13209,8 @@ pub async fn run(
     };
     let mouse = crate::core::agent::global_config::mouse_enabled();
     enter_terminal_modes(&mut stdout, mouse).map_err(abort_startup)?;
+    #[cfg(unix)]
+    install_tty_input_stop_handler();
     // Test-only hook for the real-PTY panic-recovery integration test
     // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
     // fires, but only a genuine panic on a genuine terminal, with every mode
@@ -13321,6 +13608,12 @@ async fn chat_loop<B: Backend>(
     let sync_output = use_synchronized_output();
 
     while !app.should_quit {
+        // Back from a SIGTTIN stop (`on_tty_input_stop`): re-arm the modes once
+        // the terminal is ours, and draw nothing until then.
+        #[cfg(unix)]
+        let mut tty_away = rearm_after_tty_stop(app, mouse);
+        #[cfg(not(unix))]
+        let tty_away = false;
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
         if snap_task.is_none() {
@@ -13601,7 +13894,9 @@ async fn chat_loop<B: Backend>(
             since_last: last_frame.map(|t| t.elapsed()),
         };
         let draw_now = gate.due();
-        if draw_now {
+        // A held frame stays dirty and is retried on the next tick; `deferred`
+        // below only covers `!draw_now`, so this cannot wake the loop early.
+        if draw_now && !tty_away {
             if sync_output {
                 let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
             }
@@ -13659,7 +13954,12 @@ async fn chat_loop<B: Backend>(
                 if app.refresh_shell_tail() {
                     idle_tick = false;
                 }
-                while event::poll(Duration::ZERO).unwrap_or(false) {
+                #[cfg(unix)]
+                if !tty_away && stop_if_terminal_taken() {
+                    tty_away = true;
+                }
+                // The terminal is not ours: a read would only stop again.
+                while !tty_away && event::poll(Duration::ZERO).unwrap_or(false) {
                     // Input draws at once, past the frame cap: typing must not
                     // wait on output pacing.
                     idle_tick = false;
@@ -39340,6 +39640,66 @@ mod tests {
             assert!(restored.ends_with("\x1b[?25h"), "cursor shown last: {restored:?}");
             assert!(restored.starts_with("\x1b[?2026l"), "held frame ended first");
         }
+    }
+
+    /// The SIGTTIN handler cannot format, so it writes a prebuilt copy of the
+    /// restore; it must stay byte-for-byte what every other exit writes.
+    #[cfg(unix)]
+    #[test]
+    fn tty_stop_restore_bytes_match_write_restore() {
+        let mut restored = Vec::new();
+        super::write_restore(&mut restored);
+        assert_eq!(
+            String::from_utf8_lossy(&super::RESTORE_BYTES),
+            String::from_utf8_lossy(&restored)
+        );
+    }
+
+    /// Nothing pending: the render loop draws as normal and makes no syscall.
+    /// A stop still in its handler: the loop keeps off the terminal and the
+    /// re-arm stays owed. One test, since both drive the same process-wide
+    /// flags and parallel tests would race them.
+    #[cfg(unix)]
+    #[test]
+    fn rearm_waits_for_a_pending_stop_and_skips_without_one() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut app = test_app();
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(!super::rearm_after_tty_stop(&mut app, true));
+        assert!(!app.repaint, "no repaint without a stop");
+
+        super::TTY_REARM.store(true, SeqCst);
+        super::TTY_STOPPING.store(true, SeqCst);
+        let away = super::rearm_after_tty_stop(&mut app, true);
+        let still_owed = super::TTY_REARM.load(SeqCst);
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(away, "mid-stop: neither read nor draw");
+        assert!(still_owed, "the re-arm is not consumed mid-stop");
+        assert!(!app.repaint);
+    }
+
+    #[test]
+    fn retry_interrupted_retries_only_eintr() {
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(r.is_ok());
+        assert_eq!(calls, 3);
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            Err(std::io::Error::other("no"))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 1);
     }
 
     /// Raw mode keeps the terminal from turning Ctrl-Z into SIGTSTP, so it
