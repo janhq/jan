@@ -4480,6 +4480,9 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// Set by `/worktree` to ask the loop to gather its report off the render
+    /// loop: it runs git per worktree. Taken once, like `context_request`.
+    worktree_request: bool,
     /// The provider's execution id for the most recent request that reported
     /// one, so `/usage` can name something concrete to look up. `None` when no
     /// request has reported one -- which is the normal case on the default
@@ -4925,6 +4928,9 @@ struct SubagentPanel {
     /// When the child's `SubagentStart` arrived, for the elapsed time beside
     /// it once the main turn has ended. `None` while it is queued or pending.
     started: Option<Instant>,
+    /// Where the child works, from its `SubagentStart` (see
+    /// `child_workspace::ChildWorkspace::label`). Shown in `/agents`.
+    workspace: Option<String>,
     /// The child's run as rows, built from its own stream by the same code
     /// that builds the main transcript, for the `/agents` detail view and the
     /// finished summary row's expand. A child's stream never reaches the
@@ -4975,6 +4981,7 @@ impl SubagentPanel {
             phase: None,
             parked: false,
             started: None,
+            workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
@@ -5332,6 +5339,7 @@ impl App {
             vibe_confirm: None,
             readout: None,
             context_request: false,
+            worktree_request: false,
             last_execution_id: None,
             reported_usage_request: None,
             mcp_prompt: None,
@@ -8104,7 +8112,12 @@ impl App {
                     });
                 }
             }
-            StreamEvent::SubagentStart { run_id, name, task } => {
+            StreamEvent::SubagentStart {
+                run_id,
+                name,
+                task,
+                workspace,
+            } => {
                 // A child with no model of its own runs on the parent's, so it
                 // starts on the parent's tag setting; its first request moves it
                 // to its own provider's if that differs.
@@ -8117,6 +8130,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -8127,6 +8141,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     if let Some(t) = task {
                         panel.task = t;
                     }
@@ -8136,6 +8151,7 @@ impl App {
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     self.subagents.push(panel);
                 }
             }
@@ -13217,6 +13233,20 @@ pub async fn run(
     if let Some(session) = session_scratch.as_deref() {
         let _ = workspace::remove_scratch_dir(session).await;
     }
+    // And its subagents' worktrees that hold nothing; the rest are named on
+    // the real terminal, since they are what is left to merge. Children still
+    // running are stopped first: a live writer holds its worktree, which would
+    // otherwise be kept as busy and outlive the process even when empty.
+    // On the blocking pool, as every worktree sweep is: it runs git per
+    // worktree, and a runtime worker is no place to wait on that.
+    app.subagent_set.abort_all();
+    let workspaces = app.subagent_set.workspaces.clone();
+    let kept = tokio::task::spawn_blocking(move || workspaces.finish_session())
+        .await
+        .unwrap_or_default();
+    if !kept.is_empty() {
+        eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
+    }
     res
 }
 
@@ -13400,6 +13430,9 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    // `/worktree` gathering its report: git per worktree, so on the blocking
+    // pool. One at a time.
+    let mut worktree_task: Option<tokio::task::JoinHandle<WorktreeReport>> = None;
     type ReportedUsageResult = (
         super::tokamak::usage::Query,
         Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
@@ -13554,6 +13587,10 @@ async fn chat_loop<B: Backend>(
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
         }
+        if worktree_task.is_none() && app.worktree_request {
+            app.worktree_request = false;
+            worktree_task = Some(spawn_worktree_report(app));
+        }
         // `/usage <view>` asked for an account read. It is a network call, so
         // it runs off the render loop exactly like `/context`'s report: one at
         // a time, with the overlay sitting on its loading state until it lands.
@@ -13670,7 +13707,7 @@ async fn chat_loop<B: Backend>(
         // the session is doing.
         if tidy_task.is_none() {
             if let Some(kind) = app.tidy_request.take() {
-                tidy_task = start_memory_tidy(app, kind, &session_events_tx);
+                tidy_task = start_memory_tidy(app, kind, &session_events_tx).await;
             }
         }
 
@@ -13889,6 +13926,9 @@ async fn chat_loop<B: Backend>(
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
+            }
+            Some(report) = await_worktree_report(&mut worktree_task) => {
+                finish_worktree_report(app, report);
             }
             Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
                 finish_reported_usage(app, &query, result);
@@ -17261,7 +17301,7 @@ enum TidyKind {
 
 /// Start the requested tidy on the session's registry. Fire-and-forget from
 /// the caller's view: the result is collected off the render loop.
-fn start_memory_tidy(
+async fn start_memory_tidy(
     app: &mut App,
     kind: TidyKind,
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -17292,7 +17332,8 @@ fn start_memory_tidy(
         &parent,
         events,
         budget.clone(),
-    );
+    )
+    .await;
     match dispatched {
         Ok(dispatched) => {
             app.tidy_running = Some(kind);
@@ -20633,6 +20674,13 @@ fn agent_detail_header(
         row.extend(agent_activity(panel));
     }
     out.push(Line::from(row));
+    if let Some(workspace) = &panel.workspace {
+        out.extend(
+            wrap_text(&format!("workspace {workspace}"), dim, max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
         out.push(Line::from(""));
         out.extend(
@@ -22061,8 +22109,56 @@ fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
 ///
 /// Read-only on purpose. Getting the work out is the user's own git: this
 /// session must never write to the branch they left behind.
+///
+/// It runs git once per worktree, so this only raises a flag; the loop
+/// gathers the report on the blocking pool and [`finish_worktree_report`]
+/// shows it when it lands, keeping the frame live meanwhile.
 fn worktree_command(app: &mut App) {
-    let Some(workspace) = app.workspace.clone() else {
+    app.worktree_request = true;
+}
+
+/// What `/worktree` shows, gathered off the render loop.
+struct WorktreeReport {
+    /// A line per live subagent worktree.
+    children: Vec<String>,
+    /// The session's own worktree and its changed paths, if it has one.
+    workspace: Option<(Worktree, Vec<String>)>,
+}
+
+/// Gather `/worktree`'s report on the blocking pool.
+fn spawn_worktree_report(app: &App) -> tokio::task::JoinHandle<WorktreeReport> {
+    let ledger = app.subagent_set.workspaces.clone();
+    let workspace = app.workspace.clone();
+    tokio::task::spawn_blocking(move || WorktreeReport {
+        children: ledger.live(),
+        workspace: workspace.map(|ws| {
+            let changed = git::changed_paths(&ws.path);
+            (ws, changed)
+        }),
+    })
+}
+
+/// Await an in-flight `/worktree` report, parking forever when none is
+/// running so this can sit in the loop's `select!` unconditionally.
+async fn await_worktree_report(
+    task: &mut Option<tokio::task::JoinHandle<WorktreeReport>>,
+) -> Option<WorktreeReport> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok()
+}
+
+fn finish_worktree_report(app: &mut App, report: WorktreeReport) {
+    if !report.children.is_empty() {
+        app.note("subagent worktrees:");
+        for line in &report.children {
+            app.system_detail_text(&format!("        {line}"));
+        }
+    }
+    let Some((workspace, changed)) = report.workspace else {
         app.note(
             "working in the project directory; start with --worktree for a dedicated checkout",
         );
@@ -22071,7 +22167,6 @@ fn worktree_command(app: &mut App) {
     app.note("worktree:");
     app.system_detail_text(&format!("path    {}", tilde_path(&workspace.path)));
     app.system_detail_text(&format!("branch  {}", workspace.branch));
-    let changed = git::changed_paths(&workspace.path);
     if changed.is_empty() {
         app.system_detail_text("changes nothing yet");
         return;
@@ -25789,7 +25884,8 @@ mod tests {
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, await_worktree_report, spawn_worktree_report,
+        finish_worktree_report, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -26265,6 +26361,22 @@ mod tests {
         assert!(text.contains("5 tools · 0 req  Running · ⚠ looping ×5"), "{text}");
     }
 
+    /// `/agents` names where a child works: its worktree and branch, or the
+    /// checkout it was given read-only.
+    #[test]
+    fn agent_detail_names_the_childs_workspace() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-1".into(),
+            name: "general".into(),
+            task: Some("fix it".into()),
+            workspace: Some("~/.jan/worktrees/jan-1/general-3f2a (jan/agent/general-3f2a)".into()),
+        });
+        let text = agent_detail_text(&mut app, "sub-general-1", 120, 20);
+        assert!(text.contains("workspace ~/.jan/worktrees/jan-1/general-3f2a"), "{text}");
+        assert!(text.contains("jan/agent/general-3f2a"), "{text}");
+    }
+
     #[test]
     fn agent_detail_notes_a_child_it_no_longer_has() {
         let mut app = test_app();
@@ -26298,6 +26410,7 @@ mod tests {
             run_id: "sub-collector-1".to_string(),
             name: "collector".to_string(),
             task: Some("synthesize".to_string()),
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
         assert!(!app.subagents[0].pending);
@@ -26319,6 +26432,7 @@ mod tests {
             run_id: "sub-a-1".to_string(),
             name: "a".to_string(),
             task: Some("do it".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
@@ -26339,6 +26453,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count things".to_string()),
+            workspace: None,
         });
         let child = |event: StreamEvent| StreamEvent::Subagent {
             run_id: "sub-counter-1".to_string(),
@@ -26542,6 +26657,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26589,6 +26705,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26612,6 +26729,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
@@ -26635,6 +26753,7 @@ mod tests {
             run_id: "sub-waster-1".to_string(),
             name: "waster".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
@@ -33110,6 +33229,7 @@ mod tests {
             run_id: "sub-a-1".into(),
             name: "a".into(),
             task: None,
+            workspace: None,
         });
         if let Some((provider, model)) = child_on {
             app.apply(child_request_on(provider, model));
@@ -33191,6 +33311,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 app.apply(child_request_on("tokamak", "tk-1"));
                 app.submit_user("go".into());
@@ -33229,6 +33350,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 let rt = tokio::runtime::Runtime::new().expect("runtime");
                 let held = rt.block_on(args.provider_configs.lock());
@@ -33326,6 +33448,7 @@ mod tests {
             compaction: None,
             session_start: None,
             memory_change_budget: None,
+            child_scope: None,
         })
     }
 
@@ -33448,6 +33571,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         let call = |i: u32, offset: u64| {
             wrap(
@@ -33476,6 +33600,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -33541,11 +33666,13 @@ mod tests {
             run_id: "r1".into(),
             name: "alpha".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r2",
@@ -33590,6 +33717,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
         let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
@@ -35694,6 +35822,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -35753,6 +35882,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -35787,6 +35917,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
@@ -35851,6 +35982,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -35875,6 +36007,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -35909,11 +36042,13 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -36403,6 +36538,7 @@ mod tests {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -39118,10 +39254,61 @@ mod tests {
         assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
     }
 
-    #[test]
-    fn worktree_command_without_one_points_at_the_flag() {
+    /// `/worktree` the way the loop runs it: the command only asks, and the
+    /// report (git per worktree) is gathered on the blocking pool and shown
+    /// when it lands.
+    async fn run_worktree_command(app: &mut App) {
+        worktree_command(app);
+        assert!(app.transcript.rows.is_empty(), "nothing is shown before git answers");
+        assert!(std::mem::take(&mut app.worktree_request));
+        let mut task = Some(spawn_worktree_report(app));
+        let report = await_worktree_report(&mut task).await.unwrap();
+        finish_worktree_report(app, report);
+    }
+
+    #[tokio::test]
+    async fn worktree_command_lists_live_subagent_worktrees() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path().to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(["-C", &r, "-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if !git(&["init", "-q"]) {
+            return;
+        }
+        std::fs::write(root.path().join("a.txt"), "a\n").unwrap();
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]));
         let mut app = test_app();
-        worktree_command(&mut app);
+        let ledger = app.subagent_set.workspaces.clone();
+        let (ws, lease) = ledger.assign(root.path(), "general", true, None).unwrap();
+        drop(lease);
+        let branch = ws.worktree.as_ref().unwrap().branch.clone();
+
+        run_worktree_command(&mut app).await;
+        let notes: String = app
+            .transcript
+            .rows
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(notes.contains("subagent worktrees:"), "{notes}");
+        assert!(notes.contains(&branch), "{notes}");
+        assert!(notes.contains("(0 commit(s), 0 uncommitted file(s))"), "{notes}");
+        assert!(notes.contains("--worktree"), "{notes}");
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    #[tokio::test]
+    async fn worktree_command_without_one_points_at_the_flag() {
+        let mut app = test_app();
+        run_worktree_command(&mut app).await;
         let notes: String = app
             .transcript
             .rows
@@ -40397,6 +40584,7 @@ mod tests {
             run_id: run_id.into(),
             name: name.into(),
             task: task.map(str::to_string),
+            workspace: None,
         });
     }
 
@@ -44340,7 +44528,7 @@ mod tests {
         own_project(&mut app);
         app.args = Some(test_args(&app, providers));
         let (tx, _rx) = mpsc::unbounded_channel();
-        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).expect("tidy started");
+        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).await.expect("tidy started");
         assert_eq!(app.tidy_running, Some(TidyKind::Manual));
         assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
         run_command(&mut app, "plan", &no_mcp()).await;
@@ -46077,6 +46265,7 @@ mod tests {
             home_readonly: false,
             // Bare shell: these exercise the TUI wiring, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 

@@ -116,6 +116,10 @@ pub enum StreamEvent {
         /// `subagent_name`, so matching on name alone is ambiguous.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         task: Option<String>,
+        /// Where the child works: its own worktree and branch, or the
+        /// checkout it was given, marked when read-only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
     },
     /// A backgrounded subagent dispatch found the parent run's concurrency cap
     /// (`max_parallel_subagents`) exhausted and queued the child in FIFO order.
@@ -615,6 +619,7 @@ pub(crate) mod tests {
                     run_id: "r1".into(),
                     name: "scout".into(),
                     task: Some("look".into()),
+                    workspace: None,
                 },
             ),
             (
@@ -1119,6 +1124,7 @@ pub(crate) mod tests {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
             task: None,
+            workspace: None,
         })
         .unwrap();
         assert_eq!(

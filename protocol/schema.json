@@ -233,6 +233,13 @@
                 "null"
               ]
             },
+            "workspace": {
+              "description": "Where the child works: its own worktree and branch, or the\ncheckout it was given, marked when read-only.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "subagent_start"

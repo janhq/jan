@@ -15,7 +15,7 @@ use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::nofollow;
 use crate::tools::sandbox::{
-    escapes_write_roots, hidden_under, in_scratch, landing, lexical_normalize,
+    escapes_write_roots, hidden_under, in_read_only_root, in_scratch, landing, lexical_normalize,
     refuse_windows_name, resolve_path, scratch_display_path, symlink_escapes_any_root, Landing,
 };
 use crate::screenshot_pages::PageScope;
@@ -220,6 +220,11 @@ async fn execute_text(
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
         "ls" => ls(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
+        "write" if ctx.workspace_readonly
+            && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
+        {
+            read_only_refusal(args, project_root)
+        }
         "write" => {
             write(
                 args,
@@ -229,6 +234,11 @@ async fn execute_text(
                 ctx.write_roots,
             )
             .await
+        }
+        "edit" if ctx.workspace_readonly
+            && in_read_only_root(project_root, scratch, arg_str(args, "path").unwrap_or("")) =>
+        {
+            read_only_refusal(args, project_root)
         }
         "edit" => {
             edit(
@@ -986,6 +996,17 @@ async fn edit(
     }
 }
 
+/// The refusal a `write`/`edit` gets for a path in a read-only root. Refused
+/// here rather than left to the prompt, which auto-approval would answer.
+fn read_only_refusal(args: &serde_json::Value, root: &Path) -> String {
+    let path = arg_str(args, "path").unwrap_or_default();
+    format!(
+        "ERROR: {path} is in a read-only checkout ({}): this agent cannot change the project. \
+         Write temporary files to the scratch directory instead.",
+        root.display()
+    )
+}
+
 /// The shell a confined command launches with: the (possibly jail-wrapped)
 /// shell config, the path the sandbox exposes as its temp dir, and the policy
 /// itself (which `denial_hint` reads even when the shell runs unconfined).
@@ -1018,7 +1039,11 @@ pub(crate) fn confined_shell(
     if !ctx.write_roots.is_empty() {
         policy = policy.with_write_roots(ctx.write_roots.to_vec());
     }
-    let shell = if ctx.sandbox {
+    policy = policy.with_workspace_readonly(ctx.workspace_readonly);
+    // A read-only root is only read-only inside the sandbox, so it is never
+    // run without one, whatever the surface chose.
+    let confined = ctx.sandbox || ctx.workspace_readonly;
+    let shell = if confined {
         // No confinement available means no shell: running unsandboxed would give
         // the command the whole machine, which is never what the caller asked for.
         let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
@@ -1032,7 +1057,7 @@ pub(crate) fn confined_shell(
     } else {
         proc::shell().clone()
     };
-    let sandbox_tmp = if ctx.sandbox {
+    let sandbox_tmp = if confined {
         jail::scratch_env_path(jail::backend(), &policy)
     } else {
         None
@@ -1090,7 +1115,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // Cloned into the detached task, which is what keeps a backgrounded command
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
-    let sandboxed = ctx.sandbox;
+    // A read-only root is confined even in an unsandboxed session, so its
+    // denials get the note too.
+    let sandboxed = ctx.sandbox || ctx.workspace_readonly;
     let escalation = ctx.escalation;
     // Fed from the first byte, so a command the user opens in `/shells` after it
     // backgrounded still shows what it printed before the timeout.
@@ -1464,7 +1491,9 @@ fn sandbox_denial_note(out: &str, policy: &jail::Policy, escalation: bool) -> St
         return String::new();
     }
     let mut note = jail::denial_hint(policy);
-    if escalation {
+    // Escalating drops the sandbox but not a read-only root, so offering it to
+    // a read-only run only buys a pointless prompt.
+    if escalation && !policy.workspace_readonly {
         note.push_str(ESCALATION_HINT);
     }
     note
@@ -2263,6 +2292,48 @@ mod tests {
         );
         assert!(content.starts_with("ERROR"), "got: {content}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A read-only root: `write`/`edit` refuse anything under it outright,
+    /// while reads keep working and the scratch stays writable.
+    #[tokio::test]
+    async fn a_read_only_root_refuses_writes_and_edits_under_it() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), "one").unwrap();
+        let scratch = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx = ToolContext::new(&root, &store, &[])
+            .with_scratch_root(&scratch)
+            .with_workspace_readonly(true);
+        for (tool, args) in [
+            ("write", json!({"path": "a.txt", "content": "two"})),
+            ("write", json!({"path": "new/b.txt", "content": "x"})),
+            ("write", json!({"path": ".git/HEAD", "content": "x"})),
+            ("edit", json!({"path": "a.txt", "edits": [{"old_string": "one", "new_string": "two"}]})),
+        ] {
+            let (out, _) = super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await;
+            assert!(out.starts_with("ERROR") && out.contains("read-only"), "{tool}: {out}");
+        }
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "one");
+        assert!(!root.join("new").exists());
+        let (read, _) =
+            super::execute_builtin(lookup("read").unwrap(), &json!({"path": "a.txt"}), &ctx).await;
+        assert_eq!(read, "one");
+        // `/tmp/...` names the scratch on Linux; elsewhere its real path does.
+        let in_scratch = if cfg!(target_os = "linux") {
+            "/tmp/note.txt".to_string()
+        } else {
+            scratch.join("note.txt").to_string_lossy().into_owned()
+        };
+        let (out, _) = super::execute_builtin(
+            lookup("write").unwrap(),
+            &json!({"path": in_scratch, "content": "ok"}),
+            &ctx,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[tokio::test]
@@ -3811,6 +3882,24 @@ mod tests {
         assert!(offered.contains("escalate: true"));
         assert!(sandbox_denial_note("no such file\n[exit 1]", &policy, true).is_empty());
         assert!(sandbox_denial_note("Read-only file system\n[exit 0]", &policy, true).is_empty());
+    }
+
+    /// A read-only workspace is named as read-only, never as where writes go,
+    /// and escalation is not offered: it would not lift the read-only root.
+    #[test]
+    fn a_read_only_workspace_denial_says_read_only_and_offers_no_escalation() {
+        let policy = jail::Policy::new(Path::new("/w"), true)
+            .with_scratch_root(Path::new("/var/scratch/jan-agent-s1"))
+            .with_workspace_readonly(true);
+        let denied = "touch: cannot touch '/w/x': Read-only file system\n[exit 1]";
+        let note = sandbox_denial_note(denied, &policy, true);
+        assert!(note.contains("the workspace (/w) is read-only"), "got: {note}");
+        assert!(note.contains("writes are limited to the scratch dir"), "got: {note}");
+        assert!(!note.contains("writes are limited to the workspace"), "got: {note}");
+        assert!(!note.contains("escalate"), "got: {note}");
+        let bare = jail::Policy::new(Path::new("/w"), true).with_workspace_readonly(true);
+        let note = sandbox_denial_note(denied, &bare, false);
+        assert!(note.contains("is read-only and nothing here is writable"), "got: {note}");
     }
 
     #[test]

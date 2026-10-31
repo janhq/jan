@@ -60,16 +60,104 @@ fn git(args: &[&str]) -> Result<String, String> {
 /// never triggers commit signing.
 #[cfg(feature = "cli")]
 fn run(repo: &Path, index: Option<&Path>, args: &[&str]) -> Result<String, String> {
+    let mut cmd = repo_command(repo, args)?;
+    if let Some(idx) = index {
+        cmd.env("GIT_INDEX_FILE", idx);
+    }
+    let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+    outcome(&out, args)
+}
+
+/// `git -C <repo> <args>` with the fixed agent identity [`run`] describes.
+#[cfg(feature = "cli")]
+fn repo_command(repo: &Path, args: &[&str]) -> Result<Command, String> {
     let mut cmd = git_command()?;
     cmd.arg("-C").arg(repo).args(args);
     cmd.env("GIT_AUTHOR_NAME", "Jan Agent")
         .env("GIT_AUTHOR_EMAIL", "agent@jan.ai")
         .env("GIT_COMMITTER_NAME", "Jan Agent")
         .env("GIT_COMMITTER_EMAIL", "agent@jan.ai");
-    if let Some(idx) = index {
-        cmd.env("GIT_INDEX_FILE", idx);
+    Ok(cmd)
+}
+
+/// [`run`] for a command that talks to a remote, which may never answer:
+/// past `limit` the command and every helper it started (a remote helper, an
+/// `ext::` transport's shell) are killed and this errors. It never prompts,
+/// since nobody is at a terminal to answer.
+#[cfg(feature = "cli")]
+fn run_limited(repo: &Path, args: &[&str], limit: std::time::Duration) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut cmd = repo_command(repo, args)?;
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Its own process group, so a timeout reaches the helpers too: killing
+    // only git would leave them running, holding its pipes open.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().map_err(|e| format!("failed to launch git: {e}"))?;
+    // Drained while it runs, or a chatty command fills a pipe and never exits.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let deadline = std::time::Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            waited => {
+                kill_tree(&mut child);
+                // The drain threads are left to finish on their own: a helper
+                // outside the group could still hold a pipe open.
+                return Err(match waited {
+                    Err(e) => format!("failed to wait for git: {e}"),
+                    _ => format!(
+                        "git {} timed out after {}s",
+                        args.first().copied().unwrap_or(""),
+                        limit.as_secs()
+                    ),
+                });
+            }
+        }
+    };
+    let out = std::process::Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    };
+    outcome(&out, args)
+}
+
+/// Kill `child` and the process group it leads, then reap it.
+#[cfg(feature = "cli")]
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Ok(id) = i32::try_from(child.id()) {
+        let _ = nix::sys::signal::killpg(
+            nix::unistd::Pid::from_raw(id),
+            nix::sys::signal::Signal::SIGKILL,
+        );
     }
-    let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Trimmed stdout of a git that succeeded, else its trimmed stderr (or a
+/// generic message naming the subcommand).
+#[cfg(feature = "cli")]
+fn outcome(out: &std::process::Output, args: &[&str]) -> Result<String, String> {
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -364,13 +452,83 @@ pub(crate) fn worktree_paths(repo: &Path) -> Vec<PathBuf> {
 /// copy came from a config file or a thread record.
 #[cfg(feature = "cli")]
 pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
-    let Ok(want) = path.canonicalize() else {
+    let Ok(want) = dunce::canonicalize(path) else {
         return false;
     };
     worktree_paths(repo)
         .iter()
-        .filter_map(|p| p.canonicalize().ok())
+        .filter_map(|p| dunce::canonicalize(p).ok())
         .any(|p| p == want)
+}
+
+/// Whether a model-supplied ref (a dispatch's `{"ref": ...}`) is a plain
+/// name git can neither read as an option nor as a refspec: no leading `-`
+/// or `+`, no `:` (a `src:dst` refspec would let a fetch move any local
+/// branch), no whitespace or control characters.
+pub(crate) fn is_plain_ref(r: &str) -> bool {
+    !r.is_empty()
+        && !r.starts_with(['-', '+'])
+        && !r.chars().any(|c| c == ':' || c.is_whitespace() || c.is_control())
+}
+
+/// The commit `rev` names in `repo`, or `None` when it names none or is not a
+/// [plain ref](is_plain_ref).
+#[cfg(feature = "cli")]
+pub(crate) fn resolve_commit(repo: &Path, rev: &str) -> Option<String> {
+    if !is_plain_ref(rev) {
+        return None;
+    }
+    let spec = format!("{rev}^{{commit}}");
+    run(repo, None, &["rev-parse", "--verify", "--quiet", "--end-of-options", &spec])
+        .ok()
+        .filter(|sha| is_object_id(sha))
+}
+
+/// Fetch `rev` from `origin` and return the commit it named, for a ref the
+/// local repository does not have (`pull/9486/head`).
+///
+/// `rev` must be a [plain ref](is_plain_ref) that `git check-ref-format`
+/// accepts, so it is never a refspec with a destination of its own. The
+/// destination is a ref private to this call, read and deleted again:
+/// `FETCH_HEAD` is shared by every fetch in the repository, so a concurrent
+/// one could replace it between this fetch and its resolution, and
+/// `--no-write-fetch-head` leaves it to them. `--refmap=` turns off the
+/// remote-tracking update a configured `remote.origin.fetch` would make.
+#[cfg(feature = "cli")]
+pub(crate) fn fetch_commit(
+    repo: &Path,
+    rev: &str,
+    limit: std::time::Duration,
+) -> Result<String, String> {
+    if !is_plain_ref(rev) {
+        return Err(format!("not a git ref: {rev:?}"));
+    }
+    run(repo, None, &["check-ref-format", "--allow-onelevel", rev])
+        .map_err(|_| format!("not a git ref: {rev:?}"))?;
+    static FETCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = FETCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dest = format!("refs/jan/fetch/{}-{seq}", std::process::id());
+    let spec = format!("{rev}:{dest}");
+    let fetched = run_limited(
+        repo,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "origin",
+            "--",
+            &spec,
+        ],
+        limit,
+    )
+    .and_then(|_| {
+        resolve_commit(repo, &dest).ok_or_else(|| format!("fetching {rev} named no commit"))
+    });
+    // Also after a failure: a fetch cut off at its limit may have written it.
+    let _ = run(repo, None, &["update-ref", "-d", &dest]);
+    fetched
 }
 
 /// Forget worktree registrations whose directory the user has deleted. Without
@@ -378,6 +536,296 @@ pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
 #[cfg(feature = "cli")]
 pub(crate) fn worktree_prune(repo: &Path) {
     let _ = run(repo, None, &["worktree", "prune"]);
+}
+
+/// Make `path` a repository of its own on a new `branch` at `base` (a full
+/// commit id) and return the object directory it borrows from `repo` (`git
+/// clone --shared`: its `objects/info/alternates` names it). Unlike a linked
+/// worktree it shares no git dir with `repo`, so whoever works in it never
+/// writes the user's `.git`; the branch reaches `repo` only through
+/// [`Checkout::fetch_branch`]. The parent directory is created first; `path`
+/// must not exist.
+#[cfg(feature = "cli")]
+pub(crate) fn clone_shared(
+    repo: &Path,
+    path: &Path,
+    branch: &str,
+    base: &str,
+) -> Result<PathBuf, String> {
+    require_object_id(base)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let made = run(
+        repo,
+        None,
+        &[
+            "clone",
+            "--shared",
+            "--no-checkout",
+            "--no-tags",
+            "--quiet",
+            "--",
+            &repo.to_string_lossy(),
+            &path.to_string_lossy(),
+        ],
+    )
+    .and_then(|_| run(path, None, &["checkout", "-q", "-b", branch, base, "--"]))
+    .and_then(|_| only_branch(path, branch))
+    .and_then(|_| match alternates(path)?.as_slice() {
+        [objects] => Ok(objects.clone()),
+        other => Err(format!("the clone borrows {} object directories, not one", other.len())),
+    });
+    if made.is_err() {
+        let _ = std::fs::remove_dir_all(path);
+    }
+    made
+}
+
+/// Leave a fresh clone with `branch` and nothing else: the clone's copy of the
+/// user's current branch and its remote-tracking refs would read as work it
+/// holds once the user's repository moves on, and the remote would point the
+/// child back at the repository it must not write.
+#[cfg(feature = "cli")]
+fn only_branch(path: &Path, branch: &str) -> Result<(), String> {
+    let heads = run(path, None, &["for-each-ref", "--format=%(refname:short)", "refs/heads"])?;
+    for other in heads.lines().filter(|b| *b != branch) {
+        run(path, None, &["branch", "-D", "--", other])?;
+    }
+    run(path, None, &["remote", "remove", "origin"]).map(|_| ())
+}
+
+/// The object directories the repository at `checkout` borrows, as its
+/// `objects/info/alternates` names them (canonicalized when they exist).
+#[cfg(feature = "cli")]
+fn alternates(checkout: &Path) -> Result<Vec<PathBuf>, String> {
+    let file = checkout.join(".git/objects/info/alternates");
+    match std::fs::read_to_string(&file) {
+        Ok(raw) => Ok(raw
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(|l| dunce::canonicalize(l).unwrap_or_else(|_| PathBuf::from(l)))
+            .collect()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(format!("could not read {}: {e}", file.display())),
+    }
+}
+
+/// Whether `key` (as `git config --list` spells it) is one a clone and
+/// everyday work in it leave behind and that cannot name a program. Every
+/// other key of a child's config is emptied for Jan's own git: whatever it is
+/// (`filter.*`, `diff.*`, `merge.*`, `credential.*`, `remote.*.uploadpack`,
+/// `core.sshCommand`, ...), it may be a command git would run.
+#[cfg(feature = "cli")]
+fn inert_config(key: &str) -> bool {
+    let Some((section, rest)) = key.split_once('.') else { return false };
+    let name = rest.rsplit_once('.').map_or(rest, |(_, name)| name);
+    match section {
+        "core" => matches!(
+            name,
+            "repositoryformatversion" | "filemode" | "bare" | "logallrefupdates" | "symlinks"
+                | "ignorecase" | "precomposeunicode" | "autocrlf" | "eol" | "safecrlf"
+        ),
+        "user" | "branch" => true,
+        "remote" => matches!(name, "url" | "pushurl" | "fetch" | "push" | "tagopt"),
+        _ => false,
+    }
+}
+
+/// A repository made by [`clone_shared`] that its child has worked in, opened
+/// only while it is still what Jan made. Jan's git runs unsandboxed where the
+/// child's was confined to this checkout, and the child controls everything
+/// in its `.git`: its config can name programs git then runs, its `.git` can
+/// be a file, or hold a `commondir`, pointing at another repository, and its
+/// alternates can pull in any directory's objects. [`Checkout::open`] refuses
+/// a checkout whose `.git` or alternates changed, or whose config reaches
+/// beyond itself, and every command of a checkout empties the rest of that
+/// config, names its git dir and work tree itself, honors no `replace` ref,
+/// starts only the `file` transport and never looks inside a nested
+/// repository.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone)]
+pub(crate) struct Checkout {
+    path: PathBuf,
+    /// The `key=` overrides that empty every setting of the child's config
+    /// that could name a program, read once by [`Checkout::open`].
+    overrides: Vec<String>,
+}
+
+#[cfg(feature = "cli")]
+impl Checkout {
+    /// The clone at `path` (its top level) that borrows exactly `objects`, or
+    /// an error naming what changed, for the user.
+    pub(crate) fn open(path: &Path, objects: &Path) -> Result<Self, String> {
+        let dot = path.join(".git");
+        let plain = |p: &Path, dir: bool| {
+            std::fs::symlink_metadata(p).is_ok_and(|m| if dir { m.is_dir() } else { m.is_file() })
+        };
+        if !plain(&dot, true) || !plain(&dot.join("objects"), true) || !plain(&dot.join("config"), false)
+        {
+            return Err("its .git was replaced: it is no longer a plain directory".to_string());
+        }
+        // Each of these makes git read another repository's config or objects.
+        for pointer in ["commondir", "objects/info/http-alternates"] {
+            if dot.join(pointer).exists() {
+                return Err(format!("its .git has a {pointer} file, which redirects git"));
+            }
+        }
+        if alternates(path)? != [objects.to_path_buf()] {
+            return Err(format!(
+                "its object alternates were rewritten: it must borrow only {}",
+                objects.display()
+            ));
+        }
+        // `--file` reads that one file, follows no `include` and starts nothing.
+        let listed = git_command()?
+            .args(["config", "--file"])
+            .arg(dot.join("config"))
+            .args(["--list", "-z"])
+            .output()
+            .map_err(|e| format!("failed to launch git: {e}"))?;
+        if !listed.status.success() {
+            return Err("its git config cannot be read".to_string());
+        }
+        let mut overrides = Vec::new();
+        for entry in String::from_utf8_lossy(&listed.stdout).split('\0').filter(|e| !e.is_empty()) {
+            let (key, value) = entry.split_once('\n').unwrap_or((entry, ""));
+            // These read more files (another config, `config.worktree`) than
+            // were looked at here.
+            if key.starts_with("include.")
+                || key.starts_with("includeif.")
+                || key.starts_with("extensions.")
+            {
+                return Err(format!("its git config sets {key}, which makes git read more"));
+            }
+            if key == "core.repositoryformatversion" && value != "0" {
+                return Err("its repository format is not the one Jan made".to_string());
+            }
+            if inert_config(key) {
+                continue;
+            }
+            // `-c key=value` splits at the first `=`, so such a key cannot be
+            // emptied.
+            if key.contains('=') {
+                return Err(format!("its git config sets {key}, which git cannot be told to ignore"));
+            }
+            let pair = format!("{key}=");
+            if !overrides.contains(&pair) {
+                overrides.push(pair);
+            }
+        }
+        Ok(Self { path: path.to_path_buf(), overrides })
+    }
+
+    /// The options every git of Jan's in the checkout takes, ahead of the
+    /// subcommand: the child's config emptied of anything that could run,
+    /// then what no config may turn back on.
+    fn hardened(&self) -> Vec<String> {
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        let mut opts = vec!["--no-replace-objects".to_string(), "--no-optional-locks".to_string()];
+        for pair in &self.overrides {
+            opts.extend(["-c".to_string(), pair.clone()]);
+        }
+        opts.extend([
+            "-c".to_string(),
+            "core.fsmonitor=false".to_string(),
+            "-c".to_string(),
+            format!("core.hooksPath={null}"),
+        ]);
+        opts
+    }
+
+    /// `git <args>` in the checkout, its git dir and work tree named
+    /// explicitly.
+    fn run(&self, args: &[&str]) -> Result<String, String> {
+        let opts = self.hardened();
+        let mut full: Vec<&str> = opts.iter().map(String::as_str).collect();
+        full.extend_from_slice(args);
+        let mut cmd = repo_command(&self.path, &full)?;
+        cmd.env("GIT_DIR", self.path.join(".git"))
+            .env("GIT_WORK_TREE", &self.path);
+        let out = cmd.output().map_err(|e| format!("failed to launch git: {e}"))?;
+        outcome(&out, args)
+    }
+
+    /// The branch checked out there, `None` when detached or unreadable.
+    pub(crate) fn current_branch(&self) -> Option<String> {
+        self.run(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .ok()
+            .filter(|s| !s.is_empty() && s != "HEAD")
+    }
+
+    /// Commits reachable from `tip` (a branch or `HEAD`) but not from
+    /// `base`. `None` when git cannot say, which callers must never read as
+    /// zero.
+    pub(crate) fn commits_on(&self, base: &str, tip: &str) -> Option<u64> {
+        require_object_id(base).ok()?;
+        if tip.starts_with('-') {
+            return None;
+        }
+        self.run(&["rev-list", "--count", &format!("{base}..{tip}"), "--"])
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    /// Commits any ref of the checkout (or `HEAD`) reaches that `base` does
+    /// not: everything the child committed, on whatever branch, stash or tag.
+    /// `None` when git cannot say.
+    pub(crate) fn commits_anywhere(&self, base: &str) -> Option<u64> {
+        require_object_id(base).ok()?;
+        self.run(&["rev-list", "--count", "--all", "--not", base, "--"]).ok()?.parse().ok()
+    }
+
+    /// [`try_changed_paths`] for this checkout. A nested repository (or a
+    /// recorded submodule) is never opened: its own config can name a program
+    /// (`core.fsmonitor`) that its status would run.
+    pub(crate) fn try_changed_paths(&self) -> Result<Vec<String>, String> {
+        changed_paths_with(|args| {
+            let mut full = args.to_vec();
+            full.push("--ignore-submodules=all");
+            self.run(&full)
+        })
+    }
+
+    /// Fetch `branch` into `repo` under the same name: the child's commits
+    /// become a branch of the user's repository. Not forced, so a branch the
+    /// user has since built on is never overwritten (the fetch fails instead),
+    /// and only that one ref comes. Objects are checked as they arrive.
+    /// Bounded by `limit`, like any fetch.
+    pub(crate) fn fetch_branch(
+        &self,
+        repo: &Path,
+        branch: &str,
+        limit: std::time::Duration,
+    ) -> Result<(), String> {
+        let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        let dot = self.path.join(".git").to_string_lossy().into_owned();
+        let opts = self.hardened();
+        let mut args: Vec<&str> = opts.iter().map(String::as_str).collect();
+        // Only the `file` transport, so no helper (`ext::`, a remote helper)
+        // is ever started; the `-c`s reach the `upload-pack` git runs in the
+        // checkout through the environment.
+        args.extend([
+            "-c",
+            "protocol.allow=never",
+            "-c",
+            "protocol.file.allow=always",
+            "-c",
+            "transfer.fsckObjects=true",
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "--refmap=",
+            "--no-recurse-submodules",
+            "--",
+            &dot,
+            &spec,
+        ]);
+        run_limited(repo, &args, limit).map(|_| ())
+    }
 }
 
 /// Paths changed in a worktree relative to its own `HEAD`, staged, unstaged and
@@ -390,8 +838,26 @@ pub(crate) fn worktree_prune(repo: &Path) {
 /// eat the first character of that one path.
 #[cfg(feature = "cli")]
 pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
-    run(worktree, None, &["status", "--porcelain"])
-        .unwrap_or_default()
+    try_changed_paths(worktree).unwrap_or_default()
+}
+
+/// [`changed_paths`], but a `git status` that fails is an error rather than
+/// an empty list: a caller deciding whether a checkout may be deleted must not
+/// read "git could not tell" as "clean".
+///
+/// `--untracked-files=all` overrides a user's `status.showUntrackedFiles=no`,
+/// under which a checkout holding only new files would read as clean and be
+/// force-deleted with them.
+#[cfg(feature = "cli")]
+pub(crate) fn try_changed_paths(worktree: &Path) -> Result<Vec<String>, String> {
+    changed_paths_with(|args| run(worktree, None, args))
+}
+
+#[cfg(feature = "cli")]
+fn changed_paths_with(
+    git: impl Fn(&[&str]) -> Result<String, String>,
+) -> Result<Vec<String>, String> {
+    Ok(git(&["status", "--porcelain", "--untracked-files=all"])?
         .lines()
         .filter_map(|l| l.trim_start().split_once(' '))
         // A rename reads `R old -> new`; the new name is the path on disk, and
@@ -401,7 +867,7 @@ pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
             None => path.trim().to_string(),
         })
         .filter(|s| !s.is_empty())
-        .collect()
+        .collect())
 }
 
 #[cfg(all(test, feature = "cli"))]
@@ -411,6 +877,8 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.
@@ -710,6 +1178,174 @@ mod tests {
             assert!(repo_root(&dir).is_none());
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fetch ref comes from the model, so a refspec (`src:dst`, a leading
+    /// `+`) is refused before git sees it, and a plain ref lands in
+    /// `FETCH_HEAD` only: no local branch or remote-tracking ref moves.
+    #[test]
+    fn fetch_commit_refuses_refspecs_and_moves_no_local_ref() {
+        let Some(upstream) = init_repo() else { return };
+        let trunk = current_branch(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", "-b", "x"]).unwrap();
+        std::fs::write(upstream.join("x.txt"), "x\n").unwrap();
+        run(&upstream, None, &["add", "x.txt"]).unwrap();
+        run(&upstream, None, &["commit", "-q", "-m", "x", "--no-gpg-sign"]).unwrap();
+        let x = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", &trunk]).unwrap();
+        let clone = upstream.with_extension("clone");
+        let _ = std::fs::remove_dir_all(&clone);
+        let (from, to) = (upstream.to_string_lossy(), clone.to_string_lossy());
+        git(&["clone", "-q", "--single-branch", "-b", &trunk, &from, &to]).unwrap();
+        // The usual wildcard refspec, under which a plain `git fetch origin x`
+        // would also move `refs/remotes/origin/x`.
+        let wide = "+refs/heads/*:refs/remotes/origin/*";
+        run(&clone, None, &["config", "remote.origin.fetch", wide]).unwrap();
+        run(&clone, None, &["branch", "victim"]).unwrap();
+        let before = head_sha(&clone).unwrap();
+
+        for bad in [
+            "+refs/heads/x:refs/heads/victim",
+            "x:victim",
+            "refs/heads/x:refs/heads/victim",
+            "+x",
+            "x:",
+            "x\u{7}",
+        ] {
+            assert!(fetch_commit(&clone, bad, LIMIT).is_err(), "{bad:?} must be refused");
+            assert_eq!(
+                resolve_commit(&clone, "refs/heads/victim").as_deref(),
+                Some(before.as_str()),
+                "{bad:?} moved a local branch"
+            );
+        }
+        assert_eq!(fetch_commit(&clone, "x", LIMIT).as_deref(), Ok(x.as_str()));
+        assert_eq!(resolve_commit(&clone, "refs/heads/x"), None, "no local branch made");
+        assert_eq!(resolve_commit(&clone, "refs/remotes/origin/x"), None);
+        assert_eq!(resolve_commit(&clone, "refs/heads/victim").as_deref(), Some(before.as_str()));
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&upstream);
+    }
+
+    /// Concurrent fetches in one repository would share `FETCH_HEAD`, so one
+    /// could resolve the commit another fetched. A fetch therefore resolves
+    /// from a ref of its own and leaves `FETCH_HEAD`, and no ref, behind.
+    #[test]
+    fn fetch_commit_neither_reads_nor_writes_the_shared_fetch_head() {
+        let Some(upstream) = init_repo() else { return };
+        let trunk = current_branch(&upstream).unwrap();
+        let base = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", "-b", "x"]).unwrap();
+        std::fs::write(upstream.join("x.txt"), "x\n").unwrap();
+        run(&upstream, None, &["add", "x.txt"]).unwrap();
+        run(&upstream, None, &["commit", "-q", "-m", "x", "--no-gpg-sign"]).unwrap();
+        let x = head_sha(&upstream).unwrap();
+        run(&upstream, None, &["checkout", "-q", &trunk]).unwrap();
+        let clone = upstream.with_extension("fetchhead");
+        let _ = std::fs::remove_dir_all(&clone);
+        let (from, to) = (upstream.to_string_lossy(), clone.to_string_lossy());
+        git(&["clone", "-q", "--single-branch", "-b", &trunk, &from, &to]).unwrap();
+        // What another fetch running alongside left there.
+        let other = format!("{base}\t\tbranch 'other' of elsewhere\n");
+        let fetch_head = clone.join(".git/FETCH_HEAD");
+        std::fs::write(&fetch_head, &other).unwrap();
+
+        assert_eq!(fetch_commit(&clone, "x", LIMIT).as_deref(), Ok(x.as_str()));
+        assert_eq!(std::fs::read_to_string(&fetch_head).unwrap(), other);
+        let left = run(&clone, None, &["for-each-ref", "refs/jan/"]).unwrap();
+        assert!(left.is_empty(), "{left}");
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&upstream);
+    }
+
+    /// A fetch from a remote that never answers gives up at its limit with an
+    /// error saying so, rather than holding the dispatch that asked for it.
+    #[test]
+    fn a_fetch_from_a_remote_that_never_answers_times_out() {
+        let Some(root) = init_repo() else { return };
+        run(&root, None, &["config", "protocol.ext.allow", "always"]).unwrap();
+        run(&root, None, &["remote", "add", "origin", "ext::sh -c sleep% 600"]).unwrap();
+        let started = std::time::Instant::now();
+        let err = fetch_commit(&root, "pull/1/head", std::time::Duration::from_secs(2))
+            .unwrap_err();
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
+        assert!(err.contains("timed out after 2s"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The primitives a subagent checkout's life is built from: resolve a ref
+    /// to the commit it names, make a clone of its own that borrows only the
+    /// user's objects, count what was committed in it, and bring its branch
+    /// back into the user's repository.
+    #[test]
+    fn a_child_checkout_can_be_made_counted_and_brought_back() {
+        let Some(root) = init_repo() else { return };
+        let head = head_sha(&root).unwrap();
+        assert_eq!(resolve_commit(&root, "HEAD").as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_commit(&root, "no-such-ref"), None);
+        // A ref is never read as an option, whatever it is spelled as.
+        assert_eq!(resolve_commit(&root, "--output=x"), None);
+
+        let wt = root.parent().unwrap().join(format!(
+            "{}-child",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        let objects = clone_shared(&root, &wt, "jan/agent/child-1", &head).unwrap();
+        assert_eq!(objects, dunce::canonicalize(root.join(".git/objects")).unwrap());
+        let wt = dunce::canonicalize(&wt).unwrap();
+        assert!(wt.join(".git").is_dir(), "a repository of its own, not a linked worktree");
+        assert!(!wt.join(".git/commondir").exists());
+        let heads = run(&wt, None, &["for-each-ref", "--format=%(refname)"]).unwrap();
+        assert_eq!(heads, "refs/heads/jan/agent/child-1", "no other branch, no remote refs");
+        assert!(run(&wt, None, &["remote"]).unwrap().is_empty());
+
+        let child = Checkout::open(&wt, &objects).unwrap();
+        assert_eq!(child.current_branch().as_deref(), Some("jan/agent/child-1"));
+        assert_eq!(child.commits_on(&head, "HEAD"), Some(0));
+        std::fs::write(wt.join("b.txt"), "b\n").unwrap();
+        run(&wt, None, &["add", "b.txt"]).unwrap();
+        run(&wt, None, &["commit", "-q", "-m", "b", "--no-gpg-sign"]).unwrap();
+        assert_eq!(child.commits_on(&head, "HEAD"), Some(1));
+        assert_eq!(child.commits_on(&head, "refs/heads/jan/agent/child-1"), Some(1));
+        assert_eq!(child.commits_on(&head, "--all"), None, "never an option");
+        assert_eq!(child.commits_anywhere(&head), Some(1));
+        std::fs::write(wt.join("c.txt"), "c\n").unwrap();
+        assert_eq!(child.try_changed_paths(), Ok(vec!["c.txt".to_string()]));
+
+        assert_eq!(resolve_commit(&root, "jan/agent/child-1"), None, "not there yet");
+        child.fetch_branch(&root, "jan/agent/child-1", LIMIT).unwrap();
+        let tip = head_sha(&wt).unwrap();
+        assert_eq!(resolve_commit(&root, "jan/agent/child-1").as_deref(), Some(tip.as_str()));
+        assert!(run(&root, None, &["for-each-ref", "refs/jan/"]).unwrap().is_empty());
+
+        // A `.git` swapped for a file, a `commondir`, rewritten alternates and
+        // a config that includes another file are each refused before any git
+        // runs in it.
+        let dot = wt.join(".git");
+        let elsewhere = wt.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let alternates = dot.join("objects/info/alternates");
+        let good = std::fs::read_to_string(&alternates).unwrap();
+        std::fs::write(&alternates, format!("{good}{}\n", elsewhere.display())).unwrap();
+        let err = Checkout::open(&wt, &objects).unwrap_err();
+        assert!(err.contains("alternates"), "{err}");
+        std::fs::write(&alternates, &good).unwrap();
+        std::fs::write(dot.join("commondir"), "/elsewhere\n").unwrap();
+        assert!(Checkout::open(&wt, &objects).unwrap_err().contains("commondir"));
+        std::fs::remove_file(dot.join("commondir")).unwrap();
+        run(&wt, None, &["config", "include.path", "/elsewhere"]).unwrap();
+        assert!(Checkout::open(&wt, &objects).unwrap_err().contains("include"));
+        run(&wt, None, &["config", "--unset", "include.path"]).unwrap();
+        assert!(Checkout::open(&wt, &objects).is_ok());
+        let moved = wt.with_extension("moved");
+        std::fs::rename(&dot, &moved).unwrap();
+        std::fs::write(&dot, "gitdir: /elsewhere\n").unwrap();
+        let err = Checkout::open(&wt, &objects).unwrap_err();
+        assert!(err.contains(".git was replaced"), "{err}");
+        let _ = std::fs::remove_dir_all(&moved);
+        let _ = std::fs::remove_dir_all(&wt);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `current_branch` re-reads `HEAD` live rather than caching it, so a

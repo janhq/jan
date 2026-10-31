@@ -223,6 +223,11 @@ pub struct ToolContext<'a> {
     /// it. `None` keeps the default: keyless Exa, upgraded by an `EXA_API_KEY`
     /// in the environment.
     pub web_search: Option<&'a tauri_plugin_websearch::provider::WebSearchConfig>,
+    /// `project_root` is read-only: a read-only subagent working in the user's
+    /// checkout. `write`/`edit` refuse any path under it (the scratch stays
+    /// writable), and the shell runs only confined, with the root bound
+    /// read-only; with no sandbox backend there is no shell at all.
+    pub workspace_readonly: bool,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -256,6 +261,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("screenshot_backend", &self.screenshot_backend.is_some())
             .field("hooks", &self.hooks.map(|h| h.len()).unwrap_or(0))
             .field("plan_mode", &self.plan_mode)
+            .field("workspace_readonly", &self.workspace_readonly)
             .field("hook_sink", &self.hook_sink.is_some())
             .field("shell_done_sink", &self.shell_done_sink.is_some())
             .field("detach_signal", &self.detach_signal.is_some())
@@ -418,7 +424,14 @@ impl<'a> ToolContext<'a> {
             shell_done_sink: None,
             detach_signal: None,
             web_search: None,
+            workspace_readonly: false,
         }
+    }
+
+    /// Make `project_root` read-only. See [`Self::workspace_readonly`].
+    pub fn with_workspace_readonly(mut self, readonly: bool) -> Self {
+        self.workspace_readonly = readonly;
+        self
     }
 
     /// Route the web tools to the host's chosen backend. See

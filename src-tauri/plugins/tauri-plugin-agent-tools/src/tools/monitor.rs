@@ -65,6 +65,7 @@ pub struct MonitorCtx {
     pub allow_network: bool,
     pub home_readonly: bool,
     pub sandbox: bool,
+    pub workspace_readonly: bool,
 }
 
 impl MonitorCtx {
@@ -79,6 +80,7 @@ impl MonitorCtx {
             allow_network: ctx.allow_network,
             home_readonly: ctx.home_readonly,
             sandbox: ctx.sandbox,
+            workspace_readonly: ctx.workspace_readonly,
         }
     }
 
@@ -92,7 +94,8 @@ impl MonitorCtx {
             .with_sandbox(self.sandbox)
             .with_read_roots(&self.read_roots)
             .with_write_roots(&self.write_roots)
-            .with_hidden_root(self.hidden_root.as_deref());
+            .with_hidden_root(self.hidden_root.as_deref())
+            .with_workspace_readonly(self.workspace_readonly);
         if let Some(mask) = &self.mask_root {
             ctx = ctx.with_mask_root(mask);
         }
@@ -617,6 +620,7 @@ mod tests {
             home_readonly: false,
             // Bare shell: these tests exercise the monitor loop, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 

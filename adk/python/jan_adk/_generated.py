@@ -344,6 +344,8 @@ class SubagentStartEvent(TypedDict):
     name: str
     # The task the child was dispatched with -- its sole user message. Carried on the event rather than left for consumers to correlate back to the `dispatch_subagent` call: two dispatches can share a `subagent_name`, so matching on name alone is ambiguous.
     task: NotRequired[Union[str, None]]
+    # Where the child works: its own worktree and branch, or the checkout it was given, marked when read-only.
+    workspace: NotRequired[Union[str, None]]
     type: Literal["subagent_start"]
 
 class SubagentQueuedEvent(TypedDict):
