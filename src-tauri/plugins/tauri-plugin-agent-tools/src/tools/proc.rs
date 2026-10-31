@@ -712,9 +712,7 @@ pub async fn spawn_with_stdin(
 
 #[cfg(unix)]
 fn set_process_group(cmd: &mut Command) {
-    // pgid 0 => the child becomes leader of a new group whose id equals its pid,
-    // so `kill_tree(pid)` can signal the whole group.
-    cmd.process_group(0);
+    detach_from_terminal(cmd);
 }
 
 #[cfg(windows)]
@@ -723,10 +721,44 @@ fn set_process_group(cmd: &mut Command) {
     cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
 }
 
+/// Start the child in a new session (`setsid`), so it leads a new process group
+/// (pgid == pid, which [`kill_tree`] relies on) **and** has no controlling
+/// terminal.
+///
+/// A new process group alone (`process_group(0)`) is not enough when Jan runs
+/// in a terminal: the child stays in Jan's session, so anything it starts can
+/// open `/dev/tty` and make itself the terminal's foreground group with
+/// `tcsetpgrp` (a job-control program blocking SIGTTOU does exactly that).
+/// Once it exits, the foreground points at a dead group and the TUI's next
+/// read of the terminal stops Jan with SIGTTIN -- the shell then reports
+/// `suspended (tty input)` and the session looks dead. Without a controlling
+/// terminal, opening `/dev/tty` fails (ENXIO), so a child can never take Jan's
+/// terminal; a tool that insists on prompting there fails fast instead of
+/// stopping or hanging.
+///
+/// This replaces `process_group(0)` rather than adding to it: std applies the
+/// process group before the `pre_exec` hooks, and `setsid` refuses (EPERM) in a
+/// process that already leads a group.
+#[cfg(unix)]
+pub fn detach_from_terminal(cmd: &mut Command) {
+    // # Safety: runs in the forked child before exec; `setsid` is
+    // async-signal-safe. It can only fail if the child already leads a process
+    // group, which a freshly forked child never does; failing the spawn then is
+    // better than silently sharing Jan's terminal.
+    unsafe {
+        cmd.pre_exec(|| {
+            if nix::libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
 /// Kill the process `pid` and every descendant it spawned.
 ///
-/// Every child we register is spawned with `process_group(0)` (see
-/// [`set_process_group`]), so its pgid equals its pid and `killpg` reaps the
+/// Every child we register is spawned in its own session (see
+/// [`detach_from_terminal`]), so its pgid equals its pid and `killpg` reaps the
 /// whole tree. There is deliberately no bare-`kill(pid)` fallback: `killpg`
 /// fails only when the group is already gone (ESRCH) or we lack permission
 /// (EPERM, which a single `kill` would hit too), so the fallback could never
@@ -1269,6 +1301,47 @@ mod tests {
         unregister(None, pid);
         let expected = std::env::var("TMPDIR").unwrap_or_else(|_| "unset".to_string());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), expected);
+    }
+
+    /// The child leads its own session and process group: `kill_tree` still
+    /// reaches the whole tree, and it is outside Jan's session, so it cannot
+    /// take Jan's terminal.
+    #[tokio::test]
+    async fn spawned_child_leads_its_own_session() {
+        use nix::unistd::{getpgid, getsid, Pid};
+        let mut child = spawn(shell(), "sleep 30", &tmp(), None, ShellEnv::default(), None)
+            .await
+            .unwrap();
+        let pid = Pid::from_raw(child.id().unwrap() as i32);
+        let (sid, pgid) = (getsid(Some(pid)), getpgid(Some(pid)));
+        kill_tree(pid.as_raw() as u32);
+        let _ = child.wait().await;
+        unregister(None, pid.as_raw() as u32);
+        assert_eq!(sid.unwrap(), pid, "child must lead a new session");
+        assert_eq!(pgid.unwrap(), pid, "child must lead its process group");
+        assert_ne!(sid.unwrap(), getsid(None).unwrap());
+    }
+
+    /// The SIGTTIN stop behind a "dead" TUI session: a tool child that could
+    /// open `/dev/tty` could also make itself the terminal's foreground group
+    /// and leave Jan reading from the background. Without a controlling
+    /// terminal the open fails, whether or not Jan itself has one.
+    #[tokio::test]
+    async fn spawned_child_cannot_open_the_terminal() {
+        let child = spawn(
+            shell(),
+            "if (: </dev/tty) 2>/dev/null; then echo opened; else echo denied; fi",
+            &tmp(),
+            None,
+            ShellEnv::default(),
+            None,
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(None, pid);
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "denied");
     }
 
     #[tokio::test]

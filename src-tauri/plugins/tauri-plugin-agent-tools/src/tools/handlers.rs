@@ -1653,7 +1653,12 @@ pub async fn render_html_png(
         c.args(&chrome_args);
         c
     };
+    // Chrome gets no stdin and no controlling terminal: left alone it would sit
+    // in Jan's foreground process group holding the TUI's terminal.
+    #[cfg(unix)]
+    proc::detach_from_terminal(&mut launcher);
     let mut child = match launcher
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()

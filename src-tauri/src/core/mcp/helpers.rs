@@ -546,11 +546,10 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
             // Make the child a process-group leader (pgid == pid) so teardown can
             // signal the whole tree; MCP bridges fork grandchildren that hold the
-            // port and outlive a single-PID kill.
+            // port and outlive a single-PID kill. A new session, not just a new
+            // group, so the server can never take over a terminal Jan runs in.
             #[cfg(unix)]
-            {
-                cmd.process_group(0);
-            }
+            tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
             cmd.kill_on_drop(true);
             config_params
                 .args
