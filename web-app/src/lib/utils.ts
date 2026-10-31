@@ -159,6 +159,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/minimax.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
+    case 'uberllm':
+      return '/images/model-provider/uberllm.svg'
     default:
       return undefined
   }
@@ -186,6 +188,8 @@ export const getProviderTitle = (provider: string) => {
       return 'MiniMax'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'uberllm':
+      return 'UberLLM'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
