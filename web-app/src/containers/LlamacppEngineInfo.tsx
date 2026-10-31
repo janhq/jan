@@ -64,7 +64,9 @@ export function LlamacppEngineInfo() {
           </span>
         </div>
         <a
-          href={`${UPSTREAM_REPO}/releases/tag/${engine.tag}`}
+          // The changelog is on the versioned release; the b<N> build tag
+          // page carries only binaries.
+          href={`${UPSTREAM_REPO}/releases/tag/v${engine.version}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"

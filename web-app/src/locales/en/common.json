@@ -164,8 +164,7 @@
   },
   "modelPanel": {
     "title": "Model settings",
-    "a11y": "Open model settings",
-    "contextTooltip": "Context window: {{value}} of {{max}} tokens"
+    "a11y": "Open model settings"
   },
   "coworkSlash": {
     "skillUnavailable": "Skill '{{name}}' is not available",
@@ -784,10 +783,11 @@
   "modelNoTools": "{{model}} can’t call tools, so it can’t act as an agent. Pick a tool-calling model.",
   "askContinue": "Continue",
   "askNext": "Next question",
+  "askPageOf": "{{current}} of {{total}}",
   "askPrev": "Previous question",
+  "askSkipped": "Skipped",
   "askRecommended": "Recommended",
   "askSelectedCount": "{{count}} selected",
   "askSomethingElse": "Something else",
-  "askSomethingElsePlaceholder": "Type your own answer",
   "submit": "Submit"
 }

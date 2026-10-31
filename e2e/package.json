@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "wdio run ./wdio.conf.ts",
+    "test:migration": "tsx run-migration.ts",
+    "test:unit": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -18,6 +20,10 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.0",
     "webdriverio": "^9.30.0"
+  },
+  "resolutions": {
+    "basic-ftp": "^6.2.1",
+    "serialize-javascript": "^7.0.3"
   },
   "packageManager": "yarn@4.5.3",
   "engines": {

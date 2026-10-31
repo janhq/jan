@@ -27,6 +27,18 @@ pub struct Served {
 }
 
 impl PreviewRoots {
+    /// [`register`](Self::register) for the pane, which only registers a root
+    /// for the unsandboxed mode (the sandboxed one is a `srcdoc` frame and never
+    /// touches the scheme). Refused on Windows, where WebView2 hands this
+    /// origin's frames the IPC key and the pane does not offer the mode, so
+    /// nothing can be served there.
+    pub fn register_unsandboxed(&self, root: &Path, allow_network: bool) -> Result<(), String> {
+        if cfg!(windows) {
+            return Err("ERROR: the unsandboxed preview is not available on Windows".to_string());
+        }
+        self.register(root, allow_network)
+    }
+
     pub fn register(&self, root: &Path, allow_network: bool) -> Result<(), String> {
         let canon = std::fs::canonicalize(root).map_err(|e| format!("ERROR: {e}"))?;
         if !canon.is_dir() {
@@ -230,6 +242,18 @@ mod tests {
     }
 
     #[test]
+    fn the_unsandboxed_registration_is_refused_on_windows_only() {
+        let root = temp_root("win");
+        let roots = PreviewRoots::default();
+        let registered = roots.register_unsandboxed(&root, false);
+        assert_eq!(registered.is_err(), cfg!(windows));
+        assert_eq!(
+            roots.resolve(&url_path(&root.join("index.html"))).is_none(),
+            cfg!(windows)
+        );
+    }
+
+    #[test]
     fn registering_a_missing_root_errors() {
         let roots = PreviewRoots::default();
         assert!(roots
@@ -246,6 +270,37 @@ mod tests {
         let open = csp(true);
         assert!(open.contains("connect-src 'self' https:"));
         assert!(open.contains("script-src 'self' 'unsafe-inline' blob: https:"));
+    }
+
+    /// The preview origin is app-local, so on WebView2 its frames are handed
+    /// the IPC key; this policy is what keeps a page from reaching IPC or any
+    /// other local endpoint. Pin each network-facing directive exactly.
+    #[test]
+    fn csp_connect_src_is_pinned() {
+        let directive = |policy: &str, name: &str| {
+            policy
+                .split(';')
+                .map(str::trim)
+                .find_map(|d| d.strip_prefix(name)?.strip_prefix(' ').map(str::to_string))
+                .unwrap_or_else(|| panic!("{name} missing from {policy}"))
+        };
+        let closed = csp(false);
+        assert_eq!(directive(&closed, "default-src"), "'none'");
+        assert_eq!(directive(&closed, "connect-src"), "'self'");
+        assert_eq!(directive(&closed, "worker-src"), "'self' blob:");
+        let open = csp(true);
+        assert_eq!(directive(&open, "default-src"), "'none'");
+        assert_eq!(directive(&open, "connect-src"), "'self' https:");
+        // No directive may name IPC, the app, plain http or a wildcard.
+        for policy in [&closed, &open] {
+            for token in policy.split([' ', ';']) {
+                assert!(
+                    !matches!(token, "*" | "http:" | "ws:" | "wss:" | "ipc:" | "tauri:")
+                        && !token.contains("localhost"),
+                    "{token} in {policy}"
+                );
+            }
+        }
     }
 
     #[test]

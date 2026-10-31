@@ -57,7 +57,7 @@ These settings control the network accessibility and basic behavior of your loca
 ### Server Host
 The network address the server listens on.
 - **`127.0.0.1`** (Default): The server is only accessible from your own computer. This is the most secure option for personal use.
-- **`0.0.0.0`**: The server is accessible from other devices on your local network (e.g., your phone or another computer). Use this with caution.
+- **`0.0.0.0`**: The server is accessible from other devices on your local network (e.g., your phone or another computer). Jan will not start it on this address unless an [API key](#api-key) is set.
 
 ### Server Port
 The port number for the API server.
@@ -72,10 +72,12 @@ The base path for all API endpoints.
 ### API Key
 A secret key used to authenticate requests.
 - Set any string (e.g., `a-secure-password`). If a key is configured, requests must include it in the `Authorization: Bearer YOUR_API_KEY` header.
-- Leave the field empty to disable authentication (not recommended when binding to `0.0.0.0`).
+- Leave the field empty to disable authentication. This only works with the default `127.0.0.1` host: Jan refuses to start the server on `0.0.0.0` (or any address other than your own computer) without a key.
 
 ### Trusted Hosts
 A comma-separated list of hostnames allowed to access the server. This provides an additional layer of security when the server is exposed on your network.
+- Entries are matched against the `Host` header and against the web page that sends a request. Your own computer (`127.0.0.1`, `localhost`) and private network addresses are always accepted as the `Host`.
+- `*` lets a web page from any origin call the API. It does not accept any other `Host`: to reach Jan by a hostname such as `my-mac.local`, list that hostname too.
 
 ### Request Timeout
 How long (in seconds) the server waits for a response from the local model before giving up. Increase this if you are running large models on slow hardware and see request timeouts.

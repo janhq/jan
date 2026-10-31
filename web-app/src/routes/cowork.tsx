@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 import { Bot, Command, Sparkles } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
@@ -81,7 +82,7 @@ import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
 import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
 import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
 import { CoworkModelChip } from '@/containers/CoworkModelChip'
-import { CoworkModelPanel } from '@/containers/CoworkModelPanel'
+import { ModelSettingSheet } from '@/containers/ModelSetting'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
 import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
@@ -229,7 +230,7 @@ function CoworkPage() {
   const overflowModel = coworkLocalModel(overflowProvider, selectedModel?.id)
   const overflowContext = coworkModelContext(overflowProvider, selectedModel?.id)
   // The selected provider's own model entry (with settings) drives the model
-  // rail; undefined for remote/inactive providers, which hides its chip.
+  // settings sheet; undefined for remote/inactive providers, which hides its chip.
   const modelProvider = providers.find(
     (provider) => provider.provider === selectedProvider
   )
@@ -1408,6 +1409,9 @@ function CoworkPage() {
     }
   }, [session?.id])
 
+  // With reduced motion the ask card only fades: no rise, no height fold.
+  const reduceMotion = useReducedMotion()
+
   const respondAsk = useCallback(
     (requestId: string, answers: AskAnswer[] | null) => {
       if (session?.id) answerAsk(session.id, requestId, answers)
@@ -1468,6 +1472,9 @@ function CoworkPage() {
   // they were opened from.
   useEffect(() => setRail(null), [session?.id])
 
+  // The model sheet floats over the page; only docked rails narrow the column.
+  const dockedRail = rail !== null && rail.kind !== 'model'
+
   return (
     <div
       data-testid="cowork-surface"
@@ -1502,12 +1509,12 @@ function CoworkPage() {
                     reads as tucked behind it. */}
                 <ConversationContent
                   className={cn(
-                    'mx-auto w-full pb-4',
+                    'mx-auto w-full px-6 pb-4',
                     // The centering fractions assume the transcript owns the
                     // width; with a side panel open the column is already
                     // narrow, so keeping them crushes the message and composer
                     // into an unreadable sliver.
-                    !rail && 'md:w-4/5 xl:w-4/6'
+                    !dockedRail && 'md:w-4/5 xl:w-4/6'
                   )}
                 >
                   {uiMessages.map((message, i) => (
@@ -1630,17 +1637,38 @@ function CoworkPage() {
             )}
           </div>
 
-          <div className="py-4 shrink-0">
-            <div className={cn('mx-auto w-full', !rail && 'md:w-4/5 xl:w-4/6')}>
-              {ask && typeof ask.request !== 'string' && (
-                <div className="px-1 pb-2">
-                  <CoworkAskCard
-                    requestId={ask.requestId}
-                    request={ask.request}
-                    onRespond={respondAsk}
-                  />
-                </div>
-              )}
+          {/* pb-only: the scroll area runs right up to the composer. */}
+          <div className="pb-4 shrink-0">
+            <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
+              {/* The card rises in when a question arrives and folds away once
+                  answered, so the chat box glides instead of jumping. A card
+                  already pending when the view mounts just appears. */}
+              <AnimatePresence initial={false}>
+                {ask && typeof ask.request !== 'string' && (
+                  <motion.div
+                    // A fresh card per request, so a new ask never renders a
+                    // frame with the previous one's page or picks.
+                    key={ask.requestId}
+                    className="overflow-hidden px-1"
+                    initial={
+                      reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }
+                    }
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={
+                      reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0 }
+                    }
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                  >
+                    <div className="pb-2">
+                      <CoworkAskCard
+                        requestId={ask.requestId}
+                        request={ask.request}
+                        onRespond={respondAsk}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="relative" onKeyDownCapture={onMenuKeyDown}>
                 {menuItems.length > 0 && (
                   <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
@@ -1800,11 +1828,16 @@ function CoworkPage() {
             onClose={() => setRail(null)}
           />
         )}
-        {rail?.kind === 'model' && localModel && modelProvider && (
-          <CoworkModelPanel
+        {/* Always mounted so Radix can play the close animation; the sheet
+            overlays the page, so it is not a docked rail. */}
+        {localModel && modelProvider && (
+          <ModelSettingSheet
             model={localModel}
             provider={modelProvider}
-            onClose={() => setRail(null)}
+            open={rail?.kind === 'model'}
+            onOpenChange={(open) =>
+              setRail((r) => (!open && r?.kind === 'model' ? null : r))
+            }
           />
         )}
       </div>

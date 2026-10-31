@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { ChevronDownIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react'
+import { ChevronRightIcon, WrenchIcon, SearchIcon, GlobeIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -188,8 +188,10 @@ export const ToolHeader = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors',
-          !isOpen && 'hover:bg-secondary',
+          // Hover brightens the label like the trace header above it and
+          // fades the chevron in, rather than painting a full-width square
+          // block behind the row.
+          'group/tool-header cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
           className
         )}
       >
@@ -224,6 +226,18 @@ export const ToolHeader = memo(
             {summary}
           </span>
         )}
+        {/* Right when folded, turning down as it opens, inline after the
+            label: the same cue as the trace header and every other
+            expandable row. Shown while open (it is the collapse cue), on
+            hover, on keyboard focus, and always where nothing can hover. */}
+        <ChevronRightIcon
+          className={cn(
+            '-ml-1 size-4 shrink-0 transition-[opacity,transform]',
+            isOpen
+              ? 'rotate-90 opacity-100'
+              : 'rotate-0 opacity-0 group-hover/tool-header:opacity-100 group-focus-visible/tool-header:opacity-100 [@media(hover:none)]:opacity-100'
+          )}
+        />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {queuePosition > 0 && (
             <span className="text-xs text-muted-foreground/60">
@@ -234,12 +248,6 @@ export const ToolHeader = memo(
             startedAt={startedAt}
             endedAt={endedAt}
             className="text-muted-foreground/60"
-          />
-          <ChevronDownIcon
-            className={cn(
-              'size-4 shrink-0 transition-transform',
-              isOpen ? 'rotate-180' : 'rotate-0'
-            )}
           />
         </span>
       </CollapsibleTrigger>

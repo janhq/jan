@@ -97,7 +97,7 @@ jobs:
         if: inputs.channel != 'stable'
         shell: bash
         run: |
-          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+          bash .github/scripts/use-channel-icons.sh ${{ inputs.channel }}
 
       - name: Installing node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -118,36 +118,11 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq '.bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
-          mv /tmp/package.json web-app/package.json
 
-          # Update tauri plugin versions
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
-
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
-          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
-
-          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-
-          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
-          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "---------./src-tauri/Cargo.toml---------"
-          cat ./src-tauri/Cargo.toml
+          # Every version-bearing manifest, the jan CLI's included, in one place.
+          bash .github/scripts/stamp-version.sh "${{ inputs.new_version }}"
 
           # Temporarily enable devtool on prod build
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"

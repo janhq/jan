@@ -154,8 +154,10 @@ pub enum StreamEvent {
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
-    /// ToolResult/PermissionRequest); the child's terminal Done/Error is never
-    /// wrapped (its result is delivered via `await_subagent`).
+    /// ToolResult/PermissionRequest/Parked); the child's terminal Done/Error is
+    /// never wrapped (its result is delivered via `await_subagent`). A wrapped
+    /// `Parked` describes that child alone and is display-only: the parent run
+    /// is not parked by it.
     ///
     /// Never a `ToolRequest`: a client answers a request by `request_id` on
     /// stdin, and it is told nothing about this wrapper, so a nested request
@@ -209,6 +211,8 @@ pub enum StreamEvent {
     /// work it started (a subagent still running, a monitor still watching).
     /// Nothing is being generated until a ping resumes the run, which the next
     /// `Step` marks. Lets a consumer say "watching" rather than "working".
+    /// Wrapped in `Subagent`, it describes that child instead and is
+    /// display-only: the parent's own state is unchanged.
     Parked,
     /// The client should replace its session history with `messages` before
     /// subsequent turns. Includes accepted prompt guidance in its original

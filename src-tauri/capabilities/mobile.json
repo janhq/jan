@@ -3,9 +3,6 @@
   "identifier": "mobile",
   "description": "enables the default permissions for mobile platforms",
   "windows": ["main"],
-  "remote": {
-    "urls": ["http://*"]
-  },
   "permissions": [
     "core:default",
     "core:webview:allow-set-webview-zoom",

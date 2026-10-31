@@ -364,6 +364,10 @@ pub async fn engine_devices<R: tauri::Runtime>(
 ) -> Result<Vec<EngineDevice>, String> {
     let exe = resolve_worker_exe(&app_handle)?;
     let mut cmd = tokio::process::Command::new(&exe);
+    // Same pinned cwd as a serving worker: device listing loads the backends too.
+    if let Some(dir) = worker::worker_cwd(&exe) {
+        cmd.current_dir(dir);
+    }
     cmd.arg("--list-devices").envs(envs);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());

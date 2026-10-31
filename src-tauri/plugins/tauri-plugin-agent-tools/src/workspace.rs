@@ -242,18 +242,34 @@ pub fn thread_workspace(jan_data_folder: &Path, thread_id: &str) -> Result<PathB
     Ok(threads_dir(jan_data_folder).join(thread_segment(thread_id)?))
 }
 
-/// Case-folded on Windows, where two spellings of one path are the same path
-/// and a raw `starts_with` would let a rename past the check.
+/// Case-folded on Windows and macOS, whose default filesystems treat two
+/// spellings of one path as the same path, so a raw `starts_with` would let a
+/// different spelling past the check (`canonicalize` keeps the caller's case
+/// on macOS). On macOS the `/System/Volumes/Data` firmlink prefix is dropped
+/// too: `/System/Volumes/Data/Users/u` is `/Users/u`, and `canonicalize`
+/// leaves it as spelled.
 fn containment_key(path: &Path) -> String {
     let raw = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
+    if cfg!(target_os = "macos") {
+        strip_data_volume_prefix(&raw.to_lowercase()).to_string()
+    } else if cfg!(windows) {
         raw.to_lowercase()
     } else {
         raw
     }
 }
 
-fn is_within(inner: &Path, outer: &Path) -> bool {
+/// `key` (already lower-cased) without a leading `/system/volumes/data`.
+fn strip_data_volume_prefix(key: &str) -> &str {
+    const DATA_VOLUME: &str = "/system/volumes/data";
+    match key.strip_prefix(DATA_VOLUME) {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => key,
+    }
+}
+
+pub(crate) fn is_within(inner: &Path, outer: &Path) -> bool {
     let (inner, outer) = (containment_key(inner), containment_key(outer));
     inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
 }
@@ -310,6 +326,138 @@ pub fn validate_read_root(
     Ok(canonical)
 }
 
+/// Supplies the Jan data folder the host app is configured with.
+pub type DataFolderResolver = std::sync::Arc<dyn Fn() -> PathBuf + Send + Sync>;
+
+static DATA_FOLDER_RESOLVER: std::sync::OnceLock<DataFolderResolver> = std::sync::OnceLock::new();
+
+/// Install the process-wide data folder source. First call wins, like
+/// `hooks::set_resolver`, so nothing can swap it out later.
+pub fn set_data_folder_resolver(resolver: DataFolderResolver) {
+    let _ = DATA_FOLDER_RESOLVER.set(resolver);
+}
+
+/// The Jan data folder an IPC command works in.
+///
+/// The commands take a `data_folder` argument, but it only stands in for what
+/// the host already knows: everything containment rests on (the sandbox
+/// location, the mask over settings and keys, the store) is derived from it,
+/// so the host's value wins whenever one is installed. The argument is used
+/// as-is only without a host, as in this crate's tests.
+pub fn host_data_folder(requested: &str) -> PathBuf {
+    pick_data_folder(
+        DATA_FOLDER_RESOLVER.get().map(|resolve| resolve()),
+        requested,
+    )
+}
+
+fn pick_data_folder(host: Option<PathBuf>, requested: &str) -> PathBuf {
+    host.unwrap_or_else(|| PathBuf::from(requested))
+}
+
+/// Home-relative folders an agent must never be handed write access to:
+/// credentials, folders on `PATH`, shell and tool configuration, and the
+/// places that run code at login. The shell rc files themselves sit directly in
+/// the home folder, which is refused as a whole.
+const PROTECTED_HOME_DIRS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".kube",
+    ".docker",
+    // fish, git, autostart and systemd user units all live here.
+    ".config",
+    // .local/bin is on PATH; .local/share/applications holds launchers.
+    ".local",
+    "bin",
+    ".cargo",
+    ".oh-my-zsh",
+    // Tool shims and global installs on PATH, and editor configuration.
+    ".npm",
+    ".nvm",
+    ".bun",
+    ".deno",
+    ".vscode",
+    "Applications",
+    "Library/LaunchAgents",
+    "Library/Keychains",
+    "Library/Services",
+    "Library/Application Scripts",
+    // Every app's own data and configuration, Jan's included.
+    "Library/Application Support",
+    "AppData/Local/Microsoft/WindowsApps",
+    // Per-user installs, Jan's own on Windows.
+    "AppData/Local/Programs",
+    "AppData/Roaming/Microsoft/Windows/Start Menu",
+];
+
+/// The user's home directory, or `None` when unset or degenerate.
+pub fn user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let raw = std::env::var_os("USERPROFILE");
+    #[cfg(not(windows))]
+    let raw = std::env::var_os("HOME");
+    let home = PathBuf::from(raw?);
+    if home.parent().is_none() || home.as_os_str().is_empty() {
+        return None;
+    }
+    Some(home.canonicalize().unwrap_or(home))
+}
+
+/// Check that an attached folder (already through [`validate_read_root`]) may
+/// also be written.
+///
+/// Refused: the home directory itself or any folder above it, whose top level
+/// holds the shell rc files and profile scripts; any folder inside, or
+/// containing, a [`PROTECTED_HOME_DIRS`] entry (also where that entry is a
+/// symlink); and the Jan data folder or any folder inside it. A writable attach
+/// is the workspace root, writable by the file tools and the sandboxed shell
+/// alike, so these would hand the agent persistence or credentials. Without a
+/// home folder none of this can be checked, so the attach is refused.
+pub fn validate_write_root(
+    root: &Path,
+    home: Option<&Path>,
+    data_folder: &Path,
+) -> Result<(), String> {
+    let Some(home) = home else {
+        return Err(
+            "your home folder could not be determined, so no folder can be attached writable"
+                .to_string(),
+        );
+    };
+    let data = data_folder
+        .canonicalize()
+        .unwrap_or_else(|_| data_folder.to_path_buf());
+    if is_within(root, &data) || is_within(root, data_folder) {
+        return Err(format!(
+            "{} is inside the Jan data folder and cannot be attached writable",
+            root.display()
+        ));
+    }
+    if is_within(home, root) {
+        return Err(format!(
+            "{} contains your home folder and cannot be attached writable; attach a project \
+             folder inside it instead",
+            root.display()
+        ));
+    }
+    for rel in PROTECTED_HOME_DIRS {
+        let protected = home.join(rel);
+        // `root` is canonical, so also compare against where a symlinked
+        // entry really points.
+        let resolved = protected.canonicalize().ok();
+        let overlaps = |p: &Path| is_within(root, p) || is_within(p, root);
+        if overlaps(&protected) || resolved.as_deref().is_some_and(overlaps) {
+            return Err(format!(
+                "{} overlaps {} and cannot be attached writable",
+                root.display(),
+                protected.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The session-scoped scratch directory: a subdirectory of the host temp dir
 /// (e.g. `/tmp/jan-agent-<session>` on Linux), where `bash` scratch files
 /// persist across calls for one session and the filesystem tools may write.
@@ -321,8 +469,18 @@ pub fn validate_read_root(
 /// no mount, so it is reached by this real path and made writable by a policy
 /// rule and an ACE respectively. Either way `TMPDIR`/`TMP`/`TEMP` point at it
 /// (see `tools::jail::scratch_env_path`) and it is cleaned up with the session.
+///
+/// Pure path arithmetic: `session` is not checked here. Anything that reaches
+/// the filesystem with an id from outside goes through [`ensure_scratch_dir`] or
+/// [`remove_scratch_dir`], which accept only a valid [`thread_segment`].
 pub fn scratch_dir(session: &str) -> PathBuf {
     std::env::temp_dir().join(format!("jan-agent-{session}"))
+}
+
+/// [`scratch_dir`] for an id that must first pass [`thread_segment`], so a
+/// separator or `..` in it can never move the scratch out of `jan-agent-*`.
+fn checked_scratch_dir(session: &str) -> Result<PathBuf, String> {
+    Ok(scratch_dir(&thread_segment(session)?))
 }
 
 /// Create the session-scoped scratch directory (idempotent) and return it.
@@ -330,7 +488,7 @@ pub fn scratch_dir(session: &str) -> PathBuf {
 /// its teardown: thread deletion on the desktop, run end on the CLI, and
 /// session end in the TUI.
 pub async fn ensure_scratch_dir(session: &str) -> Result<PathBuf, String> {
-    ensure_scratch_dir_path(&scratch_dir(session)).await
+    ensure_scratch_dir_path(&checked_scratch_dir(session)?).await
 }
 
 /// Create a scratch directory at an explicit path, hardening it against a
@@ -444,7 +602,7 @@ async fn sweep_scratch_older_than(root: &Path, max_age: std::time::Duration) -> 
 
 /// Delete a session's scratch directory. Idempotent: a missing scratch is Ok.
 pub async fn remove_scratch_dir(session: &str) -> Result<(), String> {
-    let dir = scratch_dir(session);
+    let dir = checked_scratch_dir(session)?;
     match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -566,7 +724,9 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if keep.contains(&name) {
+        // Only names a valid id could have produced: anything else was not made
+        // here, so it is left alone rather than swept.
+        if keep.contains(&name) || thread_segment(&name).is_err() {
             continue;
         }
         crate::tools::appcontainer::release(&entry.path());
@@ -579,20 +739,33 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
     Ok(removed)
 }
 
+/// Names Windows maps to a device in every directory, in any case and also
+/// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
+/// works on all of them.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    match stem.as_bytes() {
+        [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
+        [a, b, c, d] => matches!(&[*a, *b, *c], b"COM" | b"LPT") && d.is_ascii_digit(),
+        _ => false,
+    }
+}
+
 /// Sanitize a caller-supplied thread id into one safe path segment.
 ///
 /// Stricter than [`workspace_filename`] on purpose: a thread id is generated,
-/// never typed, so anything outside `[A-Za-z0-9._-]` is a bug or an attack. Dots
-/// are allowed inside the id but a dot-only segment is not, which is what would
-/// resolve to the threads directory itself or its parent.
+/// never typed, so anything outside `[A-Za-z0-9_-]` is a bug. No dots and no
+/// trimming, so `.`/`..` can never be produced. Kept identical to the desktop's
+/// `validate_thread_id` (`src-tauri/src/core/threads/utils.rs`): an id one side
+/// accepts the other must too.
 pub fn thread_segment(thread_id: &str) -> Result<String, String> {
-    let id = thread_id.trim();
+    let id = thread_id;
     let ok = !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        && !id.chars().all(|c| c == '.');
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        && !is_windows_device_name(id);
     if !ok {
         return Err(format!("ERROR: invalid thread id '{thread_id}'"));
     }
@@ -601,8 +774,16 @@ pub fn thread_segment(thread_id: &str) -> Result<String, String> {
 
 /// Sanitize a caller-supplied entry name into a safe `<stem>.md` filename.
 /// Rejects path separators and `..` so the result can never escape the
-/// store directory. `.md` is appended if absent.
+/// store directory, NUL and Windows device names on every OS, and on Windows a
+/// `:` (`C:x` is drive-relative and replaces the base it is joined to, `a:b`
+/// names a data stream). `.md` is appended if absent.
 pub fn workspace_filename(name: &str) -> Result<String, String> {
+    workspace_filename_on(name, cfg!(windows))
+}
+
+/// [`workspace_filename`] with the Windows-only `:` rule as a flag, so both
+/// platforms' behaviour can be tested on any host.
+fn workspace_filename_on(name: &str, reject_colon: bool) -> Result<String, String> {
     let trimmed = name.trim();
     let stem = trimmed.strip_suffix(".md").unwrap_or(trimmed);
     // Checked on the stem, not the input: otherwise a bare "." passes and the
@@ -611,7 +792,10 @@ pub fn workspace_filename(name: &str) -> Result<String, String> {
         || stem.contains('/')
         || stem.contains('\\')
         || stem.contains("..")
+        || stem.contains('\0')
+        || (reject_colon && stem.contains(':'))
         || stem.chars().all(|c| c == '.')
+        || is_windows_device_name(stem)
     {
         return Err(format!("ERROR: invalid name '{name}'"));
     }
@@ -775,7 +959,15 @@ mod tests {
     fn thread_segment_rejects_traversal_and_separators() {
         for bad in [
             "", "  ", ".", "..", "...", "../x", "a/b", "a\\b", "a b", "a;b", "a$b", "évil",
+            "v1.2", "a.", " padded", "padded ", "C:x", "a\0b",
         ] {
+            assert!(
+                thread_segment(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
+        // Windows device names, in any case and with an extension.
+        for bad in ["CON", "nul", "Aux", "com1", "LPT9", "nul.txt", "CON.tar.gz"] {
             assert!(
                 thread_segment(bad).is_err(),
                 "expected {bad:?} to be rejected"
@@ -790,11 +982,21 @@ mod tests {
             "01H8XGJWBWBAQ",
             "3f2a9c1e-1234-4c9a-9b7e-000000000000",
             "thread_42",
-            "v1.2",
+            "temporary-chat",
+            "CONSOLE",
+            "COM10",
+            "con_1",
         ] {
             assert_eq!(thread_segment(ok).unwrap(), ok);
         }
-        assert_eq!(thread_segment("  padded  ").unwrap(), "padded");
+    }
+
+    #[tokio::test]
+    async fn scratch_dir_refuses_an_id_that_is_not_one_segment() {
+        for bad in ["../x", "..", "a/b", "a\\b", "", "nul"] {
+            assert!(ensure_scratch_dir(bad).await.is_err(), "{bad:?}");
+            assert!(remove_scratch_dir(bad).await.is_err(), "{bad:?}");
+        }
     }
 
     #[tokio::test]
@@ -870,6 +1072,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn filename_rejects_nul_device_names_and_windows_drive_prefixes() {
+        for bad in ["a\0b", "nul", "CON.md", "com1", "aux.txt"] {
+            for reject_colon in [true, false] {
+                assert!(workspace_filename_on(bad, reject_colon).is_err(), "{bad:?}");
+            }
+            assert!(crate::skills::safe_stem(bad).is_err(), "{bad:?}");
+        }
+        // `:` is refused on Windows only: elsewhere it is an ordinary character
+        // that existing names may already use.
+        for colon in ["C:x", "c:", "a:b", "C:x.md"] {
+            assert!(workspace_filename_on(colon, true).is_err(), "{colon:?} on Windows");
+            assert!(workspace_filename_on(colon, false).is_ok(), "{colon:?} elsewhere");
+            assert_eq!(workspace_filename(colon).is_err(), cfg!(windows), "{colon:?}");
+        }
+        assert_eq!(workspace_filename("console").unwrap(), "console.md");
+    }
+
     /// Dot-only and empty-stem names are rejected rather than turned into a
     /// hidden file. A bare "." used to yield "..md" -- contained, but a name the
     /// guard would reject as input.
@@ -882,6 +1102,175 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn host_data_folder_wins_over_the_requested_one() {
+        let host = PathBuf::from("/host/Jan/data");
+        assert_eq!(
+            pick_data_folder(Some(host.clone()), "/Users/x/Library/LaunchAgents"),
+            host
+        );
+        assert_eq!(pick_data_folder(Some(host.clone()), ""), host);
+        // No host installed (this crate's tests): the argument is all there is.
+        assert_eq!(
+            pick_data_folder(None, "/tmp/data"),
+            PathBuf::from("/tmp/data")
+        );
+    }
+
+    const DATA: &str = "/srv/jan-data";
+
+    fn write_root(root: &str, home: &str) -> Result<(), String> {
+        validate_write_root(Path::new(root), Some(Path::new(home)), Path::new(DATA))
+    }
+
+    #[test]
+    fn validate_write_root_refuses_home_and_its_ancestors() {
+        assert!(write_root("/home/u", "/home/u").is_err());
+        assert!(write_root("/home", "/home/u").is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_protected_folders() {
+        for bad in [
+            "/home/u/.ssh",
+            "/home/u/.config",
+            "/home/u/.config/autostart",
+            "/home/u/.config/systemd/user",
+            "/home/u/.config/fish",
+            "/home/u/.local",
+            "/home/u/.local/bin",
+            "/home/u/.local/share/applications",
+            "/home/u/bin",
+            "/home/u/.cargo/bin",
+            "/home/u/.oh-my-zsh/custom",
+            "/home/u/Library",
+            "/home/u/Library/LaunchAgents",
+            "/home/u/Library/LaunchAgents/sub",
+            "/home/u/Library/Services",
+            "/home/u/Library/Application Scripts/com.example",
+            "/home/u/AppData/Local/Microsoft/WindowsApps",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu",
+            "/home/u/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+            "/home/u/Applications",
+            "/home/u/Applications/Tool.app",
+            "/home/u/Library/Application Support",
+            "/home/u/Library/Application Support/Jan/data",
+            "/home/u/Library/Application Support/Code/User",
+            "/home/u/AppData/Local/Programs",
+            "/home/u/AppData/Local/Programs/Jan",
+            "/home/u/.vscode/extensions",
+            "/home/u/.npm",
+            "/home/u/.nvm/versions",
+            "/home/u/.bun/bin",
+            "/home/u/.deno",
+        ] {
+            assert!(
+                write_root(bad, "/home/u").is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_write_root_accepts_a_project_folder() {
+        for ok in [
+            "/home/u/projects/site",
+            "/home/u/Documents/deck",
+            "/home/u/.configs-backup",
+            "/home/u/Library-notes",
+            "/home/u/binaries",
+            "/srv/work",
+            "/srv/jan-data-export",
+        ] {
+            assert!(write_root(ok, "/home/u").is_ok(), "{ok} should be accepted");
+        }
+    }
+
+    #[test]
+    fn validate_write_root_refuses_when_home_is_unknown() {
+        let data = Path::new(DATA);
+        assert!(validate_write_root(Path::new("/srv/work"), None, data).is_err());
+    }
+
+    #[test]
+    fn validate_write_root_refuses_the_data_folder_and_inside_it() {
+        assert!(write_root(DATA, "/home/u").is_err());
+        assert!(write_root("/srv/jan-data/threads", "/home/u").is_err());
+    }
+
+    // APFS and NTFS are case-insensitive by default, and `canonicalize` keeps
+    // the spelling the caller used.
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn validate_write_root_ignores_case_where_the_filesystem_does() {
+        for bad in [
+            "/home/u/.SSH",
+            "/home/u/library/launchagents",
+            "/HOME/U",
+            "/SRV/JAN-DATA/x",
+        ] {
+            assert!(
+                write_root(bad, "/home/u").is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    /// `/System/Volumes/Data/...` is the same folder as `/...` on macOS.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn validate_write_root_sees_through_the_data_volume_firmlink() {
+        for bad in [
+            "/System/Volumes/Data/Users/u",
+            "/System/Volumes/Data/Users",
+            "/System/Volumes/Data",
+            "/system/volumes/data/Users/u/.ssh",
+            "/System/Volumes/Data/Users/u/Library/LaunchAgents",
+            "/System/Volumes/Data/srv/jan-data/threads",
+        ] {
+            assert!(write_root(bad, "/Users/u").is_err(), "{bad} should be refused");
+        }
+        // And the other way round: a home spelled through the firmlink.
+        assert!(write_root("/Users/u/.ssh", "/System/Volumes/Data/Users/u").is_err());
+        assert!(write_root("/System/Volumes/Data/Users/u/projects/site", "/Users/u").is_ok());
+        assert!(write_root("/System/Volumes/DataX/u", "/Users/u").is_ok());
+    }
+
+    #[test]
+    fn data_volume_prefix_is_dropped_only_as_a_whole_component() {
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data/users/u"), "/users/u");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/data"), "/");
+        assert_eq!(strip_data_volume_prefix("/system/volumes/datax"), "/system/volumes/datax");
+        assert_eq!(strip_data_volume_prefix("/users/u"), "/users/u");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_write_root_follows_a_symlinked_protected_folder() {
+        let base = tmp_root("write_root_symlink");
+        let home = base.join("home");
+        let real = base.join("dotfiles").join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(real.join("fish")).unwrap();
+        std::os::unix::fs::symlink(&real, home.join(".config")).unwrap();
+        let (home, real) = (home.canonicalize().unwrap(), real.canonicalize().unwrap());
+        let data = base.join("data");
+        for bad in [
+            real.clone(),
+            real.join("fish"),
+            real.parent().unwrap().to_path_buf(),
+        ] {
+            assert!(
+                validate_write_root(&bad, Some(&home), &data).is_err(),
+                "{} should be refused",
+                bad.display()
+            );
+        }
+        let project = base.join("project");
+        assert!(validate_write_root(&project, Some(&home), &data).is_ok());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     // Every rejection here is a case where the mount would not mean what the UI
     // says it means, so each is refused rather than silently degraded.
     #[test]

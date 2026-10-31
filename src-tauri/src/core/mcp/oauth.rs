@@ -293,6 +293,18 @@ pub async fn advertises_oauth(url: &str) -> bool {
     manager.resolve_metadata().await.is_ok()
 }
 
+/// Whether `url` may be an OAuth endpoint, or be opened in a browser during
+/// sign-in: `http` or `https` to any host (a homelab server is often plain
+/// http on the LAN). The server supplies these URLs, and the consent page is
+/// opened with the system's default handler for its scheme, so anything else
+/// (`file:`, custom protocol handlers) is refused.
+pub(crate) fn is_allowed_oauth_url(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    matches!(parsed.scheme(), "http" | "https") && parsed.host().is_some()
+}
+
 type CodeClient = oauth2::basic::BasicClient<
     oauth2::EndpointSet,
     oauth2::EndpointNotSet,
@@ -349,6 +361,14 @@ pub async fn begin(server: &str, url: &str) -> Result<PendingAuth, String> {
     let metadata = resolution.metadata;
     let endpoint = metadata.registration_endpoint.as_deref()
         .ok_or_else(|| format!("'{server}' requires a pre-registered OAuth client; no registration endpoint was advertised"))?;
+    for advertised in [&metadata.authorization_endpoint, &metadata.token_endpoint, endpoint] {
+        if !is_allowed_oauth_url(advertised) {
+            return Err(format!(
+                "'{server}' advertised the OAuth endpoint '{advertised}', which Jan will not use: \
+                 it must be an http or https address"
+            ));
+        }
+    }
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
@@ -396,6 +416,9 @@ pub async fn begin(server: &str, url: &str) -> Result<PendingAuth, String> {
     let (challenge, verifier) = oauth2::PkceCodeChallenge::new_random_sha256();
     let (authorization_url, csrf) = client.authorize_url(oauth2::CsrfToken::new_random)
         .set_pkce_challenge(challenge).url();
+    if !is_allowed_oauth_url(authorization_url.as_str()) {
+        return Err(format!("'{server}' produced a sign-in URL Jan will not open"));
+    }
 
     Ok(PendingAuth {
         client,
@@ -692,6 +715,22 @@ mod tests {
         status: u16,
         registration_body: &'static str,
     ) -> (String, tokio::task::JoinHandle<()>) {
+        provider_server(status, registration_body, None).await
+    }
+
+    /// A provider whose metadata advertises `value` for `field`.
+    async fn metadata_server(
+        field: &'static str,
+        value: &'static str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        provider_server(201, r#"{"client_id":"c"}"#, Some((field, value))).await
+    }
+
+    async fn provider_server(
+        status: u16,
+        registration_body: &'static str,
+        metadata_override: Option<(&'static str, &'static str)>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -737,12 +776,16 @@ mod tests {
                         "authorization_servers": [origin.clone()],
                     }).to_string())
                 } else {
-                    (200, json!({
+                    let mut metadata = json!({
                         "issuer": origin.clone(),
                         "authorization_endpoint": format!("{origin}/authorize"),
                         "token_endpoint": format!("{origin}/token"),
                         "registration_endpoint": format!("{origin}/register"),
-                    }).to_string())
+                    });
+                    if let Some((field, value)) = metadata_override {
+                        metadata[field] = json!(value);
+                    }
+                    (200, metadata.to_string())
                 };
                 let reply = format!(
                     "HTTP/1.1 {code} Response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -1010,6 +1053,63 @@ mod tests {
             ));
         let err = got.expect_err("stale resource is an error, not a silent skip");
         assert!(err.contains("https://old/mcp"), "{err}");
+    }
+
+    #[test]
+    fn oauth_urls_must_be_http_or_https() {
+        for ok in [
+            "https://auth.example.com/authorize",
+            "HTTPS://auth.example.com/token",
+            "http://auth.example.com/authorize",
+            "http://192.168.1.50:8080/authorize",
+            "http://10.0.0.1/token",
+            "http://127.0.0.1:8080/authorize",
+            "http://localhost:3000/token",
+            "http://[::1]:9000/authorize",
+        ] {
+            assert!(is_allowed_oauth_url(ok), "{ok}");
+        }
+        for bad in [
+            "file:///Users/u/Downloads/payload.command",
+            "javascript:alert(1)",
+            "smb://host/share",
+            "ftp://auth.example.com/",
+            "vscode://auth.example.com/authorize",
+            "my-app:open?x=1",
+            "/authorize",
+            "",
+        ] {
+            assert!(!is_allowed_oauth_url(bad), "{bad}");
+        }
+    }
+
+    #[tokio::test]
+    async fn begin_refuses_a_non_web_endpoint() {
+        for (field, value) in [
+            ("authorization_endpoint", "file:///tmp/payload.command"),
+            ("token_endpoint", "smb://auth.example.com/token"),
+            ("registration_endpoint", "my-app://register"),
+        ] {
+            let (base, task) = metadata_server(field, value).await;
+            let err = begin("bad", &format!("{base}/mcp")).await.err().unwrap();
+            task.abort();
+            assert!(err.contains("will not use"), "{err}");
+            assert!(err.contains(value), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn begin_accepts_a_plain_http_lan_authorization_endpoint() {
+        let (base, task) =
+            metadata_server("authorization_endpoint", "http://192.168.1.50:8080/authorize").await;
+        let pending = begin("lan", &format!("{base}/mcp")).await;
+        task.abort();
+        let pending = pending.expect("http on the LAN is accepted");
+        assert!(
+            pending.authorization_url.starts_with("http://192.168.1.50:8080/authorize?"),
+            "{}",
+            pending.authorization_url
+        );
     }
 
     #[test]

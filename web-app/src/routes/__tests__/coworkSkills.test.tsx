@@ -212,8 +212,9 @@ vi.mock('@/containers/CoworkFilesPanel', () => ({
 vi.mock('@/containers/CoworkTodoChip', () => ({ CoworkTodoChip: () => null }))
 vi.mock('@/containers/CoworkTasksChip', () => ({ CoworkTasksChip: () => null }))
 vi.mock('@/containers/CoworkModelChip', () => ({ CoworkModelChip: () => null }))
-vi.mock('@/containers/CoworkModelPanel', () => ({
-  CoworkModelPanel: () => null,
+vi.mock('@/containers/ModelSetting', () => ({
+  ModelSetting: () => null,
+  ModelSettingSheet: () => null,
 }))
 vi.mock('@/containers/CoworkSandboxChip', () => ({
   CoworkSandboxChip: () => null,

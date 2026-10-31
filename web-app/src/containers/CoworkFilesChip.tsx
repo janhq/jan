@@ -33,7 +33,10 @@ export function CoworkFilesChip({
           aria-pressed={open}
           aria-label={t('common:files.a11y', { count })}
           onClick={onToggle}
-          className={cn('shrink-0', open && 'text-primary')}
+          className={cn(
+            'shrink-0',
+            open ? 'text-primary' : 'text-muted-foreground'
+          )}
         >
           <Files className="size-3.5 shrink-0" />
           <span className="font-mono tabular-nums text-muted-foreground">

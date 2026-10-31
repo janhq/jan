@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::artifact;
 use crate::memory;
 use crate::permissions::ToolPermissions;
 use crate::preview::{self, PreviewRoots};
@@ -99,10 +100,10 @@ fn with_renamed_shell_notices(
 /// `project` is an explicit override and is currently always `None`: the desktop
 /// has no project picker yet. Once one lands, a project's own store
 /// (`~/.jan/projects/<slug>`) layers on top of this one; see the memory-scope TODO.
-fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
+fn resolve_store(data_folder: &Path, project: Option<&str>) -> PathBuf {
     match project.map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => workspace::project_store(Path::new(p)),
-        None => workspace::permanent_store(Path::new(data_folder)),
+        None => workspace::permanent_store(data_folder),
     }
 }
 
@@ -110,6 +111,7 @@ fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
 /// where memories and skills live.
 #[tauri::command]
 pub async fn workspace_path(data_folder: String) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let root = workspace::ensure_permanent_store(Path::new(&data_folder)).await?;
     Ok(root.to_string_lossy().to_string())
 }
@@ -121,6 +123,7 @@ pub async fn thread_workspace_path(
     data_folder: String,
     thread_id: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let dir = workspace::ensure_thread_workspace(Path::new(&data_folder), &thread_id).await?;
     Ok(dir.to_string_lossy().to_string())
 }
@@ -132,6 +135,7 @@ pub async fn thread_workspace_delete(
     data_folder: String,
     thread_id: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::remove_thread_workspace(Path::new(&data_folder), &thread_id)
         .await
         .map_err(Into::into)
@@ -151,6 +155,7 @@ pub async fn thread_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::sweep_stale_scratch_dirs().await;
     workspace::sweep_thread_workspaces(Path::new(&data_folder), &keep)
         .await
@@ -163,6 +168,7 @@ pub async fn session_workspace_path(
     data_folder: String,
     session_id: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let dir = workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
     Ok(dir.to_string_lossy().to_string())
 }
@@ -173,6 +179,7 @@ pub async fn session_workspace_delete(
     data_folder: String,
     session_id: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::remove_session_workspace(Path::new(&data_folder), &session_id)
         .await
         .map_err(Into::into)
@@ -188,6 +195,7 @@ pub async fn session_workspace_sweep(
     data_folder: String,
     keep: Vec<String>,
 ) -> Result<usize, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     workspace::sweep_session_workspaces(Path::new(&data_folder), &keep)
         .await
         .map_err(Into::into)
@@ -200,6 +208,7 @@ pub async fn skill_list(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<SkillMeta>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     Ok(skills::list_meta(&resolve_store(
         &data_folder,
         project.as_deref(),
@@ -213,6 +222,7 @@ pub async fn skill_read(
     project: Option<String>,
     name: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::read_raw(&resolve_store(&data_folder, project.as_deref()), &name).map_err(Into::into)
 }
 
@@ -224,6 +234,7 @@ pub async fn skill_write(
     name: String,
     content: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::write(
         &resolve_store(&data_folder, project.as_deref()),
         &name,
@@ -239,6 +250,7 @@ pub async fn skill_delete(
     project: Option<String>,
     name: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::delete(&resolve_store(&data_folder, project.as_deref()), &name).map_err(Into::into)
 }
 /// Build a user prompt for an installed skill, including its body and arguments.
@@ -249,6 +261,7 @@ pub async fn skill_invoke(
     name: String,
     args: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     skills::build_invocation_message(
         &resolve_store(&data_folder, project.as_deref()),
         &name,
@@ -264,6 +277,7 @@ pub async fn memory_list(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<String>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     Ok(memory::list(&resolve_store(&data_folder, project.as_deref())).await)
 }
 
@@ -273,6 +287,7 @@ pub async fn memory_read(
     project: Option<String>,
     name: String,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     memory::read(&resolve_store(&data_folder, project.as_deref()), &name)
         .await
         .map_err(Into::into)
@@ -285,6 +300,7 @@ pub async fn memory_write(
     name: String,
     content: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     memory::write(
         &resolve_store(&data_folder, project.as_deref()),
         &name,
@@ -303,6 +319,7 @@ pub async fn memory_catalog(
     data_folder: String,
     project: Option<String>,
 ) -> Result<Vec<memory::CatalogEntry>, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let store = resolve_store(&data_folder, project.as_deref());
     // `catalog` is sync std::fs by design (the CLI calls it from sync context);
     // keep its directory walk off the async runtime's thread here.
@@ -318,6 +335,7 @@ pub async fn memory_delete(
     project: Option<String>,
     name: String,
 ) -> Result<(), AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     memory::delete(&resolve_store(&data_folder, project.as_deref()), &name)
         .await
         .map_err(Into::into)
@@ -515,6 +533,7 @@ pub async fn attachment_import(
     source: String,
     text: Option<String>,
 ) -> Result<ImportedAttachment, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     let workspace =
         workspace::ensure_session_workspace(Path::new(&data_folder), &session_id).await?;
     let imported = tokio::task::spawn_blocking(move || {
@@ -572,6 +591,7 @@ pub async fn start_monitor(
     scope: Option<WorkspaceScope>,
     on_update: tauri::ipc::Channel<crate::tools::monitor::MonitorUpdate>,
 ) -> Result<String, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     use crate::tools::monitor;
     if !jail::backend().enforces() {
         return Err(AgentToolsError::from(
@@ -585,16 +605,14 @@ pub async fn start_monitor(
         .ensure(Path::new(&data_folder), &thread_id)
         .await?;
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
-    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
-        Some(path) => vec![workspace::validate_read_root(
-            Path::new(path),
-            &sandbox,
-            Some(Path::new(&data_folder)),
-        )?],
-        None => Vec::new(),
-    };
-    let (root, read_roots, write_roots) =
-        resolve_workspace_root(sandbox, attached, project_writable.unwrap_or(false));
+    let writable = project_writable.unwrap_or(false);
+    let attached = attach_folder(
+        read_only_project.as_deref(),
+        &sandbox,
+        &data_folder,
+        writable,
+    )?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let ctx = monitor::MonitorCtx {
         project_root: root,
         scratch_root: Some(scratch),
@@ -697,6 +715,26 @@ pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError
     Ok(())
 }
 
+/// Validate the folder a surface asked to attach (Cowork's shared folder, chat's
+/// read-only attachment): plural from the outset so attaching a second folder
+/// later is not another signature change. A writable attach must also pass
+/// [`workspace::validate_write_root`].
+fn attach_folder(
+    folder: Option<&str>,
+    sandbox: &Path,
+    data_folder: &Path,
+    writable: bool,
+) -> Result<Vec<PathBuf>, AgentToolsError> {
+    let Some(folder) = folder else {
+        return Ok(Vec::new());
+    };
+    let root = workspace::validate_read_root(Path::new(folder), sandbox, Some(data_folder))?;
+    if writable {
+        workspace::validate_write_root(&root, workspace::user_home().as_deref(), data_folder)?;
+    }
+    Ok(vec![root])
+}
+
 /// Pick the workspace root a tool call resolves relative paths against, plus the
 /// side roots it may read and write.
 ///
@@ -769,7 +807,7 @@ pub async fn execute_tool<R: tauri::Runtime>(
 }
 
 /// The webview-backed `screenshot` renderer on the desktop (Linux, macOS,
-/// Windows); `None` everywhere else, keeping the Chrome fallback.
+/// Windows); `None` everywhere else, which renders through headless Chrome.
 #[cfg(all(
     feature = "tauri",
     any(target_os = "linux", target_os = "macos", target_os = "windows")
@@ -847,6 +885,7 @@ async fn execute_tool_inner(
     call_id: Option<String>,
     sink: Option<crate::tools::OutputSink>,
 ) -> Result<ToolResult, AgentToolsError> {
+    let data_folder = workspace::host_data_folder(&data_folder);
     // Created here rather than trusted to exist: `escapes_project` canonicalizes
     // the sandbox root and treats a missing one as an escape, so every tool call
     // would be refused if the thread's first tool call arrived before any UI
@@ -870,21 +909,14 @@ async fn execute_tool_inner(
         .map(PathBuf::from);
     let skill_project: Option<PathBuf> =
         project_dir.as_deref().map(workspace::project_store);
-    // Plural from the outset so attaching a second folder later is not another
-    // signature change.
-    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
-        Some(path) => vec![workspace::validate_read_root(
-            Path::new(path),
-            &sandbox,
-            Some(Path::new(&data_folder)),
-        )?],
-        None => Vec::new(),
-    };
-    let (root, read_roots, write_roots) = resolve_workspace_root(
-        sandbox,
-        attached,
-        project_writable.unwrap_or(false),
-    );
+    let writable = project_writable.unwrap_or(false);
+    let attached = attach_folder(
+        read_only_project.as_deref(),
+        &sandbox,
+        &data_folder,
+        writable,
+    )?;
+    let (root, read_roots, write_roots) = resolve_workspace_root(sandbox, attached, writable);
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
     // The desktop always sandboxes, and an attached project folder can be the
@@ -1026,20 +1058,44 @@ async fn execute_tool_inner(
 }
 
 /// Let the `preview://` scheme serve files under `root`, with `allow_network`
-/// as the page policy. Re-registering the same root replaces the flag.
+/// as the page policy. Re-registering the same root replaces the flag. Refused
+/// on Windows; see [`PreviewRoots::register_unsandboxed`].
 #[tauri::command]
 pub fn preview_register_root(
     roots: tauri::State<'_, PreviewRoots>,
     root: String,
     allow_network: bool,
 ) -> Result<(), AgentToolsError> {
-    roots.register(Path::new(&root), allow_network)?;
+    roots.register_unsandboxed(Path::new(&root), allow_network)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn preview_unregister_root(roots: tauri::State<'_, PreviewRoots>, root: String) {
     roots.unregister(Path::new(&root));
+}
+
+/// Cowork's "Open": hand an agent-written file to its OS default app, once
+/// [`artifact::checked_artifact`] has checked the file itself, not just its
+/// name, against the session's folders in `roots`. A refusal is an error the
+/// frontend answers by revealing the file instead.
+#[tauri::command]
+pub async fn open_artifact<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    data_folder: String,
+    roots: Vec<String>,
+    path: String,
+) -> Result<(), AgentToolsError> {
+    use tauri_plugin_opener::OpenerExt;
+    let data_folder = workspace::host_data_folder(&data_folder);
+    let roots = artifact::open_roots(&data_folder, &roots);
+    let file = artifact::checked_artifact(Path::new(&path), &roots)?;
+    // The canonical path, so what opens is what was checked; without the
+    // `\\?\` prefix `canonicalize` adds on Windows, which not every handler accepts.
+    let file = crate::tools::proc::without_verbatim_prefix(&file);
+    app.opener()
+        .open_path(file.to_string_lossy(), None::<&str>)
+        .map_err(|e| AgentToolsError::from(e.to_string()))
 }
 
 /// One `preview://` request. Anything not resolvable to a file under a
@@ -1198,7 +1254,7 @@ mod tests {
 
     #[test]
     fn default_store_is_permanent_and_outside_any_sandbox() {
-        let store = resolve_store("/data", None);
+        let store = resolve_store(Path::new("/data"), None);
         assert_eq!(store, Path::new("/data/agent-workspace"));
         // The sandbox lives under threads/, so no relative path from inside one
         // reaches the store without escaping it.
@@ -1209,12 +1265,12 @@ mod tests {
     #[test]
     fn explicit_project_uses_its_project_store() {
         assert_eq!(
-            resolve_store("/data", Some("/repo")),
+            resolve_store(Path::new("/data"), Some("/repo")),
             workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
-            resolve_store("/data", Some("   ")),
+            resolve_store(Path::new("/data"), Some("   ")),
             Path::new("/data/agent-workspace")
         );
     }

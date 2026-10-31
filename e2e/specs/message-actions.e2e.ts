@@ -291,15 +291,15 @@ describe('message actions', () => {
     await expect($$(USER_MESSAGES)).toBeElementsArrayOfSize(1)
     await expect($$(ASSISTANT_MESSAGES)).toBeElementsArrayOfSize(1)
 
-    // The assistant row on purpose. Its actions are always visible when not
-    // streaming (MessageItem.tsx:677-682 hides the cluster only while the reply
-    // is in flight), so this covers delete without also re-covering the
-    // transparency workaround the edit test above already exercises.
+    // The assistant row on purpose, so delete is covered on both sides. Its
+    // secondary actions are hover-revealed (opacity-0) like the user row's, so
+    // this uses the same waitForExist + bare click as the edit test above:
+    // waitForDisplayed rejects a transparent element.
     const assistantMessage = await $(ASSISTANT_MESSAGES)
     const deleteTrigger = await assistantMessage.$(
       '[data-testid="delete-message-trigger"]'
     )
-    await deleteTrigger.waitForDisplayed({ timeout: 30_000 })
+    await deleteTrigger.waitForExist({ timeout: 30_000 })
     await deleteTrigger.click()
 
     await $('[data-testid="delete-message-dialog"]').waitForDisplayed({
@@ -380,9 +380,10 @@ describe('message actions', () => {
       await waitForStreamToFinish(30_000)
 
       // Not just "the stream ended" -- that is also what finishing looks like.
-      // The Continue button renders only when metadata.stopped is true
-      // (MessageItem.tsx:114, :700-714), so its presence is what says the app
-      // recorded a stop rather than a completion.
+      // The Continue button renders only when metadata.stopped is true, so its
+      // presence is what says the app recorded a stop rather than a
+      // completion. Displayed, too: it is kept visible at rest so a stopped
+      // reply can be resumed without hovering.
       await $('[data-testid="continue-message"]').waitForDisplayed({
         timeout: 30_000,
         timeoutMsg:

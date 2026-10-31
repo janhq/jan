@@ -1,0 +1,27 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› why does the cli test fail?                                                   |
+|                                                                                |
+|                                                                                |
+|• Worked · 4 steps                                                              |
+|  └ Read 2 files; ran 2 commands                                                |
+|                                                                                |
+|• It passes now.                                                                |
+|                                                                                |
+|  Worked for 2s • 03:04 • ↑ 4.0K ↓ 30 • 15.0/s                                  |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..29 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 29..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 mod=DIM
+ 4 2..8 mod=BOLD | DIM
+ 4 8..18 mod=DIM
+ 5 0..4 fg=DarkGray
+ 5 4..32 mod=DIM
+ 7 0..2 mod=DIM
+ 9 0..46 fg=#808080

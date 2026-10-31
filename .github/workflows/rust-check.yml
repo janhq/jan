@@ -11,6 +11,18 @@ on:
     branches:
       - main
       - dev
+    # Skip PRs that only touch the docs site, top-level markdown or GitHub
+    # templates. Two things stay in: markdown elsewhere (crates include_str!
+    # some of it) and docs/src/pages/docs/agent, whose fenced excerpts the
+    # adk_examples test checks against examples/adk. Later patterns override
+    # earlier ones, so the agent pages are re-included after docs/** is dropped.
+    paths:
+      - '**'
+      - '!docs/**'
+      - 'docs/src/pages/docs/agent/**'
+      - '!*.md'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
 
 concurrency:
   group: rust-check-${{ github.ref }}
@@ -143,6 +155,53 @@ jobs:
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --test adk_examples
 
+  # `jan --version` on a build without JAN_CLI_BUILD_VERSION reports the
+  # committed app version, so a bump that skips jan-cli or tauri.conf.json
+  # ships a CLI naming the wrong release (janhq/jan-internal#454), and so does
+  # a tree whose manifests agree but lag the last tag (0.8.5 through v0.8.8).
+  # Release builds restamp all of them through the same script; this keeps the
+  # committed tree honest for source builds. jq and git ls-remote, no toolchain.
+  #
+  # Disagreement always fails. A lag behind the latest tag fails only when the
+  # change under test changes one of those version values (the script compares
+  # them against --base), and is a warning otherwise: a tag is pushed before
+  # its bump is committed, and that window must not turn main and every
+  # unrelated open PR red, including one that only adds a dependency.
+  versions:
+    name: manifest versions agree and are released
+    runs-on: ubuntu-latest
+    steps:
+      # A PR's checkout is the merge commit, so depth 2 brings its first
+      # parent, the base tip it merges into.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
+      # Reading the manifests at the base needs no history between it and
+      # HEAD, so a push only has to fetch its `before` commit. With no usable range (a new branch, a force
+      # push whose old tip is gone, a manual dispatch) lag stays a warning.
+      - name: Compare the app, CLI and Tauri manifest versions
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base=""
+          case "$EVENT" in
+            pull_request) base="$(git rev-parse HEAD^1)" ;;
+            push)
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+                git fetch --quiet --depth=1 origin "$BEFORE"; then
+                base="$BEFORE"
+              fi
+              ;;
+          esac
+          if [ -n "$base" ]; then
+            bash .github/scripts/stamp-version.sh --check --base "$base"
+          else
+            echo "no diff range for this $EVENT event; a lag behind the latest tag is a warning"
+            bash .github/scripts/stamp-version.sh --check
+          fi
+
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
   # against a document that no longer describes the channel. The unit test in
@@ -259,8 +318,33 @@ jobs:
   # runtime binary, and a client that only agreed with itself would pass. The
   # committed wire types are checked against protocol/rpc-schema.json in the
   # same job, since that document is what generates them.
+  adk-changes:
+    name: ADK paths
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      # A PR that touches nothing the ADKs build from skips the job's ~5 minute
+      # runtime build. Pushes, dispatches and an unreadable file list run it.
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$PR" ] || ! files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -qE '^(src-tauri/|adk/|packages/adk/|protocol/|package\.json$|yarn\.lock$|\.github/workflows/rust-check\.yml$)' <<< "$files"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   adk:
     name: ADKs
+    needs: adk-changes
+    if: needs.adk-changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

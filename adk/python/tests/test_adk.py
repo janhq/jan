@@ -24,7 +24,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jan_adk import PROTOCOL_VERSION, HostTool, JanRpcError, JanRuntime, JanRuntimeError  # noqa: E402
-from tests.harness import Provider, Scratch, holding, prose, streamed, tool_call  # noqa: E402
+from tests.harness import Provider, Scratch, holding, prose, settle, streamed, tool_call  # noqa: E402
 
 BIN = os.environ.get("JAN_BIN")
 
@@ -101,6 +101,7 @@ class AdkTest(unittest.TestCase):
             self.assertTrue(any(e["type"] == "step" for e in events))
             # The session hears what the turn hears, so a host can observe a run
             # it is not the one iterating.
+            settle(runtime)
             self.assertIn("token", seen)
 
             self.assertEqual(session.get_tools()["tools"], [])
@@ -269,6 +270,7 @@ class AdkTest(unittest.TestCase):
             turn = session.prompt("what is on the desk?")
             list(turn)
             self.assertEqual(turn.result().stop_reason, "completed")
+            settle(runtime)
 
             # The host is told the name it declared, not the `host__` name the
             # model calls, and a read never asks permission.

@@ -6,7 +6,6 @@ import { ChatCompletionMessage } from '../inference'
  */
 export enum NativeRoute {
   openExternalUrl = 'openExternalUrl',
-  openAppDirectory = 'openAppDirectory',
   openFileExplore = 'openFileExplorer',
   selectDirectory = 'selectDirectory',
   selectFiles = 'selectFiles',

@@ -92,7 +92,7 @@ fn fixture_mcp_version(release: &str) -> i64 {
 }
 
 fn read_thread_metadata(release: &str, thread_id: &str) -> Value {
-    let path = get_thread_metadata_path(&fixture_root(release), thread_id);
+    let path = get_thread_metadata_path(&fixture_root(release), thread_id).unwrap();
     let raw = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{release} thread metadata {path:?} unreadable: {e}"));
     serde_json::from_str(&raw).expect("thread.json must parse as JSON")
@@ -102,7 +102,7 @@ fn read_all_messages(release: &str, thread_id: &str) -> Vec<Value> {
     // The reader returns Ok(vec![]) for a missing file, which would turn a
     // layout-constant drift into a confusing downstream length failure —
     // assert the resolved path exists first so the cause is named.
-    let path = get_messages_path(&fixture_root(release), thread_id);
+    let path = get_messages_path(&fixture_root(release), thread_id).unwrap();
     assert!(
         path.exists(),
         "{release} messages file missing at {path:?} — layout constant drifted"
@@ -118,7 +118,7 @@ fn threads_written_by_0_8_3_resolve_and_parse() {
         "784952d3-dc72-474e-ab24-0d78e7035280",
     ];
     for id in thread_ids {
-        let dir = get_thread_dir(&fixture_root("0.8.3"), id);
+        let dir = get_thread_dir(&fixture_root("0.8.3"), id).unwrap();
         assert!(dir.is_dir(), "0.8.3 thread dir {id} missing from fixtures");
         let metadata = read_thread_metadata("0.8.3", id);
         assert_eq!(
@@ -165,7 +165,7 @@ fn thread_dir_layout_matches_current_path_resolution() {
     // get_thread_dir/get_messages_path are what every reader resolves through;
     // if the layout constants drift (e.g. `threads` renamed), this fails.
     let id = "1fa772e9-47e5-4a8c-a664-4b1cef37c5aa";
-    assert!(get_thread_dir(&fixture_root("0.8.3"), id).is_dir());
+    assert!(get_thread_dir(&fixture_root("0.8.3"), id).unwrap().is_dir());
     let messages = read_all_messages("0.8.3", id);
     assert!(
         !messages.is_empty(),

@@ -58,7 +58,7 @@ function General() {
     }
   }
   const { checkForUpdate } = useAppUpdater()
-  const { pausePolling } = useHardware()
+  const { pausePolling, resumePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -81,7 +81,18 @@ function General() {
       return
     }
     pausePolling()
-    await serviceHub.app().factoryReset(options)
+    try {
+      await serviceHub.app().factoryReset(options)
+    } catch (error) {
+      // Model unloads and the backend can both fail here; the backend also
+      // refuses data folders the isRootDir check above does not list. Its
+      // message says why, so show that rather than guessing a cause.
+      console.error('Factory reset failed:', error)
+      resumePolling()
+      toast.error(t('settings:general.factoryResetFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const handleOpenLogs = async () => {

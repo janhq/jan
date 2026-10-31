@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils'
 import { usedSkillNames } from '@/lib/agentActivity'
 
 import { ChainOfThoughtGroup } from './message/ChainOfThoughtGroup'
+import { AskSummaryCard } from './message/AskSummaryCard'
+import { summarizeAsk } from '@/lib/coworkAsk'
+import { ASK_TOOL_NAME } from '@/lib/coworkTools'
 import {
   CHAT_STATUS,
   CONTENT_TYPE,
@@ -15,7 +18,8 @@ import {
 import { CopyButton } from './CopyButton'
 import { RememberButton } from './RememberButton'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { formatDate } from '@/utils/formatDate'
+import { formatDate, formatMessageTime } from '@/utils/formatDate'
+import { useTouchDevice } from '@/hooks/useMediaQuery'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useMessageErrors } from '@/stores/message-errors'
@@ -71,6 +75,15 @@ export type MessageItemProps = {
   highlightedPrefix?: string | null
 }
 
+// Footer icon buttons: 28px boxes (a roomier hover highlight at the same pitch
+// as 24px + gap-1), and keyboard focus shown as that soft highlight plus a 1px
+// neutral-500 ring (the fill alone is ~1.2:1 on the page; neutral-500 clears
+// 3:1 in both themes, the light --ring token does not). The shared Button's 3px focus
+// ring is far heavier than a 16px icon.
+// Dialog triggers swap data-slot to "dialog-trigger", hence both.
+const FOOTER_ICON_BUTTONS =
+  '[&_:is([data-slot=button],[data-slot=dialog-trigger])]:size-7 [&_:is([data-slot=button],[data-slot=dialog-trigger]):focus-visible]:ring-1 [&_:is([data-slot=button],[data-slot=dialog-trigger]):focus-visible]:ring-neutral-500 [&_:is([data-slot=button],[data-slot=dialog-trigger]):focus-visible]:bg-accent [&_:is([data-slot=button],[data-slot=dialog-trigger]):focus-visible]:text-accent-foreground'
+
 export const MessageItem = memo(
   ({
     message,
@@ -93,11 +106,30 @@ export const MessageItem = memo(
     highlightedPrefix,
   }: MessageItemProps) => {
     const { t } = useTranslation()
+    // Footer controls fade in on hover or keyboard focus. Keyboard only
+    // (:focus-visible): a mouse click also focuses the button, and with plain
+    // focus-within the footer stayed shown after the pointer left. A touch
+    // screen has no hover, so there they are always shown rather than
+    // unreachable.
+    const isTouch = useTouchDevice()
+    const hoverReveal = isTouch
+      ? 'opacity-100'
+      : // will-change keeps each group on its own layer at all times. Without
+        // it WebKit promotes the group only while the fade runs, snapping its
+        // fractional position to a whole pixel, so the controls jumped ~1px
+        // as they appeared and again as they settled.
+        'opacity-0 transition-opacity will-change-[opacity] group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100'
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const coloredUserBubble = useInterfaceSettings((s) => s.coloredUserBubble)
     const metadata = message.metadata as Record<string, unknown> | undefined
     const messageError = useMessageErrors((s) => s.errors[message.id])
     const createdAt = (metadata?.createdAt as Date) ?? new Date()
+    // Machine-readable stamp for <time>; toISOString throws on an invalid date,
+    // which a malformed stored value must not turn into a crashed message.
+    const createdAtMs = new Date(createdAt).getTime()
+    const createdAtIso = Number.isNaN(createdAtMs)
+      ? undefined
+      : new Date(createdAtMs).toISOString()
     const [previewImage, setPreviewImage] = useState<{
       url: string
       filename?: string
@@ -274,6 +306,24 @@ export const MessageItem = memo(
         .map((part) => part.text)
         .join('\n')
     }, [message.parts])
+
+    // Copy stays visible on the last message, the one most often copied, and
+    // on any message with versions, where it anchors the always-visible
+    // version switcher beside it. Elsewhere it joins the hover reveal so the
+    // history stays uncluttered.
+    const hasVersions = Boolean(
+      versionInfo && versionInfo.count > 1 && onSwitchVersion
+    )
+    const copyButton = (
+      <div
+        className={cn(
+          'flex items-center',
+          !isLastMessage && !hasVersions && hoverReveal
+        )}
+      >
+        <CopyButton text={getFullTextContent()} />
+      </div>
+    )
 
     const renderTextPart = (
       part: { type: 'text'; text: string },
@@ -485,6 +535,18 @@ export const MessageItem = memo(
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i]
         const t = part.type
+        // A settled ask leaves the trace as a Q&A card, so the answers stay in
+        // view instead of being folded into "Worked for…".
+        if (t === `tool-${ASK_TOOL_NAME}` && part.state === 'output-available') {
+          const rows = summarizeAsk(part.input, part.output)
+          if (rows) {
+            flushCot(true)
+            elements.push(
+              <AskSummaryCard key={`${message.id}-ask-${i}`} rows={rows} />
+            )
+            continue
+          }
+        }
         if (isCotPart(t)) {
           cotEntries.push({ part, index: i })
           continue
@@ -566,9 +628,11 @@ export const MessageItem = memo(
       <div
         data-testid="message-item"
         data-message-role={message.role}
+        // Kept tight: every message now carries a footer row (hidden until
+        // hover), and that row already separates one turn from the next.
         className={cn(
-          'w-full mb-4 group/message',
-          message.role === 'user' && !isFirstMessage && 'mt-8'
+          'w-full mb-2 group/message',
+          message.role === 'user' && !isFirstMessage && 'mt-4'
         )}
       >
         {/* Render message parts. A turn alternates collapsed traces with
@@ -633,79 +697,83 @@ export const MessageItem = memo(
           </div>
         )}
 
-        {/* Message actions for user messages. Same shape as the assistant row
-            below -- a timestamp, gap-2, then a gap-1 icon cluster -- so the two
-            meta rows line up across roles. */}
+        {/* Message actions for user messages. The bubble is right-aligned, so
+            the row mirrors the assistant one: the date sits on the left and the
+            actions on the right, with copy last so it stays at the bubble's edge.
+            Only copy on the last message is always visible; the rest appear on
+            hover or focus. */}
         {message.role === 'user' && !hideActions && (
-          <div className="mt-3 flex items-center justify-end gap-2 text-muted-foreground text-xs opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
-            <span className="text-muted-foreground">
-              {formatDate(createdAt)}
-            </span>
-            <div className="flex items-center gap-1">
+          <div className="-mr-1.5 mt-0.5 flex items-center justify-end gap-2.5 text-muted-foreground text-xs">
+            <time
+              className={cn('text-muted-foreground', hoverReveal)}
+              dateTime={createdAtIso}
+              title={formatDate(createdAt)}
+            >
+              {formatMessageTime(createdAt)}
+            </time>
+            <div className={cn('flex items-center', FOOTER_ICON_BUTTONS)}>
+              <div className={cn('flex items-center', hoverReveal)}>
+                {/* Editing re-runs the turn, so with no model it is hidden
+                    rather than shown disabled. */}
+                {onEdit &&
+                  selectedModel &&
+                  status !== CHAT_STATUS.STREAMING &&
+                  status !== CHAT_STATUS.SUBMITTED && (
+                    <EditMessageDialog
+                      message={getFullTextContent()}
+                      imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
+                      onSave={handleEdit}
+                    />
+                  )}
+
+                {onRetry &&
+                  status !== CHAT_STATUS.STREAMING &&
+                  status !== CHAT_STATUS.SUBMITTED && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => onRetry(message.id, getFullTextContent())}
+                      title={t('chat:actions.askAgain')}
+                    >
+                      <IconRefresh size={16} className="text-muted-foreground" />
+                    </Button>
+                  )}
+
+                {onDelete &&
+                  status !== CHAT_STATUS.STREAMING &&
+                  status !== CHAT_STATUS.SUBMITTED && (
+                    <DeleteMessageDialog onDelete={handleDelete} />
+                  )}
+              </div>
+              {/* Shown at rest when there are versions, beside copy. */}
               {versionNav}
-              <CopyButton text={getFullTextContent()} />
-
-              {onEdit &&
-                status !== CHAT_STATUS.STREAMING &&
-                status !== CHAT_STATUS.SUBMITTED && (
-                  <EditMessageDialog
-                    message={getFullTextContent()}
-                    imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
-                    onSave={handleEdit}
-                  />
-                )}
-
-              {onRetry &&
-                status !== CHAT_STATUS.STREAMING &&
-                status !== CHAT_STATUS.SUBMITTED && (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => onRetry(message.id, getFullTextContent())}
-                    title={t('chat:actions.askAgain')}
-                  >
-                    <IconRefresh size={16} className="text-muted-foreground" />
-                  </Button>
-                )}
-
-              {onDelete &&
-                status !== CHAT_STATUS.STREAMING &&
-                status !== CHAT_STATUS.SUBMITTED && (
-                  <DeleteMessageDialog onDelete={handleDelete} />
-                )}
+              {copyButton}
             </div>
           </div>
         )}
 
-        {/* Message actions for assistant messages (non-tool) */}
+        {/* Message actions for assistant messages (non-tool). Mirrors the user
+            row: the actions, then the date and token speed beside them, all
+            hugging the message's leading edge. The icon buttons are 28px and
+            butt together (same 28px pitch as 24px + gap-1, but a roomier hover
+            highlight); -ml-1.5 cancels their padding so the first glyph lines
+            up with the text above, and gap-2.5 between groups evens the
+            visible gaps against the icon spacing. Only copy on the last message is
+            always visible; everything else appears on hover or keyboard focus.
+            The hidden controls keep their space (opacity, not display) so the
+            row never shifts as the pointer moves in and out. */}
         {message.role === 'assistant' && !hideActions && (
-          <div className="mt-3 flex items-center gap-2 text-muted-foreground text-xs">
-            {!isStreaming && (
-              <span className="text-muted-foreground">
-                {formatDate(createdAt)}
-              </span>
-            )}
+          <div className="@container -ml-1.5 mt-1.5 flex items-center gap-2.5 text-muted-foreground text-xs">
             <div
               className={cn(
-                'flex items-center gap-1',
+                'flex items-center',
+                FOOTER_ICON_BUTTONS,
                 (isStreaming || hideActions) && 'hidden'
               )}
             >
-              {versionNav}
-              <CopyButton text={getFullTextContent()} />
-              <RememberButton text={getFullTextContent()} />
-
-              {onEdit && !isStreaming && (
-                <EditMessageDialog
-                  message={getFullTextContent()}
-                  onSave={handleEdit}
-                />
-              )}
-
-              {onDelete && !isStreaming && (
-                <DeleteMessageDialog onDelete={handleDelete} />
-              )}
-
+              {copyButton}
+              {/* Shown at rest: it only appears on a stopped reply, and it is
+                  the one way to resume it. */}
               {selectedModel &&
                 onContinue &&
                 !isStreaming &&
@@ -717,28 +785,62 @@ export const MessageItem = memo(
                     data-testid="continue-message"
                     onClick={handleContinue}
                     title={t('chat:actions.continue')}
+                    aria-label={t('chat:actions.continue')}
                   >
-                    <IconPlayerPlay size={16} />
+                    <IconPlayerPlay size={16} aria-hidden="true" />
                   </Button>
+                )}
+              {/* Shown at rest when there are versions (copy is then shown
+                  too, so the pair sits at the leading edge together). */}
+              {versionNav}
+              <div className={cn('flex items-center', hoverReveal)}>
+                <RememberButton text={getFullTextContent()} />
+
+                {onEdit && selectedModel && !isStreaming && (
+                  <EditMessageDialog
+                    message={getFullTextContent()}
+                    onSave={handleEdit}
+                  />
                 )}
 
-              {selectedModel &&
-                onRegenerate &&
-                !isStreaming &&
-                isLastMessage && (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    data-testid="regenerate-message"
-                    onClick={handleRegenerate}
-                    title={t('chat:actions.regenerate')}
-                  >
-                    <IconRefresh size={16} />
-                  </Button>
+                {onDelete && !isStreaming && (
+                  <DeleteMessageDialog onDelete={handleDelete} />
                 )}
+
+                {selectedModel &&
+                  onRegenerate &&
+                  !isStreaming &&
+                  isLastMessage && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      data-testid="regenerate-message"
+                      onClick={handleRegenerate}
+                      title={t('chat:actions.regenerate')}
+                    >
+                      <IconRefresh size={16} />
+                    </Button>
+                  )}
+              </div>
             </div>
 
-            <TokenSpeedIndicator streaming={isStreaming} metadata={metadata} />
+            <div
+              className={cn(
+                'flex items-center gap-4',
+                hoverReveal
+              )}
+            >
+              {!isStreaming && (
+                <time
+                  className="text-muted-foreground"
+                  dateTime={createdAtIso}
+                  title={formatDate(createdAt)}
+                >
+                  {formatMessageTime(createdAt)}
+                </time>
+              )}
+              <TokenSpeedIndicator streaming={isStreaming} metadata={metadata} />
+            </div>
           </div>
         )}
 

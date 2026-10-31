@@ -792,7 +792,8 @@ fn repo_dir_name(url: &str) -> Option<&str> {
 }
 
 fn git(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    let program = jan_utils::git_program().map_err(|e| format!("ERROR: git: {e}"))?;
+    let out = Command::new(program)
         .args(args)
         .output()
         .map_err(|e| format!("ERROR: git: {e}"))?;

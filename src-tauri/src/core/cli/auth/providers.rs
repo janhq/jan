@@ -436,15 +436,14 @@ mod tests {
         definition: &ProviderDefinition,
         key: &str,
     ) -> Result<LoginResult, LoginError> {
-        let definition = definition.clone();
-        let key = key.to_string();
-        std::thread::spawn(move || {
-            tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(login_with_api_key(&definition, &key))
-        })
-        .join()
-        .expect("verification thread must not panic")
+        // Stay on the fixture-owning OS thread: global config resolution is
+        // thread-local in unit tests, so a spawned login would write into a
+        // different scratch home from the caller's assertions.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(login_with_api_key(definition, key))
     }
 
     #[test]
@@ -539,8 +538,8 @@ mod tests {
         assert!(matches!(result, Err(LoginError::Unavailable(_))));
     }
 
-    #[tokio::test]
-    async fn valid_key_persists_secret_and_non_secret_config() {
+    #[test]
+    fn valid_key_persists_secret_and_non_secret_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let body = r#"{"data":[{"id":"deepseek-chat"},{"id":"deepseek-reasoner"}]}"#;
@@ -574,8 +573,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn logout_removes_credential_and_config() {
+    #[test]
+    fn logout_removes_credential_and_config() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             let body = r#"{"data":[{"id":"deepseek-chat"}]}"#;
@@ -592,8 +591,8 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn legacy_plaintext_key_is_cleared_by_login() {
+    #[test]
+    fn legacy_plaintext_key_is_cleared_by_login() {
         let _tmp = TempSecrets::new();
         with_temp_home(|_| {
             // Simulate a pre-existing legacy entry with a plaintext key.
