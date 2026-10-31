@@ -51,6 +51,13 @@ static INDEX_LOCK: Mutex<()> = Mutex::new(());
 static KEYRING_DOWN: AtomicBool = AtomicBool::new(false);
 
 fn keyring_down() -> bool {
+    // Native QA must never access the installed app's shared OS credential
+    // namespace. This opt-in exists only in e2e builds; the encrypted fallback
+    // stays under the separately isolated JAN_DATA_FOLDER.
+    #[cfg(feature = "e2e")]
+    if std::env::var_os("JAN_E2E_NO_KEYRING").is_some_and(|value| value == "1") {
+        return true;
+    }
     KEYRING_DOWN.load(Ordering::Relaxed)
 }
 

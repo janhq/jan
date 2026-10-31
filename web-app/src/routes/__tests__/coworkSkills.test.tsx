@@ -120,13 +120,21 @@ vi.mock('@/containers/ChatInput', () => ({
     onStop,
     chatStatus,
     scopeKey,
+    model,
+    onModelChange,
   }: {
     onSubmit: (text: string) => void
     onStop: () => void
     chatStatus: string
     scopeKey: string
+    model?: ThreadModel
+    onModelChange?: (model: ThreadModel) => void
   }) => (
     <>
+      <div data-testid="composer-model">{model?.id}
+        <button onClick={() => onModelChange?.({ id: 'second-model', provider: 'test' })}>second-model</button>
+        <button onClick={() => onModelChange?.({ id: 'test-model', provider: 'test' })}>test-model</button>
+      </div>
       <output aria-label="Composer status">{chatStatus}</output>
       <button
         onClick={() => {
@@ -231,7 +239,7 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
   CoworkParkedNotice: () => null,
 }))
 
-import { Route } from '../cowork'
+import { CoworkPage } from '@/containers/CoworkPage'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
 import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -240,9 +248,9 @@ import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { answerAsk } from '@/lib/coworkRunner'
 import { localStorageKey } from '@/constants/localStorage'
+import { sessionFromThread, sessionToThreadRecord } from '@/lib/coworkPersistence'
+import { sessionToSidecar } from '@/lib/migrateCoworkSessions'
 // The router mock returns the supplied component options directly.
-const routeOptions = Route as unknown as { component: () => ReactNode }
-const CoworkPage = routeOptions.component
 function Manager() {
   const { write } = useSkills(null)
   return (
@@ -461,7 +469,7 @@ it('retries the original question after request preparation fails', async () => 
   ])
 })
 
-it('restores each session model after switching and persisted-store rehydration', async () => {
+it('restores each session model after switching and a reload from thread storage', async () => {
   const a = useCoworkSessions.getState().createSession()
   useCoworkSessions
     .getState()
@@ -473,28 +481,30 @@ it('restores each session model after switching and persisted-store rehydration'
   useCoworkSessions.getState().selectSession(a)
   const view = render(<CoworkPage />)
   const choose = async (name: string) => {
-    fireEvent.click(document.querySelector('header button')!)
-    fireEvent.click(await screen.findByText(name))
+    fireEvent.click(screen.getByRole('button', { name }))
   }
   await choose('second-model')
   act(() => useCoworkSessions.getState().selectSession(b))
   await choose('test-model')
   act(() => useCoworkSessions.getState().selectSession(a))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   view.unmount()
-  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  // A reload: every session goes to its thread record + sidecar and comes back.
+  const reloaded = useCoworkSessions.getState().sessions.map((x) =>
+    sessionFromThread(sessionToThreadRecord(x), sessionToSidecar(x))
+  )
+  const currentId = useCoworkSessions.getState().currentId
   useCoworkSessions.setState({ sessions: [], currentId: null })
-  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
-  await useCoworkSessions.persist.rehydrate()
+  useCoworkSessions.setState({ sessions: reloaded, currentId })
   render(<CoworkPage />)
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   act(() => useCoworkSessions.getState().selectSession(b))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('test-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('test-model')
   )
 })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -61,6 +61,8 @@ vi.mock('@dnd-kit/utilities', () => ({
 }))
 
 import AddEditMCPServer from '../AddEditMCPServer'
+import EditJsonMCPserver from '../EditJsonMCPserver'
+import DeleteMCPServerConfirm from '../DeleteMCPServerConfirm'
 
 const baseProps = () => ({
   open: true,
@@ -102,7 +104,7 @@ describe('AddEditMCPServer', () => {
     expect(saveBtn).toBeDisabled()
   })
 
-  it('enables Save after typing a name and calls onSave with stdio config', () => {
+  it('enables Save after typing a name and calls onSave with stdio config', async () => {
     const props = baseProps()
     render(<AddEditMCPServer {...props} />)
     fireEvent.change(
@@ -121,10 +123,10 @@ describe('AddEditMCPServer', () => {
     expect(name).toBe('myServer')
     expect(cfg.type).toBe('stdio')
     expect(cfg.command).toBe('node')
-    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
   })
 
-  it('switches transport to HTTP and saves URL-based config', () => {
+  it('switches transport to HTTP and saves URL-based config', async () => {
     const props = baseProps()
     render(<AddEditMCPServer {...props} />)
     fireEvent.change(
@@ -144,11 +146,11 @@ describe('AddEditMCPServer', () => {
     expect(cfg.args).toEqual([])
   })
 
-  it('cancel button closes the dialog without saving', () => {
+  it('cancel button closes the dialog without saving', async () => {
     const props = baseProps()
     render(<AddEditMCPServer {...props} />)
     fireEvent.click(screen.getByText('common:cancel'))
-    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
     expect(props.onSave).not.toHaveBeenCalled()
   })
 
@@ -180,7 +182,7 @@ describe('AddEditMCPServer', () => {
     ).toBeInTheDocument()
   })
 
-  it('saves each server entry from valid JSON payload', () => {
+  it('saves each server entry from valid JSON payload', async () => {
     const props = baseProps()
     render(<AddEditMCPServer {...props} />)
     fireEvent.click(document.querySelector('[title="Add server by JSON"]')!)
@@ -192,10 +194,10 @@ describe('AddEditMCPServer', () => {
       target: { value: JSON.stringify(payload) },
     })
     fireEvent.click(screen.getByText('mcp-servers:save'))
-    expect(props.onSave).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(props.onSave).toHaveBeenCalledTimes(2))
     expect(props.onSave.mock.calls[0][0]).toBe('s1')
     expect(props.onSave.mock.calls[1][0]).toBe('s2')
-    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
   })
 
   it('rejects JSON where a server declares an invalid transport type', () => {
@@ -213,5 +215,97 @@ describe('AddEditMCPServer', () => {
     expect(
       screen.getByText(/mcp-servers:editJson\.errorInvalidType/)
     ).toBeInTheDocument()
+  })
+  it('keeps form inputs on rejected save, blocks duplicates and permits retry', async () => {
+    const props = baseProps()
+    let reject!: (error: Error) => void
+    props.onSave.mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail }))
+    render(<AddEditMCPServer {...props} />)
+    const name = screen.getByPlaceholderText('mcp-servers:enterServerName')
+    fireEvent.change(name, { target: { value: 'kept' } })
+    const save = screen.getByText('mcp-servers:save')
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+    await act(async () => reject(new Error('write failed')))
+    expect(screen.getByRole('alert')).toHaveTextContent('write failed')
+    expect(name).toHaveValue('kept')
+    fireEvent.click(save)
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+})
+
+
+describe('MCP JSON and deletion async dialogs', () => {
+  it('keeps JSON edits and displays a callback failure rather than a syntax error', async () => {
+    let reject!: (error: Error) => void
+    const onSave = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail }))
+    const onOpenChange = vi.fn()
+    render(<EditJsonMCPserver open onOpenChange={onOpenChange} serverName="Notes" initialData={{ command: 'old', args: [], env: {} }} onSave={onSave} />)
+    const editor = screen.getByTestId('code-editor')
+    const text = JSON.stringify({ command: 'new', args: [], env: {} })
+    fireEvent.change(editor, { target: { value: text } })
+    const save = screen.getByText('mcp-servers:editJson.save')
+    fireEvent.click(save)
+    fireEvent.click(save)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).not.toHaveBeenCalled()
+    await act(async () => reject(new Error('JSON write failed')))
+    expect(screen.getByRole('alert')).toHaveTextContent('JSON write failed')
+    expect(editor).toHaveValue(text)
+    fireEvent.click(save)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('awaits deletion, reports failure inline and allows retry', async () => {
+    let reject!: (error: Error) => void
+    const onConfirm = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail }))
+    const onOpenChange = vi.fn()
+    render(<DeleteMCPServerConfirm open onOpenChange={onOpenChange} serverName="Notes" onConfirm={onConfirm} />)
+    const remove = screen.getByText('mcp-servers:deleteServer.delete')
+    fireEvent.click(remove)
+    fireEvent.click(remove)
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onOpenChange).not.toHaveBeenCalled()
+    await act(async () => reject(new Error('delete write failed')))
+    expect(screen.getByRole('alert')).toHaveTextContent('delete write failed')
+    fireEvent.click(remove)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+})
+
+
+describe('MCP dialog bounded errors', () => {
+  it.each(['form', 'json', 'all-json'])('keeps long %s save failures in a scroll body, outside the fixed footer', async (mode) => {
+    const failure = 'transport failure ' + 'x'.repeat(12000)
+    const props = baseProps()
+    props.onSave.mockRejectedValueOnce(new Error(failure))
+    if (mode === 'all-json') {
+      render(<EditJsonMCPserver open onOpenChange={props.onOpenChange} serverName={null} initialData={{}} onSave={props.onSave} />)
+      fireEvent.click(screen.getByText('mcp-servers:editJson.save'))
+    } else {
+      render(<AddEditMCPServer {...props} />)
+      if (mode === 'json') {
+        fireEvent.click(document.querySelector('[title="Add server by JSON"]')!)
+        fireEvent.change(screen.getByTestId('code-editor'), { target: { value: '{"OAuth":{"command":"node"}}' } })
+      } else {
+        fireEvent.change(screen.getByPlaceholderText('mcp-servers:enterServerName'), { target: { value: 'OAuth' } })
+      }
+      fireEvent.click(screen.getByText('mcp-servers:save'))
+    }
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(failure)
+    expect(alert).toHaveClass('max-h-32', 'overflow-y-auto', '[overflow-wrap:anywhere]')
+    const body = screen.getByTestId('mcp-dialog-scroll-content')
+    expect(body).toContainElement(alert)
+    expect(body).toHaveClass('min-h-0', 'overflow-y-auto')
+    expect(screen.getByRole('dialog')).toHaveClass('max-h-[calc(100dvh-2rem)]', 'overflow-hidden')
+    const save = screen.getByText(mode === 'all-json' ? 'mcp-servers:editJson.save' : 'mcp-servers:save')
+    expect(body).not.toContainElement(save)
+    expect(save.parentElement).toHaveClass('shrink-0')
+    expect(save).not.toBeDisabled()
+    expect(props.onOpenChange).not.toHaveBeenCalled()
   })
 })

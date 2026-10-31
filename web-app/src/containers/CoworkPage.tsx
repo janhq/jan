@@ -1,10 +1,16 @@
+import { updateThreadProject } from '@/lib/threadProject'
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { useHomeMode } from '@/hooks/useHomeMode'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 import ChatInput from '@/containers/ChatInput'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import HeaderPage from '@/containers/HeaderPage'
+import { CoworkOverviewPanel } from '@/containers/CoworkOverviewPanel'
+import { PanelRight } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
-import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   Fragment,
@@ -24,7 +30,7 @@ import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
 import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
-import { runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
+import { INIT_PROMPT, runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
 import {
   compactMessages,
   type ContextManagerConfig,
@@ -42,10 +48,10 @@ import type {
   CoworkTurn,
 } from '@/types/coworkSession'
 import type { Attachment } from '@/types/attachment'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
-import SkillSelector from '@/containers/SkillSelector'
 import {
   appendLiveMessages,
   coworkTurnsToUIMessages,
@@ -67,6 +73,13 @@ import {
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
 import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
+import {
+  claimCoworkHandoff,
+  clearCoworkHandoff,
+  peekCoworkHandoff,
+  releaseCoworkHandoff,
+} from '@/lib/coworkHandoff'
+import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { usePrompt } from '@/hooks/usePrompt'
 import { awaitsModel } from '@/lib/agentActivity'
 import { artifactsFromParts, artifactsFromTurns } from '@/lib/coworkArtifacts'
@@ -76,15 +89,9 @@ import { CoworkPreviewPanel } from '@/containers/CoworkPreviewPanel'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
 import { CoworkTodoPanel } from '@/containers/CoworkTodoPanel'
 import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
-import { CoworkChangesChip } from '@/containers/CoworkChangesChip'
-import { CoworkFilesChip } from '@/containers/CoworkFilesChip'
 import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
-import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
-import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
-import { CoworkModelChip } from '@/containers/CoworkModelChip'
 import { ModelSettingSheet } from '@/containers/ModelSetting'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
-import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
 import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
@@ -105,6 +112,7 @@ import {
   BLACKBOARD_DIR_DISPLAY,
   importAttachment,
   cancelAgentThreadBash,
+  cancelAgentThreadBashStrict,
   activeAgentMonitorIds,
 } from '@/lib/agentTools'
 import { isPlatformTauri } from '@/lib/platform'
@@ -124,7 +132,7 @@ import {
   type StreamSink,
   type ToolOutcome,
 } from '@/lib/coworkRunner'
-import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { useCoworkRun, registerCoworkRunForClose, isCoworkClosing } from '@/hooks/useCoworkRun'
 import {
   listSubagents,
   type SubagentDefinition,
@@ -148,11 +156,6 @@ import {
   resolveSkillCommand,
   skillCommandPrefix,
 } from '@/lib/skillCommands'
-
-export const Route = createFileRoute(route.cowork as any)({
-  beforeLoad: () => ensureCoworkEnabled(),
-  component: CoworkPage,
-})
 
 // Slash-menu rows share keyboard behavior but expose their category visually.
 type MenuItemKind = 'skill' | 'command' | 'model'
@@ -191,8 +194,9 @@ function sessionMonitorLane(sid: string): MonitorLane {
   }))
 }
 
-function CoworkPage() {
+export function CoworkPage() {
   const { t } = useTranslation()
+  const { folders: projects } = useThreadManagement()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider, providers } = useModelProvider()
@@ -203,6 +207,7 @@ function CoworkPage() {
     () => sessions.find((s) => s.id === currentId) ?? null,
     [sessions, currentId]
   )
+  const unavailable = !!session?.unavailable
   const folder = session?.folder ?? null
 
   const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(folder)
@@ -245,6 +250,9 @@ function CoworkPage() {
   )
   // The rail holds one panel at a time: they all want the width, so showing
   // two together starves the transcript (C7).
+  const desktopOverview = useMediaQuery('(min-width: 1280px)', true)
+  const [overviewOpen, setOverviewOpen] = useState(true)
+  const [overviewRequested, setOverviewRequested] = useState(false)
   const [rail, setRail] = useState<
     | { kind: 'preview'; path: string }
     | { kind: 'diff' }
@@ -255,7 +263,7 @@ function CoworkPage() {
     | null
   >(null)
   const showPreview = useCallback(
-    (path: string) => setRail({ kind: 'preview', path }),
+    (path: string) => { setOverviewOpen(false); setRail({ kind: 'preview', path }) },
     []
   )
   const ask = useCoworkRun((s) =>
@@ -444,15 +452,15 @@ function CoworkPage() {
     files?: CoworkAttachedFile[]
   }
 
-  const runRequest = async (
+  const runRequest = (
     text: string | null,
     attachments?: CoworkAttachments,
     sid = ensureCurrentSession()
-  ) => {
+  ): boolean => {
     const store = useCoworkSessions.getState()
     const current = store.sessions.find((s) => s.id === sid)
-    if (!current || useCoworkRun.getState().runId[sid]) return
-    if (!text && !(current?.messages?.length ?? 0)) return
+    if (isCoworkClosing() || !current || current.unavailable || useCoworkRun.getState().runId[sid]) return false
+    if (!text && !(current.messages?.length ?? 0)) return false
     const modelState = useModelProvider.getState()
     const modelChoice =
       current.model ??
@@ -470,14 +478,14 @@ function CoworkPage() {
       ?.models.find((model) => model.id === modelChoice?.id)
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
-      return
+      return false
     }
     // Without tool calling the transport drops the tool set silently, and the
     // agent then narrates work it never did. Refusing up front is honest; a
     // toolless "agent" run is worse than no run.
     if (!selectedModel.capabilities?.includes('tools')) {
       toast.error(t('common:modelNoTools', { model: selectedModel.id }))
-      return
+      return false
     }
     if (!current.model && modelChoice) store.setModel(sid, modelChoice)
     // Claim this session before asynchronous preparation. Another session may
@@ -487,595 +495,712 @@ function CoworkPage() {
     useCoworkRun
       .getState()
       .beginRun(sid, handle.runId, text ?? '', attachments?.media)
-    let runTurns: CoworkTurn[] = []
-    let liveFrame: number | null = null
-    const syncLive = () => {
-      if (liveFrame != null) {
-        cancelAnimationFrame(liveFrame)
-        liveFrame = null
+    let resolveDone!: () => void
+    const done = new Promise<void>((resolve) => { resolveDone = resolve })
+    let closeRequested = false
+    let executionDone = false
+    let cancellationConfirmed = false
+    const unregisterClose = registerCoworkRunForClose(async () => {
+      closeRequested = true
+      abortRun(sid)
+      // JS abort cannot kill native shells, nor force a stalled preparation or
+      // dispatch promise to settle. Refuse close if teardown cannot be confirmed;
+      // leave the run registered so a later close can retry it.
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          Promise.all([done, cancelAgentThreadBashStrict(sid).then(() => {
+            cancellationConfirmed = true
+            if (executionDone) unregisterClose()
+          })]),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(
+              'Cowork teardown did not settle; the window must remain open.'
+            )), 5000)
+          }),
+        ])
+      } finally {
+        clearTimeout(timeout)
       }
-      useCoworkRun.getState().setLiveTurns(sid, [...runTurns])
-    }
-    const scheduleLiveSync = () => {
-      if (liveFrame != null) return
-      liveFrame = requestAnimationFrame(() => {
-        liveFrame = null
+    })
+    // Acceptance is synchronous: the composer can clear now, not after the
+    // stream ends. The background task owns completion and error cleanup.
+    const execute = async () => {
+      let runTurns: CoworkTurn[] = []
+      let liveFrame: number | null = null
+      const syncLive = () => {
+        if (liveFrame != null) {
+          cancelAnimationFrame(liveFrame)
+          liveFrame = null
+        }
         useCoworkRun.getState().setLiveTurns(sid, [...runTurns])
-      })
-    }
-    const pushLive = (turns: CoworkTurn[]) => {
-      runTurns.push(...turns)
-      syncLive()
-    }
-    let messages = current.messages ?? []
-    let outcome: RunOutcome | null = null
-    let thrown: Pick<RunOutcome, 'stoppedBy' | 'errorText'> | null = null
-    try {
-      // Display the invocation, but expand it only in the model's history. Keep
-      // this in the shared request path so edits, retries and queued turns also
-      // invoke skills instead of sending the slash text as an ordinary prompt.
-      let modelText = text
-      const parsedSkill = text ? parseSkillCommand(text) : null
-      const builtIn = parsedSkill
-        ? SLASH_COMMANDS.some(
-            (command) => command.name === `/${parsedSkill.name}`
-          )
-        : false
-      const skill =
-        parsedSkill && (parsedSkill.explicit || !builtIn)
-          ? resolveSkillCommand(skillCommands, parsedSkill)
-          : null
-      if (parsedSkill?.explicit && !skill) {
-        toast.error(
-          t('common:coworkSlash.skillUnavailable', { name: parsedSkill.name })
-        )
-        return
       }
-      if (skill && parsedSkill) {
-        try {
-          modelText = await invokeSkillCommand(skill.name, parsedSkill.args)
-        } catch (error) {
-          toast.error(String(error))
-          return
-        }
-      }
-      if (text && current?.title === 'New session')
-        // Collapse newlines/runs of whitespace so a pasted multi-line prompt
-        // doesn't become an unreadable sidebar title.
-        store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
-
-      runTurns = text
-        ? [userTurn(text, attachments?.media, attachments?.files)]
-        : []
-      syncLive()
-
-      let files = attachments?.files
-      const baseMessages = current?.messages ?? []
-      messages = text
-        ? [
-            ...baseMessages,
-            {
-              id: `${sid}-user-${baseMessages.length}`,
-              role: 'user',
-              parts: [
-                {
-                  type: 'text',
-                  text: withAttachedFiles(modelText ?? text, files),
-                },
-                ...(attachments?.media ?? []),
-              ],
-            } as any,
-          ]
-        : [...baseMessages]
-      // Local models load before the first token, but only on a cold start. Probe
-      // the engine so the load card shows on a real load, not on every warm run.
-      if (selectedProvider === 'llamacpp') {
-        try {
-          const loaded = await getLoadedModels()
-          if (!loaded.includes(selectedModel.id)) {
-            useCoworkRun.getState().setSessionModelLoadProgress(sid, undefined)
-            useCoworkRun.getState().setSessionLoadingModel(sid, true)
-          }
-        } catch {
-          // Probe failed; skip the card rather than flash it every run.
-        }
-      }
-
-      // Documents go into the workspace before the question is sent, so the
-      // paths the question names exist by the time the agent reads them. The
-      // row was shown first: parsing a large PDF takes a moment.
-      if (text && files?.length) {
-        files = await importAttachedFiles(files, {
-          parse: async (path, fileType) =>
-            (await serviceHub.rag().parseDocument?.(path, fileType)) ?? '',
-          importFile: (path, parsed) => importAttachment(sid, path, parsed),
+      const scheduleLiveSync = () => {
+        if (liveFrame != null) return
+        liveFrame = requestAnimationFrame(() => {
+          liveFrame = null
+          useCoworkRun.getState().setLiveTurns(sid, [...runTurns])
         })
-        runTurns = [userTurn(text, attachments?.media, files)]
-        messages[messages.length - 1].parts[0] = {
-          type: 'text',
-          text: withAttachedFiles(modelText ?? text, files),
-        }
+      }
+      const pushLive = (turns: CoworkTurn[]) => {
+        runTurns.push(...turns)
         syncLive()
       }
-
-      // Warm the sandbox probe: the transport's prompt and tool set read it
-      // synchronously via sandboxEnforces().
-      await getSandboxStatus()
-      // Read once per run, not subscribed: the advertised set is frozen for the
-      // run anyway, so a mid-run flip in Settings would only desync the prompt.
-      const webSearch = useWebSearchConfig.getState().webSearchEnabled
-      // One snapshot per run, shared with every child this run dispatches.
-      const environment = await getCoworkEnvironment()
-      const failedReadPaths = current?.planMode ? new Set<string>() : undefined
-      const runConfig = {
-        model: { provider: selectedProvider, id: selectedModel.id },
-        planMode: current?.planMode ?? false,
-        subagentNames: subagentDefs.map((d) => d.name),
-        // Always on at depth 0, even with nothing saved: an unknown name runs as
-        // a focused general-purpose subagent, as it does in Rust.
-        allowSubagents: true,
-        webSearch,
-        workspacePath,
-        readOnlyFolder: current?.folder ?? null,
-      }
-      const transport = new CoworkChatTransport(sid, runConfig)
-      await transport.refreshTools()
-
-      // Owned by this request: children cannot outlive the run whose signal
-      // aborts them, so a fresh inbox per run can never hold a stale ping.
-      const inbox = new SubagentInbox()
-      // The session's, not the run's: a watcher keeps going after this run has
-      // answered, and its pings are drained by whichever run is up next.
-      const monitorLane = sessionMonitorLane(sid)
-
-      const sink: StreamSink = {
-        onText: (delta) => {
-          const last = runTurns[runTurns.length - 1]
-          if (last && last.role === 'assistant') {
-            last.content += delta
-            scheduleLiveSync()
-          } else {
-            pushLive([{ role: 'assistant', content: delta }])
-          }
-        },
-        // Native reasoning streams beside the content, so the collapsible
-        // thinking block fills in live instead of the transcript sitting silent
-        // for the whole chain of thought.
-        onReasoning: (delta) => {
-          const last = runTurns[runTurns.length - 1]
-          if (last && last.role === 'assistant') {
-            last.reasoning = (last.reasoning ?? '') + delta
-            scheduleLiveSync()
-          } else {
-            pushLive([{ role: 'assistant', content: '', reasoning: delta }])
-          }
-        },
-        onToolStart: (callId, name) =>
-          pushLive([
-            {
-              role: 'tool',
-              content: '',
-              callId,
-              name,
-              status: 'running',
-              argsLive: '',
-            },
-          ]),
-        // Raw JSON, appended as it arrives. The transcript reads a `write`'s
-        // destination and body straight out of this fragment, so the card fills
-        // in as the model types rather than waiting for the closing brace.
-        onToolArgsDelta: (callId, delta) => {
-          const row = runTurns.find((turn) => turn.callId === callId)
-          if (!row) return
-          row.argsLive = (row.argsLive ?? '') + delta
-          scheduleLiveSync()
-        },
-        onToolCall: (call) => {
-          const row = runTurns.find((turn) => turn.callId === call.toolCallId)
-          if (row) {
-            row.args = call.input
-            syncLive()
-          }
-        },
-      }
-
-      outcome = await runTurn({
-        messages,
-        signal: controller.signal,
-        // Starts at zero each request, matching Rust: `SessionBudget` is built
-        // inside `run_orchestration_streamed`, so the allowance is per request.
-        // The previous turn's `total_tokens` is a context size, not a spend, and
-        // seeding with it would pre-charge the whole replayed prompt.
-        sessionTokens: 0,
-        deps: {
-          sendStep: (msgs, signal) =>
-            transport.sendMessages({
-              chatId: sid,
-              messages: msgs,
-              abortSignal: signal,
-              trigger: 'submit-message',
-              messageId: undefined,
-            } as any),
-          dispatch: (call) =>
-            // Timed through the shared runtime store, which is what puts a
-            // ticking duration on the tool's own card. Calls run one at a time
-            // here, so each is its own queue of one.
-            withToolTiming(call.toolCallId, () =>
-              dispatchCoworkTool(call, {
-                sessionId: sid,
-                readOnlyFolder: current?.folder ?? null,
-                planMode: runConfig.planMode,
-                failedReadPaths,
-                webSearch,
-                monitors: monitorLane,
-                onTodo: async (input) => {
-                  const result = applyTodoOp(
-                    useCoworkSessions
-                      .getState()
-                      .sessions.find((s) => s.id === sid)?.todos,
-                    input
-                  )
-                  if (result.error) {
-                    return { output: `ERROR: ${result.error}`, isError: true }
-                  }
-                  useCoworkSessions.getState().setTodos(sid, result.list)
-                  return { output: renderTodoResult(result.list) }
-                },
-                onAsk: (callId, input) =>
-                  new Promise<ToolOutcome>((resolve) => {
-                    const parsed = parseAskRequest(input)
-                    if (typeof parsed === 'string') {
-                      resolve({ output: `ERROR: ${parsed}`, isError: true })
-                      return
-                    }
-                    useCoworkRun.getState().addPendingAsk(sid, callId, parsed)
-                    handle.pendingAsks.set(callId, (answers) => {
-                      useCoworkRun.getState().removePendingAsk(sid, callId)
-                      const planReview =
-                        runConfig.planMode &&
-                        parsed.questions.length === 1 &&
-                        parsed.questions[0].id === PLAN_REVIEW_QUESTION_ID
-                      const selection =
-                        answers?.length === 1 &&
-                        answers[0].id === PLAN_REVIEW_QUESTION_ID &&
-                        answers[0].selected.length === 1
-                          ? answers[0].selected[0]
-                          : undefined
-                      if (
-                        planReview &&
-                        (selection === EXECUTE_PLAN_LABEL ||
-                          selection === EXIT_PLAN_LABEL)
-                      ) {
-                        runConfig.planMode = false
-                        useCoworkSessions.getState().setPlanMode(sid, false)
-                        // Approval is a deliberate run boundary: refresh the
-                        // prompt and tools together before the next model step.
-                        transport.setConfig(runConfig)
-                        transport.unfreezeTools()
-                        failedReadPaths?.clear()
-                      }
-                      resolve(renderAskResult(answers))
-                      if (
-                        planReview &&
-                        (answers === null || selection === EXIT_PLAN_LABEL) &&
-                        !controller.signal.aborted
-                      ) {
-                        abortRun(sid)
-                      }
-                    })
-                  }),
-                onTask: async (callId, input) => {
-                  const plan = parseDispatchPlan(input)
-                  if (typeof plan === 'string') {
-                    return { output: `ERROR: ${plan}`, isError: true }
-                  }
-                  if (!transport.model) {
-                    return {
-                      output:
-                        'ERROR: no model is loaded for this run, so no subagent can start',
-                      isError: true,
-                    }
-                  }
-                  // Resolve every subagent up front so a tool-allowlist conflict
-                  // fails the whole dispatch atomically, before any child starts
-                  // (as in Rust). Names are unique across the plan.
-                  const parentTools = parentToolNames(transport.advertisedTools)
-                  const resolvedByName = new Map<string, ResolvedSubagent>()
-                  for (const phase of plan.phases) {
-                    for (const req of phase.subagents) {
-                      const resolved = resolveSubagent(
-                        req,
-                        subagentDefs,
-                        parentTools
-                      )
-                      if ('error' in resolved) {
-                        return {
-                          output: `ERROR: ${resolved.error}`,
-                          isError: true,
-                        }
-                      }
-                      resolvedByName.set(req.name, resolved)
-                    }
-                  }
-
-                  // A single-phase fan-out pings per child the moment it
-                  // finishes; a multi-phase plan keeps every child silent and
-                  // rings the doorbell once, when the last phase finishes
-                  // (mirrors the Rust `notify_on_finish` split).
-                  const multi = plan.phases.length > 1
-
-                  // Register the later phases up front as waiting, so the panel
-                  // shows them queued behind the phase in flight; each is
-                  // promoted by its own start (mirrors the Rust SubagentPlan).
-                  const pending = plan.phases.slice(1).flatMap((phase) =>
-                    phase.subagents.map((s) => ({
-                      runId: `${callId}-${s.name}`,
-                      name: s.name,
-                      phase: phase.number,
-                    }))
-                  )
-                  if (pending.length > 0) {
-                    useCoworkRun.getState().planSubagents(sid, pending)
-                  }
-
-                  const model = transport.model
-                  // `BLACKBOARD_DIR_DISPLAY` (/tmp/blackboard) is only where the
-                  // scratch surfaces on Linux, where the sandbox binds it over
-                  // /tmp (`scratch_display_path`). On macOS/Windows the scratch
-                  // is a real host path we don't know up front, so advertise no
-                  // dir there and let each completion notice carry the exact
-                  // path `writeBlackboard` returns.
-                  const blackboardDir =
-                    isPlatformTauri() && environment.os === 'linux'
-                      ? BLACKBOARD_DIR_DISPLAY
-                      : null
-
-                  // The plan hold keeps the run alive across the whole plan,
-                  // including the gap between one phase finishing and the next
-                  // dispatching (mirrors the Rust `plans_pending` guard).
-                  // Released once, in the finally below.
-                  inbox.begin()
-                  void runDispatchPlan(plan, callId, {
-                    runOne: (req, description, id) => {
-                      const resolved = resolvedByName.get(req.name)
-                      if (!resolved) {
-                        // Unreachable: every name was resolved above. Guard for
-                        // types (and never leave the plan hold unbalanced).
-                        return Promise.resolve({
-                          output: `ERROR: subagent '${req.name}' was not resolved`,
-                          usage: null,
-                          isError: true,
-                          sessionTokens: 0,
-                        })
-                      }
-                      return runSubagent({
-                        resolved,
-                        description,
-                        // The parent's instance: a second one would mean a
-                        // second llama-server load for the same model.
-                        model,
-                        parentTools: transport.advertisedTools,
-                        system: {
-                          workspacePath,
-                          readOnlyFolder: current?.folder ?? null,
-                          bashAvailable: sandboxEnforces(),
-                          environment,
-                        },
-                        signal: controller.signal,
-                        sessionTokens: 0,
-                        // A child never gets `todo`/`ask`/`task`, so these refuse
-                        // rather than execute: a model can still emit a call to a
-                        // tool that was never advertised.
-                        dispatch: (call) =>
-                          dispatchCoworkTool(call, {
-                            sessionId: sid,
-                            readOnlyFolder: current?.folder ?? null,
-                            planMode: current?.planMode ?? false,
-                            webSearch,
-                            // A child has no inbox for a watcher to ping.
-                            monitors: null,
-                            onTodo: async () => ({
-                              output:
-                                'The todo list belongs to the agent that dispatched you.',
-                              isError: true,
-                            }),
-                            onAsk: async () => ({
-                              output:
-                                'You cannot ask the user questions. Decide, and say what you assumed.',
-                              isError: true,
-                            }),
-                            onTask: async () => ({
-                              output: 'A subagent cannot dispatch subagents.',
-                              isError: true,
-                            }),
-                          }),
-                        events: {
-                          onQueued: (waiting) =>
-                            useCoworkRun
-                              .getState()
-                              .queueSubagent(sid, id, req.name, waiting),
-                          onStart: () =>
-                            useCoworkRun
-                              .getState()
-                              .startSubagent(sid, id, req.name),
-                          onInner: (event) =>
-                            useCoworkRun
-                              .getState()
-                              .routeIntoSubagent(sid, id, event),
-                          onEnd: (usage) =>
-                            useCoworkRun.getState().endSubagent(sid, id, usage),
-                        },
-                      })
-                    },
-                    writeBlackboard: (name, content) =>
-                      writeBlackboard(sid, name, content),
-                    // A cancelled run dispatches no further phase; see
-                    // `DispatchPlanCallbacks.signal`.
-                    signal: controller.signal,
-                    // begin at dispatch, finish at completion: with the plan hold
-                    // above, inbox.pending() never reads false mid-plan.
-                    onDispatch: () => inbox.begin(),
-                    onComplete: (id, name, result, savedPath) => {
-                      useCoworkRun
-                        .getState()
-                        .attachSubagentOutput(sid, id, result.output)
-                      // Multi-phase: decrement the child's slot without a ping;
-                      // the terminal notice below is the plan's one doorbell.
-                      if (multi) {
-                        inbox.abandon()
-                        return
-                      }
-                      inbox.finish(
-                        subagentCompletionNotice({
-                          name,
-                          callId: id,
-                          savedPath,
-                          output: result.output,
-                          isError: result.isError,
-                        })
-                      )
-                    },
-                  })
-                    .then((finalPhase) => {
-                      // Ring once for the whole plan, after its last phase. Queue
-                      // the ping (note, not finish) since the plan-hold slot is
-                      // released by the finally below. A cancelled run gets no
-                      // notice: the plan did not finish, and nobody is waiting.
-                      if (multi && !controller.signal.aborted) {
-                        inbox.note(
-                          planCompletionNotice({
-                            phaseCount: plan.phases.length,
-                            totalSubagents: plan.phases.reduce(
-                              (n, p) => n + p.subagents.length,
-                              0
-                            ),
-                            finalPhase,
-                          })
-                        )
-                      }
-                    })
-                    // runDispatchPlan never throws; this only guarantees the plan
-                    // hold is released even if a callback above does.
-                    .catch(() => {})
-                    .finally(() => inbox.abandon())
-
-                  return { output: formatDispatchedPlan(plan, blackboardDir) }
-                },
-              })
-            ),
-          sink,
-          onStep: ({ result, turns, outcomes }) => {
-            if (result.usage)
-              useCoworkRun.getState().setUsage(sid, result.usage)
-            // Replace the optimistic running rows with the settled ones so the
-            // transcript shows results, not spinners.
-            runTurns = runTurns.filter(
-              (turn) =>
-                !(turn.role === 'tool' && outcomes.has(turn.callId ?? '')) &&
-                !(turn.role === 'assistant' && turn.content === result.text)
+      let messages = current.messages ?? []
+      let outcome: RunOutcome | null = null
+      let thrown: Pick<RunOutcome, 'stoppedBy' | 'errorText'> | null = null
+      try {
+        // Display the invocation, but expand it only in the model's history. Keep
+        // this in the shared request path so edits, retries and queued turns also
+        // invoke skills instead of sending the slash text as an ordinary prompt.
+        let modelText = text
+        const parsedSkill = text ? parseSkillCommand(text) : null
+        const builtIn = parsedSkill
+          ? SLASH_COMMANDS.some(
+              (command) => command.name === `/${parsedSkill.name}`
             )
-            pushLive(turns)
-            for (const [callId, outcome] of outcomes) {
-              if (outcome.diff) {
-                useToolCallRuntime.getState().recordDiff(callId, outcome.diff)
-              }
+          : false
+        const skill =
+          parsedSkill && (parsedSkill.explicit || !builtIn)
+            ? resolveSkillCommand(skillCommands, parsedSkill)
+            : null
+        if (parsedSkill?.explicit && !skill) {
+          toast.error(
+            t('common:coworkSlash.skillUnavailable', { name: parsedSkill.name })
+          )
+          return
+        }
+        if (skill && parsedSkill) {
+          try {
+            modelText = await invokeSkillCommand(skill.name, parsedSkill.args)
+            controller.signal.throwIfAborted()
+          } catch (error) {
+            toast.error(String(error))
+            return
+          }
+        }
+        if (text && current?.title === 'New session')
+          // Collapse newlines/runs of whitespace so a pasted multi-line prompt
+          // doesn't become an unreadable sidebar title.
+          store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
+
+        runTurns = text
+          ? [userTurn(text, attachments?.media, attachments?.files)]
+          : []
+        syncLive()
+
+        let files = attachments?.files
+        const baseMessages = current?.messages ?? []
+        messages = text
+          ? [
+              ...baseMessages,
+              {
+                id: `${sid}-user-${baseMessages.length}`,
+                role: 'user',
+                parts: [
+                  {
+                    type: 'text',
+                    text: withAttachedFiles(modelText ?? text, files),
+                  },
+                  ...(attachments?.media ?? []),
+                ],
+              } as any,
+            ]
+          : [...baseMessages]
+        // Local models load before the first token, but only on a cold start. Probe
+        // the engine so the load card shows on a real load, not on every warm run.
+        if (selectedProvider === 'llamacpp') {
+          try {
+            const loaded = await getLoadedModels()
+            controller.signal.throwIfAborted()
+            if (!loaded.includes(selectedModel.id)) {
+              useCoworkRun.getState().setSessionModelLoadProgress(sid, undefined)
+              useCoworkRun.getState().setSessionLoadingModel(sid, true)
+            }
+          } catch {
+            // Probe failed; skip the card rather than flash it every run.
+          }
+        }
+
+        // Documents go into the workspace before the question is sent, so the
+        // paths the question names exist by the time the agent reads them. The
+        // row was shown first: parsing a large PDF takes a moment.
+        if (text && files?.length) {
+          files = await importAttachedFiles(files, {
+            parse: async (path, fileType) =>
+              (await serviceHub.rag().parseDocument?.(path, fileType)) ?? '',
+            importFile: (path, parsed) => importAttachment(sid, path, parsed),
+          })
+          controller.signal.throwIfAborted()
+          runTurns = [userTurn(text, attachments?.media, files)]
+          messages[messages.length - 1].parts[0] = {
+            type: 'text',
+            text: withAttachedFiles(modelText ?? text, files),
+          }
+          syncLive()
+        }
+
+        // Warm the sandbox probe: the transport's prompt and tool set read it
+        // synchronously via sandboxEnforces().
+        controller.signal.throwIfAborted()
+        await getSandboxStatus()
+        controller.signal.throwIfAborted()
+        // Read once per run, not subscribed: the advertised set is frozen for the
+        // run anyway, so a mid-run flip in Settings would only desync the prompt.
+        const webSearch = useWebSearchConfig.getState().webSearchEnabled
+        // One snapshot per run, shared with every child this run dispatches.
+        const environment = await getCoworkEnvironment()
+        controller.signal.throwIfAborted()
+        const failedReadPaths = current?.planMode ? new Set<string>() : undefined
+        const runConfig = {
+          model: { provider: selectedProvider, id: selectedModel.id },
+          planMode: current?.planMode ?? false,
+          subagentNames: subagentDefs.map((d) => d.name),
+          // Always on at depth 0, even with nothing saved: an unknown name runs as
+          // a focused general-purpose subagent, as it does in Rust.
+          allowSubagents: true,
+          webSearch,
+          workspacePath,
+          readOnlyFolder: current?.folder ?? null,
+        }
+        const transport = new CoworkChatTransport(sid, runConfig)
+        await transport.refreshTools()
+        controller.signal.throwIfAborted()
+
+        // Owned by this request: children cannot outlive the run whose signal
+        // aborts them, so a fresh inbox per run can never hold a stale ping.
+        const inbox = new SubagentInbox()
+        // The session's, not the run's: a watcher keeps going after this run has
+        // answered, and its pings are drained by whichever run is up next.
+        const monitorLane = sessionMonitorLane(sid)
+
+        const sink: StreamSink = {
+          onText: (delta) => {
+            const last = runTurns[runTurns.length - 1]
+            if (last && last.role === 'assistant') {
+              last.content += delta
+              scheduleLiveSync()
+            } else {
+              pushLive([{ role: 'assistant', content: delta }])
             }
           },
-          nextMessageId: (() => {
-            let n = baseMessages.length
-            return () => `${sid}-asst-${n++}`
-          })(),
-          inbox: {
-            // Shown as it is delivered, not as it is queued: the transcript
-            // then reads in the order the model saw things, and the turn that
-            // reacts to a subagent finishing has the note it is replying to
-            // directly above it.
-            take: () => {
-              const notices = [...inbox.take(), ...monitorLane.take()]
-              // The row gets the headline; the model gets the instructions that
-              // follow it, which are addressed to it alone.
-              pushLive(
-                notices.map((n) => ({
-                  role: 'system' as const,
-                  content: n.headline,
-                }))
-              )
-              return notices.map((n) => n.text)
-            },
-            // A running watcher is not pending work: only a queued match is,
-            // so the run ends under a monitor and the user can keep talking.
-            pending: () => inbox.pending() || monitorLane.hasQueued(),
-            wait: () =>
-              Promise.race([
-                inbox.wait(controller.signal),
-                monitorLane.wait(controller.signal),
-              ]),
-            // The model is idle for the whole wait; the transcript says so
-            // instead of showing a "Working…" spinner over nothing.
-            onParked: (p) => useCoworkRun.getState().setParked(sid, p),
+          // Native reasoning streams beside the content, so the collapsible
+          // thinking block fills in live instead of the transcript sitting silent
+          // for the whole chain of thought.
+          onReasoning: (delta) => {
+            const last = runTurns[runTurns.length - 1]
+            if (last && last.role === 'assistant') {
+              last.reasoning = (last.reasoning ?? '') + delta
+              scheduleLiveSync()
+            } else {
+              pushLive([{ role: 'assistant', content: '', reasoning: delta }])
+            }
           },
-        },
-      })
-    } catch (e) {
-      // The runner turns a failed step into an outcome, so this is the last
-      // resort — a fault in the loop itself. Either way it is not a tool call,
-      // and rendering it as one claimed the agent had run something.
-      thrown = isAbortLike(e, controller.signal)
-        ? { stoppedBy: 'aborted' }
-        : {
-            stoppedBy: 'error',
-            errorText: e instanceof Error ? e.message : String(e),
-          }
-    } finally {
-      // clearCodeRun below also drops the session's load state; this makes the
-      // card disappear the instant the run ends, before that broader reset.
-      useCoworkRun.getState().setSessionLoadingModel(sid, false)
-      useCoworkSessions
-        .getState()
-        .commitTurns(
-          sid,
-          runTurns,
-          outcome?.messages ?? messages,
-          useCoworkRun.getState().subagents[sid] ?? [],
-          outcome?.usage ?? undefined
-        )
-      if (liveFrame != null) cancelAnimationFrame(liveFrame)
-      for (const resolve of handle.pendingAsks.values()) resolve(null)
-      handle.pendingAsks.clear()
-      releaseHandle(sid, handle)
-      useCoworkRun.getState().clearCodeRun(sid)
-      const stop = thrown?.stoppedBy ?? outcome?.stoppedBy ?? null
-      if (stop)
-        useCoworkRun.getState().setOutcome(sid, {
-          stoppedBy: stop,
-          errorText: thrown?.errorText ?? outcome?.errorText,
-        })
+          onToolStart: (callId, name) =>
+            pushLive([
+              {
+                role: 'tool',
+                content: '',
+                callId,
+                name,
+                status: 'running',
+                argsLive: '',
+              },
+            ]),
+          // Raw JSON, appended as it arrives. The transcript reads a `write`'s
+          // destination and body straight out of this fragment, so the card fills
+          // in as the model types rather than waiting for the closing brace.
+          onToolArgsDelta: (callId, delta) => {
+            const row = runTurns.find((turn) => turn.callId === callId)
+            if (!row) return
+            row.argsLive = (row.argsLive ?? '') + delta
+            scheduleLiveSync()
+          },
+          onToolCall: (call) => {
+            const row = runTurns.find((turn) => turn.callId === call.toolCallId)
+            if (row) {
+              row.args = call.input
+              syncLive()
+            }
+          },
+        }
 
-      // Message queue (ChatInput enqueues while chatStatus is 'streaming',
-      // scoped to this session): a clean finish sends the next queued message;
-      // an error discards the queue, mirroring the chat route — errors mean the
-      // conversation needs attention, not more unattended sends. A stop or
-      // budget halt leaves the queue in place, visible as chips in the input.
-      if (stop === 'error') {
-        useMessageQueue.getState().clearQueue(sid)
-      } else if (stop === 'done') {
-        // Continue the originating session with its captured model and skill
-        // context, even when a different session is now being viewed.
-        setTimeout(() => {
-          if (!useCoworkSessions.getState().sessions.some((s) => s.id === sid))
-            return
-          if (useCoworkRun.getState().runId[sid]) return
-          const next = useMessageQueue.getState().dequeue(sid)
-          if (next) void runRequest(next.text, undefined, sid)
-        }, 0)
+        outcome = await runTurn({
+          messages,
+          signal: controller.signal,
+          // Starts at zero each request, matching Rust: `SessionBudget` is built
+          // inside `run_orchestration_streamed`, so the allowance is per request.
+          // The previous turn's `total_tokens` is a context size, not a spend, and
+          // seeding with it would pre-charge the whole replayed prompt.
+          sessionTokens: 0,
+          deps: {
+            sendStep: (msgs, signal) =>
+              transport.sendMessages({
+                chatId: sid,
+                messages: msgs,
+                abortSignal: signal,
+                trigger: 'submit-message',
+                messageId: undefined,
+              } as any),
+            dispatch: (call) =>
+              // Timed through the shared runtime store, which is what puts a
+              // ticking duration on the tool's own card. Calls run one at a time
+              // here, so each is its own queue of one.
+              withToolTiming(call.toolCallId, () =>
+                dispatchCoworkTool(call, {
+                  sessionId: sid,
+                  readOnlyFolder: current?.folder ?? null,
+                  planMode: runConfig.planMode,
+                  failedReadPaths,
+                  webSearch,
+                  monitors: monitorLane,
+                  onTodo: async (input) => {
+                    const result = applyTodoOp(
+                      useCoworkSessions
+                        .getState()
+                        .sessions.find((s) => s.id === sid)?.todos,
+                      input
+                    )
+                    if (result.error) {
+                      return { output: `ERROR: ${result.error}`, isError: true }
+                    }
+                    useCoworkSessions.getState().setTodos(sid, result.list)
+                    return { output: renderTodoResult(result.list) }
+                  },
+                  onAsk: (callId, input) =>
+                    new Promise<ToolOutcome>((resolve) => {
+                      const parsed = parseAskRequest(input)
+                      if (typeof parsed === 'string') {
+                        resolve({ output: `ERROR: ${parsed}`, isError: true })
+                        return
+                      }
+                      useCoworkRun.getState().addPendingAsk(sid, callId, parsed)
+                      handle.pendingAsks.set(callId, (answers) => {
+                        useCoworkRun.getState().removePendingAsk(sid, callId)
+                        const planReview =
+                          runConfig.planMode &&
+                          parsed.questions.length === 1 &&
+                          parsed.questions[0].id === PLAN_REVIEW_QUESTION_ID
+                        const selection =
+                          answers?.length === 1 &&
+                          answers[0].id === PLAN_REVIEW_QUESTION_ID &&
+                          answers[0].selected.length === 1
+                            ? answers[0].selected[0]
+                            : undefined
+                        if (
+                          planReview &&
+                          (selection === EXECUTE_PLAN_LABEL ||
+                            selection === EXIT_PLAN_LABEL)
+                        ) {
+                          runConfig.planMode = false
+                          useCoworkSessions.getState().setPlanMode(sid, false)
+                          // Approval is a deliberate run boundary: refresh the
+                          // prompt and tools together before the next model step.
+                          transport.setConfig(runConfig)
+                          transport.unfreezeTools()
+                          failedReadPaths?.clear()
+                        }
+                        resolve(renderAskResult(answers))
+                        if (
+                          planReview &&
+                          (answers === null || selection === EXIT_PLAN_LABEL) &&
+                          !controller.signal.aborted
+                        ) {
+                          abortRun(sid)
+                        }
+                      })
+                    }),
+                  onTask: async (callId, input) => {
+                    const plan = parseDispatchPlan(input)
+                    if (typeof plan === 'string') {
+                      return { output: `ERROR: ${plan}`, isError: true }
+                    }
+                    if (!transport.model) {
+                      return {
+                        output:
+                          'ERROR: no model is loaded for this run, so no subagent can start',
+                        isError: true,
+                      }
+                    }
+                    // Resolve every subagent up front so a tool-allowlist conflict
+                    // fails the whole dispatch atomically, before any child starts
+                    // (as in Rust). Names are unique across the plan.
+                    const parentTools = parentToolNames(transport.advertisedTools)
+                    const resolvedByName = new Map<string, ResolvedSubagent>()
+                    for (const phase of plan.phases) {
+                      for (const req of phase.subagents) {
+                        const resolved = resolveSubagent(
+                          req,
+                          subagentDefs,
+                          parentTools
+                        )
+                        if ('error' in resolved) {
+                          return {
+                            output: `ERROR: ${resolved.error}`,
+                            isError: true,
+                          }
+                        }
+                        resolvedByName.set(req.name, resolved)
+                      }
+                    }
+
+                    // A single-phase fan-out pings per child the moment it
+                    // finishes; a multi-phase plan keeps every child silent and
+                    // rings the doorbell once, when the last phase finishes
+                    // (mirrors the Rust `notify_on_finish` split).
+                    const multi = plan.phases.length > 1
+
+                    // Register the later phases up front as waiting, so the panel
+                    // shows them queued behind the phase in flight; each is
+                    // promoted by its own start (mirrors the Rust SubagentPlan).
+                    const pending = plan.phases.slice(1).flatMap((phase) =>
+                      phase.subagents.map((s) => ({
+                        runId: `${callId}-${s.name}`,
+                        name: s.name,
+                        phase: phase.number,
+                      }))
+                    )
+                    if (pending.length > 0) {
+                      useCoworkRun.getState().planSubagents(sid, pending)
+                    }
+
+                    const model = transport.model
+                    // `BLACKBOARD_DIR_DISPLAY` (/tmp/blackboard) is only where the
+                    // scratch surfaces on Linux, where the sandbox binds it over
+                    // /tmp (`scratch_display_path`). On macOS/Windows the scratch
+                    // is a real host path we don't know up front, so advertise no
+                    // dir there and let each completion notice carry the exact
+                    // path `writeBlackboard` returns.
+                    const blackboardDir =
+                      isPlatformTauri() && environment.os === 'linux'
+                        ? BLACKBOARD_DIR_DISPLAY
+                        : null
+
+                    // The plan hold keeps the run alive across the whole plan,
+                    // including the gap between one phase finishing and the next
+                    // dispatching (mirrors the Rust `plans_pending` guard).
+                    // Released once, in the finally below.
+                    inbox.begin()
+                    void runDispatchPlan(plan, callId, {
+                      runOne: (req, description, id) => {
+                        const resolved = resolvedByName.get(req.name)
+                        if (!resolved) {
+                          // Unreachable: every name was resolved above. Guard for
+                          // types (and never leave the plan hold unbalanced).
+                          return Promise.resolve({
+                            output: `ERROR: subagent '${req.name}' was not resolved`,
+                            usage: null,
+                            isError: true,
+                            sessionTokens: 0,
+                          })
+                        }
+                        return runSubagent({
+                          resolved,
+                          description,
+                          // The parent's instance: a second one would mean a
+                          // second llama-server load for the same model.
+                          model,
+                          parentTools: transport.advertisedTools,
+                          system: {
+                            workspacePath,
+                            readOnlyFolder: current?.folder ?? null,
+                            bashAvailable: sandboxEnforces(),
+                            environment,
+                          },
+                          signal: controller.signal,
+                          sessionTokens: 0,
+                          // A child never gets `todo`/`ask`/`task`, so these refuse
+                          // rather than execute: a model can still emit a call to a
+                          // tool that was never advertised.
+                          dispatch: (call) =>
+                            dispatchCoworkTool(call, {
+                              sessionId: sid,
+                              readOnlyFolder: current?.folder ?? null,
+                              planMode: current?.planMode ?? false,
+                              webSearch,
+                              // A child has no inbox for a watcher to ping.
+                              monitors: null,
+                              onTodo: async () => ({
+                                output:
+                                  'The todo list belongs to the agent that dispatched you.',
+                                isError: true,
+                              }),
+                              onAsk: async () => ({
+                                output:
+                                  'You cannot ask the user questions. Decide, and say what you assumed.',
+                                isError: true,
+                              }),
+                              onTask: async () => ({
+                                output: 'A subagent cannot dispatch subagents.',
+                                isError: true,
+                              }),
+                            }),
+                          events: {
+                            onQueued: (waiting) =>
+                              useCoworkRun
+                                .getState()
+                                .queueSubagent(sid, id, req.name, waiting),
+                            onStart: () =>
+                              useCoworkRun
+                                .getState()
+                                .startSubagent(sid, id, req.name),
+                            onInner: (event) =>
+                              useCoworkRun
+                                .getState()
+                                .routeIntoSubagent(sid, id, event),
+                            onEnd: (usage) =>
+                              useCoworkRun.getState().endSubagent(sid, id, usage),
+                          },
+                        })
+                      },
+                      writeBlackboard: (name, content) =>
+                        writeBlackboard(sid, name, content),
+                      // A cancelled run dispatches no further phase; see
+                      // `DispatchPlanCallbacks.signal`.
+                      signal: controller.signal,
+                      // begin at dispatch, finish at completion: with the plan hold
+                      // above, inbox.pending() never reads false mid-plan.
+                      onDispatch: () => inbox.begin(),
+                      onComplete: (id, name, result, savedPath) => {
+                        useCoworkRun
+                          .getState()
+                          .attachSubagentOutput(sid, id, result.output)
+                        // Multi-phase: decrement the child's slot without a ping;
+                        // the terminal notice below is the plan's one doorbell.
+                        if (multi) {
+                          inbox.abandon()
+                          return
+                        }
+                        inbox.finish(
+                          subagentCompletionNotice({
+                            name,
+                            callId: id,
+                            savedPath,
+                            output: result.output,
+                            isError: result.isError,
+                          })
+                        )
+                      },
+                    })
+                      .then((finalPhase) => {
+                        // Ring once for the whole plan, after its last phase. Queue
+                        // the ping (note, not finish) since the plan-hold slot is
+                        // released by the finally below. A cancelled run gets no
+                        // notice: the plan did not finish, and nobody is waiting.
+                        if (multi && !controller.signal.aborted) {
+                          inbox.note(
+                            planCompletionNotice({
+                              phaseCount: plan.phases.length,
+                              totalSubagents: plan.phases.reduce(
+                                (n, p) => n + p.subagents.length,
+                                0
+                              ),
+                              finalPhase,
+                            })
+                          )
+                        }
+                      })
+                      // runDispatchPlan never throws; this only guarantees the plan
+                      // hold is released even if a callback above does.
+                      .catch(() => {})
+                      .finally(() => inbox.abandon())
+
+                    return { output: formatDispatchedPlan(plan, blackboardDir) }
+                  },
+                })
+              ),
+            sink,
+            onStep: ({ result, turns, outcomes }) => {
+              if (result.usage)
+                useCoworkRun.getState().setUsage(sid, result.usage)
+              // Replace the optimistic running rows with the settled ones so the
+              // transcript shows results, not spinners.
+              runTurns = runTurns.filter(
+                (turn) =>
+                  !(turn.role === 'tool' && outcomes.has(turn.callId ?? '')) &&
+                  !(turn.role === 'assistant' && turn.content === result.text)
+              )
+              pushLive(turns)
+              for (const [callId, outcome] of outcomes) {
+                if (outcome.diff) {
+                  useToolCallRuntime.getState().recordDiff(callId, outcome.diff)
+                }
+              }
+            },
+            nextMessageId: (() => {
+              let n = baseMessages.length
+              return () => `${sid}-asst-${n++}`
+            })(),
+            inbox: {
+              // Shown as it is delivered, not as it is queued: the transcript
+              // then reads in the order the model saw things, and the turn that
+              // reacts to a subagent finishing has the note it is replying to
+              // directly above it.
+              take: () => {
+                const notices = [...inbox.take(), ...monitorLane.take()]
+                // The row gets the headline; the model gets the instructions that
+                // follow it, which are addressed to it alone.
+                pushLive(
+                  notices.map((n) => ({
+                    role: 'system' as const,
+                    content: n.headline,
+                  }))
+                )
+                return notices.map((n) => n.text)
+              },
+              // A running watcher is not pending work: only a queued match is,
+              // so the run ends under a monitor and the user can keep talking.
+              pending: () => inbox.pending() || monitorLane.hasQueued(),
+              wait: () =>
+                Promise.race([
+                  inbox.wait(controller.signal),
+                  monitorLane.wait(controller.signal),
+                ]),
+              // The model is idle for the whole wait; the transcript says so
+              // instead of showing a "Working…" spinner over nothing.
+              onParked: (p) => useCoworkRun.getState().setParked(sid, p),
+            },
+          },
+        })
+      } catch (e) {
+        // The runner turns a failed step into an outcome, so this is the last
+        // resort — a fault in the loop itself. Either way it is not a tool call,
+        // and rendering it as one claimed the agent had run something.
+        thrown = isAbortLike(e, controller.signal)
+          ? { stoppedBy: 'aborted' }
+          : {
+              stoppedBy: 'error',
+              errorText: e instanceof Error ? e.message : String(e),
+            }
+      } finally {
+        // clearCodeRun below also drops the session's load state; this makes the
+        // card disappear the instant the run ends, before that broader reset.
+        useCoworkRun.getState().setSessionLoadingModel(sid, false)
+        // A stream can end halfway through tool-input JSON, before dispatch
+        // produces a result. Preserve that fragment, but never persist a spinner.
+        runTurns = runTurns.map((turn) =>
+          turn.role === 'tool' && turn.status === 'running'
+            ? { ...turn, status: 'done' as const, isError: true, result: turn.result || '(interrupted)' }
+            : turn
+        )
+        useCoworkSessions
+          .getState()
+          .commitTurns(
+            sid,
+            runTurns,
+            outcome?.messages ?? messages,
+            useCoworkRun.getState().subagents[sid] ?? [],
+            outcome?.usage ?? undefined
+          )
+        if (liveFrame != null) cancelAnimationFrame(liveFrame)
+        for (const resolve of handle.pendingAsks.values()) resolve(null)
+        handle.pendingAsks.clear()
+        releaseHandle(sid, handle)
+        useCoworkRun.getState().clearCodeRun(sid)
+        const stop = thrown?.stoppedBy ?? outcome?.stoppedBy ?? null
+        if (stop)
+          useCoworkRun.getState().setOutcome(sid, {
+            stoppedBy: stop,
+            errorText: thrown?.errorText ?? outcome?.errorText,
+          })
+
+        // Message queue (ChatInput enqueues while chatStatus is 'streaming',
+        // scoped to this session): a clean finish sends the next queued message;
+        // an error discards the queue, mirroring the chat route — errors mean the
+        // conversation needs attention, not more unattended sends. A stop or
+        // budget halt leaves the queue in place, visible as chips in the input.
+        if (stop === 'error') {
+          useMessageQueue.getState().clearQueue(sid)
+        } else if (stop === 'done' && !isCoworkClosing()) {
+          // Continue the originating session with its captured model and skill
+          // context, even when a different session is now being viewed.
+          setTimeout(() => {
+            if (isCoworkClosing()) return
+            if (!useCoworkSessions.getState().sessions.some((s) => s.id === sid))
+              return
+            if (useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.unavailable) return
+            if (useCoworkRun.getState().runId[sid]) return
+            const next = useMessageQueue.getState().dequeue(sid)
+            if (next) void runRequest(next.text, undefined, sid)
+          }, 0)
+        }
       }
     }
+    void execute().catch((error: unknown) => {
+      // Cleanup can fail too (for example a persistence subscriber throwing).
+      // Never leave an unhandled rejection from this detached task.
+      try {
+        releaseHandle(sid, handle)
+        useCoworkRun.getState().clearCodeRun(sid)
+      } catch {
+        // Still release the close participant below if a store subscriber fails.
+      }
+      toast.error(error instanceof Error ? error.message : String(error))
+    }).finally(() => {
+      executionDone = true
+      resolveDone()
+      // A close attempt owns this participant until native cancellation is
+      // confirmed, even if JS finished before a timeout/rejection. Each retry
+      // above issues a fresh strict cancellation, never reuses a failed promise.
+      if (!closeRequested || cancellationConfirmed) unregisterClose()
+    })
+    return true
   }
 
   // Read through a ref so the memoized message rows keep a stable callback
   // while still calling the current render's closure.
   const runRequestRef = useRef(runRequest)
   runRequestRef.current = runRequest
+
+  // First prompt handed over from the home composer. Read without removing,
+  // run it, and clear only once the run was accepted: runRequest refuses
+  // silently (no usable model, no tool support), and a refused first prompt
+  // must stay available instead of vanishing. `claim` makes the effect safe to
+  // run twice (StrictMode) so the prompt is never sent twice.
+  const sessionId = session?.id
+  useEffect(() => {
+    if (!sessionId || unavailable || isCoworkClosing()) return
+    const handoff = peekCoworkHandoff(sessionId)
+    if (!handoff || !claimCoworkHandoff(sessionId)) return
+    void (async () => {
+      const accepted = runRequestRef.current(
+        handoff.text,
+        {
+          media: handoff.files,
+          files: handoff.documents
+            ?.filter((d): d is Attachment & { path: string } => !!d.path)
+            .map((d) => ({
+              name: d.name,
+              path: d.path,
+              fileType: d.fileType,
+              size: d.size,
+            })),
+        },
+        sessionId
+      )
+      if (accepted) {
+        clearCoworkHandoff(sessionId)
+      } else {
+        // Refused (e.g. no tool-capable model): put the text in the composer so
+        // nothing is lost, and let a later attempt try again.
+        usePrompt.getState().setPrompt(handoff.draft ?? handoff.text)
+        useChatAttachments.getState().setAttachments(sessionId, [
+          ...(handoff.documents ?? []),
+          ...(handoff.files ?? []).map((file, index): Attachment => ({
+            name: `Attachment ${index + 1}`,
+            type: file.mediaType.startsWith('audio/')
+              ? 'audio'
+              : file.mediaType.startsWith('video/') ? 'video' : 'image',
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            ...(file.mediaType === 'audio/mpeg' ? { audioFormat: 'mp3' as const } : {}),
+          })),
+        ])
+        clearCoworkHandoff(sessionId)
+        releaseCoworkHandoff(sessionId)
+      }
+    })()
+  }, [sessionId, unavailable])
 
   /**
    * `/compact`: summarize everything but the recent tail into one system
@@ -1084,6 +1209,7 @@ function CoworkPage() {
    * replays, not what the user reads.
    */
   const handleCompact = async () => {
+    if (unavailable) return
     const sid = session?.id
     const msgs = session?.messages ?? []
     if (!sid || msgs.length === 0) {
@@ -1122,7 +1248,8 @@ function CoworkPage() {
     text: string,
     files?: CoworkMediaPart[],
     documents?: Attachment[]
-  ) => {
+  ): boolean => {
+    if (unavailable || isCoworkClosing()) return false
     const skillCommand = parseSkillCommand(text)
     const isBuiltInCommand = skillCommand
       ? SLASH_COMMANDS.some((command) => command.name === `/${skillCommand.name}`)
@@ -1135,11 +1262,12 @@ function CoworkPage() {
       toast.error(
         t('common:coworkSlash.skillUnavailable', { name: skillCommand.name })
       )
-      return
+      return false
     }
 
     // Non-skill slash commands are client-side actions.
     if (!skill && text.trim().startsWith('/')) {
+      if (text.trim() === '/init') return runRequestRef.current(INIT_PROMPT)
       runSlashCommand(text, {
         t,
         running,
@@ -1148,9 +1276,9 @@ function CoworkPage() {
         openRail: (kind) => setRail({ kind }),
         compact: () => void handleCompact(),
       })
-      return
+      return true
     }
-    void runRequest(text, {
+    return runRequest(text, {
       media: files,
       files: documents
         ?.filter((d): d is Attachment & { path: string } => !!d.path)
@@ -1300,13 +1428,13 @@ function CoworkPage() {
    * means discarding that chain, not re-sending the question after it.
    */
   const handleRegenerate = useCallback(() => {
-    if (running || !session?.id) return
+    if (unavailable || running || !session?.id) return
     useCoworkSessions.getState().rewindToLastUser(session.id)
     void runRequestRef.current(null)
-  }, [running, session?.id])
+  }, [unavailable, running, session?.id])
 
   const handleIncreaseContext = useCallback(async () => {
-    if (running || contextRecovery.current.pending) return
+    if (unavailable || running || contextRecovery.current.pending) return
     const providerName = useModelProvider.getState().selectedProvider
     contextRecovery.current.pending = true
     try {
@@ -1327,7 +1455,7 @@ function CoworkPage() {
     } finally {
       contextRecovery.current.pending = false
     }
-  }, [running, serviceHub, t, navigate])
+  }, [unavailable, running, serviceHub, t, navigate])
   /**
    * The transcript turn a rendered user message came from.
    *
@@ -1369,7 +1497,7 @@ function CoworkPage() {
       // The rendered text carries the [ATTACHED_FILES] chips block; the
       // question itself is what precedes it.
       const text = extractFilesFromPrompt(newText).cleanPrompt
-      if (running || !session?.id || !text.trim()) return
+      if (unavailable || running || !session?.id || !text.trim()) return
       const index = questionTurnIndex(messageId)
       if (index < 0) return
       // The attachments stay with the question: a re-ask without them would
@@ -1378,7 +1506,7 @@ function CoworkPage() {
       useCoworkSessions.getState().dropFromTurn(session.id, index)
       void runRequestRef.current(text, { media, files })
     },
-    [running, session?.id, questionTurnIndex, displayedTurns]
+    [unavailable, running, session?.id, questionTurnIndex, displayedTurns]
   )
 
   /** Ask a question again unchanged, from a point partway up the transcript. */
@@ -1391,12 +1519,12 @@ function CoworkPage() {
 
   const handleDeleteQuestion = useCallback(
     (messageId: string) => {
-      if (running || !session?.id) return
+      if (unavailable || running || !session?.id) return
       const index = questionTurnIndex(messageId)
       if (index < 0) return
       useCoworkSessions.getState().dropFromTurn(session.id, index)
     },
-    [running, session?.id, questionTurnIndex]
+    [unavailable, running, session?.id, questionTurnIndex]
   )
 
 
@@ -1405,7 +1533,9 @@ function CoworkPage() {
     // backgrounded shell keeps executing until this kills the session's shells.
     if (session?.id) {
       abortRun(session.id)
-      void cancelAgentThreadBash(session.id)
+      void cancelAgentThreadBash(session.id).catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : String(error))
+      })
     }
   }, [session?.id])
 
@@ -1428,9 +1558,9 @@ function CoworkPage() {
   useEffect(() => {
     if (!pendingPreview || !session?.id) return
     if (pendingPreview.sessionId !== session.id) return
-    setRail({ kind: 'preview', path: pendingPreview.path })
+    showPreview(pendingPreview.path)
     useCoworkRun.getState().clearPendingPreview()
-  }, [pendingPreview, session?.id])
+  }, [pendingPreview, session?.id, showPreview])
 
   // A match landing while no run is up starts one: the queued ping is drained
   // at the top of that run's first step, exactly as a mid-run one would be.
@@ -1438,7 +1568,7 @@ function CoworkPage() {
   // between a run ending and this render sees a stale `running`.
   useEffect(() => {
     const sid = session?.id
-    if (!sid) return
+    if (!sid || unavailable) return
     const lane = sessionMonitorLane(sid)
     const deliver = () => {
       if (running || !lane.hasQueued()) return
@@ -1449,7 +1579,7 @@ function CoworkPage() {
     return () => {
       if (lane.onPing === deliver) lane.onPing = null
     }
-  }, [session?.id, running])
+  }, [session?.id, running, unavailable])
 
   // Reconcile the rail against Rust's authoritative active set when no run is
   // up (mount, and each run end): a one-shot monitor that matched but whose
@@ -1466,7 +1596,7 @@ function CoworkPage() {
     return () => {
       cancelled = true
     }
-  }, [session?.id, running])
+  }, [session?.id, running, unavailable])
 
   // Nothing to show once the session changes: both panels describe the session
   // they were opened from.
@@ -1478,18 +1608,29 @@ function CoworkPage() {
   return (
     <div
       data-testid="cowork-surface"
-      className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
+      className="relative flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
     >
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider
-            key={session?.id ?? 'new'}
-            model={session?.model}
-            useLastUsedModel={!session?.model}
-            onModelChange={(model) =>
-              useCoworkSessions.getState().setModel(ensureCurrentSession(), model)
-            }
-          />
+          <ConversationHeaderTitle title={session?.title} project={session?.project} />
+          <button
+            type="button"
+            aria-label={t(overviewOpen && !dockedRail ? 'common:overview.close' : 'common:overview.title')}
+            data-testid="overview-toggle"
+            aria-pressed={overviewOpen && !dockedRail}
+            onClick={() => {
+              setOverviewRequested(true)
+              if (!desktopOverview && !overviewRequested) { setRail(null); setOverviewOpen(true); return }
+              if (dockedRail) { setRail(null); setOverviewOpen(true) }
+              else setOverviewOpen((open) => !open)
+            }}
+            className={cn(
+              'ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-[margin,background-color,color] duration-250 ease-out motion-reduce:transition-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              overviewOpen && !dockedRail && 'xl:mr-80'
+            )}
+          >
+            <PanelRight className="size-4" />
+          </button>
         </div>
       </HeaderPage>
 
@@ -1508,14 +1649,8 @@ function CoworkPage() {
                     "Working..." indicator -- rests flush against the input and
                     reads as tucked behind it. */}
                 <ConversationContent
-                  className={cn(
-                    'mx-auto w-full px-6 pb-4',
-                    // The centering fractions assume the transcript owns the
-                    // width; with a side panel open the column is already
-                    // narrow, so keeping them crushes the message and composer
-                    // into an unreadable sliver.
-                    !dockedRail && 'md:w-4/5 xl:w-4/6'
-                  )}
+                  column
+                  className="pb-4"
                 >
                   {uiMessages.map((message, i) => (
                     <Fragment key={message.id}>
@@ -1524,18 +1659,18 @@ function CoworkPage() {
                         isFirstMessage={i === 0}
                         isLastMessage={i === uiMessages.length - 1}
                         status={viewingRun ? 'streaming' : 'ready'}
-                        onRegenerate={handleRegenerate}
+                        onRegenerate={unavailable ? undefined : handleRegenerate}
                         // Questions only. Editing the agent's own answer would
                         // put words in its mouth that its tool calls do not
                         // support, and deleting one alone would strand the
                         // results of the calls it made.
                         onEdit={
-                          message.role === 'user'
+                          message.role === 'user' && !unavailable
                             ? handleEditQuestion
                             : undefined
                         }
                         onRetry={
-                          message.role === 'user'
+                          message.role === 'user' && !unavailable
                             ? handleRetryQuestion
                             : undefined
                         }
@@ -1544,10 +1679,19 @@ function CoworkPage() {
                         // an answer, so it gets no timestamp or actions row.
                         hideActions={uiMessages[i + 1]?.role === 'system'}
                         onDelete={
-                          message.role === 'user'
+                          message.role === 'user' && !unavailable
                             ? handleDeleteQuestion
                             : undefined
                         }
+                        beforeFooter={i < liveStartIdx ? artifactsFromParts(message.parts).map((artifact) => (
+                          <CoworkArtifactCard
+                            key={artifact.path}
+                            artifact={artifact}
+                            roots={[folder, workspacePath]}
+                            onPreview={showPreview}
+                            className="my-3"
+                          />
+                        )) : undefined}
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
@@ -1567,21 +1711,6 @@ function CoworkPage() {
                             : null
                         }
                       />
-                      {/* Derived from the message's own write parts, so nothing
-                        shared with the chat surface needs to know artifacts
-                        exist. Held back for the whole live tail: a card mid-run
-                        announces a deliverable the agent may yet rewrite, and it
-                        pushes the live tail around. */}
-                      {i < liveStartIdx &&
-                        artifactsFromParts(message.parts).map((artifact) => (
-                          <CoworkArtifactCard
-                            key={artifact.path}
-                            artifact={artifact}
-                            roots={[folder, workspacePath]}
-                            onPreview={showPreview}
-                            className="my-3"
-                          />
-                        ))}
                     </Fragment>
                   ))}
                   {viewingRun && (
@@ -1599,7 +1728,7 @@ function CoworkPage() {
                       )}
                     </div>
                   )}
-                  {stoppedBy === 'steps' && (
+                  {!unavailable && stoppedBy === 'steps' && (
                     <CoworkBudgetNotice
                       kind="steps"
                       max={MAX_AGENT_STEPS}
@@ -1609,7 +1738,7 @@ function CoworkPage() {
                   {stoppedBy === 'aborted' && (
                     <CoworkRunNotice kind="stopped" />
                   )}
-                  {stoppedBy === 'error' && (
+                  {!unavailable && stoppedBy === 'error' && (
                     <CoworkRunNotice
                       kind="error"
                       message={runError}
@@ -1622,13 +1751,14 @@ function CoworkPage() {
                       }
                     />
                   )}
-                  {stoppedBy === 'tokens' && (
+                  {!unavailable && stoppedBy === 'tokens' && (
                     <CoworkBudgetNotice
                       kind="tokens"
                       onCompact={() => void handleCompact()}
-                      onNewSession={() =>
-                        useCoworkSessions.getState().createSession()
-                      }
+                      onNewSession={() => {
+                        useHomeMode.getState().setMode('cowork')
+                        navigate({ to: route.home })
+                      }}
                     />
                   )}
                 </ConversationContent>
@@ -1639,12 +1769,12 @@ function CoworkPage() {
 
           {/* pb-only: the scroll area runs right up to the composer. */}
           <div className="pb-4 shrink-0">
-            <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
+            <ConversationColumn reserveScrollGutter>
               {/* The card rises in when a question arrives and folds away once
                   answered, so the chat box glides instead of jumping. A card
                   already pending when the view mounts just appears. */}
               <AnimatePresence initial={false}>
-                {ask && typeof ask.request !== 'string' && (
+                {!unavailable && ask && typeof ask.request !== 'string' && (
                   <motion.div
                     // A fresh card per request, so a new ask never renders a
                     // frame with the previous one's page or picks.
@@ -1669,6 +1799,13 @@ function CoworkPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+              {unavailable ? (
+                <div role="alert" className="rounded-lg border border-warning/40 bg-muted p-4 text-sm">
+                  This session’s execution history is unavailable. It is read-only
+                  to avoid repeating tool actions without their saved context.
+                  Restore the session’s saved data or start a fresh session to continue.
+                </div>
+              ) : (
               <div className="relative" onKeyDownCapture={onMenuKeyDown}>
                 {menuItems.length > 0 && (
                   <div className="absolute left-0 right-0 bottom-full mb-2 z-10 max-h-64 overflow-y-auto rounded-md border bg-popover shadow-md">
@@ -1711,92 +1848,55 @@ function CoworkPage() {
                     ))}
                   </div>
                 )}
+                {folder && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <CoworkWorkspacePill folder={folder} gitBranch={gitBranch} onAttach={() => void attachFolder()} onDetach={detachFolder} />
+                  </div>
+                )}
                 <ChatInput
                   showSpeedToken={false}
+                  model={session?.model}
+                  onModelChange={(model) => {
+                    if (session?.id) useCoworkSessions.getState().setModel(session.id, model)
+                  }}
                   initialMessage={true}
                   scopeKey={session?.id}
                   ownsToolSet={false}
+                  supportsAssistants={false}
                   highlightedPrefix={skillCommandPrefix(prompt, skillCommands)}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
                   tokenSource={tokenSource}
-                  surfaceControls={
-                    <>
-                      <CoworkPlanToggle
-                        planMode={planMode}
-                        onChange={(next) => {
-                          if (session?.id)
-                            useCoworkSessions
-                              .getState()
-                              .setPlanMode(session.id, next)
-                        }}
-                      />
-                      <CoworkWorkspacePill
-                        folder={folder}
-                        gitBranch={gitBranch}
-                        onAttach={() => void attachFolder()}
-                        onDetach={detachFolder}
-                      />
-                      <CoworkSandboxChip />
-                      <CoworkTodoChip
-                        todos={session?.todos}
-                        open={rail?.kind === 'todos'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'todos' ? null : { kind: 'todos' }
-                          )
-                        }
-                      />
-                      <CoworkTasksChip
-                        subagents={subagents}
-                        monitors={monitors}
-                        open={rail?.kind === 'tasks'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'tasks' ? null : { kind: 'tasks' }
-                          )
-                        }
-                      />
-                      <CoworkChangesChip
-                        files={fileDiffs}
-                        open={rail?.kind === 'diff'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'diff' ? null : { kind: 'diff' }
-                          )
-                        }
-                      />
-                      <CoworkFilesChip
-                        count={attachments.length + artifacts.length}
-                        open={rail?.kind === 'files'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'files' ? null : { kind: 'files' }
-                          )
-                        }
-                      />
-                      <CoworkModelChip
-                        model={localModel}
-                        provider={modelProvider}
-                        open={rail?.kind === 'model'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'model' ? null : { kind: 'model' }
-                          )
-                        }
-                      />
-                      <div className="ml-auto flex items-center">
-                        <SkillSelector folder={folder} />
-                      </div>
-                    </>
-                  }
+                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={() => void attachFolder()} onSelectProject={(project) => {
+                    if (session?.id) updateThreadProject(session.id, project)
+                  }} />}
+                  menuControls={<CoworkComposerMenu section="controls" planMode={planMode} onPlanChange={(next) => {
+                    if (session?.id) useCoworkSessions.getState().setPlanMode(session.id, next)
+                  }} />}
+                  surfaceControls={planMode ? (
+                    <CoworkPlanToggle
+                      planMode={planMode}
+                      onChange={(next) => {
+                        if (session?.id) useCoworkSessions.getState().setPlanMode(session.id, next)
+                      }}
+                    />
+                  ) : undefined}
                 />
               </div>
-            </div>
+              )}
+            </ConversationColumn>
           </div>
         </div>
 
+        <div
+          className={cn(
+            'hidden shrink-0 transition-[width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none xl:block',
+            overviewOpen && !dockedRail ? 'w-80' : 'w-0'
+          )}
+          aria-hidden="true"
+        />
+        <AnimatePresence initial={false}>
         {rail?.kind === 'preview' && (
           <CoworkPreviewPanel
             roots={[folder, workspacePath]}
@@ -1828,6 +1928,7 @@ function CoworkPage() {
             onClose={() => setRail(null)}
           />
         )}
+        </AnimatePresence>
         {/* Always mounted so Radix can play the close animation; the sheet
             overlays the page, so it is not a docked rail. */}
         {localModel && modelProvider && (
@@ -1841,6 +1942,22 @@ function CoworkPage() {
           />
         )}
       </div>
+        <AnimatePresence initial={false}>
+        {overviewOpen && !dockedRail && (desktopOverview || overviewRequested) && (
+          <CoworkOverviewPanel
+            todos={session?.todos}
+            attachments={attachments}
+            artifacts={artifacts}
+            files={fileDiffs}
+            subagents={subagents}
+            monitorCount={monitors.length}
+            onPreview={showPreview}
+            onChanges={() => { setOverviewOpen(false); setRail({ kind: 'diff' }) }}
+            onAgents={() => { setOverviewOpen(false); setRail({ kind: 'tasks' }) }}
+            onClose={() => setOverviewOpen(false)}
+          />
+        )}
+        </AnimatePresence>
     </div>
   )
 }

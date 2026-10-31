@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 class MockResizeObserver {
@@ -136,7 +136,7 @@ describe('AddEditAssistant', () => {
     expect(props.onSave).not.toHaveBeenCalled()
   })
 
-  it('calls onSave with the assistant object when name is present', () => {
+  it('calls onSave with the assistant object when name is present', async () => {
     const props = baseProps()
     render(<AddEditAssistant {...props} />)
     const nameInput = screen.getByPlaceholderText('assistants:enterName')
@@ -146,7 +146,7 @@ describe('AddEditAssistant', () => {
     const saved = props.onSave.mock.calls[0][0]
     expect(saved.name).toBe('New Bot')
     expect(saved.parameters).toEqual({})
-    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
   })
 
   it('clears the name error once a name is typed', () => {
@@ -178,4 +178,29 @@ describe('AddEditAssistant', () => {
     expect(saved.id).toBe('keep-id')
     expect(saved.created_at).toBe(42)
   })
+  it('retains drafts and shows a persistence error without closing', async () => {
+    const props = baseProps()
+    props.onSave.mockRejectedValueOnce(new Error('Disk full'))
+    render(<AddEditAssistant {...props} />)
+    fireEvent.change(screen.getByPlaceholderText('assistants:enterName'), { target: { value: 'Draft Bot' } })
+    fireEvent.click(screen.getByText('assistants:save'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Disk full')
+    expect(screen.getByDisplayValue('Draft Bot')).toBeInTheDocument()
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+  })
+
+  it('blocks duplicate saves until persistence settles', async () => {
+    const props = baseProps()
+    let finish!: () => void
+    props.onSave.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve }))
+    render(<AddEditAssistant {...props} />)
+    fireEvent.change(screen.getByPlaceholderText('assistants:enterName'), { target: { value: 'Bot' } })
+    fireEvent.click(screen.getByText('assistants:save'))
+    fireEvent.click(screen.getByText('assistants:save'))
+    expect(props.onSave).toHaveBeenCalledTimes(1)
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+    finish()
+    await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false))
+  })
+
 })

@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
@@ -31,14 +32,20 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ParametersSection } from '@/containers/ParametersSection'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useThreads } from '@/hooks/useThreads'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { paramsSettings, type ParamDef } from '@/lib/predefinedParams'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface SamplerPopoverProps {
   /** Provider ID of the currently-selected model, if any. Used to scope the
    *  chip palette to a single provider's capabilities. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>
   providerId?: string
   /** Currently-selected model ID. Drives model-family rejection (e.g. o1/gpt-5
    *  reasoning models reject temperature/top_p). */
@@ -55,6 +62,10 @@ interface SamplerPopoverProps {
 }
 
 export function SamplerPopover({
+  open,
+  onOpenChange,
+  hideTrigger = false,
+  returnFocusRef,
   providerId,
   modelId,
   assistantSwitcher,
@@ -93,53 +104,105 @@ export function SamplerPopover({
       : undefined
     : selectedAssistant
 
-  const params = activeAssistant?.parameters ?? {}
+  type SaveLane = {
+    threadId?: string
+    expected: Assistant
+    params: Record<string, unknown>
+    revision: number
+    saving: boolean
+  }
+  const lanes = useRef<SaveLane[]>([])
+  const [, refreshDraft] = useState(0)
+  const threadId = assistantSwitcher?.currentThread?.id
+  const lane = lanes.current.find(
+    (entry) => entry.threadId === threadId && entry.expected === activeAssistant
+  )
+  const params = lane?.params ?? activeAssistant?.parameters ?? {}
   const samplerKeys = Object.keys(params).filter((k) => k in paramsSettings)
   const hasOverrides = samplerKeys.length > 0
 
-  const writeParams = (next: Record<string, unknown>) => {
+  const writeParams = (change: (previous: Record<string, unknown>) => Record<string, unknown>) => {
     if (!activeAssistant) return
-    const updated = { ...activeAssistant, parameters: next }
-    if (isThreadAssistant && assistantSwitcher) {
-      // Sync the thread's copy so inference picks it up immediately; mirror
-      // into the canonical assistant only when it still exists.
-      assistantSwitcher.updateCurrentThreadAssistant(updated)
-      if (assistantSwitcher.assistants.some((a) => a.id === updated.id)) {
-        updateAssistant(updated)
-      }
-    } else {
-      updateAssistant(updated)
+    let target = lanes.current.find(
+      (entry) => entry.threadId === threadId && entry.expected === activeAssistant
+    )
+    if (!target) {
+      target = { threadId, expected: activeAssistant, params, revision: 0, saving: false }
+      lanes.current.push(target)
     }
+    target.params = change(target.params)
+    target.revision++
+    refreshDraft((value) => value + 1)
+    if (target.saving) return
+    target.saving = true
+    const save = async (entry: SaveLane) => {
+      try {
+        while (true) {
+          const revision = entry.revision
+          const next = entry.params
+          // A newer thread assignment invalidates this lane, even for the same ID.
+          if (entry.threadId && useThreads.getState().threads[entry.threadId]?.assistants?.[0] !== entry.expected) break
+          const canonical = useAssistant.getState().assistants.find((a) => a.id === entry.expected.id)
+          if (canonical) await updateAssistant({ ...canonical, parameters: next })
+          if (entry.threadId) {
+            const saved = await useThreads.getState().updateThreadAssistantIfUnchanged(entry.threadId, entry.expected, next)
+            if (!saved) break
+            entry.expected = saved
+          } else {
+            // Never replace a newly selected assistant with the captured one.
+            const saved = useAssistant.getState().assistants.find((a) => a.id === entry.expected.id)
+            if (saved) entry.expected = saved
+          }
+          if (revision === entry.revision) break
+        }
+      } catch (error) {
+        toast.error('Could not save sampling parameters. Please try again.', {
+          description: error instanceof Error ? error.message : undefined,
+        })
+      } finally {
+        // Removing the optimistic draft reveals the last successfully saved
+        // state on failure, not parameters belonging to a newer selection.
+        lanes.current = lanes.current.filter((item) => item !== entry)
+        refreshDraft((value) => value + 1)
+      }
+    }
+    void save(target)
   }
 
   const handleToggle = (def: ParamDef) => {
     if (def.key in params) {
-      const next = { ...params }
-      delete next[def.key]
-      writeParams(next)
+      writeParams((previous) => {
+        const next = { ...previous }
+        delete next[def.key]
+        return next
+      })
     } else {
-      writeParams({ ...params, [def.key]: def.value })
+      writeParams((previous) => ({ ...previous, [def.key]: def.value }))
     }
   }
 
   const handleChange = (key: string, value: unknown) => {
-    writeParams({ ...params, [key]: value })
+    writeParams((previous) => ({ ...previous, [key]: value }))
   }
 
   const handleRemove = (key: string) => {
-    const next = { ...params }
-    delete next[key]
-    writeParams(next)
+    writeParams((previous) => {
+      const next = { ...previous }
+      delete next[key]
+      return next
+    })
   }
 
   const handleAddMany = (values: Record<string, unknown>) => {
-    writeParams({ ...params, ...values })
+    writeParams((previous) => ({ ...previous, ...values }))
   }
 
   const handleRemoveMany = (keys: string[]) => {
-    const next = { ...params }
-    for (const k of keys) delete next[k]
-    writeParams(next)
+    writeParams((previous) => {
+      const next = { ...previous }
+      for (const k of keys) delete next[k]
+      return next
+    })
   }
 
   const handleResetAll = () => {
@@ -147,7 +210,7 @@ export function SamplerPopover({
     for (const [k, v] of Object.entries(params)) {
       if (!(k in paramsSettings)) next[k] = v
     }
-    writeParams(next)
+    writeParams(() => next)
   }
 
   if (isPredefinedRemoteProvider(providerId)) return null
@@ -158,47 +221,7 @@ export function SamplerPopover({
       ? `Sampling — ${activeAssistant.name}`
       : 'Sampling'
 
-  return (
-    <Popover>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Sampling parameters"
-              className="relative"
-              disabled={assistantsLoading}
-            >
-              <IconAdjustmentsHorizontal
-                size={18}
-                className={cn(
-                  'text-muted-foreground',
-                  hasOverrides && 'text-primary'
-                )}
-              />
-              {hasOverrides && (
-                <span
-                  aria-hidden
-                  className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
-                />
-              )}
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{triggerLabel}</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <PopoverContent
-        align="start"
-        side="top"
-        sideOffset={8}
-        collisionPadding={12}
-        avoidCollisions
-        className="w-[380px] p-0 flex flex-col max-h-[var(--radix-popover-content-available-height)]"
-      >
+  const content = (<>
         <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 border-b">
           <AssistantHeader
             currentAssistant={activeAssistant}
@@ -243,6 +266,61 @@ export function SamplerPopover({
             Pick an assistant above to configure sampling.
           </div>
         )}
+  </>)
+
+  if (hideTrigger) {
+    return <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent onCloseAutoFocus={(event) => {
+        if (returnFocusRef?.current) { event.preventDefault(); returnFocusRef.current.focus() }
+      }} className="flex max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+        <DialogHeader className="border-b px-4 py-3 pr-12"><DialogTitle className="text-sm font-medium">Sampling parameters</DialogTitle></DialogHeader>
+        {content}
+      </DialogContent>
+    </Dialog>
+  }
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {!hideTrigger && <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Sampling parameters"
+              className="relative"
+              disabled={assistantsLoading}
+            >
+              <IconAdjustmentsHorizontal
+                size={18}
+                className={cn(
+                  'text-muted-foreground',
+                  hasOverrides && 'text-primary'
+                )}
+              />
+              {hasOverrides && (
+                <span
+                  aria-hidden
+                  className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
+                />
+              )}
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{triggerLabel}</p>
+        </TooltipContent>
+      </Tooltip>}
+
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        avoidCollisions
+        className="w-[380px] p-0 flex flex-col max-h-[var(--radix-popover-content-available-height)]"
+      >
+        {content}
       </PopoverContent>
     </Popover>
   )
@@ -293,7 +371,7 @@ function AssistantHeader({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-64 overflow-y-auto"
+        className="min-w-0 w-[min(320px,calc(100vw-16px),var(--radix-dropdown-menu-content-available-width))] max-h-64 overflow-y-auto"
       >
         <AssistantsMenu
           selectedAssistant={assistantSwitcher.selectedAssistantId}

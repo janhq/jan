@@ -49,7 +49,7 @@ const AppLayout = () => {
   } = useLeftPanel()
 
   return (
-    <div className="bg-neutral-50 dark:bg-background size-full relative">
+    <div className="bg-white dark:bg-background size-full relative">
       <SidebarProvider
         open={isLeftPanelOpen}
         onOpenChange={setLeftPanel}
@@ -72,7 +72,7 @@ const AppLayout = () => {
         <DialogAppUpdater />
         <LeftSidebar />
         <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
+          <div className="bg-white dark:bg-background size-full">
             <Outlet />
           </div>
         </SidebarInset>

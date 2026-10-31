@@ -4,6 +4,8 @@ import {
   sandboxStatus,
   threadWorkspaceDelete,
   threadWorkspaceSweep,
+  sessionWorkspaceDelete,
+  sessionWorkspaceSweep,
   memoryCatalog,
   memoryRead,
   subagentResultReserve,
@@ -409,6 +411,11 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   }
 }
 
+/** Close must confirm native teardown rather than treating it as best-effort. */
+export async function cancelAgentThreadBashStrict(sessionId: string): Promise<void> {
+  await cancelThreadBash(sessionId)
+}
+
 /** A file claimed for a subagent's answer: the name to fill it by, and the
  * model-visible path (`/tmp/subagents/<id>.md`, where the scratch is mounted
  * over `/tmp`) the parent agent can `read`. */
@@ -504,11 +511,18 @@ export async function importAttachment(
  * behind for the next startup sweep to collect, which is not worth surfacing
  * while the user is deleting a thread.
  */
-export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
+export async function cleanupThreadWorkspace(
+  threadId: string,
+  scope: WorkspaceScope = 'thread'
+): Promise<void> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
     if (!dataFolder) return
-    await threadWorkspaceDelete(dataFolder, threadId)
+    if (scope === 'session') {
+      await sessionWorkspaceDelete(dataFolder, threadId)
+    } else {
+      await threadWorkspaceDelete(dataFolder, threadId)
+    }
   } catch (e) {
     console.warn(
       `[agentTools] Failed to delete workspace for thread ${threadId}:`,
@@ -521,6 +535,25 @@ export async function cleanupThreadWorkspace(threadId: string): Promise<void> {
  * Delete sandboxes left behind by threads that no longer exist, returning how
  * many were removed. Best-effort, same reasoning as above.
  */
+/**
+ * Collect Cowork (session-scope) sandboxes whose conversation is gone. The
+ * caller must only run this once the Cowork migration has finished: while it is
+ * partial, the live-id list is incomplete and the sweep would delete the
+ * sandboxes of sessions not yet migrated.
+ */
+export async function sweepSessionWorkspaces(
+  liveSessionIds: string[]
+): Promise<number> {
+  try {
+    const dataFolder = await getServiceHub().app().getJanDataFolder()
+    if (!dataFolder) return 0
+    return await sessionWorkspaceSweep(dataFolder, liveSessionIds)
+  } catch (e) {
+    console.warn('[agentTools] Failed to sweep session workspaces:', messageOf(e))
+    return 0
+  }
+}
+
 export async function sweepThreadWorkspaces(
   liveThreadIds: string[]
 ): Promise<number> {

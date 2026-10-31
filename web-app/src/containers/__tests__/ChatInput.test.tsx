@@ -7,6 +7,9 @@ import {
   waitFor,
 } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import userEvent from '@testing-library/user-event'
+
+import { HomeModeToggle } from '../HomeModeToggle'
 
 // --- Module mocks (must be declared before component import) ---------------
 
@@ -99,25 +102,28 @@ vi.mock('@/hooks/useTokensCount', () => ({
   }),
 }))
 
+let assistantsLoading = false
+let assistantOptions = [
+  { id: 'a1', name: 'Global assistant', avatar: '' },
+  { id: 'a2', name: 'Project assistant', avatar: '' },
+]
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({
-    loading: false,
+    loading: assistantsLoading,
     currentAssistant: { id: 'a1', name: 'Global assistant', avatar: '' },
     setCurrentAssistant: vi.fn(),
-    assistants: [
-      { id: 'a1', name: 'Global assistant', avatar: '' },
-      { id: 'a2', name: 'Project assistant', avatar: '' },
-    ],
+    assistants: assistantOptions,
   }),
 }))
 
+const setAgentModeMock = vi.fn()
+const removeAgentThreadMock = vi.fn()
 let agentModeOn = false
 vi.mock('@/hooks/useAgentMode', () => ({
-  useAgentMode: (selector: any) =>
-    selector({
-      agentThreads: agentModeOn ? { 'thread-1': true } : {},
-      toggleAgentMode: vi.fn(),
-    }),
+  useAgentMode: Object.assign((selector: any) => selector({
+    agentThreads: agentModeOn ? { 'thread-1': true } : {},
+    toggleAgentMode: vi.fn(),
+  }), { getState: () => ({ setAgentMode: setAgentModeMock, removeThread: removeAgentThreadMock }) }),
 }))
 
 vi.mock('@/hooks/useMessages', () => ({
@@ -177,6 +183,7 @@ vi.mock('@/hooks/useChatAttachments', () => ({
   ),
 }))
 
+let browserOverrides = {}
 vi.mock('@/hooks/useJanBrowserExtension', () => ({
   useJanBrowserExtension: () => ({
     hasConfig: false,
@@ -185,6 +192,7 @@ vi.mock('@/hooks/useJanBrowserExtension', () => ({
     dialogOpen: false,
     dialogState: null,
     toggleBrowser: vi.fn(),
+    ...browserOverrides,
     handleCancel: vi.fn(),
     setDialogOpen: vi.fn(),
   }),
@@ -246,6 +254,11 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
+// Model selection/effort is covered by ComposerModelPicker's own suite.
+vi.mock('@/containers/ComposerModelPicker', () => ({
+  default: ({ className }: { className?: string }) => <button aria-label="Select model" className={className}>Model</button>,
+}))
+
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: vi.fn() }),
   Link: ({ children, ...props }: any) => <a {...props}>{children}</a>,
@@ -287,14 +300,15 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
-vi.mock('@/components/AssistantsMenu', () => ({
-  AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
-}))
+
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
-vi.mock('@/components/ui/dropdown-menu', () => {
+const dropdownTestMode = vi.hoisted(() => ({ real: false }))
+const tooltipTestMode = vi.hoisted(() => ({ real: false }))
+vi.mock('@/components/ui/dropdown-menu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/dropdown-menu')>()
   const Pass = ({ children }: any) => <>{children}</>
-  return {
+  const stubs = {
     DropdownMenu: Pass,
     DropdownMenuContent: Pass,
     DropdownMenuItem: ({ children, onClick, disabled }: any) => (
@@ -308,15 +322,20 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     DropdownMenuSubContent: Pass,
     DropdownMenuSubTrigger: Pass,
   }
+  return Object.fromEntries(Object.entries(actual).map(([name, Component]) => [
+    name,
+    (props: any) => dropdownTestMode.real
+      ? <Component {...props} />
+      : (() => { const Stub = stubs[name as keyof typeof stubs] ?? Pass; return <Stub {...props} /> })(),
+  ]))
 })
-vi.mock('@/components/ui/tooltip', () => {
+vi.mock('@/components/ui/tooltip', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/tooltip')>()
   const Pass = ({ children }: any) => <>{children}</>
-  return {
-    Tooltip: Pass,
-    TooltipContent: Pass,
-    TooltipTrigger: Pass,
-    TooltipProvider: Pass,
-  }
+  return Object.fromEntries(Object.entries(actual).map(([name, Component]) => [
+    name,
+    (props: any) => tooltipTestMode.real ? <Component {...props} /> : <Pass {...props} />,
+  ]))
 })
 
 vi.mock('@/lib/platform/utils', () => ({
@@ -324,18 +343,36 @@ vi.mock('@/lib/platform/utils', () => ({
 }))
 
 // Import component AFTER all mocks
+import { toast } from 'sonner'
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { getServiceHub } from '@/hooks/useServiceHub'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
 // Helpers -------------------------------------------------------------------
 
 const resetAll = () => {
+  assistantsLoading = false
+  assistantOptions = [
+    { id: 'a1', name: 'Global assistant', avatar: '' },
+    { id: 'a2', name: 'Project assistant', avatar: '' },
+  ]
+  browserOverrides = {}
+  useWebSearchConfig.setState({ webSearchEnabled: false })
+  dropdownTestMode.real = false
+  tooltipTestMode.real = false
+  useToolAvailable.setState({ disabledTools: [] })
   promptState = ''
   appStateOverrides = {}
   attachmentsList = []
   attachmentsByKey = {}
   readKeys = []
   agentModeOn = false
+  setAgentModeMock.mockClear()
+  removeAgentThreadMock.mockClear()
+  createThreadMock.mockResolvedValue({ id: 'created-thread' })
   selectedModelOverride = {
     id: 'model-a',
     capabilities: ['tools'],
@@ -373,12 +410,111 @@ describe('ChatInput', () => {
     expect(document.querySelector('[data-test-id="send-message-button"]')).toBeTruthy()
   })
 
-  it('shows the project assistant for a new conversation', () => {
+  it('keeps the composer border flush with its column without a layout inset', () => {
+    renderInput()
+    const border = getTextarea().closest('.border')!
+    expect(border).toHaveClass('rounded-3xl')
+    expect(border.parentElement).toHaveClass('overflow-hidden', 'rounded-3xl')
+    expect(border.parentElement).not.toHaveClass('p-0.5')
+  })
+
+  it('renders the streaming border as a masked overlay with reduced-motion fallback', () => {
+    renderInput({ chatStatus: 'streaming' })
+    const border = getTextarea().closest('.border')!
+    const overlay = border.parentElement!.querySelector('[aria-hidden="true"].pointer-events-none') as HTMLElement
+    expect(overlay).toHaveClass('absolute', 'inset-0', 'z-30', 'motion-reduce:hidden')
+    expect(overlay.style.maskComposite).toBe('exclude')
+    expect(border.parentElement).not.toHaveClass('p-0.5')
+  })
+
+  it('keeps assistant selection inside the composer controls menu', () => {
     renderInput({ projectId: 'project-1', projectAssistantId: 'a2' })
 
-    expect(
-      screen.getByRole('button', { name: 'Switch assistant' })
-    ).toHaveTextContent('Project assistant')
+    expect(screen.getByRole('button', { name: 'Add attachments and controls' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Switch assistant' })).not.toBeInTheDocument()
+  })
+
+  it('does not advertise assistants or register cycling for explicit Cowork surfaces', async () => {
+    dropdownTestMode.real = true
+    renderInput({ onSubmit: vi.fn(), supportsAssistants: false })
+    expect(useAssistantSwitcher.getState().cycleHandler).toBeNull()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    await screen.findByRole('menu')
+    expect(screen.queryByRole('menuitem', { name: 'Assistant' })).not.toBeInTheDocument()
+  })
+
+  it('keeps assistant menus and cycling available for callback-based ordinary chat', async () => {
+    dropdownTestMode.real = true
+    renderInput({ onSubmit: vi.fn() })
+    expect(useAssistantSwitcher.getState().cycleHandler).toBeTypeOf('function')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    expect(await screen.findByRole('menuitem', { name: 'Assistant' })).toBeInTheDocument()
+  })
+
+  it('offers None with one assistant and cycles through both choices', async () => {
+    dropdownTestMode.real = true
+    assistantOptions = assistantOptions.slice(0, 1)
+    renderInput()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const trigger = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => trigger.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    const none = await screen.findByRole('menuitem', { name: /None/ })
+    fireEvent.click(none)
+    act(() => useAssistantSwitcher.getState().cycleHandler?.())
+    // Reopen to inspect the current choice after cycling None -> one -> None.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const reopened = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => reopened.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    expect(await screen.findByRole('menuitem', { name: /Global assistant/ })).toHaveClass('bg-accent')
+    act(() => useAssistantSwitcher.getState().cycleHandler?.())
+    expect(screen.getByRole('menuitem', { name: /None/ })).toHaveClass('bg-accent')
+  })
+
+  it('exposes persistent web and browser toggles as checked menu items and named pressed buttons', async () => {
+    dropdownTestMode.real = true
+    selectedModelOverride.capabilities = ['tools', 'vision']
+    browserOverrides = { hasConfig: true, isActive: true }
+    useWebSearchConfig.setState({ webSearchEnabled: true })
+    renderInput()
+    expect(screen.getByRole('button', { name: 'common:web_search' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'common:browse' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const web = await screen.findByRole('menuitemcheckbox', { name: 'common:web_search' })
+    expect(web).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'common:browse' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(web)
+    expect(web).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('menu')).toBeVisible()
+  })
+
+  it('falls back to an existing assistant for a deleted project assignment', async () => {
+    promptState = 'Project message'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: async () => ({ id: 'project-1', name: 'Project', updated_at: 1, assistantId: 'deleted' }) }) })
+    renderInput({ projectId: 'project-1', projectAssistantId: 'deleted' })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalledWith(expect.anything(), 'Project message', expect.objectContaining({ id: 'a1' }), expect.objectContaining({ id: 'project-1' })))
+  })
+
+  it('respects explicit None when sending from a project with a deleted assignment', async () => {
+    dropdownTestMode.real = true
+    promptState = 'Project without assistant'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: async () => ({ id: 'project-1', name: 'Project', updated_at: 1, assistantId: 'deleted' }) }) })
+    const view = renderInput({ projectId: 'project-1', projectAssistantId: 'deleted' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const trigger = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => trigger.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    fireEvent.click(await screen.findByRole('menuitem', { name: /None/ }))
+    // Later store hydration must not replace an explicit selection.
+    assistantsLoading = true
+    view.rerender(<ChatInput projectId="project-1" projectAssistantId="deleted" />)
+    assistantsLoading = false
+    assistantOptions = [...assistantOptions]
+    view.rerender(<ChatInput projectId="project-1" projectAssistantId="deleted" />)
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalledWith(expect.anything(), 'Project without assistant', undefined, expect.objectContaining({ id: 'project-1' })))
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -563,7 +699,81 @@ describe('ChatInput', () => {
     expect(navigateHistoryMock).toHaveBeenCalledWith('down')
   })
 
+  it('shows distinct compact filenames and wraps mixed attachments without shrinking thumbnails', () => {
+    attachmentsList = [
+      { type: 'document', name: 'summary.md', fileType: 'md' },
+      { type: 'document', name: '研究メモ🧪—非常に長いファイル名'.repeat(8) + '.md', fileType: 'md' },
+      { type: 'image', name: 'photo.png', dataUrl: 'data:image/png;base64,xxx' },
+    ]
+    renderInput()
+    const first = screen.getByLabelText('summary.md')
+    const second = screen.getByLabelText(attachmentsList[1].name)
+    expect(first).toHaveAttribute('tabindex', '0')
+    expect(second.querySelector('.truncate')).toHaveTextContent(attachmentsList[1].name)
+    expect(first).toHaveClass('h-11', 'min-w-0')
+    const row = first.parentElement!.parentElement!
+    expect(row).toHaveClass('flex-wrap', 'min-w-0', 'gap-2')
+    const image = screen.getByRole('img', { name: 'photo.png' })
+    expect(image.parentElement).toHaveClass('size-14')
+    expect(image.parentElement!.parentElement).toHaveClass('shrink-0')
+    for (const attachment of attachmentsList) {
+      expect(screen.getByRole('button', { name: `Remove ${attachment.name}` })).toHaveClass('size-7')
+    }
+  })
+
+  it('reveals the untruncated filename tooltip on keyboard focus', async () => {
+    tooltipTestMode.real = true
+    const name = '研究メモ🧪'.repeat(30) + '.md'
+    attachmentsList = [{ type: 'document', name, fileType: 'md' }]
+    renderInput()
+    act(() => screen.getByLabelText(name).focus())
+    expect(screen.getByLabelText(name)).toHaveFocus()
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent(name)
+    expect(tooltip.querySelector('.font-medium')).toHaveClass('whitespace-normal', '[overflow-wrap:anywhere]')
+    expect(tooltip.querySelector('.font-medium')).not.toHaveClass('truncate')
+  })
+
+  it.each(['{Enter}', ' '])('removes an attachment with %s without submitting the form', async (key) => {
+    attachmentsList = [
+      { type: 'document', name: 'first.md', fileType: 'md' },
+      { type: 'document', name: 'second.md', fileType: 'md' },
+    ]
+    setAttachmentsMock.mockClear()
+    const onSubmit = vi.fn()
+    const formSubmit = vi.fn((event) => event.preventDefault())
+    render(<form onSubmit={formSubmit}><ChatInput onSubmit={onSubmit} /></form>)
+    // Let the composer's delayed mount autofocus settle before testing tab order.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 25)) })
+    const user = userEvent.setup()
+    act(() => screen.getByLabelText('first.md').focus())
+    expect(screen.getByLabelText('first.md')).toHaveFocus()
+    await user.tab()
+    const remove = screen.getByRole('button', { name: 'Remove first.md' })
+    expect(remove).toHaveFocus()
+    expect(remove).toHaveAttribute('type', 'button')
+    await user.keyboard(key)
+    await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalledTimes(1))
+    const [scope, update] = setAttachmentsMock.mock.calls[0]
+    expect(scope).toBe('thread-1')
+    expect(update(attachmentsList)).toEqual([attachmentsList[1]])
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(formSubmit).not.toHaveBeenCalled()
+  })
+
+  it('keeps removal disabled and exposes busy state while processing', async () => {
+    attachmentsList = [{ type: 'document', name: 'processing.md', fileType: 'md', processing: true }]
+    setAttachmentsMock.mockClear()
+    renderInput()
+    const remove = screen.getByRole('button', { name: 'Remove processing.md' })
+    expect(remove).toBeDisabled()
+    expect(remove.parentElement).toHaveAttribute('aria-busy', 'true')
+    await userEvent.click(remove)
+    expect(setAttachmentsMock).not.toHaveBeenCalled()
+  })
+
   it('adds attached image files to onSubmit payload', async () => {
+    selectedModelOverride.capabilities = ['vision']
     promptState = 'with image'
     attachmentsList = [
       {
@@ -590,6 +800,74 @@ describe('ChatInput', () => {
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
+  })
+
+  it.each(['llamacpp', 'remote'])('preserves image draft after Vision → Plain, then accepts Vision (%s)', async (provider) => {
+    promptState = 'describe this image'
+    selectedModelOverride = { id: 'vision', provider, capabilities: ['vision'] }
+    attachmentsList = [{ type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' }]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn()
+    const view = renderInput({ onSubmit })
+    selectedModelOverride = { id: 'plain', provider, capabilities: ['completion'] }
+    view.rerender(<ChatInput onSubmit={onSubmit} className={selectedModelOverride.id} />)
+    expect(screen.getByTestId('send-message-button')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('Choose a compatible model or remove')))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(createThreadMock).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(addToHistoryMock).not.toHaveBeenCalled()
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(promptState).toBe('describe this image')
+    expect(attachmentsList).toBe(originalAttachments)
+    selectedModelOverride = { id: 'vision', provider, capabilities: ['vision'] }
+    view.rerender(<ChatInput onSubmit={onSubmit} className={selectedModelOverride.id} />)
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('describe this image', [expect.objectContaining({ mediaType: 'image/png' })], undefined, 'describe this image'))
+    expect(setPromptMock).toHaveBeenCalledWith('')
+    expect(clearAttachmentsMock).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('blocks media-only home sends before creating a thread or persisting a message', async () => {
+    attachmentsList = [{ type: 'image', dataUrl: 'data:image/png;base64,xxx' }]
+    const persist = vi.spyOn(Storage.prototype, 'setItem')
+    renderInput()
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.info).toHaveBeenCalled())
+    expect(createThreadMock).not.toHaveBeenCalled()
+    expect(persist).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    persist.mockRestore()
+  })
+
+  it.each(['audio', 'video'])('validates %s independently of vision', async (type) => {
+    promptState = 'media'
+    attachmentsList = [{ type, dataUrl: `data:${type}/test;base64,xxx` }]
+    selectedModelOverride.capabilities = ['vision']
+    const onSubmit = vi.fn()
+    const view = renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining(`${type} attachments`)))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    selectedModelOverride = { ...selectedModelOverride, capabilities: [type] }
+    view.rerender(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not infer media validation ownership from assistant or agent-mode settings', async () => {
+    promptState = 'image'
+    agentModeOn = true
+    attachmentsList = [{ type: 'image', dataUrl: 'data:image/png;base64,xxx' }]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, supportsAssistants: false })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(toast.info).toHaveBeenCalled())
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('passes document attachments to onSubmit as the third argument', async () => {
@@ -709,8 +987,9 @@ describe('ChatInput', () => {
     // Web access is a global capability both surfaces honour -- Cowork reads
     // the same store when it builds its tool set -- so the toggle travels.
     it('offers the web-search toggle on every surface', () => {
+      useWebSearchConfig.setState({ webSearchEnabled: true })
       renderInput()
-      expect(icons('world-search')).toBe(1)
+      expect(icons('world-search')).toBe(2)
       renderInput({ ownsToolSet: false })
       expect(icons('world-search')).toBeGreaterThan(0)
     })
@@ -726,6 +1005,155 @@ describe('ChatInput', () => {
       renderInput({ ownsToolSet: false })
       // The composer still works: the textarea and attachments stay.
       expect(getTextarea()).toBeInTheDocument()
+    })
+  })
+
+  describe('structured MCP submenu', () => {
+    const configureTools = () => {
+      dropdownTestMode.real = true
+      appStateOverrides = { tools: [
+        { server: 'Workspace', name: 'read_file', description: 'Read a file from the workspace.' },
+        { server: 'Workspace', name: 'write_file', description: 'Write a workspace file.' },
+        { server: 'Other', name: 'read_file', description: 'Read from another server.' },
+        { server: 'Jan Browser MCP', name: 'browser_private', description: 'Browser tool.' },
+      ] }
+    }
+    const openTools = async () => {
+      const add = screen.getByRole('button', { name: 'Add attachments and controls' })
+      fireEvent.keyDown(add, { key: 'ArrowDown' })
+      const tools = await screen.findByRole('menuitem', { name: 'tools' })
+      act(() => tools.focus())
+      await userEvent.keyboard('{ArrowRight}')
+      return screen.findByRole('menuitem', { name: 'Workspace 2 tools' })
+    }
+
+    it('shows server counts, descriptions and live checkbox state without closing the menu', async () => {
+      configureTools()
+      renderInput()
+      const server = await openTools()
+      expect(screen.queryByText('Jan Browser MCP')).not.toBeInTheDocument()
+      await waitFor(() => expect(server).toHaveFocus())
+      await userEvent.keyboard('{ArrowRight}')
+      const read = await screen.findByRole('menuitemcheckbox', { name: 'read_file' })
+      expect(read).toHaveAttribute('aria-checked', 'true')
+      expect(screen.getByText('Read a file from the workspace.')).toBeVisible()
+      expect(read.querySelector('[aria-hidden="true"]')).toBeTruthy()
+      fireEvent.click(read)
+      expect(read).toHaveAttribute('aria-checked', 'false')
+      expect(useToolAvailable.getState().disabledTools).toEqual(['Workspace::read_file'])
+      expect(screen.getByRole('menuitemcheckbox', { name: 'All Tools' })).toHaveAttribute('aria-checked', 'mixed')
+      expect(screen.getByText('Read a file from the workspace.')).toBeVisible()
+      fireEvent.keyDown(read, { key: 'Enter' })
+      expect(read).toHaveAttribute('aria-checked', 'true')
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All Tools' }))
+      expect(read).toHaveAttribute('aria-checked', 'false')
+      expect(screen.getByRole('menuitemcheckbox', { name: 'write_file' })).toHaveAttribute('aria-checked', 'false')
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All Tools' }))
+      expect(read).toHaveAttribute('aria-checked', 'true')
+    })
+
+    it('keeps an all-disabled server reachable and restores persisted checkbox state', async () => {
+      configureTools()
+      useToolAvailable.setState({ disabledTools: ['Workspace::read_file', 'Workspace::write_file'] })
+      renderInput({ initialMessage: true })
+      const server = await openTools()
+      await waitFor(() => expect(server).toHaveFocus())
+      await userEvent.keyboard('{ArrowRight}')
+      expect(await screen.findByRole('menuitemcheckbox', { name: 'read_file' })).toHaveAttribute('aria-checked', 'false')
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'read_file' }))
+      expect(useToolAvailable.getState().disabledTools).toEqual(['Workspace::write_file'])
+    })
+
+    it.each(['unsupported', 'agent', 'external', 'empty', 'browser-only'])('preserves the existing hidden Tools gate: %s', async (gate) => {
+      configureTools()
+      if (gate === 'unsupported') selectedModelOverride = { ...selectedModelOverride, capabilities: [] }
+      if (gate === 'agent') agentModeOn = true
+      if (gate === 'empty') appStateOverrides.tools = []
+      if (gate === 'browser-only') appStateOverrides.tools = appStateOverrides.tools.slice(-1)
+      renderInput({ ownsToolSet: gate !== 'external' })
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+      await screen.findByRole('menu')
+      expect(screen.queryByRole('menuitem', { name: 'tools' })).not.toBeInTheDocument()
+    })
+
+    it('disables the Tools trigger while streaming rather than changing tool availability', async () => {
+      configureTools()
+      renderInput({ chatStatus: 'streaming' })
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+      expect(await screen.findByRole('menuitem', { name: 'tools' })).toHaveAttribute('data-disabled')
+      expect(useToolAvailable.getState().disabledTools).toEqual([])
+    })
+  })
+
+  it.each([undefined, 'project-1'])('transfers only effective agent mode when creating a thread (project=%s)', async (projectId) => {
+    agentModeOn = true
+    promptState = 'First project message'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: async () => ({ id: 'project-1', name: 'Project', updated_at: 1, assistantId: 'a2' }) }) })
+    renderInput({ projectId, projectAssistantId: projectId ? 'a2' : undefined })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalled())
+    await waitFor(() => expect(setPromptMock).toHaveBeenCalledWith(''))
+    if (projectId) {
+      expect(createThreadMock).toHaveBeenCalledWith(expect.anything(), 'First project message', expect.objectContaining({ id: 'a2' }), expect.objectContaining({ id: 'project-1' }))
+      expect(setAgentModeMock).not.toHaveBeenCalled()
+      expect(removeAgentThreadMock).not.toHaveBeenCalled()
+    } else {
+      expect(setAgentModeMock).toHaveBeenCalledWith('created-thread', true)
+      expect(removeAgentThreadMock).toHaveBeenCalledWith('thread-1')
+    }
+  })
+
+  describe('consistent composer add button', () => {
+    it.each([false, true])('reserves a 36px circle with an explicit 18px icon (initialMessage=%s)', (initialMessage) => {
+      renderInput({ initialMessage })
+      const add = screen.getByRole('button', { name: 'Add attachments and controls' })
+      expect(add).toHaveAttribute('data-size', 'icon')
+      expect(add).toHaveClass('size-9', 'shrink-0', 'rounded-full')
+      expect(add.querySelector('svg')).toHaveClass('size-[18px]')
+    })
+  })
+
+  describe('narrow composer controls', () => {
+    // jsdom cannot lay out container queries: assert the sizing contract, not
+    // window.innerWidth, because these composers also live in resizable panels.
+    it('uses a named container, a single row and a shrinkable model without shrinking Send', () => {
+      renderInput({ leadingControls: <HomeModeToggle mode="chat" onChange={vi.fn()} /> })
+      const add = screen.getByRole('button', { name: 'Add attachments and controls' })
+      const picker = screen.getByRole('button', { name: 'Select model' })
+      const send = screen.getByTestId('send-message-button')
+      expect(add.closest('.\\@container\\/composer')).toBeTruthy()
+      const row = picker.parentElement!.parentElement!
+      expect(row).toHaveClass('flex-nowrap')
+      expect(row.querySelector('.flex-wrap')).toBeNull()
+      expect(picker.parentElement).toHaveClass('min-w-0', 'shrink')
+      expect(picker).toHaveClass('min-w-0', '@max-[520px]/composer:max-w-full')
+      expect(add).toHaveClass('shrink-0')
+      expect(send).toHaveClass('shrink-0')
+      expect(screen.getByRole('radiogroup')).toHaveClass('@max-[360px]/composer:w-28')
+      expect(screen.getAllByRole('radio')).toHaveLength(2)
+    })
+
+    it('hides only inline shortcuts and leaves surface menu actions reachable while streaming', () => {
+      const onPlan = vi.fn()
+      const onFolder = vi.fn()
+      renderInput({
+        chatStatus: 'streaming',
+        surfaceControls: <button>Inline plan</button>,
+        menuControls: <button onClick={onPlan}>Menu plan</button>,
+        menuWorkspace: <button onClick={onFolder}>Attach folder</button>,
+      })
+      const hiddenClass = '@max-[520px]/composer:hidden'
+      expect(screen.getByText('Inline plan').parentElement).toHaveClass(hiddenClass)
+      for (const name of ['Menu plan', 'Attach folder']) {
+        const action = screen.getByRole('button', { name })
+        expect(action.closest('[class*="composer:hidden"]')).toBeNull()
+        fireEvent.click(action)
+      }
+      expect(onPlan).toHaveBeenCalledOnce()
+      expect(onFolder).toHaveBeenCalledOnce()
+      const shortcuts = document.querySelector('.opacity-50.pointer-events-none')
+      expect(shortcuts).toHaveClass(hiddenClass)
+      expect(screen.getByTestId('stop-message-button')).toHaveClass('shrink-0')
     })
   })
 
@@ -858,7 +1286,7 @@ describe('ChatInput', () => {
   // all. A document can still go into the prompt as text.
   describe('document attachments', () => {
     const attachDocs = () =>
-      screen.getByText('Add documents or files').closest('button')!
+      screen.getByText('Upload or add files').closest('button')!
 
     it('stay available for a model that cannot call tools', () => {
       selectedModelOverride = {

@@ -1,5 +1,7 @@
 import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { isCoworkThread } from '@/lib/threadMode'
+import { updateThreadProject } from '@/lib/threadProject'
 import { useIsThreadActive } from '@/hooks/useAppState'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useMessages } from '@/hooks/useMessages'
@@ -31,7 +33,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
 
-const ThreadItem = memo(
+export const ThreadItem = memo(
   ({
     thread,
     isMobile,
@@ -43,7 +45,6 @@ const ThreadItem = memo(
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
-    const updateThread = useThreads((state) => state.updateThread)
     const getFolderById = useThreadManagement().getFolderById
     const { folders } = useThreadManagement()
     const { t } = useTranslation()
@@ -121,19 +122,8 @@ const ThreadItem = memo(
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
-      if (project && updateThread) {
-        const projectMetadata = {
-          id: project.id,
-          name: project.name,
-          updated_at: project.updated_at,
-        }
-
-        updateThread(threadId, {
-          metadata: {
-            ...thread.metadata,
-            project: projectMetadata,
-          },
-        })
+      if (project) {
+        updateThreadProject(threadId, project)
 
         toast.success(`Thread assigned to "${project.name}" successfully`)
       }
@@ -168,7 +158,7 @@ const ThreadItem = memo(
               )}
           </Link>
           :
-          <SidebarMenuButton asChild isActive={isSelected}>
+          <SidebarMenuButton asChild isActive={isSelected} className="data-[active=true]:bg-sidebar-foreground/10 dark:data-[active=true]:bg-sidebar-accent">
             <Link to="/threads/$threadId" params={{ threadId: thread.id }} data-testid={`thread-row-${thread.id}`}>
               {isActive && (
                 <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
@@ -234,12 +224,7 @@ const ThreadItem = memo(
                   onClick={(e) => {
                     e.stopPropagation()
                     const projectName = thread.metadata?.project?.name
-                    updateThread(thread.id, {
-                      metadata: {
-                        ...thread.metadata,
-                        project: undefined,
-                      },
-                    })
+                    updateThreadProject(thread.id, undefined)
                     toast.success(
                       `Thread removed from "${projectName}" successfully`
                     )
@@ -304,7 +289,13 @@ function ThreadList({ threads, currentProjectId }: ThreadListProps) {
 
   return (
     <>
-      {sortedThreads.map((thread) => (
+      {sortedThreads.map((thread) => isCoworkThread(thread) ? (
+        <SidebarMenuItem key={thread.id}>
+          <Link to="/cowork/$sessionId" params={{ sessionId: thread.id }} data-testid={`thread-row-${thread.id}`} className="mb-2 block max-w-full overflow-hidden rounded-lg border bg-card px-4 py-4 hover:bg-secondary/30">
+            <span className="block truncate">{thread.title}</span>
+          </Link>
+        </SidebarMenuItem>
+      ) : (
         <ThreadItem
           key={thread.id}
           thread={thread}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
@@ -438,7 +438,7 @@ describe('MessageItem', () => {
     expect(screen.getByTestId('token-speed').getAttribute('data-streaming')).toBe('true')
   })
 
-  it('renders user image attachment', () => {
+  it('renders user image attachment and previews it in a portalled, dismissible dialog', async () => {
     render(
       <MessageItem
         message={
@@ -461,6 +461,12 @@ describe('MessageItem', () => {
     )
     const img = screen.getByAltText('pic.png') as HTMLImageElement
     expect(img.src).toContain('blob:foo')
+    fireEvent.click(img)
+    const dialog = screen.getByRole('dialog', { name: 'pic.png' })
+    expect(dialog.parentElement).toBe(document.body)
+    expect(dialog).toHaveClass('z-(--layer-modal)')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('renders a CoT block containing reasoning', () => {

@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 
+/** Shared height of Jan's draggable titlebar and caption-control strip. */
+export const TITLEBAR_HEIGHT = 60
+
 export type ButtonId = 'minimize' | 'maximize' | 'close'
 export type TitlebarLayout = { left: ButtonId[]; right: ButtonId[] }
 

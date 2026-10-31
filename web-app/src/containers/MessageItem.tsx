@@ -38,6 +38,7 @@ import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
@@ -72,6 +73,8 @@ export type MessageItemProps = {
   /** Suppress the per-message action buttons (regenerate/continue/edit/...),
    * e.g. while a continue is pending and re-running would be ambiguous. */
   hideActions?: boolean
+  /** Surface-specific content (e.g. produced files), above message actions. */
+  beforeFooter?: React.ReactNode
   highlightedPrefix?: string | null
 }
 
@@ -92,6 +95,7 @@ export const MessageItem = memo(
     status,
     isAnimating,
     hideActions,
+    beforeFooter,
     reasoningContainerRef,
     isReasoningAtBottom,
     onReasoningScroll,
@@ -702,8 +706,10 @@ export const MessageItem = memo(
             actions on the right, with copy last so it stays at the bubble's edge.
             Only copy on the last message is always visible; the rest appear on
             hover or focus. */}
+        {beforeFooter}
+
         {message.role === 'user' && !hideActions && (
-          <div className="-mr-1.5 mt-0.5 flex items-center justify-end gap-2.5 text-muted-foreground text-xs">
+          <div className="-mr-1.5 mt-0.5 flex items-center justify-end gap-2.5 text-muted-foreground text-sm">
             <time
               className={cn('text-muted-foreground', hoverReveal)}
               dateTime={createdAtIso}
@@ -763,7 +769,7 @@ export const MessageItem = memo(
             The hidden controls keep their space (opacity, not display) so the
             row never shifts as the pointer moves in and out. */}
         {message.role === 'assistant' && !hideActions && (
-          <div className="@container -ml-1.5 mt-1.5 flex items-center gap-2.5 text-muted-foreground text-xs">
+          <div className="@container -ml-1.5 mt-1.5 flex items-center gap-2.5 text-muted-foreground text-sm">
             <div
               className={cn(
                 'flex items-center',
@@ -844,20 +850,19 @@ export const MessageItem = memo(
           </div>
         )}
 
-        {/* Image Preview Dialog */}
-        {previewImage && (
-          <div
-            className="fixed inset-0 z-100 bg-black/50 backdrop-blur-md flex items-center justify-center cursor-pointer"
-            onClick={() => setPreviewImage(null)}
-          >
-            <img
-              src={previewImage.url}
-              alt={previewImage.filename || 'Preview'}
-              className="max-h-[90vh] max-w-[90vw] object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
+        {/* Escape the transcript's scroll/animation stacking contexts. */}
+        <Dialog open={!!previewImage} onOpenChange={(open) => { if (!open) setPreviewImage(null) }}>
+          {previewImage && (
+            <DialogContent className="w-auto max-w-[90vw] border-0 bg-transparent p-0 shadow-none sm:max-w-[90vw] lg:max-w-[90vw] xl:max-w-[90vw]">
+              <DialogTitle className="sr-only">{previewImage.filename || 'Image preview'}</DialogTitle>
+              <img
+                src={previewImage.url}
+                alt={previewImage.filename || 'Preview'}
+                className="max-h-[80vh] max-w-full object-contain"
+              />
+            </DialogContent>
+          )}
+        </Dialog>
       </div>
     )
   },
@@ -877,6 +882,7 @@ export const MessageItem = memo(
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.beforeFooter === nextProps.beforeFooter &&
       prevProps.versionInfo?.index === nextProps.versionInfo?.index &&
       prevProps.versionInfo?.count === nextProps.versionInfo?.count
     )

@@ -1,10 +1,8 @@
-import { useState } from 'react'
 import { DownloadManagement } from '@/containers/DownloadManegement'
-import { NavChats } from './NavChats'
-import { NavCowork } from './NavCowork'
+import { NavCoworkTools } from './NavCoworkTools'
+import { NavHistory } from './NavHistory'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
-import { NavTabs } from './NavTabs'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 
 import {
@@ -16,19 +14,9 @@ import {
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
-import { useLocation } from '@tanstack/react-router'
-import { isCoworkRoute, route } from '@/constants/routes'
-import { isCoworkEnabled } from '@/lib/version'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
-  const { pathname } = useLocation()
-  const inSettings =
-    pathname === route.settings.index || pathname.startsWith('/settings/')
-  const [lastSurfacePath, setLastSurfacePath] = useState(pathname)
-  if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
-  const surfacePath = inSettings ? lastSurfacePath : pathname
-  const isCowork = isCoworkRoute(surfacePath) && isCoworkEnabled()
   // Right-align the header and hide "Jan" when native controls own the top-left
   // (macOS, or a Linux DE placing buttons left).
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
@@ -44,16 +32,14 @@ export function LeftSidebar() {
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>
-          <NavTabs surfacePath={surfacePath} />
-          {isCowork ? <NavCowork /> : <NavMain />}
+          <NavMain
+            afterSearch={<NavCoworkTools section="artifacts" />}
+            beforeSettings={<NavCoworkTools />}
+          />
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
-          {!isCowork && (
-            <>
-              <NavProjects />
-              <NavChats />
-            </>
-          )}
+          <NavProjects />
+          <NavHistory />
         </SidebarContent>
         <SidebarRail />
       </Sidebar>

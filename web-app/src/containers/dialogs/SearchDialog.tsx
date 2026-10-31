@@ -113,6 +113,8 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const searchResults = useMemo(() => {
     if (!searchQuery) return { withProject: [], withoutProject: [] }
 
+    // Chat and Cowork conversations are searched together; a Cowork hit opens
+    // its own view through the /threads/$threadId redirect.
     const filteredThreads = getFilteredThreads(searchQuery)
     const withProject: Array<{
       thread: Thread

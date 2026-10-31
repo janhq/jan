@@ -8,9 +8,9 @@ interface AssistantState {
   currentAssistant: Assistant | undefined
   loading: boolean
   defaultAssistantId: string
-  addAssistant: (assistant: Assistant) => void
-  updateAssistant: (assistant: Assistant) => void
-  deleteAssistant: (id: string) => void
+  addAssistant: (assistant: Assistant) => Promise<void>
+  updateAssistant: (assistant: Assistant) => Promise<void>
+  deleteAssistant: (id: string) => Promise<void>
   setCurrentAssistant: (
     assistant: Assistant | undefined,
     saveToStorage?: boolean
@@ -112,62 +112,40 @@ const getInitialAssistantState = () => {
 
 export const useAssistant = create<AssistantState>((set, get) => ({
   ...getInitialAssistantState(),
-  addAssistant: (assistant) => {
-    set({ assistants: [...get().assistants, assistant] })
-    getServiceHub()
-      .assistants()
-      .createAssistant(assistant as unknown as CoreAssistant)
-      .catch((error) => {
-        console.error('Failed to create assistant:', error)
-      })
+  addAssistant: async (assistant) => {
+    await getServiceHub().assistants().createAssistant(assistant as unknown as CoreAssistant)
+    set((state) => ({
+      assistants: [...state.assistants.filter((a) => a.id !== assistant.id), assistant],
+    }))
   },
-  updateAssistant: (assistant) => {
+  updateAssistant: async (assistant) => {
+    await getServiceHub().assistants().createAssistant(assistant as unknown as CoreAssistant)
+    set((state) => ({
+      assistants: state.assistants.map((a) => a.id === assistant.id ? assistant : a),
+      currentAssistant: state.currentAssistant?.id === assistant.id
+        ? assistant : state.currentAssistant,
+    }))
+  },
+  deleteAssistant: async (id) => {
+    const assistant = get().assistants.find((a) => a.id === id)
+    if (!assistant) return
+    await getServiceHub().assistants().deleteAssistant(assistant as unknown as CoreAssistant)
+    // Read fresh state after persistence: selection may have changed while waiting.
     const state = get()
+    const assistants = state.assistants.filter((a) => a.id !== id)
+    const defaultId = state.defaultAssistantId === id
+      ? (assistants.find((a) => a.id === defaultAssistant.id)?.id || '')
+      : state.defaultAssistantId
+    const fallback = assistants.find((a) => a.id === defaultId)
+      || assistants.find((a) => a.id === defaultAssistant.id)
+    const wasCurrent = state.currentAssistant?.id === id
     set({
-      assistants: state.assistants.map((a) =>
-        a.id === assistant.id ? assistant : a
-      ),
-      // Update currentAssistant if it's the same assistant being updated
-      currentAssistant:
-        state.currentAssistant?.id === assistant.id
-          ? assistant
-          : state.currentAssistant,
+      assistants,
+      defaultAssistantId: defaultId,
+      currentAssistant: wasCurrent ? fallback : state.currentAssistant,
     })
-    // Create assistant already cover update logic
-    getServiceHub()
-      .assistants()
-      .createAssistant(assistant as unknown as CoreAssistant)
-      .catch((error) => {
-        console.error('Failed to update assistant:', error)
-      })
-  },
-  deleteAssistant: (id) => {
-    const state = get()
-    getServiceHub()
-      .assistants()
-      .deleteAssistant(
-        state.assistants.find((e) => e.id === id) as unknown as CoreAssistant
-      )
-      .catch((error) => {
-        console.error('Failed to delete assistant:', error)
-      })
-
-    // Check if we're deleting the current or default assistant
-    const wasCurrentAssistant = state.currentAssistant?.id === id
-    const wasDefaultAssistant = state.defaultAssistantId === id
-
-    set({ assistants: state.assistants.filter((a) => a.id !== id) })
-
-    // If the deleted assistant was current, fallback to default and update localStorage
-    if (wasCurrentAssistant) {
-      set({ currentAssistant: state.assistants.find(a => a.id === defaultAssistant.id) })
-      setLastUsedAssistantId(defaultAssistant.id)
-    }
-
-    // If the deleted assistant was the default, reset to the built-in default
-    if (wasDefaultAssistant) {
-      setDefaultAssistantId(defaultAssistant.id)
-    }
+    if (wasCurrent) setLastUsedAssistantId(fallback?.id || '')
+    if (state.defaultAssistantId === id) setDefaultAssistantId(defaultId)
   },
   setDefaultAssistant: (id) => {
     const newAssistant = get().assistants?.find(a => a.id === id)
@@ -194,7 +172,9 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       assistants.forEach((a) => (a.id = a.id?.toString())) // new String("id") !== "id"
       const lastUsedId = getLastUsedAssistantId(assistants)
       const lastUsedAssist = assistants.find((a) => a.id === lastUsedId)
-      const defaultAssistantId = getDefaultAssistantId() || ''
+      const storedDefaultId = getDefaultAssistantId() || ''
+      const defaultAssistantId = assistants.some((a) => a.id === storedDefaultId) ? storedDefaultId : ''
+      if (storedDefaultId !== defaultAssistantId) setDefaultAssistantId(defaultAssistantId)
       const defaultAssistant = assistants.find((a) => a.id === defaultAssistantId)
       set({
         assistants,

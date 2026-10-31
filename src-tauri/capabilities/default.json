@@ -12,6 +12,7 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "shell:allow-spawn",
     "shell:allow-open",
     "core:app:allow-set-app-theme",

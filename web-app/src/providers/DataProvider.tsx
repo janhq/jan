@@ -19,6 +19,7 @@ import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { sweepThreadWorkspaces } from '@/lib/agentTools'
+import { isCoworkThread } from '@/lib/threadMode'
 import { invoke } from '@tauri-apps/api/core'
 import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
@@ -315,7 +316,13 @@ export function DataProvider() {
           // Leftovers then wait for the next startup that does see threads.
           if (!sweptWorkspaces.current && threads.length > 0) {
             sweptWorkspaces.current = true
-            sweepThreadWorkspaces(threads.map((t) => t.id))
+            // Cowork conversations keep their sandboxes in the session scope, so
+            // the thread scope's keep-list is chat threads only. (The session
+            // sweep is deliberately not run here: it must wait for the Cowork
+            // migration to settle. See isCoworkMigrationSettled.)
+            sweepThreadWorkspaces(
+              threads.filter((t) => !isCoworkThread(t)).map((t) => t.id)
+            )
           }
         })
         .catch(() => {

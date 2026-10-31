@@ -11,6 +11,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import React from 'react'
+import { ModalLayerContext } from '@/components/ui/overlay-layer'
 import { ModelCombobox } from '../ModelCombobox'
 
 // Mock translation hook
@@ -67,6 +68,16 @@ describe('ModelCombobox', () => {
   afterAll(() => {
     bcrSpy?.mockRestore()
     scrollSpy?.mockRestore()
+  })
+
+  it('portals its dialog-owned menu above modals without an unbounded z-index', async () => {
+    render(<ModalLayerContext.Provider value={true}><ModelCombobox {...defaultProps} /></ModalLayerContext.Provider>)
+    fireEvent.click(screen.getByRole('textbox'))
+    await waitFor(() => expect(document.querySelector('[data-dropdown="model-combobox"]')).toBeInTheDocument())
+    const dropdown = document.querySelector('[data-dropdown="model-combobox"]')!
+    expect(dropdown.parentElement).toBe(document.body)
+    expect(dropdown).toHaveClass('z-(--layer-modal-floating)')
+    expect(dropdown).not.toHaveClass('z-9999')
   })
 
   it('renders input field with default placeholder', () => {

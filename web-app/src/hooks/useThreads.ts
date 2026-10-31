@@ -8,7 +8,16 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
-import { cleanupThreadWorkspace } from '@/lib/agentTools'
+import {
+  cleanupThreadWorkspace,
+  cancelAgentThreadBash,
+  stopAgentSessionMonitors,
+} from '@/lib/agentTools'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { abortRun } from '@/lib/coworkRunner'
+import { dropMonitorLane } from '@/lib/coworkMonitor'
+import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -36,9 +45,10 @@ type ThreadState = {
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateThreadAssistantIfUnchanged: (threadId: string, expected: Assistant, parameters: Record<string, unknown>) => Promise<Assistant | undefined>
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
-  deleteAllThreadsByProject: (projectId: string) => void
+  deleteAllThreadsByProject: (projectId: string) => Promise<void>
   searchIndex: Fzf<Thread[]> | null
 }
 
@@ -85,10 +95,11 @@ const cleanupThreadCache = async (threadId: string) => {
 // vector DB collection, its saved prompt cache, and its ephemeral agent
 // sandbox. Fire-and-forget, since every caller runs inside a `set` reducer;
 // each logs its own failures.
-const cleanupThreadArtifacts = (threadId: string) => {
+const cleanupThreadArtifacts = (threadId: string, thread?: Thread) => {
   cleanupVectorDB(threadId)
   cleanupThreadCache(threadId)
-  cleanupThreadWorkspace(threadId)
+  // Cowork conversations keep their sandbox in the session scope.
+  cleanupThreadWorkspace(threadId, workspaceScopeFor(thread))
 }
 
 export const useThreads = create<ThreadState>()((set, get) => ({
@@ -197,7 +208,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useAgentMode.getState().removeThread(threadId)
       useChatSessions.getState().removeSession(threadId)
       useAppState.getState().clearThreadState(threadId)
-      cleanupThreadArtifacts(threadId)
+      cleanupThreadArtifacts(threadId, state.threads[threadId])
       getServiceHub().threads().deleteThread(threadId)
 
       return {
@@ -221,14 +232,16 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const threadsToKeepIds = allThreadIds.filter(
         (threadId) =>
           state.threads[threadId].isFavorite ||
-          state.threads[threadId].metadata?.project
+          state.threads[threadId].metadata?.project ||
+          isCoworkThread(state.threads[threadId])
       )
 
       // Identify threads to delete (non-favorites AND no project metadata)
       const threadsToDeleteIds = allThreadIds.filter(
         (threadId) =>
           !state.threads[threadId].isFavorite &&
-          !state.threads[threadId].metadata?.project
+          !state.threads[threadId].metadata?.project &&
+          !isCoworkThread(state.threads[threadId])
       )
 
       // Delete threads and clean up their out-of-store artifacts. As in
@@ -238,7 +251,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
+        cleanupThreadArtifacts(threadId, state.threads[threadId])
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -272,7 +285,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
+        cleanupThreadArtifacts(threadId, state.threads[threadId])
         getServiceHub().threads().deleteThread(threadId)
       })
 
@@ -285,41 +298,85 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }
     })
   },
-  deleteAllThreadsByProject: (projectId) => {
-    set((state) => {
-      const allThreadIds = Object.keys(state.threads)
-
-      // Identify threads belonging to this project
-      const threadsToDeleteIds = allThreadIds.filter(
-        (threadId) =>
-          state.threads[threadId].metadata?.project?.id === projectId
-      )
-
-      threadsToDeleteIds.forEach((threadId) => {
-        useChatSessions.getState().removeSession(threadId)
-        useAppState.getState().clearThreadState(threadId)
-        cleanupThreadArtifacts(threadId)
-        getServiceHub().threads().deleteThread(threadId)
-      })
-
-      // Keep threads that don't belong to this project
-      const remainingThreads = allThreadIds
-        .filter((threadId) => !threadsToDeleteIds.includes(threadId))
-        .reduce(
-          (acc, threadId) => {
-            acc[threadId] = state.threads[threadId]
-            return acc
-          },
-          {} as Record<string, Thread>
-        )
-
-      return {
-        threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID && t.title), {
-          selector: (item: Thread) => item.title ?? '',
-        }),
-      }
+  deleteAllThreadsByProject: async (projectId) => {
+    // Wait before mutating sessions so their removals cannot precede the sync subscription.
+    const sync = await import('@/lib/coworkSync')
+    await sync.startCoworkSync()
+    // The session is authoritative even while its mirrored thread metadata is
+    // waiting for the persistence debounce (including moves out of a project).
+    const sessions = useCoworkSessions.getState().sessions
+    const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+    const projectThreads = Object.values(get().threads).filter((thread) => {
+      const session = sessionsById.get(thread.id)
+      return (session && session.unavailable !== 'id-collision' ? session.project?.id : thread.metadata?.project?.id) === projectId
     })
+    // Sessions can exist before their first write has mirrored them into threads.
+    const collisionIds = new Set(sessions.filter(
+      (session) => session.project?.id === projectId && session.unavailable === 'id-collision'
+    ).map((session) => session.id))
+    const coworkIds = new Set([
+      ...projectThreads.filter(isCoworkThread).map((thread) => thread.id),
+      ...sessions.filter((session) => session.project?.id === projectId && session.unavailable !== 'id-collision').map((session) => session.id),
+    ])
+
+    // Reconcile each durable success immediately, even if a later delete fails.
+    const reconcile = (id: string, cowork: boolean) => {
+      const thread = get().threads[id]
+      useAgentMode.getState().removeThread(id)
+      useChatSessions.getState().removeSession(id)
+      useAppState.getState().clearThreadState(id)
+      if (!cowork) cleanupThreadArtifacts(id, thread)
+      set((state) => {
+        const remainingThreads = { ...state.threads }
+        delete remainingThreads[id]
+        return {
+          threads: remainingThreads,
+          currentThreadId: state.currentThreadId === id ? undefined : state.currentThreadId,
+          searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID && t.title), {
+            selector: (item: Thread) => item.title ?? '',
+          }),
+        }
+      })
+    }
+    const failures: unknown[] = []
+    for (const thread of projectThreads) {
+      if (coworkIds.has(thread.id)) continue
+      try {
+        await getServiceHub().threads().deleteThread(thread.id)
+        reconcile(thread.id, false)
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+
+    // Collision placeholders are separate records from their same-ID chats.
+    // Removing one via sync preserves the real chat; it must not suppress the
+    // ordinary project chat deletion above or cancel that chat's running tools.
+    for (const id of new Set([...coworkIds, ...collisionIds])) {
+      try {
+        if (coworkIds.has(id)) {
+          abortRun(id)
+          void cancelAgentThreadBash(id)
+          void stopAgentSessionMonitors(id)
+          dropMonitorLane(id)
+          useCoworkRun.getState().clearMonitors(id)
+        }
+        useCoworkSessions.getState().deleteSession(id)
+        // Sync owns persistence and workspace cleanup. Flush one removal at a
+        // time so a later failure cannot strand an already-deleted thread.
+        await sync.flushCoworkDeletes()
+        if (coworkIds.has(id)) reconcile(id, true)
+      } catch (error) {
+        failures.push(error)
+        // Sync's flush reports shared pending-delete failures. Leave remaining
+        // sessions untouched for retry rather than attributing that failure to
+        // another session's deletion.
+        break
+      }
+    }
+    if (failures.length) {
+      throw new AggregateError(failures, failures.map(String).join('; '))
+    }
   },
   unstarAllThreads: () => {
     set((state) => {
@@ -396,6 +453,23 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         })
         return createdThread
       })
+  },
+  // Sampling saves must never resolve "current thread" after an await. The
+  // object identity also guards a newer selection of the same assistant ID.
+  updateThreadAssistantIfUnchanged: async (threadId, expected, parameters) => {
+    const thread = get().threads[threadId]
+    if (thread?.assistants?.[0] !== expected) return undefined
+    const assistant = { ...expected, parameters, model: thread.model }
+    const updatedThread = { ...thread, assistants: [assistant], updated: Date.now() / 1000 }
+    await getServiceHub().threads().updateThread(updatedThread)
+    if (get().threads[threadId]?.assistants?.[0] !== expected) return undefined
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [threadId]: { ...state.threads[threadId], assistants: [assistant] },
+      },
+    }))
+    return assistant
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {

@@ -144,6 +144,15 @@ impl ResumeRequest {
         Some(Self { target, fork })
     }
 }
+/// Whether a saved thread was started in the desktop's Cowork mode
+/// (`metadata.mode == "cowork"`; absent means chat).
+pub fn is_cowork_thread(t: &serde_json::Value) -> bool {
+    t.get("metadata")
+        .and_then(|m| m.get("mode"))
+        .and_then(|v| v.as_str())
+        == Some("cowork")
+}
+
 /// Recency sort key for a saved thread (`updated`, falling back to `created`).
 pub fn thread_recency(t: &serde_json::Value) -> f64 {
     t.get("updated")
@@ -179,6 +188,23 @@ pub fn find_resume_thread(
     target: &ResumeTarget,
 ) -> Result<serde_json::Value, String> {
     let mut threads = list_threads_in(base)?;
+    // Cowork conversations keep their transcript in a desktop-only sidecar, so
+    // the CLI cannot resume or fork them. `Latest` skips them; naming one by id
+    // says why it is refused instead of resuming an empty thread.
+    if let ResumeTarget::Id(id) = target {
+        if let Some(t) = threads.iter().find(|t| {
+            is_cowork_thread(t)
+                && t.get("id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|full| full == id || full.starts_with(id.as_str()))
+        }) {
+            let full = t.get("id").and_then(|v| v.as_str()).unwrap_or(id);
+            return Err(format!(
+                "thread '{full}' is a Cowork conversation and can only be resumed in the Jan desktop app"
+            ));
+        }
+    }
+    threads.retain(|t| !is_cowork_thread(t));
     match target {
         ResumeTarget::Latest => {
             sort_threads_recent(&mut threads);
@@ -4345,6 +4371,28 @@ mod tests {
         assert!(find_resume_thread(base, &ResumeTarget::Id("bbbb".into()))
             .unwrap_err()
             .contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_resume_thread_skips_and_refuses_cowork_threads() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        seed_thread(base, "chat1111", 100.0);
+        // A newer Cowork thread must not win `Latest`.
+        let cw = "cowk2222";
+        std::fs::create_dir_all(get_thread_dir(base, cw).unwrap()).unwrap();
+        std::fs::write(
+            get_thread_metadata_path(base, cw).unwrap(),
+            serde_json::json!({"id": cw, "updated": 900.0, "metadata": {"mode": "cowork"}}).to_string(),
+        )
+        .unwrap();
+
+        let latest = find_resume_thread(base, &ResumeTarget::Latest).unwrap();
+        assert_eq!(latest["id"], "chat1111");
+
+        let err = find_resume_thread(base, &ResumeTarget::Id("cowk".into())).unwrap_err();
+        assert!(err.contains("Cowork"), "{err}");
+        assert!(resolve_resume(base, &ResumeRequest::fork(ResumeTarget::Id(cw.into()))).is_err());
     }
 
     #[test]

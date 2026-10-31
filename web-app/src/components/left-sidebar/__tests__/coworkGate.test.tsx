@@ -1,81 +1,103 @@
 import '@testing-library/jest-dom/vitest'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 const channel = vi.hoisted(() => ({ cowork: false }))
-const navigation = vi.hoisted(() => ({ pathname: '/' }))
 
 vi.mock('@/lib/version', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/version')>()),
   isCoworkEnabled: () => channel.cowork,
 }))
 vi.mock('@tanstack/react-router', () => ({
-  useLocation: () => ({ pathname: navigation.pathname }),
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a {...props} href={to}>
-      {children}
-    </a>
-  ),
+  useNavigate: () => vi.fn(),
+  Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
+  useLocation: () => ({ pathname: '/' }),
 }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-vi.mock('@/hooks/useLeftPanel', () => ({
-  useLeftPanel: () => ({ open: true }),
+vi.mock('@/hooks/useLeftPanel', () => ({ useLeftPanel: () => ({ open: true }) }))
+vi.mock('@/stores/titlebar-layout-store', () => ({ useTitlebarLayout: () => 0 }))
+vi.mock('@/containers/DownloadManegement', () => ({ DownloadManagement: () => null }))
+vi.mock('@/containers/dialogs/SkillsManagerDialog', () => ({
+  default: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    open ? <div role="dialog"><button onClick={() => onOpenChange(false)}>Close skills</button></div> : null,
 }))
-vi.mock('@/hooks/useThreads', () => ({
-  useThreads: (
-    selector: (state: { threads: Record<string, unknown> }) => unknown
-  ) => selector({ threads: {} }),
-}))
-vi.mock('@/stores/titlebar-layout-store', () => ({
-  useTitlebarLayout: () => 0,
-}))
-vi.mock('@/containers/DownloadManegement', () => ({
-  DownloadManagement: () => null,
-}))
-vi.mock('../NavCowork', () => ({ NavCowork: () => <div>Cowork sessions</div> }))
-vi.mock('../NavMain', () => ({ NavMain: () => <div>Chat navigation</div> }))
-vi.mock('../NavChats', () => ({ NavChats: () => <div>Chat threads</div> }))
-vi.mock('../NavProjects', () => ({ NavProjects: () => null }))
+vi.mock('@/hooks/useThreadManagement', () => ({ useThreadManagement: () => ({ addFolder: vi.fn() }) }))
+vi.mock('@/hooks/useSearchDialog', () => ({ useSearchDialog: () => ({ open: false, setOpen: vi.fn() }) }))
+vi.mock('@/hooks/useProjectDialog', () => ({ useProjectDialog: () => ({ open: false, setOpen: vi.fn() }) }))
+vi.mock('@/containers/dialogs/AddProjectDialog', () => ({ default: () => null }))
+vi.mock('@/containers/dialogs/SearchDialog', () => ({ SearchDialog: () => null }))
+vi.mock('../NavHistory', () => ({ NavHistory: () => <div>Chats and tasks</div> }))
+vi.mock('../NavProjects', () => ({ NavProjects: () => <div>Projects</div> }))
 vi.mock('@/components/ui/sidebar', () => {
   const Box = ({ children }: { children: ReactNode }) => <div>{children}</div>
   return {
     Sidebar: Box,
     SidebarContent: Box,
     SidebarHeader: Box,
+    SidebarMenu: ({ children }: { children: ReactNode }) => <ul>{children}</ul>,
+    SidebarMenuItem: ({ children }: { children: ReactNode }) => <li>{children}</li>,
+    SidebarMenuButton: (props: ComponentProps<'button'> & { asChild?: boolean; isActive?: boolean }) => {
+      const { asChild, isActive, ...buttonProps } = props
+      void asChild
+      void isActive
+      return <button {...buttonProps} />
+    },
     SidebarTrigger: () => null,
     SidebarRail: () => null,
   }
 })
+vi.mock('@/components/animated-icon/animated-lucide', () => ({
+  AnimatedLucideIcon: () => null,
+}))
 
 import { LeftSidebar } from '..'
 
 beforeEach(() => {
   channel.cowork = false
-  navigation.pathname = '/'
 })
 
-it('keeps a Cowork URL on the chat surface on builds that do not ship Cowork', () => {
-  navigation.pathname = '/cowork'
+it('renders one sidebar: navigation, projects and a single history, with no tab switcher', () => {
   render(<LeftSidebar />)
-
-  expect(screen.getByText('Chat navigation')).toBeInTheDocument()
-  expect(screen.getByText('Chat threads')).toBeInTheDocument()
-  expect(screen.queryByText('Cowork sessions')).not.toBeInTheDocument()
+  expect(screen.getByText('common:newChat')).toBeInTheDocument()
+  expect(screen.getByText('Projects')).toBeInTheDocument()
+  expect(screen.getByText('Chats and tasks')).toBeInTheDocument()
   expect(screen.queryByRole('link', { name: 'common:cowork' })).not.toBeInTheDocument()
-  // The switcher has a single surface left, so it is not rendered at all.
   expect(screen.queryByRole('link', { name: 'common:home' })).not.toBeInTheDocument()
 })
 
-it('shows the Cowork surface and the tab switcher where Cowork ships', () => {
-  channel.cowork = true
-  navigation.pathname = '/cowork'
+it('hides the Cowork-only entries where Cowork is not available', () => {
   render(<LeftSidebar />)
+  expect(screen.queryByTestId('nav-artifacts')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('nav-customize')).not.toBeInTheDocument()
+})
 
-  expect(screen.getByText('Cowork sessions')).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'common:cowork' })).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'common:home' })).toBeInTheDocument()
-  expect(screen.queryByText('Chat threads')).not.toBeInTheDocument()
+it('shows Artifacts and Skills where Cowork ships, without replacing the rest', () => {
+  channel.cowork = true
+  render(<LeftSidebar />)
+  expect(screen.getByTestId('nav-artifacts')).toBeInTheDocument()
+  expect(screen.getByTestId('nav-customize')).toHaveTextContent('common:skills')
+  expect(screen.queryByText('common:customize')).not.toBeInTheDocument()
+  const artifacts = screen.getByTestId('nav-artifacts')
+  expect(screen.getByText('common:search').compareDocumentPosition(artifacts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(artifacts.compareDocumentPosition(screen.getByText('common:hub')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.getByText('common:newChat')).toBeInTheDocument()
+  expect(screen.getByText('Chats and tasks')).toBeInTheDocument()
+})
+
+it('inserts Skills directly before Settings as a menu row and opens its dialog', () => {
+  channel.cowork = true
+  render(<LeftSidebar />)
+  const skills = screen.getByRole('button', { name: 'common:skills' })
+  const row = skills.closest('li')!
+  expect(row.nextElementSibling).toHaveTextContent('common:settings')
+  expect(row.parentElement?.tagName).toBe('UL')
+  expect(document.querySelector('ul ul')).not.toBeInTheDocument()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  fireEvent.click(skills)
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Close skills'))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })

@@ -89,9 +89,11 @@ export function CoworkWorkspacePill({
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="ghost"
-          size={folderName ? 'xs' : 'icon-xs'}
-          className="shrink-0 text-muted-foreground"
+          variant={folderName ? 'outline' : 'ghost'}
+          size={folderName ? 'sm' : 'icon-xs'}
+          className={folderName
+            ? 'h-9 max-w-64 shrink-0 gap-2 rounded-full border-border bg-background px-4 text-muted-foreground shadow-none hover:bg-muted has-[>svg]:px-4'
+            : 'shrink-0 text-muted-foreground'}
           aria-label={
             folderName
               ? t('common:workspace.a11yWithFolder', { folder: folderName })
@@ -100,11 +102,10 @@ export function CoworkWorkspacePill({
         >
           {folderName ? (
             <>
-              <Folder className="size-3.5 shrink-0" />
-              <span className="max-w-[120px] truncate text-foreground">
+              <Folder className="size-4 shrink-0" />
+              <span className="max-w-[160px] truncate">
                 {folderName}
               </span>
-              <PencilLine className="size-3 shrink-0 text-muted-foreground/70" />
             </>
           ) : (
             <FolderPlus className="size-[18px] shrink-0" />

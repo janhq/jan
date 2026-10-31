@@ -1,6 +1,7 @@
 import { Handshake } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { basenameOf } from '@/lib/coworkPreview'
+import { COWORK_IDEAS } from '@/lib/coworkIdeas'
 
 type Props = {
   /** Attached project folder, or null when nothing is attached. */
@@ -10,7 +11,7 @@ type Props = {
   onPick: (text: string) => void
 }
 
-const EXAMPLE_KEYS = ['first', 'second', 'third'] as const
+const EXAMPLE_KEYS = COWORK_IDEAS
 
 /**
  * The first thing a new session shows.
@@ -35,7 +36,7 @@ export function CoworkEmptyState({ folder, onPick }: Props) {
     // back by -mx-2 so their labels line up under the heading while the hover
     // target keeps its breathing room.
     <div className="absolute inset-0 flex flex-col justify-end pb-3">
-      <div className="mx-auto w-full px-6 md:w-4/5 xl:w-4/6">
+      <div className="mx-auto w-full max-w-[880px] px-4 md:px-6">
         <div className="animate-in fade-in-0 duration-500 motion-reduce:animate-none">
           <Handshake size={20} className="text-primary" aria-hidden />
           <h1 className="mt-3 font-studio text-2xl font-medium tracking-tight">
