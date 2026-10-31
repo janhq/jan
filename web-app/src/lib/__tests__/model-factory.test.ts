@@ -118,6 +118,38 @@ describe('ModelFactory', () => {
       )
     })
 
+    it.each([
+      [
+        'https://api.minimax.io/anthropic',
+        'https://api.minimax.io/anthropic/v1',
+      ],
+      [
+        'https://api.minimaxi.com/anthropic',
+        'https://api.minimaxi.com/anthropic/v1',
+      ],
+    ])(
+      'derives the internal Anthropic version path for %s',
+      async (baseUrl, expectedSdkBaseUrl) => {
+        const { createAnthropic } = await import('@ai-sdk/anthropic')
+        vi.mocked(createAnthropic).mockClear()
+        const provider: ProviderObject = {
+          provider: 'minimax-anthropic',
+          api_type: 'anthropic',
+          api_key: 'test-api-key',
+          base_url: baseUrl,
+          models: [],
+          settings: [],
+          active: true,
+        }
+
+        await ModelFactory.createModel('MiniMax-M3', provider)
+
+        expect(createAnthropic).toHaveBeenCalledWith(
+          expect.objectContaining({ baseURL: expectedSdkBaseUrl })
+        )
+      }
+    )
+
     it('routes google and gemini through the native @ai-sdk/google client and strips the /openai suffix', async () => {
       const { createGoogleGenerativeAI } = await import('@ai-sdk/google')
       for (const name of ['google', 'gemini'] as const) {

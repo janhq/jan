@@ -25,6 +25,9 @@ vi.mock('@/constants/models', () => ({
     openai: {
       models: ['gpt-4', 'gpt-3.5-turbo'],
     },
+    minimax: {
+      models: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
+    },
   },
 }))
 
@@ -33,6 +36,18 @@ vi.mock('@janhq/core', () => ({
     instance: vi.fn(),
   },
   SettingComponentProps: {},
+}))
+
+vi.mock('@/hooks/useAppState', () => ({
+  useAppState: { getState: () => ({}) },
+}))
+vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({ findSessionByModel: vi.fn() }))
+vi.mock('@/lib/engineError', () => ({ engineFailure: vi.fn() }))
+vi.mock('@/hooks/useGeneralSetting', () => ({
+  useGeneralSetting: { getState: () => ({ stripReasoningFromContext: false }) },
+}))
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  i18n: { t: (key: string) => key },
 }))
 
 vi.mock('@/types/models', () => ({
@@ -61,7 +76,8 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@/lib/models', () => ({
+vi.mock('@/lib/models', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/models')>(),
   getModelCapabilities: vi.fn().mockReturnValue([]),
 }))
 
@@ -211,6 +227,17 @@ describe('TauriProvidersService', () => {
     it('throws if no base_url', async () => {
       await expect(svc.fetchModelsFromProvider({ ...baseProvider, base_url: '' }))
         .rejects.toThrow('Provider must have base_url configured')
+    })
+
+    it.each([
+      { data: [{ id: 'MiniMax-M2.7' }, { id: 'MiniMax-M3' }, { id: 'MiniMax-M3.1-Flash' }] },
+      ['MiniMax-M2.7', 'MiniMax-M3', 'MiniMax-M3.1-Flash'],
+      { models: ['MiniMax-M2.7', 'MiniMax-M3', 'MiniMax-M3.1-Flash'] },
+    ])('filters MiniMax discovery without mutating saved models', async (response) => {
+      vi.mocked(fetchTauri).mockResolvedValueOnce(Response.json(response))
+      const provider = { ...baseProvider, provider: 'minimax', models: [{ id: 'MiniMax-M2.7' }] }
+      expect(await svc.fetchModelsFromProvider(provider)).toEqual(['MiniMax-M3.1-Flash', 'MiniMax-M3'])
+      expect(provider.models).toEqual([{ id: 'MiniMax-M2.7' }])
     })
 
     it('returns model ids from data.data format', async () => {
