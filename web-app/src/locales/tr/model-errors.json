@@ -1,0 +1,32 @@
+{
+  "title": "Bağlam sınırı hatası",
+  "description": "Bu sohbet, dolmak üzere olan bir beyaz tahta gibi yapay zekânın bellek sınırına yaklaşıyor. Daha fazlasını hatırlaması için bellek penceresini (bağlam boyutunu) genişletebiliriz; ancak bu işlem bilgisayarınızda daha fazla bellek kullanabilir. Yeni mesajlara yer açmak için sohbet geçmişinin bir bölümünü unutması anlamına gelen girdi kısaltma işlemini de uygulayabiliriz.",
+  "increaseContextSizeDescription": "Bağlam boyutunu artırmak istiyor musunuz?",
+  "truncateInput": "Girdiyi Kısalt",
+  "increaseContextSize": "Bağlam Boyutunu Artır",
+  "lastRequestOverflowed": "Son istek bağlam penceresini aştı.",
+  "contextOverflowDetail": "Bu istek {{request}} jeton gerektiriyor ancak modelin bağlam penceresi yalnızca {{context}} jeton alabiliyor.",
+  "contextOverflowGeneric": "İstek, kullanılabilir bağlam boyutunu aşıyor.",
+  "engine": {
+    "unknown": "Model motoru beklenmeyen bir hata bildirdi.",
+    "MODEL_LOAD_FAILED": "Model yüklenemedi.",
+    "MODEL_ARCH_NOT_SUPPORTED": "Bu modelin mimarisi mevcut motor tarafından desteklenmiyor. Motoru Ayarlar'dan güncellemek destek sağlayabilir.",
+    "MODEL_LOAD_TIMED_OUT": "Modelin yüklenmesi çok uzun sürdüğü için işlem durduruldu. Daha küçük bir model veya bağlam boyutu genellikle yardımcı olur.",
+    "MISSING_SHARED_LIBRARY": "Motorun ihtiyaç duyduğu bir kitaplık eksik olduğundan motor başlatılamıyor.",
+    "GPU_DRIVER_TOO_OLD": "GPU sürücünüz bu motor için çok eski. Sürücüyü güncellemek veya Ayarlar'dan CPU motoruna geçmek sorunu çözecektir.",
+    "OUT_OF_MEMORY": "Bu modeli çalıştırmak için yeterli bellek yok. Daha küçük bir model veya bağlam boyutu genellikle yardımcı olur.",
+    "INVALID_ARGUMENT": "Model ayarlarından biri geçersiz.",
+    "IO_ERROR": "Model başlatılırken bir dosya okunamadı veya dosyaya yazılamadı.",
+    "INTERNAL_ERROR": "Model başlatılırken Jan içinde bir hata oluştu."
+  },
+  "engineMissingLibraries": "Eksik: {{libraries}}",
+  "engineReportedDetail": "Motorun bildirdiği hata: {{detail}}",
+  "startModelFailed": "Model başlatılamadı: {{reason}}",
+  "createModelFailed": "Model oluşturulamadı: {{reason}}",
+  "noRunningSession": "Model için çalışan oturum bulunamadı: {{model}}",
+  "serverPortOccupied": "Bağlantı noktası kullanımda",
+  "serverPortOccupiedDescription": "{{port}} bağlantı noktası zaten kullanılıyor. Lütfen farklı bir bağlantı noktası deneyin.",
+  "serverInvalidModelPath": "Model yolu geçersiz veya erişilemiyor",
+  "serverStartModelFailed": "Model başlatılamadı",
+  "serverStartFailed": "Sunucu başlatılamadı"
+}

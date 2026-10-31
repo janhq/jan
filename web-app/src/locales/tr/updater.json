@@ -1,0 +1,10 @@
+{
+  "newVersion": "Yeni Sürüm {{version}}",
+  "updateAvailable": "Güncelleme Mevcut",
+  "nightlyBuild": "Günlük Yapı (Nightly)",
+  "showReleaseNotes": "Sürüm Notlarını Göster",
+  "hideReleaseNotes": "Sürüm Notlarını Gizle",
+  "remindMeLater": "Sonra Hatırlat",
+  "downloading": "İndiriliyor...",
+  "updateNow": "Şimdi Güncelle"
+}
