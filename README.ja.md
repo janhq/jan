@@ -139,7 +139,7 @@ yarn dev
 - **Windows**: 10以上、NVIDIA/AMD/Intel ArcのGPUサポート
 - **Linux**: ほとんどのディストリビューションで動作、GPUアクセラレーション対応
 
-詳細な互換性については[インストールガイド](https://jan.ai/docs/desktop/mac)をご確認ください。
+詳細な互換性については[インストールガイド](https://jan.ai/docs/desktop/install/mac)をご確認ください。
 
 ## トラブルシューティング
 
