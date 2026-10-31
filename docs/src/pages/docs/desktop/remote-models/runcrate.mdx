@@ -1,0 +1,73 @@
+---
+title: Runcrate API
+description: Learn how to integrate Runcrate API with Jan to chat with open-weight models.
+keywords:
+  [
+    Runcrate API,
+    Jan,
+    Jan AI,
+    ChatGPT alternative,
+    conversational AI,
+    large language model,
+    integration,
+    Runcrate integration,
+    API integration
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# Runcrate
+
+Jan supports [Runcrate](https://runcrate.ai/) API integration, allowing you to use open-weight models (DeepSeek, Kimi, GLM, Qwen, gpt-oss and more) through Runcrate's OpenAI-compatible API in Jan's interface.
+
+## Integrate Runcrate API with Jan
+
+<Steps>
+### Step 1: Get Your API Key
+1. Visit [Runcrate API Keys](https://runcrate.ai/dashboard/api-keys) and sign in
+2. Create & copy a new API key or copy your existing one
+
+<Callout type='info'>
+Ensure your account has credits or free usage left for the model you pick
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **Runcrate**
+3. Insert your **API Key**
+
+### Step 3: Start Using Runcrate's Models
+
+1. Jump into any existing **Chat** or create a new one
+2. Select a Runcrate model from **model selector**
+3. Start chatting
+</Steps>
+
+## Available Models Through Runcrate
+
+Jan includes a few Runcrate models by default. In case you want to use a specific Runcrate model that
+you cannot find in **Jan**, follow the instructions in the [Add Cloud Models](/docs/desktop/manage-models#add-models-1):
+- See the list of available models in the [Runcrate model catalog](https://runcrate.ai/dashboard/models), or from `GET https://api.runcrate.ai/v1/models`.
+- The `id` property must match the model id in the list. For example, if you want to use Qwen3.5 35B A3B, you must set the `id` property to `Qwen/Qwen3.5-35B-A3B`.
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and not revoked
+- Check that your Runcrate account has credits
+- Ensure the model you're trying to use is available to your account
+
+**2. Connection Problems**
+- Check your internet connection
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Check if you're using the correct model ID, including the organization prefix (for example `deepseek-ai/`)
+- Compare it with the ids returned by `GET https://api.runcrate.ai/v1/models`
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [Runcrate documentation](https://runcrate.ai/docs).
