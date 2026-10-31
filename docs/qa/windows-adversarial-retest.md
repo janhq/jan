@@ -260,3 +260,187 @@ Cowork real-home isolation cases remain BLOCKED; no workaround, approvals,
 permission changes, bypasses or process-name kills are authorized.
 
 **Delta results: PENDING exact-source authorization and build.**
+
+
+### Exact source authorized; transfer started
+
+Parent authorized final pushed commit
+`2fff5e640d2df340d085af094f3b9209735b4cd9` (`2fff5e640`), verified with
+`git rev-parse` and fork branch `git ls-remote`. Parent states production source
+is frozen and local automated tests are 4857 tests / 366 files PASS, lint and
+TypeScript PASS; these are not Windows native results.
+
+Generated snapshot using **git archive of that exact commit**, not working-tree
+bytes, excluding mutable `docs/qa/` only:
+
+- `/tmp/jan-windows-delta-2fff5e64/source.tar.gz`, 242119356 bytes, SHA256
+  `f34d0b08d0bb17c8df0f55b5b91590e6f85b5ed9fb714d85e031c4d2f7545b89`.
+- `/tmp/jan-windows-delta-2fff5e64/source-manifest.json`, SHA256
+  `5962ff5806386361c6f6c861ea5b103db2dcf131bfb14e4269c716c619419406`,
+  **2865 files**, embedded as `QA-SOURCE-MANIFEST.json`.
+- 32 changed/added file hashes versus baseline approved snapshot, comparison at
+  `/tmp/windows-delta-evidence-2fff5e64/delta-source-comparison.json`.
+
+Transfer uses scoped HTTP at tailnet-only `100.64.0.101:18775`, allowlisted source
+GET and prefixed evidence PUT (8 MB per artifact). Claude preflight reports no
+real-profile rustup directory; download has started into new
+`C:/Users/James/orca/workspaces/jan/audit-runtime/delta-2fff5e64/download`.
+Remote archive/all-source verification and build are still pending at this
+checkpoint. No current-source Windows case is yet reported passed.
+
+
+### Remote exact-source verification complete
+
+Claude reports successful download (`curl1=0`, `curl2=0`), both archive and
+manifest SHA256 values matching, successful extraction (`tar=0`), exact full
+commit in manifest, and **all 2865 source files hash-verified**. The 2866th file
+on disk is the embedded manifest, itself byte-identical to the downloaded
+manifest. New source root:
+`C:/Users/James/orca/workspaces/jan/windows-native-delta-2fff5e64`.
+Build/native results remain pending. The stopped-state native UI expectation is
+the existing **Continue** action on a stopped partial reply plus durable
+`metadata.stopped: true`; no literal “stopped” label is assumed.
+
+
+### Cached isolated build running
+
+Remote comparison agrees: **32 frontend-only changed/added files**, no Rust
+source changes. New target seeded by copying 8883 files / 12.9 GB; baseline
+binary/target are preserved. Tool versions reported by scoped build:
+`rustc 1.98.0` (Windows ARM64), `clang 19.1.5`, Node `v24.20.0`.
+
+Initial PowerShell `-Steps` invocation treated the comma-separated steps as one
+string and ran no build steps. Claude detected this from the subsecond build log
+and corrected argument handling. The subsequent full scoped install → web →
+incremental native e2e build is running. Robocopy exit 1 was correctly classified
+as successful copy, not a source/build failure. No native result is inferred from
+these setup events. Real-profile `.rustup` and `.cargo` remain absent per Claude.
+
+
+### Full Windows build completed
+
+Claude received authoritative background build **exit 0**. All frontend steps
+had reported exit 0; post-build audit is restoring yarn's `web-app/package.json`
+key-order rewrite from the exact archive before all-file rehash. This is the same
+previously documented package-manager setup normalization, not an approved
+product change. Isolated fixture/native D15/D27 remain the next priority.
+
+Parent separately reports Ubuntu CI's SkillsDialog test clicked Delete while
+Save was still busy; a test-only wait-for-enabled correction is being verified.
+This does not change the Windows frozen production snapshot or establish a new
+Windows UI regression. No Windows rebuild is requested for that test-only delta.
+
+
+## D15 final-source native retest — PASS (independently reviewed)
+
+Exact tested source is `2fff5e640d2df340d085af094f3b9209735b4cd9`.
+Recovered `delta-source-verification.json`: **2865/2865 verified**, no failures,
+embedded manifest identical. `delta-build-manifest.json`: **zero post-build source
+differences**, Windows ARM64 e2e build, external version `0.8.8-nightly-QA`.
+Binary 88559616 bytes, SHA256
+`9bc56799ed32382ba414ccdb9d92cdd9c2d6b7827f2d41cfaeff66881ba314eb`;
+frontend index SHA256
+`23b5dd665913c67b95749809b2eb9ad12182a782f63b42b705673f8cd538853e`.
+Engine resources remain stubs: this proves native UI lifecycle, not production
+inference engines. Yarn 4.5.3; rustc 1.98.0 / clang 19.1.5 ARM64 / Node v24.20.0.
+
+Actual native New Chat → model picker → synthetic prompt SIGMA-15 → Enter used
+loopback `/v1/chat/completions`, 40 chunks paced 750 ms. Mid-stream screenshot
+shows chunks 1–12, sidebar spinner and active red Stop. Native caption Close
+(element 18) at **17:14:30.4067907 +07:00**; fixture aborted at
+**10:14:31.123Z**; exact PID **6636** confirmed exited at
+**17:14:31.2741658 +07:00**, about 0.87 seconds after click. Provider click returned
+`accessibility_error` from `FromHandle` after destruction; correlated abort,
+cleanup and exact-PID exit establish delivered Close, not a failed interaction.
+
+Relaunch PID **15152**, native sidebar reopen: partial reply **chunks 1–14**
+present, sidebar spinner cleared, play/Continue action visible. Durable assistant
+message has status `ready`, 490 text characters and **`metadata.stopped: true`**.
+Two chunks arriving after the mid-stream screenshot were also preserved.
+
+This monitoring agent independently opened/read **both** `D15-midstream.png` and
+`D15-reopened.png`, plus event log, synthetic message JSONL, fixture events,
+source verification and build manifest at `/tmp/windows-delta-evidence-2fff5e64/`.
+Thus baseline FAIL15 is resolved for ordinary Chat. Cowork durability remains
+blocked and is not inferred. **D27 is still in progress at this checkpoint.**
+
+
+## D27 core Add/overflow checks — independently reviewed
+
+Native Add MCP Server → HTTP → loopback OAuth fixture → Save now closes without
+an error modal and saves `qa-oauth` **inactive**. Recovered config entry:
+`type: http`, `url: http://127.0.0.1:65095/oauth/mcp`, `active: false`, empty
+command/args/env. Screenshot `D27-oauth-card.png` independently opened/read:
+off toggle, **Auth: not authenticated**, **Sign in** visible. Read-only state:
+no dialogs, `rawInPage: false`, switch unchecked. No literal “needs authentication”
+card label is claimed; Sign in and the existing not-authenticated badge are shown.
+
+Fixture requests independently read: initialize + RFC9728 protected-resource
+metadata + RFC8414 authorization-server metadata. Backend app log contains
+explicit `NEEDS_AUTH` after discovery; it is no longer exposed as a UI error.
+No authorization/register/token exchange or stored credentials were used.
+
+Non-OAuth malformed-content fixture remains a generic Error, **not OAuth**.
+Independently opened/read `D27-malformed-result.png` (wrapped transport details,
+Cancel/Copy visible) and `D27-malformed-dialog.png` (wrapped inline transport
+error, **Cancel and Save fully visible**, no horizontal overflow). Read-only DOM
+measurements agree: dialogs width 672 CSS px, scrollWidth=clientWidth=670, both
+footer actions inside dialog and viewport. Failed malformed entry was not saved.
+Technical transport details remain verbose by design; bounded display is the
+acceptance target, not removal of legitimate non-OAuth diagnostics.
+
+Harness note: initial state fields `rawNeedsAuth`/`rawInPage` used a broad raw-error
+regex including rmcp, so true on malformed transport details does **not** mean
+literal `NEEDS_AUTH`. Complete text and screenshots contain no OAuth marker for
+this control; coordinator requested literal-marker clarification in final output.
+Plain401/badmeta controls and final disposition are still being completed.
+
+
+## Final scoped Windows delta disposition — 2 PASS / 0 FAIL
+
+**D15 PASS; D27 PASS** on exact production source
+`2fff5e640d2df340d085af094f3b9209735b4cd9`.
+This resolves both baseline failures; it is **not a rerun of all 30 cases**.
+Baseline remains historically **21 PASS / 2 FAIL / 7 BLOCKED**. Seven blockers
+remain blocked, including unsafe real-home Cowork paths; no workaround attempted.
+Optional menu/attachment sweep was deliberately omitted to finish the two targets.
+
+D27 controls completed: malformed content, plain HTTP401 without valid OAuth,
+and invalid OAuth metadata all remain **ordinary errors**, with no literal
+`NEEDS_AUTH`, no Sign in flow, and failed entries absent from saved config.
+The badmeta error's phrase “Auth required” is technical transport text, **not**
+the explicit OAuth marker. Add footer actions remain inside viewport/dialog;
+scrollWidth=clientWidth=670 CSS px for both Add and Error dialogs at 1200×800.
+This agent independently opened/read **all ten recovered PNGs**: D15 midstream
+and reopened; D27 OAuth result/card; malformed, plain401 and badmeta modal/dialog
+pairs. Parent also independently reviewed the critical reopened/card/footer views.
+
+Native actual input drove prompt/model selection/Close/reopen and MCP Add form
+entry/Save/dismissal. WebDriver was restricted to setup/scroll and read-only
+assertions; none of those scripted actions are promoted to native behavior proof.
+Missing WebDriver session after relaunch and a PowerShell interpolation parser
+error were test-harness issues corrected without product changes. Broad raw-error
+flags in early state JSON are mislabeled; complete text/literal-marker checks and
+screenshots establish classification, not those broad booleans.
+
+Cleanup reported by Windows-local Claude:
+- Native caption Close exited owned Jan **PID15152** at
+  **17:22:46.4435405 +07:00**.
+- Exact owned loopback fixture **PID2976** stopped at
+  **17:22:46.5120424 +07:00**; its resulting exit255 is termination, not test failure.
+- Baseline evidence hash comparison: **0 changed lines**.
+- Real-profile `.rustup` and `.cargo`: both absent.
+- Cleanup wrapper exited1 despite completed recorded cleanup; no unverified
+  blanket cleanup success is inferred from wrapper status alone.
+
+Credential evidence is limited to synthetic fixture traffic (no token/register
+exchange) and saved OAuth entry (empty env, inactive). An attempted wider isolated
+profile scan encountered locked temp files, so it is **not an exhaustive credential
+scan**. No real credentials or real-data Cowork run was used.
+
+Recovered evidence root: `/tmp/windows-delta-evidence-2fff5e64/`; remote evidence:
+`C:/Users/James/orca/workspaces/jan/audit-artifacts/windows-adversarial-delta-2fff5e64/`.
+`delta-build-manifest.json`, `delta-source-verification.json`, synthetic disk/events,
+config entry and all screenshots are retained. The source is 2865/2865 hash-verified
+with zero post-build production differences. Report/artifact transfer completion
+is recorded below separately; baseline above is never replaced.
