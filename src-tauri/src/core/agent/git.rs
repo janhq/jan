@@ -31,20 +31,28 @@ use std::process::Command;
 /// A `git` command, resolved by [`jan_utils::git_program`] so Windows never
 /// runs a `git.exe` from Jan's own folder.
 ///
-/// It never talks to the user's terminal: no stdin, `GIT_TERMINAL_PROMPT=0`,
-/// and (unix) its own session. Under the TUI, git asking for credentials on
-/// `/dev/tty` -- or ssh asking to trust a host key -- would otherwise wait on
-/// a prompt the TUI hides, with the TUI and git both reading the same
-/// keystrokes. Now such a command fails with git's own error instead.
+/// It never talks to the user's terminal: `GIT_TERMINAL_PROMPT=0` and (unix)
+/// its own session, so neither git nor anything it runs (a credential helper,
+/// ssh asking to trust a host key) can open `/dev/tty`. Under the TUI such a
+/// prompt would wait behind the TUI's screen, with the TUI and git both
+/// reading the same keystrokes; now the command fails with git's own error.
+/// For a git that may prompt, see [`git_command_on_terminal`].
 pub(crate) fn git_command() -> Result<Command, String> {
-    let mut cmd = jan_utils::git_program()
-        .map(Command::new)
-        .map_err(|e| format!("failed to launch git: {e}"))?;
+    let mut cmd = git_command_on_terminal()?;
     cmd.stdin(std::process::Stdio::null())
         .env("GIT_TERMINAL_PROMPT", "0");
     #[cfg(unix)]
     tauri_plugin_agent_tools::tools::proc::detach_std_from_terminal(&mut cmd);
     Ok(cmd)
+}
+
+/// A plain `git` that shares Jan's terminal, so it can ask for credentials
+/// there. Only for a caller that knows nothing else is using the terminal --
+/// a plain `jan plugin install`, never the TUI.
+pub(crate) fn git_command_on_terminal() -> Result<Command, String> {
+    jan_utils::git_program()
+        .map(Command::new)
+        .map_err(|e| format!("failed to launch git: {e}"))
 }
 
 /// Run `git` with literal args (callers pass their own `-C`). Returns trimmed

@@ -790,10 +790,30 @@ fn repo_dir_name(url: &str) -> Option<&str> {
     Some(name.strip_suffix(".git").unwrap_or(name))
 }
 
+/// Whether the TUI holds the terminal (raw mode on). The desktop app has no
+/// terminal to prompt on, so it counts as owned.
+fn tui_owns_terminal() -> bool {
+    #[cfg(feature = "cli")]
+    {
+        ratatui::crossterm::terminal::is_raw_mode_enabled().unwrap_or(true)
+    }
+    #[cfg(not(feature = "cli"))]
+    {
+        true
+    }
+}
+
 fn git(args: &[&str]) -> Result<String, String> {
-    // Shared with the snapshot code, so a clone that needs credentials fails
-    // with git's error rather than prompting on the TUI's terminal.
-    let out = super::git::git_command()
+    // A plain `jan plugin install` in a shell may let git ask for credentials
+    // (a private https repo, a first-seen ssh host). Under the TUI -- raw mode
+    // on -- that prompt would sit hidden behind the screen, so there git gets
+    // no terminal and fails with its own error instead.
+    let command = if tui_owns_terminal() {
+        super::git::git_command()
+    } else {
+        super::git::git_command_on_terminal()
+    };
+    let out = command
         .map_err(|e| format!("ERROR: {e}"))?
         .args(args)
         .output()
