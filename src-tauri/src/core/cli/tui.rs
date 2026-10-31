@@ -230,13 +230,27 @@ fn suspend_to_shell(mouse: bool) -> io::Result<()> {
         restore_terminal_modes();
     }
     let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
+    // Resumed with `bg`, the `tcsetattr`s below stop jan with SIGTTOU; after
+    // `fg` they fail with EINTR, which must not leave the TUI in cooked mode.
     if modes_off {
         // crossterm's enable is a no-op while it believes raw mode is on.
-        let _ = disable_raw_mode();
+        let _ = retry_interrupted(disable_raw_mode);
     }
-    enable_raw_mode()?;
+    retry_interrupted(enable_raw_mode)?;
     enter_terminal_modes(&mut io::stdout(), mouse)?;
     stopped
+}
+
+/// Run a terminal call again while it fails with EINTR. A `tcsetattr` from the
+/// background stops jan with SIGTTOU and, once continued, returns EINTR on
+/// macOS. Bounded in practice: each retry needs another stop and continue.
+fn retry_interrupted(mut f: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    loop {
+        match f() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => return other,
+        }
+    }
 }
 
 /// POSIX: a process group is orphaned when no member has a parent in another
@@ -450,7 +464,7 @@ extern "C" fn on_tty_input_stop(_: nix::libc::c_int) {
         return;
     }
     TTY_STOPPING.store(true, Ordering::SeqCst);
-    if !TTY_REARM.swap(true, Ordering::SeqCst) {
+    if !TTY_REARM.load(Ordering::SeqCst) {
         let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
         // SAFETY: async-signal-safe; put back right after the write.
         let ttou = unsafe { sigaction(Signal::SIGTTOU, &ignore) };
@@ -465,6 +479,11 @@ extern "C" fn on_tty_input_stop(_: nix::libc::c_int) {
                 nix::libc::write(nix::libc::STDOUT_FILENO, rest.as_ptr().cast(), rest.len())
             };
             if n > 0 {
+                // Modes are (being) turned off: a re-arm is owed. Not before
+                // the first byte lands -- on a terminal that refuses every
+                // write nothing was restored, and a re-arm would stack the
+                // modes a second time.
+                TTY_REARM.store(true, Ordering::SeqCst);
                 rest = &rest[n as usize..];
             } else if n == 0 || Errno::last() != Errno::EINTR {
                 break;
@@ -511,8 +530,9 @@ fn rearm_after_tty_stop(app: &mut App, mouse: bool) -> bool {
     TTY_REARM.store(false, Ordering::SeqCst);
     // crossterm's enable is a no-op while it believes raw mode is on, and the
     // handler could not turn it off; disable first so the termios is re-read.
-    let _ = disable_raw_mode();
-    if let Err(e) = enable_raw_mode().and_then(|()| enter_terminal_modes(&mut io::stdout(), mouse))
+    let _ = retry_interrupted(disable_raw_mode);
+    if let Err(e) = retry_interrupted(enable_raw_mode)
+        .and_then(|()| enter_terminal_modes(&mut io::stdout(), mouse))
     {
         app.note(&format!("could not restore the terminal after a stop: {e}"));
     }
@@ -13163,11 +13183,7 @@ pub async fn run(
 
     // Started in the background (`jan &`), the `tcsetattr` stops jan with
     // SIGTTOU and, once `fg` continues it, fails with EINTR; try again then.
-    let mut raw = enable_raw_mode();
-    while matches!(&raw, Err(e) if e.kind() == io::ErrorKind::Interrupted) {
-        raw = enable_raw_mode();
-    }
-    raw.map_err(|e| e.to_string())?;
+    retry_interrupted(enable_raw_mode).map_err(|e| e.to_string())?;
     // From here a panic must not leave the shell in raw mode / the alternate
     // screen / mouse-tracking / Kitty keys: install before anything else that
     // can panic runs, so every failure from this point is caught by it.
@@ -39640,13 +39656,50 @@ mod tests {
     }
 
     /// Nothing pending: the render loop draws as normal and makes no syscall.
+    /// A stop still in its handler: the loop keeps off the terminal and the
+    /// re-arm stays owed. One test, since both drive the same process-wide
+    /// flags and parallel tests would race them.
     #[cfg(unix)]
     #[test]
-    fn no_tty_stop_means_nothing_to_rearm() {
+    fn rearm_waits_for_a_pending_stop_and_skips_without_one() {
+        use std::sync::atomic::Ordering::SeqCst;
         let mut app = test_app();
-        super::TTY_REARM.store(false, std::sync::atomic::Ordering::SeqCst);
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
         assert!(!super::rearm_after_tty_stop(&mut app, true));
         assert!(!app.repaint, "no repaint without a stop");
+
+        super::TTY_REARM.store(true, SeqCst);
+        super::TTY_STOPPING.store(true, SeqCst);
+        let away = super::rearm_after_tty_stop(&mut app, true);
+        let still_owed = super::TTY_REARM.load(SeqCst);
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(away, "mid-stop: neither read nor draw");
+        assert!(still_owed, "the re-arm is not consumed mid-stop");
+        assert!(!app.repaint);
+    }
+
+    #[test]
+    fn retry_interrupted_retries_only_eintr() {
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(r.is_ok());
+        assert_eq!(calls, 3);
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            Err(std::io::Error::other("no"))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 1);
     }
 
     /// Raw mode keeps the terminal from turning Ctrl-Z into SIGTSTP, so it
