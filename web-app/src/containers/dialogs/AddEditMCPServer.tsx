@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { normalizeAppError } from '@/utils/appError'
 import { cn } from '@/lib/utils'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
@@ -106,7 +107,7 @@ interface AddEditMCPServerProps {
   onOpenChange: (open: boolean) => void
   editingKey: string | null
   initialData?: MCPServerConfig
-  onSave: (name: string, config: MCPServerConfig) => void
+  onSave: (name: string, config: MCPServerConfig) => void | Promise<void>
 }
 
 export default function AddEditMCPServer({
@@ -132,6 +133,9 @@ export default function AddEditMCPServer({
   const [isToggled, setIsToggled] = useState(false)
   const [jsonContent, setJsonContent] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const savePending = useRef(false)
+  const [saving, setSaving] = useState(false)
 
   // Reset form when modal opens/closes or editing key changes
   useEffect(() => {
@@ -275,7 +279,7 @@ export default function AddEditMCPServer({
     setHeaderValues(newValues)
   }
 
-  const handleSave = () => {
+  const save = async () => {
     // Handle JSON mode
     if (isToggled) {
       try {
@@ -316,14 +320,14 @@ export default function AddEditMCPServer({
             return
           }
 
-          onSave(trimmedServerName, serverConfig as MCPServerConfig)
+          await onSave(trimmedServerName, serverConfig as MCPServerConfig)
         }
         onOpenChange(false)
         resetForm()
         setError(null)
         return
-      } catch {
-        setError(t('mcp-servers:editJson.errorFormat'))
+      } catch (error) {
+        setError(error instanceof SyntaxError ? t('mcp-servers:editJson.errorFormat') : normalizeAppError(error))
         return
       }
     }
@@ -364,14 +368,29 @@ export default function AddEditMCPServer({
     }
 
     if (serverName.trim() !== '') {
-      onSave(serverName.trim(), config)
+      await onSave(serverName.trim(), config)
       onOpenChange(false)
       resetForm()
     }
   }
 
+  const handleSave = async () => {
+    if (savePending.current) return
+    savePending.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      await save()
+    } catch (error) {
+      setError(normalizeAppError(error))
+    } finally {
+      savePending.current = false
+      setSaving(false)
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!savePending.current) onOpenChange(value) }}>
       <DialogContent
         showCloseButton={false}
         onInteractOutside={(e) => {
@@ -430,7 +449,7 @@ export default function AddEditMCPServer({
                   className="w-full text-sm! min-h-[300px] font-mono!"
                 />
               </div>
-              {error && <div className="text-destructive text-sm">{error}</div>}
+
             </div>
           </div>
         ) : (
@@ -663,14 +682,15 @@ export default function AddEditMCPServer({
           </div>
         )}
 
+        {error && <div role="alert" className="text-destructive text-sm">{error}</div>}
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <Button disabled={saving} variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
           <Button
             onClick={handleSave}
             size="sm"
-            disabled={!isToggled && serverName.trim() === ''}
+            disabled={saving || (!isToggled && serverName.trim() === '')}
           >
             {t('mcp-servers:save')}
           </Button>

@@ -84,6 +84,38 @@ const user = (text: string): UIMessage =>
   ({ id: 'u1', role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
 
 describe('consumeStep', () => {
+  it('retains partial wire history after a deferred stream rejects on abort, without replaying completed tools', async () => {
+    const controller = new AbortController()
+    const d = deps([toolStep('write')])
+    let stream!: ReadableStreamDefaultController<UIMessageChunk>
+    let started!: () => void
+    const streaming = new Promise<void>((resolve) => { started = resolve })
+    let count = 0
+    d.sendStep.mockImplementation(async () => {
+      if (count++ === 0) return streamOf(toolStep('write'))
+      return new ReadableStream<UIMessageChunk>({
+        start(c) {
+          stream = c
+          c.enqueue({ type: 'text-delta', id: 't', delta: 'File written; next I' } as UIMessageChunk)
+          controller.signal.addEventListener('abort', () => c.error(new Error('Request cancelled')), { once: true })
+        },
+      })
+    })
+    d.sink.onText.mockImplementation(() => { started() })
+    const running = runTurn({ messages: [user('write it')], signal: controller.signal, deps: d })
+    await streaming
+    expect(stream).toBeDefined()
+    controller.abort()
+    const out = await running
+    expect(out.stoppedBy).toBe('aborted')
+    expect(d.dispatch).toHaveBeenCalledOnce()
+    expect(out.messages[0]).toEqual(user('write it'))
+    expect(out.messages[1].parts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: 'c1', state: 'output-available', output: 'ok' }),
+    ]))
+    expect(out.messages[2].parts).toContainEqual({ type: 'text', text: 'File written; next I' })
+  })
+
   /// Native reasoning arrives as its own chunk type and must neither be
   /// dropped (nothing on screen while the model thinks) nor folded into
   /// `text` (which goes back upstream as wire content).

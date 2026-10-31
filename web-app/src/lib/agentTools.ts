@@ -411,6 +411,11 @@ export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
   }
 }
 
+/** Close must confirm native teardown rather than treating it as best-effort. */
+export async function cancelAgentThreadBashStrict(sessionId: string): Promise<void> {
+  await cancelThreadBash(sessionId)
+}
+
 /** A file claimed for a subagent's answer: the name to fill it by, and the
  * model-visible path (`/tmp/subagents/<id>.md`, where the scratch is mounted
  * over `/tmp`) the parent agent can `read`. */

@@ -21,7 +21,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon, SlidersHorizontal, UserRound, Check } from 'lucide-react'
+import { ArrowRight, PlusIcon, SlidersHorizontal, UserRound } from 'lucide-react'
 import {
   IconPhoto,
   IconMusic,
@@ -124,6 +124,8 @@ type ChatInputProps = {
   initialMessage?: boolean
   projectId?: string
   projectAssistantId?: string
+  /** Whether this surface applies assistant instructions and selection. */
+  supportsAssistants?: boolean
   onSubmit?: (
     text: string,
     files?: Array<{ type: 'file'; mediaType: string; url: string }>,
@@ -201,6 +203,7 @@ const ChatInput = memo(function ChatInput({
   initialMessage,
   projectId,
   projectAssistantId,
+  supportsAssistants = true,
   onSubmit,
   onStop,
   chatStatus,
@@ -254,7 +257,7 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const { loading, currentAssistant, setCurrentAssistant, assistants } =
+  const { loading, currentAssistant, setCurrentAssistant, assistants, defaultAssistantId } =
     useAssistant()
 
   // Agent mode
@@ -441,27 +444,47 @@ const ChatInput = memo(function ChatInput({
     hasPromptText: prompt.trim().length > 0,
     hasReportedUsage: (tokenSource?.usage?.totalTokens ?? 0) > 0,
   })
-  const [selectedAssistantId, setSelectedAssistantId] = useState<
+  // Resolve a missing project assignment only while initializing. Once selected,
+  // including explicit None, the composer's choice is authoritative at send time.
+  const initialAssistantId = assistants.find((a) => a.id === projectAssistantId)?.id
+    || assistants.find((a) => a.id === currentAssistant?.id)?.id
+    || (projectAssistantId
+      ? assistants.find((a) => a.id === defaultAssistantId)?.id || assistants[0]?.id
+      : '')
+  const selectionKey = JSON.stringify([projectId, projectAssistantId])
+  const selectionInitialization = useRef({ key: selectionKey, resolved: !loading })
+  const [selectedAssistantId, setSelectedAssistantIdState] = useState<
     string | undefined
-  >(loading ? undefined : projectAssistantId || currentAssistant?.id || '')
+  >(loading ? undefined : initialAssistantId)
+  const setSelectedAssistantId = useCallback((id: string) => {
+    selectionInitialization.current.resolved = true
+    setSelectedAssistantIdState(id)
+  }, [])
 
   useEffect(() => {
-    setSelectedAssistantId(projectAssistantId || currentAssistant?.id || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, projectAssistantId])
+    if (selectionInitialization.current.key !== selectionKey) {
+      selectionInitialization.current = { key: selectionKey, resolved: false }
+    }
+    if (!loading && !selectionInitialization.current.resolved) {
+      selectionInitialization.current.resolved = true
+      setSelectedAssistantIdState(initialAssistantId)
+    }
+  }, [loading, selectionKey, initialAssistantId])
 
   const assistantCycleRef = useRef<() => void>(() => {})
   assistantCycleRef.current = () => {
-    if (assistants.length <= 1) return
+    if (!supportsAssistants || assistants.length === 0) return
     const activeId = currentThread
       ? currentThread.assistants?.[0]?.id
       : selectedAssistantId
     const index = assistants.findIndex((assistant) => assistant.id === activeId)
-    const next = assistants[(index + 1) % assistants.length]
-    if (currentThread) updateCurrentThreadAssistant(next)
-    else setSelectedAssistantId(next.id)
+    // None is a real choice, including when only one assistant exists.
+    const next = assistants[index + 1]
+    if (currentThread) updateCurrentThreadAssistant(next as Assistant)
+    else setSelectedAssistantId(next?.id || '')
   }
   useEffect(() => {
+    if (!supportsAssistants) return
     useAssistantSwitcher
       .getState()
       .setCycleHandler(() => assistantCycleRef.current())
@@ -469,10 +492,10 @@ const ChatInput = memo(function ChatInput({
       useAssistantSwitcher.getState().setCycleHandler(null)
       useAssistantSwitcher.getState().setOpen(false)
     }
-  }, [])
+  }, [supportsAssistants])
   useEffect(() => {
-    if (assistantMenuOpen) setOptionsOpen(true)
-  }, [assistantMenuOpen])
+    if (supportsAssistants && assistantMenuOpen) setOptionsOpen(true)
+  }, [assistantMenuOpen, supportsAssistants])
 
   // Jan Browser Extension hook
   const {
@@ -730,7 +753,6 @@ const ChatInput = memo(function ChatInput({
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
           | undefined
-        let projectAssistantId: string | undefined
 
         if (projectId) {
           try {
@@ -743,18 +765,15 @@ const ChatInput = memo(function ChatInput({
                 name: project.name,
                 updated_at: project.updated_at,
               }
-              projectAssistantId = project.assistantId
             }
           } catch (e) {
             console.warn('Failed to fetch project metadata:', e)
           }
         }
 
-        // Only use assistant when chatting via project with an assigned assistant
-        // When no projectId, use the selected assistant from dropdown (if any)
-        const assistant = projectAssistantId
-          ? assistants.find((a) => a.id === projectAssistantId)
-          : assistants.find((a) => a.id === selectedAssistantId)
+        const assistant = supportsAssistants
+          ? assistants.find((a) => a.id === selectedAssistantId)
+          : undefined
 
         setCurrentAssistant(assistant)
 
@@ -2470,7 +2489,7 @@ const ChatInput = memo(function ChatInput({
                         )}
                         {menuWorkspace}
                         <DropdownMenuSeparator />
-                        {assistants.length > 1 && (
+                        {supportsAssistants && assistants.length > 0 && (
                           <DropdownMenuSub
                             open={assistantMenuOpen}
                             onOpenChange={setAssistantMenuOpen}
@@ -2495,36 +2514,37 @@ const ChatInput = memo(function ChatInput({
                         {showToolControls &&
                           hasJanBrowserMCPConfig &&
                           modelSupportsBrowser && (
-                            <DropdownMenuItem
+                            <DropdownMenuCheckboxItem
+                              checked={janBrowserMCPActive}
+                              onSelect={(event) => event.preventDefault()}
                               disabled={isStreaming || isJanBrowserMCPLoading}
-                              onSelect={() => void handleBrowseClick()}
+                              onCheckedChange={() => void handleBrowseClick()}
                             >
                               <IconBrandChrome size={18} />
                               {isJanBrowserMCPLoading
                                 ? t('common:starting')
                                 : t('common:browse')}
-                              {janBrowserMCPActive && <Check className="ml-auto size-4 text-primary" />}
-                            </DropdownMenuItem>
+                            </DropdownMenuCheckboxItem>
                           )}
                         {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
-                          <DropdownMenuItem disabled={isStreaming} onSelect={() => setWebSearchEnabled(!webSearchEnabled)}>
+                          <DropdownMenuCheckboxItem checked={webSearchEnabled} onSelect={(event) => event.preventDefault()} disabled={isStreaming} onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}>
                             <IconWorldSearch size={18} />
                             {t('common:web_search')}
-                            {webSearchEnabled && <Check className="ml-auto size-4 text-primary" />}
-                          </DropdownMenuItem>
+                          </DropdownMenuCheckboxItem>
                         )}
                         {menuControls}
                         {showToolControls &&
                           sandboxEnforcesShell &&
                           selectedModel?.capabilities?.includes('tools') && (
-                            <DropdownMenuItem
+                            <DropdownMenuCheckboxItem
+                              checked={shellEnabled}
+                              onSelect={(event) => event.preventDefault()}
                               disabled={isStreaming}
-                              onSelect={() => setShellEnabled(!shellEnabled)}
+                              onCheckedChange={(checked) => setShellEnabled(checked === true)}
                             >
                               <IconTerminal2 size={18} />
                               {t('common:shell')}
-                              {shellEnabled && <Check className="ml-auto size-4 text-primary" />}
-                            </DropdownMenuItem>
+                            </DropdownMenuCheckboxItem>
                           )}
                         {showToolControls &&
                           selectedModel?.capabilities?.includes('tools') &&
@@ -2640,7 +2660,9 @@ const ChatInput = memo(function ChatInput({
                               <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                disabled={isJanBrowserMCPLoading}
+                                disabled={isStreaming || isJanBrowserMCPLoading}
+                                aria-label={t('common:browse')}
+                                aria-pressed={janBrowserMCPActive}
                                 className={cn(
                                   janBrowserMCPActive && 'text-primary'
                                 )}
@@ -2760,6 +2782,9 @@ const ChatInput = memo(function ChatInput({
                                 className={cn(
                                   webSearchEnabled && 'text-primary'
                                 )}
+                                aria-label={t('common:web_search')}
+                                aria-pressed={webSearchEnabled}
+                                disabled={isStreaming}
                                 onClick={() =>
                                   setWebSearchEnabled(!webSearchEnabled)
                                 }
@@ -2923,7 +2948,7 @@ const ChatInput = memo(function ChatInput({
         returnFocusRef={optionsTriggerRef}
         providerId={selectedProvider}
         modelId={selectedModel?.id}
-        assistantSwitcher={{ assistants, currentThread, selectedAssistantId, setSelectedAssistantId, updateCurrentThreadAssistant }}
+        assistantSwitcher={supportsAssistants ? { assistants, currentThread, selectedAssistantId, setSelectedAssistantId, updateCurrentThreadAssistant } : undefined}
       />
       <JanBrowserExtensionDialog
         open={extensionDialogOpen}

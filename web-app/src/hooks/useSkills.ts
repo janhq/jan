@@ -165,12 +165,14 @@ export function useSkills(folder: string | null) {
     [scopeOf]
   )
 
+  // Creation must use the selected destination even if a global skill with
+  // the same name is visible in the merged folder list. Edits retain origin.
   const write = useCallback(
-    async (name: string, content: string) => {
-      await skillStore.writeSkill(scopeOf(name), name, content)
+    async (name: string, content: string, create = false) => {
+      await skillStore.writeSkill(create ? newScope : scopeOf(name), name, content)
       bump()
     },
-    [scopeOf, bump]
+    [scopeOf, newScope, bump]
   )
 
   const remove = useCallback(

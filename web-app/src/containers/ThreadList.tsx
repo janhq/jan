@@ -1,6 +1,7 @@
 import { Folder, Loader2, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { isCoworkThread } from '@/lib/threadMode'
+import { updateThreadProject } from '@/lib/threadProject'
 import { useIsThreadActive } from '@/hooks/useAppState'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useMessages } from '@/hooks/useMessages'
@@ -44,7 +45,6 @@ export const ThreadItem = memo(
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
-    const updateThread = useThreads((state) => state.updateThread)
     const getFolderById = useThreadManagement().getFolderById
     const { folders } = useThreadManagement()
     const { t } = useTranslation()
@@ -122,19 +122,8 @@ export const ThreadItem = memo(
 
     const assignThreadToProject = (threadId: string, projectId: string) => {
       const project = getFolderById(projectId)
-      if (project && updateThread) {
-        const projectMetadata = {
-          id: project.id,
-          name: project.name,
-          updated_at: project.updated_at,
-        }
-
-        updateThread(threadId, {
-          metadata: {
-            ...thread.metadata,
-            project: projectMetadata,
-          },
-        })
+      if (project) {
+        updateThreadProject(threadId, project)
 
         toast.success(`Thread assigned to "${project.name}" successfully`)
       }
@@ -235,12 +224,7 @@ export const ThreadItem = memo(
                   onClick={(e) => {
                     e.stopPropagation()
                     const projectName = thread.metadata?.project?.name
-                    updateThread(thread.id, {
-                      metadata: {
-                        ...thread.metadata,
-                        project: undefined,
-                      },
-                    })
+                    updateThreadProject(thread.id, undefined)
                     toast.success(
                       `Thread removed from "${projectName}" successfully`
                     )

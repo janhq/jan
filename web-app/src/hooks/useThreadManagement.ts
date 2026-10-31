@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
+import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { updateThreadProject } from '@/lib/threadProject'
+import { isCoworkThread } from '@/lib/threadMode'
 import type { ThreadFolder } from '@/services/projects/types'
 import { useEffect } from 'react'
 
@@ -38,20 +41,19 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 
   deleteFolder: async (id) => {
-    // Remove project metadata from all threads that belong to this project
-    const threadsState = useThreads.getState()
-    const threadsToUpdate = Object.values(threadsState.threads).filter(
-      (thread) => thread.metadata?.project?.id === id
-    )
-
-    threadsToUpdate.forEach((thread) => {
-      threadsState.updateThread(thread.id, {
-        metadata: {
-          ...thread.metadata,
-          project: undefined,
-        },
-      })
-    })
+    // Sessions are authoritative, including while their mirrors lag persistence.
+    const threads = Object.values(useThreads.getState().threads)
+    const sessions = useCoworkSessions.getState().sessions
+    const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+    const ids = new Set(threads.filter((thread) =>
+      (isCoworkThread(thread)
+        ? sessionsById.get(thread.id)?.project?.id
+        : thread.metadata?.project?.id) === id
+    ).map((thread) => thread.id))
+    for (const session of sessions) {
+      if (session.project?.id === id && !session.unavailable) ids.add(session.id)
+    }
+    ids.forEach((threadId) => updateThreadProject(threadId, undefined))
 
     const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)

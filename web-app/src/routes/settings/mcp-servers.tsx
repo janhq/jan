@@ -15,7 +15,7 @@ import {
   MCPSettings,
   DEFAULT_MCP_SETTINGS,
 } from '@/hooks/useMCPServers'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
@@ -101,15 +101,10 @@ function MCPServersDesktop() {
   const {
     mcpServers,
     settings,
-    addServer,
     editServer,
-    renameServer,
-    deleteServer,
     syncServers,
-    syncServersAndRestart,
     getServerConfig,
-    setSettings,
-    updateSettings,
+    saveSettings,
   } = useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
@@ -160,33 +155,32 @@ function MCPServersDesktop() {
   }, [serviceHub])
   const setErrorMessage = useAppState((state) => state.setErrorMessage)
 
-  const updateToolCallTimeout = (rawValue: string) => {
-    if (rawValue === '') {
-      updateSettings({
-        toolCallTimeoutSeconds: DEFAULT_MCP_SETTINGS.toolCallTimeoutSeconds,
+  const [savingSettings, setSavingSettings] = useState(false)
+  const settingsSavePending = useRef(false)
+  const [timeoutDraft, setTimeoutDraft] = useState(String(settings.toolCallTimeoutSeconds))
+  const [outputDraft, setOutputDraft] = useState(String(settings.maxToolOutputChars))
+
+  useEffect(() => {
+    setTimeoutDraft(String(settings.toolCallTimeoutSeconds))
+    setOutputDraft(String(settings.maxToolOutputChars))
+  }, [settings.toolCallTimeoutSeconds, settings.maxToolOutputChars])
+
+  const handleSaveSettings = useCallback(async (partial: Partial<MCPSettings>) => {
+    if (settingsSavePending.current) return
+    settingsSavePending.current = true
+    setSavingSettings(true)
+    try {
+      await saveSettings(partial)
+    } catch (error) {
+      setErrorMessage({
+        message: normalizeAppError(error),
+        subtitle: 'Failed to save MCP settings. Please retry.',
       })
-      return
+    } finally {
+      settingsSavePending.current = false
+      setSavingSettings(false)
     }
-
-    const numericValue = Number(rawValue)
-    if (!Number.isNaN(numericValue)) {
-      updateSettings({ toolCallTimeoutSeconds: numericValue })
-    }
-  }
-
-  const updateMaxToolOutputChars = (rawValue: string) => {
-    if (rawValue === '') {
-      updateSettings({
-        maxToolOutputChars: DEFAULT_MCP_SETTINGS.maxToolOutputChars,
-      })
-      return
-    }
-
-    const numericValue = Number(rawValue)
-    if (!Number.isNaN(numericValue) && numericValue >= 0) {
-      updateSettings({ maxToolOutputChars: numericValue })
-    }
-  }
+  }, [saveSettings, setErrorMessage])
 
   const modelProviders = useModelProvider((state) => state.providers)
 
@@ -213,14 +207,14 @@ function MCPServersDesktop() {
       !model ||
       !isRouterModelSelectable(provider, model)
     ) {
-      updateSettings({ routerModelProvider: '', routerModelId: '' })
+      void handleSaveSettings({ routerModelProvider: '', routerModelId: '' })
     }
   }, [
     settings.useLightweightRouterModel,
     settings.routerModelProvider,
     settings.routerModelId,
     modelProviders,
-    updateSettings,
+    handleSaveSettings,
   ])
 
   const handleOpenDialog = (serverKey?: string) => {
@@ -236,28 +230,83 @@ function MCPServersDesktop() {
     setOpen(true)
   }
 
-  const handleSaveServer = async (name: string, config: MCPServerConfig) => {
-    if (editingKey) {
-      // If server name changed, rename it while preserving position
-      if (editingKey !== name) {
-        toggleServer(editingKey, false)
-        renameServer(editingKey, name, config)
-        toggleServer(name, true)
-        // Restart servers to update tool references with new server name
-        syncServersAndRestart()
-      } else {
-        toggleServer(editingKey, false)
-        editServer(editingKey, config)
-        toggleServer(editingKey, true)
-        syncServers()
-      }
-    } else {
-      // Add new server
-      toggleServer(name, false)
-      addServer(name, config)
-      toggleServer(name, true)
-      syncServers()
+  const reconfigurationPending = useRef(false)
+
+  // Reconfiguration is one transaction, not two guarded UI toggles. In
+  // particular, capture active before disconnecting and never reconnect old
+  // credentials as a speculative rollback after a transport/write failure.
+  const reconfigureServers = async (
+    nextServers: Record<string, MCPServerConfig>,
+    affectedKeys: string[],
+    nextSettings = useMCPServers.getState().settings
+  ) => {
+    const keys = [...new Set(affectedKeys)]
+    if (reconfigurationPending.current || settingsSavePending.current ||
+        pendingServers.current.size > 0) {
+      const error = new Error('An MCP change is already in progress. Please retry.')
+      setErrorMessage({ message: error.message, subtitle: t('mcp-servers:checkParams') })
+      throw error
     }
+    reconfigurationPending.current = true
+    settingsSavePending.current = true
+    setSavingSettings(true)
+    const previous = useMCPServers.getState()
+    let committed = false
+    keys.forEach((key) => pendingServers.current.add(key))
+    setLoadingServers((current) => ({
+      ...current, ...Object.fromEntries(keys.map((key) => [key, true])),
+    }))
+    try {
+      const liveServers = await serviceHub.mcp().getConnectedServers()
+      for (const key of keys) {
+        if (liveServers.includes(key)) {
+          await serviceHub.mcp().deactivateMCPServer(key)
+        }
+      }
+      useMCPServers.setState({ mcpServers: nextServers, settings: nextSettings })
+      committed = true
+      for (const key of keys) {
+        const config = nextServers[key]
+        if (config?.active) {
+          await serviceHub.mcp().activateMCPServer(key, config)
+        }
+      }
+      await syncServers()
+    } catch (error) {
+      // Roll back the saved preference only. Transport state is refreshed below;
+      // a disconnected server must not be presented as reconnected by rollback.
+      if (committed) {
+        useMCPServers.setState({
+          mcpServers: previous.mcpServers,
+          settings: previous.settings,
+        })
+      }
+      setErrorMessage({
+        message: normalizeAppError(error),
+        subtitle: t('mcp-servers:checkParams'),
+      })
+      throw error
+    } finally {
+      refreshConnectedServers()
+      keys.forEach((key) => pendingServers.current.delete(key))
+      setLoadingServers((current) => ({
+        ...current, ...Object.fromEntries(keys.map((key) => [key, false])),
+      }))
+      reconfigurationPending.current = false
+      settingsSavePending.current = false
+      setSavingSettings(false)
+    }
+  }
+
+  const handleSaveServer = async (name: string, config: MCPServerConfig) => {
+    const servers = useMCPServers.getState().mcpServers
+    // The form supplies the requested enabled preference, including false.
+    const nextConfig = { ...config, active: config.active ?? (editingKey ? servers[editingKey]?.active ?? false : true) }
+    const nextServers = editingKey
+      ? Object.fromEntries(Object.entries(servers).map(([key, value]) =>
+          key === editingKey ? [name, nextConfig] : [key, value]))
+      : { ...servers, [name]: nextConfig }
+    await reconfigureServers(nextServers, editingKey ? [editingKey, name] : [name])
   }
 
   const handleEdit = (serverKey: string) => {
@@ -270,21 +319,14 @@ function MCPServersDesktop() {
   }
 
   const handleConfirmDelete = async () => {
-    if (serverToDelete) {
-      // Stop the server before deletion
-      try {
-        await serviceHub.mcp().deactivateMCPServer(serverToDelete)
-      } catch (error) {
-        console.error('Error stopping server before deletion:', error)
-      }
-
-      deleteServer(serverToDelete)
-      toast.success(
-        t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
-      )
-      setServerToDelete(null)
-      syncServersAndRestart()
-    }
+    if (!serverToDelete) return
+    const nextServers = { ...useMCPServers.getState().mcpServers }
+    delete nextServers[serverToDelete]
+    await reconfigureServers(nextServers, [serverToDelete])
+    toast.success(
+      t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
+    )
+    setServerToDelete(null)
   }
 
   const handleOpenJsonEditor = async (serverKey?: string) => {
@@ -312,54 +354,31 @@ function MCPServersDesktop() {
           mcpSettings?: MCPSettings
         }
   ) => {
+    const servers = useMCPServers.getState().mcpServers
     if (jsonServerName) {
-      try {
-        toggleServer(jsonServerName, false)
-      } catch (error) {
-        console.error('Error deactivating server:', error)
-      }
-      // Save single server
-      editServer(jsonServerName, data as MCPServerConfig)
-      toggleServer(jsonServerName, (data as MCPServerConfig).active || false)
-    } else {
-      // Save all servers
-      let nextServers: Record<string, MCPServerConfig> = {}
-      let nextSettings: MCPSettings | undefined
-
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        if ('mcpServers' in data || 'mcpSettings' in data) {
-          const payload = data as {
-            mcpServers?: Record<string, MCPServerConfig>
-            mcpSettings?: MCPSettings
-          }
-          nextServers = payload.mcpServers ?? {}
-          nextSettings = payload.mcpSettings
-        } else {
-          nextServers = data as Record<string, MCPServerConfig>
-        }
-      }
-
-      if (nextSettings) {
-        setSettings({
-          ...DEFAULT_MCP_SETTINGS,
-          ...nextSettings,
-        })
-      }
-
-      // Clear existing servers first
-      Object.keys(mcpServers).forEach((serverKey) => {
-        toggleServer(serverKey, false)
-        deleteServer(serverKey)
-      })
-
-      // Add all servers from the JSON
-      Object.entries(nextServers).forEach(([key, config]) => {
-        addServer(key, config)
-        toggleServer(key, config.active || false)
-      })
-
-      await syncServers()
+      const config = data as MCPServerConfig
+      await reconfigureServers({
+        ...servers,
+        [jsonServerName]: { ...config, active: Boolean(config.active) },
+      }, [jsonServerName])
+      return
     }
+    const payload = data as {
+      mcpServers?: Record<string, MCPServerConfig>
+      mcpSettings?: MCPSettings
+    }
+    const wrapped = 'mcpServers' in data || 'mcpSettings' in data
+    const nextServers = wrapped
+      ? payload.mcpServers ?? {}
+      : data as Record<string, MCPServerConfig>
+    const nextSettings = wrapped && payload.mcpSettings
+      ? { ...DEFAULT_MCP_SETTINGS, ...payload.mcpSettings }
+      : useMCPServers.getState().settings
+    await reconfigureServers(
+      nextServers,
+      [...Object.keys(servers), ...Object.keys(nextServers)],
+      nextSettings
+    )
   }
 
   /**
@@ -414,72 +433,50 @@ function MCPServersDesktop() {
     }
   }
 
-  const toggleServer = (serverKey: string, active: boolean) => {
-    if (serverKey) {
-      setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
-      const config = getServerConfig(serverKey)
-      if (active && config) {
-        serviceHub
-          .mcp()
-          .activateMCPServer(serverKey, {
-            ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-            active,
-          })
-          .then(() => {
-            // Save single server
-            editServer(serverKey, {
-              ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-              active,
-            })
-            syncServers()
-            toast.success(
-              active
-                ? t('mcp-servers:serverStatusActive', { serverKey })
-                : t('mcp-servers:serverStatusInactive', { serverKey })
-            )
-            refreshConnectedServers()
-          })
-          .catch((error) => {
-            editServer(serverKey, {
-              ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-              active: false,
-            })
-            // A server that only needs signing in is not a misconfigured one:
-            // the backend tags it, so point at the fix rather than telling the
-            // user to check parameters they got right.
-            const authDetail = needsAuthDetail(error)
-            if (authDetail !== null) {
-              void refreshAuth()
-              setErrorMessage({
-                message: t('mcp-servers:auth.needsAuth', {
-                  serverName: serverKey,
-                }),
-                subtitle: t('mcp-servers:auth.needsAuthHint'),
-              })
-              return
-            }
-            setErrorMessage({
-              message: normalizeAppError(error),
-              subtitle: t('mcp-servers:checkParams'),
-            })
-          })
-          .finally(() => {
-            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
-          })
+  const pendingServers = useRef(new Set<string>())
+  const toggleServer = async (serverKey: string, active: boolean) => {
+    const config = getServerConfig(serverKey)
+    if (!config || reconfigurationPending.current || pendingServers.current.has(serverKey)) return
+    pendingServers.current.add(serverKey)
+    setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
+    let changedConfig: MCPServerConfig | undefined
+    try {
+      if (active) {
+        await serviceHub.mcp().activateMCPServer(serverKey, { ...config, active })
       } else {
-        editServer(serverKey, {
-          ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
-          active,
-        })
-        syncServers()
-        serviceHub
-          .mcp()
-          .deactivateMCPServer(serverKey)
-          .finally(() => {
-            refreshConnectedServers()
-            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
-          })
+        await serviceHub.mcp().deactivateMCPServer(serverKey)
       }
+      changedConfig = { ...config, active }
+      editServer(serverKey, changedConfig)
+      await syncServers()
+      toast.success(t(active
+        ? 'mcp-servers:serverStatusActive'
+        : 'mcp-servers:serverStatusInactive', { serverKey }))
+    } catch (error) {
+      // Restore the persisted preference, not a guessed transport state. In
+      // particular, never reconnect automatically on a failed disconnect save.
+      if (changedConfig && getServerConfig(serverKey) === changedConfig) {
+        editServer(serverKey, config)
+      }
+      const authDetail = needsAuthDetail(error)
+      if (active && authDetail !== null) {
+        void refreshAuth()
+        setErrorMessage({
+          message: t('mcp-servers:auth.needsAuth', { serverName: serverKey }),
+          subtitle: t('mcp-servers:auth.needsAuthHint'),
+        })
+      } else {
+        setErrorMessage({
+          message: normalizeAppError(error),
+          subtitle: t('mcp-servers:checkParams'),
+        })
+      }
+    } finally {
+      // The connection indicator is always sourced from the live service, even
+      // when persistence fails after the transport has already changed.
+      refreshConnectedServers()
+      pendingServers.current.delete(serverKey)
+      setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
     }
   }
 
@@ -580,12 +577,17 @@ function MCPServersDesktop() {
                       type="number"
                       min={1}
                       step={1}
-                      value={settings.toolCallTimeoutSeconds}
+                      value={timeoutDraft}
+                      disabled={savingSettings}
                       onChange={(event) =>
-                        updateToolCallTimeout(event.target.value)
+                        setTimeoutDraft(event.target.value)
                       }
-                      onBlur={() => {
-                        void syncServers()
+                      onBlur={async () => {
+                        const value = timeoutDraft === '' ? DEFAULT_MCP_SETTINGS.toolCallTimeoutSeconds : Number(timeoutDraft)
+                        if (Number.isFinite(value) && value >= 1) {
+                          await handleSaveSettings({ toolCallTimeoutSeconds: value })
+                        }
+                        setTimeoutDraft(String(useMCPServers.getState().settings.toolCallTimeoutSeconds))
                       }}
                       className="w-28"
                     />
@@ -601,12 +603,17 @@ function MCPServersDesktop() {
                       type="number"
                       min={0}
                       step={1000}
-                      value={settings.maxToolOutputChars}
+                      value={outputDraft}
+                      disabled={savingSettings}
                       onChange={(event) =>
-                        updateMaxToolOutputChars(event.target.value)
+                        setOutputDraft(event.target.value)
                       }
-                      onBlur={() => {
-                        void syncServers()
+                      onBlur={async () => {
+                        const value = outputDraft === '' ? DEFAULT_MCP_SETTINGS.maxToolOutputChars : Number(outputDraft)
+                        if (Number.isFinite(value) && value >= 0) {
+                          await handleSaveSettings({ maxToolOutputChars: value })
+                        }
+                        setOutputDraft(String(useMCPServers.getState().settings.maxToolOutputChars))
                       }}
                       className="w-28"
                     />
@@ -621,18 +628,16 @@ function MCPServersDesktop() {
                     <div className="shrink-0 ml-4">
                       <Switch
                         checked={settings.enableSmartToolRouting}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            updateSettings({ enableSmartToolRouting: true })
-                          } else {
-                            updateSettings({
+                        disabled={savingSettings}
+                        onCheckedChange={async (checked) => {
+                          await handleSaveSettings(checked
+                            ? { enableSmartToolRouting: true }
+                            : {
                               enableSmartToolRouting: false,
                               useLightweightRouterModel: false,
                               routerModelProvider: '',
                               routerModelId: '',
                             })
-                          }
-                          void syncServers()
                         }}
                       />
                     </div>
@@ -647,9 +652,9 @@ function MCPServersDesktop() {
                     <div className="shrink-0 ml-4">
                       <Switch
                         checked={settings.useLightweightRouterModel}
-                        disabled={!settings.enableSmartToolRouting}
-                        onCheckedChange={(checked) => {
-                          updateSettings(
+                        disabled={savingSettings || !settings.enableSmartToolRouting}
+                        onCheckedChange={async (checked) => {
+                          await handleSaveSettings(
                             checked
                               ? { useLightweightRouterModel: true }
                               : {
@@ -658,7 +663,6 @@ function MCPServersDesktop() {
                                   routerModelId: '',
                                 }
                           )
-                          void syncServers()
                         }}
                       />
                     </div>
@@ -673,13 +677,12 @@ function MCPServersDesktop() {
                       providers={modelProviders}
                       selectedProvider={settings.routerModelProvider}
                       selectedModelId={settings.routerModelId}
-                      disabled={routerPickerDisabled}
-                      onSelect={(providerName, modelId) => {
-                        updateSettings({
+                      disabled={savingSettings || routerPickerDisabled}
+                      onSelect={async (providerName, modelId) => {
+                        await handleSaveSettings({
                           routerModelProvider: providerName,
                           routerModelId: modelId,
                         })
-                        void syncServers()
                       }}
                       placeholder={t(
                         'mcp-servers:runtimeSettings.selectRouterModelPlaceholder'
@@ -847,6 +850,7 @@ function MCPServersDesktop() {
                             <Switch
                               checked={config.active}
                               loading={!!loadingServers[key]}
+                              disabled={!!loadingServers[key]}
                               onCheckedChange={(checked) =>
                                 toggleServer(key, checked)
                               }

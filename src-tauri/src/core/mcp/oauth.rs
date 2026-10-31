@@ -290,7 +290,12 @@ pub async fn advertises_oauth(url: &str) -> bool {
     let OAuthState::Unauthorized(manager) = state else {
         return false;
     };
-    manager.resolve_metadata().await.is_ok()
+    // A successful resolution can contain synthesized legacy endpoints even
+    // when the server published no OAuth metadata. Only discovery is evidence.
+    manager
+        .resolve_metadata()
+        .await
+        .is_ok_and(|resolution| resolution.source.is_discovered())
 }
 
 /// Whether `url` may be an OAuth endpoint, or be opened in a browser during
@@ -795,6 +800,52 @@ mod tests {
             }
         });
         (base, task)
+    }
+
+    #[tokio::test]
+    async fn advertises_oauth_rejects_legacy_endpoints_without_metadata() {
+        use rmcp::transport::auth::AuthorizationMetadataSource;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // An ordinary non-OAuth endpoint: every discovery route is absent.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 4096];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let n = socket.read(&mut buf).await.unwrap();
+                    if n == 0 { break; }
+                    request.extend_from_slice(&buf[..n]);
+                }
+                socket.write_all(
+                    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                ).await.unwrap();
+            }
+        });
+
+        // Demonstrate the regression: rmcp returns Ok with usable-looking
+        // endpoints, but explicitly says they were not discovered.
+        let OAuthState::Unauthorized(manager) = OAuthState::new(url.clone(), None).await.unwrap()
+        else { panic!("expected an unauthorized manager") };
+        let resolution = manager.resolve_metadata().await.unwrap();
+        assert_eq!(resolution.source, AuthorizationMetadataSource::LegacyEndpointFallback);
+        assert!(!advertises_oauth(&url).await);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn advertises_oauth_accepts_discovered_metadata() {
+        let (base, task) = registration_server(201, r#"{"client_id":"registered"}"#).await;
+        assert!(advertises_oauth(&format!("{base}/mcp")).await);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn advertises_oauth_rejects_discovery_errors() {
+        assert!(!advertises_oauth("not a URL").await);
     }
 
     #[tokio::test]

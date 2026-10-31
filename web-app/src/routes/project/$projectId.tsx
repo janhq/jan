@@ -143,6 +143,7 @@ function ProjectPageContent() {
               projectId={projectId}
               projectAssistantId={project.assistantId}
               leadingControls={coworkAvailable ? <HomeModeToggle mode={mode} onChange={setMode} /> : undefined}
+              supportsAssistants={mode === 'chat'}
               ownsToolSet={mode === 'cowork' ? false : undefined}
               scopeKey={mode === 'cowork' ? `project-cowork:${projectId}` : undefined}
               onSubmit={mode === 'cowork' ? (

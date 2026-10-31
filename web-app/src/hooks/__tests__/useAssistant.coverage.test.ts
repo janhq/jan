@@ -22,10 +22,10 @@ vi.mock('@/constants/localStorage', () => ({
 }))
 
 describe('useAssistant - coverage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     localStorage.clear()
-    act(() => {
+    await act(async () => {
       useAssistant.setState({
         assistants: [defaultAssistant],
         currentAssistant: defaultAssistant,
@@ -35,17 +35,17 @@ describe('useAssistant - coverage', () => {
     })
   })
 
-  it('should set null assistants and just set loading false', () => {
+  it('should set null assistants and just set loading false', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setAssistants(null)
     })
 
     expect(result.current.loading).toBe(false)
   })
 
-  it('setAssistants should use last used assistant from localStorage', () => {
+  it('setAssistants should use last used assistant from localStorage', async () => {
     localStorage.setItem('last-used-assistant', 'a2')
     const { result } = renderHook(() => useAssistant())
 
@@ -54,14 +54,14 @@ describe('useAssistant - coverage', () => {
       { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} },
     ]
 
-    act(() => {
+    await act(async () => {
       result.current.setAssistants(assistants as any)
     })
 
     expect(result.current.currentAssistant?.id).toBe('a2')
   })
 
-  it('setAssistants should use default assistant ID from localStorage', () => {
+  it('setAssistants should use default assistant ID from localStorage', async () => {
     localStorage.setItem('default-assistant-id', 'a2')
     const { result } = renderHook(() => useAssistant())
 
@@ -70,7 +70,7 @@ describe('useAssistant - coverage', () => {
       { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} },
     ]
 
-    act(() => {
+    await act(async () => {
       result.current.setAssistants(assistants as any)
     })
 
@@ -78,22 +78,22 @@ describe('useAssistant - coverage', () => {
     expect(result.current.defaultAssistantId).toBe('a2')
   })
 
-  it('setAssistants should fallback to default when last used ID not found', () => {
+  it('setAssistants should fallback to default when last used ID not found', async () => {
     localStorage.setItem('last-used-assistant', 'nonexistent')
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setAssistants([defaultAssistant] as any)
     })
 
     expect(result.current.currentAssistant?.id).toBe('jan')
   })
 
-  it('setAssistants handles empty string last used ID', () => {
+  it('setAssistants handles empty string last used ID', async () => {
     localStorage.setItem('last-used-assistant', '')
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setAssistants([defaultAssistant] as any)
     })
 
@@ -101,58 +101,58 @@ describe('useAssistant - coverage', () => {
     expect(result.current.currentAssistant).toBeUndefined()
   })
 
-  it('should delete current assistant and fallback to default', () => {
+  it('should delete current assistant and fallback to default', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const a2 = { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} }
-    act(() => {
-      result.current.addAssistant(a2 as any)
+    await act(async () => {
+      await result.current.addAssistant(a2 as any)
       result.current.setCurrentAssistant(a2 as any)
     })
 
-    act(() => {
-      result.current.deleteAssistant('a2')
+    await act(async () => {
+      await result.current.deleteAssistant('a2')
     })
 
     expect(result.current.currentAssistant?.id).toBe('jan')
   })
 
-  it('should delete the default assistant and reset', () => {
+  it('should delete the default assistant and reset', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setDefaultAssistant('jan')
     })
 
-    act(() => {
-      result.current.deleteAssistant('jan')
+    await act(async () => {
+      await result.current.deleteAssistant('jan')
     })
 
     // defaultAssistantId should reset
     expect(result.current.assistants.find(a => a.id === 'jan')).toBeUndefined()
   })
 
-  it('setCurrentAssistant switches even when a default assistant is set', () => {
+  it('setCurrentAssistant switches even when a default assistant is set', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       useAssistant.setState({ defaultAssistantId: 'jan' })
     })
 
     const a2 = { id: 'a2', name: 'A2' } as any
-    act(() => {
+    await act(async () => {
       result.current.setCurrentAssistant(a2)
     })
 
     expect(result.current.currentAssistant?.id).toBe('a2')
   })
 
-  it('setCurrentAssistant with saveToStorage false', () => {
+  it('setCurrentAssistant with saveToStorage false', async () => {
     const { result } = renderHook(() => useAssistant())
     const setItemSpy = vi.spyOn(localStorage, 'setItem')
 
     const a2 = { id: 'a2', name: 'A2' } as any
-    act(() => {
+    await act(async () => {
       result.current.setCurrentAssistant(a2, false)
     })
 
@@ -161,10 +161,10 @@ describe('useAssistant - coverage', () => {
     expect(setItemSpy).not.toHaveBeenCalledWith('last-used-assistant', 'a2')
   })
 
-  it('setCurrentAssistant does nothing if same assistant', () => {
+  it('setCurrentAssistant does nothing if same assistant', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setCurrentAssistant(defaultAssistant as any)
     })
 
@@ -172,10 +172,10 @@ describe('useAssistant - coverage', () => {
     expect(result.current.currentAssistant?.id).toBe('jan')
   })
 
-  it('setDefaultAssistant should set and persist', () => {
+  it('setDefaultAssistant should set and persist', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setDefaultAssistant('jan')
     })
 
@@ -183,36 +183,36 @@ describe('useAssistant - coverage', () => {
     expect(result.current.currentAssistant?.id).toBe('jan')
   })
 
-  it('setDefaultAssistant with non-existent ID', () => {
+  it('setDefaultAssistant with non-existent ID', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setDefaultAssistant('nonexistent')
     })
 
     expect(result.current.defaultAssistantId).toBe('nonexistent')
   })
 
-  it('setDefaultAssistant with empty string removes default', () => {
+  it('setDefaultAssistant with empty string removes default', async () => {
     const { result } = renderHook(() => useAssistant())
 
-    act(() => {
+    await act(async () => {
       result.current.setDefaultAssistant('')
     })
 
     expect(result.current.defaultAssistantId).toBe('')
   })
 
-  it('updateAssistant should not change currentAssistant when different assistant updated', () => {
+  it('updateAssistant should not change currentAssistant when different assistant updated', async () => {
     const { result } = renderHook(() => useAssistant())
 
     const a2 = { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 1, parameters: {} }
-    act(() => {
-      result.current.addAssistant(a2 as any)
+    await act(async () => {
+      await result.current.addAssistant(a2 as any)
     })
 
-    act(() => {
-      result.current.updateAssistant({ ...a2, name: 'Updated A2' } as any)
+    await act(async () => {
+      await result.current.updateAssistant({ ...a2, name: 'Updated A2' } as any)
     })
 
     // currentAssistant should still be jan

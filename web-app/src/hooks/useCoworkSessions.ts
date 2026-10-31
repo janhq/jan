@@ -72,6 +72,7 @@ type CoworkSessionsState = {
   createSession: () => string
   selectSession: (id: string) => void
   deleteSession: (id: string) => void
+  setProject: (id: string, project: CoworkSession['project']) => void
   setFolder: (id: string, folder: string | null) => void
   setModel: (id: string, model: ThreadModel) => void
   setPlanMode: (id: string, planMode: boolean) => void
@@ -183,6 +184,13 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
             s.currentId === id ? (sessions[0]?.id ?? null) : s.currentId
           return { sessions, currentId }
         }),
+
+      setProject: (id, project) =>
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === id ? { ...x, project, updated: now() } : x
+          ),
+        })),
 
       setFolder: (id, folder) =>
         set((s) => ({
