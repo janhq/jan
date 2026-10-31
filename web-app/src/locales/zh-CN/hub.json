@@ -13,5 +13,6 @@
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
   "tools": "工具",
-  "searchPlaceholder": "在 Hugging Face 上搜索模型..."
+  "searchPlaceholder": "搜索 Hugging Face 内的模型...",
+  "resumeUnavailable": "无法恢复此下载任务，请重新开始。"
 }
