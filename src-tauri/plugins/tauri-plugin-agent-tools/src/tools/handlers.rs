@@ -1679,7 +1679,19 @@ pub async fn render_html_png(
         }
         String::from_utf8_lossy(&buf).into_owned()
     });
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    let pid = child.id();
+    let waited = tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await;
+    // Still running: Chrome leads its own process group, so take its helper
+    // processes down with it. Only while unreaped -- once `wait` returns, the
+    // pid (and so the group id) may be reused.
+    #[cfg(unix)]
+    if waited.is_err() {
+        if let Some(pid) = pid {
+            proc::kill_tree(pid);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (waited, pid);
     let _ = child.kill().await;
     let stderr = drain.await.unwrap_or_default();
     let _ = tokio::fs::remove_dir_all(&profile).await;

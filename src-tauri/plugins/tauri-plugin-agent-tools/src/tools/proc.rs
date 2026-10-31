@@ -732,9 +732,10 @@ fn set_process_group(cmd: &mut Command) {
 /// Once it exits, the foreground points at a dead group and the TUI's next
 /// read of the terminal stops Jan with SIGTTIN -- the shell then reports
 /// `suspended (tty input)` and the session looks dead. Without a controlling
-/// terminal, opening `/dev/tty` fails (ENXIO), so a child can never take Jan's
-/// terminal; a tool that insists on prompting there fails fast instead of
-/// stopping or hanging.
+/// terminal, opening `/dev/tty` fails (ENXIO) and `tcsetpgrp` has no terminal
+/// to act on, so a child can never make itself the foreground group of Jan's
+/// terminal; a tool that prompts on `/dev/tty` fails fast instead of stopping
+/// or hanging.
 ///
 /// This replaces `process_group(0)` rather than adding to it: std applies the
 /// process group before the `pre_exec` hooks, and `setsid` refuses (EPERM) in a
@@ -1325,7 +1326,10 @@ mod tests {
     /// The SIGTTIN stop behind a "dead" TUI session: a tool child that could
     /// open `/dev/tty` could also make itself the terminal's foreground group
     /// and leave Jan reading from the background. Without a controlling
-    /// terminal the open fails, whether or not Jan itself has one.
+    /// terminal the open fails. Only meaningful when the test runner itself
+    /// has a terminal (run it under a pty to see the old `process_group(0)`
+    /// spawn print "opened"); without one it passes either way, and
+    /// `spawned_child_leads_its_own_session` is the guard.
     #[tokio::test]
     async fn spawned_child_cannot_open_the_terminal() {
         let child = spawn(
