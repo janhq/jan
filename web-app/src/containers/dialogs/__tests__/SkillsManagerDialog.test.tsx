@@ -102,6 +102,8 @@ describe('SkillsManagerDialog', () => {
     fireEvent.change(content, { target: { value: 'Updated instructions' } })
     click('common:skillSave')
     await waitFor(() => expect(mocks.write).toHaveBeenCalledWith('writing', 'Updated instructions', false))
+    // Invocation precedes save completion; deleting while busy is intentionally disabled.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'common:skillDelete: writing' })).toBeEnabled())
     click('common:skillDelete: writing')
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('writing'))
     await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument())
