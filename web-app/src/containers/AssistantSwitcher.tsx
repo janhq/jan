@@ -105,7 +105,7 @@ export function AssistantSwitcher({
           <p>Switch assistant ({shortcutHint})</p>
         </TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+      <DropdownMenuContent align="start" className="min-w-0 w-[min(320px,calc(100vw-16px),var(--radix-dropdown-menu-content-available-width))] max-h-64 overflow-y-auto">
         <AssistantsMenu
           selectedAssistant={selectedAssistantId}
           setSelectedAssistant={setSelectedAssistantId}

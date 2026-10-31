@@ -80,6 +80,22 @@ describe('ComposerModelPicker', () => {
     expect(search.closest('[role="menu"]')).toBeNull()
     expect(screen.getByRole('menu', { name: 'Model options' }).contains(search)).toBe(false)
   })
+  // JSDOM cannot measure Popper collisions; native QA must also assert viewport
+  // bounds and that only the model list scrolls with the footer fully visible.
+  it('bounds the popup while allowing only model results to shrink and scroll', () => {
+    renderPicker(<ComposerModelPicker />)
+    const dialog = screen.getByRole('dialog', { name: 'Choose a model' })
+    expect(dialog).toHaveClass('flex', 'flex-col', 'overflow-hidden',
+      'max-h-[min(var(--radix-popover-content-available-height,calc(100dvh-24px)),calc(100dvh-24px))]')
+    const list = screen.getByRole('listbox', { name: 'Models' })
+    expect(list).toHaveClass('min-h-0', 'max-h-56', 'shrink', 'overflow-y-auto')
+    expect(screen.getByRole('combobox').parentElement?.parentElement).toHaveClass('shrink-0')
+    const footer = screen.getByRole('menu', { name: 'Model options' })
+    expect(footer.parentElement?.parentElement).toHaveClass('shrink-0')
+    expect(dialog).not.toHaveClass('overflow-y-auto')
+    expect(screen.getAllByRole('option')[0]).toHaveClass('py-1')
+    expect(screen.getByRole('menuitem', { name: /Manage models/ })).toHaveClass('min-h-8', 'py-1.5')
+  })
   it('links the combobox to instance-scoped result IDs', () => {
     const first = renderPicker(<ComposerModelPicker />)
     const search = screen.getByRole('combobox')
@@ -307,7 +323,9 @@ describe('ComposerModelPicker', () => {
     setup({ id: 'gpt-5.2', settings: { thinking_budget_tokens: { key: 'thinking_budget_tokens', title: '', description: '', controller_type: 'dropdown', controller_props: { value: 'high' } } } })
     renderPicker(<ComposerModelPicker />)
     openChoices('Reasoning effort')
-    expect(screen.getByRole('menuitemradio', { name: 'High' })).toHaveAttribute('aria-checked', 'true')
+    const selectedChoice = screen.getByRole('menuitemradio', { name: 'High' })
+    expect(selectedChoice).toHaveAttribute('aria-checked', 'true')
+    expect(selectedChoice.querySelector('svg')).toHaveClass('size-4', 'text-primary')
     expect(screen.getByRole('menuitemradio', { name: 'Default' })).toHaveAttribute('aria-checked', 'false')
     expect(mocks.update).not.toHaveBeenCalled()
   })

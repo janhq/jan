@@ -91,7 +91,7 @@ function ReasoningSubmenu({ label, accessibleLabel, value, choices, onChange }: 
   const options = [{ value: '', label: 'Default' }, ...choices]
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger aria-label={accessibleLabel} className="rounded-lg px-2.5 py-2 [&>svg:last-child]:ml-0">
+      <DropdownMenuSubTrigger aria-label={accessibleLabel} className="min-h-8 rounded-lg px-2.5 py-1.5 [&>svg:last-child]:ml-0">
         <Brain className="size-4 text-muted-foreground" />
         <span>{label}</span>
         <span className="flex-1 text-right text-muted-foreground">{options.find((choice) => choice.value === value)?.label ?? 'Default'}</span>
@@ -103,7 +103,7 @@ function ReasoningSubmenu({ label, accessibleLabel, value, choices, onChange }: 
               <MenuPrimitive.RadioItem key={choice.value} value={choice.value}
                 className="flex cursor-default items-center gap-4 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground">
                 <span className="flex-1">{choice.label}</span>
-                <span className="size-4"><MenuPrimitive.ItemIndicator><Check className="size-4" /></MenuPrimitive.ItemIndicator></span>
+                <span className="size-4"><MenuPrimitive.ItemIndicator><Check className="size-4 text-primary" /></MenuPrimitive.ItemIndicator></span>
               </MenuPrimitive.RadioItem>
             ))}
           </MenuPrimitive.RadioGroup>
@@ -261,10 +261,10 @@ export default function ComposerModelPicker({
             {override && <span className="shrink-0 text-muted-foreground @max-[520px]/composer:hidden">· {override}</span>}
           </button>
         </PopoverTrigger>
-        <PopoverContent aria-label="Choose a model" align="end" side="top" sideOffset={8} className="w-[336px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl p-0 shadow-lg"
+        <PopoverContent aria-label="Choose a model" align="end" side="top" sideOffset={8} collisionPadding={12} className="flex max-h-[min(var(--radix-popover-content-available-height,calc(100dvh-24px)),calc(100dvh-24px))] w-[336px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-xl p-0 shadow-lg"
           onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus() }}
           onCloseAutoFocus={(event) => { if (settingsOpen) event.preventDefault() }}>
-          <div className="border-b px-3 py-2">
+          <div className="shrink-0 border-b px-3 py-2">
             <div className="flex items-center gap-2">
               <Search className="size-4 shrink-0 text-muted-foreground" />
               <input ref={searchRef} role="combobox" aria-label="Search models or providers" aria-expanded={open} aria-controls={resultsId} aria-autocomplete="list"
@@ -293,13 +293,13 @@ export default function ComposerModelPicker({
                 }} />
             </div>
           </div>
-          <div id={resultsId} role="listbox" aria-label="Models" className="max-h-64 overflow-y-auto p-1.5">
+          <div id={resultsId} role="listbox" aria-label="Models" className="min-h-0 max-h-56 shrink overflow-y-auto p-1.5">
             {results.map(({ provider: p, model: m }, index) => {
               const selected = p.provider === selectedProvider && m.id === selectedModel?.id
               return <button type="button" role="option" tabIndex={-1} aria-selected={selected} id={`${resultsId}-${index}`} key={`${p.provider}/${m.id}`}
                 onKeyDown={(e) => { if (e.key !== 'Escape' && e.key !== 'Tab') e.stopPropagation() }}
                 data-testid={`model-option-${m.id}`} onMouseEnter={() => setActiveIndex(index)} onClick={() => select(p.provider, m.id)}
-                className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring', activeIndex === index && 'bg-muted', selected && 'font-medium')}>
+                className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring', activeIndex === index && 'bg-muted', selected && 'font-medium')}>
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm" title={m.id}>{getModelDisplayName(m)}</span><span className="block text-[11px] leading-4 font-normal text-muted-foreground">{getProviderTitle(p.provider)}</span></span>
                 {selected && <Check className="size-4 shrink-0 text-primary" />}
               </button>
@@ -308,7 +308,7 @@ export default function ComposerModelPicker({
           </div>
           {/* Only the footer is a menu. Keep its Popper wrapper in normal flow;
               submenus still use the shared portalled/layered primitives. */}
-          <div className="border-t p-1.5 [&>[data-radix-popper-content-wrapper]]:static! [&>[data-radix-popper-content-wrapper]]:transform-none! [&>[data-radix-popper-content-wrapper]]:w-full!">
+          <div className="shrink-0 border-t p-1.5 [&>[data-radix-popper-content-wrapper]]:static! [&>[data-radix-popper-content-wrapper]]:transform-none! [&>[data-radix-popper-content-wrapper]]:w-full!">
             <DropdownMenu modal={false} open>
               <MenuPrimitive.Content ref={footerRef} aria-label="Model options" className="space-y-0.5 outline-none"
                 onCloseAutoFocus={(event) => event.preventDefault()}
@@ -332,10 +332,10 @@ export default function ComposerModelPicker({
               value={activeChoice?.value ?? ''}
               choices={effort.choices.map((choice) => ({ ...choice, label: choice.label === 'XHigh' ? 'Very high' : choice.label }))}
               onChange={(value) => setEffort(value)} />}
-            {provider && selectedModel?.settings && <DropdownMenuItem className="rounded-lg px-2.5 py-2" onSelect={() => { setOpen(false); setSettingsOpen(true) }}>
+            {provider && selectedModel?.settings && <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 py-1.5" onSelect={() => { setOpen(false); setSettingsOpen(true) }}>
               <Settings2 className="size-4 text-muted-foreground" /><span>Model settings</span>
             </DropdownMenuItem>}
-            <DropdownMenuItem className="rounded-lg px-2.5 py-2" onSelect={() => { setOpen(false); navigate({ to: route.settings.model_providers }) }}>
+            <DropdownMenuItem className="min-h-8 rounded-lg px-2.5 py-1.5" onSelect={() => { setOpen(false); navigate({ to: route.settings.model_providers }) }}>
               <SlidersHorizontal className="size-4 text-muted-foreground" /><span className="flex-1">Manage models</span><ChevronRight className="size-4 text-muted-foreground" />
             </DropdownMenuItem>
               </MenuPrimitive.Content>
