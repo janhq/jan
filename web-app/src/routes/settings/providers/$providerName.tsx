@@ -54,6 +54,22 @@ import {
   withUnreachableErrors,
 } from '@/lib/provider-unreachable'
 
+// Predefined providers whose base URL the user sets, with the hint and the
+// placeholder shown in the editor.
+const EDITABLE_BASE_URL_PROVIDERS: Record<
+  string,
+  { descriptionKey: string; placeholder: string }
+> = {
+  azure: {
+    descriptionKey: 'providers:baseUrl.azureDescription',
+    placeholder: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+  },
+  litellm: {
+    descriptionKey: 'providers:baseUrl.litellmDescription',
+    placeholder: 'http://localhost:4000/v1',
+  },
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
   component: ProviderDetail,
@@ -253,7 +269,7 @@ function ProviderDetail() {
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
 
   useEffect(() => {
-    if (provider?.provider !== 'azure') return
+    if (!provider || !(provider.provider in EDITABLE_BASE_URL_PROVIDERS)) return
     setBaseUrlDraft(provider.base_url ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.base_url])
@@ -336,7 +352,7 @@ function ProviderDetail() {
   }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
 
   const commitBaseUrlDraft = useCallback(() => {
-    if (!provider || provider.provider !== 'azure') return
+    if (!provider || !(provider.provider in EDITABLE_BASE_URL_PROVIDERS)) return
     const next = baseUrlDraft.trim()
     if (next === (provider.base_url ?? '')) return
     updateProvider(providerName, { ...provider, base_url: next })
@@ -479,7 +495,13 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
+    // A LiteLLM proxy can run without authentication, so it needs no key.
+    const needsApiKey = provider?.provider !== 'litellm'
+    if (
+      !provider ||
+      !provider.base_url ||
+      (needsApiKey && !providerHasRemoteApiKeys(provider))
+    ) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
@@ -803,19 +825,25 @@ function ProviderDetail() {
                 provider.provider !== 'llamacpp' &&
                 provider.provider !== 'mlx' && (
                   <Card>
-                    {provider.provider === 'azure' && (
+                    {provider.provider in EDITABLE_BASE_URL_PROVIDERS && (
                       <div className="space-y-2 mb-4">
                         <div className="space-y-1">
                           <h2 className="font-medium text-foreground text-base">
                             {t('providers:baseUrl.title')}
                           </h2>
                           <p className="text-sm text-muted-foreground leading-normal">
-                            {t('providers:baseUrl.azureDescription')}
+                            {t(
+                              EDITABLE_BASE_URL_PROVIDERS[provider.provider]
+                                .descriptionKey
+                            )}
                           </p>
                         </div>
                         <input
                           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          placeholder="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1"
+                          placeholder={
+                            EDITABLE_BASE_URL_PROVIDERS[provider.provider]
+                              .placeholder
+                          }
                           value={baseUrlDraft}
                           onChange={(e) => setBaseUrlDraft(e.target.value)}
                           onBlur={() => commitBaseUrlDraft()}
