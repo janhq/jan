@@ -31,5 +31,11 @@
   "personality": "Personalidade",
   "capabilities": "Capacidades",
   "instructionsDateHint": "Dica: Use {{current_date}} para inserir a data de hoje.",
-  "maxToolSteps": "Máximo de passos das ferramentas (tools)"
+  "maxToolSteps": "Máximo de passos das ferramentas (tools)",
+  "setAsDefault": "Definir como assistente padrão",
+  "isDefault": "Padrão",
+  "defaultAssistantSection": "Assistente Padrão",
+  "defaultAssistantDesc": "Usado ao iniciar um novo chat",
+  "allAssistants": "Todos os Assistentes",
+  "lastUsed": "Último usado"
 }

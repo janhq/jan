@@ -1,5 +1,18 @@
 {
   "addProvider": "Adicionar Provedor",
   "addOpenAIProvider": "Adicionar Provedor OpenAI",
-  "enterNameForProvider": "Digite o nome para o provedor"
+  "enterNameForProvider": "Digite o nome para o provedor",
+  "apiTypeLabel": "Formato da API",
+  "apiTypeOpenAI": "Compatível com OpenAI",
+  "apiTypeAnthropic": "Compatível com Anthropic",
+  "baseUrlLabel": "URL base",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "Chave de API",
+  "apiKeyPlaceholder": "Cole sua chave de API",
+  "invalidBaseUrl": "A URL base deve ser uma URL http(s) válida",
+  "globalSettings": "Configurações globais",
+  "stripReasoning": "Remover o raciocínio do contexto",
+  "stripReasoningDesc": "Remove o conteúdo de raciocínio (thinking) das mensagens anteriores antes de reenviar o histórico, em todos os provedores. Melhora o reaproveitamento do cache KV em modelos locais, mas alguns modelos (como as versões mais recentes do Qwen) recomendam mantê-lo para um raciocínio melhor em várias rodadas.",
+  "providerAlreadyExists": "Já existe um provedor chamado {{name}}."
 }
