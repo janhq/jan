@@ -662,6 +662,21 @@ const ChatInput = memo(function ChatInput({
       return
     }
 
+    // Revalidate at send time: attachments can outlive a model switch. Use
+    // capabilities directly, not hasMmproj's effect-delayed picker state.
+    // Local model discovery advertises vision; remote models need no mmproj.
+    const unsupportedMedia = (['image', 'audio', 'video'] as const).filter(
+      (type) =>
+        attachments.some((att) => att.type === type && !!att.dataUrl) &&
+        !selectedModel.capabilities?.includes(type === 'image' ? 'vision' : type)
+    )
+    if (unsupportedMedia.length > 0) {
+      toast.info(
+        `The selected model does not support ${unsupportedMedia.join(', ')} attachments. Choose a compatible model or remove these attachments.`
+      )
+      return false
+    }
+
     setMessage('')
     addToHistory(effectivePrompt)
 
@@ -2107,11 +2122,12 @@ const ChatInput = memo(function ChatInput({
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">
-                <div className="flex gap-3 items-center">
+                <div className="flex min-w-0 flex-wrap gap-2 items-center">
                   {attachments
                     .map((att, idx) => ({ att, idx }))
                     .map(({ att, idx }) => {
                       const isImage = att.type === 'image'
+                      const isDocument = att.type === 'document'
                       const isAudio = att.type === 'audio'
                       const isVideo = att.type === 'video'
                       const ext = att.fileType || att.mimeType?.split('/')[1]
@@ -2126,14 +2142,24 @@ const ChatInput = memo(function ChatInput({
                       return (
                         <div
                           key={`${att.type}-${idx}-${att.name}`}
-                          className="relative"
+                          className={cn(
+                            'relative min-w-0',
+                            isDocument
+                              ? 'flex max-w-full items-center rounded-xl border bg-muted/30'
+                              : 'shrink-0 pr-2 pt-2'
+                          )}
+                          aria-busy={att.processing || undefined}
                         >
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div
+                                tabIndex={0}
+                                aria-label={att.name}
                                 className={cn(
-                                  'relative border rounded-xl size-14 overflow-hidden',
-                                  'flex items-center justify-center'
+                                  'relative flex min-w-0 items-center overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                                  isDocument
+                                    ? 'h-11 gap-2 pl-3 pr-1'
+                                    : 'size-14 justify-center border'
                                 )}
                               >
                                 {isImage && att.dataUrl ? (
@@ -2156,8 +2182,8 @@ const ChatInput = memo(function ChatInput({
                                     <IconVideo size={20} />
                                   </div>
                                 ) : (
-                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                    <IconPaperclip size={18} />
+                                  <div aria-hidden="true" className="flex shrink-0 flex-col items-center justify-center text-muted-foreground">
+                                    <IconPaperclip size={16} />
                                     {ext && (
                                       <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
                                         .{ext}
@@ -2165,14 +2191,16 @@ const ChatInput = memo(function ChatInput({
                                     )}
                                   </div>
                                 )}
+                                {isDocument && (
+                                  <span className="min-w-0 max-w-48 truncate text-sm">
+                                    {att.name}
+                                  </span>
+                                )}
                               </div>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-xs">
-                                <div
-                                  className="font-medium truncate max-w-52"
-                                  title={att.name}
-                                >
+                            <TooltipContent className="max-w-[min(24rem,calc(100vw-2rem))]">
+                              <div className="min-w-0 text-xs">
+                                <div className="font-medium whitespace-normal [overflow-wrap:anywhere]">
                                   {att.name}
                                 </div>
                                 <div className="opacity-70">
@@ -2203,15 +2231,18 @@ const ChatInput = memo(function ChatInput({
                             </TooltipContent>
                           </Tooltip>
 
-                          {/* Remove button disabled while processing - outside overflow-hidden container */}
-                          {!att.processing && (
-                            <div
-                              className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                              onClick={() => handleRemoveAttachment(idx)}
-                            >
-                              <IconX className="text-neutral-200" size={14} />
-                            </div>
-                          )}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${att.name}`}
+                            disabled={att.processing}
+                            className={cn(
+                              'flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+                              isDocument ? 'mx-1' : 'absolute right-0 top-0 border'
+                            )}
+                            onClick={() => handleRemoveAttachment(idx)}
+                          >
+                            <IconX aria-hidden="true" size={14} />
+                          </button>
                         </div>
                       )
                     })}

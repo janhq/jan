@@ -36,7 +36,7 @@ export class DefaultMessagesService implements MessagesService {
       ExtensionManager.getInstance()
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.createMessage(message)
-        ?.catch(() => message) ?? message
+        ?? Promise.reject(new Error('Message storage is unavailable'))
     )
   }
 
@@ -50,7 +50,7 @@ export class DefaultMessagesService implements MessagesService {
       ExtensionManager.getInstance()
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.modifyMessage(message)
-        ?.catch(() => message) ?? message
+        ?? Promise.reject(new Error('Message storage is unavailable'))
     )
   }
 

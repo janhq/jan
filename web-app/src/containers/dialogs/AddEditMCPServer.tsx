@@ -392,12 +392,13 @@ export default function AddEditMCPServer({
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!savePending.current) onOpenChange(value) }}>
       <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden"
         showCloseButton={false}
         onInteractOutside={(e) => {
           e.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center justify-between">
             <span>
               {editingKey
@@ -416,6 +417,7 @@ export default function AddEditMCPServer({
             </div>
           </DialogTitle>
         </DialogHeader>
+        <div data-testid="mcp-dialog-scroll-content" className="min-h-0 overflow-y-auto">
         {isToggled ? (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -682,8 +684,9 @@ export default function AddEditMCPServer({
           </div>
         )}
 
-        {error && <div role="alert" className="text-destructive text-sm">{error}</div>}
-        <DialogFooter>
+        {error && <div role="alert" className="text-destructive text-sm max-h-32 overflow-y-auto [overflow-wrap:anywhere]">{error}</div>}
+        </div>
+        <DialogFooter className="shrink-0">
           <Button disabled={saving} variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>

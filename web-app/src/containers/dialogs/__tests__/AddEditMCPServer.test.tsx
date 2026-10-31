@@ -275,3 +275,37 @@ describe('MCP JSON and deletion async dialogs', () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })
 })
+
+
+describe('MCP dialog bounded errors', () => {
+  it.each(['form', 'json', 'all-json'])('keeps long %s save failures in a scroll body, outside the fixed footer', async (mode) => {
+    const failure = 'transport failure ' + 'x'.repeat(12000)
+    const props = baseProps()
+    props.onSave.mockRejectedValueOnce(new Error(failure))
+    if (mode === 'all-json') {
+      render(<EditJsonMCPserver open onOpenChange={props.onOpenChange} serverName={null} initialData={{}} onSave={props.onSave} />)
+      fireEvent.click(screen.getByText('mcp-servers:editJson.save'))
+    } else {
+      render(<AddEditMCPServer {...props} />)
+      if (mode === 'json') {
+        fireEvent.click(document.querySelector('[title="Add server by JSON"]')!)
+        fireEvent.change(screen.getByTestId('code-editor'), { target: { value: '{"OAuth":{"command":"node"}}' } })
+      } else {
+        fireEvent.change(screen.getByPlaceholderText('mcp-servers:enterServerName'), { target: { value: 'OAuth' } })
+      }
+      fireEvent.click(screen.getByText('mcp-servers:save'))
+    }
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(failure)
+    expect(alert).toHaveClass('max-h-32', 'overflow-y-auto', '[overflow-wrap:anywhere]')
+    const body = screen.getByTestId('mcp-dialog-scroll-content')
+    expect(body).toContainElement(alert)
+    expect(body).toHaveClass('min-h-0', 'overflow-y-auto')
+    expect(screen.getByRole('dialog')).toHaveClass('max-h-[calc(100dvh-2rem)]', 'overflow-hidden')
+    const save = screen.getByText(mode === 'all-json' ? 'mcp-servers:editJson.save' : 'mcp-servers:save')
+    expect(body).not.toContainElement(save)
+    expect(save.parentElement).toHaveClass('shrink-0')
+    expect(save).not.toBeDisabled()
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+  })
+})

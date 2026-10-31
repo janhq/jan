@@ -319,6 +319,37 @@ describe('ComposerModelPicker', () => {
     await user.keyboard('{Escape}')
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('model-selector-trigger')))
   })
+  it.each([
+    ['remote effort', 'openai', 'gpt-5.2', 'Reasoning effort', 0],
+    ['local mode', 'llamacpp', 'local', 'Reasoning mode', 0],
+    ['local budget', 'llamacpp', 'local', 'Reasoning effort', 1],
+  ] as const)('closes only the %s submenu on Escape, then closes the picker on a second Escape', async (_label, providerId, modelId, submenuName, tabSteps) => {
+    setup({ id: modelId, capabilities: ['reasoning'] }, providerId)
+    const user = userEvent.setup()
+    render(<ComposerModelPicker />)
+    const trigger = screen.getByTestId('model-selector-trigger')
+    await user.click(trigger)
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('combobox')))
+    await user.tab()
+    for (let i = 0; i < tabSteps; i++) await user.keyboard('{ArrowDown}')
+    const reasoning = screen.getByRole('menuitem', { name: submenuName })
+    await waitFor(() => expect(document.activeElement).toBe(reasoning))
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Default' })))
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu', { name: submenuName })).toBeNull())
+    expect(screen.getByRole('dialog', { name: 'Choose a model' })).toBeInTheDocument()
+    expect(reasoning).toHaveAttribute('aria-expanded', 'false')
+    expect(document.activeElement).toBe(reasoning)
+    expect(mocks.update).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Choose a model' })).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+
   it('marks the active effort choice and does not write when opening its submenu', () => {
     setup({ id: 'gpt-5.2', settings: { thinking_budget_tokens: { key: 'thinking_budget_tokens', title: '', description: '', controller_type: 'dropdown', controller_props: { value: 'high' } } } })
     renderPicker(<ComposerModelPicker />)

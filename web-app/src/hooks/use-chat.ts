@@ -1,3 +1,4 @@
+import { trackChat, observeChatWork, isChatClosing } from '@/lib/chatClose'
 import {
   CustomChatTransport,
   type ContinuationContent,
@@ -84,7 +85,19 @@ export function useChat(
     return ensureSession(
       sessionId,
       transportRef.current,
-      () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
+      () => {
+        const pending = new Set<Promise<unknown>>()
+        const instance = new Chat({
+          ...chatInitOptions,
+          transport: transportRef.current,
+          onFinish: (event) => observeChatWork(pending, () => chatInitOptions.onFinish?.(event)),
+          sendAutomaticallyWhen: chatInitOptions.sendAutomaticallyWhen
+            ? async (event) => !isChatClosing() && await chatInitOptions.sendAutomaticallyWhen!(event) && !isChatClosing()
+            : undefined,
+        })
+        trackChat(instance, pending)
+        return instance
+      },
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps

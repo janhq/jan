@@ -1,3 +1,6 @@
+import { Chat } from '@ai-sdk/react'
+import { trackChat, observeChatWork, __resetChatCloseForTests } from '@/lib/chatClose'
+import { flushMessageWrites, __resetMessageWritesForTests, useMessages } from '@/hooks/useMessages'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 
@@ -45,10 +48,12 @@ const backend = vi.hoisted(() => {
   return { settings, threads, extras, log, invoke }
 })
 
+const chatStorage = vi.hoisted(() => ({ create: vi.fn().mockResolvedValue(undefined), modify: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined) }))
 const updateChatThread = vi.hoisted(() => vi.fn())
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     core: () => ({ invoke: backend.invoke }),
+    messages: () => ({ createMessage: chatStorage.create, modifyMessage: chatStorage.modify, deleteMessage: chatStorage.remove }),
     threads: () => ({ updateThread: updateChatThread }),
     projects: () => ({ getProjects: async () => [], deleteProject: async () => {} }),
   }),
@@ -94,6 +99,10 @@ const legacy = (id: string): Json => ({
 
 describe('coworkSync startup', () => {
   beforeEach(() => {
+    __resetChatCloseForTests()
+    __resetMessageWritesForTests()
+    useMessages.setState({ messages: {} })
+    chatStorage.create.mockReset().mockResolvedValue(undefined)
     backend.settings.clear()
     backend.threads.clear()
     backend.extras.clear()
@@ -195,6 +204,49 @@ describe('coworkSync startup', () => {
     const reloaded = useCoworkSessions.getState().sessions.find((s) => s.id === id)!
     expect(reloaded.turns).toEqual(turns)
     expect(reloaded.messages).toEqual(messages)
+  })
+
+  it('native close handler holds BOTH ordinary Chat finalization/write and Cowork commit', async () => {
+    await startCoworkSync()
+    let finishChat!: () => void
+    let finishCowork!: () => void
+    let finishWrite!: () => void
+    const pending = new Set<Promise<unknown>>()
+    const chat = new Chat({})
+    trackChat(chat, pending)
+    const chatDone = new Promise<void>((resolve) => { finishChat = resolve })
+    const coworkDone = new Promise<void>((resolve) => { finishCowork = resolve })
+    const writeDone = new Promise<void>((resolve) => { finishWrite = resolve })
+    chatStorage.create.mockImplementation(async () => writeDone)
+    observeChatWork(pending, async () => {
+      await chatDone
+      useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
+    })
+    const unregister = registerCoworkRunForClose(() => coworkDone)
+    const preventDefault = vi.fn()
+    let destroyed = false
+    const closing = closeWindow.callback!({ preventDefault }).then(() => { destroyed = !preventDefault.mock.calls.length })
+    finishCowork(); await Promise.resolve(); expect(destroyed).toBe(false)
+    finishChat(); await vi.waitFor(() => expect(chatStorage.create).toHaveBeenCalled())
+    expect(destroyed).toBe(false)
+    finishWrite(); await closing
+    expect(destroyed).toBe(true)
+    unregister()
+  })
+
+  it('native close handler prevents destroy on failed ordinary write and second close retries', async () => {
+    await startCoworkSync()
+    chatStorage.create.mockRejectedValueOnce(new Error('disk full'))
+    useMessages.getState().addMessage({ id: 'partial', thread_id: 'ordinary', content: [] } as any)
+    await Promise.resolve(); await Promise.resolve()
+    const first = vi.fn()
+    await closeWindow.callback!({ preventDefault: first })
+    expect(first).toHaveBeenCalledOnce()
+    const second = vi.fn()
+    await closeWindow.callback!({ preventDefault: second })
+    expect(second).not.toHaveBeenCalled()
+    await flushMessageWrites()
+    expect(chatStorage.create).toHaveBeenCalledTimes(2)
   })
 
   it.each([true, false])('project reassignment survives later writes and project deletion (move=%s)', async (move) => {

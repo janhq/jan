@@ -36,7 +36,8 @@ import { McpRouterModelPicker } from '@/containers/McpRouterModelPicker'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 import { normalizeAppError } from '@/utils/appError'
 import { McpServerAuth } from '@/containers/McpServerAuth'
-import { useMcpAuth, needsAuthDetail } from '@/hooks/useMcpAuth'
+import { useMcpAuth } from '@/hooks/useMcpAuth'
+import { needsAuthDetail, isNeedsAuthError } from '@/utils/mcpAuthError'
 
 
 // Function to mask sensitive URL parameters
@@ -252,6 +253,7 @@ function MCPServersDesktop() {
     setSavingSettings(true)
     const previous = useMCPServers.getState()
     let committed = false
+    const needsSignIn: string[] = []
     keys.forEach((key) => pendingServers.current.add(key))
     setLoadingServers((current) => ({
       ...current, ...Object.fromEntries(keys.map((key) => [key, true])),
@@ -268,10 +270,31 @@ function MCPServersDesktop() {
       for (const key of keys) {
         const config = nextServers[key]
         if (config?.active) {
-          await serviceHub.mcp().activateMCPServer(key, config)
+          try {
+            await serviceHub.mcp().activateMCPServer(key, config)
+          } catch (error) {
+            // A backend-confirmed OAuth challenge is a valid saved server,
+            // not a malformed configuration. Never start interactive auth here.
+            if (!isNeedsAuthError(error)) throw error
+            useMCPServers.setState((state) => ({
+              mcpServers: {
+                ...state.mcpServers,
+                [key]: { ...config, active: false },
+              },
+            }))
+            needsSignIn.push(key)
+          }
         }
       }
       await syncServers()
+      if (needsSignIn.length > 0) {
+        void refreshAuth()
+        for (const serverName of needsSignIn) {
+          toast.info(t('mcp-servers:auth.needsAuth', { serverName }), {
+            description: t('mcp-servers:auth.needsAuthHint'),
+          })
+        }
+      }
     } catch (error) {
       // Roll back the saved preference only. Transport state is refreshed below;
       // a disconnected server must not be presented as reconnected by rollback.

@@ -1,3 +1,5 @@
+import { Chat } from '@ai-sdk/react'
+import { trackChat, quiesceChats, __resetChatCloseForTests } from '@/lib/chatClose'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type * as WebSearchConfigModule from '@/hooks/useWebSearchConfig'
@@ -1421,41 +1423,38 @@ describe('ThreadDetail route', () => {
     // turn has nothing worth persisting, but its live card must not stay
     // "Running".
     it('settles a live tool call stopped before it had any input', () => {
+      const other: any = { id: 'a-other', role: 'assistant', parts: [{ type: 'tool-fetch', toolCallId: 'tcO', state: 'input-available' }] }
+      const chat = new Chat({ messages: [
+        { id: 'a-early', role: 'assistant', parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }] }, other,
+      ] })
+      h.chatSessionsState.sessions['thread-1'] = { chat }
       renderComponent()
-      h.mockSetChatMessages.mockClear()
       act(() => {
-        ;(h as any).capturedOnFinish({
-          message: {
-            id: 'a-early',
-            role: 'assistant',
-            parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
-            metadata: {},
-          },
-          isAbort: true,
-          isError: false,
-        })
+        ;(h as any).capturedOnFinish({ message: chat.messages[0], isAbort: true, isError: false })
       })
-      const updater = h.mockSetChatMessages.mock.calls
-        .map((c: any[]) => c[0])
-        .find((a: unknown) => typeof a === 'function')
-      // The open thread's own last message is still mid-call; it is not the
-      // aborted turn, so it must be left alone.
-      const other = {
-        id: 'a-other',
-        role: 'assistant',
-        parts: [{ type: 'tool-fetch', toolCallId: 'tcO', state: 'input-available' }],
-      }
-      const live = [
-        {
-          id: 'a-early',
-          role: 'assistant',
-          parts: [{ type: 'tool-fetch', toolCallId: 'tcE', state: 'input-streaming' }],
-        },
-        other,
-      ]
-      const out = updater(live)
-      expect(out[0].parts[0]).toMatchObject({ state: 'output-error' })
-      expect(out[1]).toBe(other)
+      expect(chat.messages[0].parts[0]).toMatchObject({ state: 'output-error' })
+      expect(chat.messages[1]).toBe(other)
+    })
+
+    it('close after navigating A to B settles only retained A, never B', async () => {
+      __resetChatCloseForTests()
+      const a = new Chat({ messages: [{ id: 'a-close', role: 'assistant', parts: [{ type: 'tool-fetch', toolCallId: 'tc-close', state: 'input-available', input: {} }] }] })
+      const b = new Chat({ messages: [{ id: 'b-close', role: 'assistant', parts: [{ type: 'text', text: 'B stays intact' }] }] })
+      const beforeB = b.messages
+      trackChat(a, new Set()); trackChat(b, new Set())
+      h.chatSessionsState.sessions = { 'thread-1': { chat: a }, 'thread-2': { chat: b } }
+      h.messagesState.getMessages = vi.fn((id: string) => id === 'thread-1' ? [{ id: 'a-close', thread_id: id, content: [], metadata: {} }] : [])
+      const { rerender } = renderComponent()
+      h.routeParams.threadId = 'thread-2'
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      await act(async () => { await quiesceChats() })
+      expect(a.messages[0].parts[0]).toMatchObject({ state: 'output-error' })
+      expect(b.messages).toBe(beforeB)
+      expect(h.messagesState.updateMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 'a-close', metadata: expect.objectContaining({ stopped: true }) }))
+      __resetChatCloseForTests()
+      h.routeParams.threadId = 'thread-1'
+      h.chatSessionsState.sessions = {}
     })
   })
 
@@ -2358,6 +2357,7 @@ describe('ThreadDetail route', () => {
           'thread-1': {
             transport: { getTurnModelSelection: () => null },
             chat: {
+              stop: vi.fn(),
               messages: [
                 {
                   id: 'a-tc',
@@ -2427,6 +2427,7 @@ describe('ThreadDetail route', () => {
           'thread-1': {
             transport: { getTurnModelSelection: () => null },
             chat: {
+              stop: vi.fn(),
               messages: [
                 {
                   id: 'a-tc',
@@ -2497,6 +2498,7 @@ describe('ThreadDetail route', () => {
           'thread-1': {
             transport: { getTurnModelSelection: () => null },
             chat: {
+              stop: vi.fn(),
               messages: [
                 { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'go' }] },
                 {

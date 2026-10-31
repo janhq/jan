@@ -1,3 +1,4 @@
+import { forgetChat } from '@/lib/chatClose';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
@@ -190,6 +191,8 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       return { sessions: rest };
     });
 
+    forgetChat(existing.chat);
+
     // Then cleanup (existing is a copy, safe to use after removal)
     existing.unsubscribers.forEach((unsubscribe) => {
       try {
@@ -215,6 +218,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     });
 
     Object.values(sessions).forEach((session) => {
+      forgetChat(session.chat);
       session.unsubscribers.forEach((unsubscribe) => {
         try {
           unsubscribe();

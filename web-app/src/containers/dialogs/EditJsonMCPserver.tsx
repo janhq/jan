@@ -85,18 +85,19 @@ export default function EditJsonMCPserver({
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!savePending.current) onOpenChange(value) }}>
       <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden"
         onInteractOutside={(e) => {
           e.preventDefault()
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {serverName
               ? t('mcp-servers:editJson.title', { serverName })
               : t('mcp-servers:editJson.titleAll')}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
+        <div data-testid="mcp-dialog-scroll-content" className="min-h-0 overflow-y-auto space-y-2">
           <div className="border  rounded-md overflow-hidden!">
             <style>{`
               .w-tc-editor textarea {
@@ -124,10 +125,10 @@ export default function EditJsonMCPserver({
               className="w-full text-sm! overflow-hidden break-all! font-mono!"
             />
           </div>
-          {error && <div role="alert" className="text-destructive text-sm">{error}</div>}
+          {error && <div role="alert" className="text-destructive text-sm max-h-32 overflow-y-auto [overflow-wrap:anywhere]">{error}</div>}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button size="sm" disabled={saving} onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
         </DialogFooter>
       </DialogContent>
