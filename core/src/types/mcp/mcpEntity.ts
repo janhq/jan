@@ -17,6 +17,19 @@ export interface MCPToolCallResult {
   }>
 }
 
+export interface MCPPromptArgument {
+  name: string
+  description: string | null
+  required: boolean | null
+}
+
+export interface MCPPrompt {
+  name: string
+  description: string | null
+  server: string
+  arguments: MCPPromptArgument[] | null
+}
+
 export interface MCPServerInfo {
   name: string
   connected: boolean

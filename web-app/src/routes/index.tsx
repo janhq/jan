@@ -4,6 +4,7 @@ import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
+import { usePrompts } from '@/hooks/usePrompts'
 import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -41,6 +42,7 @@ function Index() {
   const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
   useTools()
+  usePrompts()
 
   const hasValidProviders = hasUsableProvider(providers)
 
