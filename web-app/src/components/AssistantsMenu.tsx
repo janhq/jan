@@ -29,18 +29,22 @@ export function AssistantsMenu({
   return (
     <>
       {deletedAssistant && (
-        <DropdownMenuItem className="bg-accent" disabled>
+        <DropdownMenuItem className="min-w-0 bg-accent" disabled>
           <div className="flex min-w-0 w-full items-center gap-2 leading-5">
             <AssistantAvatar avatar={deletedAssistant.avatar} />
-            <span className="min-w-0 flex-1 truncate">
+            <span
+              dir="auto"
+              title={`${deletedAssistant.name || 'Unnamed Assistant'} (deleted)`}
+              className="min-w-0 flex-1 truncate [unicode-bidi:isolate]"
+            >
               {deletedAssistant.name || 'Unnamed Assistant'} (deleted)
             </span>
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">✓</span>
+            <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">✓</span>
           </div>
         </DropdownMenuItem>
       )}
       <DropdownMenuItem
-        className={noSelectedAssistant ? 'bg-accent' : ''}
+        className={`min-w-0 ${noSelectedAssistant ? 'bg-accent' : ''}`}
         onClick={() => {
           setSelectedAssistant('')
           if (currentThread) {
@@ -50,10 +54,10 @@ export function AssistantsMenu({
       >
         <div className="flex min-w-0 w-full items-center gap-2 leading-5">
           <span className="flex size-4 shrink-0 items-center justify-center leading-none text-muted-foreground">—</span>
-          <span>None</span>
-          {noSelectedAssistant && (
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">✓</span>
-          )}
+          <span className="min-w-0 flex-1 truncate">None</span>
+          <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">
+            {noSelectedAssistant ? '✓' : null}
+          </span>
         </div>
       </DropdownMenuItem>
       {assistants.length > 0 ? (
@@ -64,7 +68,7 @@ export function AssistantsMenu({
           return (
             <DropdownMenuItem
               key={assistant.id}
-              className={isSelected ? 'bg-accent' : ''}
+              className={`min-w-0 ${isSelected ? 'bg-accent' : ''}`}
               onClick={() => {
                 if (currentThread) {
                   updateCurrentThreadAssistant(assistant)
@@ -75,12 +79,16 @@ export function AssistantsMenu({
             >
               <div className="flex min-w-0 w-full items-center gap-2 leading-5">
                 <AssistantAvatar avatar={assistant.avatar} />
-                <span className="min-w-0 flex-1 truncate">{assistant.name || 'Unnamed Assistant'}</span>
-                {isSelected && (
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                    ✓
-                  </span>
-                )}
+                <span
+                  dir="auto"
+                  title={assistant.name || 'Unnamed Assistant'}
+                  className="min-w-0 flex-1 truncate [unicode-bidi:isolate]"
+                >
+                  {assistant.name || 'Unnamed Assistant'}
+                </span>
+                <span className="flex size-4 shrink-0 items-center justify-center text-xs text-muted-foreground">
+                  {isSelected ? '✓' : null}
+                </span>
               </div>
             </DropdownMenuItem>
           )

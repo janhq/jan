@@ -2498,7 +2498,7 @@ const ChatInput = memo(function ChatInput({
                               <UserRound className="size-4 text-muted-foreground" />
                               Assistant
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                            <DropdownMenuSubContent className="min-w-0 w-[min(320px,calc(100vw-16px),var(--radix-dropdown-menu-content-available-width))] max-h-64 overflow-y-auto">
                               <AssistantsMenu
                                 assistants={assistants}
                                 currentThread={currentThread}
