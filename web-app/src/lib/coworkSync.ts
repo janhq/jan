@@ -32,6 +32,8 @@ let persistence: CoworkPersistence | null = null
 let unsubscribe: (() => void) | null = null
 let startPromise: Promise<void> | null = null
 let migrationSettled = false
+const pendingDeletes = new Set<Promise<void>>()
+let deleteFailure: unknown = null
 
 const getInvoke = (): Invoke => {
   const core = getServiceHub().core()
@@ -79,6 +81,16 @@ export function isCoworkMigrationDone(): boolean {
 }
 
 /** Await queued and in-flight Cowork writes (used before the window closes). */
+export async function flushCoworkDeletes(): Promise<void> {
+  if (startPromise) await startPromise
+  await Promise.all([...pendingDeletes])
+  if (deleteFailure) {
+    const failure = deleteFailure
+    deleteFailure = null
+    throw failure
+  }
+}
+
 export async function flushCowork(): Promise<void> {
   await persistence?.flush()
 }
@@ -86,7 +98,9 @@ export async function flushCowork(): Promise<void> {
 export function startCoworkSync(): Promise<void> {
   if (!isPlatformTauri()) return Promise.resolve()
   startPromise ??= doStart().catch((e) => {
-    console.warn('[cowork] sync failed to start; Cowork stays in memory only:', e)
+    startPromise = null
+    console.warn('[cowork] sync failed to start; operations must retry initialization:', e)
+    throw e
   })
   return startPromise
 }
@@ -154,10 +168,24 @@ async function doStart() {
         p.schedule(s, { legacy: loaded.legacyIds.has(s.id) })
       }
       for (const id of removed) {
-        void (async () => {
-          await p.remove(id, { recordDeleted: !migrationSettled })
-          await cleanupThreadWorkspace(id, 'session')
+        const snapshot = prev.sessions.find((session) => session.id === id)
+        const removal = (async () => {
+          await p.remove(id, { recordDeleted: !migrationSettled, preserveThread: snapshot?.unavailable === 'id-collision' })
+          // Workspace reclamation cannot turn a successful durable deletion
+          // back into a visible session. It is best-effort and retried by sweep.
+          if (snapshot?.unavailable !== 'id-collision') {
+            try { await cleanupThreadWorkspace(id, 'session') } catch (error) { console.warn('Workspace cleanup failed:', error) }
+          }
         })()
+        pendingDeletes.add(removal)
+        void removal.catch((error) => {
+          deleteFailure = error
+          if (snapshot) useCoworkSessions.setState((current) => ({
+            sessions: current.sessions.some((session) => session.id === id)
+              ? current.sessions : [...current.sessions, snapshot],
+          }))
+          console.warn(`[cowork] delete failed for ${id}:`, error)
+        }).finally(() => pendingDeletes.delete(removal))
       }
     }
     prev = state
@@ -166,11 +194,11 @@ async function doStart() {
   // 6. Flush when the app is hidden or closed.
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') void p.flush()
+      if (document.visibilityState === 'hidden') void Promise.all([p.flush(), flushCoworkDeletes()]).catch((error) => console.warn('Cowork background flush failed:', error))
     })
   }
   if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', () => void p.flush())
+    window.addEventListener('beforeunload', () => { void Promise.all([p.flush(), flushCoworkDeletes()]).catch((error) => console.warn('Cowork unload flush failed:', error)) })
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
       await getCurrentWindow().onCloseRequested(async () => {
@@ -178,6 +206,7 @@ async function doStart() {
         // has settled; a failure must not trap the user in an unclosable window.
         try {
           await p.flush()
+          await flushCoworkDeletes()
         } catch (e) {
           console.warn('[cowork] flush on close failed:', e)
         }
@@ -195,4 +224,6 @@ export function __resetCoworkSyncForTests() {
   persistence = null
   startPromise = null
   migrationSettled = false
+  pendingDeletes.clear()
+  deleteFailure = null
 }

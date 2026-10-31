@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { act, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -55,6 +56,12 @@ const respondWith = (body: string) => {
 
 const view = (path: string, roots: Array<string | null> = [ROOT]) =>
   render(<CoworkPreviewPanel roots={roots} path={path} onClose={vi.fn()} />)
+
+const selectAction = async (name: string, checkbox = false) => {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+  await user.click(screen.getByRole(checkbox ? 'menuitemcheckbox' : 'menuitem', { name }))
+}
 
 describe('CoworkPreviewPanel', () => {
   beforeEach(() => {
@@ -124,7 +131,7 @@ describe('CoworkPreviewPanel', () => {
     view('game.html')
 
     await screen.findByText('common:preview.externalRefs#1')
-    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await selectAction('common:preview.allowNetwork', true)
     await waitFor(() =>
       expect(screen.queryByText('common:preview.externalRefs#1')).toBeNull()
     )
@@ -193,7 +200,7 @@ describe('CoworkPreviewPanel', () => {
     const { unmount } = view('game.html')
     await screen.findByTitle('game.html')
 
-    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    await selectAction('common:preview.unsandboxed', true)
     const frame = (await waitFor(() => {
       const f = screen.getByTitle('game.html') as HTMLIFrameElement
       expect(f.getAttribute('src')).toBeTruthy()
@@ -206,7 +213,7 @@ describe('CoworkPreviewPanel', () => {
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, false)
     )
 
-    fireEvent.click(screen.getByLabelText('common:preview.allowNetwork'))
+    await selectAction('common:preview.allowNetwork', true)
     await waitFor(() =>
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(ROOT, true)
     )
@@ -237,7 +244,7 @@ describe('CoworkPreviewPanel', () => {
     view(`${folder}/game.html`, [ROOT, folder])
     await screen.findByTitle(`${folder}/game.html`)
 
-    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    await selectAction('common:preview.unsandboxed', true)
     await waitFor(() =>
       expect(previewRegisterRoot).toHaveBeenLastCalledWith(folder, false)
     )
@@ -251,7 +258,8 @@ describe('CoworkPreviewPanel', () => {
     view('game.html')
 
     const frame = (await screen.findByTitle('game.html')) as HTMLIFrameElement
-    expect(screen.queryByLabelText('common:preview.unsandboxed')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'common:preview.unsandboxed' })).toBeNull()
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
     expect(frame.getAttribute('src')).toBeNull()
     expect(previewRegisterRoot).not.toHaveBeenCalled()
@@ -264,7 +272,7 @@ describe('CoworkPreviewPanel', () => {
     view('page.html')
     await screen.findByTitle('page.html')
 
-    fireEvent.click(screen.getByLabelText('common:artifactOpenExternal'))
+    await selectAction('common:artifactOpenExternal')
     await waitFor(() =>
       expect(openArtifact).toHaveBeenCalledWith('/data', [ROOT], `${ROOT}/page.html`)
     )
@@ -272,14 +280,32 @@ describe('CoworkPreviewPanel', () => {
     expect(revealItemInDir).not.toHaveBeenCalled()
 
     openArtifact.mockRejectedValueOnce(new Error('is a link'))
-    fireEvent.click(screen.getByLabelText('common:artifactOpenExternal'))
+    await selectAction('common:artifactOpenExternal')
     await waitFor(() =>
       expect(revealItemInDir).toHaveBeenCalledWith(`${ROOT}/page.html`)
     )
     expect(openPath).not.toHaveBeenCalled()
   })
 
-  it('registers nothing while the sandbox is in use', async () => {
+  it('keeps secondary actions in a keyboard-accessible checked menu', async () => {
+    respondWith('<p>ok</p>')
+    view('page.html')
+    await screen.findByTitle('page.html')
+    expect(screen.queryByRole('button', { name: 'common:artifactOpenExternal' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'common:preview.reload' })).toBeInTheDocument()
+    const user = userEvent.setup()
+    screen.getByRole('button', { name: 'common:artifactMoreActions' }).focus()
+    await user.keyboard('{Enter}')
+    const network = await screen.findByRole('menuitemcheckbox', { name: 'common:preview.allowNetwork' })
+    expect(network).toHaveAttribute('aria-checked', 'false')
+    await user.click(network)
+    await user.click(screen.getByRole('button', { name: 'common:artifactMoreActions' }))
+    expect(screen.getByRole('menuitemcheckbox', { name: 'common:preview.allowNetwork' })).toHaveAttribute('aria-checked', 'true')
+    await user.click(screen.getByRole('menuitem', { name: 'common:artifactShowInFolder' }))
+    expect(revealItemInDir).toHaveBeenCalledWith(`${ROOT}/page.html`)
+  })
+
+  it('registers nothing while the sandbox is in use' , async () => {
     respondWith('<p>ok</p>')
     view('page.html')
     await screen.findByTitle('page.html')

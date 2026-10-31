@@ -1,8 +1,6 @@
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
-import {
-  IconLayoutSidebar,
-} from '@tabler/icons-react'
+import { PanelLeft } from 'lucide-react'
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
 import { DownloadManagement } from '@/containers/DownloadManegement'
@@ -21,12 +19,14 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
   // Right-anchored controls (Windows, and Linux DEs that place them there) sit at
   // right-4 above the header — keep header content clear of them at every width.
   const rightButtons = useTitlebarLayout((s) => s.layout.right.length)
-  const rightControlsPad = rightButtons > 0 ? rightButtons * 32 + 24 : undefined
+  const rightControlsPad = !IS_MACOS && rightButtons > 0 ? rightButtons * 32 + 24 : undefined
 
   return (
     <div
       className={cn(
-        'h-15 flex items-center shrink-0',
+        // Sit above the global drag surface, but let empty header space pass
+        // through to it. Only interactive descendants receive pointer events.
+        'relative z-30 h-15 flex items-center shrink-0 pointer-events-none [&_button]:pointer-events-auto [&_a]:pointer-events-auto [&_input]:pointer-events-auto [&_[role="button"]]:pointer-events-auto',
         (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
         children === undefined && 'border-none'
       )}
@@ -49,8 +49,8 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
               onClick={() => setLeftPanel(!open)}
               aria-label="Toggle sidebar"
             >
-              <IconLayoutSidebar
-                className="text-muted-foreground relative size-4.5"
+              <PanelLeft
+                className="text-muted-foreground relative size-4"
               />
             </Button>
             {/* After the toggle so the toggle stays put when this appears */}

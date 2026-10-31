@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
@@ -20,22 +21,23 @@ type SearchParams = {
   threadModel?: ThreadModel
 }
 import { useCallback, useEffect, useState } from 'react'
-import { FolderPlus, Folder, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
+import { HomeWorkspacePicker } from '@/containers/HomeWorkspacePicker'
+import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
+import type { ThreadFolder } from '@/services/projects/types'
 import { HomeModeToggle } from '@/containers/HomeModeToggle'
 import { useHomeMode } from '@/hooks/useHomeMode'
-import { useCoworkSessions, startNewSession } from '@/hooks/useCoworkSessions'
-import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { usePrompt } from '@/hooks/usePrompt'
-import { writeCoworkHandoff } from '@/lib/coworkHandoff'
+import { startCoworkConversation } from '@/lib/startCoworkConversation'
 import { isCoworkEnabled } from '@/lib/version'
 import { basenameOf } from '@/lib/coworkPreview'
 import { COWORK_IDEAS } from '@/lib/coworkIdeas'
+import { Code2, FileText, Folder, LayoutDashboard, X } from 'lucide-react'
 import type { Attachment } from '@/types/attachment'
 import { useThreads } from '@/hooks/useThreads'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -50,7 +52,8 @@ export const Route = createFileRoute(route.home as any)({
 
 function Index() {
   const { t } = useTranslation()
-  const { providers } = useModelProvider()
+  const reduceMotion = useReducedMotion()
+  const { providers, selectedModel, selectedProvider } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
@@ -63,6 +66,9 @@ function Index() {
   // whatever was stored.
   const mode = coworkAvailable ? storedMode : 'chat'
   const [folder, setFolder] = useState<string | null>(null)
+  const [project, setProject] = useState<ThreadFolder | null>(null)
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const { addFolder, folders: projects } = useThreadManagement()
   useTools()
 
   const pickFolder = useCallback(async () => {
@@ -79,20 +85,26 @@ function Index() {
       documents?: Attachment[],
       draft?: string
     ) => {
-      const runningIds = Object.keys(useCoworkRun.getState().runId)
-      const id = startNewSession(runningIds)
-      if (folder) useCoworkSessions.getState().setFolder(id, folder)
+      let id: string
       try {
-        writeCoworkHandoff(id, { text, draft, files, documents })
+        id = startCoworkConversation({
+          model: selectedModel
+            ? { id: selectedModel.id, provider: selectedProvider }
+            : threadModel,
+          folder,
+          project: project ?? undefined,
+          handoff: { text, draft, files, documents },
+        })
       } catch (e) {
         console.warn('[cowork] could not store the first prompt:', e)
         toast.error(t('common:error'))
-        return
+        return false
       }
       setFolder(null)
+      setProject(null)
       navigate({ to: route.coworkSession, params: { sessionId: id } })
     },
-    [folder, navigate, t]
+    [folder, project, threadModel, selectedModel, selectedProvider, navigate, t]
   )
 
   const hasValidProviders = hasUsableProvider(providers)
@@ -107,20 +119,26 @@ function Index() {
 
   return (
     <div className="flex h-full flex-col justify-center">
-      <HeaderPage>
-        <div className="flex items-center gap-2 w-full">
-          <DropdownModelProvider model={threadModel} />
-        </div>
-      </HeaderPage>
+      <AddProjectDialog
+        open={projectDialogOpen}
+        onOpenChange={setProjectDialogOpen}
+        editingKey={null}
+        onSave={async (name, assistantId) => {
+          const created = await addFolder(name, assistantId)
+          setProject(created)
+          setProjectDialogOpen(false)
+        }}
+      />
+      <HeaderPage />
       <div
         className={cn(
           'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
         )}
       >
-        <div
-          className={cn(
-            'mx-auto w-full px-6 md:w-4/5 xl:w-4/6 -mt-20',
-          )}
+        <motion.div
+          layout="position"
+          transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto w-full px-6 md:w-4/5 xl:w-4/6 -mt-20"
         >
           <div className={cn('text-center mb-4')}>
             <h1
@@ -136,45 +154,82 @@ function Index() {
               showSpeedToken={false}
               model={threadModel}
               initialMessage={true}
+              projectId={mode === 'chat' ? project?.id : undefined}
+              projectAssistantId={mode === 'chat' ? project?.assistantId : undefined}
               onSubmit={mode === 'cowork' ? startCowork : undefined}
               scopeKey={mode === 'cowork' ? 'home-cowork' : undefined}
               ownsToolSet={mode === 'cowork' ? false : undefined}
-              surfaceControls={
+              menuWorkspace={(
+                <CoworkComposerMenu
+                  section="workspace"
+                  projects={projects}
+                  projectId={project?.id}
+                  onAttachFolder={mode === 'cowork' ? () => void pickFolder() : undefined}
+                  onSelectProject={setProject}
+                  onAddProject={() => setProjectDialogOpen(true)}
+                />
+              )}
+              leadingControls={
                 coworkAvailable ? (
                   <HomeModeToggle mode={mode} onChange={setMode} />
                 ) : undefined
               }
             />
           </div>
+          {mode === 'chat' && project && (
+            <div className="flex items-center gap-2 pt-2 text-sm text-muted-foreground" data-testid="home-chat-project">
+              <Folder className="size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{project.name}</span>
+              <button
+                type="button"
+                className="rounded-sm p-1 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t('common:homeMode.removeFolder')}
+                onClick={() => setProject(null)}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <AnimatePresence initial={false}>
+            {mode === 'cowork' && (
+              <motion.div
+                key="cowork-workspace"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
+                className="-mx-3 overflow-hidden px-3"
+              >
+                <div className="pt-2">
+                  <HomeWorkspacePicker
+                    folder={folder}
+                    project={project}
+                    projects={projects}
+                    onSelectProject={setProject}
+                    onAddFolder={() => void pickFolder()}
+                    onAddProject={() => setProjectDialogOpen(true)}
+                    onRemove={() => { setFolder(null); setProject(null) }}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence initial={false}>
           {mode === 'cowork' && (
-            <div className="mt-3 flex flex-col items-start gap-3">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  data-testid="home-cowork-folder"
-                  onClick={() => void pickFolder()}
-                >
-                  {folder ? <Folder className="size-4" /> : <FolderPlus className="size-4" />}
-                  {folder ? basenameOf(folder) : t('common:homeMode.addFolder')}
-                </Button>
-                {folder && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 rounded-full"
-                    aria-label={t('common:homeMode.removeFolder')}
-                    onClick={() => setFolder(null)}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                )}
-              </div>
+            <motion.div
+              key="cowork-options"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.25, ease: [0.22, 1, 0.36, 1] }}
+              className="-mx-3 overflow-hidden px-3"
+            >
+            <div className="pt-4 pb-2">
               <div className="w-full">
-                <p className="text-sm font-medium">{t('common:homeMode.ideas')}</p>
-                <div className="mt-1 -mx-2 flex flex-col items-start">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">{t('common:homeMode.ideas')}</h2>
+                <div className="mt-3 -mx-3 flex flex-col gap-1">
                   {COWORK_IDEAS.map((key) => {
+                    const Icon = key === 'first' ? Code2 : key === 'second' ? LayoutDashboard : FileText
                     const name = folder ? basenameOf(folder) : null
                     const text = t(
                       `common:coworkEmpty.${folder ? 'folder' : 'sandbox'}.${key}`,
@@ -185,17 +240,20 @@ function Index() {
                         key={key}
                         type="button"
                         onClick={() => usePrompt.getState().setPrompt(text)}
-                        className="max-w-full rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left text-base leading-6 text-muted-foreground transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                       >
-                        {text}
+                        <Icon aria-hidden="true" strokeWidth={1.6} className="mt-0.5 size-5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                        <span className="min-w-0 break-words">{text}</span>
                       </button>
                     )
                   })}
                 </div>
               </div>
             </div>
+            </motion.div>
           )}
-        </div>
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   )

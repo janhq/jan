@@ -32,8 +32,10 @@ export function LeftSidebar() {
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>
-          <NavMain />
-          <NavCoworkTools />
+          <NavMain
+            afterSearch={<NavCoworkTools section="artifacts" />}
+            beforeSettings={<NavCoworkTools />}
+          />
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
           <NavProjects />

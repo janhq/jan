@@ -120,13 +120,21 @@ vi.mock('@/containers/ChatInput', () => ({
     onStop,
     chatStatus,
     scopeKey,
+    model,
+    onModelChange,
   }: {
     onSubmit: (text: string) => void
     onStop: () => void
     chatStatus: string
     scopeKey: string
+    model?: ThreadModel
+    onModelChange?: (model: ThreadModel) => void
   }) => (
     <>
+      <div data-testid="composer-model">{model?.id}
+        <button onClick={() => onModelChange?.({ id: 'second-model', provider: 'test' })}>second-model</button>
+        <button onClick={() => onModelChange?.({ id: 'test-model', provider: 'test' })}>test-model</button>
+      </div>
       <output aria-label="Composer status">{chatStatus}</output>
       <button
         onClick={() => {
@@ -473,15 +481,14 @@ it('restores each session model after switching and a reload from thread storage
   useCoworkSessions.getState().selectSession(a)
   const view = render(<CoworkPage />)
   const choose = async (name: string) => {
-    fireEvent.click(document.querySelector('header button')!)
-    fireEvent.click(await screen.findByText(name))
+    fireEvent.click(screen.getByRole('button', { name }))
   }
   await choose('second-model')
   act(() => useCoworkSessions.getState().selectSession(b))
   await choose('test-model')
   act(() => useCoworkSessions.getState().selectSession(a))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   view.unmount()
   // A reload: every session goes to its thread record + sidecar and comes back.
@@ -493,11 +500,11 @@ it('restores each session model after switching and a reload from thread storage
   useCoworkSessions.setState({ sessions: reloaded, currentId })
   render(<CoworkPage />)
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('second-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('second-model')
   )
   act(() => useCoworkSessions.getState().selectSession(b))
   await waitFor(() =>
-    expect(document.querySelector('header')).toHaveTextContent('test-model')
+    expect(screen.getByTestId('composer-model')).toHaveTextContent('test-model')
   )
 })
 

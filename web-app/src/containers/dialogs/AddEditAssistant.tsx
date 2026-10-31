@@ -198,7 +198,7 @@ export default function AddEditAssistant({
                 <EmojiPicker
                   open={showEmojiPicker}
                   theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
-                  className="absolute!s z-40! overflow-y-auto! top-2"
+                  className="absolute! z-10 overflow-y-auto! top-2"
                   height={350}
                   lazyLoadEmojis
                   previewConfig={{ showPreview: false }}

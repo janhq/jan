@@ -381,10 +381,10 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
   )
 }
 
-function ModelSettingSheetBody({ model, provider }: ModelSettingProps) {
+function ModelSettingSheetBody({ model, provider, onCloseAutoFocus }: ModelSettingProps & { onCloseAutoFocus?: (event: Event) => void }) {
   const { t } = useTranslation()
   return (
-    <SheetContent>
+    <SheetContent onCloseAutoFocus={onCloseAutoFocus}>
       <SheetHeader>
         <SheetTitle>
           {t('common:modelSettings.title', {
@@ -406,13 +406,15 @@ export function ModelSettingSheet({
   provider,
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: ModelSettingProps & {
+  onCloseAutoFocus?: (event: Event) => void
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <ModelSettingSheetBody model={model} provider={provider} />
+      <ModelSettingSheetBody model={model} provider={provider} onCloseAutoFocus={onCloseAutoFocus} />
     </Sheet>
   )
 }

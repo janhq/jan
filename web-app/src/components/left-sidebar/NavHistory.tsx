@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { Handshake, Loader2, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Loader2, MoreHorizontal, Trash2 } from 'lucide-react'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -61,6 +61,7 @@ const CoworkRow = memo(function CoworkRow({
     <SidebarMenuItem>
       <SidebarMenuButton
         isActive={isCurrent}
+        className="data-[active=true]:bg-sidebar-foreground/10 dark:data-[active=true]:bg-sidebar-accent"
         data-testid={`history-cowork-${session.id}`}
         onClick={() =>
           navigate({
@@ -69,10 +70,8 @@ const CoworkRow = memo(function CoworkRow({
           })
         }
       >
-        {isRunning ? (
+        {isRunning && (
           <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
-        ) : (
-          <Handshake className="size-3.5 shrink-0 text-foreground/50" aria-label={t('common:homeMode.cowork')} />
         )}
         <span className="truncate" title={session.title}>
           {session.title}
@@ -181,7 +180,7 @@ export function NavHistory() {
             />
           ) : (
             // Chat rows keep ThreadList's item (rename, move to project, delete).
-            <ThreadItem key={row.id} thread={row.thread} isMobile={isMobile} showModeIcon />
+            <ThreadItem key={row.id} thread={row.thread} isMobile={isMobile} />
           )
         )}
       </SidebarMenu>

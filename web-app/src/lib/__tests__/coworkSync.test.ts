@@ -62,6 +62,7 @@ import { useThreads } from '@/hooks/useThreads'
 import {
   startCoworkSync,
   flushCowork,
+  flushCoworkDeletes,
   isCoworkMigrationDone,
   __resetCoworkSyncForTests,
 } from '../coworkSync'
@@ -182,4 +183,29 @@ describe('coworkSync startup', () => {
     expect(ids).toContain(early)
     expect(ids).toContain('a')
   })
+  it('a sandbox cleanup failure does not restore a durably deleted session', async () => {
+    await startCoworkSync()
+    const id = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().commitTurns(id, [{ role: 'user', content: 'x' }], [], [])
+    await flushCowork()
+    agentTools.cleanupThreadWorkspace.mockRejectedValueOnce(new Error('cleanup failed'))
+    useCoworkSessions.getState().deleteSession(id)
+    await flushCoworkDeletes()
+    expect(backend.threads.has(id)).toBe(false)
+    expect(useCoworkSessions.getState().sessions.some((s) => s.id === id)).toBe(false)
+  })
+
+  it('propagates initialization failure and permits a later retry', async () => {
+    const invoke = backend.invoke
+    let fail = true
+    backend.invoke = async (command, args) => {
+      if (command === 'list_threads' && fail) throw new Error('storage unavailable')
+      return invoke(command, args)
+    }
+    await expect(startCoworkSync()).rejects.toThrow('storage unavailable')
+    fail = false
+    await expect(startCoworkSync()).resolves.toBeUndefined()
+    backend.invoke = invoke
+  })
+
 })

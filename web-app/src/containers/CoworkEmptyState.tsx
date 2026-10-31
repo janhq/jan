@@ -36,7 +36,7 @@ export function CoworkEmptyState({ folder, onPick }: Props) {
     // back by -mx-2 so their labels line up under the heading while the hover
     // target keeps its breathing room.
     <div className="absolute inset-0 flex flex-col justify-end pb-3">
-      <div className="mx-auto w-full px-6 md:w-4/5 xl:w-4/6">
+      <div className="mx-auto w-full max-w-[880px] px-4 md:px-6">
         <div className="animate-in fade-in-0 duration-500 motion-reduce:animate-none">
           <Handshake size={20} className="text-primary" aria-hidden />
           <h1 className="mt-3 font-studio text-2xl font-medium tracking-tight">

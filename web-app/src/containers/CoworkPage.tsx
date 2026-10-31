@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useNavigate } from '@tanstack/react-router'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { useHomeMode } from '@/hooks/useHomeMode'
+import { useThreadManagement } from '@/hooks/useThreadManagement'
 import ChatInput from '@/containers/ChatInput'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import HeaderPage from '@/containers/HeaderPage'
+import { CoworkOverviewPanel } from '@/containers/CoworkOverviewPanel'
+import { PanelRight } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -41,10 +47,10 @@ import type {
   CoworkTurn,
 } from '@/types/coworkSession'
 import type { Attachment } from '@/types/attachment'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
+import { CoworkComposerMenu } from '@/containers/CoworkComposerMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { MessageItem } from '@/containers/MessageItem'
-import SkillSelector from '@/containers/SkillSelector'
 import {
   appendLiveMessages,
   coworkTurnsToUIMessages,
@@ -81,15 +87,9 @@ import { CoworkPreviewPanel } from '@/containers/CoworkPreviewPanel'
 import { CoworkDiffPanel } from '@/containers/CoworkDiffPanel'
 import { CoworkTodoPanel } from '@/containers/CoworkTodoPanel'
 import { CoworkTasksPanel } from '@/containers/CoworkTasksPanel'
-import { CoworkChangesChip } from '@/containers/CoworkChangesChip'
-import { CoworkFilesChip } from '@/containers/CoworkFilesChip'
 import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
-import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
-import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
-import { CoworkModelChip } from '@/containers/CoworkModelChip'
 import { ModelSettingSheet } from '@/containers/ModelSetting'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
-import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
 import { CoworkRunNotice } from '@/containers/CoworkRunNotice'
 import { CoworkAskCard } from '@/containers/CoworkAskCard'
@@ -193,6 +193,7 @@ function sessionMonitorLane(sid: string): MonitorLane {
 
 export function CoworkPage() {
   const { t } = useTranslation()
+  const { folders: projects } = useThreadManagement()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider, providers } = useModelProvider()
@@ -245,6 +246,9 @@ export function CoworkPage() {
   )
   // The rail holds one panel at a time: they all want the width, so showing
   // two together starves the transcript (C7).
+  const desktopOverview = useMediaQuery('(min-width: 1280px)', true)
+  const [overviewOpen, setOverviewOpen] = useState(true)
+  const [overviewRequested, setOverviewRequested] = useState(false)
   const [rail, setRail] = useState<
     | { kind: 'preview'; path: string }
     | { kind: 'diff' }
@@ -255,7 +259,7 @@ export function CoworkPage() {
     | null
   >(null)
   const showPreview = useCallback(
-    (path: string) => setRail({ kind: 'preview', path }),
+    (path: string) => { setOverviewOpen(false); setRail({ kind: 'preview', path }) },
     []
   )
   const ask = useCoworkRun((s) =>
@@ -1471,9 +1475,9 @@ export function CoworkPage() {
   useEffect(() => {
     if (!pendingPreview || !session?.id) return
     if (pendingPreview.sessionId !== session.id) return
-    setRail({ kind: 'preview', path: pendingPreview.path })
+    showPreview(pendingPreview.path)
     useCoworkRun.getState().clearPendingPreview()
-  }, [pendingPreview, session?.id])
+  }, [pendingPreview, session?.id, showPreview])
 
   // A match landing while no run is up starts one: the queued ping is drained
   // at the top of that run's first step, exactly as a mid-run one would be.
@@ -1521,18 +1525,29 @@ export function CoworkPage() {
   return (
     <div
       data-testid="cowork-surface"
-      className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
+      className="relative flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
     >
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider
-            key={session?.id ?? 'new'}
-            model={session?.model}
-            useLastUsedModel={!session?.model}
-            onModelChange={(model) =>
-              useCoworkSessions.getState().setModel(ensureCurrentSession(), model)
-            }
-          />
+          <ConversationHeaderTitle title={session?.title} project={session?.project} />
+          <button
+            type="button"
+            aria-label={t(overviewOpen && !dockedRail ? 'common:overview.close' : 'common:overview.title')}
+            data-testid="overview-toggle"
+            aria-pressed={overviewOpen && !dockedRail}
+            onClick={() => {
+              setOverviewRequested(true)
+              if (!desktopOverview && !overviewRequested) { setRail(null); setOverviewOpen(true); return }
+              if (dockedRail) { setRail(null); setOverviewOpen(true) }
+              else setOverviewOpen((open) => !open)
+            }}
+            className={cn(
+              'ml-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-[margin,background-color,color] duration-250 ease-out motion-reduce:transition-none hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              overviewOpen && !dockedRail && 'xl:mr-80'
+            )}
+          >
+            <PanelRight className="size-4" />
+          </button>
         </div>
       </HeaderPage>
 
@@ -1551,14 +1566,8 @@ export function CoworkPage() {
                     "Working..." indicator -- rests flush against the input and
                     reads as tucked behind it. */}
                 <ConversationContent
-                  className={cn(
-                    'mx-auto w-full px-6 pb-4',
-                    // The centering fractions assume the transcript owns the
-                    // width; with a side panel open the column is already
-                    // narrow, so keeping them crushes the message and composer
-                    // into an unreadable sliver.
-                    !dockedRail && 'md:w-4/5 xl:w-4/6'
-                  )}
+                  column
+                  className="pb-4"
                 >
                   {uiMessages.map((message, i) => (
                     <Fragment key={message.id}>
@@ -1591,6 +1600,15 @@ export function CoworkPage() {
                             ? handleDeleteQuestion
                             : undefined
                         }
+                        beforeFooter={i < liveStartIdx ? artifactsFromParts(message.parts).map((artifact) => (
+                          <CoworkArtifactCard
+                            key={artifact.path}
+                            artifact={artifact}
+                            roots={[folder, workspacePath]}
+                            onPreview={showPreview}
+                            className="my-3"
+                          />
+                        )) : undefined}
                         reasoningContainerRef={reasoningContainerRef}
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
@@ -1610,21 +1628,6 @@ export function CoworkPage() {
                             : null
                         }
                       />
-                      {/* Derived from the message's own write parts, so nothing
-                        shared with the chat surface needs to know artifacts
-                        exist. Held back for the whole live tail: a card mid-run
-                        announces a deliverable the agent may yet rewrite, and it
-                        pushes the live tail around. */}
-                      {i < liveStartIdx &&
-                        artifactsFromParts(message.parts).map((artifact) => (
-                          <CoworkArtifactCard
-                            key={artifact.path}
-                            artifact={artifact}
-                            roots={[folder, workspacePath]}
-                            onPreview={showPreview}
-                            className="my-3"
-                          />
-                        ))}
                     </Fragment>
                   ))}
                   {viewingRun && (
@@ -1670,11 +1673,8 @@ export function CoworkPage() {
                       kind="tokens"
                       onCompact={() => void handleCompact()}
                       onNewSession={() => {
-                        const id = useCoworkSessions.getState().createSession()
-                        navigate({
-                          to: route.coworkSession,
-                          params: { sessionId: id },
-                        })
+                        useHomeMode.getState().setMode('cowork')
+                        navigate({ to: route.home })
                       }}
                     />
                   )}
@@ -1686,7 +1686,7 @@ export function CoworkPage() {
 
           {/* pb-only: the scroll area runs right up to the composer. */}
           <div className="pb-4 shrink-0">
-            <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
+            <ConversationColumn reserveScrollGutter>
               {/* The card rises in when a question arrives and folds away once
                   answered, so the chat box glides instead of jumping. A card
                   already pending when the view mounts just appears. */}
@@ -1758,8 +1758,17 @@ export function CoworkPage() {
                     ))}
                   </div>
                 )}
+                {folder && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <CoworkWorkspacePill folder={folder} gitBranch={gitBranch} onAttach={() => void attachFolder()} onDetach={detachFolder} />
+                  </div>
+                )}
                 <ChatInput
                   showSpeedToken={false}
+                  model={session?.model}
+                  onModelChange={(model) => {
+                    if (session?.id) useCoworkSessions.getState().setModel(session.id, model)
+                  }}
                   initialMessage={true}
                   scopeKey={session?.id}
                   ownsToolSet={false}
@@ -1768,82 +1777,34 @@ export function CoworkPage() {
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
                   tokenSource={tokenSource}
-                  surfaceControls={
-                    <>
-                      <CoworkPlanToggle
-                        planMode={planMode}
-                        onChange={(next) => {
-                          if (session?.id)
-                            useCoworkSessions
-                              .getState()
-                              .setPlanMode(session.id, next)
-                        }}
-                      />
-                      <CoworkWorkspacePill
-                        folder={folder}
-                        gitBranch={gitBranch}
-                        onAttach={() => void attachFolder()}
-                        onDetach={detachFolder}
-                      />
-                      <CoworkSandboxChip />
-                      <CoworkTodoChip
-                        todos={session?.todos}
-                        open={rail?.kind === 'todos'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'todos' ? null : { kind: 'todos' }
-                          )
-                        }
-                      />
-                      <CoworkTasksChip
-                        subagents={subagents}
-                        monitors={monitors}
-                        open={rail?.kind === 'tasks'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'tasks' ? null : { kind: 'tasks' }
-                          )
-                        }
-                      />
-                      <CoworkChangesChip
-                        files={fileDiffs}
-                        open={rail?.kind === 'diff'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'diff' ? null : { kind: 'diff' }
-                          )
-                        }
-                      />
-                      <CoworkFilesChip
-                        count={attachments.length + artifacts.length}
-                        open={rail?.kind === 'files'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'files' ? null : { kind: 'files' }
-                          )
-                        }
-                      />
-                      <CoworkModelChip
-                        model={localModel}
-                        provider={modelProvider}
-                        open={rail?.kind === 'model'}
-                        onToggle={() =>
-                          setRail((r) =>
-                            r?.kind === 'model' ? null : { kind: 'model' }
-                          )
-                        }
-                      />
-                      <div className="ml-auto flex items-center">
-                        <SkillSelector folder={folder} />
-                      </div>
-                    </>
-                  }
+                  menuWorkspace={<CoworkComposerMenu section="workspace" projects={projects} projectId={session?.project?.id} onAttachFolder={() => void attachFolder()} onSelectProject={(project) => {
+                    if (session?.id) useCoworkSessions.setState((state) => ({ sessions: state.sessions.map((x) => x.id === session.id ? { ...x, project, updated: Date.now() } : x) }))
+                  }} />}
+                  menuControls={<CoworkComposerMenu section="controls" planMode={planMode} onPlanChange={(next) => {
+                    if (session?.id) useCoworkSessions.getState().setPlanMode(session.id, next)
+                  }} />}
+                  surfaceControls={planMode ? (
+                    <CoworkPlanToggle
+                      planMode={planMode}
+                      onChange={(next) => {
+                        if (session?.id) useCoworkSessions.getState().setPlanMode(session.id, next)
+                      }}
+                    />
+                  ) : undefined}
                 />
               </div>
-            </div>
+            </ConversationColumn>
           </div>
         </div>
 
+        <div
+          className={cn(
+            'hidden shrink-0 transition-[width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none xl:block',
+            overviewOpen && !dockedRail ? 'w-80' : 'w-0'
+          )}
+          aria-hidden="true"
+        />
+        <AnimatePresence initial={false}>
         {rail?.kind === 'preview' && (
           <CoworkPreviewPanel
             roots={[folder, workspacePath]}
@@ -1875,6 +1836,7 @@ export function CoworkPage() {
             onClose={() => setRail(null)}
           />
         )}
+        </AnimatePresence>
         {/* Always mounted so Radix can play the close animation; the sheet
             overlays the page, so it is not a docked rail. */}
         {localModel && modelProvider && (
@@ -1888,6 +1850,22 @@ export function CoworkPage() {
           />
         )}
       </div>
+        <AnimatePresence initial={false}>
+        {overviewOpen && !dockedRail && (desktopOverview || overviewRequested) && (
+          <CoworkOverviewPanel
+            todos={session?.todos}
+            attachments={attachments}
+            artifacts={artifacts}
+            files={fileDiffs}
+            subagents={subagents}
+            monitorCount={monitors.length}
+            onPreview={showPreview}
+            onChanges={() => { setOverviewOpen(false); setRail({ kind: 'diff' }) }}
+            onAgents={() => { setOverviewOpen(false); setRail({ kind: 'tasks' }) }}
+            onClose={() => setOverviewOpen(false)}
+          />
+        )}
+        </AnimatePresence>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   IconAdjustmentsHorizontal,
   IconChevronDown,
@@ -39,6 +40,10 @@ import { cn } from '@/lib/utils'
 interface SamplerPopoverProps {
   /** Provider ID of the currently-selected model, if any. Used to scope the
    *  chip palette to a single provider's capabilities. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>
   providerId?: string
   /** Currently-selected model ID. Drives model-family rejection (e.g. o1/gpt-5
    *  reasoning models reject temperature/top_p). */
@@ -55,6 +60,10 @@ interface SamplerPopoverProps {
 }
 
 export function SamplerPopover({
+  open,
+  onOpenChange,
+  hideTrigger = false,
+  returnFocusRef,
   providerId,
   modelId,
   assistantSwitcher,
@@ -158,47 +167,7 @@ export function SamplerPopover({
       ? `Sampling — ${activeAssistant.name}`
       : 'Sampling'
 
-  return (
-    <Popover>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Sampling parameters"
-              className="relative"
-              disabled={assistantsLoading}
-            >
-              <IconAdjustmentsHorizontal
-                size={18}
-                className={cn(
-                  'text-muted-foreground',
-                  hasOverrides && 'text-primary'
-                )}
-              />
-              {hasOverrides && (
-                <span
-                  aria-hidden
-                  className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
-                />
-              )}
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{triggerLabel}</p>
-        </TooltipContent>
-      </Tooltip>
-
-      <PopoverContent
-        align="start"
-        side="top"
-        sideOffset={8}
-        collisionPadding={12}
-        avoidCollisions
-        className="w-[380px] p-0 flex flex-col max-h-[var(--radix-popover-content-available-height)]"
-      >
+  const content = (<>
         <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 border-b">
           <AssistantHeader
             currentAssistant={activeAssistant}
@@ -243,6 +212,61 @@ export function SamplerPopover({
             Pick an assistant above to configure sampling.
           </div>
         )}
+  </>)
+
+  if (hideTrigger) {
+    return <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent onCloseAutoFocus={(event) => {
+        if (returnFocusRef?.current) { event.preventDefault(); returnFocusRef.current.focus() }
+      }} className="flex max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+        <DialogHeader className="border-b px-4 py-3 pr-12"><DialogTitle className="text-sm font-medium">Sampling parameters</DialogTitle></DialogHeader>
+        {content}
+      </DialogContent>
+    </Dialog>
+  }
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {!hideTrigger && <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Sampling parameters"
+              className="relative"
+              disabled={assistantsLoading}
+            >
+              <IconAdjustmentsHorizontal
+                size={18}
+                className={cn(
+                  'text-muted-foreground',
+                  hasOverrides && 'text-primary'
+                )}
+              />
+              {hasOverrides && (
+                <span
+                  aria-hidden
+                  className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
+                />
+              )}
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{triggerLabel}</p>
+        </TooltipContent>
+      </Tooltip>}
+
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        collisionPadding={12}
+        avoidCollisions
+        className="w-[380px] p-0 flex flex-col max-h-[var(--radix-popover-content-available-height)]"
+      >
+        {content}
       </PopoverContent>
     </Popover>
   )

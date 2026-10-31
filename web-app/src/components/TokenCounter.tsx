@@ -45,10 +45,9 @@ export const TokenCounter = memo(function TokenCounter({
   const { t } = useTranslation()
   const { calculateTokens, ...tokenData } = useTokensCount(messages, source)
 
-  const [isAnimating, setIsAnimating] = useState(false)
   const [prevTokenCount, setPrevTokenCount] = useState(0)
   const [isUpdating, setIsUpdating] = useState(false)
-  const timersRef = useRef<{ update?: NodeJS.Timeout; anim?: NodeJS.Timeout }>(
+  const timersRef = useRef<{ update?: NodeJS.Timeout }>(
     {}
   )
 
@@ -60,22 +59,16 @@ export const TokenCounter = memo(function TokenCounter({
     const currentTotal = tokenData.tokenCount + additionalTokens
     const timers = timersRef.current
     if (timers.update) clearTimeout(timers.update)
-    if (timers.anim) clearTimeout(timers.anim)
 
     if (currentTotal !== prevTokenCount) {
       setIsUpdating(true)
       timers.update = setTimeout(() => setIsUpdating(false), 250)
-      if (prevTokenCount > 0 && Math.abs(currentTotal - prevTokenCount) > 10) {
-        setIsAnimating(true)
-        timers.anim = setTimeout(() => setIsAnimating(false), 600)
-      }
       setPrevTokenCount(currentTotal)
     }
 
     return () => {
       if (timers.update) clearTimeout(timers.update)
-      if (timers.anim) clearTimeout(timers.anim)
-    }
+      }
   }, [tokenData.tokenCount, additionalTokens, prevTokenCount])
 
   const totalTokens = useMemo(
@@ -116,12 +109,6 @@ export const TokenCounter = memo(function TokenCounter({
       : tier === 'warn'
         ? 'text-amber-500'
         : 'text-foreground'
-  const ringCls =
-    tier === 'over'
-      ? 'stroke-destructive'
-      : tier === 'warn'
-        ? 'stroke-amber-500'
-        : 'stroke-primary'
   const barCls =
     tier === 'over'
       ? 'bg-destructive'
@@ -151,47 +138,8 @@ export const TokenCounter = memo(function TokenCounter({
             className={cn('relative cursor-pointer', className)}
             onClick={handleCalculateTokens}
           >
-            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-background border border-border">
-              <span
-                className={cn(
-                  'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
-                  textCls,
-                  isAnimating && 'scale-110'
-                )}
-              >
-                {pct?.toFixed(1) ?? '0.0'}%
-              </span>
-              <div className="relative size-4 shrink-0">
-                <svg
-                  className="size-4 transform -rotate-90"
-                  viewBox="0 0 16 16"
-                >
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    className="text-muted-foreground/40"
-                  />
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    strokeDasharray={`${2 * Math.PI * 6}`}
-                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(pct ?? 0, 100) / 100)}`}
-                    className={cn(
-                      'transition-all duration-500 ease-out',
-                      ringCls
-                    )}
-                    style={{ transformOrigin: 'center' }}
-                  />
-                </svg>
-              </div>
+            <div className="py-1 text-xs tabular-nums text-muted-foreground">
+              Context: {formatTokenCount(totalTokens)}
             </div>
           </div>
         </TooltipTrigger>
@@ -347,10 +295,9 @@ function TokenCountOnly({
       <Tooltip>
         <TooltipTrigger asChild>
           <div className={cn('relative cursor-default', className)}>
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border border-border">
-              <IconSum className="size-3.5 text-muted-foreground shrink-0" />
-              <span className="text-xs font-medium tabular-nums text-foreground">
-                {formatTokenCount(totalTokens)}
+            <div className="flex items-center gap-1.5 py-1 text-muted-foreground">
+              <span className="text-xs tabular-nums text-muted-foreground">
+                Context: {formatTokenCount(totalTokens)}
               </span>
             </div>
           </div>

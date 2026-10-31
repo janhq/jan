@@ -2,20 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FolderOpen,
   Globe,
+  Ellipsis,
   RotateCw,
   ShieldOff,
   SquareArrowOutUpRight,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
+import { CoworkPanelButton, CoworkSidePanel } from '@/containers/CoworkSidePanel'
 import { getServiceHub, useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cn } from '@/lib/utils'
 import { buildSrcDoc } from '@/lib/htmlSandbox'
 import { previewShimError } from '@/lib/previewShim'
 import {
@@ -24,7 +26,6 @@ import {
   registerPreviewRoot,
   unregisterPreviewRoot,
 } from '@/lib/previewProtocol'
-import { cn } from '@/lib/utils'
 import {
   MAX_PREVIEW_BYTES,
   basenameOf,
@@ -157,72 +158,55 @@ export function CoworkPreviewPanel({ roots, path, onClose }: Props) {
     return () => void unregisterPreviewRoot(matchedRoot).catch(() => {})
   }, [live, matchedRoot, allowNetwork, nonce])
 
-  const iconButton = (
-    label: string,
-    Icon: typeof RotateCw,
-    onClick: () => void,
-    active?: boolean
-  ) => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onClick}
-          aria-label={label}
-          aria-pressed={active}
-          className={cn(
-            'shrink-0',
-            active ? 'text-primary' : 'text-muted-foreground'
-          )}
-        >
-          <Icon className="size-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
-
   return (
     <CoworkSidePanel
       title={basenameOf(path)}
       onClose={onClose}
       summary={
-        <div className="flex shrink-0 items-center gap-0.5">
-          {state.status === 'ready' && state.kind === 'html' && (
-            <>
-              {iconButton(
-                t('common:preview.allowNetwork'),
-                Globe,
-                () => setAllowNetwork((v) => !v),
-                allowNetwork
-              )}
-              {matchedRoot &&
-                canUnsandbox() &&
-                iconButton(
-                  t('common:preview.unsandboxed'),
-                  ShieldOff,
-                  () => setUnsandboxed((v) => !v),
-                  unsandboxed
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <CoworkPanelButton
+                aria-label={t('common:artifactMoreActions')}
+                title={t('common:artifactMoreActions')}
+              >
+                <Ellipsis className="size-4" />
+              </CoworkPanelButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {abs && <>
+                <DropdownMenuItem onSelect={() => void openOrReveal(artifactOpener(), roots, abs)}>
+                  <SquareArrowOutUpRight />{t('common:artifactOpenExternal')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void serviceHub.opener().revealItemInDir(abs)}>
+                  <FolderOpen />{t('common:artifactShowInFolder')}
+                </DropdownMenuItem>
+              </>}
+              {state.status === 'ready' && state.kind === 'html' && <>
+                {abs && <DropdownMenuSeparator />}
+                <DropdownMenuCheckboxItem checked={allowNetwork} onCheckedChange={setAllowNetwork}>
+                  <Globe />{t('common:preview.allowNetwork')}
+                </DropdownMenuCheckboxItem>
+                {matchedRoot && canUnsandbox() && (
+                  <DropdownMenuCheckboxItem checked={unsandboxed} onCheckedChange={setUnsandboxed}>
+                    <ShieldOff />{t('common:preview.unsandboxed')}
+                  </DropdownMenuCheckboxItem>
                 )}
-            </>
-          )}
-          {iconButton(t('common:preview.reload'), RotateCw, reload)}
-          {abs && (
-            <>
-              {iconButton(
-                t('common:artifactOpenExternal'),
-                SquareArrowOutUpRight,
-                () => void openOrReveal(artifactOpener(), roots, abs)
-              )}
-              {iconButton(
-                t('common:artifactShowInFolder'),
-                FolderOpen,
-                () => void serviceHub.opener().revealItemInDir(abs)
-              )}
-            </>
-          )}
-        </div>
+              </>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <CoworkPanelButton
+                onClick={reload}
+                aria-label={t('common:preview.reload')}
+              >
+                <RotateCw className="size-4" />
+              </CoworkPanelButton>
+            </TooltipTrigger>
+            <TooltipContent>{t('common:preview.reload')}</TooltipContent>
+          </Tooltip>
+        </>
       }
     >
       <PreviewBody
@@ -276,7 +260,7 @@ function HtmlFrame({
   }, [])
 
   const blocked = allowNetwork ? 0 : (state.externalRefs ?? 0)
-  const notice = 'border-b bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+  const notice = 'border-b bg-muted dark:bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
   const frameClass = 'min-h-0 w-full flex-1 border-0 bg-white'
   return (
     <div className="flex h-full flex-col">

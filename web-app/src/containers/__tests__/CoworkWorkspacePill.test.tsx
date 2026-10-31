@@ -56,7 +56,10 @@ describe('CoworkWorkspacePill', () => {
         onDetach={vi.fn()}
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: /a11yWithFolder/ }))
+    const trigger = screen.getByRole('button', { name: /a11yWithFolder/ })
+    expect(trigger).toHaveClass('h-9', 'rounded-full', 'border-border', 'text-muted-foreground')
+    expect(trigger.querySelector('svg')).toHaveClass('size-4', 'shrink-0')
+    await userEvent.click(trigger)
 
     expect(screen.getByText('common:workspace.readsFrom')).toBeInTheDocument()
     expect(

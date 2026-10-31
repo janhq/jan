@@ -71,6 +71,8 @@ export function sessionToThreadRecord(
     mode: 'cowork',
     folder: s.folder ?? null,
   }
+  if (s.project !== undefined) metadata.project = s.project
+  else delete metadata.project
   if (s.planMode !== undefined) metadata.planMode = s.planMode
   else delete metadata.planMode
   if (s.goal !== undefined) metadata.goal = s.goal
@@ -116,6 +118,7 @@ export function sessionFromThread(
         ? { id: String(model.id), provider: String(model.engine ?? 'llamacpp') }
         : undefined,
     folder: typeof meta.folder === 'string' ? meta.folder : null,
+    ...(meta.project && { project: meta.project }),
     turns: sidecar?.turns ?? [],
     messages: sidecar?.messages ?? [],
     ...(sidecar?.history !== undefined && { history: sidecar.history }),
@@ -211,11 +214,23 @@ export async function loadCoworkSessions(
   return { sessions, currentId, legacyIds, threads: coworkThreads }
 }
 
+/** Journal mutations must never replace unreadable deletion intent with an empty set. */
+async function readDeletedIdsStrict(invoke: Invoke): Promise<Set<string>> {
+  const raw = await invoke<string | null>('settings_get', {
+    key: COWORK_DELETED_IDS_KEY,
+  })
+  const parsed: unknown = raw == null ? [] : JSON.parse(raw)
+  if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'string')) {
+    throw new Error('Invalid Cowork deletion journal: expected an array of strings')
+  }
+  return new Set(parsed)
+}
+
 export type CoworkPersistence = {
   /** Record a new snapshot of a session; written after the debounce. */
   schedule(session: CoworkSession, opts?: { legacy?: boolean }): void
   /** Delete a session: tombstone, drain, then delete its thread. */
-  remove(id: string, opts?: { recordDeleted?: boolean }): Promise<void>
+  remove(id: string, opts?: { recordDeleted?: boolean; preserveThread?: boolean }): Promise<void>
   setCurrentId(id: string | null): void
   /** Seed the known on-disk thread records after hydration. */
   adopt(threads: Json[]): void
@@ -243,6 +258,38 @@ export function createCoworkPersistence(
   const chains = new Map<string, Promise<void>>()
   const persisted = new Map<string, Json>()
   const tombstones = new Set<string>()
+  // Failed compensation stays queued until flush (no background busy-loop).
+  // Keep its tombstone until the durable deletion intent really is removed.
+  const pendingRollbacks = new Set<string>()
+
+  let deletionJournalChain: Promise<void> = Promise.resolve()
+  const updateDeletionJournal = (update: () => Promise<void>) => {
+    const next = deletionJournalChain.then(update)
+    deletionJournalChain = next.catch(() => {})
+    return next
+  }
+
+  const rollbackDeletion = async (id: string) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await updateDeletionJournal(async () => {
+          if (!pendingRollbacks.has(id)) return
+          // Re-read in the shared queue so concurrent deletions are preserved.
+          const ids = await readDeletedIdsStrict(invoke)
+          ids.delete(id)
+          await invoke('settings_set', {
+            key: COWORK_DELETED_IDS_KEY,
+            value: JSON.stringify([...ids]),
+          })
+          pendingRollbacks.delete(id)
+          tombstones.delete(id)
+        })
+        return
+      } catch (error) {
+        if (attempt === 2) throw error
+      }
+    }
+  }
 
   let currentIdDirty = false
   let currentIdValue: string | null = null
@@ -257,6 +304,7 @@ export function createCoworkPersistence(
 
   const writeOnce = async (id: string) => {
     if (tombstones.has(id)) {
+      if (pendingRollbacks.has(id)) return
       dirty.delete(id)
       return
     }
@@ -345,12 +393,15 @@ export function createCoworkPersistence(
   return {
     schedule(session, o) {
       const id = session.id
-      if (tombstones.has(id) || session.unavailable) return
+      if ((tombstones.has(id) && !pendingRollbacks.has(id)) || session.unavailable) return
       if (!persisted.has(id) && isEmpty(session)) return
       const prev = latest.get(id)
       latest.set(id, { session, legacy: o?.legacy ?? prev?.legacy ?? false })
       dirty.add(id)
       clearTimer(id)
+      // The sync layer restores failed removals immediately. Retain that
+      // snapshot, but do not write it or claim recovery before compensation.
+      if (pendingRollbacks.has(id)) return
       timers.set(
         id,
         setTimeout(() => {
@@ -361,25 +412,55 @@ export function createCoworkPersistence(
     },
 
     async remove(id, o) {
+      if (pendingRollbacks.has(id)) await rollbackDeletion(id)
       tombstones.add(id)
       clearTimer(id)
       dirty.delete(id)
+      const snapshot = latest.get(id)
       latest.delete(id)
       await (chains.get(id) ?? Promise.resolve())
+      let journalAdded = false
+      let deletionCompleted = false
       try {
-        await invoke('delete_thread', { threadId: id })
-        persisted.delete(id)
-        opts.onThreadRemoved?.(id)
+        // Record durable intent before deleting files. The key is shared by
+        // every session, so serialize read-modify-write across bulk removals.
         if (o?.recordDeleted) {
-          const ids = await readDeletedIds(invoke)
-          ids.add(id)
-          await invoke('settings_set', {
-            key: COWORK_DELETED_IDS_KEY,
-            value: JSON.stringify([...ids]),
+          await updateDeletionJournal(async () => {
+            const ids = await readDeletedIdsStrict(invoke)
+            if (ids.has(id)) return
+            ids.add(id)
+            await invoke('settings_set', {
+              key: COWORK_DELETED_IDS_KEY,
+              value: JSON.stringify([...ids]),
+            })
+            journalAdded = true
           })
         }
+        if (!o?.preserveThread) await invoke('delete_thread', { threadId: id })
+        deletionCompleted = true
+        persisted.delete(id)
+        if (!o?.preserveThread) opts.onThreadRemoved?.(id)
       } catch (e) {
+        if (journalAdded && !deletionCompleted) {
+          pendingRollbacks.add(id)
+          try {
+            // Undo only this removal's new intent, not a pre-existing marker.
+            await rollbackDeletion(id)
+          } catch (rollbackError) {
+            if (snapshot && !latest.has(id)) {
+              latest.set(id, snapshot)
+              dirty.add(id)
+            }
+            const error = new Error(`${String(e)}; deletion recovery pending: ${String(rollbackError)}`)
+            opts.onError?.(id, error)
+            throw error
+          }
+        }
+        // The authoritative store can restore the session and retry deletion.
+        // Pending compensation instead retains edits and its tombstone above.
+        tombstones.delete(id)
         opts.onError?.(id, e)
+        throw e
       }
     },
 
@@ -402,6 +483,10 @@ export function createCoworkPersistence(
     isPersisted: (id) => persisted.has(id),
 
     async flush() {
+      // A flush must not report success with failed recovery still queued.
+      // Each call makes bounded attempts; storage failure never spins forever.
+      await Promise.all([...pendingRollbacks].map((id) => rollbackDeletion(id)))
+      await deletionJournalChain
       for (let pass = 0; pass < 3 && dirty.size > 0; pass++) {
         for (const id of [...dirty]) {
           clearTimer(id)

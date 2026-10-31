@@ -6,8 +6,11 @@ import React from 'react'
 
 const h = vi.hoisted(() => ({
   navigate: vi.fn(),
+  pickFolder: vi.fn(),
   coworkEnabled: false,
   providers: [] as any[],
+  selectedModel: undefined as Model | undefined,
+  selectedProvider: '',
   search: { threadModel: undefined as any },
   setCurrentThreadId: vi.fn(),
   useTools: vi.fn(),
@@ -27,7 +30,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/lib/version', () => ({ isCoworkEnabled: () => h.coworkEnabled }))
 vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({ dialog: () => ({ open: vi.fn() }) }),
+  useServiceHub: () => ({ dialog: () => ({ open: h.pickFolder }) }),
 }))
 vi.mock('@/hooks/useCoworkRun', () => ({
   useCoworkRun: { getState: () => ({ runId: {} }) },
@@ -41,7 +44,11 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: () => ({ providers: h.providers }),
+  useModelProvider: () => ({
+    providers: h.providers,
+    selectedModel: h.selectedModel,
+    selectedProvider: h.selectedProvider,
+  }),
 }))
 
 vi.mock('@/hooks/useThreads', () => ({
@@ -53,16 +60,26 @@ vi.mock('@/hooks/useTools', () => ({
 }))
 
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ model, initialMessage, onSubmit, surfaceControls }: any) => (
-    <div data-testid="chat-input" data-initial={String(initialMessage)}>
+  default: ({ model, initialMessage, onSubmit, surfaceControls, leadingControls, menuWorkspace, menuControls, projectId }: any) => (
+    <div data-testid="chat-input" data-initial={String(initialMessage)} data-project-id={projectId}>
       {model ? model.id : 'no-model'}
-      <div data-testid="surface-controls">{surfaceControls}</div>
+      <div data-testid="menu-workspace">{menuWorkspace}</div>
+      <div data-testid="menu-controls">{menuControls}</div>
+      <div data-testid="surface-controls">{leadingControls}{surfaceControls}</div>
       <button
         data-testid="submit"
         onClick={() => (onSubmit ?? (() => {}))('do the thing', undefined, undefined, 'do the thing')}
       />
     </div>
   ),
+}))
+
+vi.mock('@/containers/CoworkComposerMenu', () => ({
+  CoworkComposerMenu: ({ onAttachFolder, onSelectProject, onAddProject }: any) => <>
+    <button onClick={onAttachFolder}>Menu folder</button>
+    <button onClick={() => onSelectProject({ id: 'project-1', name: 'Project' })}>Menu project</button>
+    <button onClick={onAddProject}>Menu new project</button>
+  </>,
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -95,6 +112,11 @@ vi.mock('@/constants/routes', () => ({
   route: { home: '/', coworkSession: '/cowork/$sessionId' },
 }))
 
+vi.mock('@/containers/dialogs/AddProjectDialog', () => ({ default: () => null }))
+vi.mock('@/hooks/useThreadManagement', () => ({
+  useThreadManagement: () => ({ addFolder: vi.fn(), folders: [] }),
+}))
+
 import { Route } from '../index'
 import { useHomeMode } from '@/hooks/useHomeMode'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
@@ -109,6 +131,8 @@ describe('Index route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     h.providers = []
+    h.selectedModel = undefined
+    h.selectedProvider = ''
     h.search = { threadModel: undefined }
     h.providerHasRemoteApiKeys.mockReturnValue(false)
     h.coworkEnabled = false
@@ -149,7 +173,7 @@ describe('Index route', () => {
     renderComponent()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('dropdown')).toBeInTheDocument()
+    expect(screen.queryByTestId('dropdown')).not.toBeInTheDocument()
     expect(screen.getByText('chat:description')).toBeInTheDocument()
   })
 
@@ -178,12 +202,12 @@ describe('Index route', () => {
     expect(screen.getByTestId('setup-screen')).toBeInTheDocument()
   })
 
-  it('passes threadModel from search into DropdownModelProvider and ChatInput', () => {
+  it('passes threadModel to the composer without a header model picker', () => {
     h.providers = [{ provider: 'openai', models: [] }]
     h.providerHasRemoteApiKeys.mockReturnValue(true)
     h.search = { threadModel: { id: 'gpt-x', provider: 'openai' } }
     renderComponent()
-    expect(screen.getByTestId('dropdown')).toHaveTextContent('gpt-x')
+    expect(screen.queryByTestId('dropdown')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toHaveTextContent('gpt-x')
     expect(screen.getByTestId('chat-input')).toHaveAttribute('data-initial', 'true')
   })
@@ -215,12 +239,57 @@ describe('Index route', () => {
       expect(screen.queryByTestId('home-cowork-folder')).not.toBeInTheDocument()
     })
 
+    it('associates the Chat draft with its visibly selected project without a folder action', () => {
+      renderComponent()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu project' }))
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
+      expect(screen.getByTestId('home-chat-project')).toHaveTextContent('Project')
+      expect(screen.queryByTestId('home-cowork-folder')).not.toBeInTheDocument()
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(screen.getByTestId('chat-input')).toHaveAttribute('data-project-id', 'project-1')
+      fireEvent.click(screen.getByRole('button', { name: 'common:homeMode.removeFolder' }))
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-project-id')
+      expect(screen.queryByTestId('home-chat-project')).not.toBeInTheDocument()
+    })
+
+    it('keeps workspace actions draft-only until submission, alongside the workspace picker', async () => {
+      h.coworkEnabled = true
+      h.pickFolder.mockResolvedValue('/tmp/workspace')
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      expect(screen.getByTestId('home-cowork-folder')).toBeInTheDocument()
+      expect(screen.getByTestId('menu-controls')).toBeEmptyDOMElement()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await screen.findByText('workspace')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu project' }))
+      expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+      fireEvent.click(screen.getByTestId('submit'))
+      const [session] = useCoworkSessions.getState().sessions
+      expect(session.folder).toBe('/tmp/workspace')
+      expect(session.project).toEqual({ id: 'project-1', name: 'Project' })
+    })
+
     it('Cowork mode shows the folder control and the ideas', () => {
       h.coworkEnabled = true
       useHomeMode.setState({ mode: 'cowork' })
       renderComponent()
       expect(screen.getByTestId('home-cowork-folder')).toBeInTheDocument()
       expect(screen.getByText('common:homeMode.ideas')).toBeInTheDocument()
+    })
+
+    it('places the workspace below and outside the composer before ideas', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      const picker = screen.getByTestId('home-cowork-folder')
+      const composer = screen.getByTestId('chat-input')
+      const ideas = screen.getByText('common:homeMode.ideas')
+      expect(composer.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(composer).not.toContainElement(picker)
+      expect(picker.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(picker.parentElement?.parentElement).toHaveClass('pt-2')
+      expect(screen.getByTestId('surface-controls')).toContainElement(screen.getByTestId('home-mode-toggle'))
     })
 
     it('submitting in Cowork mode creates a session, hands off the prompt and opens its URL', () => {
@@ -235,6 +304,54 @@ describe('Index route', () => {
         to: '/cowork/$sessionId',
         params: { sessionId: session.id },
       })
+    })
+
+    it('uses the current model selection instead of the initial URL model on Cowork submit', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
+      h.selectedModel = { id: 'model-a' }
+      h.selectedProvider = 'provider-a'
+      const { rerender } = renderComponent()
+
+      // The picker initialized A from the URL, then the user manually picked B.
+      h.selectedModel = { id: 'model-b' }
+      h.selectedProvider = 'provider-b'
+      const Component = Route.component as React.ComponentType
+      rerender(<Component />)
+      fireEvent.click(screen.getByTestId('submit'))
+
+      expect(useCoworkSessions.getState().sessions[0].model).toEqual({
+        id: 'model-b', provider: 'provider-b',
+      })
+    })
+
+    it('keeps the initialized URL model when it is still selected on Cowork submit', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
+      h.selectedModel = { id: 'model-a' }
+      h.selectedProvider = 'provider-a'
+      renderComponent()
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(useCoworkSessions.getState().sessions[0].model).toEqual(h.search.threadModel)
+    })
+
+    it('falls back to the URL model when no current model is selected', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      h.search = { threadModel: { id: 'model-a', provider: 'provider-a' } }
+      renderComponent()
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(useCoworkSessions.getState().sessions[0].model).toEqual(h.search.threadModel)
+    })
+
+    it('leaves the Cowork model unset without a current selection or URL model', () => {
+      h.coworkEnabled = true
+      useHomeMode.setState({ mode: 'cowork' })
+      renderComponent()
+      fireEvent.click(screen.getByTestId('submit'))
+      expect(useCoworkSessions.getState().sessions[0].model).toBeUndefined()
     })
 
     it('ignores a stored Cowork mode where Cowork is not available', () => {

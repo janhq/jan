@@ -7,11 +7,11 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
-import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
+import { ConversationColumn } from '@/components/ai-elements/conversation-column'
 import { useShallow } from 'zustand/react/shallow'
 import { MessageItem } from '@/containers/MessageItem'
 
@@ -109,7 +109,7 @@ import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
@@ -2309,7 +2309,7 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
+          <ConversationHeaderTitle title={thread?.title} project={thread?.metadata?.project} />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -2324,7 +2324,8 @@ function ThreadDetail() {
         >
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
-              className={cn('mx-auto w-full px-6 pb-4 md:w-4/5 xl:w-4/6')}
+              column
+              className="pb-4"
             >
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
@@ -2476,7 +2477,7 @@ function ThreadDetail() {
         {/* Chat Input - Fixed at bottom. No top padding: the scroll area (and
             its fade) runs right up to the composer, with the resting gap kept
             inside the scroll content as pb-4. */}
-        <div className="pb-4 px-6 mx-auto w-full md:w-4/5 xl:w-4/6">
+        <ConversationColumn reserveScrollGutter className="pb-4">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
@@ -2484,7 +2485,7 @@ function ThreadDetail() {
             chatStatus={effectiveStatus}
             toolsRunning={toolsRunning}
           />
-        </div>
+        </ConversationColumn>
       </div>
     </div>
   )
