@@ -6,7 +6,7 @@
       "checking": "正在检查扩展状态..."
     },
     "notInstalled": {
-      "title": "Jan 在您的浏览器中完成任务",
+      "title": "Jan 可使用您的浏览器完成任务",
       "description": "安装扩展以授予 Jan 浏览器访问权限",
       "getExtension": "获取扩展"
     }
@@ -59,6 +59,8 @@
     "description": "配置 Jan 如何管理和重试 MCP 服务器。",
     "toolCallTimeout": "工具调用超时时间（秒）",
     "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。",
+    "maxToolOutputChars": "工具输出字符上限",
+    "maxToolOutputCharsDesc": "保存于上下文内的最大工具输出长度。标记并截断超出限制的任何输出，以避免过长输出耗尽模型上下文。将其设为 0 则不会触发截断。",
     "smartToolRouting": "智能 MCP 工具路由",
     "smartToolRoutingDesc": "启用后，Jan 会在加载工具前先选择相关的 MCP 服务器。关闭则始终加载完整的 MCP 工具列表。",
     "useLightweightRouterModel": "使用独立模型进行路由",
@@ -69,5 +71,31 @@
     "routerModelSearchPlaceholder": "搜索模型…",
     "routerModelEmptyList": "没有可用的轻量模型。请添加更小的模型，或在「模型」中配置 API 密钥。",
     "routerModelEmptySearch": "没有与「{{query}}」匹配的结果。"
+  },
+  "auth": {
+    "label": "认证：",
+    "state": {
+      "notApplicable": "可选",
+      "staticHeader": "授权请求头",
+      "authenticated": "已认证",
+      "expired": "已过期",
+      "staleResource": "证书并非对应此 URL",
+      "unauthenticated": "未通过认证"
+    },
+    "expiresIn": "{{duration}} 内过期",
+    "authenticate": "登录",
+    "reauthenticate": "重新认证",
+    "clear": "清除认证",
+    "waiting": "正在浏览器内操作...",
+    "openSignInPage": "打开登录页面",
+    "needsAuth": "{{serverName}} 需认证",
+    "needsAuthHint": "登录此服务器以建立连接。",
+    "authorized": "登录到 {{serverName}}",
+    "authorizeFailed": "尝试登录到 {{serverName}} 失败",
+    "cleared": "清除 {{serverName}} 内保存的凭证",
+    "nothingToClear": "{{serverName}} 内未保存任何凭证",
+    "clearFailed": "无法清除 {{serverName}} 内保存的凭证",
+    "renew": "刷新会话",
+    "expiredAgo": "{{duration}} 前过期"
   }
 }
