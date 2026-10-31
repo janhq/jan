@@ -86,8 +86,22 @@ describe('agentWorkspace', () => {
     expect(slugifyMemoryName('How to set up CUDA 12?')).toBe(
       'how-to-set-up-cuda-12'
     )
-    expect(slugifyMemoryName('  ---  ')).toBe('memory')
-    expect(slugifyMemoryName('')).toBe('memory')
+    // Never a name the store reserves for its index, which would make the
+    // Remember action fail for an empty, non-Latin or literal title.
+    expect(slugifyMemoryName('  ---  ')).toBe('note')
+    expect(slugifyMemoryName('')).toBe('note')
+    expect(slugifyMemoryName('\u8bb0\u5fc6')).toBe('note')
+    expect(slugifyMemoryName('Memory')).toBe('memory-note')
+    expect(slugifyMemoryName('INDEX')).toBe('index-note')
+    // Nor a Windows device name, which the store refuses on every OS.
+    expect(slugifyMemoryName('Con')).toBe('con-note')
+    expect(slugifyMemoryName('AUX')).toBe('aux-note')
+    expect(slugifyMemoryName('nul')).toBe('nul-note')
+    expect(slugifyMemoryName('PRN?')).toBe('prn-note')
+    expect(slugifyMemoryName('COM1')).toBe('com1-note')
+    expect(slugifyMemoryName('lpt0')).toBe('lpt0-note')
+    expect(slugifyMemoryName('com10')).toBe('com10')
+    expect(slugifyMemoryName('console')).toBe('console')
     expect(slugifyMemoryName('a'.repeat(100))).toHaveLength(60)
   })
 
@@ -99,7 +113,7 @@ describe('agentWorkspace', () => {
       name: 'chat-notes-3',
       duplicate: false,
     })
-    // Suffixing, never overwriting: memory_write replaces by name, and the
+    // Suffixing, never overwriting: a memory write replaces by name, and the
     // existing notes are not this action's to replace.
     expect(api.memoryWrite).toHaveBeenCalledWith(
       '/data',

@@ -9,6 +9,10 @@
 
 use serde_json::{json, Value};
 
+/// The `memory` tool's description: what it is for and the reconcile rule that
+/// keeps the index small (janhq/jan-internal#497).
+const MEMORY_DESCRIPTION: &str = "Your long-term memory: durable facts (decisions, conventions, preferences, gotchas) kept across sessions. It is yours to curate; no op asks the user. Before writing, `search` or `view` for an existing note on the topic and update it (`edit`, or `write` over it) rather than adding another. When a new fact supersedes a note, `delete` the old one. When work a note tracks is finished, archive it by adding front matter `status: done` (it stays readable and searchable but leaves the index). Group related notes in a folder with `move` (`name` to `tui/scroll`); never write an index or overview note, the index is built for you. Keep notes short; never store secrets or session-only state.";
+
 /// The `bash` tool's description before any shell-specific note.
 const BASH_DESCRIPTION: &str = "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output.";
 
@@ -154,37 +158,21 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "memory_list",
-                "description": "List your memory notes (durable facts stored across sessions): this project's, then your user-wide ones as `user:<name>`. No arguments.",
-                "parameters": { "type": "object", "properties": {}, "required": [] }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "memory_read",
-                "description": "Read a memory note by name. `name` is this project's note, `user:name` a user-wide note, `project:<slug>` another project's index and `project:<slug>/name` one of its notes.",
+                "name": super::MEMORY_TOOL,
+                "description": MEMORY_DESCRIPTION,
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension), optionally scoped with `user:` or `project:<slug>/`." }
+                        "op": { "type": "string", "enum": ["view", "search", "write", "edit", "delete", "move"], "description": "view: the index (no name), a folder's notes (`folder/`), or a note's content. search: keyword search over titles and bodies, archived notes included. write: create or overwrite. edit: replace one exact, unique `old` with `new`. delete: remove a note. move: rename `name` to `to` (e.g. into a folder), keeping its content." },
+                        "name": { "type": "string", "description": "Note name without .md: `note` or `folder/note` (this project), `user:note` (every project), `project:<slug>` or `project:<slug>/note` (another project, read-only). Required for write, edit, delete and move. `index` and `MEMORY` are reserved: the index is built for you." },
+                        "to": { "type": "string", "description": "move: the new name, `note` or `folder/note`; must not exist yet." },
+                        "query": { "type": "string", "description": "search: words that must all appear in the note." },
+                        "title": { "type": "string", "description": "write: one-line title, stored as the note's first line and shown in the index." },
+                        "content": { "type": "string", "description": "write: the note's Markdown body. Front matter `status: done` archives it." },
+                        "old": { "type": "string", "description": "edit: exact text to replace; must occur exactly once." },
+                        "new": { "type": "string", "description": "edit: replacement text." }
                     },
-                    "required": ["name"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "memory_write",
-                "description": "Create or overwrite a memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short. Plain `name` is this project's; `user:name` applies to every project (personal preferences, cross-project conventions).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note. Prefix `user:` for a user-wide note." },
-                        "content": { "type": "string", "description": "Full Markdown content of the note." }
-                    },
-                    "required": ["name", "content"]
+                    "required": ["op"]
                 }
             }
         }),
@@ -406,6 +394,28 @@ mod tests {
         let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         assert_eq!(once, twice);
+    }
+
+    /// One `memory` tool carries every op and the reconcile rule; the three
+    /// old tools are gone with no aliases.
+    #[test]
+    fn memory_is_one_tool_with_six_ops_and_the_reconcile_rule() {
+        let schemas = builtin_tool_schemas();
+        let names: Vec<&str> = schemas.iter().filter_map(|s| s["function"]["name"].as_str()).collect();
+        assert!(names.contains(&"memory"));
+        assert!(!names.iter().any(|n| n.starts_with("memory_")), "{names:?}");
+        let memory = schemas.iter().find(|s| s["function"]["name"] == "memory").unwrap();
+        let params = &memory["function"]["parameters"];
+        assert_eq!(params["required"], json!(["op"]));
+        assert_eq!(
+            params["properties"]["op"]["enum"],
+            json!(["view", "search", "write", "edit", "delete", "move"])
+        );
+        assert!(params["properties"]["to"].is_object(), "move takes `to`");
+        let description = memory["function"]["description"].as_str().unwrap();
+        for rule in ["`search` or `view`", "`delete` the old one", "`status: done`", "no op asks the user"] {
+            assert!(description.contains(rule), "{rule}: {description}");
+        }
     }
 
     /// A PowerShell or cmd host says so before the generic text, so the model

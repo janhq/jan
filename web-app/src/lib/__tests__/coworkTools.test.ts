@@ -10,6 +10,7 @@ import {
   coworkToolSignature,
   allowedToolNames,
   PLAN_DENIED_TOOLS,
+  PLAN_DENIED_MEMORY_OPS,
   TODO_TOOL_NAME,
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
@@ -20,7 +21,7 @@ const schema = (name: string) => ({
   function: { name, description: name, parameters: { type: 'object' } },
 })
 
-const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory_write']
+const ALL = ['read', 'ls', 'grep', 'write', 'edit', 'shell', 'memory']
 
 const opts = (over: Partial<Parameters<typeof buildCoworkTools>[0]> = {}) => ({
   planMode: false,
@@ -143,7 +144,18 @@ describe('web tools', () => {
 describe('allowedToolNames', () => {
   it('refuses the same set plan mode withholds', () => {
     const out = allowedToolNames([...ALL, TASK_TOOL_NAME], opts({ planMode: true }))
-    expect(out).toEqual(['read', 'ls', 'grep'])
+    // Memory stays for its reads (view, search); the dispatcher refuses the
+    // ops that change the store.
+    expect(out).toEqual(['read', 'ls', 'grep', 'memory'])
+  })
+
+  it('names the memory ops plan mode refuses', () => {
+    expect([...PLAN_DENIED_MEMORY_OPS].sort()).toEqual([
+      'delete',
+      'edit',
+      'move',
+      'write',
+    ])
   })
 
   it('refuses task past the subagent depth cap', () => {

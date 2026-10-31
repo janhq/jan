@@ -168,9 +168,11 @@ impl Hook {
         // An unparseable matcher cannot reach here: `HookSet::extend_from`
         // drops such an entry with a notice rather than letting it match
         // nothing forever.
-        glob::Pattern::new(&self.matcher)
+        let matched = glob::Pattern::new(&self.matcher)
             .map(|p| p.matches(tool_name))
-            .unwrap_or(false)
+            .unwrap_or(false);
+        // A matcher on the old memory tools guards the one that replaced them.
+        matched || (tool_name == super::MEMORY_TOOL && super::names_legacy_memory(&self.matcher))
     }
 }
 
@@ -202,9 +204,10 @@ pub struct HookSet {
     /// swallowed, because a hook that silently does not fire is worse than one
     /// that complains -- the user believes their policy is in force.
     load_notices: Vec<String>,
-    /// The subset of `load_notices` from [`super::renamed_shell_notice`].
+    /// The subset of `load_notices` from [`super::renamed_tool_notice`],
+    /// each with the current name of the tool its matcher meant.
     #[serde(skip)]
-    renamed_shell_notices: Vec<String>,
+    renamed_notices: Vec<(&'static str, String)>,
 }
 
 impl HookSet {
@@ -230,11 +233,16 @@ impl HookSet {
         &self.load_notices
     }
 
-    /// The load notices for matchers that still name the shell tool's old
-    /// name `bash`. Kept apart so a surface with no run start (the desktop's
-    /// per-call command) can put them on the shell call they no longer guard.
-    pub fn renamed_shell_notices(&self) -> &[String] {
-        &self.renamed_shell_notices
+    /// The load notices for matchers that still name `tool` by an old name
+    /// (`bash` for the shell, `memory_*` for memory). Kept apart so a surface
+    /// with no run start (the desktop's per-call command) can put them on the
+    /// call of the tool they meant.
+    pub fn renamed_notices(&self, tool: &str) -> Vec<&str> {
+        self.renamed_notices
+            .iter()
+            .filter(|(t, _)| *t == tool)
+            .map(|(_, notice)| notice.as_str())
+            .collect()
     }
 
     /// Append entries from one source, skipping any whose event name is not
@@ -276,11 +284,17 @@ impl HookSet {
                 ));
                 continue;
             }
-            // Kept as written, so it starts matching the moment it is renamed,
-            // but said out loud: a guard hook on `bash` no longer fires.
+            // Kept as written and said out loud: a guard hook on `bash` no
+            // longer fires, and one on an old memory name now guards every
+            // `memory` op (see `Hook::matches`).
             let hook_where = format!("Hook {} matcher in {where_}", event.as_str());
-            if let Some(notice) = super::renamed_shell_notice(&matcher, &hook_where) {
-                self.renamed_shell_notices.push(notice.clone());
+            if let Some(notice) = super::renamed_tool_notice(&matcher, &hook_where) {
+                let tool = if super::names_legacy_memory(&matcher) {
+                    super::MEMORY_TOOL
+                } else {
+                    super::SHELL_TOOL
+                };
+                self.renamed_notices.push((tool, notice.clone()));
                 self.load_notices.push(notice);
             }
             self.hooks.push(Hook {
@@ -697,7 +711,7 @@ mod tests {
         let matched = set.matching(HookEvent::PreToolUse, Some("edit"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "a");
-        let matched = set.matching(HookEvent::PreToolUse, Some("memory_write"));
+        let matched = set.matching(HookEvent::PreToolUse, Some("skill_write"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "b");
     }
@@ -718,8 +732,30 @@ mod tests {
         let notice = &set.load_notices()[0];
         assert!(notice.contains("PreToolUse matcher in hooks.json"), "{notice}");
         assert!(notice.contains("now `shell`"), "{notice}");
-        assert_eq!(set.renamed_shell_notices(), set.load_notices());
+        let notices: Vec<&str> = set.load_notices().iter().map(String::as_str).collect();
+        assert_eq!(set.renamed_notices("shell"), notices);
         assert_eq!(set.matching(HookEvent::PreToolUse, Some("shell")).len(), 1);
+    }
+
+    /// A matcher on an old memory tool name guards the `memory` tool, and is
+    /// reported so the user renames it.
+    #[test]
+    fn an_old_memory_matcher_guards_the_memory_tool_and_is_reported() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUse", Some("memory_write"), "guard"),
+                entry("PostToolUse", Some("*write*"), "log"),
+            ],
+            Path::new("hooks.json"),
+        );
+        assert_eq!(set.matching(HookEvent::PreToolUse, Some("memory")).len(), 1);
+        assert!(set.matching(HookEvent::PostToolUse, Some("memory")).is_empty());
+        assert_eq!(set.load_notices().len(), 1, "{:?}", set.load_notices());
+        let notice = &set.load_notices()[0];
+        assert!(notice.contains("PreToolUse matcher in hooks.json names `memory_write`"), "{notice}");
+        assert_eq!(set.renamed_notices("memory"), vec![notice.as_str()]);
+        assert!(set.renamed_notices("shell").is_empty());
     }
 
     #[test]

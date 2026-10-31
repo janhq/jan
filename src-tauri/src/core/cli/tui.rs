@@ -4559,6 +4559,20 @@ struct App {
     plugin_collection_url: Option<String>,
     /// A plugin install is in flight: a second request is refused.
     plugin_installing: bool,
+    /// A memory tidy was asked for (`/memory tidy`, or the auto trigger); the
+    /// chat loop starts it on the session's subagent registry. Taken once.
+    tidy_request: Option<TidyKind>,
+    /// The tidy in flight, if any: one at a time.
+    tidy_running: Option<TidyKind>,
+    /// The in-flight tidy's subagent run id, so entering plan mode can stop it.
+    tidy_run_id: Option<String>,
+    /// Whether this session already queued an automatic tidy. Auto-tidy runs
+    /// at most once per session, so a tidy that cannot get the index under
+    /// budget never loops; `/new`, `/clear` and `/resume` reset it.
+    auto_tidy_checked: bool,
+    /// The memory stamp (`Scopes::stamp`) the last under-budget check saw, so
+    /// a turn that changed no note skips rebuilding the index.
+    auto_tidy_stamp: Option<u64>,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
@@ -5349,6 +5363,11 @@ impl App {
             plugin_collection_url: None,
             plugin_installing: false,
             update_installing: false,
+            tidy_request: None,
+            tidy_running: None,
+            tidy_run_id: None,
+            auto_tidy_checked: false,
+            auto_tidy_stamp: None,
             compact_request: None,
             compacting: None,
             compact_started: None,
@@ -5454,6 +5473,22 @@ impl App {
         self.adopt_session_start(Some(start));
     }
 
+    /// Re-take the session's memory index after a compaction. The compaction
+    /// already rewrote the history, so the prompt it is about to send is new
+    /// either way, and a fresh index stops the changes block from repeating
+    /// what the summary folded in. The date and branch stay the session's.
+    fn refresh_memory_snapshot(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let Some(start) = args.session_start.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let fresh = start.with_fresh_memory(&root);
+        self.adopt_session_start(Some(fresh));
+    }
+
     /// Run the session on `start` from the next turn on; a no-op when it is
     /// already the one in use.
     fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
@@ -5487,6 +5522,9 @@ impl App {
         self.resume_notice_pending = false;
         self.set_host_system_prompt(None);
         self.refresh_session_start();
+        // A new session gets its own chance at an automatic tidy.
+        self.auto_tidy_checked = false;
+        self.auto_tidy_stamp = None;
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -8487,6 +8525,7 @@ impl App {
                 if child.is_none() {
                     self.run_compacting = None;
                     self.pending_compaction_refresh = true;
+                    self.refresh_memory_snapshot();
                 }
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
@@ -8704,7 +8743,87 @@ impl App {
         // Reminder policy runs last: only if nothing else already claimed the
         // next turn (goal eval, a dequeued message) and open work remains.
         self.maybe_inject_todo_reminder(normal, no_answer, &answer);
+        self.maybe_auto_tidy();
         self.persist();
+    }
+
+    /// Switch to plan mode, the one way the TUI enters it once the session is
+    /// up. A tidy child runs in normal mode, so one already running would keep
+    /// changing memory under a mode that keeps memory read only: it is
+    /// aborted (the registry releases its slot; a note it was mid-way through
+    /// is written whole or not at all, and the index is rebuilt by the next
+    /// change), and a queued one is dropped. A stopped automatic tidy gets its
+    /// check back, so it runs again at the first turn end after plan mode.
+    fn enter_plan_mode(&mut self) {
+        self.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let queued = self.tidy_request.take();
+        let running = self.tidy_running.take();
+        if let Some(run_id) = self.tidy_run_id.take() {
+            self.subagent_set.abort_child(&run_id);
+        }
+        if queued.or(running) == Some(TidyKind::Auto) {
+            self.auto_tidy_checked = false;
+            self.auto_tidy_stamp = None;
+        }
+        if queued.is_some() || running.is_some() {
+            self.note("memory tidy stopped: plan mode is read only");
+        }
+    }
+
+    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
+    /// the parent's permissions, so with `memory` denied it could change
+    /// nothing: no tidy is started.
+    fn memory_denied(&self) -> bool {
+        self.args.as_ref().is_some_and(|a| {
+            a.permissions
+                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        })
+    }
+
+    /// Queue an automatic memory tidy when the index has outgrown its prompt
+    /// budget, at most once per session.
+    ///
+    /// Checked at the end of every turn rather than per write: that is when the
+    /// session's own writes have landed, and the first turn's end also covers
+    /// a store that was already over budget at session start. Only a queued
+    /// tidy spends the session's one automatic tidy, so a store that grows
+    /// past its budget mid-session is still tidied. Cheap when nothing changed:
+    /// the index is rebuilt only when the notes' metadata stamp moved. The tidy
+    /// runs in the background on the session's subagent registry and never
+    /// starts a model turn, so it cannot block or loop; its changes reach this
+    /// session only through the `Memory Changes` tail block. Off with
+    /// `memory_auto_tidy = false`.
+    fn maybe_auto_tidy(&mut self) {
+        // Plan mode is read-only, memory included; the check resumes at the
+        // first turn end after it.
+        if self.auto_tidy_checked
+            || self.tidy_running.is_some()
+            || self.tidy_request.is_some()
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+        {
+            return;
+        }
+        let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
+            return;
+        };
+        if !crate::core::agent::global_config::memory_auto_tidy_enabled() || self.memory_denied() {
+            return;
+        }
+        let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+        let scopes = tauri_plugin_agent_tools::memory::Scopes {
+            store: &store,
+            home: home.as_deref(),
+            cross_project,
+        };
+        let stamp = scopes.stamp();
+        if self.auto_tidy_stamp == Some(stamp) {
+            return;
+        }
+        self.auto_tidy_stamp = Some(stamp);
+        if scopes.over_budget() {
+            self.auto_tidy_checked = true;
+            self.tidy_request = Some(TidyKind::Auto);
+        }
     }
 
     /// Whether auto-compaction should trigger: a non-zero token use above the
@@ -11183,11 +11302,19 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
             query: s("pattern"),
             scope: scope(),
         }),
-        "memory_read" => Some(named("memory")),
+        "memory" => match args.get("op").and_then(|v| v.as_str()) {
+            Some("view") if !s("name").is_empty() => Some(named("memory")),
+            Some("view") => Some(Explore::List {
+                target: "memory notes".to_string(),
+            }),
+            Some("search") => Some(Explore::Search {
+                query: s("query"),
+                scope: Some("memory".to_string()),
+            }),
+            // write/edit/delete change memory: not an exploration.
+            _ => None,
+        },
         "skill_read" => Some(named("skill")),
-        "memory_list" => Some(Explore::List {
-            target: "memory notes".to_string(),
-        }),
         "skill_list" => Some(Explore::List {
             target: "skills".to_string(),
         }),
@@ -13229,7 +13356,7 @@ async fn chat_loop<B: Backend>(
     // whole session rather than for one run: a child outliving the run that
     // dispatched it must still reach its panel and emit its closing bracket.
     let (session_events_tx, mut session_events) = mpsc::unbounded_channel::<StreamEvent>();
-    subagent_set.install_session_events(session_events_tx);
+    subagent_set.install_session_events(session_events_tx.clone());
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -13301,6 +13428,8 @@ async fn chat_loop<B: Backend>(
     let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
         None;
     let mut compact_base = 0usize;
+    // A memory tidy runs as a session-owned subagent; this collects its answer.
+    let mut tidy_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
 
     // The dock's branch indicator is captured once at startup; re-read it on a
     // slow timer so a checkout made outside the TUI (another terminal, an
@@ -13525,6 +13654,23 @@ async fn chat_loop<B: Backend>(
                     )
                     .await
                 }));
+            }
+        }
+
+        // Entering plan mode stops the tidy and drops `tidy_running`; its
+        // collector would only report the cancellation as a failure.
+        if app.tidy_running.is_none() {
+            if let Some(task) = tidy_task.take() {
+                task.abort();
+            }
+        }
+
+        // A memory tidy was asked for: start it in the background. It writes
+        // only memory and never starts a turn, so it runs beside whatever else
+        // the session is doing.
+        if tidy_task.is_none() {
+            if let Some(kind) = app.tidy_request.take() {
+                tidy_task = start_memory_tidy(app, kind, &session_events_tx);
             }
         }
 
@@ -13810,6 +13956,9 @@ async fn chat_loop<B: Backend>(
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
+            }
+            tidied = await_memory_tidy(&mut tidy_task) => {
+                finish_memory_tidy(app, tidied);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -16270,6 +16419,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/memory",
+        hint: "[tidy]",
+        description: "Show the memory index size, or tidy memory in the background",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/compact",
         hint: "",
         description: "Summarize older turns to free up context",
@@ -16685,6 +16840,7 @@ async fn run_command(
         "settings" => settings_command(app, arg),
         "vibe-setting" => vibe_setting::command(app, arg),
         "goal" => goal_command(app, arg),
+        "memory" => memory_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
         "effort" | "think" | "reasoning" => effort_command(app, arg),
@@ -16908,7 +17064,7 @@ it wholesale.\n\n\
 3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
 migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
 multi-step recipe exists. Do not invent skills to fill space.\n\n\
-4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
+4. Record durable project facts with the `memory` tool (search first, update rather than duplicate): decisions, constraints, and gotchas that are \
 true beyond this session and not already stated in the code.\n\n\
 Then report what you wrote and why, briefly."
     )
@@ -17051,6 +17207,200 @@ fn compact_command(app: &mut App) {
     app.compact_request = Some(CompactKind::Manual);
 }
 
+/// `/memory`: `tidy` starts a memory tidy in the background; bare shows the
+/// index size against its budget.
+fn memory_command(app: &mut App, arg: &str) {
+    let Some(root) = app.args.as_ref().and_then(|a| a.project_root.clone()) else {
+        app.note("memory is unavailable (no active project)");
+        return;
+    };
+    match arg.trim() {
+        "tidy" => {
+            if app.memory_denied() {
+                app.note("memory tidy is unavailable: this project's rules deny the memory tool");
+                return;
+            }
+            // The tidy child runs in normal mode, so without this it would
+            // change memory that plan mode keeps read-only.
+            if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+                app.note("memory tidy is unavailable in plan mode (read only); /plan exit to leave");
+                return;
+            }
+            if app.tidy_running.is_some() || app.tidy_request.is_some() {
+                app.note("a memory tidy is already running");
+                return;
+            }
+            // A manual tidy also settles this session's automatic one.
+            app.auto_tidy_checked = true;
+            app.tidy_request = Some(TidyKind::Manual);
+        }
+        "" => {
+            let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+            let scopes = tauri_plugin_agent_tools::memory::Scopes {
+                store: &store,
+                home: home.as_deref(),
+                cross_project,
+            };
+            app.note(&format!(
+                "memory index: ~{} of {} tokens; /memory tidy archives, merges and prunes notes",
+                scopes.index_tokens(),
+                tauri_plugin_agent_tools::memory::INDEX_BUDGET_TOKENS
+            ));
+        }
+        other => app.note(&format!("unknown /memory option '{other}' (try /memory tidy)")),
+    }
+}
+
+/// Which path asked for a memory tidy. A manual one reports even when it
+/// changed nothing; an automatic one stays quiet unless it did something.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TidyKind {
+    Manual,
+    Auto,
+}
+
+/// Start the requested tidy on the session's registry. Fire-and-forget from
+/// the caller's view: the result is collected off the render loop.
+fn start_memory_tidy(
+    app: &mut App,
+    kind: TidyKind,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
+    let args = app.args.clone()?;
+    if app.model.is_empty() {
+        if kind == TidyKind::Manual {
+            app.note("memory tidy needs a model: run /login first");
+        }
+        return None;
+    }
+    let parent = crate::core::agent::subagent::ParentRun {
+        model: app.model.clone(),
+        smol_model: crate::core::agent::subagent::configured_smol_model(),
+        budget_remaining: None,
+        send_reasoning: app.send_reasoning,
+        cost_remaining: None,
+        tool_ceiling: None,
+        known_tools: Vec::new(),
+    };
+    let set = app.subagent_set.clone();
+    let budget = Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(
+        tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES,
+    ));
+    let dispatched = crate::core::agent::subagent::spawn_memory_tidy(
+        &set.scope(),
+        &args,
+        &parent,
+        events,
+        budget.clone(),
+    );
+    match dispatched {
+        Ok(dispatched) => {
+            app.tidy_running = Some(kind);
+            app.tidy_run_id = Some(dispatched.run_id.clone());
+            let label = match kind {
+                TidyKind::Manual => "tidying memory in the background",
+                TidyKind::Auto => "memory index is over its budget: tidying in the background",
+            };
+            app.note(label);
+            Some(tokio::spawn(async move {
+                let report = crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
+                    .await
+                    .map(|collected| collected.text)
+                    .map_err(|e| e.to_string())?;
+                Ok(with_cap_note(report, &budget))
+            }))
+        }
+        Err(e) => {
+            if kind == TidyKind::Manual {
+                app.note(&format!("memory tidy failed to start: {e}"));
+            }
+            None
+        }
+    }
+}
+
+/// Report a finished tidy: its own summary of what it changed, as one note.
+fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
+    let kind = app.tidy_running.take().unwrap_or(TidyKind::Manual);
+    app.tidy_run_id = None;
+    match result {
+        Ok(report) => {
+            let report = report.trim();
+            let quiet = report.is_empty() || report.eq_ignore_ascii_case("no changes");
+            if quiet && kind == TidyKind::Auto {
+                return;
+            }
+            app.note(&format!(
+                "memory tidied: {}",
+                if quiet { "no changes".to_string() } else { tidy_summary(report) }
+            ));
+        }
+        Err(e) => app.note(&format!("memory tidy failed: {e}")),
+    }
+}
+
+/// The tidy's report, with a closing line when the harness refused changes
+/// past the cap: the model may not say so, and the user should know the store
+/// was only partly tidied.
+fn with_cap_note(report: String, budget: &tauri_plugin_agent_tools::memory::ChangeBudget) -> String {
+    if budget.refused() == 0 {
+        return report;
+    }
+    format!(
+        "{}\ncap reached ({} changes); run /memory tidy again to continue",
+        report.trim_end(),
+        budget.used()
+    )
+}
+
+/// Verbs a tidy report's lines start with (see `MEMORY_TIDY_PROMPT`).
+const TIDY_VERBS: [&str; 4] = ["archived", "merged", "deleted", "moved"];
+
+/// A tidy report as one line. The report has a line per change, and a note
+/// that carried all of them grew taller than the screen, pushing its own
+/// `memory tidied:` header out of view. A few changes are listed; more are
+/// counted per verb, the full list staying in the memory-tidy row.
+fn tidy_summary(report: &str) -> String {
+    let changes: Vec<&str> = report
+        .lines()
+        .map(|l| l.trim().trim_start_matches(['-', '*', ' ']))
+        .filter(|l| TIDY_VERBS.iter().any(|v| l.starts_with(v)))
+        .collect();
+    let summary = if changes.is_empty() {
+        let first = report.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        first.chars().take(160).collect()
+    } else if changes.len() <= 3 {
+        changes.join("; ")
+    } else {
+        TIDY_VERBS
+            .iter()
+            .filter_map(|verb| {
+                let n = changes.iter().filter(|l| l.starts_with(verb)).count();
+                (n > 0).then(|| format!("{verb} {n}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match report.lines().find(|l| l.starts_with("cap reached (")) {
+        Some(cap) if !summary.contains("cap reached") => format!("{summary}; {cap}"),
+        _ => summary,
+    }
+}
+
+async fn await_memory_tidy(
+    task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
+) -> Result<String, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("memory tidy task failed: {e}")),
+    }
+}
+
 /// Compact-and-retry attempts allowed per user turn. The loop already retries
 /// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
 /// recovery so a model that overflows at any size still hands control back.
@@ -17118,6 +17468,7 @@ fn finish_compaction(
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
+            app.refresh_memory_snapshot();
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             // The provider's last `usage` measured the pre-compaction history, so
@@ -17360,6 +17711,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "claude_code_alias",
         label: "claude_code_alias",
         desc: "reuse and refresh Claude Code's keychain login for Claude requests",
+        kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
+        key: "memory_auto_tidy",
+        label: "memory_auto_tidy",
+        desc: "tidy memory in the background when its index outgrows the prompt budget",
         kind: AgentSettingKind::Bool { default: true },
         scope: SettingScope::Global,
     },
@@ -18834,7 +19192,7 @@ fn plan_command(app: &mut App, arg: &str) {
         }
         return;
     }
-    app.run_mode = RunMode::Plan;
+    app.enter_plan_mode();
     app.persist();
     app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     if app.goal.is_some() {
@@ -21638,6 +21996,7 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     {
         app.run_mode = mode;
         if mode == RunMode::Plan {
+            app.enter_plan_mode();
             app.note("resumed in plan mode (read only); /plan exit to leave");
         }
     }
@@ -25415,6 +25774,7 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        finish_memory_tidy, memory_command, start_memory_tidy, TidyKind, with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
@@ -29764,7 +30124,7 @@ mod tests {
             "Reading main.rs"
         );
         assert_eq!(
-            tool_activity("memory_write", &json!({ "name": "decisions" })),
+            tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
     }
@@ -32416,7 +32776,7 @@ mod tests {
         assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
         assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
         assert!(sent.contains("skill_write"), "{sent}");
-        assert!(sent.contains("memory_write"), "{sent}");
+        assert!(sent.contains("`memory` tool"), "{sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -32965,6 +33325,7 @@ mod tests {
             shell_detach: None,
             compaction: None,
             session_start: None,
+            memory_change_budget: None,
         })
     }
 
@@ -36687,10 +37048,10 @@ mod tests {
     fn consecutive_collapsible_tools_fold_into_one_summary_row() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_list", json!({})),
+            ("c1", "memory", json!({ "op": "view" })),
             ("c2", "skill_list", json!({})),
-            ("c3", "memory_read", json!({ "name": "project-overview" })),
-            ("c4", "memory_read", json!({ "name": "top-p" })),
+            ("c3", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c4", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36742,8 +37103,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_keybinding() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36782,8 +37143,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_click() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -37364,8 +37725,8 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
-            name: "memory_read".into(),
-            args: json!({ "name": "x" }),
+            name: "memory".into(),
+            args: json!({ "op": "view", "name": "x" }),
         });
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -43823,6 +44184,392 @@ mod tests {
         let start = app.args.as_ref().and_then(|a| a.session_start.clone());
         let fresh = crate::core::agent::context::SessionStart::capture(Some(&app.project_root));
         assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
+    }
+
+    /// Point `app` at a fresh project of its own, so its memory store is not
+    /// shared with any other test's.
+    fn own_project(app: &mut App) {
+        app.project_root = tempfile::tempdir().unwrap().keep();
+        let _ = std::fs::remove_dir_all(crate::core::agent::project::store_root(&app.project_root));
+        app.args = Some(test_args(app, std::collections::HashMap::new()));
+    }
+
+    /// An app on a project whose memory index is far over its budget, with a
+    /// temp home so the config read is the default (auto-tidy on).
+    fn over_budget_app(app: &mut App) {
+        own_project(app);
+        fill_store(app);
+    }
+
+    /// Write enough notes into `app`'s own store to put its index over budget.
+    fn fill_store(app: &App) {
+        let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..200 {
+            std::fs::write(
+                dir.join(format!("n{i:03}.md")),
+                "A long finished note about a merged pull request and its review",
+            )
+            .unwrap();
+        }
+    }
+
+    /// Auto-tidy is on by default and fires once per session when the index is
+    /// over budget: a second turn does not queue another, and a new session
+    /// gets one fresh check.
+    #[test]
+    fn auto_tidy_queues_once_per_session_when_over_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+            app.tidy_request = None;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "debounced: once per session");
+            app.reset_session();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a new session checks again");
+        });
+    }
+
+    /// Under budget nothing is queued and the check is not spent: a store that
+    /// outgrows its budget later in the session is tidied at that turn's end,
+    /// still only once.
+    #[test]
+    fn auto_tidy_rechecks_each_turn_until_the_index_outgrows_its_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            own_project(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "a small index is left alone");
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            fill_store(&app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a later over-budget turn tidies");
+            app.tidy_request = None;
+            let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+            std::fs::write(dir.join("later.md"), "Another note").unwrap();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "still at most once per session");
+        });
+    }
+
+    /// With `memory` denied a tidy child could change nothing, so neither the
+    /// automatic nor the manual tidy starts one.
+    #[test]
+    fn no_tidy_starts_when_the_project_denies_memory() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            let mut args = (**app.args.as_ref().unwrap()).clone();
+            args.permissions = tauri_plugin_agent_tools::permissions::ToolPermissions::new(
+                tauri_plugin_agent_tools::permissions::PermissionDefault::Allow,
+                &[],
+                &["memory".to_string()],
+                &[],
+            );
+            app.args = Some(Arc::new(args));
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "no automatic tidy");
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "no manual tidy");
+        });
+    }
+
+    /// Plan mode is read-only, so auto-tidy waits it out rather than spending
+    /// the session's one automatic tidy.
+    #[test]
+    fn auto_tidy_waits_out_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+        });
+    }
+
+    /// A manual tidy changes memory, which plan mode refuses: it is turned
+    /// away with a pointer out of plan mode, and works once plan mode is left.
+    #[test]
+    fn manual_tidy_is_refused_in_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("plan mode") && text.contains("/plan exit"), "{text}");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+        });
+    }
+
+    /// A tidy already running when plan mode is entered is stopped, not left
+    /// to change memory under a read-only mode: its child is aborted, its
+    /// bookkeeping released, and the user is told. Driven with a real spawned
+    /// tidy against an upstream that never answers, so it is mid-run.
+    #[tokio::test]
+    async fn entering_plan_mode_stops_a_running_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let held: Vec<_> = listener.incoming().collect();
+            drop(held);
+        });
+        let providers = std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, providers));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).expect("tidy started");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual));
+        assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.subagent_set.live_run_ids().is_empty(), "the tidy child was aborted");
+        assert_eq!(app.tidy_running, None, "a later tidy may start once plan mode is left");
+        let collected = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(matches!(collected, Ok(Ok(Err(_)))), "the tidy produced no report");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// A queued tidy is dropped by entering plan mode, from `/plan` or by
+    /// resuming a thread saved in plan mode; with nothing to stop, nothing is
+    /// said.
+    #[tokio::test]
+    async fn entering_plan_mode_drops_a_queued_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.tidy_request = Some(TidyKind::Manual);
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.tidy_request, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+
+        let meta = json!({ "run_mode": "plan" });
+        let mut resumed = test_app();
+        resumed.tidy_request = Some(TidyKind::Auto);
+        resumed.tidy_running = Some(TidyKind::Auto);
+        restore_run_mode(&mut resumed, Some(&meta));
+        assert_eq!(resumed.run_mode, RunMode::Plan);
+        assert_eq!(resumed.tidy_request, None);
+        assert_eq!(resumed.tidy_running, None);
+        let text: String = resumed.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped"), "{text}");
+
+        let mut idle = test_app();
+        run_command(&mut idle, "plan", &no_mcp()).await;
+        let text: String = idle.transcript.rows.iter().map(row_text).collect();
+        assert!(!text.contains("memory tidy"), "{text}");
+    }
+
+    /// `memory_auto_tidy = false` turns the automatic trigger off; `/memory
+    /// tidy` still works.
+    #[test]
+    fn auto_tidy_can_be_turned_off_but_the_manual_tidy_still_runs() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "memory_auto_tidy = false\n").unwrap();
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+            memory_command(&mut app, "tidy");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("already running"), "{text}");
+        });
+    }
+
+    /// A tidy's report is surfaced as one note; an automatic tidy that changed
+    /// nothing says nothing, a manual one says so.
+    #[test]
+    fn a_finished_tidy_reports_what_it_changed() {
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        assert!(app.transcript.rows.is_empty(), "a quiet auto tidy adds no row");
+        assert!(app.tidy_running.is_none());
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("archived pr-1\ndeleted old: superseded".into()));
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived pr-1"), "{text}");
+        assert!(text.contains("memory tidied: no changes"), "{text}");
+    }
+
+    /// A stub OpenAI-compatible upstream answering every request with `text`
+    /// as a plain final answer. Returns the provider configs pointing at it.
+    fn stub_upstream(
+        text: &'static str,
+    ) -> std::collections::HashMap<String, crate::core::state::ProviderConfig> {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant",
+                    "content": text}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect()
+    }
+
+    /// #497 bug 2: the `memory tidied:` note never showed in the live TUI.
+    /// The tidy's report is one line per change, and the whole report became
+    /// one note, so with dozens of changes its header scrolled off before a
+    /// frame painted it. Driven through the real select loop with a spawned
+    /// tidy against a stub provider, and checked on the rendered frame.
+    #[tokio::test]
+    async fn a_spawned_tidy_shows_its_note_in_the_live_frame() {
+        let report: &'static str = Box::leak(
+            (0..70)
+                .map(|i| format!("archived note-{i:03}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_boxed_str(),
+        );
+        let mut app = test_app();
+        own_project(&mut app);
+        let args = test_args(&app, stub_upstream(report));
+        app.args = Some(args.clone());
+        app.tidy_request = Some(TidyKind::Manual);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        let registry: PermissionRegistry = Default::default();
+        let asks = crate::core::agent::interaction::new_registry();
+        let servers: crate::core::state::SharedMcpServers = Default::default();
+        // The loop has no exit of its own here; the tidy lands well inside this.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(8),
+            super::chat_loop(&mut terminal, &args, &registry, &asks, &mut app, None, None, &servers, false),
+        )
+        .await;
+        assert!(app.tidy_running.is_none(), "the tidy was collected");
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let frame: String = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>() + "\n")
+            .collect();
+        assert!(frame.contains("memory tidied: archived 70"), "{frame}");
+        assert!(!frame.contains("archived note-030"), "one line, not the full list: {frame}");
+    }
+
+    /// A tidy the harness stopped at its cap says so in its note, even when
+    /// the model's report does not.
+    #[test]
+    fn a_capped_tidy_reports_the_cap() {
+        let budget = tauri_plugin_agent_tools::memory::ChangeBudget::new(2);
+        assert_eq!(with_cap_note("archived a".into(), &budget), "archived a");
+        let dir = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(dir.path(), dir.path(), &[])
+            .with_memory_change_budget(Some(&budget));
+        let memory = tauri_plugin_agent_tools::tools::lookup("memory").unwrap();
+        for i in 0..3 {
+            rt.block_on(tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+                memory,
+                &json!({"op": "write", "name": format!("n{i}"), "content": "x"}),
+                &ctx,
+            ));
+        }
+        let report = with_cap_note("archived a\narchived b".into(), &budget);
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok(report));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived a; archived b; cap reached (2 changes)"), "{text}");
+    }
+
+    /// A tidy never touches the conversation: no turn is started and the
+    /// history is unchanged, so the session's prompt is not rewritten.
+    #[test]
+    fn a_tidy_never_starts_a_turn_or_edits_history() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        let before = app.history.clone();
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("archived pr-1".into()));
+        assert!(!app.want_start);
+        assert_eq!(app.history, before);
+    }
+
+    #[test]
+    fn memory_is_a_slash_command() {
+        let row = SLASH_COMMANDS.iter().find(|c| c.name == "/memory").unwrap();
+        assert_eq!(row.hint, "[tidy]");
+        assert!(AGENT_SETTINGS.iter().any(|d| d.key == "memory_auto_tidy"
+            && matches!(d.kind, super::AgentSettingKind::Bool { default: true })));
+    }
+
+    /// A compaction rewrites the history anyway, so the session takes a fresh
+    /// memory index there; the date and branch stay the session's.
+    #[test]
+    fn a_compaction_refreshes_only_the_memory_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        args.session_start = Some(stale.clone());
+        app.args = Some(std::sync::Arc::new(args));
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        finish_compaction(&mut app, Ok(vec![json!({ "role": "user", "content": "s" })]), 5);
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone()).unwrap();
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).unwrap_or(app.project_root.clone());
+        assert_eq!(start, stale.with_fresh_memory(&root));
+        assert!(start.memory().is_some(), "the memory index was re-taken");
     }
 
     /// A fork continues the source's prefix, so it keeps the source's snapshot

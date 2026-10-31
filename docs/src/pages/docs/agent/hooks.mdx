@@ -107,8 +107,8 @@ command = "logger -t jan 'agent session finished'"
 | `timeout_secs` | Seconds before the hook is killed. Defaults to 60 |
 
 `matcher` is only consulted for the two tool events - a session-lifecycle hook has no tool name to
-match and always fires. It is an ordinary glob, so `*write*` catches `write`, `memory_write` and
-`skill_write`, while `edit` catches only `edit`. An invalid glob is dropped at load with a notice
+match and always fires. It is an ordinary glob, so `*write*` catches `write` and `skill_write`,
+while `edit` catches only `edit`. An invalid glob is dropped at load with a notice
 rather than kept: a pattern that cannot parse can only ever answer "no", which reads exactly like a
 hook written for a tool that was never called.
 
@@ -141,6 +141,11 @@ The shell tool is named `shell` (formerly `bash`). A `matcher` or a script that 
 for `bash` no longer matches it; change it to `shell`. A `bash` matcher is reported: by the `jan`
 CLI when a run starts, and by the desktop app under each shell call. A script's `tool_name` check
 cannot be detected, so search your hooks for it.
+
+The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. A
+matcher that names an old one (or a glob such as `memory_*`) still applies, to every `memory` op, and
+is reported the same way; rename it to `memory`. A script that tests `tool_name` for an old name
+needs the same change.
 
 ## The answer
 

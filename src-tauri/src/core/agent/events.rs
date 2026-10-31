@@ -435,10 +435,8 @@ fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
 pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
     // Dedicated skill/memory tools are self-describing via their name + `name` arg.
     let dedicated = match name {
-        "memory_list" => Some(("Reading", "memory", String::new())),
+        "memory" => Some(memory_label(args)),
         "skill_list" => Some(("Reading", "skill", String::new())),
-        "memory_read" => Some(("Reading", "memory", arg_name(args))),
-        "memory_write" => Some(("Updating", "memory", arg_name(args))),
         "skill_read" => Some(("Reading", "skill", arg_name(args))),
         "skill_write" => Some(("Updating", "skill", arg_name(args))),
         _ => None,
@@ -466,6 +464,22 @@ pub fn describe_tool_call(name: &str, args: &serde_json::Value) -> String {
         };
     }
     format!("{name} {args}")
+}
+
+/// The verb and target of one `memory` op: reads list or open, the rest change.
+fn memory_label(args: &serde_json::Value) -> (&'static str, &'static str, String) {
+    let verb = match args.get("op").and_then(|v| v.as_str()) {
+        Some("write") | Some("edit") => "Updating",
+        Some("delete") => "Deleting",
+        Some("move") => "Moving",
+        Some("search") => "Searching",
+        _ => "Reading",
+    };
+    let item = match args.get("op").and_then(|v| v.as_str()) {
+        Some("search") => args.get("query").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        _ => arg_name(args),
+    };
+    (verb, "memory", item)
 }
 
 fn arg_name(args: &serde_json::Value) -> String {
@@ -909,11 +923,11 @@ pub(crate) mod tests {
     #[test]
     fn describe_labels_dedicated_skill_and_memory_tools() {
         assert_eq!(
-            describe_tool_call("memory_write", &json!({"name": "decisions"})),
+            describe_tool_call("memory", &json!({"op": "write", "name": "decisions"})),
             "Updating memory: decisions"
         );
         assert_eq!(
-            describe_tool_call("memory_read", &json!({"name": "drift.md"})),
+            describe_tool_call("memory", &json!({"op": "view", "name": "drift.md"})),
             "Reading memory: drift"
         );
         assert_eq!(
@@ -921,10 +935,22 @@ pub(crate) mod tests {
             "Updating skill: deploy"
         );
         assert_eq!(
-            describe_tool_call("memory_list", &json!({})),
+            describe_tool_call("memory", &json!({"op": "view"})),
             "Reading memory notes"
         );
         assert_eq!(describe_tool_call("skill_list", &json!({})), "Reading skills");
+        assert_eq!(
+            describe_tool_call("memory", &json!({"op": "delete", "name": "old"})),
+            "Deleting memory: old"
+        );
+        assert_eq!(
+            describe_tool_call("memory", &json!({"op": "search", "query": "yarn"})),
+            "Searching memory: yarn"
+        );
+        assert_eq!(
+            describe_tool_call("memory", &json!({"op": "move", "name": "old", "to": "tui/old"})),
+            "Moving memory: old"
+        );
     }
 
     #[test]

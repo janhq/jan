@@ -414,7 +414,7 @@ fn replay(history: &[Value], cwd: &Path) -> Vec<SessionUpdate> {
                         .unwrap_or(Value::Null);
                     out.push(SessionUpdate::ToolCall(
                         ToolCall::new(id.to_string(), tool_title(name, &args))
-                            .kind(tool_kind(name))
+                            .kind(tool_kind(name, &args))
                             .status(ToolCallStatus::Completed)
                             .locations(tool_locations(&args, cwd))
                             .raw_input(args),
@@ -763,13 +763,13 @@ impl TurnMap {
                 let call = self.call(&id, &name);
                 call.announced = true;
                 update(SessionUpdate::ToolCall(
-                    ToolCall::new(id, name.clone()).kind(tool_kind(&name)).status(ToolCallStatus::Pending),
+                    ToolCall::new(id, name.clone()).kind(tool_kind(&name, &Value::Null)).status(ToolCallStatus::Pending),
                 ))
             }
             StreamEvent::ToolCall { id, name, args } => {
                 let locations = tool_locations(&args, &self.cwd);
                 let title = tool_title(&name, &args);
-                let kind = tool_kind(&name);
+                let kind = tool_kind(&name, &args);
                 let call = self.call(&id, &name);
                 call.args = Some(args.clone());
                 if call.announced {
@@ -930,7 +930,12 @@ impl TurnMap {
             (None, Some(path)) => format!("{tool_name} ({capability}) {path}"),
             (None, None) => format!("{tool_name} ({capability})"),
         };
-        let mut fields = ToolCallUpdateFields::new().title(title).kind(tool_kind(tool_name));
+        let args = matched
+            .as_ref()
+            .and_then(|id| self.calls.get(id))
+            .and_then(|c| c.args.clone())
+            .unwrap_or(Value::Null);
+        let mut fields = ToolCallUpdateFields::new().title(title).kind(tool_kind(tool_name, &args));
         if let Some(path) = &path {
             fields = fields.locations(vec![ToolCallLocation::new(absolute(&self.cwd, path))]);
         }
@@ -979,11 +984,19 @@ fn plan(list: &TodoList) -> Plan {
     Plan::new(entries)
 }
 
-/// What kind of work a tool does, for the client's icon and grouping.
-fn tool_kind(name: &str) -> ToolKind {
+/// What kind of work a tool does, for the client's icon and grouping. `args`
+/// matters only for `memory`, whose `op` decides between reading and editing;
+/// before its arguments are known it is `Other` rather than a guessed edit.
+fn tool_kind(name: &str, args: &Value) -> ToolKind {
     match name {
-        "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
-        "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
+        tauri_plugin_agent_tools::tools::MEMORY_TOOL => match args.get("op").and_then(Value::as_str) {
+            Some("view") => ToolKind::Read,
+            Some("search") => ToolKind::Search,
+            Some("write" | "edit" | "delete" | "move") => ToolKind::Edit,
+            _ => ToolKind::Other,
+        },
+        "read" | "ls" | "skill_read" | "skill_list" => ToolKind::Read,
+        "edit" | "write" | "skill_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
         // `bash` is the shell's pre-rename name, still in replayed history.
         "bash" | tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,
@@ -1051,6 +1064,21 @@ mod tests {
                 "always": ask.offers_always,
             }),
         }
+    }
+
+    /// `memory` is one tool for reads and writes, so its kind comes from the
+    /// call's `op`; before the arguments arrive it is not claimed to edit.
+    #[test]
+    fn a_memory_call_is_classified_by_its_op() {
+        let kind = |args: Value| tool_kind("memory", &args);
+        assert_eq!(kind(json!({"op": "view"})), ToolKind::Read);
+        assert_eq!(kind(json!({"op": "search", "query": "q"})), ToolKind::Search);
+        for op in ["write", "edit", "delete", "move"] {
+            assert_eq!(kind(json!({"op": op})), ToolKind::Edit, "{op}");
+        }
+        assert_eq!(kind(Value::Null), ToolKind::Other);
+        assert_eq!(tool_kind("write", &Value::Null), ToolKind::Edit);
+        assert_eq!(tool_kind("read", &Value::Null), ToolKind::Read);
     }
 
     #[test]

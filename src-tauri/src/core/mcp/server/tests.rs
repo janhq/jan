@@ -32,10 +32,9 @@ fn default_served_set_is_read_only() {
     assert!(names.contains(&"find".to_string()));
     assert!(names.contains(&"grep".to_string()));
     assert!(names.contains(&"web_search".to_string()));
-    assert!(names.contains(&"memory_read".to_string()));
-    // Workspace writes stay in: they reach the agent's own store by name, never
-    // a project file.
-    assert!(names.contains(&"memory_write".to_string()));
+    // Memory and workspace writes stay in: they reach the agent's own store
+    // by name, never a project file.
+    assert!(names.contains(&"memory".to_string()));
     assert!(names.contains(&"skill_write".to_string()));
     assert!(!names.contains(&"write".to_string()));
     assert!(!names.contains(&"edit".to_string()));

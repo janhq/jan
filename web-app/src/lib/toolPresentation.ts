@@ -25,11 +25,15 @@ export type ToolCallBar =
    * pairs) are the arguments worth showing while they stream: for those two
    * tools the arguments are the work itself, and a large one takes long enough
    * that a spinner says nothing about it.
+   *
+   * `op` is `memory`'s operation: one tool both reads and changes the store,
+   * so the op, not the tool name, says what the call is doing.
    */
   | {
       variant: 'workspace'
       tool: string
       target: string
+      op?: string
       detail?: string
       body?: string
       edits?: { old_string: string; new_string?: string }[]
@@ -143,6 +147,17 @@ export function describeNativeToolCall(
         tool: toolName,
         target: asString(args.pattern),
         detail: asString(args.path) || undefined,
+      }
+    }
+    // A memory search is about its query; every other op names a note, or
+    // none for a view of the whole store.
+    if (toolName === 'memory') {
+      const op = asString(args.op)
+      return {
+        variant: 'workspace',
+        tool: toolName,
+        target: op === 'search' ? asString(args.query) : asString(args.name),
+        op,
       }
     }
     return {

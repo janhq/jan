@@ -14,7 +14,7 @@ export const INIT_PROMPT = `Onboard yourself to this project so future sessions 
 
 2. Write skills with skill_write for the project's repeatable procedures - releasing, running migrations, adding a module, debugging a subsystem - one skill per procedure, only where a real multi-step recipe exists. Do not invent skills to fill space.
 
-3. Record durable project facts with memory_write: decisions, constraints, and gotchas that are true beyond this session and not already stated in the code.
+3. Record durable project facts with the memory tool (search first; update rather than duplicate): decisions, constraints, and gotchas that are true beyond this session and not already stated in the code.
 
 Then report what you wrote and why, briefly.`
 

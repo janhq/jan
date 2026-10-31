@@ -182,11 +182,29 @@ describe('describeNativeToolCall for agent tools', () => {
   })
 
   it('leads with the name for memory and skill tools', () => {
-    expect(describeNativeToolCall(agent, 'memory_read', { name: 'prefs' })).toEqual({
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view', name: 'prefs' })).toEqual({
       variant: 'workspace',
-      tool: 'memory_read',
+      tool: 'memory',
       target: 'prefs',
+      op: 'view',
     })
+  })
+
+  // `memory` is one tool with many ops: the op decides the verb, and a search
+  // is about its query, not a name it does not have.
+  it('carries the memory op and leads a search with its query', () => {
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'search', query: 'cuda' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'cuda', op: 'search' })
+    expect(describeNativeToolCall(agent, 'memory', { op: 'view' })).toEqual({
+      variant: 'workspace',
+      tool: 'memory',
+      target: '',
+      op: 'view',
+    })
+    expect(
+      describeNativeToolCall(agent, 'memory', { op: 'move', name: 'a', to: 'b' })
+    ).toEqual({ variant: 'workspace', tool: 'memory', target: 'a', op: 'move' })
   })
 })
 

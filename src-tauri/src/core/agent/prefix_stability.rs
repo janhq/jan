@@ -271,6 +271,7 @@ fn turn(project: &Path, history: &[Value], recall: &str, tools: &[Value]) -> Req
         false,
         &PromptPolicy::default(),
         Some(&start),
+        true,
     )
     .unwrap();
     let mut tail = composed.tail;

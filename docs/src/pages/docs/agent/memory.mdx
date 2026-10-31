@@ -1,7 +1,7 @@
 ---
 title: Memory
-description: Durable facts the agent keeps about your project, stored as files you can read and edit.
-keywords: [Jan, Jan Agent, memory, durable facts, project memory, recall]
+description: Durable facts the agent keeps and curates about your project, stored as files you can read and edit.
+keywords: [Jan, Jan Agent, memory, durable facts, project memory, recall, memory tidy, auto-tidy]
 ---
 
 import { Callout } from 'nextra/components'
@@ -23,15 +23,27 @@ The agent writes memory itself when it learns something durable, and reads it ba
 prompt on later runs. It's scoped per project, with a separate user scope for notes that apply
 everywhere (see [Scopes](#scopes)).
 
-Three tools drive it, and only the write prompts for approval:
+One `memory` tool drives it, with an `op`. Memory belongs to the agent, so no op asks for
+approval, in the TUI, headless runs or ACP:
 
-| Tool | Approval |
-| --- | --- |
-| `memory_list` | No |
-| `memory_read` | No |
-| `memory_write` | Yes |
+| `op` | Arguments | What it does |
+| --- | --- | --- |
+| `view` | `name`? | No name: the full index. A folder (`tui/`): its notes. A note: its content. If a note and a folder share a name, `tui` is the note and `tui/` the folder |
+| `search` | `query` | Keyword search over titles and bodies, archived notes included |
+| `write` | `name`, `title`, `content` | Create or overwrite; the title is the note's first line |
+| `edit` | `name`, `old`, `new` | Replace one exact, unique piece of text |
+| `delete` | `name` | Remove the note and its index line |
+| `move` | `name`, `to` | Rename a note or move it into (or out of) a folder in one step; content, front matter and recency are kept. Fails if `to` exists |
 
-Because writes prompt, nothing enters memory without you seeing it.
+A `deny = ["memory"]` entry in `agent.toml` turns the tool off.
+
+`view` and `search` calls in one turn run in parallel. Changes (`write`, `edit`, `delete`, `move`)
+to one store apply one at a time, whoever makes them (the agent, a tidy, the desktop app), so two
+edits of the same note never lose one: the second sees the first's result, and an `edit` whose text
+is gone by then fails with `not found` instead of overwriting.
+
+Memory belongs to the main agent only. [Subagents](/docs/agent/subagents#isolation) get no `memory`
+tool and no memory index, so the main agent passes them any remembered fact they need in the task.
 
 ## Where it lives
 
@@ -44,12 +56,60 @@ delete them. Nothing is hidden in an opaque store.
 |-- memory/<name>.md           # user-wide notes, every project
 `-- projects/<slug>/
     |-- MEMORY.md              # index of this project's notes
-    `-- memory/<name>.md       # this project's notes
+    `-- memory/
+        |-- <name>.md          # this project's notes
+        |-- <folder>/<name>.md # grouped notes, one folder level
+        `-- .meta.json         # last read / last written times (drives index order)
 ```
 
-Each `MEMORY.md` is generated: it is rebuilt on every `memory_write` and delete, so don't edit it by
+A note's first line is its **title**, the only part of it the index shows. A note may open with
+front matter; `status: done` there **archives** it:
+
+```markdown
+---
+status: done
+---
+PR 9102 merged: subagent steering
+...
+```
+
+An archived note stays readable and searchable but is never listed, which is how finished work
+(merged PRs, closed issues, past reviews) leaves the prompt without being lost.
+
+Because the index is built for you, `index` and `MEMORY` are reserved note names (in any folder, any
+case): a new note named like that is refused.
+
+Each `MEMORY.md` is generated: it is rebuilt on every write, edit and delete, so don't edit it by
 hand - your changes would be overwritten. See [Project Config](/docs/agent/project-config) for how
 `<slug>` is chosen.
+
+Notes written by an older Jan are migrated once, the first time a session starts on the store: a
+note whose first line starts with `DONE` or `OBSOLETE` is archived, recency is seeded from file
+times, and nothing is renamed or deleted.
+
+## The index in the prompt
+
+The system prompt's **Available Memories** block is the index, titles only, and it is capped at
+about **1,500 tokens** however many notes a project has:
+
+1. This project's notes, most recently used first. A folder takes one line (`tui/ (18 notes)`).
+2. Your user notes, then one pointer per other project with memory.
+3. Whatever does not fit becomes a single line: `+N more ... memory view lists everything`.
+
+The agent opens a note (or a folder) by name with `view`, so the index only has to say what exists.
+When a write leaves the index near its budget, the tool result says so, which is the agent's cue to
+archive or merge.
+
+The index is a **snapshot taken when the session starts**. Writing, editing or deleting a note
+mid-session never changes the system prompt, so the cached prompt prefix survives memory updates.
+Changes made since the snapshot, by the agent or by a tidy, are listed in a short
+`Memory changes this session: + new, ~ changed, - deleted` block after the conversation instead
+(a `move` shows as `- old` plus `+ new`).
+The block is sent with the first request of every run and again after any successful `memory` call
+that changed it, so a note written mid-run (in a headless `jan cli agent run` too, including
+follow-ups sent with `--input-format stream-json`) reaches the model's next request. The
+snapshot is retaken on `/new`, `/clear`, `/resume`, and after a compaction. A fork continues its
+source session, so it keeps the source's snapshot.
 
 ## Scopes
 
@@ -62,8 +122,11 @@ Memory names are scoped:
 | `project:<slug>` | Another project's `MEMORY.md` index | No |
 | `project:<slug>/name` | One note from another project | No |
 
-`memory_read` accepts all four. `memory_write` to another project is refused, so a session can only
+`view` accepts all four. Writing, editing or deleting in another project is refused, so a session can only
 change its own project's notes and your user notes.
+
+In [plan mode](/docs/agent/run-modes#plan-mode) memory is read-only: `view` and `search` work, and
+`write`, `edit`, `move` and `delete` are refused.
 
 The system prompt's **Available Memories** block lists this project's notes, your user notes, and
 pointers to other projects that have memory, which the agent opens with `project:<slug>` only when
@@ -88,8 +151,43 @@ vice versa.
 Memory works when it's small and specific. A note that restates what any reader would see from the
 README is noise; a note about the thing that surprised someone is worth keeping.
 
-If the agent has stored something wrong, delete the file. There's no special command for it - they
-are just files.
+The tool tells the agent to reconcile rather than append: search for an existing note before
+writing, update it instead of adding a near-duplicate, delete a note a newer fact supersedes, and
+archive finished work. If the agent has stored something wrong, tell it, or delete the file yourself -
+they are just files.
+
+## Tidying
+
+A tidy is a cheap subagent (on the [`smol` model](/docs/agent/subagents#choosing-a-subagents-model))
+that reads the notes in its own context and is deliberately conservative: it archives only notes whose
+own content says the work is finished (merged, released, closed, obsolete), merges only clear
+duplicates, deletes only notes a newer one supersedes, groups notes with `move`, never writes index
+or overview notes, and leaves a note alone when unsure. It reports what it changed as one line in the console, for example
+`memory tidied: archived pr-9102; merged tui-scroll into tui/scroll` (with more than three changes,
+counts instead: `memory tidied: archived 12, moved 5`; the full list is in the tidy's subagent row). The main conversation never
+loads the notes, and the tidy never asks for permission. It is the only subagent with memory.
+
+- **At most 30 changes per tidy.** The tidy's `memory` tool refuses any write, edit, delete or move
+  past the 30th, so a tidy that misjudges the store can only misjudge that many notes. When the cap is
+  hit the console note says `cap reached (30 changes)`; run `/memory tidy` again to continue.
+- **No lost edits.** A tidy works in the background while you and the agent keep going. Its `memory`
+  tool refuses to overwrite, move or delete a note that changed since the tidy last viewed it, so
+  it must read the note again first and an edit made meanwhile is never overwritten.
+- **`/memory tidy`** runs one now. Bare `/memory` shows the index size against its budget.
+- **Auto-tidy** runs one in the background when the index no longer fits its budget. It is checked
+  each time a turn finishes (cheaply: the index is only rebuilt when a note changed), so a store that
+  outgrows its budget mid-session is tidied at that turn's end. It runs at most once per session
+  (`/new`, `/clear` and `/resume` start a new session; a fork does not), so a store a tidy cannot
+  shrink is never retried in a loop. It never blocks your turn,
+  never starts a model turn of its own, and never rewrites this session's prompt: what it changed
+  shows up in the memory-changes block. An automatic tidy that changed nothing stays silent.
+
+Auto-tidy is on by default. To turn it off, use `/settings` (`memory_auto_tidy`) or set this in
+`~/.jan/config.toml`; `/memory tidy` keeps working either way:
+
+```toml
+memory_auto_tidy = false   # default: true
+```
 
 ## Memory and AGENTS.md
 

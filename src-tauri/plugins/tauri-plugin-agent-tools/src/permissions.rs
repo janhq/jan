@@ -32,9 +32,16 @@ pub struct ToolPermissions {
     allow_write: Vec<Pattern>,
 }
 
+/// Each pattern as written, plus `memory` for one that named the old memory
+/// tools (see [`crate::tools::names_legacy_memory`]), so such a rule keeps
+/// applying -- a deny to the whole tool, which is the conservative reading.
 fn compile(patterns: &[String]) -> Vec<Pattern> {
     patterns
         .iter()
+        .flat_map(|p| {
+            let alias = crate::tools::names_legacy_memory(p).then_some(crate::tools::MEMORY_TOOL);
+            std::iter::once(p.as_str()).chain(alias)
+        })
         .filter_map(|p| Pattern::new(p).ok())
         .collect()
 }
@@ -63,6 +70,16 @@ impl ToolPermissions {
             deny: Vec::new(),
             allow_write: Vec::new(),
         }
+    }
+
+    /// These permissions with `name` denied as well: hidden from the tool list
+    /// and refused at the gate, whatever the allow lists say. How a caller takes
+    /// one tool away from a run (a subagent's memory) without a config edit.
+    pub fn with_denied(mut self, name: &str) -> Self {
+        if let Ok(pattern) = Pattern::new(&Pattern::escape(name)) {
+            self.deny.push(pattern);
+        }
+        self
     }
 
     pub fn is_denied(&self, name: &str) -> bool {
@@ -100,6 +117,31 @@ mod tests {
 
     fn s(items: &[&str]) -> Vec<String> {
         items.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn with_denied_takes_one_exact_tool_away_even_from_an_allow_list() {
+        let perms = ToolPermissions::new(PermissionDefault::Allow, &s(&["memory"]), &[], &[])
+            .with_denied("memory");
+        assert!(perms.is_denied("memory"));
+        assert!(!perms.is_denied("memory_extra"), "an exact name, not a prefix");
+        assert!(!perms.is_denied("read"));
+    }
+
+    /// A rule on an old memory tool name still applies, to the one `memory`
+    /// tool: a deny on `memory_read` denies every op rather than none.
+    #[test]
+    fn old_memory_tool_names_apply_to_the_memory_tool() {
+        for old in ["memory_write", "memory_read", "memory_list", "memory_*"] {
+            let perms = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&[old]), &[]);
+            assert!(perms.is_denied("memory"), "deny {old}");
+            let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &s(&[old]), &[], &[]);
+            assert!(perms.is_allowed("memory"), "allow {old}");
+            let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &s(&[old]));
+            assert!(perms.is_allowed("memory"), "allow_write {old}");
+        }
+        let broad = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["*write*"]), &[]);
+        assert!(!broad.is_denied("memory"), "a glob that never named memory is left alone");
     }
 
     #[test]

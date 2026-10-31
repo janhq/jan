@@ -239,29 +239,51 @@ const TOOL_ICONS: Record<string, typeof IconFile> = {
   grep: IconSearch,
   write: IconFilePencil,
   edit: IconFilePencil,
-  memory_list: IconNotebook,
-  memory_read: IconNotebook,
-  memory_write: IconNotebook,
+  memory: IconNotebook,
   skill_list: IconBook,
   skill_read: IconBook,
   skill_write: IconBook,
 }
 
 /** Tools whose whole call is the verb: there is no argument worth a bar. */
-const LISTING_TOOLS = new Set(['memory_list', 'skill_list', 'ls'])
+const LISTING_TOOLS = new Set(['skill_list', 'ls'])
 
 // A workspace call is not always a read: `Reading...` under a `write` is simply
 // wrong, and the verb is the only progress signal the widget has.
 const RUNNING_KEYS: Record<string, string> = {
   write: 'tools:toolCall.writing',
-  memory_write: 'tools:toolCall.writing',
   skill_write: 'tools:toolCall.writing',
   edit: 'tools:toolCall.editing',
   find: 'tools:toolCall.searching',
   grep: 'tools:toolCall.searching',
   ls: 'tools:toolCall.listing',
-  memory_list: 'tools:toolCall.listing',
   skill_list: 'tools:toolCall.listing',
+}
+
+type WorkspaceBar = Extract<ToolCallBar, { variant: 'workspace' }>
+
+/** A bare `view` lists the whole store, like `ls` with no path. */
+const isMemoryListing = (bar: WorkspaceBar) =>
+  bar.tool === 'memory' && bar.op === 'view' && !bar.target
+
+// `memory` is one tool for reads and changes alike, so its op picks the verb.
+const runningKey = (bar: WorkspaceBar): string => {
+  if (bar.tool !== 'memory') {
+    return RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading'
+  }
+  switch (bar.op) {
+    case 'write':
+    case 'edit':
+    case 'delete':
+    case 'move':
+      return 'tools:toolCall.writing'
+    case 'search':
+      return 'tools:toolCall.searching'
+    default:
+      return isMemoryListing(bar)
+        ? 'tools:toolCall.listing'
+        : 'tools:toolCall.reading'
+  }
 }
 
 // find/grep bars carry a pattern and memory/skill an entry name, so `path` is
@@ -269,14 +291,13 @@ const RUNNING_KEYS: Record<string, string> = {
 const PLACEHOLDER_KEYS: Record<string, string> = {
   find: 'tools:toolCall.patternPlaceholder',
   grep: 'tools:toolCall.patternPlaceholder',
-  memory_read: 'tools:toolCall.namePlaceholder',
-  memory_write: 'tools:toolCall.namePlaceholder',
+  memory: 'tools:toolCall.namePlaceholder',
   skill_read: 'tools:toolCall.namePlaceholder',
   skill_write: 'tools:toolCall.namePlaceholder',
 }
 
 export type AgentToolWidgetProps = {
-  bar: Extract<ToolCallBar, { variant: 'workspace' }>
+  bar: WorkspaceBar
   state: ToolUIPart['state']
   output?: ToolUIPart['output']
   errorText?: string
@@ -298,11 +319,16 @@ export const AgentToolWidget = memo(
     )
     const Icon = TOOL_ICONS[bar.tool] ?? IconFile
     const body = asText(output)
-    // `ls` with no path lists the workspace root; show that rather than a bar
-    // that reads as though an argument failed to stream.
+    // `ls` with no path lists the workspace root, and a bare memory view the
+    // whole store; show that rather than a bar that reads as though an
+    // argument failed to stream.
     const value =
       bar.target ||
-      (LISTING_TOOLS.has(bar.tool) ? t('tools:toolCall.workspaceRoot') : '')
+      (LISTING_TOOLS.has(bar.tool)
+        ? t('tools:toolCall.workspaceRoot')
+        : isMemoryListing(bar)
+          ? t('settings:cowork.memories')
+          : '')
 
     return (
       <div className="space-y-1.5">
@@ -340,7 +366,7 @@ export const AgentToolWidget = memo(
           !errorText && (
             <div className="px-2 text-sm">
               <Shimmer duration={1}>
-                {t(RUNNING_KEYS[bar.tool] ?? 'tools:toolCall.reading')}
+                {t(runningKey(bar))}
               </Shimmer>
             </div>
           )

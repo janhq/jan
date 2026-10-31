@@ -32,9 +32,14 @@ Every tool maps to one capability, and approval applies at that level rather tha
 
 | Capability | Tools | Default |
 | --- | --- | --- |
-| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
-| Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
+| Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `skill_read`, `skill_list` | Allowed |
+| Write | `write`, `edit` | Prompts |
 | Exec | `shell` | Prompts |
+
+The agent's own stores never prompt: every `memory` op (view, search, write, edit, move, delete) and
+`skill_write` act only on the agent's notes and skills by name, never on a project file, so they are
+allowed without asking. A `deny` entry in `agent.toml` still removes them, and in plan mode only
+`view` and `search` run. See [Memory](/docs/agent/memory).
 
 So approving `a` on a shell command allows further shell commands, not just that one. That's the
 trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
@@ -88,6 +93,11 @@ subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing. The `jan` 
 each such `[tools]` entry when a run starts (the desktop app does not read `[tools]`), and every
 surface refuses a subagent whose `allowed_tools` still says `bash`. `jan mcp serve --tool bash`
 says so too.
+
+The memory tools `memory_write`, `memory_read` and `memory_list` are now one tool, `memory`. An old
+name in `allow`, `deny` or a hook matcher keeps applying, to the whole `memory` tool: a
+`deny = ["memory_write"]` now denies every memory op, reads included. The `jan` CLI reports each
+such entry when a run starts; rename it to `memory`.
 
 ## The shell sandbox
 
