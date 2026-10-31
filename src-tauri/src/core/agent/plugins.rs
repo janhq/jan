@@ -26,7 +26,6 @@
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Deserialize;
 
@@ -792,8 +791,10 @@ fn repo_dir_name(url: &str) -> Option<&str> {
 }
 
 fn git(args: &[&str]) -> Result<String, String> {
-    let program = jan_utils::git_program().map_err(|e| format!("ERROR: git: {e}"))?;
-    let out = Command::new(program)
+    // Shared with the snapshot code, so a clone that needs credentials fails
+    // with git's error rather than prompting on the TUI's terminal.
+    let out = super::git::git_command()
+        .map_err(|e| format!("ERROR: {e}"))?
         .args(args)
         .output()
         .map_err(|e| format!("ERROR: git: {e}"))?;

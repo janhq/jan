@@ -30,10 +30,21 @@ use std::process::Command;
 
 /// A `git` command, resolved by [`jan_utils::git_program`] so Windows never
 /// runs a `git.exe` from Jan's own folder.
-fn git_command() -> Result<Command, String> {
-    jan_utils::git_program()
+///
+/// It never talks to the user's terminal: no stdin, `GIT_TERMINAL_PROMPT=0`,
+/// and (unix) its own session. Under the TUI, git asking for credentials on
+/// `/dev/tty` -- or ssh asking to trust a host key -- would otherwise wait on
+/// a prompt the TUI hides, with the TUI and git both reading the same
+/// keystrokes. Now such a command fails with git's own error instead.
+pub(crate) fn git_command() -> Result<Command, String> {
+    let mut cmd = jan_utils::git_program()
         .map(Command::new)
-        .map_err(|e| format!("failed to launch git: {e}"))
+        .map_err(|e| format!("failed to launch git: {e}"))?;
+    cmd.stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0");
+    #[cfg(unix)]
+    tauri_plugin_agent_tools::tools::proc::detach_std_from_terminal(&mut cmd);
+    Ok(cmd)
 }
 
 /// Run `git` with literal args (callers pass their own `-C`). Returns trimmed
@@ -411,6 +422,23 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// git, and whatever it runs (credential helpers, ssh, aliases), cannot
+    /// prompt on the TUI's terminal. The `/dev/tty` probe is only meaningful
+    /// when the test runner has a terminal (it says "opened" for a git that
+    /// shares Jan's session); `GIT_TERMINAL_PROMPT` is checked regardless.
+    #[cfg(unix)]
+    #[test]
+    fn git_never_prompts_on_the_terminal() {
+        let Ok(mut cmd) = git_command() else { return };
+        let probe = "!echo \"prompt=$GIT_TERMINAL_PROMPT\"; \
+                     if (: </dev/tty) 2>/dev/null; then echo opened; else echo denied; fi";
+        let Ok(out) = cmd.args(["-c", &format!("alias.probe={probe}"), "probe"]).output() else {
+            return;
+        };
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "prompt=0\ndenied");
+    }
 
     /// Init a throwaway repo with one commit, or `None` if git is unavailable so
     /// the suite skips instead of failing on a box without git.

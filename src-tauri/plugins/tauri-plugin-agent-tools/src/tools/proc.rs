@@ -742,6 +742,13 @@ fn set_process_group(cmd: &mut Command) {
 /// process that already leads a group.
 #[cfg(unix)]
 pub fn detach_from_terminal(cmd: &mut Command) {
+    detach_std_from_terminal(cmd.as_std_mut());
+}
+
+/// [`detach_from_terminal`] for a blocking `std::process::Command`.
+#[cfg(unix)]
+pub fn detach_std_from_terminal(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
     // # Safety: runs in the forked child before exec; `setsid` is
     // async-signal-safe. It can only fail if the child already leads a process
     // group, which a freshly forked child never does; failing the spawn then is
