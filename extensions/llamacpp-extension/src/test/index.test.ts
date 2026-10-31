@@ -511,64 +511,63 @@ describe('llamacpp_extension', () => {
     })
   })
 
-  describe('migrateFitOff', () => {
-    beforeEach(() => {
+  // Existing installs keep their stored fit value: the settings file has no
+  // record of who set it, so an untouched off and an explicit off look alike.
+  describe('fit migration', () => {
+    it('no longer forces fit off at load', () => {
+      expect((extension as any).migrateFitOff).toBeUndefined()
+    })
+  })
+
+  describe('migrateSeededCtxSize', () => {
+    const yamls: Record<string, Record<string, unknown>> = {}
+
+    beforeEach(async () => {
+      const { fs, joinPath, getJanDataFolderPath } = await import('@janhq/core')
       vi.mocked(getBackendSetting).mockResolvedValue(null)
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/jan')
+      vi.mocked(joinPath).mockImplementation((p) => Promise.resolve(p.join('/')))
+      // A Hub download is nested one level deeper, under its author.
+      yamls['/jan/llamacpp/models/seeded/model.yml'] = { name: 's', ctx_size: 8192 }
+      yamls['/jan/llamacpp/models/custom/model.yml'] = { name: 'c', ctx_size: 32768 }
+      yamls['/jan/llamacpp/models/author/hub/model.yml'] = { name: 'h', ctx_size: 8192 }
+      const tree: Record<string, string[]> = {
+        '/jan/llamacpp/models': [
+          '/jan/llamacpp/models/seeded',
+          '/jan/llamacpp/models/custom',
+          '/jan/llamacpp/models/author',
+        ],
+        '/jan/llamacpp/models/author': ['/jan/llamacpp/models/author/hub'],
+      }
+      vi.mocked(fs.existsSync).mockImplementation(
+        async (p: string) => p === '/jan/llamacpp/models' || p in yamls
+      )
+      vi.mocked(fs.readdirSync).mockImplementation(async (p: string) => tree[p] ?? [])
+      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 0 })
+      ;(fs as any).readYaml = vi.fn((path: string) =>
+        Promise.resolve(structuredClone(yamls[path]))
+      )
+      ;(fs as any).writeYaml = vi.fn((path: string, data: Record<string, unknown>) => {
+        yamls[path] = data
+        return Promise.resolve()
+      })
     })
 
-    it('should skip migration if already migrated', async () => {
+    it('drops the seeded 8192 so fit can size the context, and keeps a chosen one', async () => {
+      await (extension as any).migrateSeededCtxSize()
+
+      expect(yamls['/jan/llamacpp/models/seeded/model.yml']).toEqual({ name: 's' })
+      expect(yamls['/jan/llamacpp/models/author/hub/model.yml']).toEqual({ name: 'h' })
+      expect(yamls['/jan/llamacpp/models/custom/model.yml'].ctx_size).toBe(32768)
+      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_seeded_ctx_cleared_v1', '1')
+    })
+
+    it('runs once', async () => {
       vi.mocked(getBackendSetting).mockResolvedValue('1')
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn()
 
-      await extension['migrateFitOff']()
+      await (extension as any).migrateSeededCtxSize()
 
-      expect(extension['getSettings']).not.toHaveBeenCalled()
-    })
-
-    it('should set migration key without calling updateSettings when fit is already false', async () => {
-      extension['config'] = { fit: false } as any
-      extension['getSettings'] = vi.fn()
-      extension['updateSettings'] = vi.fn()
-
-      await extension['migrateFitOff']()
-
-      expect(extension['getSettings']).not.toHaveBeenCalled()
-      expect(extension['updateSettings']).not.toHaveBeenCalled()
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
-    })
-
-    it('should disable fit when it is true', async () => {
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'ctx_size', controllerProps: { value: 2048 } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateFitOff']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
-      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
-      expect(extension['config'].fit).toBe(false)
-      expect(setBackendSetting).toHaveBeenCalledWith('llamacpp_fit_off_v1', '1')
-    })
-
-    it('should not modify other settings during fit migration', async () => {
-      extension['config'] = { fit: true } as any
-      extension['getSettings'] = vi.fn().mockResolvedValue([
-        { key: 'fit', controllerProps: { value: true } },
-        { key: 'fit_target', controllerProps: { value: '1024' } },
-        { key: 'fit_ctx', controllerProps: { value: '' } },
-      ])
-      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
-
-      await extension['migrateFitOff']()
-
-      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
-      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
-      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+      expect(yamls['/jan/llamacpp/models/seeded/model.yml'].ctx_size).toBe(8192)
     })
   })
 

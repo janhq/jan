@@ -33,6 +33,8 @@ import {
  writeSettingsFile,
  settingsFileExists,
 } from './settings-store'
+import { applyPlatformFitDefault } from './fit-default'
+import { findModelEntries } from './model-tree'
 
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -195,6 +197,11 @@ const LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY =
 /// again. A user who deliberately chose exactly 100 loses that choice, which is
 /// the right trade: 100 was never a considered value, it was the default.
 const LEGACY_NGL_DEFAULT = 100
+
+/// The context size the web-app seeded into every llamacpp model while fit was
+/// off by default; see migrateSeededCtxSize.
+const SEEDED_CTX_SIZE = 8192
+const SEEDED_CTX_CLEARED_KEY = 'llamacpp_seeded_ctx_cleared_v1'
 
 /// Matches the `timeout` default in settings.json.
 const DEFAULT_TIMEOUT = 600
@@ -485,6 +492,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   // check_for_updates, auto_update_engine, verify_backend_deps) from the
   // persisted set on its own.
   const settings = structuredClone(SETTINGS)
+  applyPlatformFitDefault(settings, IS_MAC)
   await this.registerSettings(settings)
 
   let loadedConfig: any = {}
@@ -498,10 +506,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
   this.config = loadedConfig as LlamacppConfig
 
-  // Auto-fit is disabled by default on all platforms; ctx-size owns context
-  // sizing. Force off for users a prior build left with fit enabled.
-  await this.migrateFitOff()
-
+  // No fit migration: the settings file stores every value with no record of
+  // who set it, so a stored `fit: false` cannot be told apart from an explicit
+  // off. Existing installs keep what they have; the default reaches new ones.
   await this.migrateAutoUnloadToModelsMax()
 
   await this.migrateParallelToDefault()
@@ -513,6 +520,9 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   await this.getProviderPath()
 
   await this.migratePersistedModelSettingsToYaml()
+
+  // After the backfill, which is what copied the seed into model.yml.
+  await this.migrateSeededCtxSize()
 
   // Set up validation event listeners to bridge Tauri events to frontend
   this.unlistenValidationStarted = await listen<{
@@ -1197,27 +1207,6 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   await setBackendSetting(MIGRATION_KEY, '1')
  }
 
- private async migrateFitOff(): Promise<void> {
-  const MIGRATION_KEY = 'llamacpp_fit_off_v1'
-  if (await getBackendSetting(MIGRATION_KEY)) return
-
-  if (this.config.fit === true) {
-   const settings = await this.getSettings()
-   await this.updateSettings(
-    settings.map((item) => {
-     if (item.key === 'fit') {
-      item.controllerProps.value = false
-     }
-     return item
-    })
-   )
-   this.config.fit = false
-   logger.info('Migrated fit setting: disabled')
-  }
-
-  await setBackendSetting(MIGRATION_KEY, '1')
- }
-
  private async migratePersistedModelSettingsToYaml(): Promise<void> {
   if (await getBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY)) return
 
@@ -1226,7 +1215,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
 
   // v1's n_gpu_layers stamp lives in model.yml, not in the persisted
   // settings, so it has to be swept even when nothing is persisted.
-  await this.stripLegacyNglFromModelYaml(providerPath)
+  await this.stripModelYamlValue(providerPath, 'n_gpu_layers', LEGACY_NGL_DEFAULT)
 
   if (persistedModels.length === 0) {
    await setBackendSetting(LLAMACPP_MODEL_SETTINGS_BACKFILL_KEY, '1')
@@ -1291,40 +1280,49 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
  }
 
  /**
-  * Removes v1's `n_gpu_layers: 100` stamp from every model.yml.
-  *
-  * Separate from the settings backfill because the stamp is in the yaml even
-  * for models that no longer appear in the persisted provider settings, so
-  * iterating the persisted list would miss them.
+  * One-shot: drops the `ctx_size: 8192` the web-app seeded into every model
+  * (and the settings backfill then copied into model.yml), so auto-fit may
+  * shrink the context down to `fit_ctx`; upstream's fit leaves a set context
+  * alone. The seed has no provenance, so 8192 is taken to be it. Nothing
+  * changes with fit off: preset.ts's `[*] ctx-size` is 8192 too.
   */
- private async stripLegacyNglFromModelYaml(providerPath: string): Promise<void> {
+ private async migrateSeededCtxSize(): Promise<void> {
+  if (await getBackendSetting(SEEDED_CTX_CLEARED_KEY)) return
+  await this.stripModelYamlValue(
+   await this.getProviderPath(),
+   'ctx_size',
+   SEEDED_CTX_SIZE
+  )
+  await setBackendSetting(SEEDED_CTX_CLEARED_KEY, '1')
+ }
+
+ /**
+  * Removes `key` from every model.yml where it equals `value`.
+  *
+  * Walks the models directory rather than the persisted settings because a
+  * stamped value is in the yaml even for models that no longer appear in the
+  * persisted provider settings, so iterating the persisted list would miss them.
+  */
+ private async stripModelYamlValue(
+  providerPath: string,
+  key: string,
+  value: number
+ ): Promise<void> {
   const modelsDir = await joinPath([providerPath, 'models'])
   if (!(await fs.existsSync(modelsDir))) return
 
-  let entries: string[] = []
-  try {
-   entries = await fs.readdirSync(modelsDir)
-  } catch (e) {
-   logger.warn('Could not list models while sweeping legacy ngl:', e)
-   return
-  }
-
-  for (const entry of entries) {
-   const configPath = await joinPath([entry, 'model.yml'])
+  for (const { configPath } of await findModelEntries(modelsDir)) {
    try {
-    if (!(await fs.existsSync(configPath))) continue
     // Read as a bag rather than ModelConfig: that type covers the
     // plugin's own fields, not every per-model key the sidebar writes.
     const cfg = await fs.readYaml<Record<string, unknown>>(configPath)
-    if (cfg?.n_gpu_layers !== LEGACY_NGL_DEFAULT) continue
-    delete cfg.n_gpu_layers
+    if (cfg?.[key] !== value) continue
+    delete cfg[key]
     await fs.writeYaml(configPath, cfg)
-    logger.info(
-     `Removed legacy n_gpu_layers=${LEGACY_NGL_DEFAULT} from ${configPath}`
-    )
+    logger.info(`Removed ${key}=${value} from ${configPath}`)
    } catch (e) {
     // Per-model isolation: one unreadable yaml must not block the sweep.
-    logger.warn(`Legacy ngl sweep skipped ${configPath}:`, e)
+    logger.warn(`${key} sweep skipped ${configPath}:`, e)
    }
   }
  }
@@ -1691,41 +1689,7 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
    logger.warn(`list: migrateLegacyModels failed, continuing: ${String(err)}`)
   }
 
-  let modelIds: string[] = []
-
-  // DFS. Mirror the defensive pattern in preset.ts: an unreadable entry
-  // (Windows AV quarantine, junction, locked file) must not kill the whole
-  // scan — log and continue past it.
-  let stack = [modelsDir]
-  while (stack.length > 0) {
-   const currentDir = stack.pop()
-
-   // check if model.yml exists
-   const modelConfigPath = await joinPath([currentDir, 'model.yml'])
-   if (await fs.existsSync(modelConfigPath)) {
-    // +1 to remove the leading slash
-    // NOTE: this does not handle Windows path \\
-    modelIds.push(currentDir.slice(modelsDir.length + 1))
-    continue
-   }
-
-   let children: string[] = []
-   try {
-    children = await fs.readdirSync(currentDir)
-   } catch (err) {
-    logger.warn(`list: readdir failed for ${currentDir}: ${String(err)}`)
-    continue
-   }
-   for (const child of children) {
-    try {
-     const dirInfo = await fs.fileStat(child)
-     if (!dirInfo?.isDirectory) continue
-     stack.push(child)
-    } catch (err) {
-     logger.warn(`list: stat failed for ${child}: ${String(err)}`)
-    }
-   }
-  }
+  const modelIds = (await findModelEntries(modelsDir)).map((e) => e.modelId)
 
   // Per-model isolation: one malformed model.yml (or a write_yaml failure
   // inside resolveEmbeddingConfig) must not discard the other entries.
