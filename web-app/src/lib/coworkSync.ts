@@ -1,3 +1,5 @@
+import { quiesceChats, resumeChatsAfterPreventedClose, withChatCloseDeadline } from '@/lib/chatClose'
+import { flushMessageWrites } from '@/hooks/useMessages'
 import { quiesceCoworkRuns, resumeCoworkAfterPreventedClose, __resetCoworkRunCloseForTests } from '@/hooks/useCoworkRun'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
@@ -210,15 +212,16 @@ async function doStart() {
           // A live run has not committed its question/transcript/wire history
           // yet. Stop it and await its final commit before draining storage.
           // Still flush other sessions if one participant fails to settle cleanly.
-          try {
-            await quiesceCoworkRuns()
-          } finally {
-            await p.flush()
-            await flushCoworkDeletes()
-          }
+          await withChatCloseDeadline((async () => {
+              const runs = await Promise.allSettled([quiesceCoworkRuns(), quiesceChats()])
+              const writes = await Promise.allSettled([p.flush(), flushCoworkDeletes(), flushMessageWrites()])
+              const failed = [...runs, ...writes].find((result) => result.status === 'rejected')
+              if (failed?.status === 'rejected') throw failed.reason
+            })())
         } catch (e) {
           event.preventDefault()
           resumeCoworkAfterPreventedClose()
+          resumeChatsAfterPreventedClose()
           console.warn('[cowork] flush on close failed:', e)
         }
       })

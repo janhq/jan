@@ -1,3 +1,4 @@
+import { isChatClosing, setChatCloseStop, trackChatFinalization } from '@/lib/chatClose'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import {
@@ -519,9 +520,6 @@ function ThreadDetail() {
   const backendError = isLlamacppActive ? backendErrorRaw : undefined
 
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
-  const setChatMessagesRef = useRef<
-    ((updater: (prev: UIMessage[]) => UIMessage[]) => void) | null
-  >(null)
   // The per-turn hand-offs to onFinish (pending parent, Continue target,
   // context-limit partial, launched n_ctx) are module maps keyed by thread; see
   // pendingAssistantParents.
@@ -555,10 +553,9 @@ function ThreadDetail() {
       // open thread's, and a background thread's turn can abort while another
       // thread is in front.
       if (isAbort) {
-        setChatMessagesRef.current?.((prev) =>
-          prev.map((m) =>
-            m.id === finishedMessage.id ? settleStoppedToolCalls([m])[0] : m
-          )
+        const retained = useChatSessions.getState().sessions[threadId]?.chat
+        if (retained) retained.messages = retained.messages.map((m) =>
+          m.id === finishedMessage.id ? settleStoppedToolCalls([m])[0] : m
         )
       }
       const msgMeta = message.metadata as Record<string, unknown> | undefined
@@ -644,8 +641,8 @@ function ThreadDetail() {
         }
 
         if (isStoppedTurn) {
-          setChatMessagesRef.current?.((prev) =>
-            prev.map((m) =>
+          const retained = useChatSessions.getState().sessions[threadId]?.chat
+          if (retained) retained.messages = retained.messages.map((m) =>
               m.id === message.id
                 ? {
                     ...m,
@@ -656,7 +653,6 @@ function ThreadDetail() {
                   }
                 : m
             )
-          )
         }
 
         // A continuation resumes a stopped turn: the stale partial is deleted
@@ -766,7 +762,7 @@ function ThreadDetail() {
       // A reply without tool calls has no loop. It must not register
       // controllers, settle the runtime or clear the busy flag, or it would take
       // them from an earlier turn whose call is still running.
-      const hasTools = sessionData.tools.length > 0
+      const hasTools = sessionData.tools.length > 0 && !isChatClosing()
       const callController = new AbortController()
       const signal = callController.signal
       const stopController = new AbortController()
@@ -820,13 +816,14 @@ function ThreadDetail() {
       // running call, but the loop still records the calls it cuts short.
       const stoppedByUser = () => stopSignal.aborted && !released
 
+      const toolWrites: Promise<unknown>[] = []
       const record = (output: Parameters<typeof addToolOutput>[0]) => {
-        void addToolOutput(output)
+        toolWrites.push(Promise.resolve(addToolOutput(output)))
       }
 
-      ;(async () => {
+      const toolCompletion = (async () => {
         for (const toolCall of sessionData.tools) {
-          if (stoppedByUser()) break
+          if (stoppedByUser() || isChatClosing()) break
           // The thread was deleted before this call's turn came: it will not run.
           // Recorded as the chat closing, like a cut-short approval below, so
           // every call of the turn ends with an outcome.
@@ -879,7 +876,7 @@ function ThreadDetail() {
             // Only an explicit Stop skips the result. Deleting the thread also
             // resolves a pending approval as denied, recorded below as the chat
             // closing rather than as the user's refusal.
-            if (stoppedByUser()) break
+            if (stoppedByUser() || isChatClosing()) break
 
             if (!approved) {
               record({
@@ -1002,6 +999,9 @@ function ThreadDetail() {
           }
         }
 
+        await Promise.all(toolWrites)
+        const liveTurn = useChatSessions.getState().sessions[threadId]?.chat?.messages.find((m) => m.id === message.id)
+        if (liveTurn) rewriteStoredTurn(threadId, liveTurn, stopSignal.aborted || isChatClosing())
         unwatchSession?.()
         if (!hasTools || toolLoopGeneration.get(threadId) !== generation) return
         useToolCallRuntime.getState().settleRemaining(threadId)
@@ -1033,7 +1033,7 @@ function ThreadDetail() {
         useAppState.getState().setThreadBusy(threadId, false)
       })
 
-      if (!isAbort) {
+      if (!isAbort && !isChatClosing()) {
         const localMessages = useMessages.getState().getMessages(threadId)
         const assistantCount = localMessages.filter(
           (m) => m.role === 'assistant'
@@ -1105,6 +1105,7 @@ function ThreadDetail() {
           }
         }
       }
+      trackChatFinalization(useChatSessions.getState().sessions[threadId]?.chat, toolCompletion)
     },
     onToolCall: ({ toolCall }) => {
       // Collect the tool for the onFinish execution loop, and request approval
@@ -1168,7 +1169,9 @@ function ThreadDetail() {
     toolLoopControllers.get(threadId)?.abort()
     running?.abort()
     useToolApprovalRequests.getState().clearPendingForThread(threadId)
-    stop()
+    const retained = useChatSessions.getState().sessions[threadId]?.chat
+    if (retained) void retained.stop()
+    else stop()
 
     // Only the turn being stopped. Taken from the SDK's own chat state, which
     // is current: the rendered snapshot is throttled and can lag the stream, so
@@ -1179,7 +1182,8 @@ function ThreadDetail() {
       chatMessagesRef.current
     const settled = settleStoppedToolCalls(live, turnId)
     if (settled === live) return
-    setChatMessages((prev) => settleStoppedToolCalls(prev, turnId))
+    if (retained) retained.messages = settleStoppedToolCalls(retained.messages, turnId)
+    else setChatMessages((prev) => settleStoppedToolCalls(prev, turnId))
     // A turn that was still streaming is persisted by onFinish; one that is
     // already stored (its tools were running) has to be rewritten here. It was
     // stored before any tool ran, so the output of a call that did finish is
@@ -1189,6 +1193,10 @@ function ThreadDetail() {
     const stoppedTurn = settled.find((m) => m.id === stoppedId)
     if (stoppedTurn) rewriteStoredTurn(threadId, stoppedTurn, true)
   }, [threadId, stop, setChatMessages])
+
+  // Keep the thread-captured stop closure after navigation/unmount.
+  const retainedChat = useChatSessions.getState().sessions[threadId]?.chat
+  if (retainedChat) setChatCloseStop(retainedChat, handleStop)
 
   // A new reply (regenerate, edit) replaces the turn it answers, so a tool call
   // that turn still has running is abandoned: ended like a Stop, before the new
@@ -2160,7 +2168,6 @@ function ThreadDetail() {
 
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
-  setChatMessagesRef.current = setChatMessages
 
   useEffect(() => {
     if (

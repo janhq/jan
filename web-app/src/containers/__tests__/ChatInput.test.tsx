@@ -304,6 +304,7 @@ vi.mock('@/components/TokenCounter', () => ({
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
 const dropdownTestMode = vi.hoisted(() => ({ real: false }))
+const tooltipTestMode = vi.hoisted(() => ({ real: false }))
 vi.mock('@/components/ui/dropdown-menu', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/ui/dropdown-menu')>()
   const Pass = ({ children }: any) => <>{children}</>
@@ -328,14 +329,13 @@ vi.mock('@/components/ui/dropdown-menu', async (importOriginal) => {
       : (() => { const Stub = stubs[name as keyof typeof stubs] ?? Pass; return <Stub {...props} /> })(),
   ]))
 })
-vi.mock('@/components/ui/tooltip', () => {
+vi.mock('@/components/ui/tooltip', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui/tooltip')>()
   const Pass = ({ children }: any) => <>{children}</>
-  return {
-    Tooltip: Pass,
-    TooltipContent: Pass,
-    TooltipTrigger: Pass,
-    TooltipProvider: Pass,
-  }
+  return Object.fromEntries(Object.entries(actual).map(([name, Component]) => [
+    name,
+    (props: any) => tooltipTestMode.real ? <Component {...props} /> : <Pass {...props} />,
+  ]))
 })
 
 vi.mock('@/lib/platform/utils', () => ({
@@ -343,6 +343,7 @@ vi.mock('@/lib/platform/utils', () => ({
 }))
 
 // Import component AFTER all mocks
+import { toast } from 'sonner'
 import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
@@ -361,6 +362,7 @@ const resetAll = () => {
   browserOverrides = {}
   useWebSearchConfig.setState({ webSearchEnabled: false })
   dropdownTestMode.real = false
+  tooltipTestMode.real = false
   useToolAvailable.setState({ disabledTools: [] })
   promptState = ''
   appStateOverrides = {}
@@ -697,7 +699,81 @@ describe('ChatInput', () => {
     expect(navigateHistoryMock).toHaveBeenCalledWith('down')
   })
 
+  it('shows distinct compact filenames and wraps mixed attachments without shrinking thumbnails', () => {
+    attachmentsList = [
+      { type: 'document', name: 'summary.md', fileType: 'md' },
+      { type: 'document', name: '研究メモ🧪—非常に長いファイル名'.repeat(8) + '.md', fileType: 'md' },
+      { type: 'image', name: 'photo.png', dataUrl: 'data:image/png;base64,xxx' },
+    ]
+    renderInput()
+    const first = screen.getByLabelText('summary.md')
+    const second = screen.getByLabelText(attachmentsList[1].name)
+    expect(first).toHaveAttribute('tabindex', '0')
+    expect(second.querySelector('.truncate')).toHaveTextContent(attachmentsList[1].name)
+    expect(first).toHaveClass('h-11', 'min-w-0')
+    const row = first.parentElement!.parentElement!
+    expect(row).toHaveClass('flex-wrap', 'min-w-0', 'gap-2')
+    const image = screen.getByRole('img', { name: 'photo.png' })
+    expect(image.parentElement).toHaveClass('size-14')
+    expect(image.parentElement!.parentElement).toHaveClass('shrink-0')
+    for (const attachment of attachmentsList) {
+      expect(screen.getByRole('button', { name: `Remove ${attachment.name}` })).toHaveClass('size-7')
+    }
+  })
+
+  it('reveals the untruncated filename tooltip on keyboard focus', async () => {
+    tooltipTestMode.real = true
+    const name = '研究メモ🧪'.repeat(30) + '.md'
+    attachmentsList = [{ type: 'document', name, fileType: 'md' }]
+    renderInput()
+    act(() => screen.getByLabelText(name).focus())
+    expect(screen.getByLabelText(name)).toHaveFocus()
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent(name)
+    expect(tooltip.querySelector('.font-medium')).toHaveClass('whitespace-normal', '[overflow-wrap:anywhere]')
+    expect(tooltip.querySelector('.font-medium')).not.toHaveClass('truncate')
+  })
+
+  it.each(['{Enter}', ' '])('removes an attachment with %s without submitting the form', async (key) => {
+    attachmentsList = [
+      { type: 'document', name: 'first.md', fileType: 'md' },
+      { type: 'document', name: 'second.md', fileType: 'md' },
+    ]
+    setAttachmentsMock.mockClear()
+    const onSubmit = vi.fn()
+    const formSubmit = vi.fn((event) => event.preventDefault())
+    render(<form onSubmit={formSubmit}><ChatInput onSubmit={onSubmit} /></form>)
+    // Let the composer's delayed mount autofocus settle before testing tab order.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 25)) })
+    const user = userEvent.setup()
+    act(() => screen.getByLabelText('first.md').focus())
+    expect(screen.getByLabelText('first.md')).toHaveFocus()
+    await user.tab()
+    const remove = screen.getByRole('button', { name: 'Remove first.md' })
+    expect(remove).toHaveFocus()
+    expect(remove).toHaveAttribute('type', 'button')
+    await user.keyboard(key)
+    await waitFor(() => expect(setAttachmentsMock).toHaveBeenCalledTimes(1))
+    const [scope, update] = setAttachmentsMock.mock.calls[0]
+    expect(scope).toBe('thread-1')
+    expect(update(attachmentsList)).toEqual([attachmentsList[1]])
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(formSubmit).not.toHaveBeenCalled()
+  })
+
+  it('keeps removal disabled and exposes busy state while processing', async () => {
+    attachmentsList = [{ type: 'document', name: 'processing.md', fileType: 'md', processing: true }]
+    setAttachmentsMock.mockClear()
+    renderInput()
+    const remove = screen.getByRole('button', { name: 'Remove processing.md' })
+    expect(remove).toBeDisabled()
+    expect(remove.parentElement).toHaveAttribute('aria-busy', 'true')
+    await userEvent.click(remove)
+    expect(setAttachmentsMock).not.toHaveBeenCalled()
+  })
+
   it('adds attached image files to onSubmit payload', async () => {
+    selectedModelOverride.capabilities = ['vision']
     promptState = 'with image'
     attachmentsList = [
       {
@@ -724,6 +800,74 @@ describe('ChatInput', () => {
       )
     )
     expect(clearAttachmentsMock).toHaveBeenCalled()
+  })
+
+  it.each(['llamacpp', 'remote'])('preserves image draft after Vision → Plain, then accepts Vision (%s)', async (provider) => {
+    promptState = 'describe this image'
+    selectedModelOverride = { id: 'vision', provider, capabilities: ['vision'] }
+    attachmentsList = [{ type: 'image', name: 'fixture.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,xxx' }]
+    const originalAttachments = attachmentsList
+    const onSubmit = vi.fn()
+    const view = renderInput({ onSubmit })
+    selectedModelOverride = { id: 'plain', provider, capabilities: ['completion'] }
+    view.rerender(<ChatInput onSubmit={onSubmit} className={selectedModelOverride.id} />)
+    expect(screen.getByTestId('send-message-button')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('Choose a compatible model or remove')))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(createThreadMock).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    expect(addToHistoryMock).not.toHaveBeenCalled()
+    expect(enqueueMock).not.toHaveBeenCalled()
+    expect(promptState).toBe('describe this image')
+    expect(attachmentsList).toBe(originalAttachments)
+    selectedModelOverride = { id: 'vision', provider, capabilities: ['vision'] }
+    view.rerender(<ChatInput onSubmit={onSubmit} className={selectedModelOverride.id} />)
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('describe this image', [expect.objectContaining({ mediaType: 'image/png' })], undefined, 'describe this image'))
+    expect(setPromptMock).toHaveBeenCalledWith('')
+    expect(clearAttachmentsMock).toHaveBeenCalledWith('thread-1')
+  })
+
+  it('blocks media-only home sends before creating a thread or persisting a message', async () => {
+    attachmentsList = [{ type: 'image', dataUrl: 'data:image/png;base64,xxx' }]
+    const persist = vi.spyOn(Storage.prototype, 'setItem')
+    renderInput()
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(toast.info).toHaveBeenCalled())
+    expect(createThreadMock).not.toHaveBeenCalled()
+    expect(persist).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    expect(clearAttachmentsMock).not.toHaveBeenCalled()
+    persist.mockRestore()
+  })
+
+  it.each(['audio', 'video'])('validates %s independently of vision', async (type) => {
+    promptState = 'media'
+    attachmentsList = [{ type, dataUrl: `data:${type}/test;base64,xxx` }]
+    selectedModelOverride.capabilities = ['vision']
+    const onSubmit = vi.fn()
+    const view = renderInput({ onSubmit })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(expect.stringContaining(`${type} attachments`)))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(setPromptMock).not.toHaveBeenCalled()
+    selectedModelOverride = { ...selectedModelOverride, capabilities: [type] }
+    view.rerender(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not infer media validation ownership from assistant or agent-mode settings', async () => {
+    promptState = 'image'
+    agentModeOn = true
+    attachmentsList = [{ type: 'image', dataUrl: 'data:image/png;base64,xxx' }]
+    const onSubmit = vi.fn()
+    renderInput({ onSubmit, supportsAssistants: false })
+    fireEvent.keyDown(getTextarea(), { key: 'Enter' })
+    await waitFor(() => expect(toast.info).toHaveBeenCalled())
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('passes document attachments to onSubmit as the third argument', async () => {

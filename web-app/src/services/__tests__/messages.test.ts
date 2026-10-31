@@ -92,35 +92,23 @@ describe('DefaultMessagesService', () => {
       expect(result).toEqual(message)
     })
 
-    it('should return original message when extension not found', async () => {
+    it('rejects when extension is missing rather than acknowledging a fictitious write', async () => {
       mockExtensionManager.get.mockReturnValue(null)
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
-
-      const result = await messagesService.createMessage(message)
-
-      expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
-      expect(result).toEqual(message)
+      await expect(messagesService.createMessage(message)).rejects.toThrow('Message storage is unavailable')
     })
 
-    it('should return original message when createMessage fails', async () => {
+    it('propagates createMessage storage failures', async () => {
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
-      const error = new Error('Failed to create message')
-      mockExtension.createMessage.mockRejectedValue(error)
-
-      const result = await messagesService.createMessage(message)
-
-      expect(mockExtensionManager.get).toHaveBeenCalledWith(ExtensionTypeEnum.Conversational)
+      mockExtension.createMessage.mockRejectedValue(new Error('Failed to create message'))
+      await expect(messagesService.createMessage(message)).rejects.toThrow('Failed to create message')
       expect(mockExtension.createMessage).toHaveBeenCalledWith(message)
-      expect(result).toEqual(message)
     })
 
-    it('should handle undefined createMessage response', async () => {
+    it('rejects a missing createMessage operation result', async () => {
       const message = { id: 'msg-1', threadId: 'thread-123', content: 'Hello', role: 'user' }
       mockExtension.createMessage.mockReturnValue(undefined)
-
-      const result = await messagesService.createMessage(message)
-
-      expect(result).toEqual(message)
+      await expect(messagesService.createMessage(message)).rejects.toThrow('Message storage is unavailable')
     })
   })
 

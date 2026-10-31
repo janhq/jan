@@ -80,7 +80,8 @@ export function getComposerEffortChoices(providerId: string, model: Model | null
 }
 
 /** A real Radix submenu: pointer grace areas, roving focus, typeahead, and
- * ArrowRight/Left/Escape behavior stay with the shared menu primitives. */
+ * ArrowRight/Left behavior stays with the shared menu primitives. Escape
+ * closes this submenu before the always-open inline footer/root picker. */
 function ReasoningSubmenu({ label, accessibleLabel, value, choices, onChange }: {
   label: string
   accessibleLabel: string
@@ -88,16 +89,24 @@ function ReasoningSubmenu({ label, accessibleLabel, value, choices, onChange }: 
   choices: ComposerEffortChoice[]
   onChange: (value: string | undefined) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLDivElement>(null)
   const options = [{ value: '', label: 'Default' }, ...choices]
   return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger aria-label={accessibleLabel} className="min-h-8 rounded-lg px-2.5 py-1.5 [&>svg:last-child]:ml-0">
+    <DropdownMenuSub open={open} onOpenChange={setOpen}>
+      <DropdownMenuSubTrigger ref={triggerRef} aria-label={accessibleLabel} className="min-h-8 rounded-lg px-2.5 py-1.5 [&>svg:last-child]:ml-0">
         <Brain className="size-4 text-muted-foreground" />
         <span>{label}</span>
         <span className="flex-1 text-right text-muted-foreground">{options.find((choice) => choice.value === value)?.label ?? 'Default'}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent aria-label={accessibleLabel} sideOffset={6} className="min-w-40 rounded-xl p-1.5">
+        <DropdownMenuSubContent aria-label={accessibleLabel} sideOffset={6} className="min-w-40 rounded-xl p-1.5"
+          onEscapeKeyDown={(event) => {
+            // Radix defaults to closing the menu root, which is always open here.
+            event.preventDefault()
+            setOpen(false)
+            triggerRef.current?.focus()
+          }}>
           <MenuPrimitive.RadioGroup value={value} onValueChange={(next) => onChange(next || undefined)}>
             {options.map((choice) => (
               <MenuPrimitive.RadioItem key={choice.value} value={choice.value}

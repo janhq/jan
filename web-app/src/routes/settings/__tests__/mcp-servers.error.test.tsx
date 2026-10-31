@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Route as McpServersRoute } from '../mcp-servers'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
+import { toast } from 'sonner'
 
 let formProps: { onSave: (name: string, config: import('@/hooks/useMCPServers').MCPServerConfig) => Promise<void> }
 let jsonProps: { onSave: (data: unknown) => Promise<void> }
@@ -11,6 +12,8 @@ let deleteProps: { onConfirm: () => Promise<void> }
 const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
 const getConnectedServers = vi.fn().mockResolvedValue([])
+const getMCPAuthStatus = vi.fn().mockResolvedValue(null)
+const authorizeMCPServer = vi.fn().mockResolvedValue(undefined)
 const updateMCPConfig = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('@/containers/SettingsMenu', () => ({
@@ -103,7 +106,7 @@ vi.mock('@/components/ui/input', () => ({
 }))
 
 vi.mock('@/hooks/useServiceHub', () => {
-  const hub = { mcp: () => ({ activateMCPServer, deactivateMCPServer, getConnectedServers, updateMCPConfig, getMCPAuthStatus: vi.fn().mockResolvedValue(null) }) }
+  const hub = { mcp: () => ({ activateMCPServer, deactivateMCPServer, getConnectedServers, updateMCPConfig, getMCPAuthStatus, authorizeMCPServer }) }
   return { useServiceHub: () => hub, getServiceHub: () => hub }
 })
 
@@ -152,11 +155,14 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
   },
 }))
 
 beforeEach(() => {
   vi.clearAllMocks()
+  useAppState.setState({ errorMessage: undefined })
+  getMCPAuthStatus.mockResolvedValue(null)
   activateMCPServer.mockReset().mockResolvedValue(undefined)
   updateMCPConfig.mockReset().mockResolvedValue(undefined)
   deactivateMCPServer.mockReset().mockResolvedValue(undefined)
@@ -373,6 +379,51 @@ describe('MCP reconfiguration transactions', () => {
     const Component = McpServersRoute.component as React.ComponentType
     render(<Component />)
   }
+
+  it.each(['form', 'json'])('saves a confirmed OAuth challenge inactive via %s, with explicit Sign In', async (mode) => {
+    const oauth = { ...config, type: 'http' as const, url: 'https://oauth.example/mcp' }
+    getMCPAuthStatus.mockResolvedValue({
+      state: 'unauthenticated', canAuthenticate: true, hasCredentials: false,
+      renewable: false, expiresAt: null,
+    })
+    activateMCPServer.mockRejectedValueOnce(new Error('NEEDS_AUTH: no credentials are stored (rmcp private detail)'))
+    start(false)
+    if (mode === 'form') {
+      await act(async () => formProps.onSave('OAuth', oauth))
+    } else {
+      fireEvent.click(screen.getByTitle('mcp-servers:editAllJson'))
+      await act(async () => jsonProps.onSave({ mcpServers: { OAuth: oauth } }))
+    }
+    expect(useMCPServers.getState().mcpServers.OAuth).toEqual({ ...oauth, active: false })
+    expect(JSON.parse(updateMCPConfig.mock.calls[0][0]).mcpServers.OAuth.active).toBe(false)
+    expect(useAppState.getState().errorMessage).toBeUndefined()
+    expect(toast.info).toHaveBeenCalledWith('mcp-servers:auth.needsAuth', {
+      description: 'mcp-servers:auth.needsAuthHint',
+    })
+    expect(authorizeMCPServer).not.toHaveBeenCalled()
+    await waitFor(() => expect(getMCPAuthStatus).toHaveBeenCalledWith('OAuth'))
+    getMCPAuthStatus.mockResolvedValue(null)
+  })
+
+  it('still rejects persistence failure after a recoverable OAuth challenge', async () => {
+    const previous = useMCPServers.getState().mcpServers
+    activateMCPServer.mockRejectedValueOnce('NEEDS_AUTH: no credentials')
+    updateMCPConfig.mockRejectedValueOnce(new Error('write failed'))
+    start(false)
+    await act(async () => { await expect(formProps.onSave('OAuth', config)).rejects.toThrow('write failed') })
+    expect(useMCPServers.getState().mcpServers).toEqual(previous)
+    expect(toast.info).not.toHaveBeenCalled()
+  })
+
+  it.each(['Failed to connect to server: protocol mismatch', 'transport: NEEDS_AUTH: not a backend marker', 'HTTP 401 unauthorized'])('rejects untagged activation failure: %s', async (message) => {
+    const previous = useMCPServers.getState().mcpServers
+    activateMCPServer.mockRejectedValueOnce(new Error(message))
+    start(false)
+    await act(async () => { await expect(formProps.onSave('OAuth', config)).rejects.toThrow(message) })
+    expect(useMCPServers.getState().mcpServers).toEqual(previous)
+    expect(updateMCPConfig).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
+  })
 
   it('awaits disconnect before committing and activating edited form config', async () => {
     let finish!: () => void
