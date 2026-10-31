@@ -60,25 +60,11 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
   },
 
   deleteFolderWithThreads: async (id) => {
-    // Get all threads that belong to this project
-    const threadsState = useThreads.getState()
-    const projectThreads = Object.values(threadsState.threads).filter(
-      (thread) => thread.metadata?.project?.id === id
-    )
+    // Share the project deletion lifecycle, including authoritative Cowork
+    // session removal; direct backend deletes race Cowork's write-through sync.
+    await useThreads.getState().deleteAllThreadsByProject(id)
 
-    // Delete threads from backend first
-    const serviceHub = getServiceHub()
-    for (const thread of projectThreads) {
-      await serviceHub.threads().deleteThread(thread.id)
-    }
-
-    // Delete threads from frontend state
-    for (const thread of projectThreads) {
-      threadsState.deleteThread(thread.id)
-    }
-
-    // Delete the project from storage
-    const projectsService = serviceHub.projects()
+    const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)
 
     const updatedProjects = await projectsService.getProjects()

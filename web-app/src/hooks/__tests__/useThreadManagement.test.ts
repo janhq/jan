@@ -26,7 +26,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
 
 // Mock useThreads
 const mockUpdateThread = vi.fn()
-const mockDeleteThreadState = vi.fn()
+const mockDeleteAllThreadsByProject = vi.fn()
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: {
     getState: () => ({
@@ -36,7 +36,7 @@ vi.mock('@/hooks/useThreads', () => ({
         't3': { id: 't3', metadata: { project: { id: 'p2' } } },
       },
       updateThread: mockUpdateThread,
-      deleteThread: mockDeleteThreadState,
+      deleteAllThreadsByProject: mockDeleteAllThreadsByProject,
     }),
   },
 }))
@@ -55,6 +55,7 @@ const getStore = () => {
 describe('useThreadManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDeleteAllThreadsByProject.mockResolvedValue(undefined)
     mockGetProjects.mockResolvedValue([])
   })
 
@@ -139,12 +140,39 @@ describe('useThreadManagement', () => {
       await result.current.deleteFolderWithThreads('p1')
     })
 
-    // Should delete backend threads for project p1
-    expect(mockDeleteThread).toHaveBeenCalledWith('t1')
-    expect(mockDeleteThread).toHaveBeenCalledWith('t2')
-    expect(mockDeleteThreadState).toHaveBeenCalledWith('t1')
-    expect(mockDeleteThreadState).toHaveBeenCalledWith('t2')
+    // Both chat and Cowork deletion must go through the shared lifecycle.
+    expect(mockDeleteAllThreadsByProject).toHaveBeenCalledExactlyOnceWith('p1')
+    expect(mockDeleteThread).not.toHaveBeenCalled()
     expect(mockDeleteProject).toHaveBeenCalledWith('p1')
+  })
+
+  it('waits for bulk durable deletion before deleting the project', async () => {
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    mockDeleteAllThreadsByProject.mockReturnValueOnce(pending)
+    const { result } = renderHook(() => useThreadManagement())
+    let deleting!: Promise<void>
+    act(() => { deleting = result.current.deleteFolderWithThreads('p1') })
+    expect(mockDeleteProject).not.toHaveBeenCalled()
+    await act(async () => {
+      finish()
+      await deleting
+    })
+    expect(mockDeleteProject).toHaveBeenCalledExactlyOnceWith('p1')
+  })
+
+  it('keeps the project and folder state when bulk deletion fails', async () => {
+    const folders = [{ id: 'p1', name: 'Project 1' }]
+    mockGetProjects.mockResolvedValue(folders)
+    mockDeleteAllThreadsByProject.mockRejectedValueOnce(new Error('delete failed'))
+    const { result } = renderHook(() => useThreadManagement())
+    await waitFor(() => expect(result.current.folders).toEqual(folders))
+
+    await act(async () => {
+      await expect(result.current.deleteFolderWithThreads('p1')).rejects.toThrow('delete failed')
+    })
+    expect(mockDeleteProject).not.toHaveBeenCalled()
+    expect(result.current.folders).toEqual(folders)
   })
 
   it('should get folder by id', async () => {

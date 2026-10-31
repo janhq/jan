@@ -212,6 +212,233 @@ describe('coworkPersistence write protocol', () => {
     expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
   })
 
+  it('serializes the shared deletion journal for concurrent removals', async () => {
+    const p = createCoworkPersistence(b.invoke)
+    await Promise.all([p.remove('a', { recordDeleted: true }), p.remove('b', { recordDeleted: true })])
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!).sort()).toEqual(['a', 'b'])
+  })
+
+  it('rolls back failed deletion intent so a legacy-only session survives rehydration', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete_thread failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+    // No retry write has persisted a thread before this simulated restart.
+    expect(b.threads.has('a')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+    expect([...loaded.legacyIds]).toEqual(['a'])
+    p.schedule(session('a', { title: 'still editable' }), { legacy: true })
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('still editable')
+  })
+
+  it('retries transient rollback failure before rejecting so immediate legacy hydration recovers', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    let rollbackAttempts = 0
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]') {
+        if (++rollbackAttempts === 1) throw new Error('rollback failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    expect(rollbackAttempts).toBe(2)
+    expect(b.threads.has('a')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+    expect([...loaded.legacyIds]).toEqual(['a'])
+  })
+
+  it('retries a failed rollback read without erasing unrelated deletion markers', async () => {
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+    let rollbackReads = 0
+    let deleting = false
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') {
+        deleting = true
+        throw new Error('delete failed')
+      }
+      if (deleting && cmd === 'settings_get' && args.key === COWORK_DELETED_IDS_KEY) {
+        if (++rollbackReads === 1) throw new Error('read failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    expect(rollbackReads).toBe(2)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other'])
+    expect(b.log.filter((cmd) => cmd === 'settings_set')).toHaveLength(2)
+  })
+
+  it.each(['{invalid', '{}', 'null', '["other", 42]', ''])(
+    'does not overwrite invalid journal %j during rollback and reports pending recovery',
+    async (raw) => {
+      b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+      const invoke = async (cmd: string, args: any) => {
+        if (cmd === 'delete_thread') {
+          b.settings.set(COWORK_DELETED_IDS_KEY, raw)
+          throw new Error('delete failed')
+        }
+        return b.invoke(cmd, args)
+      }
+      const p = createCoworkPersistence(invoke as any)
+      await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+      await expect(p.flush()).rejects.toThrow()
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(raw)
+      expect(b.log.filter((cmd) => cmd === 'settings_set')).toHaveLength(1)
+      b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other', 'a']))
+      await p.flush()
+      expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other'])
+    }
+  )
+
+  it('does not erase existing markers or delete files when the intent read fails', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_get', times: 1 } })
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['other']))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_get failed')
+    expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe('["other"]')
+    expect(b.log).not.toContain('settings_set')
+    expect(b.log).not.toContain('delete_thread')
+    await p.remove('a', { recordDeleted: true })
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['other', 'a'])
+  })
+
+  it.each(['{invalid', '{}', 'null', '["other", 42]', ''])(
+    'rejects invalid journal %j before recording intent or deleting files',
+    async (raw) => {
+      b.settings.set(COWORK_DELETED_IDS_KEY, raw)
+      const p = createCoworkPersistence(b.invoke)
+      await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow()
+      expect(b.settings.get(COWORK_DELETED_IDS_KEY)).toBe(raw)
+      expect(b.log).not.toContain('settings_set')
+      expect(b.log).not.toContain('delete_thread')
+    }
+  )
+
+  it('surfaces persistent rollback failure, retains compensation for bounded flush retry and queued edits', async () => {
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: [session('a')] }, version: 1,
+    }))
+    let broken = true
+    let rollbackAttempts = 0
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread') throw new Error('delete failed')
+      if (cmd === 'settings_set' && args.key === COWORK_DELETED_IDS_KEY && args.value === '[]') {
+        rollbackAttempts++
+        if (broken) throw new Error('rollback failed')
+      }
+      return b.invoke(cmd, args)
+    }
+    const onError = vi.fn()
+    const p = createCoworkPersistence(invoke as any, { onError })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('deletion recovery pending')
+    expect(onError).toHaveBeenCalledWith('a', expect.objectContaining({ message: expect.stringContaining('rollback failed') }))
+    expect(rollbackAttempts).toBe(3)
+    // The sync catch restores this snapshot; it must not be silently discarded.
+    p.schedule(session('a', { title: 'restored edit' }), { legacy: true })
+    await expect(p.flush()).rejects.toThrow('rollback failed')
+    expect(rollbackAttempts).toBe(6)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(rollbackAttempts).toBe(6)
+    expect(b.threads.has('a')).toBe(false)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+    // Disk is still broken: do not pretend this is restart-safe recovery.
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: false })).sessions).toEqual([])
+    broken = false
+    await p.flush()
+    expect(rollbackAttempts).toBe(7)
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual([])
+    expect(b.threads.get('a')!.title).toBe('restored edit')
+    expect((await loadCoworkSessions(b.invoke, { migrationSettled: false })).sessions.map((s) => s.id)).toEqual(['a'])
+    await p.flush()
+    expect(rollbackAttempts).toBe(7)
+  })
+
+  it('rollback preserves concurrent deletion intent and successful deletes cannot resurrect', async () => {
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['already-deleted']))
+    b.settings.set(CODE_SESSIONS_KEY, JSON.stringify({
+      state: { sessions: ['a', 'b', 'already-deleted'].map((id) => session(id)) }, version: 1,
+    }))
+    let rejectDelete!: (e: Error) => void
+    let started!: () => void
+    const deleting = new Promise<void>((resolve) => (started = resolve))
+    const gate = new Promise<void>((_resolve, reject) => (rejectDelete = reject))
+    const invoke = async (cmd: string, args: any) => {
+      if (cmd === 'delete_thread' && args.threadId === 'a') {
+        started()
+        await gate
+      }
+      return b.invoke(cmd, args)
+    }
+    const p = createCoworkPersistence(invoke as any)
+    const failed = expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete failed')
+    await deleting
+    await p.remove('b', { recordDeleted: true })
+    rejectDelete(new Error('delete failed'))
+    await failed
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!).sort()).toEqual(['already-deleted', 'b'])
+    p.schedule(session('b', { title: 'late edit' }))
+    await p.flush()
+    expect(b.threads.has('b')).toBe(false)
+    const loaded = await loadCoworkSessions(b.invoke, { migrationSettled: false })
+    expect(loaded.sessions.map((s) => s.id)).toEqual(['a'])
+  })
+
+  it('does not roll back a pre-existing legitimate deletion marker', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    b.settings.set(COWORK_DELETED_IDS_KEY, JSON.stringify(['a', 'other']))
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('delete_thread failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a', 'other'])
+  })
+
+  it('keeps deletion intent if notification fails after the backend has deleted the thread', async () => {
+    const p = createCoworkPersistence(b.invoke, {
+      onThreadRemoved: () => { throw new Error('notification failed') },
+    })
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('notification failed')
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['a'])
+  })
+
+  it('does not delete files when journaling fails and the journal queue remains usable', async () => {
+    b = makeBackend({ failNext: { cmd: 'settings_set', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    await expect(p.remove('a', { recordDeleted: true })).rejects.toThrow('settings_set failed')
+    expect(b.log).not.toContain('delete_thread')
+    await p.remove('b', { recordDeleted: true })
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toEqual(['b'])
+  })
+
+  it('a failed deletion is surfaced and does not permanently block session writes', async () => {
+    b = makeBackend({ failNext: { cmd: 'delete_thread', times: 1 } })
+    const p = createCoworkPersistence(b.invoke)
+    p.schedule(session('a'))
+    await p.flush()
+    await expect(p.remove('a')).rejects.toThrow('delete_thread failed')
+    p.schedule(session('a', { title: 'still editable' }))
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('still editable')
+  })
+
+  it('deleting a collision placeholder never deletes or unlists the unrelated chat', async () => {
+    b.threads.set('collision', { id: 'collision', title: 'Original chat' })
+    const onRemoved = vi.fn()
+    const p = createCoworkPersistence(b.invoke, { onThreadRemoved: onRemoved })
+    await p.remove('collision', { preserveThread: true, recordDeleted: true })
+    expect(b.threads.get('collision')!.title).toBe('Original chat')
+    expect(onRemoved).not.toHaveBeenCalled()
+    expect(JSON.parse(b.settings.get(COWORK_DELETED_IDS_KEY)!)).toContain('collision')
+  })
+
   it('never writes sessions flagged unavailable (files are preserved)', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 5 })
     p.schedule(session('a', { unavailable: 'unreadable-sidecar' }))

@@ -1,4 +1,4 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -7,13 +7,20 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
+import { HomeModeToggle } from '@/containers/HomeModeToggle'
+import { useHomeMode } from '@/hooks/useHomeMode'
+import { isCoworkEnabled } from '@/lib/version'
+import { startCoworkConversation } from '@/lib/startCoworkConversation'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { toast } from 'sonner'
+import type { Attachment } from '@/types/attachment'
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
 import ProjectFiles from '@/containers/ProjectFiles'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +40,12 @@ export const Route = createFileRoute('/project/$projectId')({
 
 function ProjectPageContent() {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
+  const { selectedModel, selectedProvider } = useModelProvider()
+  const storedMode = useHomeMode((s) => s.mode)
+  const setMode = useHomeMode((s) => s.setMode)
+  const coworkAvailable = isCoworkEnabled()
+  const mode = coworkAvailable ? storedMode : 'chat'
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -66,9 +79,7 @@ function ProjectPageContent() {
     }
   }
 
-  const handleDeleteAllThreads = () => {
-    deleteAllThreadsByProject(projectId)
-  }
+  const handleDeleteAllThreads = () => deleteAllThreadsByProject(projectId)
 
   if (!project) {
     return (
@@ -89,7 +100,7 @@ function ProjectPageContent() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full">
-          <DropdownModelProvider />
+          <ConversationHeaderTitle project={project} />
         </div>
       </HeaderPage>
 
@@ -131,6 +142,30 @@ function ProjectPageContent() {
               initialMessage={true}
               projectId={projectId}
               projectAssistantId={project.assistantId}
+              leadingControls={coworkAvailable ? <HomeModeToggle mode={mode} onChange={setMode} /> : undefined}
+              ownsToolSet={mode === 'cowork' ? false : undefined}
+              scopeKey={mode === 'cowork' ? `project-cowork:${projectId}` : undefined}
+              onSubmit={mode === 'cowork' ? (
+                text: string,
+                files?: Array<{ type: 'file'; mediaType: string; url: string }>,
+                documents?: Attachment[],
+                draft?: string
+              ) => {
+                let id: string
+                try {
+                  id = startCoworkConversation({
+                    model: selectedModel ? { id: selectedModel.id, provider: selectedProvider } : undefined,
+                    folder: null,
+                    project,
+                    handoff: { text, files, documents, draft },
+                  })
+                } catch (e) {
+                  console.warn('[cowork] could not store the first prompt:', e)
+                  toast.error(t('common:error'))
+                  return false
+                }
+                navigate({ to: '/cowork/$sessionId', params: { sessionId: id } })
+              } : undefined}
             />
           </div>
 

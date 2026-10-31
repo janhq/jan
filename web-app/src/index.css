@@ -8,7 +8,9 @@
 /* Accent tint for neutral toasts (Appearance > Accent color, --primary).
    Set via class, not an inline style prop, so WebView2's hashed style-src
    CSP doesn't drop it. richColors typed toasts keep their semantics. */
-.toaster {
+.toaster[data-sonner-toaster] {
+  /* Override Sonner's library default (999999999) with the shared tier. */
+  z-index: var(--layer-toast);
   --normal-bg: color-mix(in oklch, var(--popover) 92%, var(--primary));
   --normal-text: var(--popover-foreground);
   --normal-border: color-mix(in oklch, var(--border) 55%, var(--primary));
@@ -95,7 +97,14 @@
   --text-4xl: calc(var(--font-size-base) * 2.25);
 }
 
+/* Shared overlay contract. Portals escape panel stacking contexts; modal
+   descendants use React context (not DOM inheritance) to select the 90 tier. */
 :root {
+  --layer-panel: 40;
+  --layer-floating: 60;
+  --layer-modal: 80;
+  --layer-modal-floating: 90;
+  --layer-toast: 100;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

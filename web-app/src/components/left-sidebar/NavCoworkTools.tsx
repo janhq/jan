@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
-import { Box, SlidersHorizontal, type LucideIcon } from 'lucide-react'
+import { BookOpen, Box, type LucideIcon } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import {
-  SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
@@ -40,20 +39,20 @@ function ToolRow({ item }: { item: Item }) {
           ref={iconRef}
           icon={item.icon}
           preset={item.preset}
-          className="text-foreground/70"
+          className="size-4 shrink-0 text-foreground/70"
           size={16}
         />
-        <span>{item.title}</span>
+        <span className="min-w-0 truncate leading-5">{item.title}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   )
 }
 
 /**
- * Artifacts and Customize, the Cowork-only entries of the one sidebar. They show
+ * Artifacts and Skills, the Cowork-only entries of the one sidebar. They show
  * wherever Cowork is available and never replace the rest of the navigation.
  */
-export function NavCoworkTools() {
+export function NavCoworkTools({ section = 'customize' }: { section?: 'artifacts' | 'customize' }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [skillsOpen, setSkillsOpen] = useState(false)
@@ -68,22 +67,24 @@ export function NavCoworkTools() {
       onClick: () => navigate({ to: route.artifacts }),
     },
     {
-      title: t('common:customize'),
-      icon: SlidersHorizontal,
+      title: t('common:skills'),
+      icon: BookOpen,
       preset: 'sliders',
       testId: 'nav-customize',
       onClick: () => setSkillsOpen(true),
     },
   ]
 
+  const visibleItems = items.filter((item) => item.testId === `nav-${section}`)
+  // Both sections are rows in NavMain's menu, not nested menus.
   return (
     <>
-      <SidebarMenu>
-        {items.map((item) => (
-          <ToolRow key={item.title} item={item} />
-        ))}
-      </SidebarMenu>
-      <SkillsManagerDialog open={skillsOpen} onOpenChange={setSkillsOpen} />
+      {visibleItems.map((item) => (
+        <ToolRow key={item.title} item={item} />
+      ))}
+      {section === 'customize' && (
+        <SkillsManagerDialog open={skillsOpen} onOpenChange={setSkillsOpen} />
+      )}
     </>
   )
 }

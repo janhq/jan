@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 
 import { IconDownload } from '@tabler/icons-react'
@@ -45,10 +46,10 @@ const DialogAppUpdater = () => {
 
   return (
     <>
-      {appUpdateState.isUpdateAvailable && (
+      {appUpdateState.isUpdateAvailable && createPortal(
         <div
           className={cn(
-            'fixed z-50 bottom-3 right-3 bg-background flex items-center justify-center border rounded-lg shadow-md'
+            'fixed z-(--layer-floating) bottom-3 right-3 bg-background flex items-center justify-center border rounded-lg shadow-md'
           )}
         >
           <div className="px-2 py-4">
@@ -122,7 +123,8 @@ const DialogAppUpdater = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

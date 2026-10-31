@@ -79,7 +79,7 @@ const getNavMainItems = (
     onClick: onNewChat,
     testId: 'new-chat-button',
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -92,7 +92,7 @@ const getNavMainItems = (
     animatedIcon: BotIcon,
     onClick: onJanClaw,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -105,7 +105,7 @@ const getNavMainItems = (
     animatedIcon: FolderPlusIcon,
     onClick: onNewProject,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -118,7 +118,7 @@ const getNavMainItems = (
     animatedIcon: SearchIcon,
     onClick: onSearch,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90 gap-0">
+      <KbdGroup className="ml-auto shrink-0 scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
@@ -150,8 +150,8 @@ function NavMainItemWithAnimatedIcon({
 
   const content = (
     <>
-      <AnimatedIcon ref={iconRef} className="text-foreground/70" size={16} />
-      <span>{label}</span>
+      <AnimatedIcon ref={iconRef} className="size-4 shrink-0 text-foreground/70" size={16} />
+      <span className="min-w-0 truncate leading-5">{label}</span>
       {item.shortcut}
     </>
   )
@@ -172,7 +172,13 @@ function NavMainItemWithAnimatedIcon({
   )
 }
 
-export function NavMain() {
+export function NavMain({
+  afterSearch,
+  beforeSettings,
+}: {
+  afterSearch?: React.ReactNode
+  beforeSettings?: React.ReactNode
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { addFolder } = useThreadManagement()
@@ -207,11 +213,14 @@ export function NavMain() {
         {navMainItems.map((item) => {
           if (item.animatedIcon) {
             return (
-              <NavMainItemWithAnimatedIcon
-                key={item.title}
-                item={item}
-                label={t(item.title)}
-              />
+              <React.Fragment key={item.title}>
+                {item.title === 'common:settings' && beforeSettings}
+                <NavMainItemWithAnimatedIcon
+                  item={item}
+                  label={t(item.title)}
+                />
+                {item.title === 'common:search' && afterSearch}
+              </React.Fragment>
             )
           }
 
@@ -226,14 +235,14 @@ export function NavMain() {
               >
                 {item.url ? (
                   <Link to={item.url}>
-                    {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    {Icon && <Icon className="size-4 shrink-0 text-foreground/70" />}
+                    <span className="min-w-0 truncate leading-5">{t(item.title)}</span>
                     {item.shortcut}
                   </Link>
                 ) : (
                   <>
-                    {Icon && <Icon className="text-foreground/70" />}
-                    <span>{t(item.title)}</span>
+                    {Icon && <Icon className="size-4 shrink-0 text-foreground/70" />}
+                    <span className="min-w-0 truncate leading-5">{t(item.title)}</span>
                     {item.shortcut}
                   </>
                 )}

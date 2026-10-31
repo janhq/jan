@@ -159,7 +159,7 @@
     "scriptErrors_other": "The page reported {{count}} errors. First: {{message}}"
   },
   "changes": {
-    "title": "Agent changes",
+    "title": "Changes",
     "empty": "Files the agent writes or edits will show up here.",
     "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
   },
@@ -717,6 +717,12 @@
   "artifactsAll": "All",
   "artifactsEmpty": "Nothing produced yet. Artifacts from Cowork runs show up here.",
   "artifactsNoMatch": "No artifacts match.",
+  "artifactsLibraryDescription": "Files created across your conversations, all in one place.",
+  "artifactsLibraryFiles": "files",
+  "artifactsLibraryCount_one": "{{count}} file",
+  "artifactsLibraryCount_other": "{{count}} files",
+  "artifactsLibraryFilter": "Filter by file type",
+  "artifactsLibraryReset": "Clear filters",
   "artifactsSearch": "Search artifacts",
   "artifactsShowMore": "Show {{count}} more",
   "workspace": {
@@ -736,12 +742,32 @@
     "a11yWithFolder": "Project folder {{folder}}, attached with read and write access. Change or detach it.",
     "a11yNoFolder": "No project folder attached. Attach one."
   },
+  "overview": {
+    "title": "Conversation overview",
+    "resize": "Resize side panel",
+    "close": "Hide conversation overview",
+    "progress": "Progress",
+    "files": "Files",
+    "agents": "Agent overview",
+    "activity": "Activity",
+    "backgroundTasks": "Background tasks",
+    "monitorCount_one": "{{count}} monitor",
+    "monitorCount_other": "{{count}} monitors",
+    "noProgress": "Steps will appear as Jan works.",
+    "noFiles": "Files will appear here.",
+    "agentCount": "{{count}} agents"
+  },
   "homeMode": {
     "label": "Conversation type",
     "chat": "Chat",
     "cowork": "Cowork",
     "addFolder": "Add project or folder",
-    "removeFolder": "Remove folder",
+    "removeFolder": "Remove selection",
+    "addProject": "Add project",
+    "addToProject": "Add to a project",
+    "newProject": "New project",
+    "noProjects": "No projects yet",
+    "addFolderAction": "Add folder",
     "ideas": "Ideas for you"
   },
   "coworkEmpty": {

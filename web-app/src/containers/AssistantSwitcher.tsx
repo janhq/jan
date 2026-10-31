@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { IconChevronDown, IconUser } from '@tabler/icons-react'
+import { IconChevronDown } from '@tabler/icons-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { AssistantAvatar } from '@/components/AssistantAvatar'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
 import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -93,19 +93,11 @@ export function AssistantSwitcher({
               className="h-7 px-2 gap-1 min-w-0"
               aria-label="Switch assistant"
             >
-              {activeAssistant?.avatar ? (
-                <AvatarEmoji
-                  avatar={activeAssistant.avatar}
-                  imageClassName="size-4 object-contain"
-                  textClassName="text-sm"
-                />
-              ) : (
-                <IconUser size={14} className="text-muted-foreground" />
-              )}
-              <span className="text-sm font-medium truncate max-w-32">
+              <AssistantAvatar avatar={activeAssistant?.avatar} />
+              <span className="text-sm leading-5 font-medium truncate max-w-32">
                 {activeAssistant?.name ?? t('common:noAssistant')}
               </span>
-              <IconChevronDown size={14} className="text-muted-foreground" />
+              <IconChevronDown size={14} className="shrink-0 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

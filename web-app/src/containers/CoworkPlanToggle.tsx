@@ -1,4 +1,4 @@
-import { ListChecks } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -17,7 +17,8 @@ type Props = {
  * A pressed-state button, not a Switch: a Switch reads as a settings control,
  * and this is a mode flipped mid-conversation.
  *
- * Icon-only until it is on, then it grows a label. The composer's control row
+ * Icon-only in both states; active color communicates the enabled mode.
+ * The composer's control row
  * is a row of quiet ghost icons; an outlined pill sitting among them read as
  * bolted on, and a mode that is off has nothing to say. `text-primary` for the
  * on state is the row's own convention, borrowed from the web-search toggle.
@@ -30,8 +31,9 @@ export function CoworkPlanToggle({ planMode, onChange }: Props) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            type="button"
             variant="ghost"
-            size={planMode ? 'xs' : 'icon-xs'}
+            size="icon-xs"
             aria-pressed={planMode}
             aria-label={t('common:planMode.label')}
             onClick={() => onChange(!planMode)}
@@ -40,11 +42,7 @@ export function CoworkPlanToggle({ planMode, onChange }: Props) {
               planMode ? 'text-primary' : 'text-muted-foreground'
             )}
           >
-            <ListChecks
-              aria-hidden
-              className={cn('shrink-0', planMode ? 'size-3.5' : 'size-[18px]')}
-            />
-            {planMode && <span>{t('common:planMode.label')}</span>}
+            <ClipboardList aria-hidden className="size-[18px] shrink-0" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

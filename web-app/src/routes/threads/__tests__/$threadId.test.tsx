@@ -194,6 +194,7 @@ const h = vi.hoisted(() => {
 // -----------------------------------------------------------------------------
 
 vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: any) => <a>{children}</a>,
   createFileRoute: () => (config: any) => ({ ...config, id: '/threads/$threadId' }),
   useParams: () => ({ threadId: h.routeParams.threadId }),
   useSearch: () => ({ threadModel: undefined }),
@@ -582,10 +583,10 @@ describe('ThreadDetail route', () => {
     expect(result.threadModel).toBeUndefined()
   })
 
-  it('renders header, model dropdown, and chat input', () => {
+  it('renders conversation header and chat input without a header model picker', () => {
     renderComponent()
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('model-dropdown')).toHaveTextContent('gpt-x')
+    expect(screen.queryByTestId('model-dropdown')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
     expect(screen.getByTestId('chat-status')).toHaveTextContent('ready')
   })

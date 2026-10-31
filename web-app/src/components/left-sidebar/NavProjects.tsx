@@ -53,8 +53,8 @@ function ProjectItem({
           to="/project/$projectId"
           params={{ projectId: item.id }}
         >
-          <FolderIcon  className="text-foreground/70" size={16} />
-          <span>{item.name}</span>
+          <FolderIcon className="size-4 shrink-0 text-foreground/70" size={16} />
+          <span className="min-w-0 truncate leading-5">{item.name}</span>
         </Link>
       </SidebarMenuButton>
       <DropdownMenu>

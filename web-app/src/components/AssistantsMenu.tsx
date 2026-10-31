@@ -1,6 +1,5 @@
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
-import { IconUser } from '@tabler/icons-react'
+import { AssistantAvatar } from '@/components/AssistantAvatar'
 
 type AssistantMenuProps = {
   selectedAssistant: string | undefined
@@ -31,20 +30,12 @@ export function AssistantsMenu({
     <>
       {deletedAssistant && (
         <DropdownMenuItem className="bg-accent" disabled>
-          <div className="flex items-center gap-2 w-full">
-            {deletedAssistant.avatar ? (
-              <AvatarEmoji
-                avatar={deletedAssistant.avatar}
-                imageClassName="w-4 h-4 object-contain"
-                textClassName="text-sm"
-              />
-            ) : (
-              <IconUser size={18} className="text-muted-foreground" />
-            )}
-            <span>
+          <div className="flex min-w-0 w-full items-center gap-2 leading-5">
+            <AssistantAvatar avatar={deletedAssistant.avatar} />
+            <span className="min-w-0 flex-1 truncate">
               {deletedAssistant.name || 'Unnamed Assistant'} (deleted)
             </span>
-            <span className="ml-auto text-xs text-muted-foreground">✓</span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">✓</span>
           </div>
         </DropdownMenuItem>
       )}
@@ -57,11 +48,11 @@ export function AssistantsMenu({
           }
         }}
       >
-        <div className="flex items-center gap-2 w-full">
-          <span className="text-muted-foreground">—</span>
+        <div className="flex min-w-0 w-full items-center gap-2 leading-5">
+          <span className="flex size-4 shrink-0 items-center justify-center leading-none text-muted-foreground">—</span>
           <span>None</span>
           {noSelectedAssistant && (
-            <span className="ml-auto text-xs text-muted-foreground">✓</span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">✓</span>
           )}
         </div>
       </DropdownMenuItem>
@@ -82,15 +73,11 @@ export function AssistantsMenu({
                 }
               }}
             >
-              <div className="flex items-center gap-2 w-full">
-                <AvatarEmoji
-                  avatar={assistant.avatar}
-                  imageClassName="w-4 h-4 object-contain"
-                  textClassName="text-sm"
-                />
-                <span>{assistant.name || 'Unnamed Assistant'}</span>
+              <div className="flex min-w-0 w-full items-center gap-2 leading-5">
+                <AssistantAvatar avatar={assistant.avatar} />
+                <span className="min-w-0 flex-1 truncate">{assistant.name || 'Unnamed Assistant'}</span>
                 {isSelected && (
-                  <span className="ml-auto text-xs text-muted-foreground">
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                     ✓
                   </span>
                 )}

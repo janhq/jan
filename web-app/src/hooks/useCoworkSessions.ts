@@ -42,6 +42,8 @@ export type CoworkSession = {
   /** An attached project folder, mounted read-only. Writes always land in the
    * session's own sandbox, never here. */
   folder: string | null
+  /** Optional Jan project associated with this conversation. */
+  project?: { id: string; name: string; updated_at: number; assistantId?: string }
   turns: CoworkTurn[]
   /** The authoritative conversation, sent to the model each turn. */
   messages: UIMessage[]

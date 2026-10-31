@@ -2,6 +2,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useThreads } from '../useThreads'
 import { useChatSessions } from '@/stores/chat-session-store'
+import { useCoworkSessions } from '../useCoworkSessions'
+import { useAppState } from '../useAppState'
+import { createHandle, getRunHandle, abortRun } from '@/lib/coworkRunner'
+import { cleanupThreadWorkspace, cancelAgentThreadBash, stopAgentSessionMonitors } from '@/lib/agentTools'
+
+vi.mock('@/lib/agentTools', () => ({
+  cleanupThreadWorkspace: vi.fn(),
+  cancelAgentThreadBash: vi.fn(),
+  stopAgentSessionMonitors: vi.fn(),
+}))
 
 vi.mock('@/services/threads', () => ({
   createThread: vi.fn(),
@@ -26,6 +36,12 @@ vi.mock('fzf', () => ({
 const mockCreateThread = vi.fn()
 const mockDeleteThread = vi.fn()
 const mockUpdateThread = vi.fn()
+const mockFlushCoworkDeletes = vi.fn()
+
+vi.mock('@/lib/coworkSync', () => ({
+  startCoworkSync: async () => {},
+  flushCoworkDeletes: () => mockFlushCoworkDeletes(),
+}))
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
@@ -68,6 +84,9 @@ vi.mock('@/constants/chat', () => ({
 describe('useThreads - coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDeleteThread.mockResolvedValue(undefined)
+    mockFlushCoworkDeletes.mockResolvedValue(undefined)
+    useCoworkSessions.setState({ sessions: [], currentId: null })
     act(() => {
       useThreads.setState({
         threads: {},
@@ -359,7 +378,7 @@ describe('useThreads - coverage', () => {
     expect(result.current.currentThreadId).toBeUndefined()
   })
 
-  it('should delete all threads by project', () => {
+  it('should delete all threads by project', async () => {
     const { result } = renderHook(() => useThreads())
 
     act(() => {
@@ -370,13 +389,239 @@ describe('useThreads - coverage', () => {
       ])
     })
 
-    act(() => {
-      result.current.deleteAllThreadsByProject('p1')
+    await act(async () => {
+      await result.current.deleteAllThreadsByProject('p1')
     })
 
     expect(result.current.threads['t1']).toBeUndefined()
     expect(result.current.threads['t2']).toBeDefined()
     expect(result.current.threads['t3']).toBeDefined()
+  })
+
+  it('deletes mixed project chat and Cowork sessions, including sessions not yet mirrored', async () => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    const session = (id: string, projectId = 'p1') => ({
+      id, title: id, folder: null, turns: [], messages: [], updated: 1,
+      project: { ...project, id: projectId },
+    })
+    useCoworkSessions.setState({
+      sessions: [session('cowork'), session('pending'), session('other', 'p2')],
+      currentId: 'cowork',
+    })
+    useThreads.getState().setThreads([
+      { id: 'chat', title: 'Project chat', metadata: { project } },
+      { id: 'cowork', title: 'Project task', metadata: { mode: 'cowork', project } },
+      { id: 'other', title: 'Other task', metadata: { mode: 'cowork', project: { ...project, id: 'p2' } } },
+      { id: 'loose', title: 'Loose chat' },
+    ] as Thread[])
+    useThreads.getState().setCurrentThreadId('cowork')
+    const handle = createHandle('cowork', 'run')
+    const child = new AbortController()
+    handle.subagents.set('child', child)
+    const answer = vi.fn()
+    handle.pendingAsks.set('ask', answer)
+    const otherHandle = createHandle('other', 'other-run')
+
+    await useThreads.getState().deleteAllThreadsByProject('p1')
+
+    expect(useCoworkSessions.getState().sessions.map(s => s.id)).toEqual(['other'])
+    expect(useCoworkSessions.getState().currentId).toBe('other')
+    expect(Object.keys(useThreads.getState().threads)).toEqual(['other', 'loose'])
+    expect(useThreads.getState().currentThreadId).toBeUndefined()
+    expect(useThreads.getState().getFilteredThreads('Project')).toEqual([])
+    // Cowork persistence must be deleted by session sync, never by a competing writer.
+    expect(mockDeleteThread).toHaveBeenCalledExactlyOnceWith('chat')
+    expect(handle.outer.signal.aborted).toBe(true)
+    expect(handle.tools.signal.aborted).toBe(true)
+    expect(child.signal.aborted).toBe(true)
+    expect(answer).toHaveBeenCalledWith(null)
+    expect(getRunHandle('cowork')).toBeUndefined()
+    expect(cancelAgentThreadBash).toHaveBeenCalledWith('cowork')
+    expect(cancelAgentThreadBash).toHaveBeenCalledWith('pending')
+    expect(stopAgentSessionMonitors).toHaveBeenCalledWith('cowork')
+    expect(otherHandle.outer.signal.aborted).toBe(false)
+    // A late completion cannot recreate a removed session or schedule its persistence.
+    useCoworkSessions.getState().setMessages('cowork', [])
+    expect(useCoworkSessions.getState().sessions.map(s => s.id)).toEqual(['other'])
+    abortRun('other')
+  })
+
+  it.each(['p2', undefined])('uses the live session project %s instead of stale mirror p1', async (projectId) => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    useCoworkSessions.setState({ sessions: [{
+      id: 'moved', title: 'Moved', folder: null, turns: [], messages: [], updated: 1,
+      project: projectId ? { ...project, id: projectId } : undefined,
+    }] })
+    useThreads.getState().setThreads([
+      { id: 'moved', title: 'Moved', metadata: { mode: 'cowork', project } },
+    ] as Thread[])
+    useThreads.getState().setCurrentThreadId('moved')
+
+    await useThreads.getState().deleteAllThreadsByProject('p1')
+
+    expect(useCoworkSessions.getState().sessions.map(s => s.id)).toEqual(['moved'])
+    expect(useThreads.getState().threads.moved).toBeDefined()
+    expect(useThreads.getState().currentThreadId).toBe('moved')
+    expect(mockDeleteThread).not.toHaveBeenCalled()
+
+    if (projectId) {
+      await useThreads.getState().deleteAllThreadsByProject(projectId)
+      expect(useCoworkSessions.getState().sessions).toEqual([])
+      expect(useThreads.getState().threads.moved).toBeUndefined()
+    }
+  })
+
+  it.each(['Chat', 'Cowork'])('waits for delayed %s durable deletion before pruning state', async (mode) => {
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    const thread = { id: 'delayed', title: 'Delayed', metadata: { project } } as Thread
+    if (mode === 'Cowork') {
+      thread.metadata = { ...thread.metadata, mode: 'cowork' }
+      useCoworkSessions.setState({ sessions: [{
+        id: thread.id, title: thread.title!, folder: null, turns: [], messages: [], updated: 1, project,
+      }] })
+      mockFlushCoworkDeletes.mockReturnValueOnce(pending)
+    } else {
+      mockDeleteThread.mockReturnValueOnce(pending)
+    }
+    useThreads.getState().setThreads([thread])
+    useThreads.getState().setCurrentThreadId(thread.id)
+    let completed = false
+    const deleting = useThreads.getState().deleteAllThreadsByProject('p1').then(() => { completed = true })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    expect(useThreads.getState().threads.delayed).toBeDefined()
+    expect(useThreads.getState().currentThreadId).toBe('delayed')
+    finish()
+    await deleting
+    expect(useThreads.getState().threads.delayed).toBeUndefined()
+    expect(useThreads.getState().currentThreadId).toBeUndefined()
+  })
+
+  it.each(['Chat', 'Cowork'])('propagates rejected %s deletion without pruning thread state', async (mode) => {
+    const failure = new Error('durable delete failed')
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    const thread = { id: 'failed', title: 'Failed', metadata: { project } } as Thread
+    if (mode === 'Cowork') {
+      thread.metadata = { ...thread.metadata, mode: 'cowork' }
+      useCoworkSessions.setState({ sessions: [{
+        id: thread.id, title: thread.title!, folder: null, turns: [], messages: [], updated: 1, project,
+      }] })
+      mockFlushCoworkDeletes.mockRejectedValueOnce(failure)
+    } else {
+      mockDeleteThread.mockRejectedValueOnce(failure)
+    }
+    useThreads.getState().setThreads([thread])
+    useThreads.getState().setCurrentThreadId(thread.id)
+
+    await expect(useThreads.getState().deleteAllThreadsByProject('p1')).rejects.toMatchObject({ errors: [failure] })
+
+    expect(useThreads.getState().threads.failed).toEqual(thread)
+    expect(useThreads.getState().currentThreadId).toBe('failed')
+    expect(useThreads.getState().getFilteredThreads('Failed')).toHaveLength(1)
+  })
+
+  it('deletes both same-project records when a collision placeholder shares a chat ID', async () => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    useCoworkSessions.setState({ sessions: [{
+      id: 'collision', title: 'Legacy task', folder: null, turns: [], messages: [], updated: 1,
+      project, unavailable: 'id-collision',
+    }] })
+    useThreads.getState().setThreads([
+      { id: 'collision', title: 'Real chat', metadata: { project } },
+    ] as Thread[])
+    useThreads.getState().setCurrentThreadId('collision')
+
+    await useThreads.getState().deleteAllThreadsByProject('p1')
+
+    expect(mockDeleteThread).toHaveBeenCalledExactlyOnceWith('collision')
+    expect(mockFlushCoworkDeletes).toHaveBeenCalledOnce()
+    expect(useCoworkSessions.getState().sessions).toEqual([])
+    expect(useThreads.getState().threads.collision).toBeUndefined()
+    expect(useThreads.getState().currentThreadId).toBeUndefined()
+    expect(cleanupThreadWorkspace).toHaveBeenCalledWith('collision', 'thread')
+    expect(cancelAgentThreadBash).not.toHaveBeenCalled()
+  })
+
+  it('reconciles the first chat before a second chat rejects and keeps failed state retryable', async () => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    const stops = { first: vi.fn(), second: vi.fn() }
+    useThreads.getState().setThreads(['first', 'second'].map(id => ({
+      id, title: id, metadata: { project },
+    })) as Thread[])
+    useThreads.getState().setCurrentThreadId('first')
+    for (const id of ['first', 'second'] as const) {
+      useChatSessions.getState().ensureSession(id, {} as never,
+        () => ({ status: 'streaming', stop: stops[id] }) as never)
+      useAppState.getState().setThreadErrorMessage(id, 'saved error')
+    }
+    const failure = new Error('second deletion failed')
+    mockDeleteThread.mockResolvedValueOnce(undefined).mockImplementationOnce(async () => {
+      // The first chat must already be stopped and absent while B is pending.
+      expect(useThreads.getState().threads.first).toBeUndefined()
+      expect(stops.first).toHaveBeenCalledOnce()
+      expect(useAppState.getState().errorMessages.first).toBeUndefined()
+      throw failure
+    })
+
+    await expect(useThreads.getState().deleteAllThreadsByProject('p1')).rejects.toMatchObject({
+      errors: [failure],
+    })
+
+    expect(Object.keys(useThreads.getState().threads)).toEqual(['second'])
+    expect(useThreads.getState().currentThreadId).toBeUndefined()
+    expect(useThreads.getState().getFilteredThreads('first')).toEqual([])
+    expect(useThreads.getState().getFilteredThreads('second')).toHaveLength(1)
+    expect(stops.second).not.toHaveBeenCalled()
+    expect(useChatSessions.getState().sessions.second).toBeDefined()
+    expect(useAppState.getState().errorMessages.second).toBe('saved error')
+    expect(cleanupThreadWorkspace).toHaveBeenCalledExactlyOnceWith('first', 'thread')
+    useChatSessions.getState().removeSession('second')
+  })
+
+  it('keeps a successful chat reconciled when later Cowork persistence fails', async () => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    useThreads.getState().setThreads([
+      { id: 'chat', title: 'Chat', metadata: { project } },
+      { id: 'task', title: 'Task', metadata: { project, mode: 'cowork' } },
+    ] as Thread[])
+    useCoworkSessions.setState({ sessions: [{
+      id: 'task', title: 'Task', folder: null, turns: [], messages: [], updated: 1, project,
+    }] })
+    const failure = new Error('Cowork delete failed')
+    mockFlushCoworkDeletes.mockRejectedValueOnce(failure)
+
+    await expect(useThreads.getState().deleteAllThreadsByProject('p1')).rejects.toMatchObject({ errors: [failure] })
+
+    expect(useThreads.getState().threads.chat).toBeUndefined()
+    expect(useThreads.getState().threads.task).toBeDefined()
+    expect(useThreads.getState().getFilteredThreads('Chat')).toEqual([])
+    expect(cleanupThreadWorkspace).toHaveBeenCalledExactlyOnceWith('chat', 'thread')
+  })
+
+  it('reconciles the first Cowork deletion before the second flush fails', async () => {
+    const project = { id: 'p1', name: 'Project', updated_at: 1 }
+    const sessions = ['done', 'failed'].map(id => ({
+      id, title: id, folder: null, turns: [], messages: [], updated: 1, project,
+    }))
+    useCoworkSessions.setState({ sessions })
+    useThreads.getState().setThreads(sessions.map(({ id, title }) => ({
+      id, title, metadata: { project, mode: 'cowork' },
+    })) as Thread[])
+    const failure = new Error('second Cowork deletion failed')
+    mockFlushCoworkDeletes.mockResolvedValueOnce(undefined).mockImplementationOnce(async () => {
+      expect(useThreads.getState().threads.done).toBeUndefined()
+      // Real sync restores the failed session snapshot before rejecting.
+      useCoworkSessions.setState({ sessions: [sessions[1]] })
+      throw failure
+    })
+
+    await expect(useThreads.getState().deleteAllThreadsByProject('p1')).rejects.toMatchObject({ errors: [failure] })
+
+    expect(Object.keys(useThreads.getState().threads)).toEqual(['failed'])
+    expect(useCoworkSessions.getState().sessions.map(s => s.id)).toEqual(['failed'])
+    expect(mockDeleteThread).not.toHaveBeenCalled()
   })
 
   it('should get filtered threads with search term', () => {
