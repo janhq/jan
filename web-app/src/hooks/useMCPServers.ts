@@ -72,6 +72,7 @@ type MCPServerStoreState = {
   setServers: (servers: MCPServers) => void
   setSettings: (settings: MCPSettings) => void
   updateSettings: (partial: Partial<MCPSettings>) => void
+  saveSettings: (partial: Partial<MCPSettings>) => Promise<void>
   syncServers: () => Promise<void>
   syncServersAndRestart: () => Promise<void>
 }
@@ -162,6 +163,15 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
         deletedServerKeys: [...state.deletedServerKeys, key],
       }
     }),
+  // Commit settings to the UI only after persistence succeeds. A failed write
+  // must remain retryable, rather than appearing saved in the store.
+  saveSettings: async (partial) => {
+    const settings = { ...get().settings, ...partial }
+    await getServiceHub().mcp().updateMCPConfig(
+      JSON.stringify({ mcpServers: get().mcpServers, mcpSettings: settings })
+    )
+    set({ settings })
+  },
   syncServers: async () => {
     const { mcpServers, settings } = get()
     await getServiceHub().mcp().updateMCPConfig(

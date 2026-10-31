@@ -1,3 +1,4 @@
+import { useRef, type KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { HomeMode } from '@/hooks/useHomeMode'
@@ -15,9 +16,40 @@ type Props = {
 export function HomeModeToggle({ mode, onChange }: Props) {
   const { t } = useTranslation()
   const options: HomeMode[] = ['chat', 'cowork']
+  const buttons = useRef<(HTMLButtonElement | null)[]>([])
+
+  const handleKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    let nextIndex: number
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextIndex = (index + 1) % options.length
+        break
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextIndex = (index - 1 + options.length) % options.length
+        break
+      case 'Home':
+        nextIndex = 0
+        break
+      case 'End':
+        nextIndex = options.length - 1
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    onChange(options[nextIndex])
+    buttons.current[nextIndex]?.focus()
+  }
+
   return (
     <div
       role="radiogroup"
+      aria-orientation="horizontal"
       aria-label={t('common:homeMode.label')}
       data-testid="home-mode-toggle"
       className="relative isolate grid h-9 w-[164px] @max-[520px]/composer:w-32 @max-[360px]/composer:w-28 shrink-0 grid-cols-2 items-center rounded-full bg-muted p-0.5 dark:bg-white/[0.04]"
@@ -29,7 +61,7 @@ export function HomeModeToggle({ mode, onChange }: Props) {
           mode === 'cowork' && 'translate-x-full'
         )}
       />
-      {options.map((value) => {
+      {options.map((value, index) => {
         const active = mode === value
         return (
           <button
@@ -37,6 +69,11 @@ export function HomeModeToggle({ mode, onChange }: Props) {
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={active ? 0 : -1}
+            ref={(button) => {
+              buttons.current[index] = button
+            }}
+            onKeyDown={(event) => handleKeyDown(event, index)}
             data-testid={`home-mode-${value}`}
             onClick={() => onChange(value)}
             className={cn(

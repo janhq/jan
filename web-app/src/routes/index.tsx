@@ -158,6 +158,7 @@ function Index() {
               projectAssistantId={mode === 'chat' ? project?.assistantId : undefined}
               onSubmit={mode === 'cowork' ? startCowork : undefined}
               scopeKey={mode === 'cowork' ? 'home-cowork' : undefined}
+              supportsAssistants={mode === 'chat'}
               ownsToolSet={mode === 'cowork' ? false : undefined}
               menuWorkspace={(
                 <CoworkComposerMenu

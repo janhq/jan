@@ -1,3 +1,4 @@
+import { quiesceCoworkRuns, resumeCoworkAfterPreventedClose, __resetCoworkRunCloseForTests } from '@/hooks/useCoworkRun'
 import { useCoworkSessions, type CoworkSession } from '@/hooks/useCoworkSessions'
 import { useThreads } from '@/hooks/useThreads'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -201,13 +202,23 @@ async function doStart() {
     window.addEventListener('beforeunload', () => { void Promise.all([p.flush(), flushCoworkDeletes()]).catch((error) => console.warn('Cowork unload flush failed:', error)) })
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      await getCurrentWindow().onCloseRequested(async () => {
+      await getCurrentWindow().onCloseRequested(async (event) => {
         // Awaiting here holds the close until every queued and in-flight write
-        // has settled; a failure must not trap the user in an unclosable window.
+        // has settled. On failure keep the window (and unsaved state) alive;
+        // another close request can retry storage rather than lose the run.
         try {
-          await p.flush()
-          await flushCoworkDeletes()
+          // A live run has not committed its question/transcript/wire history
+          // yet. Stop it and await its final commit before draining storage.
+          // Still flush other sessions if one participant fails to settle cleanly.
+          try {
+            await quiesceCoworkRuns()
+          } finally {
+            await p.flush()
+            await flushCoworkDeletes()
+          }
         } catch (e) {
+          event.preventDefault()
+          resumeCoworkAfterPreventedClose()
           console.warn('[cowork] flush on close failed:', e)
         }
       })
@@ -219,6 +230,7 @@ async function doStart() {
 
 /** Test seam: forget all module state. */
 export function __resetCoworkSyncForTests() {
+  __resetCoworkRunCloseForTests()
   unsubscribe?.()
   unsubscribe = null
   persistence = null

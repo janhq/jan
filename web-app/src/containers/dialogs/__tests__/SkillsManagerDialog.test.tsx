@@ -8,9 +8,25 @@ const mocks = vi.hoisted(() => ({
   currentId: null as string | null,
   skills: [] as { name: string; description?: string; origin?: string }[],
   read: vi.fn(), write: vi.fn(), remove: vi.fn(), hubList: vi.fn(), hubImport: vi.fn(),
-  success: vi.fn(), error: vi.fn(),
+  success: vi.fn(), error: vi.fn(), scope: vi.fn(),
+  writeDestination: vi.fn(), importDestination: vi.fn(),
 }))
-vi.mock('@/hooks/useSkills', () => ({ useSkills: () => mocks }))
+vi.mock('@/hooks/useSkills', () => ({
+  useSkills: (folder: string | null) => {
+    mocks.scope(folder)
+    return {
+      ...mocks,
+      write: (...args: unknown[]) => {
+        mocks.writeDestination(folder)
+        return mocks.write(...args)
+      },
+      hubImport: (...args: unknown[]) => {
+        mocks.importDestination(folder)
+        return mocks.hubImport(...args)
+      },
+    }
+  },
+}))
 vi.mock('@/hooks/useCoworkSessions', () => ({
   useCoworkSessions: (selector: (state: unknown) => unknown) => selector(mocks),
 }))
@@ -57,7 +73,7 @@ describe('SkillsManagerDialog', () => {
     fireEvent.change(name, { target: { value: ' writing ' } })
     fireEvent.change(content, { target: { value: 'Write clearly' } })
     click('common:skillSave')
-    await waitFor(() => expect(mocks.write).toHaveBeenCalledWith('writing', 'Write clearly'))
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledWith('writing', 'Write clearly', true))
     await waitFor(() => expect(name).toBeDisabled())
     click('common:cancel')
     expect(screen.getByText('common:skillsEmpty')).toBeVisible()
@@ -85,7 +101,7 @@ describe('SkillsManagerDialog', () => {
     expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toBeDisabled()
     fireEvent.change(content, { target: { value: 'Updated instructions' } })
     click('common:skillSave')
-    await waitFor(() => expect(mocks.write).toHaveBeenCalledWith('writing', 'Updated instructions'))
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledWith('writing', 'Updated instructions', false))
     click('common:skillDelete: writing')
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('writing'))
     await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument())
@@ -111,76 +127,180 @@ describe('SkillsManagerDialog', () => {
   })
 })
 
-// Scope changes must replace the owner of async callbacks, not just clear the
-// visible text: a deferred read can otherwise restore the old scope's draft.
-describe('SkillsManagerDialog scope isolation', () => {
-  const switchFolder = (folder: string | null) => {
-    mocks.sessions = [{ id: 'current', folder }]
-    mocks.currentId = 'current'
-  }
+const changeScope = (value: string) => fireEvent.change(screen.getByRole('combobox'), { target: { value } })
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => { resolve = r })
+  return { promise, resolve }
+}
 
-  it('resets drafts on global/folder changes, but preserves them within the same folder and on reopen', () => {
+describe('SkillsManagerDialog scope and async isolation', () => {
+  beforeEach(() => {
+    mocks.sessions = [{ id: 'current', folder: '/a' }]
+    mocks.currentId = 'current'
+  })
+
+  it('defaults to Global after folder Cowork, always offers Global and freezes context while open', () => {
     const view = show()
-    click('common:skillNew')
-    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' }), { target: { value: 'Global draft' } })
-    switchFolder('/a')
+    expect(screen.getByRole('combobox')).toHaveValue('')
+    expect(mocks.scope).toHaveBeenLastCalledWith(null)
+    changeScope('/a')
+    expect(mocks.scope).toHaveBeenLastCalledWith('/a')
+    mocks.sessions = [{ id: 'current', folder: '/b' }]
     view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
+    expect(screen.getByRole('combobox')).toHaveValue('/a')
+    changeScope('')
+    expect(mocks.scope).toHaveBeenLastCalledWith(null)
+    expect(screen.getByRole('option', { name: 'common:skillOriginGlobal' })).toBeVisible()
+  })
+
+  it.each(['/b', null])('resets an unavailable closed scope to Global when context becomes %s', async (nextFolder) => {
+    const view = show()
+    changeScope('/a')
+    click('common:skillNew')
+    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' }), { target: { value: 'Old folder draft' } })
+    view.rerender(<SkillsManagerDialog open={false} onOpenChange={vi.fn()} />)
+    mocks.sessions = [{ id: 'current', folder: nextFolder }]
+    view.rerender(<SkillsManagerDialog open={false} onOpenChange={vi.fn()} />)
+    expect(mocks.scope).toHaveBeenLastCalledWith(null)
+    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
+    expect(screen.getByRole('combobox')).toHaveValue('')
+    expect(screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(nextFolder ? ['', nextFolder] : [''])
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     click('common:skillNew')
-    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' }), { target: { value: 'Folder draft' } })
-    mocks.sessions.push({ id: 'same-folder', folder: '/a' })
-    mocks.currentId = 'same-folder'
+    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' }), { target: { value: 'global-draft' } })
+    click('common:skillSave')
+    await waitFor(() => expect(mocks.write).toHaveBeenCalled())
+    expect(mocks.writeDestination).toHaveBeenLastCalledWith(null)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'common:skillHubImport' })).toBeEnabled())
+    click('common:skillHubImport')
+    await screen.findByText('Research helper')
+    click('common:skillImport')
+    await waitFor(() => expect(mocks.hubImport).toHaveBeenCalledWith('research'))
+    expect(mocks.importDestination).toHaveBeenLastCalledWith(null)
+  })
+
+  it('preserves the selected scope and draft across a same-context external close', () => {
+    const view = show()
+    changeScope('/a')
+    click('common:skillNew')
+    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' }), { target: { value: 'Same folder draft' } })
     view.rerender(<SkillsManagerDialog open={false} onOpenChange={vi.fn()} />)
     view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
-    expect(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' })).toHaveValue('Folder draft')
-    switchFolder('/b')
-    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveValue('/a')
+    expect(screen.getByDisplayValue('Same folder draft')).toBeVisible()
+    expect(mocks.scope).toHaveBeenLastCalledWith('/a')
+  })
+
+  it('guards a dirty scope switch and resets the draft only after discard', () => {
+    show()
     click('common:skillNew')
-    switchFolder(null)
-    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' }), { target: { value: 'Draft' } })
+    changeScope('/a')
+    expect(screen.getByText('common:skillsDiscardTitle')).toBeVisible()
+    const buttons = screen.getAllByRole('button', { name: 'common:cancel' })
+    fireEvent.click(buttons[buttons.length - 1])
+    expect(screen.getByRole('combobox')).toHaveValue('')
+    expect(screen.getByDisplayValue('Draft')).toBeVisible()
+    changeScope('/a')
+    click('common:skillsDiscard')
+    expect(screen.getByRole('combobox')).toHaveValue('/a')
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('ignores an old-folder read even after switching away and back', async () => {
-    let resolveRead!: (value: string) => void
-    mocks.read.mockReturnValueOnce(new Promise<string>((resolve) => { resolveRead = resolve }))
-    mocks.skills = [{ name: 'writing' }]
-    switchFolder('/a')
+  it('ignores a late A read after B is selected', async () => {
+    const a = deferred<string>()
+    mocks.skills = [{ name: 'A' }, { name: 'B' }]
+    mocks.read.mockReturnValueOnce(a.promise).mockResolvedValueOnce('B body')
+    show()
+    click('A')
+    click('B')
+    expect(await screen.findByDisplayValue('B body')).toBeVisible()
+    await act(async () => { a.resolve('A body') })
+    expect(screen.getByDisplayValue('B body')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toHaveValue('B')
+  })
+
+  it.each(['new', 'cancel'])('ignores a late read after %s', async (destination) => {
+    const a = deferred<string>()
+    mocks.skills = [{ name: 'A' }, { name: 'B' }]
     const view = show()
-    click('writing common:skillOriginGlobal')
-    switchFolder('/b')
-    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
-    switchFolder('/a')
-    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
+    if (destination === 'cancel') {
+      click('B')
+      await screen.findByDisplayValue('Existing instructions')
+    }
+    mocks.read.mockReturnValueOnce(a.promise)
+    click('A')
+    if (destination === 'new') click('common:skillNew')
+    else click('common:cancel')
+    await act(async () => { a.resolve('A body') })
+    expect(screen.queryByDisplayValue('A body')).not.toBeInTheDocument()
+    if (destination === 'new') expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toBeEnabled()
+    else expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    view.unmount()
+  })
+
+  it('locks navigation, scope and editing while save is pending', async () => {
+    const save = deferred<void>()
+    mocks.skills = [{ name: 'A' }, { name: 'B' }]
+    mocks.write.mockReturnValueOnce(save.promise)
+    show()
+    click('A')
+    await screen.findByDisplayValue('Existing instructions')
+    click('common:skillSave')
+    expect(screen.getByRole('combobox')).toBeDisabled()
+    for (const name of ['B', 'common:skillNew', 'common:skillHubImport', 'common:cancel']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled()
+      click(name)
+    }
+    expect(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' })).toBeDisabled()
+    await act(async () => { save.resolve() })
+    expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toHaveValue('A')
+    expect(mocks.read).toHaveBeenCalledTimes(1)
+    expect(mocks.write).toHaveBeenCalledWith('A', 'Existing instructions', false)
+  })
+
+  it('guards dirty New navigation and discards only after explicit confirmation', async () => {
+    mocks.skills = [{ name: 'A' }]
+    show()
+    click('A')
+    const content = await screen.findByDisplayValue('Existing instructions')
+    fireEvent.change(content, { target: { value: 'Unsaved A' } })
     click('common:skillNew')
-    await act(async () => { resolveRead('Old scope instructions') })
-    expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toBeEnabled()
-    expect(screen.getByRole('textbox', { name: 'common:skillContentPlaceholder' })).not.toHaveValue('Old scope instructions')
+    expect(screen.getByText('common:skillsDiscardTitle')).toBeVisible()
+    click('common:skillsDiscard')
+    expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toHaveValue('')
+    expect(screen.queryByDisplayValue('Unsaved A')).not.toBeInTheDocument()
     expect(mocks.write).not.toHaveBeenCalled()
   })
 
-  it('discards old hub loads and resets an in-flight import on scope change', async () => {
-    let resolveList!: (value: { name: string; description: string }[]) => void
-    mocks.hubList.mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }))
+  it('cannot restore a saved selection after an external close and reopen', async () => {
+    const save = deferred<void>()
+    mocks.skills = [{ name: 'A' }, { name: 'B' }]
+    mocks.write.mockReturnValueOnce(save.promise)
     const view = show()
-    click('common:skillHubImport')
-    switchFolder('/a')
+    click('A')
+    await screen.findByDisplayValue('Existing instructions')
+    click('common:skillSave')
+    view.rerender(<SkillsManagerDialog open={false} onOpenChange={vi.fn()} />)
     view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
-    expect(screen.queryByText('common:skillHubTitle')).not.toBeInTheDocument()
-    await act(async () => { resolveList([{ name: 'stale', description: 'Old hub result' }]) })
-    click('common:skillHubImport')
-    expect(await screen.findByText('Research helper')).toBeVisible()
-    expect(screen.queryByText('Old hub result')).not.toBeInTheDocument()
-    let resolveImport!: () => void
-    mocks.hubImport.mockReturnValueOnce(new Promise<void>((resolve) => { resolveImport = resolve }))
-    click('common:skillImport')
-    expect(screen.getByRole('button', { name: 'common:skillImport' })).toBeDisabled()
-    switchFolder('/b')
-    view.rerender(<SkillsManagerDialog open onOpenChange={vi.fn()} />)
-    click('common:skillHubImport')
-    expect(await screen.findByRole('button', { name: 'common:skillImport' })).toBeEnabled()
-    await act(async () => { resolveImport() })
-    expect(screen.getByRole('button', { name: 'common:skillImport' })).toBeEnabled()
+    await act(async () => { save.resolve() })
+    click('B')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toHaveValue('B'))
+    expect(mocks.success).not.toHaveBeenCalled()
+  })
+
+  it('isolates old-scope reads when switching away and back', async () => {
+    const a = deferred<string>()
+    mocks.skills = [{ name: 'A' }]
+    mocks.read.mockReturnValueOnce(a.promise)
+    show()
+    click('A')
+    changeScope('/a')
+    changeScope('')
+    click('common:skillNew')
+    await act(async () => { a.resolve('Old scope') })
+    expect(screen.queryByDisplayValue('Old scope')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'common:skillNamePlaceholder' })).toBeEnabled()
   })
 })

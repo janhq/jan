@@ -25,7 +25,7 @@ interface AddEditAssistantProps {
   onOpenChange: (open: boolean) => void
   editingKey: string | null
   initialData?: Assistant
-  onSave: (assistant: Assistant) => void
+  onSave: (assistant: Assistant) => Promise<void> | void
 }
 
 export default function AddEditAssistant({
@@ -58,7 +58,9 @@ export default function AddEditAssistant({
   const emojiPickerRef = useRef<HTMLDivElement>(null)
   const emojiPickerTriggerRef = useRef<HTMLDivElement>(null)
   const [nameError, setNameError] = useState<string | null>(null)
-  // const [toolStepsInput, setToolStepsInput] = useState('20')
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Handle click outside emoji picker or trigger
   useEffect(() => {
@@ -84,6 +86,8 @@ export default function AddEditAssistant({
 
   // Reset form when modal opens/closes or editing key changes
   useEffect(() => {
+    setSaveError(null)
+    setNameError(null)
     if (open && editingKey && initialData) {
       setAvatar(initialData.avatar)
       setName(initialData.name)
@@ -141,7 +145,8 @@ export default function AddEditAssistant({
     })
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (savingRef.current) return
     if (!name.trim()) {
       setNameError(t('assistants:nameRequired'))
       return
@@ -156,15 +161,27 @@ export default function AddEditAssistant({
       instructions,
       parameters: params,
     }
-    onSave(assistant)
-    onOpenChange(false)
-    resetForm()
+    savingRef.current = true
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onSave(assistant)
+      onOpenChange(false)
+      resetForm()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('common:error'))
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   const { t } = useTranslation()
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!savingRef.current) onOpenChange(nextOpen)
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
@@ -173,7 +190,7 @@ export default function AddEditAssistant({
               : t('assistants:addAssistant')}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
+        <fieldset disabled={saving} className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative">
               <label className="text-sm mb-2 inline-block">
@@ -285,10 +302,11 @@ export default function AddEditAssistant({
               onRemoveMany={removeManyParams}
             />
           </div>
-        </div>
+        </fieldset>
+        {saveError && <div role="alert" className="text-sm text-destructive">{saveError}</div>}
 
         <DialogFooter>
-          <Button onClick={handleSave}>{t('assistants:save')}</Button>
+          <Button onClick={handleSave} disabled={saving}>{t('assistants:save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

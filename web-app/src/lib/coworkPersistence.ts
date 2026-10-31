@@ -235,7 +235,7 @@ export type CoworkPersistence = {
   /** Seed the known on-disk thread records after hydration. */
   adopt(threads: Json[]): void
   isPersisted(id: string): boolean
-  /** Resolves once every queued and in-flight write has settled. */
+  /** Drains queued/in-flight work; rejects if writes remain after bounded retries. */
   flush(): Promise<void>
 }
 
@@ -487,19 +487,25 @@ export function createCoworkPersistence(
       // Each call makes bounded attempts; storage failure never spins forever.
       await Promise.all([...pendingRollbacks].map((id) => rollbackDeletion(id)))
       await deletionJournalChain
-      for (let pass = 0; pass < 3 && dirty.size > 0; pass++) {
+      for (let pass = 0; pass < 3; pass++) {
         for (const id of [...dirty]) {
           clearTimer(id)
           enqueue(id)
         }
+        // Include writes already in flight even when they temporarily cleared
+        // their dirty flag. Failures re-mark it before the next pass.
         await Promise.all([...chains.values()])
+        if (currentIdTimer) {
+          clearTimeout(currentIdTimer)
+          currentIdTimer = null
+        }
+        await enqueueCurrentId()
+        if (dirty.size === 0 && !currentIdDirty) return
       }
-      await Promise.all([...chains.values()])
-      if (currentIdTimer) {
-        clearTimeout(currentIdTimer)
-        currentIdTimer = null
-      }
-      await enqueueCurrentId()
+      // Keep snapshots, dirty flags and session retry timers intact: a later
+      // flush (or background retry) must be able to recover without a new edit.
+      const pending = [...dirty, ...(currentIdDirty ? ['current-id'] : [])]
+      throw new Error(`Cowork persistence flush failed; pending writes: ${pending.join(', ')}`)
     },
   }
 }

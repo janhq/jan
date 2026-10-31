@@ -48,19 +48,19 @@ function AssistantContent() {
     setDeleteConfirmOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deletingId) {
-      deleteAssistant(deletingId)
+      await deleteAssistant(deletingId)
       setDeleteConfirmOpen(false)
       setDeletingId(null)
     }
   }
 
-  const handleSave = (assistant: Assistant) => {
+  const handleSave = async (assistant: Assistant) => {
     if (editingKey) {
-      updateAssistant(assistant)
+      await updateAssistant(assistant)
     } else {
-      addAssistant(assistant)
+      await addAssistant(assistant)
     }
     setOpen(false)
     setEditingKey(null)

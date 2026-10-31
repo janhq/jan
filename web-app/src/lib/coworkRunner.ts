@@ -217,7 +217,8 @@ export type StreamSink = {
  */
 export async function consumeStep(
   stream: ReadableStream<UIMessageChunk>,
-  sink: StreamSink
+  sink: StreamSink,
+  signal?: AbortSignal
 ): Promise<StepResult> {
   const reader = stream.getReader()
   const result: StepResult = {
@@ -275,6 +276,12 @@ export async function consumeStep(
           break
       }
     }
+  } catch (error) {
+    // An aborted fetch commonly rejects reader.read() rather than emitting an
+    // abort chunk. Return the accumulated step so the loop commits the partial
+    // response to wire history, not just the on-screen streaming transcript.
+    if (!isAbortLike(error, signal)) throw error
+    result.aborted = true
   } finally {
     reader.releaseLock()
   }
@@ -489,7 +496,7 @@ export async function runTurn(opts: {
       }
       try {
         const stream = await deps.sendStep([...messages], signal)
-        result = await consumeStep(stream, sink)
+        result = await consumeStep(stream, sink, signal)
       } catch (e) {
         if (isAbortLike(e, signal)) {
           return {

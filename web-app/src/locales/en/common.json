@@ -824,5 +824,10 @@
   "askRecommended": "Recommended",
   "askSelectedCount": "{{count}} selected",
   "askSomethingElse": "Something else",
-  "submit": "Submit"
+  "submit": "Submit",
+  "skillsScopeLabel": "Scope",
+  "skillsDestination": "New skills and hub imports are saved to: {{destination}}",
+  "skillsDiscardTitle": "Discard unsaved changes?",
+  "skillsDiscardDescription": "Your unsaved skill changes will be lost.",
+  "skillsDiscard": "Discard changes"
 }

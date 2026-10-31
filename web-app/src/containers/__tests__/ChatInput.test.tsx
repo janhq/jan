@@ -102,15 +102,17 @@ vi.mock('@/hooks/useTokensCount', () => ({
   }),
 }))
 
+let assistantsLoading = false
+let assistantOptions = [
+  { id: 'a1', name: 'Global assistant', avatar: '' },
+  { id: 'a2', name: 'Project assistant', avatar: '' },
+]
 vi.mock('@/hooks/useAssistant', () => ({
   useAssistant: () => ({
-    loading: false,
+    loading: assistantsLoading,
     currentAssistant: { id: 'a1', name: 'Global assistant', avatar: '' },
     setCurrentAssistant: vi.fn(),
-    assistants: [
-      { id: 'a1', name: 'Global assistant', avatar: '' },
-      { id: 'a2', name: 'Project assistant', avatar: '' },
-    ],
+    assistants: assistantOptions,
   }),
 }))
 
@@ -181,6 +183,7 @@ vi.mock('@/hooks/useChatAttachments', () => ({
   ),
 }))
 
+let browserOverrides = {}
 vi.mock('@/hooks/useJanBrowserExtension', () => ({
   useJanBrowserExtension: () => ({
     hasConfig: false,
@@ -189,6 +192,7 @@ vi.mock('@/hooks/useJanBrowserExtension', () => ({
     dialogOpen: false,
     dialogState: null,
     toggleBrowser: vi.fn(),
+    ...browserOverrides,
     handleCancel: vi.fn(),
     setDialogOpen: vi.fn(),
   }),
@@ -296,9 +300,7 @@ vi.mock('@/containers/MovingBorder', () => ({
 vi.mock('@/components/TokenCounter', () => ({
   TokenCounter: () => <div data-testid="stub-token-counter" />,
 }))
-vi.mock('@/components/AssistantsMenu', () => ({
-  AssistantsMenu: () => <div data-testid="stub-assistants-menu" />,
-}))
+
 
 // Minimal dropdown/tooltip stubs (pass-throughs to keep DOM shallow)
 const dropdownTestMode = vi.hoisted(() => ({ real: false }))
@@ -345,10 +347,19 @@ import ChatInput from '../ChatInput'
 import { useImageAttachmentConfig } from '@/hooks/useImageAttachmentConfig'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { useAssistantSwitcher } from '@/hooks/useAssistantSwitcher'
+import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 
 // Helpers -------------------------------------------------------------------
 
 const resetAll = () => {
+  assistantsLoading = false
+  assistantOptions = [
+    { id: 'a1', name: 'Global assistant', avatar: '' },
+    { id: 'a2', name: 'Project assistant', avatar: '' },
+  ]
+  browserOverrides = {}
+  useWebSearchConfig.setState({ webSearchEnabled: false })
   dropdownTestMode.real = false
   useToolAvailable.setState({ disabledTools: [] })
   promptState = ''
@@ -419,6 +430,89 @@ describe('ChatInput', () => {
 
     expect(screen.getByRole('button', { name: 'Add attachments and controls' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Switch assistant' })).not.toBeInTheDocument()
+  })
+
+  it('does not advertise assistants or register cycling for explicit Cowork surfaces', async () => {
+    dropdownTestMode.real = true
+    renderInput({ onSubmit: vi.fn(), supportsAssistants: false })
+    expect(useAssistantSwitcher.getState().cycleHandler).toBeNull()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    await screen.findByRole('menu')
+    expect(screen.queryByRole('menuitem', { name: 'Assistant' })).not.toBeInTheDocument()
+  })
+
+  it('keeps assistant menus and cycling available for callback-based ordinary chat', async () => {
+    dropdownTestMode.real = true
+    renderInput({ onSubmit: vi.fn() })
+    expect(useAssistantSwitcher.getState().cycleHandler).toBeTypeOf('function')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    expect(await screen.findByRole('menuitem', { name: 'Assistant' })).toBeInTheDocument()
+  })
+
+  it('offers None with one assistant and cycles through both choices', async () => {
+    dropdownTestMode.real = true
+    assistantOptions = assistantOptions.slice(0, 1)
+    renderInput()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const trigger = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => trigger.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    const none = await screen.findByRole('menuitem', { name: /None/ })
+    fireEvent.click(none)
+    act(() => useAssistantSwitcher.getState().cycleHandler?.())
+    // Reopen to inspect the current choice after cycling None -> one -> None.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const reopened = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => reopened.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    expect(await screen.findByRole('menuitem', { name: /Global assistant/ })).toHaveClass('bg-accent')
+    act(() => useAssistantSwitcher.getState().cycleHandler?.())
+    expect(screen.getByRole('menuitem', { name: /None/ })).toHaveClass('bg-accent')
+  })
+
+  it('exposes persistent web and browser toggles as checked menu items and named pressed buttons', async () => {
+    dropdownTestMode.real = true
+    selectedModelOverride.capabilities = ['tools', 'vision']
+    browserOverrides = { hasConfig: true, isActive: true }
+    useWebSearchConfig.setState({ webSearchEnabled: true })
+    renderInput()
+    expect(screen.getByRole('button', { name: 'common:web_search' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'common:browse' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const web = await screen.findByRole('menuitemcheckbox', { name: 'common:web_search' })
+    expect(web).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'common:browse' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(web)
+    expect(web).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByRole('menu')).toBeVisible()
+  })
+
+  it('falls back to an existing assistant for a deleted project assignment', async () => {
+    promptState = 'Project message'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: async () => ({ id: 'project-1', name: 'Project', updated_at: 1, assistantId: 'deleted' }) }) })
+    renderInput({ projectId: 'project-1', projectAssistantId: 'deleted' })
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalledWith(expect.anything(), 'Project message', expect.objectContaining({ id: 'a1' }), expect.objectContaining({ id: 'project-1' })))
+  })
+
+  it('respects explicit None when sending from a project with a deleted assignment', async () => {
+    dropdownTestMode.real = true
+    promptState = 'Project without assistant'
+    Object.assign(getServiceHub(), { projects: () => ({ getProjectById: async () => ({ id: 'project-1', name: 'Project', updated_at: 1, assistantId: 'deleted' }) }) })
+    const view = renderInput({ projectId: 'project-1', projectAssistantId: 'deleted' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Add attachments and controls' }), { key: 'ArrowDown' })
+    const trigger = await screen.findByRole('menuitem', { name: 'Assistant' })
+    act(() => trigger.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    fireEvent.click(await screen.findByRole('menuitem', { name: /None/ }))
+    // Later store hydration must not replace an explicit selection.
+    assistantsLoading = true
+    view.rerender(<ChatInput projectId="project-1" projectAssistantId="deleted" />)
+    assistantsLoading = false
+    assistantOptions = [...assistantOptions]
+    view.rerender(<ChatInput projectId="project-1" projectAssistantId="deleted" />)
+    fireEvent.click(screen.getByTestId('send-message-button'))
+    await waitFor(() => expect(createThreadMock).toHaveBeenCalledWith(expect.anything(), 'Project without assistant', undefined, expect.objectContaining({ id: 'project-1' })))
   })
 
   it('disables the send button when prompt is empty', () => {
@@ -749,6 +843,7 @@ describe('ChatInput', () => {
     // Web access is a global capability both surfaces honour -- Cowork reads
     // the same store when it builds its tool set -- so the toggle travels.
     it('offers the web-search toggle on every surface', () => {
+      useWebSearchConfig.setState({ webSearchEnabled: true })
       renderInput()
       expect(icons('world-search')).toBe(2)
       renderInput({ ownsToolSet: false })

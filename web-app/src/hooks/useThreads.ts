@@ -45,6 +45,7 @@ type ThreadState = {
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateThreadAssistantIfUnchanged: (threadId: string, expected: Assistant, parameters: Record<string, unknown>) => Promise<Assistant | undefined>
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
   deleteAllThreadsByProject: (projectId: string) => Promise<void>
@@ -452,6 +453,23 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         })
         return createdThread
       })
+  },
+  // Sampling saves must never resolve "current thread" after an await. The
+  // object identity also guards a newer selection of the same assistant ID.
+  updateThreadAssistantIfUnchanged: async (threadId, expected, parameters) => {
+    const thread = get().threads[threadId]
+    if (thread?.assistants?.[0] !== expected) return undefined
+    const assistant = { ...expected, parameters, model: thread.model }
+    const updatedThread = { ...thread, assistants: [assistant], updated: Date.now() / 1000 }
+    await getServiceHub().threads().updateThread(updatedThread)
+    if (get().threads[threadId]?.assistants?.[0] !== expected) return undefined
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [threadId]: { ...state.threads[threadId], assistants: [assistant] },
+      },
+    }))
+    return assistant
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {

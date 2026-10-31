@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   IconAdjustmentsHorizontal,
@@ -32,10 +32,12 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ParametersSection } from '@/containers/ParametersSection'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useThreads } from '@/hooks/useThreads'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { paramsSettings, type ParamDef } from '@/lib/predefinedParams'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface SamplerPopoverProps {
   /** Provider ID of the currently-selected model, if any. Used to scope the
@@ -102,53 +104,105 @@ export function SamplerPopover({
       : undefined
     : selectedAssistant
 
-  const params = activeAssistant?.parameters ?? {}
+  type SaveLane = {
+    threadId?: string
+    expected: Assistant
+    params: Record<string, unknown>
+    revision: number
+    saving: boolean
+  }
+  const lanes = useRef<SaveLane[]>([])
+  const [, refreshDraft] = useState(0)
+  const threadId = assistantSwitcher?.currentThread?.id
+  const lane = lanes.current.find(
+    (entry) => entry.threadId === threadId && entry.expected === activeAssistant
+  )
+  const params = lane?.params ?? activeAssistant?.parameters ?? {}
   const samplerKeys = Object.keys(params).filter((k) => k in paramsSettings)
   const hasOverrides = samplerKeys.length > 0
 
-  const writeParams = (next: Record<string, unknown>) => {
+  const writeParams = (change: (previous: Record<string, unknown>) => Record<string, unknown>) => {
     if (!activeAssistant) return
-    const updated = { ...activeAssistant, parameters: next }
-    if (isThreadAssistant && assistantSwitcher) {
-      // Sync the thread's copy so inference picks it up immediately; mirror
-      // into the canonical assistant only when it still exists.
-      assistantSwitcher.updateCurrentThreadAssistant(updated)
-      if (assistantSwitcher.assistants.some((a) => a.id === updated.id)) {
-        updateAssistant(updated)
-      }
-    } else {
-      updateAssistant(updated)
+    let target = lanes.current.find(
+      (entry) => entry.threadId === threadId && entry.expected === activeAssistant
+    )
+    if (!target) {
+      target = { threadId, expected: activeAssistant, params, revision: 0, saving: false }
+      lanes.current.push(target)
     }
+    target.params = change(target.params)
+    target.revision++
+    refreshDraft((value) => value + 1)
+    if (target.saving) return
+    target.saving = true
+    const save = async (entry: SaveLane) => {
+      try {
+        while (true) {
+          const revision = entry.revision
+          const next = entry.params
+          // A newer thread assignment invalidates this lane, even for the same ID.
+          if (entry.threadId && useThreads.getState().threads[entry.threadId]?.assistants?.[0] !== entry.expected) break
+          const canonical = useAssistant.getState().assistants.find((a) => a.id === entry.expected.id)
+          if (canonical) await updateAssistant({ ...canonical, parameters: next })
+          if (entry.threadId) {
+            const saved = await useThreads.getState().updateThreadAssistantIfUnchanged(entry.threadId, entry.expected, next)
+            if (!saved) break
+            entry.expected = saved
+          } else {
+            // Never replace a newly selected assistant with the captured one.
+            const saved = useAssistant.getState().assistants.find((a) => a.id === entry.expected.id)
+            if (saved) entry.expected = saved
+          }
+          if (revision === entry.revision) break
+        }
+      } catch (error) {
+        toast.error('Could not save sampling parameters. Please try again.', {
+          description: error instanceof Error ? error.message : undefined,
+        })
+      } finally {
+        // Removing the optimistic draft reveals the last successfully saved
+        // state on failure, not parameters belonging to a newer selection.
+        lanes.current = lanes.current.filter((item) => item !== entry)
+        refreshDraft((value) => value + 1)
+      }
+    }
+    void save(target)
   }
 
   const handleToggle = (def: ParamDef) => {
     if (def.key in params) {
-      const next = { ...params }
-      delete next[def.key]
-      writeParams(next)
+      writeParams((previous) => {
+        const next = { ...previous }
+        delete next[def.key]
+        return next
+      })
     } else {
-      writeParams({ ...params, [def.key]: def.value })
+      writeParams((previous) => ({ ...previous, [def.key]: def.value }))
     }
   }
 
   const handleChange = (key: string, value: unknown) => {
-    writeParams({ ...params, [key]: value })
+    writeParams((previous) => ({ ...previous, [key]: value }))
   }
 
   const handleRemove = (key: string) => {
-    const next = { ...params }
-    delete next[key]
-    writeParams(next)
+    writeParams((previous) => {
+      const next = { ...previous }
+      delete next[key]
+      return next
+    })
   }
 
   const handleAddMany = (values: Record<string, unknown>) => {
-    writeParams({ ...params, ...values })
+    writeParams((previous) => ({ ...previous, ...values }))
   }
 
   const handleRemoveMany = (keys: string[]) => {
-    const next = { ...params }
-    for (const k of keys) delete next[k]
-    writeParams(next)
+    writeParams((previous) => {
+      const next = { ...previous }
+      for (const k of keys) delete next[k]
+      return next
+    })
   }
 
   const handleResetAll = () => {
@@ -156,7 +210,7 @@ export function SamplerPopover({
     for (const [k, v] of Object.entries(params)) {
       if (!(k in paramsSettings)) next[k] = v
     }
-    writeParams(next)
+    writeParams(() => next)
   }
 
   if (isPredefinedRemoteProvider(providerId)) return null

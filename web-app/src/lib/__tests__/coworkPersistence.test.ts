@@ -145,6 +145,82 @@ describe('coworkPersistence write protocol', () => {
     expect(b.threads.has('a')).toBe(true)
   })
 
+  it.each(['write_thread_extra', 'create_thread', 'modify_thread'])(
+    'rejects flush after bounded %s failures and recovers the latest snapshot',
+    async (cmd) => {
+      const failure = { cmd, times: 0 }
+      b = makeBackend({ failNext: failure })
+      const onError = vi.fn()
+      const p = createCoworkPersistence(b.invoke, { onError, retryMs: 50 })
+      if (cmd === 'modify_thread') {
+        p.schedule(session('a'))
+        await p.flush()
+      }
+      failure.times = 6
+      p.schedule(session('a', { title: 'unsaved' }))
+      await expect(p.flush()).rejects.toThrow('pending writes: a')
+      expect(onError).toHaveBeenCalledTimes(3)
+      await expect(p.flush()).rejects.toThrow('pending writes: a')
+      expect(onError).toHaveBeenCalledTimes(6)
+      p.schedule(session('a', { title: 'latest' }))
+      await p.flush()
+      expect(b.threads.get('a')!.title).toBe('latest')
+      expect(b.extras.get('a').messages).toEqual(session('a').messages)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(onError).toHaveBeenCalledTimes(6)
+    }
+  )
+
+  it('counts failures from an already in-flight write and rejects instead of losing dirty work', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const onError = vi.fn()
+    let failing = true
+    const p = createCoworkPersistence(async (cmd, args) => {
+      if (cmd === 'write_thread_extra' && failing) {
+        await gate
+        throw new Error('disk full')
+      }
+      return b.invoke(cmd, args)
+    }, { debounceMs: 10, onError })
+    p.schedule(session('a'))
+    await vi.advanceTimersByTimeAsync(10)
+    const flushed = expect(p.flush()).rejects.toThrow('pending writes: a')
+    release()
+    await flushed
+    expect(onError).toHaveBeenCalledTimes(3)
+    failing = false
+    await p.flush()
+    expect(b.threads.get('a')!.title).toBe('T a')
+  })
+
+  it('retains a failed snapshot for automatic background recovery after rejected flush', async () => {
+    b = makeBackend({ failNext: { cmd: 'write_thread_extra', times: 3 } })
+    const p = createCoworkPersistence(b.invoke, { retryMs: 50 })
+    p.schedule(session('a'))
+    await expect(p.flush()).rejects.toThrow('pending writes: a')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(b.threads.get('a')!.title).toBe('T a')
+    await p.flush()
+  })
+
+  it.each(['settings_set', 'settings_remove'])(
+    'rejects flush after bounded current-id %s failures and retries without a new selection',
+    async (cmd) => {
+      b = makeBackend({ failNext: { cmd, times: 3 } })
+      b.settings.set(COWORK_CURRENT_ID_KEY, 'old')
+      const onError = vi.fn()
+      const p = createCoworkPersistence(b.invoke, { onError })
+      p.setCurrentId(cmd === 'settings_set' ? 'new' : null)
+      await expect(p.flush()).rejects.toThrow('pending writes: current-id')
+      expect(onError).toHaveBeenCalledTimes(3)
+      expect(onError).toHaveBeenLastCalledWith('current-id', expect.any(Error))
+      expect(b.settings.get(COWORK_CURRENT_ID_KEY)).toBe('old')
+      await p.flush()
+      expect(b.settings.get(COWORK_CURRENT_ID_KEY)).toBe(cmd === 'settings_set' ? 'new' : undefined)
+    }
+  )
+
   it('flush writes pending work immediately without waiting for the debounce', async () => {
     const p = createCoworkPersistence(b.invoke, { debounceMs: 60_000 })
     p.schedule(session('a'))
