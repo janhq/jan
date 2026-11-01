@@ -1,0 +1,68 @@
+---
+title: UnoRouter
+description: A step-by-step guide on integrating Jan with UnoRouter.
+keywords:
+  [
+    Jan,
+    local AI,
+    privacy focus,
+    conversational AI,
+    large language models,
+    UnoRouter,
+    free models,
+    OpenAI-compatible gateway,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# UnoRouter
+
+Jan supports [UnoRouter](https://unorouter.com) through its OpenAI-compatible API. UnoRouter is an open-source gateway serving 200+ models (Claude, GPT, Gemini, DeepSeek, Kimi, GLM, Qwen and more) behind a single API key; models with a `:free` suffix cost nothing.
+
+## Integrate UnoRouter with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit [UnoRouter](https://unorouter.com) and sign in (Discord or GitHub, no card required)
+2. Create or copy an API key from the [token page](https://unorouter.com/token)
+
+<Callout type='info'>
+Free-tier models run on shared pools with a light per-model rate limit (about 1 request per minute per model). Rotate between free models or use paid models for higher throughput.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **UnoRouter**
+3. Insert your **API Key**
+
+### Step 3: Start Using UnoRouter Models
+
+1. Open any existing **Chat** or create a new one
+2. Select a UnoRouter model from the **model selector**
+3. Start chatting
+</Steps>
+
+## Available Models Through UnoRouter
+
+Jan refreshes UnoRouter models from `https://api.unorouter.com/v1/models`. Browse the full catalog with prices at [unorouter.com/models](https://unorouter.com/models); any model ID from there can also be added manually.
+
+## Troubleshooting
+
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Confirm your account has access to the model you selected
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify the base URL is `https://api.unorouter.com/v1`
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Rate Limits on Free Models**
+- Free models allow about 1 request per minute per model; wait for the `Retry-After` time or switch to a different `:free` model
+- A busy free model returns an explicit "all providers busy" error and recovers automatically
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH).
