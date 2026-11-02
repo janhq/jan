@@ -41,6 +41,23 @@ describe('grant-driven advertisement (decided: scratch-safe defaults, folder gra
   it.todo('advertisement recomputes only at turn boundaries; a mid-turn grant change affects dispatch immediately but schemas next turn')
 })
 
+describe('consent mount preconditions', () => {
+  it.todo(
+    'ConversationScopeControl mounts only once the getter is overlay-only: after restart, persisted elevated grants resolve to denied defaults until reconfirmed (no metadata fallback)'
+  )
+})
+
+describe('temporary chats (scratch only, never persistent consent)', () => {
+  it.todo('a temporary chat keeps direct answers and the scratch-sandbox shell baseline')
+  it.todo(
+    'no consent control is offered on a temporary chat, even as a pending draft (prepareThreadCreation refuses; scope control renders nothing)'
+  )
+  it.todo(
+    'temporary threads never persist grants: the setter rejects and the getter returns denied defaults'
+  )
+  it.todo('no elevated grant or durable memory write is reachable from a temporary chat')
+})
+
 describe('task children (decided: same narrowed context, no Session fallback)', () => {
   it.todo('children narrow from the parent Chat frozen advertised record and can never widen it')
   it.todo('children dispatch native names through the same threadId and per-call grant getter, never scope=session or Cowork flags')
