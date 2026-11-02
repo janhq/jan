@@ -314,7 +314,7 @@ pub fn load(path: &Path) -> std::io::Result<Loaded> {
 /// anything that is not a regular file. On Unix the open itself does not
 /// follow a link (`O_NOFOLLOW`), so a link swapped in after the check is
 /// refused too.
-fn open_no_follow(
+pub(crate) fn open_no_follow(
     options: &mut std::fs::OpenOptions,
     path: &Path,
 ) -> std::io::Result<std::fs::File> {

@@ -27,7 +27,15 @@
 //! remembers every child's workspace for the session, so a later dispatch can
 //! name it, and at the session's end removes the checkouts that hold nothing:
 //! no commit past their base and no uncommitted change, `ref` ones included
-//! (a writer may have committed there). One git cannot read is kept.
+//! (a writer may have committed there). One git cannot read is kept. A
+//! conversation ending (`/new`, `/clear`, `/resume`) does the same for its
+//! own worktrees.
+//!
+//! Beside the checkouts, out of every child's reach, `.meta/<id>.json` records
+//! what Jan made and `.meta/<id>.lock` is held by the process that owns it, so
+//! a startup sweep can settle what a crashed session left without touching a
+//! live one's. Removed checkouts are renamed into `.trash`, which that sweep
+//! empties, so nobody waits on deleting them.
 //!
 //! Only the CLI build creates checkouts and holds readers to a read-only
 //! checkout; on the desktop every child works in its parent's checkout as it
@@ -386,6 +394,9 @@ struct LedgerState {
     removing: HashSet<PathBuf>,
     /// Worktrees this session created, in creation order.
     created: Vec<ChildWorktree>,
+    /// The lock on each of `created`'s metadata, held so no other jan
+    /// process's startup sweep takes a worktree this one still owns.
+    holds: HashMap<PathBuf, std::fs::File>,
 }
 
 /// The session's record of its children's workspaces.
@@ -421,8 +432,10 @@ impl Ledger {
         request: Option<&WorkspaceRequest>,
     ) -> Result<(ChildWorkspace, Option<WriterLease>), String> {
         let read_only = !writer && READ_ONLY_READERS;
-        let ws = match request {
-            Some(WorkspaceRequest::Shared) => ChildWorkspace::shared(parent_root, read_only),
+        let (ws, hold) = match request {
+            Some(WorkspaceRequest::Shared) => {
+                (ChildWorkspace::shared(parent_root, read_only), None)
+            }
             Some(WorkspaceRequest::Reuse(earlier)) => {
                 let found = self.state.lock().unwrap().by_name.get(earlier).cloned();
                 let mut ws = found.ok_or_else(|| {
@@ -435,12 +448,12 @@ impl Ledger {
                 ws.read_only = read_only;
                 ws.left_changes = false;
                 ws.fresh = false;
-                ws
+                (ws, None)
             }
             Some(WorkspaceRequest::New) => create(parent_root, name, None, read_only)?,
             Some(WorkspaceRequest::Ref(r)) => create(parent_root, name, Some(r), read_only)?,
             None if writer => create(parent_root, name, None, read_only)?,
-            None => ChildWorkspace::shared(parent_root, read_only),
+            None => (ChildWorkspace::shared(parent_root, read_only), None),
         };
         let mut state = self.state.lock().unwrap();
         // A reuse was looked up under an earlier hold of the lock: a sweep may
@@ -488,6 +501,9 @@ impl Ledger {
             if !state.created.iter().any(|c| c.path == wt.path) {
                 state.created.push(wt.clone());
             }
+            if let Some(hold) = hold {
+                state.holds.insert(wt.path.clone(), hold);
+            }
         }
         state.by_name.insert(name.to_string(), ws.clone());
         Ok((ws, lease))
@@ -521,9 +537,13 @@ impl Ledger {
             return false;
         }
         let gone = remove_if_empty(wt);
+        if gone {
+            forget_meta(wt);
+        }
         let mut state = self.state.lock().unwrap();
         state.removing.remove(&wt.path);
         if gone {
+            state.holds.remove(&wt.path);
             state.created.retain(|c| c.path != wt.path);
             state
                 .by_name
@@ -543,7 +563,109 @@ fn remove_if_empty(wt: &ChildWorktree) -> bool {
     let Ok(checkout) = checkout(wt) else { return false };
     checkout.commits_anywhere(&wt.base) == Some(0)
         && checkout.is_clean() == Ok(true)
-        && std::fs::remove_dir_all(&wt.path).is_ok()
+        && trash(&wt.path)
+}
+
+/// Where Jan keeps what it knows of each checkout of a project: beside the
+/// checkouts, out of every child's write roots (a child can rewrite anything
+/// in its own checkout, so nothing there may say what to fetch from).
+const META_DIR: &str = ".meta";
+
+/// Where removed checkouts wait to be deleted, beside them so the move is a
+/// rename on one filesystem.
+#[cfg(feature = "cli")]
+const TRASH_DIR: &str = ".trash";
+
+/// `<id>.<ext>` in the metadata directory of the checkouts in `dir`.
+fn meta_file(dir: &Path, id: &str, ext: &str) -> PathBuf {
+    dir.join(META_DIR).join(format!("{id}.{ext}"))
+}
+
+/// Drop what was recorded of `wt` once it is gone: the record, then its
+/// lock, which only the holder of that lock may unlink (a new owner never
+/// reopens an existing lock file, see [`reserve`]).
+fn forget_meta(wt: &ChildWorktree) {
+    let (Some(dir), Some(id)) = (wt.path.parent(), wt.path.file_name()) else { return };
+    let id = id.to_string_lossy();
+    let _ = std::fs::remove_file(meta_file(dir, &id, "json"));
+    let _ = std::fs::remove_file(meta_file(dir, &id, "lock"));
+}
+
+/// What Jan recorded about a subagent checkout when it made it, so a later
+/// process can settle it after this one died.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct WorktreeMeta {
+    branch: String,
+    base: String,
+    from_ref: Option<String>,
+    repo: PathBuf,
+    objects: PathBuf,
+    /// Settled already: its kept line was shown once, so no sweep repeats it.
+    finished: bool,
+}
+
+/// Record `wt` beside it, atomically, so a sweep never reads half a record.
+#[cfg(feature = "cli")]
+fn write_meta(wt: &ChildWorktree, finished: bool) -> std::io::Result<()> {
+    let (Some(dir), Some(id)) = (wt.path.parent(), wt.path.file_name()) else {
+        return Err(std::io::Error::other("a checkout path without a parent"));
+    };
+    let meta = WorktreeMeta {
+        branch: wt.branch.clone(),
+        base: wt.base.clone(),
+        from_ref: wt.from_ref.clone(),
+        repo: wt.repo.clone(),
+        objects: wt.objects.clone(),
+        finished,
+    };
+    let id = id.to_string_lossy();
+    let tmp = meta_file(dir, &id, "json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(&meta).map_err(std::io::Error::other)?)?;
+    std::fs::rename(&tmp, meta_file(dir, &id, "json"))
+}
+
+/// Take `file`'s advisory lock without waiting: the OS drops it when the
+/// holder dies, so a lock that is free has no live owner. `flock` is per
+/// open file, so this process's own second open is refused too.
+#[cfg(feature = "cli")]
+fn lock(file: std::fs::File) -> std::io::Result<std::fs::File> {
+    fs4::FileExt::try_lock(&file).map_err(std::io::Error::from)?;
+    Ok(file)
+}
+
+/// Claim checkout id `id` in `dir` before cloning into it: its lock file is
+/// created, never opened if it exists (`AlreadyExists`), so two processes
+/// picking the same id cannot both own it.
+#[cfg(feature = "cli")]
+fn reserve(dir: &Path, id: &str) -> std::io::Result<std::fs::File> {
+    std::fs::create_dir_all(dir.join(META_DIR))?;
+    let path = meta_file(dir, id, "lock");
+    let file = crate::core::agent::session_log::open_no_follow(
+        std::fs::OpenOptions::new().write(true).create_new(true),
+        &path,
+    )?;
+    lock(file).inspect_err(|_| {
+        let _ = std::fs::remove_file(&path);
+    })
+}
+
+/// Move a checkout that holds nothing out of the way at once, into the
+/// project's trash, which the startup sweep empties: deleting in place walks
+/// every file a child left (`node_modules`, build output) while the user
+/// waits. Deletes in place when the rename fails (something mounted there, a
+/// handle still open on Windows). Returns whether `path` is gone.
+#[cfg(feature = "cli")]
+fn trash(path: &Path) -> bool {
+    if let (Some(dir), Some(id)) = (path.parent(), path.file_name()) {
+        let bin = dir.join(TRASH_DIR);
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
+        let to = bin.join(format!("{}-{}", id.to_string_lossy(), &nonce[..8]));
+        if std::fs::create_dir_all(&bin).is_ok() && std::fs::rename(path, to).is_ok() {
+            return true;
+        }
+    }
+    std::fs::remove_dir_all(path).is_ok()
 }
 
 /// How long bringing a branch into the user's repository may take.
@@ -601,24 +723,28 @@ fn remove_if_empty(_wt: &ChildWorktree) -> bool {
 const REF_FETCH_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// A fresh checkout for `name`, or the parent's checkout when the project
-/// cannot have one (the reason is kept for the dispatch note).
+/// cannot have one (the reason is kept for the dispatch note). A checkout
+/// comes with the lock on its metadata, which its owner holds while it lives.
 #[cfg(feature = "cli")]
 fn create(
     parent_root: &Path,
     name: &str,
     git_ref: Option<&str>,
     read_only: bool,
-) -> Result<ChildWorkspace, String> {
+) -> Result<(ChildWorkspace, Option<std::fs::File>), String> {
     use crate::core::agent::git;
-    let fallback = |why: &str| ChildWorkspace {
-        fallback: Some(why.to_string()),
-        ..ChildWorkspace::shared(parent_root, read_only)
+    let fallback = |why: &str| {
+        let ws = ChildWorkspace {
+            fallback: Some(why.to_string()),
+            ..ChildWorkspace::shared(parent_root, read_only)
+        };
+        Ok((ws, None))
     };
     let Some(repo) = git::repo_root(parent_root) else {
         if git_ref.is_some() {
             return Err("workspace {\"ref\": ...} needs a git repository".to_string());
         }
-        return Ok(fallback("not a git repository"));
+        return fallback("not a git repository");
     };
     let base = match git_ref {
         Some(r) => match git::resolve_commit(&repo, r) {
@@ -628,7 +754,7 @@ fn create(
         },
         None => match git::head_sha(&repo) {
             Some(sha) => sha,
-            None => return Ok(fallback("the repository has no commits yet")),
+            None => return fallback("the repository has no commits yet"),
         },
     };
     let dir = project_worktrees_dir(parent_root)
@@ -641,6 +767,13 @@ fn create(
         if path.exists() {
             continue;
         }
+        let hold = match reserve(&dir, &id) {
+            Ok(hold) => hold,
+            Err(e) => {
+                last = format!("could not reserve {id}: {e}");
+                continue;
+            }
+        };
         let branch = format!("jan/agent/{id}");
         match git::clone_shared(&repo, &path, &branch, &base) {
             Ok(objects) => {
@@ -664,25 +797,33 @@ fn create(
                     .map(|rel| path.join(rel));
                 let missing = sub.as_ref().is_some_and(|sub| !sub.is_dir());
                 let root = sub.filter(|_| !missing).unwrap_or_else(|| path.clone());
-                return Ok(ChildWorkspace {
+                let wt = ChildWorktree {
+                    path,
+                    branch,
+                    base,
+                    from_ref: git_ref.map(str::to_string),
+                    repo: repo.clone(),
+                    objects,
+                };
+                // Without a record no later sweep can settle it, but this
+                // process still can: the checkout is usable either way.
+                let _ = write_meta(&wt, false);
+                let ws = ChildWorkspace {
                     root,
                     read_only,
                     left_changes: git_ref.is_none() && !git::changed_paths(&repo).is_empty(),
                     missing_subdir: missing
                         .then(|| rel.to_string_lossy().replace('\\', "/")),
-                    worktree: Some(ChildWorktree {
-                        path,
-                        branch,
-                        base,
-                        from_ref: git_ref.map(str::to_string),
-                        repo: repo.clone(),
-                        objects,
-                    }),
+                    worktree: Some(wt),
                     fallback: None,
                     fresh: true,
-                });
+                };
+                return Ok((ws, Some(hold)));
             }
-            Err(e) => last = e,
+            Err(e) => {
+                let _ = std::fs::remove_file(meta_file(&dir, &id, "lock"));
+                last = e;
+            }
         }
     }
     Err(format!("could not create a checkout: {last}"))
@@ -696,18 +837,104 @@ fn create(
     _name: &str,
     _git_ref: Option<&str>,
     read_only: bool,
-) -> Result<ChildWorkspace, String> {
-    Ok(ChildWorkspace {
+) -> Result<(ChildWorkspace, Option<std::fs::File>), String> {
+    let ws = ChildWorkspace {
         fallback: Some("subagent worktrees are CLI-only".to_string()),
         ..ChildWorkspace::shared(parent_root, read_only)
-    })
+    };
+    Ok((ws, None))
+}
+
+/// A worktree a cleanup decides on, with the lock that keeps every other jan
+/// process's sweep off it until the decision is made.
+#[cfg(feature = "cli")]
+struct Owned {
+    wt: ChildWorktree,
+    hold: Option<std::fs::File>,
+}
+
+/// Worktrees taken from a ledger (or found orphaned) to be settled, off the
+/// render loop: removed when they hold nothing, else brought back and named.
+#[cfg(feature = "cli")]
+pub(crate) struct Batch {
+    ledger: Option<Arc<Ledger>>,
+    owned: Vec<Owned>,
+    /// Name a worktree a writer is still in rather than leave it unreported:
+    /// at the session's end nothing later would mention it.
+    report_busy: bool,
+}
+
+#[cfg(feature = "cli")]
+impl Batch {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.owned.is_empty()
+    }
+
+    /// Settle every worktree at once, one thread each, so N kept ones cost
+    /// the slowest one rather than the sum (bringing a branch back may take a
+    /// fetch). Returns a kept line per worktree that holds work, in order.
+    pub(crate) fn settle(self) -> Vec<String> {
+        let Batch { ledger, owned, report_busy } = self;
+        let ledger = ledger.as_ref();
+        std::thread::scope(|scope| {
+            let settling: Vec<_> = owned
+                .into_iter()
+                .map(|one| scope.spawn(move || settle_one(ledger, one, report_busy)))
+                .collect();
+            settling.into_iter().filter_map(|t| t.join().ok().flatten()).collect()
+        })
+    }
+}
+
+/// Decide one worktree of a batch. With a ledger it is claimed first, as an
+/// undo would, so the two never decide one worktree together; one it cannot
+/// claim (a writer is back in it, or an undo is deciding it) stays the
+/// ledger's, lock included, for the next end.
+#[cfg(feature = "cli")]
+fn settle_one(ledger: Option<&Arc<Ledger>>, one: Owned, report_busy: bool) -> Option<String> {
+    let Owned { wt, hold } = one;
+    if let Some(ledger) = ledger {
+        if !ledger.claim(&wt.path) {
+            let mut state = ledger.state.lock().unwrap();
+            let busy = state.busy.contains(&wt.path);
+            if !state.created.iter().any(|c| c.path == wt.path) {
+                state.created.push(wt.clone());
+            }
+            if let Some(hold) = hold {
+                state.holds.insert(wt.path.clone(), hold);
+            }
+            drop(state);
+            return (busy && report_busy).then(|| kept_line(&wt, None));
+        }
+    }
+    let line = if !wt.path.is_dir() || remove_if_empty(&wt) {
+        forget_meta(&wt);
+        None
+    } else {
+        // Whatever the child committed before it was stopped, so the user
+        // has the branch to merge.
+        let brought = bring_back(&wt).err();
+        let line = kept_line(&wt, brought.as_deref());
+        // The user owns it now: no later sweep reports it again.
+        let _ = write_meta(&wt, true);
+        Some(line)
+    };
+    if let Some(ledger) = ledger {
+        ledger.state.lock().unwrap().removing.remove(&wt.path);
+    }
+    drop(hold);
+    line
 }
 
 #[cfg(feature = "cli")]
 impl Ledger {
-    /// Whether a writer is in `path` right now.
-    fn is_busy(&self, path: &Path) -> bool {
-        self.state.lock().unwrap().busy.contains(path)
+    /// End the conversation's hold on its worktrees: forget every name (a
+    /// later conversation must not be handed these) and take every worktree
+    /// no writer is in, so a settle running later never sees the next
+    /// conversation's. A busy one stays recorded for the next end. Takes the
+    /// ledger's lock only: no git, no I/O.
+    pub(crate) fn end_conversation(self: &Arc<Self>) -> Batch {
+        self.take(false)
     }
 
     /// End of session: remove every checkout that holds nothing (no commit
@@ -717,28 +944,27 @@ impl Ledger {
     /// cannot read: removal deletes it, so "unknown" must never count as
     /// "clean".
     ///
-    /// The ledger's lock is held only to snapshot and to record each removal,
-    /// never across git, so leases and dispatches carry on meanwhile.
-    pub(crate) fn finish_session(&self) -> Vec<String> {
-        let created = {
-            let mut state = self.state.lock().unwrap();
-            state.by_name.clear();
-            state.created.clone()
-        };
-        let mut kept = Vec::new();
-        for wt in created {
-            if !wt.path.is_dir() {
-                self.state.lock().unwrap().created.retain(|c| c.path != wt.path);
+    /// The ledger's lock is held only to take the worktrees and to record
+    /// each decision, never across git, so leases and dispatches carry on
+    /// meanwhile.
+    pub(crate) fn finish_session(self: &Arc<Self>) -> Vec<String> {
+        self.take(true).settle()
+    }
+
+    fn take(self: &Arc<Self>, busy_too: bool) -> Batch {
+        let mut guard = self.state.lock().unwrap();
+        let state = &mut *guard;
+        state.by_name.clear();
+        let mut owned = Vec::new();
+        for wt in std::mem::take(&mut state.created) {
+            if !busy_too && state.busy.contains(&wt.path) {
+                state.created.push(wt);
                 continue;
             }
-            if !self.remove_unless_busy(&wt) {
-                // Whatever the child committed before it was stopped, so the
-                // user has the branch to merge; not while a writer is in it.
-                let brought = (!self.is_busy(&wt.path)).then(|| bring_back(&wt).err()).flatten();
-                kept.push(kept_line(&wt, brought.as_deref()));
-            }
+            let hold = state.holds.remove(&wt.path);
+            owned.push(Owned { wt, hold });
         }
-        kept
+        Batch { ledger: Some(self.clone()), owned, report_busy: busy_too }
     }
 
     /// The session's subagent worktrees still on disk, for `/worktree`. Runs
@@ -1068,7 +1294,8 @@ mod git_tests {
         assert_eq!(crate::core::agent::git::resolve_commit(&root, idle_branch), None);
         assert!(committed.root.is_dir() && dirty.root.is_dir());
         assert!(kept.iter().any(|k| k.contains("1 commit(s)")), "{kept:?}");
-        assert_eq!(ledger.live().len(), 2);
+        // Named once and handed to the user: the ledger holds none of them.
+        assert!(ledger.live().is_empty(), "{:?}", ledger.live());
         let _ = std::fs::remove_dir_all(&committed.root);
         let _ = std::fs::remove_dir_all(&dirty.root);
         let _ = std::fs::remove_dir_all(&root);
@@ -1791,5 +2018,186 @@ mod git_tests {
         assert_eq!(fetched, None, "nothing fetched from it");
         assert_eq!(kept.len(), 1, "{kept:?}");
         assert!(kept[0].contains("alternates"), "{kept:?}");
+    }
+
+    /// The `.meta` and `.trash` directories beside `root`'s checkouts.
+    fn meta_of(root: &Path) -> PathBuf {
+        dunce::canonicalize(project_worktrees_dir(root).unwrap()).unwrap().join(META_DIR)
+    }
+
+    fn trash_of(root: &Path) -> PathBuf {
+        project_worktrees_dir(root).unwrap().join(TRASH_DIR)
+    }
+
+    fn id_of(ws: &ChildWorkspace) -> String {
+        let wt = ws.worktree.as_ref().unwrap();
+        wt.path.file_name().unwrap().to_string_lossy().into_owned()
+    }
+
+    /// A new conversation in the same process starts with no names: an
+    /// earlier conversation's worktree, kept or removed, is not handed out.
+    #[test]
+    fn a_new_conversation_cannot_reuse_an_earlier_conversations_worktree_by_name() {
+        let Some(root) = repo("names") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (kept, l1) = ledger.assign(&root, "general", true, None).unwrap();
+        let (_idle, l2) = ledger.assign(&root, "explore", true, None).unwrap();
+        drop((l1, l2));
+        commit(&kept.root, "b.txt");
+        assert_eq!(ledger.end_conversation().settle().len(), 1);
+        for earlier in ["general", "explore"] {
+            let reuse = WorkspaceRequest::Reuse(earlier.to_string());
+            let err = ledger.assign(&root, "next", true, Some(&reuse)).unwrap_err();
+            assert!(err.contains("no earlier subagent"), "{earlier}: {err}");
+        }
+        assert!(ledger.live().is_empty(), "{:?}", ledger.live());
+        let _ = std::fs::remove_dir_all(&kept.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The batch is taken when the conversation ends; a worktree the next
+    /// conversation makes before the batch is settled is not in it.
+    #[test]
+    fn ending_a_conversation_leaves_the_next_conversations_worktrees_alone() {
+        let Some(root) = repo("next") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (old, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        let batch = ledger.end_conversation();
+        let (new, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        assert!(batch.settle().is_empty());
+        assert!(!old.root.exists(), "the old conversation's empty worktree goes");
+        assert!(new.root.is_dir(), "the new conversation's worktree stays");
+        assert_eq!(ledger.live().len(), 1, "{:?}", ledger.live());
+        let _ = ledger.finish_session();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A writer still in its worktree when the conversation ends keeps it,
+    /// unreported; the next end (or exit) settles it once the writer is gone.
+    #[test]
+    fn a_busy_worktree_survives_a_conversation_end_and_goes_at_the_next() {
+        let Some(root) = repo("busyend") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        assert!(ledger.end_conversation().settle().is_empty());
+        assert!(ws.root.is_dir(), "a writer is still in it");
+        drop(lease);
+        assert!(ledger.finish_session().is_empty());
+        assert!(!ws.root.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Removing an empty worktree is a rename into the project's trash, so
+    /// no one waits for its files to be deleted; the trash is emptied later.
+    #[test]
+    fn an_empty_worktree_is_moved_to_trash_not_deleted_in_place() {
+        let Some(root) = repo("trash") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        assert!(ledger.finish_session().is_empty());
+        assert!(!ws.root.exists());
+        let trashed: Vec<PathBuf> = std::fs::read_dir(trash_of(&root))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(&id_of(&ws)))
+            .collect();
+        assert_eq!(trashed.len(), 1, "{trashed:?}");
+        assert!(trashed[0].join("a.txt").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The fast emptiness check still sees a new directory as work.
+    #[test]
+    fn an_untracked_directory_keeps_a_worktree_under_the_fast_check() {
+        let Some(root) = repo("untracked-dir") else { return };
+        assert!(git(&root, &["config", "status.showUntrackedFiles", "no"]));
+        let ledger = Arc::new(Ledger::default());
+        let (ws, lease) = ledger.assign(&root, "general", true, None).unwrap();
+        drop(lease);
+        std::fs::create_dir_all(ws.root.join("node_modules/x")).unwrap();
+        std::fs::write(ws.root.join("node_modules/x/y.js"), "y\n").unwrap();
+        assert_eq!(ledger.finish_session().len(), 1);
+        assert!(ws.root.join("node_modules/x/y.js").is_file());
+        let _ = std::fs::remove_dir_all(&ws.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// N kept worktrees cost about the slowest one, not the sum: each takes
+    /// two seconds to read, three in a row would take six.
+    #[cfg(unix)]
+    #[test]
+    fn kept_worktrees_are_settled_in_parallel() {
+        use std::time::{Duration, Instant};
+        let Some(root) = repo("parallel") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let mut roots = Vec::new();
+        for name in ["general", "general-2", "general-3"] {
+            let (ws, lease) = ledger.assign(&root, name, true, None).unwrap();
+            drop(lease);
+            commit(&ws.root, "b.txt");
+            if !slow_status(&ws.root) {
+                return;
+            }
+            roots.push(ws.root);
+        }
+        let started = Instant::now();
+        let kept = ledger.finish_session();
+        let took = started.elapsed();
+        for dir in &roots {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(kept.len(), 3, "{kept:?}");
+        assert!(took < Duration::from_secs(4), "settling took {took:?}");
+    }
+
+    /// What Jan needs to settle a worktree later is recorded beside it, where
+    /// the child cannot rewrite it, and marked once the worktree was reported.
+    #[test]
+    fn each_worktree_records_its_metadata_beside_not_inside_its_checkout() {
+        let Some(root) = repo("meta") else { return };
+        let ledger = Arc::new(Ledger::default());
+        let (kept, l1) = ledger.assign(&root, "general", true, None).unwrap();
+        let (idle, l2) = ledger.assign(&root, "general-2", true, None).unwrap();
+        drop((l1, l2));
+        let wt = kept.worktree.clone().unwrap();
+        let json = meta_of(&root).join(format!("{}.json", id_of(&kept)));
+        assert!(!json.starts_with(&wt.path));
+        let read = |p: &Path| -> WorktreeMeta {
+            serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+        };
+        let meta = read(&json);
+        assert_eq!(meta.branch, wt.branch);
+        assert_eq!(meta.base, wt.base);
+        assert_eq!(meta.from_ref, wt.from_ref);
+        assert_eq!(meta.repo, wt.repo);
+        assert_eq!(meta.objects, wt.objects);
+        assert!(!meta.finished);
+        commit(&kept.root, "b.txt");
+        assert_eq!(ledger.finish_session().len(), 1);
+        assert!(read(&json).finished, "a reported worktree is marked");
+        for ext in ["json", "lock"] {
+            let gone = meta_of(&root).join(format!("{}.{ext}", id_of(&idle)));
+            assert!(!gone.exists(), "{}", gone.display());
+        }
+        let _ = std::fs::remove_dir_all(&kept.root);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Two processes picking the same id cannot both own it.
+    #[test]
+    fn an_id_is_reserved_once() {
+        let Some(root) = repo("reserve") else { return };
+        let dir = project_worktrees_dir(&root).unwrap();
+        let id = format!("reserve-{:04x}", N.fetch_add(1, Ordering::SeqCst));
+        let first = reserve(&dir, &id).unwrap();
+        let err = reserve(&dir, &id).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        drop(first);
+        let _ = std::fs::remove_file(dir.join(META_DIR).join(format!("{id}.lock")));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
