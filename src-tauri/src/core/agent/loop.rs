@@ -322,10 +322,13 @@ fn mark_parts_as_error(mut parts: Vec<serde_json::Value>) -> Vec<serde_json::Val
 /// reminder; `headline`, when set, is shown to the user at delivery as
 /// [`StreamEvent::Notice`]. Subagent completions carry no headline -- their
 /// `SubagentEnd` row already reported the fact -- while a monitor match has no
-/// other on-screen account.
+/// other on-screen account. `message` is set for a subagent's
+/// `message_main_agent` as `(from, text)`, announced at delivery as
+/// [`StreamEvent::AgentMessage`].
 pub(crate) struct BackgroundNotice {
     pub headline: Option<String>,
     pub text: String,
+    pub message: Option<(String, String)>,
 }
 
 #[async_trait]
@@ -1364,6 +1367,7 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: None,
                         text: context,
+                        message: None,
                     });
                 }
                 for notice in report.notices {
@@ -1372,6 +1376,7 @@ impl CompositeToolInvoker {
                     queued.push(BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message,
+                        message: None,
                     });
                 }
                 queue.lock().unwrap().extend(queued);
@@ -1491,6 +1496,7 @@ impl CompositeToolInvoker {
                 // an event the user needs announced, unlike a monitor match.
                 headline: None,
                 text: context,
+                message: None,
             });
         }
         for notice in outcome.notices {
@@ -1499,6 +1505,7 @@ impl CompositeToolInvoker {
             queued.push(BackgroundNotice {
                 headline: Some(message.clone()),
                 text: message,
+                message: None,
             });
         }
         if !queued.is_empty() {
@@ -2221,9 +2228,10 @@ impl ToolInvoker for CompositeToolInvoker {
             .map(|ctx| ctx.bg.take_notices())
             .unwrap_or_default()
             .into_iter()
-            .map(|text| BackgroundNotice {
+            .map(|notice| BackgroundNotice {
                 headline: None,
-                text,
+                text: notice.text,
+                message: notice.message,
             })
             .collect();
         out.extend(
@@ -2233,6 +2241,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|u| BackgroundNotice {
                     headline: Some(u.headline),
                     text: u.text,
+                    message: None,
                 }),
         );
         // Hook output rides the same channel: a `context` answer has to reach
@@ -2251,6 +2260,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 .map(|n| BackgroundNotice {
                     headline: Some(n.headline),
                     text: n.text,
+                    message: None,
                 }),
         );
         out
@@ -4209,6 +4219,7 @@ async fn orchestrate_inner(
                     BackgroundNotice {
                         headline: Some(message.clone()),
                         text: message.clone(),
+                        message: None,
                     }
                 })
                 .collect();
@@ -4981,6 +4992,13 @@ async fn run_turn_cycle(
                 if let Some(headline) = &notice.headline {
                     let _ = events.send(StreamEvent::Notice {
                         text: headline.clone(),
+                    });
+                }
+                if let Some((from, text)) = &notice.message {
+                    let _ = events.send(StreamEvent::AgentMessage {
+                        from: from.clone(),
+                        to: crate::core::agent::events::MAIN_AGENT.to_string(),
+                        text: text.clone(),
                     });
                 }
             }
@@ -7654,6 +7672,7 @@ mod tests {
                 .map(|text| BackgroundNotice {
                     headline: None,
                     text,
+                    message: None,
                 })
                 .collect()
         }
@@ -7807,6 +7826,7 @@ mod tests {
             vec![BackgroundNotice {
                 headline: Some("Monitor mon-1: condition 'ok' matched".to_string()),
                 text: "Monitor 'mon-1' condition 'ok' matched on build.log:\nBUILD OK".to_string(),
+                message: None,
             }]
         }
         fn background_pending(&self) -> bool {
@@ -11408,6 +11428,7 @@ mod tests {
         invoker.hook_notices_queue.lock().unwrap().push(BackgroundNotice {
             headline: None,
             text: "hook said so".to_string(),
+            message: None,
         });
         assert!(invoker.background_pending(), "the hook answer is owed");
         let waited = tokio::time::timeout(
@@ -12622,7 +12643,7 @@ mod tests {
             )
             .await;
         assert!(steered.contains("Queued"), "{steered}");
-        assert_eq!(inbox.drain().len(), 1);
+        assert_eq!(inbox.drain().0.len(), 1);
 
         let stopped = invoker
             .handle_subagent_tool("stop_subagent", &json!({ "name": "w" }))
@@ -12760,7 +12781,7 @@ mod tests {
         let postman_inbox = inbox.clone();
         let postman = tokio::spawn(async move {
             while let Some(request) = requests.recv().await {
-                let _ = request.reply.send(postman_inbox.drain());
+                let _ = request.reply.send(postman_inbox.drain().0);
             }
         });
 
@@ -12799,7 +12820,7 @@ mod tests {
             assert_eq!(steered, "actually, check loop.rs", "a plain user turn");
         }
         assert!(
-            inbox.drain().is_empty(),
+            inbox.drain().0.is_empty(),
             "the boundary drain consumed the message exactly once"
         );
         drop(steering);

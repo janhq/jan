@@ -1,0 +1,23 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|                                                                                |
+|› go                                                                            |
+|                                                                                |
+|                                                                                |
+|• Done.                                                                         |
+|                                                                                |
+|  Worked for 2s • 03:04 • ↑ 4.0K ↓ 30 • 15.0/s                                  |
+|                                                                                |
+|• model switched to gpt-5-mini                                                  |
+
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..4 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 4..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 mod=DIM
+ 6 0..46 fg=#808080
+ 8 0..2 fg=LightBlue
+ 8 2..30 mod=DIM

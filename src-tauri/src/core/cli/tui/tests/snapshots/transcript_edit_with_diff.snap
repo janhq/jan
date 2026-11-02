@@ -7,7 +7,7 @@ expression: render_snapshot(buf)
 |                                                                                |
 |                                                                                |
 |• Edited geometry.rs (+2 -2)                                                    |
-|      8  use std::fmt;                                                          |
+|  └   8  use std::fmt;                                                          |
 |      9 -fn area(w: u32, h: u32) -> u32 {                                       |
 |      9 +fn area(w: u64, h: u64) -> u64 {                                       |
 |     10      w * h                                                              |
@@ -27,7 +27,7 @@ expression: render_snapshot(buf)
  4 24..25 fg=DarkGray
  4 25..27 fg=Red
  4 27..28 fg=DarkGray
- 5 4..8 fg=DarkGray
+ 5 0..8 fg=DarkGray
  5 8..9 mod=DIM
  5 9..12 fg=#B48EAD
  5 12..22 fg=#C0C5CE

@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+■ denied: execute via 'bash' on rm -rf build
+■ error: 502 Bad Gateway from the provider
+-- collapsed
+
+■ denied: execute via 'bash' on rm -rf build
+■ error: 502 Bad Gateway from the provider
+-- narrow (28)
+
+■ denied: execute via
+  'bash' on rm -rf build
+■ error: 502 Bad Gateway
+  from the provider

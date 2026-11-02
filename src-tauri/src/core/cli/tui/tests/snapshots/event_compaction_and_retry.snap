@@ -1,0 +1,20 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: doc
+---
+-- expanded
+
+• compacted 12 messages into a summary: the prompt neared the context window
+• Upstream request failed: 502; retrying
+-- collapsed
+
+• compacted 12 messages into a summary: the prompt neared the context window
+• Upstream request failed: 502; retrying
+-- narrow (28)
+
+• compacted 12 messages
+  into a summary: the
+  prompt neared the
+  context window
+• Upstream request
+  failed: 502; retrying

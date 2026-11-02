@@ -3432,6 +3432,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        StreamEvent::AgentMessage { from, to, text } => {
+            eprintln!("\x1b[2m[message {from} -> {to}] {text}\x1b[0m")
+        }
         StreamEvent::Compaction {
             phase,
             reason,
@@ -3459,6 +3462,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             ),
             StreamEvent::Notice { text } => {
                 eprintln!("\x1b[2m[subagent:{name}] [notice] {text}\x1b[0m")
+            }
+            StreamEvent::AgentMessage { from, to, text } => {
+                eprintln!("\x1b[2m[message {from} -> {to}] {text}\x1b[0m")
             }
             StreamEvent::Compaction {
                 phase,

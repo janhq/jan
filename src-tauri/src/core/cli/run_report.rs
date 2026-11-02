@@ -13,7 +13,8 @@
 //! consumer matches on are the snake_case variant names: `token`, `reasoning`,
 //! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
-//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `compaction`,
+//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `agent_message`,
+//! `compaction`,
 //! `retry`, `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
 //! `todo_update`, `turn_usage`, `done`, `error`, `permission_request`,
 //! `tool_request`, `tool_request_cancelled`, `tool_details`,
@@ -31,7 +32,7 @@
 //! CLI-minted tags against the records that mint them -- a renamed tag is a
 //! breaking change for every consumer, so it must not be able to land quietly.
 //!
-//! `monitors`, `parked` and `notice` are display-only progress; a consumer that
+//! `monitors`, `parked`, `notice` and `agent_message` are display-only progress; a consumer that
 //! only wants the outcome can read the last line alone. Unknown tags must be
 //! ignored rather than treated as an error -- new variants are additive.
 

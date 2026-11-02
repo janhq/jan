@@ -109,6 +109,32 @@ pub enum DisplayEntry {
     /// A system note the transcript showed (an acknowledgement, a warning, a
     /// failure), so a resumed transcript reads the way the live one did.
     Note { text: String, level: NoteLevel },
+    /// A message between the main agent and a subagent, as delivered (see
+    /// `StreamEvent::AgentMessage`). Part of the conversation, not a note: the
+    /// main agent's next move may answer it, so a resume must show it.
+    AgentMessage { from: String, to: String, text: String },
+    /// A note one subagent's run raised on the main transcript (a notice, a
+    /// retry, a compaction), drawn with the agent as its title and `text`
+    /// under it, so a resume shows what the child went through.
+    AgentNote {
+        agent: String,
+        tone: NoteTone,
+        text: String,
+    },
+}
+
+/// How an [`DisplayEntry::AgentNote`] reads: its gutter mark and colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteTone {
+    /// A plain informational note.
+    Info,
+    /// Something the user should notice: a timeout, a failed command.
+    Warn,
+    /// A monitor condition matching.
+    Monitor,
+    /// A background command that finished.
+    Finished,
 }
 
 /// How loud a note is.

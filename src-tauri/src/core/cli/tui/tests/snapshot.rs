@@ -1258,3 +1258,197 @@ fn transcript_user_tool_and_answer() {
     finish_turn(&mut app, 3_100, 18);
     assert_buffer("transcript_user_tool_and_answer", &body(&mut app));
 }
+
+// ---- Transcript events (#512): one layout for every kind ------------------
+
+/// Every row from `from` on, laid out at `width` as one plain text block, the
+/// expanded form when `open` (every region the shared renderer folds opened,
+/// as Ctrl-O does) and the folded form otherwise.
+fn event_rows(app: &mut App, from: usize, width: u16, open: bool) -> String {
+    pinned(DARK, || {
+        let t = &app.transcript;
+        let layout = t.layout_body(width, 0, false, open, None, Vec::new());
+        let height = layout.content_h;
+        let (lines, rows, _) = layout.window(&t.rows, width, 0, height, None, &|_| None);
+        lines
+            .iter()
+            .zip(rows)
+            .filter(|(_, row)| row.is_some_and(|r| r >= from))
+            .map(|(l, _)| line_text(l).trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// One kind's rows in all three states the spec names: expanded while its
+/// step is in progress (or opened by the user), folded once it finishes, and
+/// wrapped on a narrow terminal.
+fn event_kind_snapshot(name: &str, build: impl Fn(&mut App)) {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    let from = app.transcript.rows.len();
+    build(&mut app);
+    let open = event_rows(&mut app, from, 80, true);
+    app.transcript.end_step();
+    let folded = event_rows(&mut app, from, 80, false);
+    let narrow = event_rows(&mut app, from, 28, false);
+    let doc = format!("-- expanded\n{open}\n-- collapsed\n{folded}\n-- narrow (28)\n{narrow}\n");
+    insta::with_settings!({ prepend_module_to_snapshot => false }, {
+        insta::assert_snapshot!(name, doc);
+    });
+}
+
+fn general_4(app: &mut App, event: StreamEvent) {
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-general-4".into(),
+        name: "general-4".into(),
+        event: Box::new(event),
+    });
+}
+
+#[test]
+fn event_note_and_report() {
+    event_kind_snapshot("event_note_and_report", |app| {
+        app.note("worktree:");
+        app.system_detail_text("path    /tmp/wt-a");
+        app.system_detail_text("branch  jan/agent/a");
+    });
+}
+
+#[test]
+fn event_error_and_denied_permission() {
+    event_kind_snapshot("event_error_and_denied_permission", |app| {
+        app.system(Level::Error, "denied: execute via 'bash' on rm -rf build");
+        app.on_error("upstream".into(), "502 Bad Gateway from the provider".into());
+    });
+}
+
+#[test]
+fn event_compaction_and_retry() {
+    use crate::core::agent::events::{CompactionPhase, CompactionReason};
+    event_kind_snapshot("event_compaction_and_retry", |app| {
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::Preflight,
+            messages: Some(12),
+            report: None,
+        });
+        app.apply(StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_memory_tidy() {
+    event_kind_snapshot("event_memory_tidy", |app| {
+        app.tidy_running = Some(super::super::TidyKind::Manual);
+        super::finish_memory_tidy(app, Ok("archived pr-1\narchived old\nmerged a into b".into()));
+    });
+}
+
+#[test]
+fn event_child_notes() {
+    event_kind_snapshot("event_child_notes", |app| {
+        general_4(app, StreamEvent::Notice {
+            text: "Upstream request failed: connection reset by the peer while reading".into(),
+        });
+        general_4(app, StreamEvent::Retry {
+            attempt: 2,
+            max_attempts: 5,
+            delay_ms: 0,
+            reason: "Upstream request failed: 502".into(),
+        });
+    });
+}
+
+#[test]
+fn event_background_notices() {
+    event_kind_snapshot("event_background_notices", |app| {
+        app.apply(StreamEvent::Notice { text: "Monitor mon-1: 'build' matched".into() });
+        app.apply(StreamEvent::Notice {
+            text: crate::core::agent::child_workspace::kept_notice(&[
+                "/tmp/wt-a on jan/agent/a (1 commit(s), 0 uncommitted file(s))".into(),
+            ]),
+        });
+    });
+}
+
+#[test]
+fn event_messages_between_agents() {
+    use crate::core::agent::events::MAIN_AGENT;
+    event_kind_snapshot("event_messages_between_agents", |app| {
+        general_4(app, StreamEvent::AgentMessage {
+            from: MAIN_AGENT.into(),
+            to: "general-4".into(),
+            text: "Narrow it to the parser.\nSkip the lexer: it is covered.".into(),
+        });
+        app.apply(StreamEvent::AgentMessage {
+            from: "general-4".into(),
+            to: MAIN_AGENT.into(),
+            text: "Found the bug in parse_command.\nIt drops the last token.".into(),
+        });
+    });
+}
+
+#[test]
+fn event_subagent_dispatch_and_finish() {
+    event_kind_snapshot("event_subagent_dispatch_and_finish", |app| {
+        tool_call(app, "d1", "dispatch_subagent", json!({ "subagents": [
+            { "agent": "explore", "task": "Find the parser and report its entry point." },
+            { "agent": "general", "task": "Write the docs." },
+        ] }));
+        tool_result(app, "d1", "dispatched", false, None);
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: Some("stopped by the parent agent".into()),
+        });
+    });
+}
+
+#[test]
+fn event_collected_subagent_answer() {
+    event_kind_snapshot("event_collected_subagent_answer", |app| {
+        tool_call(app, "a1", "await_subagent", json!({ "run_id": "sub-explore-1" }));
+        tool_result(app, "a1", "The parser starts at parse_command.\nIt lives in tui.rs.", false, None);
+    });
+}
+
+#[test]
+fn event_tool_group_and_diff() {
+    event_kind_snapshot("event_tool_group_and_diff", |app| {
+        tool_call(app, "r1", "read", json!({ "path": "src/main.rs" }));
+        tool_call(app, "b1", "bash", json!({ "command": "cargo test" }));
+        tool_result(app, "r1", "fn main() {}", false, None);
+        tool_result(app, "b1", "ok\n[exit 0]", false, None);
+        app.transcript.finalize_tool_group();
+        tool_call(app, "e1", "edit", json!({ "path": "src/geometry.rs" }));
+        tool_result(app, "e1", "Applied 1 edit(s)", false, Some("-    9 | fn area(w: u32) -> u32 {\n+    9 | fn area(w: u64) -> u64 {"));
+    });
+}
+
+#[test]
+fn event_todo_ask_and_plan() {
+    event_kind_snapshot("event_todo_ask_and_plan", |app| {
+        tool_call(app, "t1", "todo", json!({ "op": "init", "list": [] }));
+        tool_result(app, "t1", "ok", false, None);
+        tool_call(app, "q1", "ask", json!({ "questions": [] }));
+        tool_result(app, "q1", "answered", false, None);
+        app.transcript.finalize_tool_group();
+        app.note("\u{25c8} PLAN \u{b7} read only -- investigate, then propose a plan for review");
+    });
+}
+
+#[test]
+fn event_turn_receipt_then_note() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    token(&mut app, "Done.");
+    finish_turn(&mut app, 4_000, 30);
+    app.note("model switched to gpt-5-mini");
+    assert_buffer("event_turn_receipt_then_note", &body(&mut app));
+}
