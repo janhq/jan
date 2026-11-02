@@ -244,7 +244,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     })
   },
   deleteAllThreads: () => {
-    capabilityRequests.clear()
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
@@ -268,6 +267,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // deleteThread: removing the chat session is what ends a turn the thread
       // still has running in the background.
       threadsToDeleteIds.forEach((threadId) => {
+        capabilityRequests.delete(threadId)
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
         useAppState.getState().clearThreadState(threadId)

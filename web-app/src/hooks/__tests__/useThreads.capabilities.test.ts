@@ -271,4 +271,17 @@ describe('useThreads conversation capabilities', () => {
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
   })
 
+  it.each(['favorite', 'project'])('bulk deletion preserves in-flight saves for retained %s threads', async (kind) => {
+    const kept = thread('chat', kind === 'project' ? { project: { id: 'p', name: 'Project', updated_at: 1 } } : {})
+    if (kind === 'favorite') kept.isFavorite = true
+    useThreads.setState({ threads: { chat: kept } })
+    const pending = deferred()
+    persist.mockReturnValueOnce(pending.promise)
+    const saving = save(granted)
+    useThreads.getState().deleteAllThreads()
+    pending.resolve()
+    await saving
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
+  })
+
 })
