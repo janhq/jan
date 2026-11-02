@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
 use crate::tools::sandbox::{
-    command_touches_hidden_root, escapes_read_roots, escapes_write_roots, in_hidden_root,
+    escapes_read_roots, escapes_write_roots, hidden_tokens, in_attached_root, in_hidden_root,
 };
 use crate::tools::{BuiltinTool, Capability};
 
@@ -186,16 +186,36 @@ pub fn resolve_decision(
     // nor a routine "allow writes" approval reaches keys, hooks or the agent's
     // own permissions.
     if let Some(hidden) = ctx.hidden_root {
+        // An attached root inside the home (a parent's view of its subagents'
+        // worktrees) is the one part of it a read may reach. The read tools
+        // only read. The shell may name it only while it stays in the sandbox
+        // (`hidden_root` is set only then, and `escalate` leaves it) and the
+        // sandbox mounts that root read-only (it is not also a write root):
+        // otherwise `rm -rf` on a child's worktree would be one prompt away.
+        let shell_reads_only = tool.capability == Capability::Exec
+            && !requests_escalation(tool, args);
+        let carved = |p: &str| match tool.capability {
+            Capability::Read => {
+                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+            }
+            Capability::Exec if shell_reads_only => {
+                in_attached_root(ctx.project_root, ctx.scratch, ctx.read_roots, p)
+                    && !in_attached_root(ctx.project_root, ctx.scratch, ctx.write_roots, p)
+            }
+            _ => false,
+        };
+        let hidden_hit = |p: &str| {
+            in_hidden_root(ctx.project_root, ctx.scratch, hidden, p) && !carved(p)
+        };
         let hits_path = tool.path_args.iter().any(|key| {
             args.get(key)
                 .and_then(|v| v.as_str())
-                .is_some_and(|p| in_hidden_root(ctx.project_root, ctx.scratch, hidden, p))
+                .is_some_and(hidden_hit)
         });
         let hits_command = tool.capability == Capability::Exec
-            && args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .is_some_and(|c| command_touches_hidden_root(ctx.project_root, ctx.scratch, hidden, c));
+            && args.get("command").and_then(|v| v.as_str()).is_some_and(|c| {
+                hidden_tokens(hidden, c).into_iter().any(|t| hidden_hit(&t))
+            });
         if hits_path || hits_command {
             return Decision::HardDeny(DenyReason::Hidden);
         }
@@ -782,10 +802,17 @@ mod tests {
         let root = unique_root();
         let grants = SessionGrants::default();
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        for name in ["memory_read", "memory_write", "skill_write", "memory_list"] {
+        // Every memory op, writes and deletes included: memory is the agent's.
+        for (name, op) in [
+            ("memory", "view"),
+            ("memory", "write"),
+            ("memory", "edit"),
+            ("memory", "delete"),
+            ("skill_write", ""),
+        ] {
             let d = resolve_decision(
                 lookup(name).unwrap(),
-                &json!({"name": "x", "content": "y"}),
+                &json!({"op": op, "name": "x", "content": "y"}),
                 &GateContext {
                     project_root: &root,
                     scratch: None,
@@ -796,13 +823,13 @@ mod tests {
                 &perms,
                 &grants,
             );
-            assert_eq!(d, Decision::Allow, "{name} should auto-allow");
+            assert_eq!(d, Decision::Allow, "{name} {op} should auto-allow");
         }
         // Explicit deny in agent.toml still overrides the auto-allow.
         let denied =
-            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
+            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory"]), &[]);
         let d = resolve_decision(
-            lookup("memory_write").unwrap(),
+            lookup("memory").unwrap(),
             &json!({"name": "x", "content": "y"}),
             &GateContext {
                 project_root: &root,
@@ -1074,6 +1101,91 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The parent may read its subagents' worktrees under `~/.jan/worktrees`
+    /// through a read root: by path with the read tools, and from the shell
+    /// only while it runs sandboxed, where the root is mounted read-only. The
+    /// rest of the Jan home stays hidden, a read root grants no write, and a
+    /// shell call that leaves the sandbox (`escalate`) or a root the sandbox
+    /// mounts writable gets no carve-out at all.
+    #[test]
+    fn a_read_root_inside_the_jan_home_is_readable_and_nothing_else_there_is() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let trees = jan.join("worktrees/proj-1");
+        std::fs::create_dir_all(trees.join("general-ab12")).unwrap();
+        std::fs::write(trees.join("general-ab12/a.txt"), b"a").unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let roots = vec![trees.canonicalize().unwrap()];
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &roots,
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let perms = ToolPermissions::allow_all();
+        let grants = SessionGrants::default();
+        let file = trees.join("general-ab12/a.txt");
+        let read = |args| resolve_decision(lookup("read").unwrap(), &args, &ctx, &perms, &grants);
+        assert_eq!(read(json!({"path": file.to_string_lossy()})), Decision::Allow);
+        assert_eq!(
+            read(json!({"path": jan.join("config.toml").to_string_lossy()})),
+            Decision::HardDeny(DenyReason::Hidden)
+        );
+        let shell = |cmd: String| {
+            resolve_decision(
+                lookup(crate::tools::SHELL_TOOL).unwrap(),
+                &json!({"command": cmd}),
+                &ctx,
+                &perms,
+                &grants,
+            )
+        };
+        assert_eq!(
+            shell(format!("git -C {} diff", file.parent().unwrap().display())),
+            Decision::Prompt(PromptKind::Exec),
+            "an ordinary exec, not a hidden-path refusal"
+        );
+        assert_eq!(
+            shell(format!("cat {}", jan.join("config.toml").display())),
+            Decision::HardDeny(DenyReason::Hidden)
+        );
+        let write = resolve_decision(
+            lookup("write").unwrap(),
+            &json!({"path": file.to_string_lossy(), "content": "x"}),
+            &ctx,
+            &perms,
+            &grants,
+        );
+        assert_eq!(write, Decision::HardDeny(DenyReason::Hidden), "a read root is not writable");
+        // Out of the sandbox nothing mounts the root read-only, so a command
+        // naming it is refused like any other path in the Jan home.
+        let rm = format!("rm -rf {}", file.parent().unwrap().display());
+        let unsandboxed = resolve_decision(
+            lookup(crate::tools::SHELL_TOOL).unwrap(),
+            &json!({"command": rm, ESCALATE_ARG: true}),
+            &ctx,
+            &perms,
+            &grants,
+        );
+        assert_eq!(unsandboxed, Decision::HardDeny(DenyReason::Hidden));
+        // Inside it, the same command meets a read-only mount.
+        assert_eq!(shell(rm.clone()), Decision::Prompt(PromptKind::Exec));
+        // A root the sandbox mounts writable is no read-only view.
+        let writable = GateContext { write_roots: &roots, ..ctx };
+        let in_writable = resolve_decision(
+            lookup(crate::tools::SHELL_TOOL).unwrap(),
+            &json!({"command": rm}),
+            &writable,
+            &perms,
+            &grants,
+        );
+        assert_eq!(in_writable, Decision::HardDeny(DenyReason::Hidden));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// The Cowork opt-in at the gate layer: an attached root also passed as a

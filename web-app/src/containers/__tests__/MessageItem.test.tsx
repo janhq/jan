@@ -84,7 +84,13 @@ vi.mock('../CopyButton', () => ({
 }))
 
 vi.mock('@/utils/formatDate', () => ({
-  formatDate: () => '2024-01-01',
+  formatDate: () => '2024-01-01 full',
+  formatMessageTime: () => '3:30 PM',
+}))
+
+const touchRef = vi.hoisted(() => ({ current: false }))
+vi.mock('@/hooks/useMediaQuery', () => ({
+  useTouchDevice: () => touchRef.current,
 }))
 
 vi.mock('@/lib/fileMetadata', () => ({
@@ -137,6 +143,7 @@ describe('MessageItem', () => {
     vi.clearAllMocks()
     selectedModelRef.current = { id: 'm1' }
     pendingApprovalsRef.current = {}
+    touchRef.current = false
   })
 
   it('renders assistant text via RenderMarkdown', () => {
@@ -768,6 +775,23 @@ describe('MessageItem', () => {
     expect(copy.getAttribute('data-text')).toBe('a\nb')
   })
 
+  it.each(['user', 'assistant'])(
+    'hides edit on a %s message when no selectedModel',
+    (role) => {
+      selectedModelRef.current = null
+      render(
+        <MessageItem
+          message={makeMsg({ role }) as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onEdit={vi.fn()}
+        />
+      )
+      expect(screen.queryByTestId('edit-btn')).not.toBeInTheDocument()
+    }
+  )
+
   it('does not render regenerate button when no selectedModel', () => {
     selectedModelRef.current = null
     const onRegenerate = vi.fn()
@@ -781,5 +805,104 @@ describe('MessageItem', () => {
       />
     )
     expect(screen.queryByTitle('chat:actions.regenerate')).not.toBeInTheDocument()
+  })
+
+  describe('footer', () => {
+    const renderAssistant = () =>
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onRegenerate={vi.fn()}
+        />
+      )
+
+    it('shows the compact time with the full date as its tooltip', () => {
+      renderAssistant()
+      const time = screen.getByText('3:30 PM')
+      expect(time).toHaveAttribute('title', '2024-01-01 full')
+      // A real <time> with a machine-readable stamp, not a titled span.
+      expect(time.tagName).toBe('TIME')
+      expect(time.getAttribute('datetime')).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    })
+
+    it('reveals secondary actions on hover only, with copy always visible', () => {
+      renderAssistant()
+      const regenerate = screen.getByTestId('regenerate-message')
+      // Secondary actions sit in a hover-revealed group; copy does not.
+      expect(regenerate.parentElement?.className).toContain('opacity-0')
+      expect(regenerate.parentElement?.className).toContain(
+        'group-hover/message:opacity-100'
+      )
+      // Keyboard users reach the same controls: focus inside reveals them.
+      expect(regenerate.parentElement?.className).toContain(
+        'group-has-[:focus-visible]/message:opacity-100'
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement).not.toBeNull()
+      expect(copy.parentElement!.className).not.toContain('opacity-0')
+    })
+
+    it('hides copy behind hover on an earlier message', () => {
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage={false}
+          status={'ready' as any}
+        />
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement?.className).toContain('opacity-0')
+      expect(copy.parentElement?.className).toContain(
+        'group-hover/message:opacity-100'
+      )
+    })
+
+    it('keeps copy and the version switcher visible together when there are versions', () => {
+      render(
+        <MessageItem
+          message={makeMsg() as any}
+          isFirstMessage
+          isLastMessage={false}
+          status={'ready' as any}
+          versionInfo={{ index: 1, count: 2 }}
+          onSwitchVersion={vi.fn()}
+        />
+      )
+      const copy = screen.getByTestId('copy-btn')
+      expect(copy.parentElement!.className).not.toContain('opacity-0')
+      const prev = screen.getByTestId('message-version-prev')
+      expect(prev.closest('[class*="opacity-0"]')).toBeNull()
+    })
+
+    it('keeps Continue visible at rest on a stopped reply', () => {
+      render(
+        <MessageItem
+          message={makeMsg({ metadata: { createdAt: new Date(), stopped: true } }) as any}
+          isFirstMessage
+          isLastMessage
+          status={'ready' as any}
+          onContinue={vi.fn()}
+          onRegenerate={vi.fn()}
+        />
+      )
+      // The only way to resume a stopped reply is not hidden behind hover...
+      const cont = screen.getByTestId('continue-message')
+      expect(cont.closest('[class*="opacity-0"]')).toBeNull()
+      // ...while regenerate stays with the other hover-revealed actions.
+      const regen = screen.getByTestId('regenerate-message')
+      expect(regen.closest('[class*="opacity-0"]')).not.toBeNull()
+    })
+
+    it('shows every action on a touch device', () => {
+      touchRef.current = true
+      renderAssistant()
+      const regenerate = screen.getByTestId('regenerate-message')
+      expect(regenerate.parentElement?.className).toContain('opacity-100')
+      expect(regenerate.parentElement?.className).not.toContain('opacity-0')
+    })
   })
 })

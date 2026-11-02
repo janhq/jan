@@ -6,7 +6,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import { BrainIcon, ChevronDownIcon } from 'lucide-react'
+import { BrainIcon, ChevronRightIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -149,10 +149,12 @@ export const ReasoningTrigger = memo(
           <>
             <BrainIcon className="size-4" />
             {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
+            {/* Right when folded, turning down as it opens: the same cue as
+                every other expandable row. */}
+            <ChevronRightIcon
               className={cn(
                 'size-4 transition-transform',
-                isOpen ? 'rotate-180' : 'rotate-0'
+                isOpen ? 'rotate-90' : 'rotate-0'
               )}
             />
           </>

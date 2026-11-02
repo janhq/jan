@@ -548,10 +548,11 @@ pub(crate) struct RunSettings {
     /// like the `[agent]` section it comes from.
     #[cfg(feature = "cli")]
     pub worktree: Option<bool>,
-    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
-    /// shell tool's old name `bash`, which now matches nothing. Reported at run
-    /// start with the hook-load notices, so a deny rule that stopped applying
-    /// does not do so silently.
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names a
+    /// tool by an old name: the shell's `bash`, which now matches nothing, or
+    /// an old memory tool, which now applies to all of `memory`. Reported at
+    /// run start with the hook-load notices, so a rule whose reach changed does
+    /// not do so silently.
     pub tool_notices: Vec<String>,
 }
 
@@ -587,7 +588,7 @@ fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
     .into_iter()
     .flat_map(|(where_, list)| {
         list.iter().filter_map(move |name| {
-            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+            tauri_plugin_agent_tools::tools::renamed_tool_notice(name, where_)
         })
     })
     .collect()
@@ -893,6 +894,20 @@ mod tests {
         let notices = run_settings(&root).tool_notices;
         assert_eq!(notices.len(), 1, "{notices:?}");
         assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
+    }
+
+    /// A `[tools]` entry on an old memory tool name still applies, to the
+    /// whole `memory` tool, and is reported so the user renames it.
+    #[test]
+    fn a_tools_list_naming_an_old_memory_tool_still_applies_and_is_reported() {
+        let root = unique_root("renamed_memory");
+        write_agent_toml(&root, "[tools]\ndeny = [\"memory_write\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `memory_write`"), "{}", notices[0]);
+        let cfg = load_agent_config(&root).unwrap();
+        assert!(permissions_from(&cfg).is_denied("memory"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

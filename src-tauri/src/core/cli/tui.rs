@@ -221,11 +221,36 @@ fn suspend_to_shell(mouse: bool) -> io::Result<()> {
             "no job-control shell above jan (ssh -t, docker exec); nothing could resume it",
         ));
     }
-    restore_terminal_modes();
+    // After a SIGTTIN stop the modes are already off (an external SIGTSTP can
+    // land while jan sits in the background): restoring again would pop the
+    // shell's own kitty entry. This path re-enters the modes itself, so the
+    // render loop must not re-arm them a second time.
+    let modes_off = TTY_REARM.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if !modes_off {
+        restore_terminal_modes();
+    }
     let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
-    enable_raw_mode()?;
+    // Resumed with `bg`, the `tcsetattr`s below stop jan with SIGTTOU; after
+    // `fg` they fail with EINTR, which must not leave the TUI in cooked mode.
+    if modes_off {
+        // crossterm's enable is a no-op while it believes raw mode is on.
+        let _ = retry_interrupted(disable_raw_mode);
+    }
+    retry_interrupted(enable_raw_mode)?;
     enter_terminal_modes(&mut io::stdout(), mouse)?;
     stopped
+}
+
+/// Run a terminal call again while it fails with EINTR. A `tcsetattr` from the
+/// background stops jan with SIGTTOU and, once continued, returns EINTR on
+/// macOS. Bounded in practice: each retry needs another stop and continue.
+fn retry_interrupted(mut f: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    loop {
+        match f() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => return other,
+        }
+    }
 }
 
 /// POSIX: a process group is orphaned when no member has a parent in another
@@ -333,6 +358,220 @@ async fn await_stop_signal(signal: &mut StopSignal) {
     pending().await
 }
 
+/// Set by `on_tty_input_stop` when it writes the restore bytes; cleared by
+/// whatever turns the modes back on (`rearm_after_tty_stop`, `suspend_to_shell`).
+/// While set the modes are off, so a second stop writes nothing: a second
+/// kitty pop would pop the shell's own entry.
+#[cfg(unix)]
+static TTY_REARM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `on_tty_input_stop` is running, possibly stopped inside: the render loop
+/// must not re-arm under it.
+#[cfg(unix)]
+static TTY_STOPPING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The SIGTTIN disposition jan inherited, while its own handler is installed.
+#[cfg(unix)]
+static TTY_INHERITED_TTIN: std::sync::Mutex<Option<nix::sys::signal::SigAction>> =
+    std::sync::Mutex::new(None);
+
+/// A read from the background (another group took the terminal's foreground)
+/// stops jan with SIGTTIN, and by default with every mode still on: the shell
+/// prompt then fills with mouse reports. A plain `sigaction` handler rather
+/// than a tokio stream like SIGTSTP's: that registration is permanent, and a
+/// caught SIGTTIN no longer stops anything, so a background read outside
+/// `chat_loop` (startup, shutdown) would re-raise it in a tight loop forever.
+/// Installed once the modes are on, so a stop before then has nothing to
+/// restore and nothing to re-arm; `release_terminal` puts the inherited
+/// disposition back. A parent that ignores SIGTTIN (a background read then
+/// fails with EIO instead of stopping) is left alone.
+#[cfg(unix)]
+fn install_tty_input_stop_handler() {
+    use nix::sys::signal::{sigaction, SigHandler, Signal};
+    // SAFETY: the handler only makes async-signal-safe calls.
+    let Ok(old) = (unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) }) else {
+        return;
+    };
+    if old.handler() == SigHandler::SigIgn {
+        // SAFETY: putting back what was there a moment ago.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &old) };
+        return;
+    }
+    *TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()) = Some(old);
+}
+
+#[cfg(unix)]
+fn tty_input_stop_action() -> nix::sys::signal::SigAction {
+    use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet};
+    SigAction::new(
+        SigHandler::Handler(on_tty_input_stop),
+        SaFlags::SA_RESTART,
+        SigSet::empty(),
+    )
+}
+
+#[cfg(unix)]
+fn reset_tty_input_stop_handler() {
+    let old = TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).take();
+    if let Some(old) = old {
+        // SAFETY: restoring the disposition jan started with.
+        let _ = unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTIN, &old) };
+    }
+}
+
+#[cfg(unix)]
+fn tty_input_stop_installed() -> bool {
+    TTY_INHERITED_TTIN.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
+/// Whether jan's group is, positively, the terminal's foreground. Async-signal-
+/// safe (`tcgetpgrp`, `getpgrp`); an unreadable answer is a no, so the handler
+/// only skips the stop on evidence.
+#[cfg(unix)]
+fn tty_foreground_is_ours() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: plain queries.
+    unsafe {
+        let fg = nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO);
+        fg >= 0 && fg == nix::libc::getpgrp()
+    }
+}
+
+/// Async-signal-safe only: one write of the restore bytes, then the real stop.
+/// No `disable_raw_mode`: from the background a `tcsetattr` raises SIGTTOU, and
+/// the termios is the new foreground's anyway -- a job-control shell restores
+/// its own when it takes the terminal back. SIGTTOU is ignored around the
+/// write, so under `stty tostop` the restore still lands before the stop
+/// instead of the write stopping jan first. `raise`, not the group-wide `kill`
+/// Ctrl-Z uses: the SIGTTIN that got here (the kernel's on a background read,
+/// or `stop_if_terminal_taken`'s) already went to the whole group, so a
+/// wrapper got its own copy; only this process caught it. The shell still
+/// reports `suspended (tty input)`. Once jan is back in the foreground the
+/// render loop re-arms the modes.
+#[cfg(unix)]
+extern "C" fn on_tty_input_stop(_: nix::libc::c_int) {
+    use nix::errno::Errno;
+    use nix::sys::signal::{
+        pthread_sigmask, raise, sigaction, SaFlags, SigAction, SigHandler, SigSet, SigmaskHow,
+        Signal,
+    };
+    use std::sync::atomic::Ordering;
+    let saved = Errno::last_raw();
+    // The foreground came back before the handler ran, or the signal did not
+    // come from a background read at all: nothing to hand back.
+    if tty_foreground_is_ours() {
+        Errno::set_raw(saved);
+        return;
+    }
+    TTY_STOPPING.store(true, Ordering::SeqCst);
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; put back right after the write.
+        let ttou = unsafe { sigaction(Signal::SIGTTOU, &ignore) };
+        let mut rest: &[u8] = &RESTORE_BYTES;
+        // Bounded: an EIO or a closed terminal ends it rather than looping.
+        for _ in 0..8 {
+            if rest.is_empty() {
+                break;
+            }
+            // SAFETY: writes from a static buffer.
+            let n = unsafe {
+                nix::libc::write(nix::libc::STDOUT_FILENO, rest.as_ptr().cast(), rest.len())
+            };
+            if n > 0 {
+                // Modes are (being) turned off: a re-arm is owed. Not before
+                // the first byte lands -- on a terminal that refuses every
+                // write nothing was restored, and a re-arm would stack the
+                // modes a second time.
+                TTY_REARM.store(true, Ordering::SeqCst);
+                rest = &rest[n as usize..];
+            } else if n == 0 || Errno::last() != Errno::EINTR {
+                break;
+            }
+        }
+        if let Ok(ttou) = ttou {
+            // SAFETY: as above.
+            let _ = unsafe { sigaction(Signal::SIGTTOU, &ttou) };
+        }
+    }
+    // Re-checked: the foreground may have come back during the write, and a
+    // stop then would need a second `fg` for nothing.
+    if !tty_foreground_is_ours() {
+        let default = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+        // SAFETY: async-signal-safe; the default action is what stops the process.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &default) };
+        let _ = raise(Signal::SIGTTIN);
+        // SIGTTIN is blocked while its handler runs; unblocking delivers the
+        // pending one, and the process stops here until SIGCONT.
+        let mut ttin = SigSet::empty();
+        ttin.add(Signal::SIGTTIN);
+        let _ = pthread_sigmask(SigmaskHow::SIG_UNBLOCK, Some(&ttin), None);
+        // SAFETY: as above.
+        let _ = unsafe { sigaction(Signal::SIGTTIN, &tty_input_stop_action()) };
+    }
+    TTY_STOPPING.store(false, Ordering::SeqCst);
+    Errno::set_raw(saved);
+}
+
+/// After a SIGTTIN stop, take the modes back as `suspend_to_shell` does after
+/// its SIGSTOP, but only once jan is the terminal's foreground again: a resume
+/// into the background (`bg`) leaves it pending. Returns whether the terminal
+/// is still not jan's, so the caller neither reads (that would only stop again)
+/// nor paints over the shell.
+#[cfg(unix)]
+fn rearm_after_tty_stop(app: &mut App, mouse: bool) -> bool {
+    use std::sync::atomic::Ordering;
+    if !TTY_REARM.load(Ordering::SeqCst) {
+        return false;
+    }
+    if TTY_STOPPING.load(Ordering::SeqCst) || !owns_terminal_foreground() {
+        return true;
+    }
+    TTY_REARM.store(false, Ordering::SeqCst);
+    // crossterm's enable is a no-op while it believes raw mode is on, and the
+    // handler could not turn it off; disable first so the termios is re-read.
+    let _ = retry_interrupted(disable_raw_mode);
+    if let Err(e) = retry_interrupted(enable_raw_mode)
+        .and_then(|()| enter_terminal_modes(&mut io::stdout(), mouse))
+    {
+        app.note(&format!("could not restore the terminal after a stop: {e}"));
+    }
+    app.request_repaint();
+    false
+}
+
+/// Another group holds the terminal's foreground: stop now, from the render
+/// loop, instead of on the next read. A stop inside crossterm's blocking read
+/// resumes into that same read, so after `fg` the TUI would stay off-screen
+/// until a key arrived; stopped here, the next pass re-arms at once. Sent to
+/// the whole group, as the kernel's own SIGTTIN is, so a wrapper stops too;
+/// jan's copy goes through the handler, so the same restore and the same
+/// `suspended (tty input)`. Returns whether it stopped (or tried to: in an
+/// orphaned group the stop is discarded, and `TTY_REARM` keeps the loop from
+/// trying again).
+#[cfg(unix)]
+fn stop_if_terminal_taken() -> bool {
+    use nix::sys::signal::{kill, Signal};
+    // Without the handler (an ignored SIGTTIN) the signal would do nothing,
+    // every tick.
+    if !tty_input_stop_installed() || owns_terminal_foreground() {
+        return false;
+    }
+    let _ = kill(nix::unistd::Pid::from_raw(0), Signal::SIGTTIN);
+    true
+}
+
+/// Whether jan's group is the foreground of the terminal it draws to. An
+/// unreadable answer counts as yes: re-arming wrongly only means the next read
+/// stops again, where waiting wrongly would freeze the session.
+#[cfg(unix)]
+fn owns_terminal_foreground() -> bool {
+    // libc directly: nix's wrapper sits behind its `term` feature.
+    // SAFETY: a plain query on stdout's descriptor.
+    let fg = unsafe { nix::libc::tcgetpgrp(nix::libc::STDOUT_FILENO) };
+    fg < 0 || fg == nix::unistd::getpgrp().as_raw()
+}
+
 /// Raw escape sequences standing in for the `crossterm::Command` types used
 /// elsewhere (`DisableBracketedPaste`, `DisableMouseCapture`,
 /// `LeaveAlternateScreen`, cursor show): `restore_terminal_modes` has no
@@ -348,6 +587,46 @@ const DISABLE_BRACKETED_PASTE: &str = "\x1b[?2004l";
 const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
+
+/// What `write_restore` writes, as one static buffer for the SIGTTIN handler,
+/// which cannot format or allocate. Built from the same constants; a test
+/// pins the two together. Unix only, like the handler (Windows omits the
+/// alternate-scroll restore).
+#[cfg(unix)]
+const RESTORE_PARTS: [&str; 7] = [
+    END_SYNC_UPDATE,
+    DISABLE_BRACKETED_PASTE,
+    DISABLE_MOUSE_CAPTURE,
+    KITTY_KEYS_OFF,
+    ALT_SCROLL_RESTORE,
+    LEAVE_ALT_SCREEN,
+    SHOW_CURSOR,
+];
+#[cfg(unix)]
+const RESTORE_LEN: usize = {
+    let (mut n, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        n += RESTORE_PARTS[i].len();
+        i += 1;
+    }
+    n
+};
+#[cfg(unix)]
+static RESTORE_BYTES: [u8; RESTORE_LEN] = {
+    let mut out = [0u8; RESTORE_LEN];
+    let (mut at, mut i) = (0, 0);
+    while i < RESTORE_PARTS.len() {
+        let part = RESTORE_PARTS[i].as_bytes();
+        let mut j = 0;
+        while j < part.len() {
+            out[at] = part[j];
+            at += 1;
+            j += 1;
+        }
+        i += 1;
+    }
+    out
+};
 
 /// The thread running the render loop while it owns the terminal's modes, or
 /// `None` once they have been restored. Panic hooks are process-wide, but only
@@ -366,6 +645,10 @@ fn release_terminal() -> bool {
     let mut owner = TERMINAL_OWNER.lock().unwrap_or_else(|e| e.into_inner());
     if *owner == Some(std::thread::current().id()) {
         *owner = None;
+        // Back to the default stop, so whatever runs after the session (the
+        // resume hint, a panic message) behaves like any other program.
+        #[cfg(unix)]
+        reset_tty_input_stop_handler();
         true
     } else {
         false
@@ -4480,6 +4763,9 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// Set by `/worktree` to ask the loop to gather its report off the render
+    /// loop: it runs git per worktree. Taken once, like `context_request`.
+    worktree_request: bool,
     /// The provider's execution id for the most recent request that reported
     /// one, so `/usage` can name something concrete to look up. `None` when no
     /// request has reported one -- which is the normal case on the default
@@ -4559,6 +4845,20 @@ struct App {
     plugin_collection_url: Option<String>,
     /// A plugin install is in flight: a second request is refused.
     plugin_installing: bool,
+    /// A memory tidy was asked for (`/memory tidy`, or the auto trigger); the
+    /// chat loop starts it on the session's subagent registry. Taken once.
+    tidy_request: Option<TidyKind>,
+    /// The tidy in flight, if any: one at a time.
+    tidy_running: Option<TidyKind>,
+    /// The in-flight tidy's subagent run id, so entering plan mode can stop it.
+    tidy_run_id: Option<String>,
+    /// Whether this session already queued an automatic tidy. Auto-tidy runs
+    /// at most once per session, so a tidy that cannot get the index under
+    /// budget never loops; `/new`, `/clear` and `/resume` reset it.
+    auto_tidy_checked: bool,
+    /// The memory stamp (`Scopes::stamp`) the last under-budget check saw, so
+    /// a turn that changed no note skips rebuilding the index.
+    auto_tidy_stamp: Option<u64>,
     /// Compaction handed off to the loop, which spawns the summarizing model
     /// call off the render loop. Taken once.
     compact_request: Option<CompactKind>,
@@ -4911,6 +5211,9 @@ struct SubagentPanel {
     /// When the child's `SubagentStart` arrived, for the elapsed time beside
     /// it once the main turn has ended. `None` while it is queued or pending.
     started: Option<Instant>,
+    /// Where the child works, from its `SubagentStart` (see
+    /// `child_workspace::ChildWorkspace::label`). Shown in `/agents`.
+    workspace: Option<String>,
     /// The child's run as rows, built from its own stream by the same code
     /// that builds the main transcript, for the `/agents` detail view and the
     /// finished summary row's expand. A child's stream never reaches the
@@ -4961,6 +5264,7 @@ impl SubagentPanel {
             phase: None,
             parked: false,
             started: None,
+            workspace: None,
             transcript: Transcript::for_child(INITIAL_THINK_TAGS),
         }
     }
@@ -5318,6 +5622,7 @@ impl App {
             vibe_confirm: None,
             readout: None,
             context_request: false,
+            worktree_request: false,
             last_execution_id: None,
             reported_usage_request: None,
             mcp_prompt: None,
@@ -5349,6 +5654,11 @@ impl App {
             plugin_collection_url: None,
             plugin_installing: false,
             update_installing: false,
+            tidy_request: None,
+            tidy_running: None,
+            tidy_run_id: None,
+            auto_tidy_checked: false,
+            auto_tidy_stamp: None,
             compact_request: None,
             compacting: None,
             compact_started: None,
@@ -5454,6 +5764,22 @@ impl App {
         self.adopt_session_start(Some(start));
     }
 
+    /// Re-take the session's memory index after a compaction. The compaction
+    /// already rewrote the history, so the prompt it is about to send is new
+    /// either way, and a fresh index stops the changes block from repeating
+    /// what the summary folded in. The date and branch stay the session's.
+    fn refresh_memory_snapshot(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let Some(start) = args.session_start.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let fresh = start.with_fresh_memory(&root);
+        self.adopt_session_start(Some(fresh));
+    }
+
     /// Run the session on `start` from the next turn on; a no-op when it is
     /// already the one in use.
     fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
@@ -5487,6 +5813,9 @@ impl App {
         self.resume_notice_pending = false;
         self.set_host_system_prompt(None);
         self.refresh_session_start();
+        // A new session gets its own chance at an automatic tidy.
+        self.auto_tidy_checked = false;
+        self.auto_tidy_stamp = None;
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -8066,7 +8395,12 @@ impl App {
                     });
                 }
             }
-            StreamEvent::SubagentStart { run_id, name, task } => {
+            StreamEvent::SubagentStart {
+                run_id,
+                name,
+                task,
+                workspace,
+            } => {
                 // A child with no model of its own runs on the parent's, so it
                 // starts on the parent's tag setting; its first request moves it
                 // to its own provider's if that differs.
@@ -8079,6 +8413,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                 } else if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -8089,6 +8424,7 @@ impl App {
                     panel.queued = false;
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     if let Some(t) = task {
                         panel.task = t;
                     }
@@ -8098,6 +8434,7 @@ impl App {
                     let mut panel = SubagentPanel::new(run_id, name, task.unwrap_or_default());
                     panel.started = Some(Instant::now());
                     panel.transcript.parse_think_tags = inherited;
+                    panel.workspace = workspace;
                     self.subagents.push(panel);
                 }
             }
@@ -8487,6 +8824,7 @@ impl App {
                 if child.is_none() {
                     self.run_compacting = None;
                     self.pending_compaction_refresh = true;
+                    self.refresh_memory_snapshot();
                 }
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
@@ -8704,7 +9042,87 @@ impl App {
         // Reminder policy runs last: only if nothing else already claimed the
         // next turn (goal eval, a dequeued message) and open work remains.
         self.maybe_inject_todo_reminder(normal, no_answer, &answer);
+        self.maybe_auto_tidy();
         self.persist();
+    }
+
+    /// Switch to plan mode, the one way the TUI enters it once the session is
+    /// up. A tidy child runs in normal mode, so one already running would keep
+    /// changing memory under a mode that keeps memory read only: it is
+    /// aborted (the registry releases its slot; a note it was mid-way through
+    /// is written whole or not at all, and the index is rebuilt by the next
+    /// change), and a queued one is dropped. A stopped automatic tidy gets its
+    /// check back, so it runs again at the first turn end after plan mode.
+    fn enter_plan_mode(&mut self) {
+        self.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let queued = self.tidy_request.take();
+        let running = self.tidy_running.take();
+        if let Some(run_id) = self.tidy_run_id.take() {
+            self.subagent_set.abort_child(&run_id);
+        }
+        if queued.or(running) == Some(TidyKind::Auto) {
+            self.auto_tidy_checked = false;
+            self.auto_tidy_stamp = None;
+        }
+        if queued.is_some() || running.is_some() {
+            self.note("memory tidy stopped: plan mode is read only");
+        }
+    }
+
+    /// Whether this project's rules deny the `memory` tool. A tidy child keeps
+    /// the parent's permissions, so with `memory` denied it could change
+    /// nothing: no tidy is started.
+    fn memory_denied(&self) -> bool {
+        self.args.as_ref().is_some_and(|a| {
+            a.permissions
+                .is_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        })
+    }
+
+    /// Queue an automatic memory tidy when the index has outgrown its prompt
+    /// budget, at most once per session.
+    ///
+    /// Checked at the end of every turn rather than per write: that is when the
+    /// session's own writes have landed, and the first turn's end also covers
+    /// a store that was already over budget at session start. Only a queued
+    /// tidy spends the session's one automatic tidy, so a store that grows
+    /// past its budget mid-session is still tidied. Cheap when nothing changed:
+    /// the index is rebuilt only when the notes' metadata stamp moved. The tidy
+    /// runs in the background on the session's subagent registry and never
+    /// starts a model turn, so it cannot block or loop; its changes reach this
+    /// session only through the `Memory Changes` tail block. Off with
+    /// `memory_auto_tidy = false`.
+    fn maybe_auto_tidy(&mut self) {
+        // Plan mode is read-only, memory included; the check resumes at the
+        // first turn end after it.
+        if self.auto_tidy_checked
+            || self.tidy_running.is_some()
+            || self.tidy_request.is_some()
+            || self.run_mode == crate::core::agent::plan::RunMode::Plan
+        {
+            return;
+        }
+        let Some(root) = self.args.as_ref().and_then(|a| a.project_root.clone()) else {
+            return;
+        };
+        if !crate::core::agent::global_config::memory_auto_tidy_enabled() || self.memory_denied() {
+            return;
+        }
+        let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+        let scopes = tauri_plugin_agent_tools::memory::Scopes {
+            store: &store,
+            home: home.as_deref(),
+            cross_project,
+        };
+        let stamp = scopes.stamp();
+        if self.auto_tidy_stamp == Some(stamp) {
+            return;
+        }
+        self.auto_tidy_stamp = Some(stamp);
+        if scopes.over_budget() {
+            self.auto_tidy_checked = true;
+            self.tidy_request = Some(TidyKind::Auto);
+        }
     }
 
     /// Whether auto-compaction should trigger: a non-zero token use above the
@@ -11183,11 +11601,19 @@ fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
             query: s("pattern"),
             scope: scope(),
         }),
-        "memory_read" => Some(named("memory")),
+        "memory" => match args.get("op").and_then(|v| v.as_str()) {
+            Some("view") if !s("name").is_empty() => Some(named("memory")),
+            Some("view") => Some(Explore::List {
+                target: "memory notes".to_string(),
+            }),
+            Some("search") => Some(Explore::Search {
+                query: s("query"),
+                scope: Some("memory".to_string()),
+            }),
+            // write/edit/delete change memory: not an exploration.
+            _ => None,
+        },
         "skill_read" => Some(named("skill")),
-        "memory_list" => Some(Explore::List {
-            target: "memory notes".to_string(),
-        }),
         "skill_list" => Some(Explore::List {
             target: "skills".to_string(),
         }),
@@ -12898,7 +13324,9 @@ pub async fn run(
     let prev_log_level = log::max_level();
     log::set_max_level(log::LevelFilter::Off);
 
-    enable_raw_mode().map_err(|e| e.to_string())?;
+    // Started in the background (`jan &`), the `tcsetattr` stops jan with
+    // SIGTTOU and, once `fg` continues it, fails with EINTR; try again then.
+    retry_interrupted(enable_raw_mode).map_err(|e| e.to_string())?;
     // From here a panic must not leave the shell in raw mode / the alternate
     // screen / mouse-tracking / Kitty keys: install before anything else that
     // can panic runs, so every failure from this point is caught by it.
@@ -12924,6 +13352,8 @@ pub async fn run(
     };
     let mouse = crate::core::agent::global_config::mouse_enabled();
     enter_terminal_modes(&mut stdout, mouse).map_err(abort_startup)?;
+    #[cfg(unix)]
+    install_tty_input_stop_handler();
     // Test-only hook for the real-PTY panic-recovery integration test
     // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
     // fires, but only a genuine panic on a genuine terminal, with every mode
@@ -13090,6 +13520,20 @@ pub async fn run(
     if let Some(session) = session_scratch.as_deref() {
         let _ = workspace::remove_scratch_dir(session).await;
     }
+    // And its subagents' worktrees that hold nothing; the rest are named on
+    // the real terminal, since they are what is left to merge. Children still
+    // running are stopped first: a live writer holds its worktree, which would
+    // otherwise be kept as busy and outlive the process even when empty.
+    // On the blocking pool, as every worktree sweep is: it runs git per
+    // worktree, and a runtime worker is no place to wait on that.
+    app.subagent_set.abort_all();
+    let workspaces = app.subagent_set.workspaces.clone();
+    let kept = tokio::task::spawn_blocking(move || workspaces.finish_session())
+        .await
+        .unwrap_or_default();
+    if !kept.is_empty() {
+        eprintln!("{}", crate::core::agent::child_workspace::kept_notice(&kept));
+    }
     res
 }
 
@@ -13229,7 +13673,7 @@ async fn chat_loop<B: Backend>(
     // whole session rather than for one run: a child outliving the run that
     // dispatched it must still reach its panel and emit its closing bracket.
     let (session_events_tx, mut session_events) = mpsc::unbounded_channel::<StreamEvent>();
-    subagent_set.install_session_events(session_events_tx);
+    subagent_set.install_session_events(session_events_tx.clone());
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -13273,6 +13717,9 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    // `/worktree` gathering its report: git per worktree, so on the blocking
+    // pool. One at a time.
+    let mut worktree_task: Option<tokio::task::JoinHandle<WorktreeReport>> = None;
     type ReportedUsageResult = (
         super::tokamak::usage::Query,
         Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
@@ -13301,6 +13748,8 @@ async fn chat_loop<B: Backend>(
     let mut compact_task: Option<tokio::task::JoinHandle<Result<Vec<serde_json::Value>, String>>> =
         None;
     let mut compact_base = 0usize;
+    // A memory tidy runs as a session-owned subagent; this collects its answer.
+    let mut tidy_task: Option<tokio::task::JoinHandle<Result<String, String>>> = None;
 
     // The dock's branch indicator is captured once at startup; re-read it on a
     // slow timer so a checkout made outside the TUI (another terminal, an
@@ -13321,6 +13770,12 @@ async fn chat_loop<B: Backend>(
     let sync_output = use_synchronized_output();
 
     while !app.should_quit {
+        // Back from a SIGTTIN stop (`on_tty_input_stop`): re-arm the modes once
+        // the terminal is ours, and draw nothing until then.
+        #[cfg(unix)]
+        let mut tty_away = rearm_after_tty_stop(app, mouse);
+        #[cfg(not(unix))]
+        let tty_away = false;
         // Drive the snapshot queue: run one job off-loop at a time. A job whose
         // inputs no longer resolve (snapshots disabled) is dropped.
         if snap_task.is_none() {
@@ -13425,6 +13880,10 @@ async fn chat_loop<B: Backend>(
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
         }
+        if worktree_task.is_none() && app.worktree_request {
+            app.worktree_request = false;
+            worktree_task = Some(spawn_worktree_report(app));
+        }
         // `/usage <view>` asked for an account read. It is a network call, so
         // it runs off the render loop exactly like `/context`'s report: one at
         // a time, with the overlay sitting on its loading state until it lands.
@@ -13528,6 +13987,23 @@ async fn chat_loop<B: Backend>(
             }
         }
 
+        // Entering plan mode stops the tidy and drops `tidy_running`; its
+        // collector would only report the cancellation as a failure.
+        if app.tidy_running.is_none() {
+            if let Some(task) = tidy_task.take() {
+                task.abort();
+            }
+        }
+
+        // A memory tidy was asked for: start it in the background. It writes
+        // only memory and never starts a turn, so it runs beside whatever else
+        // the session is doing.
+        if tidy_task.is_none() {
+            if let Some(kind) = app.tidy_request.take() {
+                tidy_task = start_memory_tidy(app, kind, &session_events_tx).await;
+            }
+        }
+
         // A turn finished under an active goal: run the (stateless) evaluator
         // before anything else. It either auto-submits the next turn (setting
         // want_start) or hands control back. Gated on an idle, run-free state so
@@ -13601,7 +14077,9 @@ async fn chat_loop<B: Backend>(
             since_last: last_frame.map(|t| t.elapsed()),
         };
         let draw_now = gate.due();
-        if draw_now {
+        // A held frame stays dirty and is retried on the next tick; `deferred`
+        // below only covers `!draw_now`, so this cannot wake the loop early.
+        if draw_now && !tty_away {
             if sync_output {
                 let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
             }
@@ -13659,7 +14137,12 @@ async fn chat_loop<B: Backend>(
                 if app.refresh_shell_tail() {
                     idle_tick = false;
                 }
-                while event::poll(Duration::ZERO).unwrap_or(false) {
+                #[cfg(unix)]
+                if !tty_away && stop_if_terminal_taken() {
+                    tty_away = true;
+                }
+                // The terminal is not ours: a read would only stop again.
+                while !tty_away && event::poll(Duration::ZERO).unwrap_or(false) {
                     // Input draws at once, past the frame cap: typing must not
                     // wait on output pacing.
                     idle_tick = false;
@@ -13744,6 +14227,9 @@ async fn chat_loop<B: Backend>(
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
             }
+            Some(report) = await_worktree_report(&mut worktree_task) => {
+                finish_worktree_report(app, report);
+            }
             Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
                 finish_reported_usage(app, &query, result);
             }
@@ -13810,6 +14296,9 @@ async fn chat_loop<B: Backend>(
             }
             compacted = await_compaction(&mut compact_task) => {
                 finish_compaction(app, compacted, compact_base);
+            }
+            tidied = await_memory_tidy(&mut tidy_task) => {
+                finish_memory_tidy(app, tidied);
             }
             snap_res = await_snapshot(&mut snap_task) => {
                 match (snap_inflight.take(), snap_res) {
@@ -16270,6 +16759,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/memory",
+        hint: "[tidy]",
+        description: "Show the memory index size, or tidy memory in the background",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/compact",
         hint: "",
         description: "Summarize older turns to free up context",
@@ -16685,6 +17180,7 @@ async fn run_command(
         "settings" => settings_command(app, arg),
         "vibe-setting" => vibe_setting::command(app, arg),
         "goal" => goal_command(app, arg),
+        "memory" => memory_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
         "effort" | "think" | "reasoning" => effort_command(app, arg),
@@ -16908,7 +17404,7 @@ it wholesale.\n\n\
 3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
 migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
 multi-step recipe exists. Do not invent skills to fill space.\n\n\
-4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
+4. Record durable project facts with the `memory` tool (search first, update rather than duplicate): decisions, constraints, and gotchas that are \
 true beyond this session and not already stated in the code.\n\n\
 Then report what you wrote and why, briefly."
     )
@@ -17051,6 +17547,201 @@ fn compact_command(app: &mut App) {
     app.compact_request = Some(CompactKind::Manual);
 }
 
+/// `/memory`: `tidy` starts a memory tidy in the background; bare shows the
+/// index size against its budget.
+fn memory_command(app: &mut App, arg: &str) {
+    let Some(root) = app.args.as_ref().and_then(|a| a.project_root.clone()) else {
+        app.note("memory is unavailable (no active project)");
+        return;
+    };
+    match arg.trim() {
+        "tidy" => {
+            if app.memory_denied() {
+                app.note("memory tidy is unavailable: this project's rules deny the memory tool");
+                return;
+            }
+            // The tidy child runs in normal mode, so without this it would
+            // change memory that plan mode keeps read-only.
+            if app.run_mode == crate::core::agent::plan::RunMode::Plan {
+                app.note("memory tidy is unavailable in plan mode (read only); /plan exit to leave");
+                return;
+            }
+            if app.tidy_running.is_some() || app.tidy_request.is_some() {
+                app.note("a memory tidy is already running");
+                return;
+            }
+            // A manual tidy also settles this session's automatic one.
+            app.auto_tidy_checked = true;
+            app.tidy_request = Some(TidyKind::Manual);
+        }
+        "" => {
+            let (store, home, cross_project) = crate::core::agent::project::memory_roots(&root);
+            let scopes = tauri_plugin_agent_tools::memory::Scopes {
+                store: &store,
+                home: home.as_deref(),
+                cross_project,
+            };
+            app.note(&format!(
+                "memory index: ~{} of {} tokens; /memory tidy archives, merges and prunes notes",
+                scopes.index_tokens(),
+                tauri_plugin_agent_tools::memory::INDEX_BUDGET_TOKENS
+            ));
+        }
+        other => app.note(&format!("unknown /memory option '{other}' (try /memory tidy)")),
+    }
+}
+
+/// Which path asked for a memory tidy. A manual one reports even when it
+/// changed nothing; an automatic one stays quiet unless it did something.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TidyKind {
+    Manual,
+    Auto,
+}
+
+/// Start the requested tidy on the session's registry. Fire-and-forget from
+/// the caller's view: the result is collected off the render loop.
+async fn start_memory_tidy(
+    app: &mut App,
+    kind: TidyKind,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+) -> Option<tokio::task::JoinHandle<Result<String, String>>> {
+    let args = app.args.clone()?;
+    if app.model.is_empty() {
+        if kind == TidyKind::Manual {
+            app.note("memory tidy needs a model: run /login first");
+        }
+        return None;
+    }
+    let parent = crate::core::agent::subagent::ParentRun {
+        model: app.model.clone(),
+        smol_model: crate::core::agent::subagent::configured_smol_model(),
+        budget_remaining: None,
+        send_reasoning: app.send_reasoning,
+        cost_remaining: None,
+        tool_ceiling: None,
+        known_tools: Vec::new(),
+    };
+    let set = app.subagent_set.clone();
+    let budget = Arc::new(tauri_plugin_agent_tools::memory::ChangeBudget::new(
+        tauri_plugin_agent_tools::memory::TIDY_MAX_CHANGES,
+    ));
+    let dispatched = crate::core::agent::subagent::spawn_memory_tidy(
+        &set.scope(),
+        &args,
+        &parent,
+        events,
+        budget.clone(),
+    )
+    .await;
+    match dispatched {
+        Ok(dispatched) => {
+            app.tidy_running = Some(kind);
+            app.tidy_run_id = Some(dispatched.run_id.clone());
+            let label = match kind {
+                TidyKind::Manual => "tidying memory in the background",
+                TidyKind::Auto => "memory index is over its budget: tidying in the background",
+            };
+            app.note(label);
+            Some(tokio::spawn(async move {
+                let report = crate::core::agent::subagent::await_subagent(&set, &dispatched.run_id)
+                    .await
+                    .map(|collected| collected.text)
+                    .map_err(|e| e.to_string())?;
+                Ok(with_cap_note(report, &budget))
+            }))
+        }
+        Err(e) => {
+            if kind == TidyKind::Manual {
+                app.note(&format!("memory tidy failed to start: {e}"));
+            }
+            None
+        }
+    }
+}
+
+/// Report a finished tidy: its own summary of what it changed, as one note.
+fn finish_memory_tidy(app: &mut App, result: Result<String, String>) {
+    let kind = app.tidy_running.take().unwrap_or(TidyKind::Manual);
+    app.tidy_run_id = None;
+    match result {
+        Ok(report) => {
+            let report = report.trim();
+            let quiet = report.is_empty() || report.eq_ignore_ascii_case("no changes");
+            if quiet && kind == TidyKind::Auto {
+                return;
+            }
+            app.note(&format!(
+                "memory tidied: {}",
+                if quiet { "no changes".to_string() } else { tidy_summary(report) }
+            ));
+        }
+        Err(e) => app.note(&format!("memory tidy failed: {e}")),
+    }
+}
+
+/// The tidy's report, with a closing line when the harness refused changes
+/// past the cap: the model may not say so, and the user should know the store
+/// was only partly tidied.
+fn with_cap_note(report: String, budget: &tauri_plugin_agent_tools::memory::ChangeBudget) -> String {
+    if budget.refused() == 0 {
+        return report;
+    }
+    format!(
+        "{}\ncap reached ({} changes); run /memory tidy again to continue",
+        report.trim_end(),
+        budget.used()
+    )
+}
+
+/// Verbs a tidy report's lines start with (see `MEMORY_TIDY_PROMPT`).
+const TIDY_VERBS: [&str; 4] = ["archived", "merged", "deleted", "moved"];
+
+/// A tidy report as one line. The report has a line per change, and a note
+/// that carried all of them grew taller than the screen, pushing its own
+/// `memory tidied:` header out of view. A few changes are listed; more are
+/// counted per verb, the full list staying in the memory-tidy row.
+fn tidy_summary(report: &str) -> String {
+    let changes: Vec<&str> = report
+        .lines()
+        .map(|l| l.trim().trim_start_matches(['-', '*', ' ']))
+        .filter(|l| TIDY_VERBS.iter().any(|v| l.starts_with(v)))
+        .collect();
+    let summary = if changes.is_empty() {
+        let first = report.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        first.chars().take(160).collect()
+    } else if changes.len() <= 3 {
+        changes.join("; ")
+    } else {
+        TIDY_VERBS
+            .iter()
+            .filter_map(|verb| {
+                let n = changes.iter().filter(|l| l.starts_with(verb)).count();
+                (n > 0).then(|| format!("{verb} {n}"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match report.lines().find(|l| l.starts_with("cap reached (")) {
+        Some(cap) if !summary.contains("cap reached") => format!("{summary}; {cap}"),
+        _ => summary,
+    }
+}
+
+async fn await_memory_tidy(
+    task: &mut Option<tokio::task::JoinHandle<Result<String, String>>>,
+) -> Result<String, String> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    match joined {
+        Ok(inner) => inner,
+        Err(e) => Err(format!("memory tidy task failed: {e}")),
+    }
+}
+
 /// Compact-and-retry attempts allowed per user turn. The loop already retries
 /// within a single request (`MAX_COMPACTION_ATTEMPTS`); this bounds the outer
 /// recovery so a model that overflows at any size still hands control back.
@@ -17118,6 +17809,7 @@ fn finish_compaction(
         Ok(mut compacted) if compacted.len() < base_len => {
             compacted.extend(app.history.split_off(base_len.min(app.history.len())));
             app.history = compacted;
+            app.refresh_memory_snapshot();
             app.persist();
             // Estimate tokens from compacted message content (~4 chars ≈ 1 token).
             // The provider's last `usage` measured the pre-compaction history, so
@@ -17360,6 +18052,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         key: "claude_code_alias",
         label: "claude_code_alias",
         desc: "reuse and refresh Claude Code's keychain login for Claude requests",
+        kind: AgentSettingKind::Bool { default: true },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
+        key: "memory_auto_tidy",
+        label: "memory_auto_tidy",
+        desc: "tidy memory in the background when its index outgrows the prompt budget",
         kind: AgentSettingKind::Bool { default: true },
         scope: SettingScope::Global,
     },
@@ -18834,7 +19533,7 @@ fn plan_command(app: &mut App, arg: &str) {
         }
         return;
     }
-    app.run_mode = RunMode::Plan;
+    app.enter_plan_mode();
     app.persist();
     app.note("◈ PLAN · read only — investigate, then propose a plan for review");
     if app.goal.is_some() {
@@ -20275,6 +20974,13 @@ fn agent_detail_header(
         row.extend(agent_activity(panel));
     }
     out.push(Line::from(row));
+    if let Some(workspace) = &panel.workspace {
+        out.extend(
+            wrap_text(&format!("workspace {workspace}"), dim, max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
         out.push(Line::from(""));
         out.extend(
@@ -21638,6 +22344,7 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     {
         app.run_mode = mode;
         if mode == RunMode::Plan {
+            app.enter_plan_mode();
             app.note("resumed in plan mode (read only); /plan exit to leave");
         }
     }
@@ -21702,8 +22409,56 @@ fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
 ///
 /// Read-only on purpose. Getting the work out is the user's own git: this
 /// session must never write to the branch they left behind.
+///
+/// It runs git once per worktree, so this only raises a flag; the loop
+/// gathers the report on the blocking pool and [`finish_worktree_report`]
+/// shows it when it lands, keeping the frame live meanwhile.
 fn worktree_command(app: &mut App) {
-    let Some(workspace) = app.workspace.clone() else {
+    app.worktree_request = true;
+}
+
+/// What `/worktree` shows, gathered off the render loop.
+struct WorktreeReport {
+    /// A line per live subagent worktree.
+    children: Vec<String>,
+    /// The session's own worktree and its changed paths, if it has one.
+    workspace: Option<(Worktree, Vec<String>)>,
+}
+
+/// Gather `/worktree`'s report on the blocking pool.
+fn spawn_worktree_report(app: &App) -> tokio::task::JoinHandle<WorktreeReport> {
+    let ledger = app.subagent_set.workspaces.clone();
+    let workspace = app.workspace.clone();
+    tokio::task::spawn_blocking(move || WorktreeReport {
+        children: ledger.live(),
+        workspace: workspace.map(|ws| {
+            let changed = git::changed_paths(&ws.path);
+            (ws, changed)
+        }),
+    })
+}
+
+/// Await an in-flight `/worktree` report, parking forever when none is
+/// running so this can sit in the loop's `select!` unconditionally.
+async fn await_worktree_report(
+    task: &mut Option<tokio::task::JoinHandle<WorktreeReport>>,
+) -> Option<WorktreeReport> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.ok()
+}
+
+fn finish_worktree_report(app: &mut App, report: WorktreeReport) {
+    if !report.children.is_empty() {
+        app.note("subagent worktrees:");
+        for line in &report.children {
+            app.system_detail_text(&format!("        {line}"));
+        }
+    }
+    let Some((workspace, changed)) = report.workspace else {
         app.note(
             "working in the project directory; start with --worktree for a dedicated checkout",
         );
@@ -21712,7 +22467,6 @@ fn worktree_command(app: &mut App) {
     app.note("worktree:");
     app.system_detail_text(&format!("path    {}", tilde_path(&workspace.path)));
     app.system_detail_text(&format!("branch  {}", workspace.branch));
-    let changed = git::changed_paths(&workspace.path);
     if changed.is_empty() {
         app.system_detail_text("changes nothing yet");
         return;
@@ -25415,6 +26169,7 @@ mod tests {
         await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        finish_memory_tidy, memory_command, start_memory_tidy, TidyKind, with_cap_note,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
         agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
@@ -25429,7 +26184,8 @@ mod tests {
         subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        with_real_think_tag_gate, worktree_command, AgentStatus, App, CompactKind, ContextReport,
+        with_real_think_tag_gate, worktree_command, await_worktree_report, spawn_worktree_report,
+        finish_worktree_report, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -25905,6 +26661,22 @@ mod tests {
         assert!(text.contains("5 tools · 0 req  Running · ⚠ looping ×5"), "{text}");
     }
 
+    /// `/agents` names where a child works: its worktree and branch, or the
+    /// checkout it was given read-only.
+    #[test]
+    fn agent_detail_names_the_childs_workspace() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-1".into(),
+            name: "general".into(),
+            task: Some("fix it".into()),
+            workspace: Some("~/.jan/worktrees/jan-1/general-3f2a (jan/agent/general-3f2a)".into()),
+        });
+        let text = agent_detail_text(&mut app, "sub-general-1", 120, 20);
+        assert!(text.contains("workspace ~/.jan/worktrees/jan-1/general-3f2a"), "{text}");
+        assert!(text.contains("jan/agent/general-3f2a"), "{text}");
+    }
+
     #[test]
     fn agent_detail_notes_a_child_it_no_longer_has() {
         let mut app = test_app();
@@ -25938,6 +26710,7 @@ mod tests {
             run_id: "sub-collector-1".to_string(),
             name: "collector".to_string(),
             task: Some("synthesize".to_string()),
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
         assert!(!app.subagents[0].pending);
@@ -25959,6 +26732,7 @@ mod tests {
             run_id: "sub-a-1".to_string(),
             name: "a".to_string(),
             task: Some("do it".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
@@ -25979,6 +26753,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count things".to_string()),
+            workspace: None,
         });
         let child = |event: StreamEvent| StreamEvent::Subagent {
             run_id: "sub-counter-1".to_string(),
@@ -26182,6 +26957,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: Some("count".to_string()),
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26229,6 +27005,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
@@ -26252,6 +27029,7 @@ mod tests {
             run_id: "sub-counter-1".to_string(),
             name: "counter".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
@@ -26275,6 +27053,7 @@ mod tests {
             run_id: "sub-waster-1".to_string(),
             name: "waster".to_string(),
             task: None,
+            workspace: None,
         });
         open_agents_picker(&mut app);
         press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
@@ -29764,7 +30543,7 @@ mod tests {
             "Reading main.rs"
         );
         assert_eq!(
-            tool_activity("memory_write", &json!({ "name": "decisions" })),
+            tool_activity("memory", &json!({ "op": "write", "name": "decisions" })),
             "Updating memory: decisions"
         );
     }
@@ -32416,7 +33195,7 @@ mod tests {
         assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
         assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
         assert!(sent.contains("skill_write"), "{sent}");
-        assert!(sent.contains("memory_write"), "{sent}");
+        assert!(sent.contains("`memory` tool"), "{sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -32750,6 +33529,7 @@ mod tests {
             run_id: "sub-a-1".into(),
             name: "a".into(),
             task: None,
+            workspace: None,
         });
         if let Some((provider, model)) = child_on {
             app.apply(child_request_on(provider, model));
@@ -32831,6 +33611,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 app.apply(child_request_on("tokamak", "tk-1"));
                 app.submit_user("go".into());
@@ -32869,6 +33650,7 @@ mod tests {
                     run_id: "sub-a-1".into(),
                     name: "a".into(),
                     task: None,
+                    workspace: None,
                 });
                 let rt = tokio::runtime::Runtime::new().expect("runtime");
                 let held = rt.block_on(args.provider_configs.lock());
@@ -32965,6 +33747,8 @@ mod tests {
             shell_detach: None,
             compaction: None,
             session_start: None,
+            memory_change_budget: None,
+            child_scope: None,
         })
     }
 
@@ -33087,6 +33871,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         let call = |i: u32, offset: u64| {
             wrap(
@@ -33115,6 +33900,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // Seven calls; only the last SUBAGENT_WINDOW remain visible.
         for i in 0..7 {
@@ -33180,11 +33966,13 @@ mod tests {
             run_id: "r1".into(),
             name: "alpha".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "beta".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r2",
@@ -33229,6 +34017,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         assert_eq!(app.subagents.len(), 1, "no duplicate panel on promotion");
         let promoted = app.subagents.iter().find(|p| p.run_id == "r1").unwrap();
@@ -35333,6 +36122,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // More calls than the live window, so expansion reveals ones it hid.
         for i in 0..7 {
@@ -35392,6 +36182,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -35426,6 +36217,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentEnd {
             run_id: "r1".into(),
@@ -35490,6 +36282,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         // A wrapped child token is internal and dropped.
         app.apply(wrap(
@@ -35514,6 +36307,7 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -35548,11 +36342,13 @@ mod tests {
             run_id: "r1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::SubagentStart {
             run_id: "r2".into(),
             name: "explorer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(wrap(
             "r1",
@@ -36042,6 +36838,7 @@ mod tests {
             run_id: "sub-reviewer-1".into(),
             name: "reviewer".into(),
             task: None,
+            workspace: None,
         });
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
@@ -36687,10 +37484,10 @@ mod tests {
     fn consecutive_collapsible_tools_fold_into_one_summary_row() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_list", json!({})),
+            ("c1", "memory", json!({ "op": "view" })),
             ("c2", "skill_list", json!({})),
-            ("c3", "memory_read", json!({ "name": "project-overview" })),
-            ("c4", "memory_read", json!({ "name": "top-p" })),
+            ("c3", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c4", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36742,8 +37539,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_keybinding() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -36782,8 +37579,8 @@ mod tests {
     fn folded_group_expands_and_collapses_via_click() {
         let mut app = test_app();
         let calls = [
-            ("c1", "memory_read", json!({ "name": "project-overview" })),
-            ("c2", "memory_read", json!({ "name": "top-p" })),
+            ("c1", "memory", json!({ "op": "view", "name": "project-overview" })),
+            ("c2", "memory", json!({ "op": "view", "name": "top-p" })),
         ];
         for (id, name, args) in calls {
             app.apply(StreamEvent::ToolCall {
@@ -37364,8 +38161,8 @@ mod tests {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
-            name: "memory_read".into(),
-            args: json!({ "name": "x" }),
+            name: "memory".into(),
+            args: json!({ "op": "view", "name": "x" }),
         });
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -38757,10 +39554,61 @@ mod tests {
         assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
     }
 
-    #[test]
-    fn worktree_command_without_one_points_at_the_flag() {
+    /// `/worktree` the way the loop runs it: the command only asks, and the
+    /// report (git per worktree) is gathered on the blocking pool and shown
+    /// when it lands.
+    async fn run_worktree_command(app: &mut App) {
+        worktree_command(app);
+        assert!(app.transcript.rows.is_empty(), "nothing is shown before git answers");
+        assert!(std::mem::take(&mut app.worktree_request));
+        let mut task = Some(spawn_worktree_report(app));
+        let report = await_worktree_report(&mut task).await.unwrap();
+        finish_worktree_report(app, report);
+    }
+
+    #[tokio::test]
+    async fn worktree_command_lists_live_subagent_worktrees() {
+        use std::process::Command;
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path().to_string_lossy().to_string();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(["-C", &r, "-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(args)
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        if !git(&["init", "-q"]) {
+            return;
+        }
+        std::fs::write(root.path().join("a.txt"), "a\n").unwrap();
+        assert!(git(&["add", "a.txt"]));
+        assert!(git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]));
         let mut app = test_app();
-        worktree_command(&mut app);
+        let ledger = app.subagent_set.workspaces.clone();
+        let (ws, lease) = ledger.assign(root.path(), "general", true, None).unwrap();
+        drop(lease);
+        let branch = ws.worktree.as_ref().unwrap().branch.clone();
+
+        run_worktree_command(&mut app).await;
+        let notes: String = app
+            .transcript
+            .rows
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(notes.contains("subagent worktrees:"), "{notes}");
+        assert!(notes.contains(&branch), "{notes}");
+        assert!(notes.contains("(0 commit(s), 0 uncommitted file(s))"), "{notes}");
+        assert!(notes.contains("--worktree"), "{notes}");
+        let _ = tokio::task::spawn_blocking(move || ledger.finish_session()).await;
+    }
+
+    #[tokio::test]
+    async fn worktree_command_without_one_points_at_the_flag() {
+        let mut app = test_app();
+        run_worktree_command(&mut app).await;
         let notes: String = app
             .transcript
             .rows
@@ -39340,6 +40188,66 @@ mod tests {
             assert!(restored.ends_with("\x1b[?25h"), "cursor shown last: {restored:?}");
             assert!(restored.starts_with("\x1b[?2026l"), "held frame ended first");
         }
+    }
+
+    /// The SIGTTIN handler cannot format, so it writes a prebuilt copy of the
+    /// restore; it must stay byte-for-byte what every other exit writes.
+    #[cfg(unix)]
+    #[test]
+    fn tty_stop_restore_bytes_match_write_restore() {
+        let mut restored = Vec::new();
+        super::write_restore(&mut restored);
+        assert_eq!(
+            String::from_utf8_lossy(&super::RESTORE_BYTES),
+            String::from_utf8_lossy(&restored)
+        );
+    }
+
+    /// Nothing pending: the render loop draws as normal and makes no syscall.
+    /// A stop still in its handler: the loop keeps off the terminal and the
+    /// re-arm stays owed. One test, since both drive the same process-wide
+    /// flags and parallel tests would race them.
+    #[cfg(unix)]
+    #[test]
+    fn rearm_waits_for_a_pending_stop_and_skips_without_one() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut app = test_app();
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(!super::rearm_after_tty_stop(&mut app, true));
+        assert!(!app.repaint, "no repaint without a stop");
+
+        super::TTY_REARM.store(true, SeqCst);
+        super::TTY_STOPPING.store(true, SeqCst);
+        let away = super::rearm_after_tty_stop(&mut app, true);
+        let still_owed = super::TTY_REARM.load(SeqCst);
+        super::TTY_REARM.store(false, SeqCst);
+        super::TTY_STOPPING.store(false, SeqCst);
+        assert!(away, "mid-stop: neither read nor draw");
+        assert!(still_owed, "the re-arm is not consumed mid-stop");
+        assert!(!app.repaint);
+    }
+
+    #[test]
+    fn retry_interrupted_retries_only_eintr() {
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(r.is_ok());
+        assert_eq!(calls, 3);
+        let mut calls = 0;
+        let r = super::retry_interrupted(|| {
+            calls += 1;
+            Err(std::io::Error::other("no"))
+        });
+        assert!(r.is_err());
+        assert_eq!(calls, 1);
     }
 
     /// Raw mode keeps the terminal from turning Ctrl-Z into SIGTSTP, so it
@@ -40036,6 +40944,7 @@ mod tests {
             run_id: run_id.into(),
             name: name.into(),
             task: task.map(str::to_string),
+            workspace: None,
         });
     }
 
@@ -43825,6 +44734,392 @@ mod tests {
         assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
     }
 
+    /// Point `app` at a fresh project of its own, so its memory store is not
+    /// shared with any other test's.
+    fn own_project(app: &mut App) {
+        app.project_root = tempfile::tempdir().unwrap().keep();
+        let _ = std::fs::remove_dir_all(crate::core::agent::project::store_root(&app.project_root));
+        app.args = Some(test_args(app, std::collections::HashMap::new()));
+    }
+
+    /// An app on a project whose memory index is far over its budget, with a
+    /// temp home so the config read is the default (auto-tidy on).
+    fn over_budget_app(app: &mut App) {
+        own_project(app);
+        fill_store(app);
+    }
+
+    /// Write enough notes into `app`'s own store to put its index over budget.
+    fn fill_store(app: &App) {
+        let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..200 {
+            std::fs::write(
+                dir.join(format!("n{i:03}.md")),
+                "A long finished note about a merged pull request and its review",
+            )
+            .unwrap();
+        }
+    }
+
+    /// Auto-tidy is on by default and fires once per session when the index is
+    /// over budget: a second turn does not queue another, and a new session
+    /// gets one fresh check.
+    #[test]
+    fn auto_tidy_queues_once_per_session_when_over_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+            app.tidy_request = None;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "debounced: once per session");
+            app.reset_session();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a new session checks again");
+        });
+    }
+
+    /// Under budget nothing is queued and the check is not spent: a store that
+    /// outgrows its budget later in the session is tidied at that turn's end,
+    /// still only once.
+    #[test]
+    fn auto_tidy_rechecks_each_turn_until_the_index_outgrows_its_budget() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            own_project(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "a small index is left alone");
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            fill_store(&app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto), "a later over-budget turn tidies");
+            app.tidy_request = None;
+            let dir = crate::core::agent::project::store_root(&app.project_root).join("memory");
+            std::fs::write(dir.join("later.md"), "Another note").unwrap();
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "still at most once per session");
+        });
+    }
+
+    /// With `memory` denied a tidy child could change nothing, so neither the
+    /// automatic nor the manual tidy starts one.
+    #[test]
+    fn no_tidy_starts_when_the_project_denies_memory() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            let mut args = (**app.args.as_ref().unwrap()).clone();
+            args.permissions = tauri_plugin_agent_tools::permissions::ToolPermissions::new(
+                tauri_plugin_agent_tools::permissions::PermissionDefault::Allow,
+                &[],
+                &["memory".to_string()],
+                &[],
+            );
+            app.args = Some(Arc::new(args));
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "no automatic tidy");
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "no manual tidy");
+        });
+    }
+
+    /// Plan mode is read-only, so auto-tidy waits it out rather than spending
+    /// the session's one automatic tidy.
+    #[test]
+    fn auto_tidy_waits_out_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, Some(TidyKind::Auto));
+        });
+    }
+
+    /// A manual tidy changes memory, which plan mode refuses: it is turned
+    /// away with a pointer out of plan mode, and works once plan mode is left.
+    #[test]
+    fn manual_tidy_is_refused_in_plan_mode() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.run_mode = crate::core::agent::plan::RunMode::Plan;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, None, "nothing queued in plan mode");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("plan mode") && text.contains("/plan exit"), "{text}");
+            app.run_mode = crate::core::agent::plan::RunMode::Normal;
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+        });
+    }
+
+    /// A tidy already running when plan mode is entered is stopped, not left
+    /// to change memory under a read-only mode: its child is aborted, its
+    /// bookkeeping released, and the user is told. Driven with a real spawned
+    /// tidy against an upstream that never answers, so it is mid-run.
+    #[tokio::test]
+    async fn entering_plan_mode_stops_a_running_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let held: Vec<_> = listener.incoming().collect();
+            drop(held);
+        });
+        let providers = std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect();
+        let mut app = test_app();
+        own_project(&mut app);
+        app.args = Some(test_args(&app, providers));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let task = start_memory_tidy(&mut app, TidyKind::Manual, &tx).await.expect("tidy started");
+        assert_eq!(app.tidy_running, Some(TidyKind::Manual));
+        assert_eq!(app.subagent_set.live_run_ids().len(), 1, "the tidy child is live");
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Plan);
+        assert!(app.subagent_set.live_run_ids().is_empty(), "the tidy child was aborted");
+        assert_eq!(app.tidy_running, None, "a later tidy may start once plan mode is left");
+        let collected = tokio::time::timeout(Duration::from_secs(5), task).await;
+        assert!(matches!(collected, Ok(Ok(Err(_)))), "the tidy produced no report");
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+    }
+
+    /// A queued tidy is dropped by entering plan mode, from `/plan` or by
+    /// resuming a thread saved in plan mode; with nothing to stop, nothing is
+    /// said.
+    #[tokio::test]
+    async fn entering_plan_mode_drops_a_queued_tidy() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.tidy_request = Some(TidyKind::Manual);
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.tidy_request, None);
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped: plan mode is read only"), "{text}");
+
+        let meta = json!({ "run_mode": "plan" });
+        let mut resumed = test_app();
+        resumed.tidy_request = Some(TidyKind::Auto);
+        resumed.tidy_running = Some(TidyKind::Auto);
+        restore_run_mode(&mut resumed, Some(&meta));
+        assert_eq!(resumed.run_mode, RunMode::Plan);
+        assert_eq!(resumed.tidy_request, None);
+        assert_eq!(resumed.tidy_running, None);
+        let text: String = resumed.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidy stopped"), "{text}");
+
+        let mut idle = test_app();
+        run_command(&mut idle, "plan", &no_mcp()).await;
+        let text: String = idle.transcript.rows.iter().map(row_text).collect();
+        assert!(!text.contains("memory tidy"), "{text}");
+    }
+
+    /// `memory_auto_tidy = false` turns the automatic trigger off; `/memory
+    /// tidy` still works.
+    #[test]
+    fn auto_tidy_can_be_turned_off_but_the_manual_tidy_still_runs() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "memory_auto_tidy = false\n").unwrap();
+            let mut app = test_app();
+            over_budget_app(&mut app);
+            app.maybe_auto_tidy();
+            assert_eq!(app.tidy_request, None);
+            memory_command(&mut app, "tidy");
+            assert_eq!(app.tidy_request, Some(TidyKind::Manual));
+            memory_command(&mut app, "tidy");
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
+            assert!(text.contains("already running"), "{text}");
+        });
+    }
+
+    /// A tidy's report is surfaced as one note; an automatic tidy that changed
+    /// nothing says nothing, a manual one says so.
+    #[test]
+    fn a_finished_tidy_reports_what_it_changed() {
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        assert!(app.transcript.rows.is_empty(), "a quiet auto tidy adds no row");
+        assert!(app.tidy_running.is_none());
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok("archived pr-1\ndeleted old: superseded".into()));
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("no changes".into()));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived pr-1"), "{text}");
+        assert!(text.contains("memory tidied: no changes"), "{text}");
+    }
+
+    /// A stub OpenAI-compatible upstream answering every request with `text`
+    /// as a plain final answer. Returns the provider configs pointing at it.
+    fn stub_upstream(
+        text: &'static str,
+    ) -> std::collections::HashMap<String, crate::core::state::ProviderConfig> {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let chunk = json!({"id": "s", "object": "chat.completion.chunk", "created": 1,
+                    "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant",
+                    "content": text}, "finish_reason": "stop"}]});
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        std::iter::once((
+            "stub".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        ))
+        .collect()
+    }
+
+    /// #497 bug 2: the `memory tidied:` note never showed in the live TUI.
+    /// The tidy's report is one line per change, and the whole report became
+    /// one note, so with dozens of changes its header scrolled off before a
+    /// frame painted it. Driven through the real select loop with a spawned
+    /// tidy against a stub provider, and checked on the rendered frame.
+    #[tokio::test]
+    async fn a_spawned_tidy_shows_its_note_in_the_live_frame() {
+        let report: &'static str = Box::leak(
+            (0..70)
+                .map(|i| format!("archived note-{i:03}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .into_boxed_str(),
+        );
+        let mut app = test_app();
+        own_project(&mut app);
+        let args = test_args(&app, stub_upstream(report));
+        app.args = Some(args.clone());
+        app.tidy_request = Some(TidyKind::Manual);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        let registry: PermissionRegistry = Default::default();
+        let asks = crate::core::agent::interaction::new_registry();
+        let servers: crate::core::state::SharedMcpServers = Default::default();
+        // The loop has no exit of its own here; the tidy lands well inside this.
+        let _ = tokio::time::timeout(
+            Duration::from_secs(8),
+            super::chat_loop(&mut terminal, &args, &registry, &asks, &mut app, None, None, &servers, false),
+        )
+        .await;
+        assert!(app.tidy_running.is_none(), "the tidy was collected");
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let frame: String = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>() + "\n")
+            .collect();
+        assert!(frame.contains("memory tidied: archived 70"), "{frame}");
+        assert!(!frame.contains("archived note-030"), "one line, not the full list: {frame}");
+    }
+
+    /// A tidy the harness stopped at its cap says so in its note, even when
+    /// the model's report does not.
+    #[test]
+    fn a_capped_tidy_reports_the_cap() {
+        let budget = tauri_plugin_agent_tools::memory::ChangeBudget::new(2);
+        assert_eq!(with_cap_note("archived a".into(), &budget), "archived a");
+        let dir = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(dir.path(), dir.path(), &[])
+            .with_memory_change_budget(Some(&budget));
+        let memory = tauri_plugin_agent_tools::tools::lookup("memory").unwrap();
+        for i in 0..3 {
+            rt.block_on(tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+                memory,
+                &json!({"op": "write", "name": format!("n{i}"), "content": "x"}),
+                &ctx,
+            ));
+        }
+        let report = with_cap_note("archived a\narchived b".into(), &budget);
+        let mut app = test_app();
+        app.tidy_running = Some(TidyKind::Auto);
+        finish_memory_tidy(&mut app, Ok(report));
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
+        assert!(text.contains("memory tidied: archived a; archived b; cap reached (2 changes)"), "{text}");
+    }
+
+    /// A tidy never touches the conversation: no turn is started and the
+    /// history is unchanged, so the session's prompt is not rewritten.
+    #[test]
+    fn a_tidy_never_starts_a_turn_or_edits_history() {
+        let mut app = test_app();
+        app.history.push(json!({ "role": "user", "content": "hi" }));
+        let before = app.history.clone();
+        app.tidy_running = Some(TidyKind::Manual);
+        finish_memory_tidy(&mut app, Ok("archived pr-1".into()));
+        assert!(!app.want_start);
+        assert_eq!(app.history, before);
+    }
+
+    #[test]
+    fn memory_is_a_slash_command() {
+        let row = SLASH_COMMANDS.iter().find(|c| c.name == "/memory").unwrap();
+        assert_eq!(row.hint, "[tidy]");
+        assert!(AGENT_SETTINGS.iter().any(|d| d.key == "memory_auto_tidy"
+            && matches!(d.kind, super::AgentSettingKind::Bool { default: true })));
+    }
+
+    /// A compaction rewrites the history anyway, so the session takes a fresh
+    /// memory index there; the date and branch stay the session's.
+    #[test]
+    fn a_compaction_refreshes_only_the_memory_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        args.session_start = Some(stale.clone());
+        app.args = Some(std::sync::Arc::new(args));
+        app.compacting = Some(CompactKind::Manual);
+        app.history = (0..5)
+            .map(|i| json!({ "role": "user", "content": format!("m{i}") }))
+            .collect();
+        finish_compaction(&mut app, Ok(vec![json!({ "role": "user", "content": "s" })]), 5);
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone()).unwrap();
+        let root = app.args.as_ref().and_then(|a| a.project_root.clone()).unwrap_or(app.project_root.clone());
+        assert_eq!(start, stale.with_fresh_memory(&root));
+        assert!(start.memory().is_some(), "the memory index was re-taken");
+    }
+
     /// A fork continues the source's prefix, so it keeps the source's snapshot
     /// (same date, same branch, same system prompt bytes) and sends no resume
     /// notice, where a resume of the same thread takes a fresh snapshot.
@@ -45330,6 +46625,7 @@ mod tests {
             home_readonly: false,
             // Bare shell: these exercise the TUI wiring, not the jail.
             sandbox: false,
+            workspace_readonly: false,
         }
     }
 

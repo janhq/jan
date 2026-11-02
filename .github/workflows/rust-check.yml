@@ -11,6 +11,18 @@ on:
     branches:
       - main
       - dev
+    # Skip PRs that only touch the docs site, top-level markdown or GitHub
+    # templates. Two things stay in: markdown elsewhere (crates include_str!
+    # some of it) and docs/src/pages/docs/agent, whose fenced excerpts the
+    # adk_examples test checks against examples/adk. Later patterns override
+    # earlier ones, so the agent pages are re-included after docs/** is dropped.
+    paths:
+      - '**'
+      - '!docs/**'
+      - 'docs/src/pages/docs/agent/**'
+      - '!*.md'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
 
 concurrency:
   group: rust-check-${{ github.ref }}

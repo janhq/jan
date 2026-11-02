@@ -60,6 +60,15 @@ export async function deleteMemory(name: string): Promise<void> {
   invalidateMemory()
 }
 
+// The store refuses these stems: the harness builds the memory index itself
+// (`MEMORY.md`), and on a case-insensitive filesystem `memory.md` is that file.
+const RESERVED_MEMORY_NAMES = new Set(['index', 'memory'])
+
+// Mirrors `is_windows_device_name` in the agent-tools plugin's workspace.rs,
+// which the store applies on every OS: the part before the first dot, in any
+// case, is CON/PRN/AUX/NUL or COM/LPT plus one digit.
+const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i
+
 /**
  * A filesystem-safe note name from a thread title. The store's names are file
  * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
@@ -72,7 +81,10 @@ export function slugifyMemoryName(title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
     .replace(/-+$/, '')
-  return slug || 'memory'
+  if (!slug) return 'note'
+  return RESERVED_MEMORY_NAMES.has(slug) || WINDOWS_DEVICE_NAME.test(slug)
+    ? `${slug}-note`
+    : slug
 }
 
 export type RememberResult = {
@@ -83,7 +95,7 @@ export type RememberResult = {
 
 /**
  * The chat surface's "Remember" action: save `content` as a note named after
- * the thread title. `memory_write` replaces a note by name, and this is a new
+ * the thread title. A memory write replaces a note by name, and this is a new
  * fact rather than a curated topic, so an existing name gets a `-2`, `-3`, ...
  * suffix instead of silently overwriting it. A sibling that already holds this
  * exact content is returned instead of being copied again, so a second click

@@ -109,14 +109,43 @@ pub fn path_slug(path: &Path) -> String {
     format!("{name}-{}", path_hash(path))
 }
 
+/// The main checkout a Jan subagent checkout at `top` (a `git clone --shared`
+/// at `<jan home>/worktrees/<slug>/<id>`) borrows its objects from: the
+/// `<main>/.git/objects` its alternates name, canonicalized. `None` for any
+/// other repository.
+///
+/// A writer can rewrite its own alternates, so they are trusted only when they
+/// name the project whose slug the clone was created under; otherwise a kept
+/// checkout could steer later sessions into another project's store.
+fn shared_clone_origin(top: &Path) -> Option<PathBuf> {
+    let worktrees = jan_home()?.join("worktrees");
+    let worktrees = worktrees.canonicalize().unwrap_or(worktrees);
+    let slug_dir = top.parent()?;
+    if slug_dir.parent()? != worktrees {
+        return None;
+    }
+    let raw = std::fs::read_to_string(top.join(".git/objects/info/alternates")).ok()?;
+    let objects = Path::new(raw.lines().next()?.trim());
+    let git = objects.parent()?;
+    if objects.file_name()? != "objects" || git.file_name()? != ".git" {
+        return None;
+    }
+    // The alternates spell `main` however git was handed it (forward slashes
+    // on Windows, an unresolved symlink), and the slug hashes that text.
+    let main = git.parent()?;
+    let main = main.canonicalize().unwrap_or_else(|_| main.to_path_buf());
+    (slug_dir.file_name()? == path_slug(&main).as_str()).then_some(main)
+}
+
 /// The path a project's store is keyed on: the project root, canonicalized,
-/// with a linked git worktree mapped back onto its main checkout.
+/// with a Jan subagent checkout or a linked git worktree mapped back onto its
+/// main checkout.
 ///
 /// Without the mapping, a session running in `~/.jan/worktrees/<slug>/<id>`
 /// would get a fresh, empty store and lose the project's memory, skills and
 /// config. A subdirectory of a worktree maps to the same subdirectory of the
-/// main checkout. Read straight from the `.git` file rather than by running
-/// `git`, because this runs on every store lookup.
+/// main checkout. Read straight from the `.git` file or the alternates rather
+/// than by running `git`, because this runs on every store lookup.
 pub fn project_key(project_root: &Path) -> PathBuf {
     let root = project_root
         .canonicalize()
@@ -124,7 +153,11 @@ pub fn project_key(project_root: &Path) -> PathBuf {
     for top in root.ancestors() {
         let dot_git = top.join(".git");
         if dot_git.is_dir() {
-            return root;
+            return match (shared_clone_origin(top), root.strip_prefix(top)) {
+                (Some(main), Ok(rel)) if rel.as_os_str().is_empty() => main,
+                (Some(main), Ok(rel)) => main.join(rel),
+                _ => root,
+            };
         }
         if !dot_git.is_file() {
             continue;
@@ -742,7 +775,7 @@ async fn sweep_workspaces_in(dir: PathBuf, keep: &[String]) -> Result<usize, Str
 /// Names Windows maps to a device in every directory, in any case and also
 /// with an extension (`nul.txt`). Checked on every OS so an id accepted on one
 /// works on all of them.
-fn is_windows_device_name(name: &str) -> bool {
+pub(crate) fn is_windows_device_name(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
     match stem.as_bytes() {
         [a, b, c] => matches!(&[*a, *b, *c], b"CON" | b"PRN" | b"AUX" | b"NUL"),
@@ -862,6 +895,49 @@ mod tests {
         assert_eq!(project_key(&wt.join("sub")), project_key(&main.join("sub")));
         assert_ne!(project_key(&main.join("sub")), main_key);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A Jan subagent checkout (`git clone --shared` under the Jan home's
+    /// `worktrees/`) shares its main checkout's store too; the same clone made
+    /// anywhere else is a project of its own.
+    #[test]
+    fn a_shared_clone_under_the_jan_worktrees_keys_on_its_main_checkout() {
+        let main = unique_data_folder().join("main");
+        std::fs::create_dir_all(main.join(".git/objects")).unwrap();
+        let worktrees = jan_home().unwrap().join("worktrees");
+        // Unique ids: the Jan home is shared by every test in this process.
+        let id = unique_data_folder().file_name().unwrap().to_owned();
+        let slug_dir = worktrees.join(path_slug(&main.canonicalize().unwrap()));
+        let clone = slug_dir.join(&id);
+        // A writer that rewrote its alternates to name a project other than
+        // the one its slug directory belongs to.
+        let forged = worktrees.join("other-0").join(&id);
+        let elsewhere = unique_data_folder().join("clone");
+        for dir in [&clone, &forged, &elsewhere] {
+            std::fs::create_dir_all(dir.join(".git/objects/info")).unwrap();
+            std::fs::write(
+                dir.join(".git/objects/info/alternates"),
+                format!("{}\n", main.join(".git/objects").display()),
+            )
+            .unwrap();
+            std::fs::create_dir_all(dir.join("sub")).unwrap();
+        }
+        let main = main.canonicalize().unwrap();
+        // The store slug hashes the path's text, which `Path` equality does not
+        // compare: a trailing slash or another spelling of `main` would pass
+        // `==` and still land in a different, empty store.
+        assert_eq!(project_key(&clone).as_os_str(), main.as_os_str());
+        assert_eq!(path_slug(&project_key(&clone)), path_slug(&main));
+        assert_eq!(
+            project_key(&clone.join("sub")).as_os_str(),
+            main.join("sub").as_os_str()
+        );
+        assert_eq!(project_key(&elsewhere), elsewhere.canonicalize().unwrap());
+        assert_eq!(project_key(&forged), forged.canonicalize().unwrap());
+        let _ = std::fs::remove_dir_all(&slug_dir);
+        let _ = std::fs::remove_dir_all(forged.parent().unwrap());
+        let _ = std::fs::remove_dir_all(elsewhere.parent().unwrap());
+        let _ = std::fs::remove_dir_all(main.parent().unwrap());
     }
 
     /// The whole point of the split: a thread sandbox is a sibling of the store,

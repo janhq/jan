@@ -526,10 +526,10 @@ fn stdio_command(params: &McpServerConfig, scrub: &[String]) -> Command {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
+    // Its own session: pgid == pid for `kill_process_tree`, and no controlling
+    // terminal, so a server cannot take the TUI's terminal away from Jan.
     #[cfg(unix)]
-    {
-        cmd.process_group(0);
-    }
+    tauri_plugin_agent_tools::tools::proc::detach_from_terminal(&mut cmd);
     cmd.kill_on_drop(true);
     for arg in params.args.iter().filter_map(Value::as_str) {
         cmd.arg(arg);

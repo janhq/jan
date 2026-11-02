@@ -114,6 +114,36 @@ describe('dispatchCoworkTool', () => {
     expect(executeAgentTool).toHaveBeenCalled()
   })
 
+  // Plan mode is read-only for memory too: the tool stays advertised for its
+  // reads, so the refusal is per op.
+  it('refuses memory ops that change the store in plan mode', async () => {
+    for (const op of ['write', 'edit', 'delete', 'move']) {
+      const out = await dispatchCoworkTool(
+        call('memory', { op, name: 'n' }),
+        ctx({ planMode: true })
+      )
+      expect(out.isError).toBe(true)
+      expect(out.output).toMatch(/plan mode/)
+      expect(out.output).toMatch(/view/)
+    }
+    expect(executeAgentTool).not.toHaveBeenCalled()
+  })
+
+  it('still runs memory view and search in plan mode', async () => {
+    for (const op of ['view', 'search']) {
+      await dispatchCoworkTool(
+        call('memory', { op, query: 'q' }),
+        ctx({ planMode: true })
+      )
+    }
+    expect(executeAgentTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('runs memory writes outside plan mode', async () => {
+    await dispatchCoworkTool(call('memory', { op: 'write' }), ctx())
+    expect(executeAgentTool).toHaveBeenCalled()
+  })
+
   // The attached folder is passed twice: as the read-only filesystem root and
   // as the skill-overlay project (last arg), so the folder's skills reach the
   // agent on top of the permanent store (#8879).

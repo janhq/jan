@@ -50,25 +50,7 @@ export const TokenSpeedIndicator = memo(
 
     if (displaySpeed === 0 && displayTokenCount === 0) return null
 
-    if (showTokenSpeed) {
-      return (
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          {displaySpeed > 0 && (
-            <div className="flex items-center gap-1">
-              <Gauge size={16} />
-              <span>{displaySpeed} tokens/sec</span>
-            </div>
-          )}
-          {displayTokenCount > 0 && (
-            <span className="text-muted-foreground">
-              ({displayTokenCount} tokens)
-            </span>
-          )}
-        </div>
-      )
-    }
-
-    return (
+    const compact = (
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -103,6 +85,33 @@ export const TokenSpeedIndicator = memo(
         </PopoverContent>
       </Popover>
     )
+
+    if (showTokenSpeed) {
+      return (
+        <>
+          {/* The footer needs ~400px with the inline stats; in a narrower
+              column (small window, Cowork's docked rail) they give way to the
+              compact gauge rather than wrapping it, so the numbers stay one
+              click away. Queries the footer's @container. */}
+          <div className="flex items-center gap-2 text-muted-foreground text-xs @max-md:hidden">
+            {displaySpeed > 0 && (
+              <div className="flex items-center gap-1">
+                <Gauge size={16} />
+                <span>{displaySpeed} tokens/s</span>
+              </div>
+            )}
+            {displayTokenCount > 0 && (
+              <span className="text-muted-foreground">
+                ({displayTokenCount} tokens)
+              </span>
+            )}
+          </div>
+          <div className="hidden @max-md:flex">{compact}</div>
+        </>
+      )
+    }
+
+    return compact
   }
 )
 

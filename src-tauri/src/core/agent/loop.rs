@@ -143,7 +143,7 @@ pub(crate) struct OrchestrationArgs {
     /// subagents via the cloned parent args.
     pub auto_approve: bool,
     /// Read-only plan mode. When `Plan`, mutation-capable tools (write/edit/bash,
-    /// memory_write/skill_write, MCP, subagent dispatch) are neither advertised
+    /// skill_write, MCP, subagent dispatch) are neither advertised
     /// nor executable: the dispatcher hard-denies them with `plan_mode_read_only`,
     /// stronger than auto-approval's prompt suppression (it cannot override this).
     pub run_mode: crate::core::agent::plan::RunMode,
@@ -216,6 +216,14 @@ pub(crate) struct OrchestrationArgs {
     /// turn composes the same bytes. `None` for a one-off run with no session to
     /// freeze across, which snapshots at the start of that run instead.
     pub session_start: Option<crate::core::agent::context::SessionStart>,
+    /// The cap on this run's memory mutations. Set only for Jan's memory tidy
+    /// subagent (`subagent::spawn_memory_tidy`), which shares it with the TUI
+    /// so a hit cap is reported; `None` everywhere else.
+    pub memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// Set only on a dispatched child: whether its `project_root` is
+    /// read-only, the extra paths its sandboxed shell may write and the
+    /// environment it gets (see [`crate::core::agent::child_workspace`]).
+    pub child_scope: Option<crate::core::agent::child_workspace::ChildScope>,
 }
 
 #[async_trait]
@@ -377,6 +385,46 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// the default does nothing, which is right for every invoker that has no
     /// project and therefore no hook files to read.
     async fn pre_compact(&self, _message_count: usize) {}
+
+    /// The `# Memory Changes` block, when it differs from the one this run
+    /// last sent: called after a batch with a successful `memory` call, so a
+    /// later request in the same run learns what changed. `None` when nothing
+    /// new is to be said, and for every invoker without a memory snapshot.
+    fn fresh_memory_changes(&self) -> Option<String> {
+        None
+    }
+}
+
+/// The session's memory snapshot and the `# Memory Changes` block this run
+/// last sent. The block is part of the run's tail, built once per run; a note
+/// written mid-run would otherwise reach the model only on the next run.
+pub(crate) struct MemoryChangesTracker {
+    snapshot: crate::core::agent::context::MemorySnapshot,
+    sent: std::sync::Mutex<Option<String>>,
+}
+
+impl MemoryChangesTracker {
+    /// `sent` is the block the run's tail already carries, if any.
+    pub(crate) fn new(
+        snapshot: crate::core::agent::context::MemorySnapshot,
+        sent: Option<String>,
+    ) -> Self {
+        Self {
+            snapshot,
+            sent: std::sync::Mutex::new(sent),
+        }
+    }
+
+    /// The current block when it is not the one last sent, marking it sent.
+    fn fresh(&self, project_root: &std::path::Path) -> Option<String> {
+        let now = self.snapshot.changes_block(project_root)?;
+        let mut sent = self.sent.lock().unwrap();
+        if sent.as_deref() == Some(now.as_str()) {
+            return None;
+        }
+        *sent = Some(now.clone());
+        Some(now)
+    }
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -823,6 +871,52 @@ struct CompositeToolInvoker {
     parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// See [`OrchestrationArgs::shell_detach`].
     shell_detach: Option<tokio::sync::watch::Receiver<bool>>,
+    /// The session's memory snapshot, for a mid-run `# Memory Changes`
+    /// block. `None` where the run's tail carries none (a child run, a
+    /// host-owned prompt, no snapshot).
+    memory_changes: Option<MemoryChangesTracker>,
+    /// See [`OrchestrationArgs::memory_change_budget`].
+    memory_change_budget: Option<Arc<tauri_plugin_agent_tools::memory::ChangeBudget>>,
+    /// The bucket this run's shells register under (`proc::kill_thread`): a
+    /// child's own `run_id`, so stopping it can end the shells it left running
+    /// before its worktree goes to another writer. `None` on a top-level run.
+    shell_owner: Option<String>,
+    /// What a child's workspace adds to its tools: a read-only root, the paths
+    /// its shell may also write, and its shell env. A top-level run gets the
+    /// default plus, on the CLI, read access to its subagents' worktrees.
+    workspace: RunWorkspace,
+}
+
+/// The per-run additions to [`CompositeToolInvoker`]'s tool context that come
+/// from where the run works (see [`crate::core::agent::child_workspace`]).
+#[derive(Debug, Clone, Default)]
+struct RunWorkspace {
+    read_only: bool,
+    read_roots: Vec<std::path::PathBuf>,
+    write_roots: Vec<std::path::PathBuf>,
+}
+
+impl RunWorkspace {
+    /// A child runs under its scope; a parent may read its children's
+    /// worktrees. Write roots are also read roots: the tools require it.
+    fn resolve(
+        scope: Option<&crate::core::agent::child_workspace::ChildScope>,
+        root: &std::path::Path,
+    ) -> Self {
+        match scope {
+            Some(scope) => Self {
+                read_only: scope.read_only,
+                read_roots: scope.write_roots.iter().chain(&scope.read_roots).cloned().collect(),
+                write_roots: scope.write_roots.clone(),
+            },
+            None => Self {
+                read_roots: crate::core::agent::child_workspace::parent_read_root(root)
+                    .into_iter()
+                    .collect(),
+                ..Self::default()
+            },
+        }
+    }
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1111,8 +1205,11 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         .first_phase
         .iter()
         .map(|c| match &d.blackboard_dir {
-            Some(dir) => format!("  - {} (run_id: {}) -> {dir}/{}.md", c.name, c.run_id, c.name),
-            None => format!("  - {} (run_id: {})", c.name, c.run_id),
+            Some(dir) => format!(
+                "  - {} (run_id: {}) -> {dir}/{}.md; {}",
+                c.name, c.run_id, c.name, c.workspace
+            ),
+            None => format!("  - {} (run_id: {}); {}", c.name, c.run_id, c.workspace),
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1208,10 +1305,14 @@ impl CompositeToolInvoker {
                 &self.project_root,
                 &self.enabled_skills,
             ))
-            .with_skill_user_root(self.memory_home.as_deref());
+            .with_skill_user_root(self.memory_home.as_deref())
+            .with_memory_change_budget(self.memory_change_budget.as_deref());
         let ctx = ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_workspace_readonly(self.workspace.read_only)
+        .with_read_roots(&self.workspace.read_roots)
+        .with_write_roots(&self.workspace.write_roots)
         .with_escalation(self.escalation.offered())
         .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
@@ -1223,7 +1324,8 @@ impl CompositeToolInvoker {
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
         )
-        .with_shell_done_sink(self.shell_done_sink());
+        .with_shell_done_sink(self.shell_done_sink())
+        .with_thread_id(self.shell_owner.as_deref());
         match &self.shell_detach {
             Some(signal) => ctx.with_detach_signal(signal.clone()),
             None => ctx,
@@ -1691,7 +1793,9 @@ impl CompositeToolInvoker {
                     // Unconfined means no scratch: the tools see the real
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
-                ) {
+                )
+                .await
+                {
                     Ok(d) => format_dispatched_plan(&d),
                     Err(e) => {
                         ctx.bg.release_names(&reserved);
@@ -2172,6 +2276,10 @@ impl ToolInvoker for CompositeToolInvoker {
         self.monitors.snapshot()
     }
 
+    fn fresh_memory_changes(&self) -> Option<String> {
+        self.memory_changes.as_ref()?.fresh(&self.project_root)
+    }
+
     async fn pre_compact(&self, message_count: usize) {
         crate::core::agent::compaction::fire_pre_compact(
             &self.hooks,
@@ -2639,10 +2747,11 @@ impl ToolInvoker for CompositeToolInvoker {
                 &tauri_plugin_agent_tools::tools::gate::GateContext {
                     project_root: &self.project_root,
                     scratch: Some(self.scratch_root.as_path()),
-                    // The CLI works *in* the project, so it has no separate
-                    // read-only or writable root to attach.
-                    read_roots: &[],
-                    write_roots: &[],
+                    // The CLI works *in* the project; what is attached is
+                    // its subagents' worktrees (a parent) or the borrowed
+                    // objects and build dir (a child).
+                    read_roots: &self.workspace.read_roots,
+                    write_roots: &self.workspace.write_roots,
                     hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
@@ -2680,12 +2789,14 @@ impl ToolInvoker for CompositeToolInvoker {
                 let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 let web_search = self.web_search.clone();
+                let read_roots = self.workspace.read_roots.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
                 // to be batched concurrently would be no policy at all.
                 let hooks = self.hooks.clone();
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
+                let change_budget = self.memory_change_budget.clone();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled);
                     let ctx = match memory_home.as_deref() {
@@ -2697,11 +2808,13 @@ impl ToolInvoker for CompositeToolInvoker {
                             &root, &enabled,
                         ))
                         .with_skill_user_root(memory_home.as_deref())
+                        .with_memory_change_budget(change_budget.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
                         .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
+                        .with_read_roots(&read_roots)
                         .with_web_search(web_search.as_ref())
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -2933,6 +3046,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         compaction: None,
         // Each proxy request is a session of one run: it snapshots its own.
         session_start: None,
+        memory_change_budget: None,
+        child_scope: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -3342,6 +3457,8 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
+            // A subagent (the run with an override prompt) has no memory, so
+            // its prompt carries no memory index or memory instructions.
             crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
@@ -3349,6 +3466,7 @@ fn build_run_system_prompt(
                 subagents_enabled,
                 policy,
                 session_start,
+                override_prompt.is_none(),
             )
             .map(Some)
         }
@@ -3611,6 +3729,9 @@ async fn orchestrate_inner(
         allow_escalation,
         compaction,
         session_start,
+        // Read through `args` where the invoker is built.
+        memory_change_budget: _,
+        child_scope,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -3662,6 +3783,14 @@ async fn orchestrate_inner(
         .as_ref()
         .map(|s| s.prompt.clone())
         .unwrap_or_default();
+    // The one snapshot this run composes with and reports memory changes
+    // against. A run with no session snapshot (the API server) takes its own
+    // here, and both halves must read that same one: the tracker below would
+    // otherwise have nothing to diff against, so the run's own writes never
+    // reached its next request. A host prompt carries neither, so none is taken.
+    let run_start = host_system_prompt
+        .is_none()
+        .then(|| run_session_start(session_start.as_ref(), project_root.as_deref()));
     // A host prompt replaces the composition outright: nothing Jan writes is
     // placed around it, above the cache line or below the history.
     let stable_system = match host_system_prompt.as_deref() {
@@ -3678,7 +3807,7 @@ async fn orchestrate_inner(
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
             // With no project, it still reaches the prompt, after the base.
-            Some(&run_session_start(session_start.as_ref(), project_root.as_deref())),
+            run_start.as_ref(),
         )?,
     };
     let jan_owns_prompt = host_system_prompt.is_none();
@@ -3705,6 +3834,24 @@ async fn orchestrate_inner(
                     volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
+        }
+    }
+    // The index above the cache line is the session's snapshot, so a note
+    // written since (by this run, a tidy, another session) is reported here instead.
+    // Not gated on `project_memory`: that is about recall and indexing, and an
+    // ephemeral session still has the index and the tool.
+    // The same block is recomputed after a successful `memory` call later in
+    // this run (`MemoryChangesTracker`), so the run's own writes reach its
+    // next request rather than only the next run.
+    let mut memory_changes: Option<MemoryChangesTracker> = None;
+    if jan_owns_prompt && system_prompt_override.is_none() {
+        let snapshot = run_start.as_ref().and_then(|s| s.memory());
+        if let (Some(root), Some(snapshot)) = (project_root.as_deref(), snapshot) {
+            let block = snapshot.changes_block(root);
+            if let Some(block) = &block {
+                volatile_parts.push((Composer::MemoryChanges, block.clone()));
+            }
+            memory_changes = Some(MemoryChangesTracker::new(snapshot.clone(), block));
         }
     }
     // Child (subagent) runs are excluded via `system_prompt_override`, the
@@ -3923,8 +4070,8 @@ async fn orchestrate_inner(
 
     if let Some(root) = project_root {
         // Background subagents are scoped to this run unless the session owns
-        // them: `_bg_guard` aborts any still-running child when
-        // `orchestrate_inner` returns or is cancelled. The cap
+        // them: `bg_guard` aborts any still-running child and sweeps their
+        // worktrees when the run ends or is cancelled. The cap
         // (`max_parallel_subagents`) is snapshotted here, at run start.
         let bg = session_subagent_bg.clone().unwrap_or_else(|| {
             std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
@@ -3936,9 +4083,9 @@ async fn orchestrate_inner(
         // TUI aborts them on cancel and on session reset). Arming it here would
         // kill on the first turn's return exactly the children this change
         // exists to keep running.
-        let _bg_guard = session_subagent_bg
+        let bg_guard = session_subagent_bg
             .is_none()
-            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
+            .then(|| crate::core::agent::subagent::AbortOnDrop::new(bg.clone(), events));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
             model_id: model_id.clone(),
@@ -3998,7 +4145,11 @@ async fn orchestrate_inner(
             hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
-            env_set: settings.env_set,
+            // A child's workspace adds its build and cache dirs on top.
+            env_set: merge_env_set(
+                settings.env_set,
+                child_scope.as_ref().map(|c| c.env_set.clone()).unwrap_or_default(),
+            ),
             web_search: resolve_web_search(),
             project_root: root.clone(),
             allowed_names: allowed_names.clone(),
@@ -4033,10 +4184,15 @@ async fn orchestrate_inner(
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
             parent_link: args.parent_link.clone(),
+            // Only a child run has an id of its own.
+            shell_owner: run_id.clone(),
             // Without a session registry nothing would deliver the detached
             // command's end except a park, which holds the message just the
             // same; so the signal only applies where the session owns shells.
             shell_detach: args.shell_detach.clone().filter(|_| session_bg_shells.is_some()),
+            memory_changes,
+            memory_change_budget: args.memory_change_budget.clone(),
+            workspace: RunWorkspace::resolve(child_scope.as_ref(), root),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -4142,12 +4298,20 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // `bg_guard`. On an error, teardown still aborts them. A session-owned
         // set is skipped: nothing is about to abort those children, and waiting
         // here would hold the run open for precisely the work the session set
         // exists to outlive it.
         if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
+        }
+        // A run-owned registry's children are done with this run, so its end
+        // is their session's end: stop any still running, then sweep their
+        // worktrees, here rather than when the function returns so the kept
+        // notice precedes `SessionEnd`. A session-owned registry has no guard;
+        // its owner sweeps it.
+        if let Some(guard) = bg_guard {
+            guard.finish().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
@@ -5270,6 +5434,7 @@ async fn run_turn_cycle(
         // `todo` at all means the list was just reconciled, regardless of
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
+        let mut memory_touched_this_batch = false;
         for outcome in tool_results {
             // Emitted here only when the invoker did not announce it already
             // (the default invoker never does; a failed call refused before
@@ -5287,6 +5452,9 @@ async fn run_turn_cycle(
                 ..
             } = outcome;
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            if name == tauri_plugin_agent_tools::tools::MEMORY_TOOL && !is_error {
+                memory_touched_this_batch = true;
+            }
             if name == "todo" {
                 todo_touched_this_batch = true;
             } else if !is_error
@@ -5326,6 +5494,14 @@ async fn run_turn_cycle(
                     "tool_call_id": id,
                     "content": wire_content
                 }));
+            }
+        }
+        // A note this run wrote is reported to its next request, below the
+        // history like the run's own tail: the index above the cache line is
+        // the session-start snapshot and must not move.
+        if memory_touched_this_batch {
+            if let Some(block) = tools.fresh_memory_changes() {
+                transcript.record_reminder(&block);
             }
         }
         if todo_touched_this_batch {
@@ -8842,6 +9018,10 @@ mod tests {
             ),
             parent_link: None,
             shell_detach: None,
+            memory_changes: None,
+            memory_change_budget: None,
+            shell_owner: None,
+            workspace: RunWorkspace::default(),
         }
     }
 
@@ -9132,6 +9312,38 @@ mod tests {
             out[0].content
         );
         assert!(!marker.exists(), "a plugin tool must not run in plan mode");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode is read-only for memory too: `view` and `search` run, every
+    /// op that changes the store is refused before it touches a note.
+    #[tokio::test]
+    async fn plan_mode_reads_memory_but_refuses_to_change_it() {
+        let root = hooks_root("planmemory");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let note = invoker.store_root.join("memory").join("fact.md");
+        std::fs::create_dir_all(note.parent().unwrap()).unwrap();
+        std::fs::write(&note, "A fact").unwrap();
+        for args in [
+            r#"{"op":"write","name":"new","content":"x"}"#,
+            r#"{"op":"edit","name":"fact","old":"A","new":"B"}"#,
+            r#"{"op":"delete","name":"fact"}"#,
+            r#"{"op":"move","name":"fact","to":"moved"}"#,
+        ] {
+            let out = invoker.invoke(&[hooked_tool_call("memory", args)]).await.unwrap();
+            assert!(out[0].content.contains(PLAN_MODE_UNAVAILABLE), "{args}: {}", out[0].content);
+        }
+        assert_eq!(std::fs::read_to_string(&note).unwrap(), "A fact", "nothing changed");
+        assert!(!invoker.store_root.join("memory").join("new.md").exists());
+        let view = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"view","name":"fact"}"#)]).await.unwrap();
+        assert_eq!(view[0].content, "A fact");
+        let search = invoker.invoke(&[hooked_tool_call("memory", r#"{"op":"search","query":"fact"}"#)]).await.unwrap();
+        assert!(search[0].content.contains("`fact`"), "{}", search[0].content);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -11742,6 +11954,272 @@ mod tests {
         assert!(out.contains("only a subagent"), "{out}");
     }
 
+    /// The names a dispatched child is advertised, given the allowlist it was
+    /// dispatched with and whether it is Jan's tidy subagent.
+    fn child_tools(allowed: Option<&[&str]>, memory_access: bool) -> Vec<String> {
+        let root = std::env::temp_dir().join(format!(
+            "jan-child-tools-{}-{}",
+            std::process::id(),
+            TEST_ROOT_SEQ.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let permissions = if memory_access {
+            ToolPermissions::allow_all()
+        } else {
+            ToolPermissions::allow_all().with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL)
+        };
+        let allowed: Option<std::collections::HashSet<String>> =
+            allowed.map(|names| names.iter().map(|n| n.to_string()).collect());
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            allowed.as_ref(),
+            &permissions,
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Normal,
+            false,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            true,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// Subagents have no memory: a dispatched child is never offered the tool,
+    /// even when its `allowed_tools` names it. Jan's tidy subagent is the one
+    /// child that keeps it.
+    #[test]
+    fn a_dispatched_child_is_never_offered_memory_but_the_tidy_child_is() {
+        let full = child_tools(None, false);
+        assert!(full.iter().any(|n| n == "read"), "{full:?}");
+        assert!(!full.iter().any(|n| n.starts_with("memory")), "{full:?}");
+        let asked = child_tools(Some(&["read", "memory"]), false);
+        assert_eq!(asked, vec!["read".to_string()], "allowed_tools cannot add it back");
+        let tidy = child_tools(None, true);
+        assert!(tidy.iter().any(|n| n == "memory"), "{tidy:?}");
+    }
+
+    /// #497 bug 1: a headless run builds its tail once, so a note the model
+    /// wrote mid-run never reached a later request of the same run. The next
+    /// request now carries `# Memory Changes` naming the note, below the
+    /// history, while the system prompt bytes stay the session's.
+    #[tokio::test]
+    async fn a_memory_write_mid_run_reaches_the_next_request_of_the_same_run() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let snapshot = crate::core::agent::context::MemorySnapshot::capture(&root);
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        invoker.sandbox = false;
+        invoker.hidden_root = None;
+        invoker.auto_approve = true;
+        invoker.memory_changes = Some(MemoryChangesTracker::new(snapshot, None));
+        let write = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "w1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"write\",\"name\":\"build_cmd\",\"title\":\"Build\",\"content\":\"make foo\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let shell = json!({"choices": [{"message": {"content": null, "tool_calls": [{
+            "id": "v1", "type": "function", "function": {"name": "memory",
+            "arguments": "{\"op\":\"view\",\"name\":\"build_cmd\"}"}
+        }]}, "finish_reason": "tool_calls"}]});
+        let model = MockModel::new(vec![write, shell, final_answer("done")]);
+        let (events, _events_rx) = mpsc::unbounded_channel();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "remember the build command"}),
+            ]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+        let _ = std::fs::remove_dir_all(&root);
+        let sent = model.requests.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3);
+        let text = |i: usize| serde_json::to_string(&sent[i]["messages"]).unwrap();
+        assert!(!text(0).contains("# Memory Changes"), "nothing changed yet: {}", text(0));
+        assert!(text(1).contains("# Memory Changes"), "{}", text(1));
+        assert!(text(1).contains("+ build_cmd"), "{}", text(1));
+        // Said once: a read-only call later does not repeat an unchanged block.
+        assert_eq!(text(2).matches("# Memory Changes").count(), 1, "{}", text(2));
+        for request in &sent {
+            let messages = request["messages"].as_array().unwrap();
+            assert_eq!(messages[0], json!({"role": "system", "content": "Stable instructions."}));
+            let systems = messages.iter().filter(|m| m["role"] == "system").count();
+            assert_eq!(systems, 1, "no second system message: {messages:?}");
+        }
+        // The block follows the tool result, below the history.
+        let second = sent[1]["messages"].as_array().unwrap();
+        let last = second.last().unwrap();
+        assert_eq!(last["role"], "user", "{second:?}");
+        assert!(last["content"].as_str().unwrap().contains("+ build_cmd"));
+    }
+
+    /// A run with no session snapshot (the API server's orchestration, which
+    /// goes through `run_orchestration_streamed` with `session_start: None`)
+    /// takes one for its prompt; the same snapshot must back its
+    /// `# Memory Changes` tracker, or a note written mid-run never reaches the
+    /// run's next request. Driven end to end against a stub provider.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_run_without_a_session_snapshot_still_reports_its_memory_changes() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("kept.md"), "Kept\n\nAlready here.").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = bodies.clone();
+        std::thread::spawn(move || {
+            let call = |id: &str, args: &str| {
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [{
+                        "index": 0, "id": id, "type": "function",
+                        "function": {"name": "memory", "arguments": args}}]},
+                    "finish_reason": "tool_calls"}]})
+            };
+            let chunks = [
+                call("w1", r#"{"op":"write","name":"build_cmd","title":"Build","content":"make foo"}"#),
+                call("v1", r#"{"op":"view","name":"build_cmd"}"#),
+                json!({"id": "s", "object": "chat.completion.chunk", "created": 1, "model": "m",
+                    "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"},
+                    "finish_reason": "stop"}]}),
+            ];
+            for (i, connection) in listener.incoming().enumerate() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        size = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                seen.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+                let chunk = &chunks[i.min(chunks.len() - 1)];
+                let answer = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            }
+        });
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.session_start = None;
+        args.sandbox = Some(false);
+        args.subagents_enabled = false;
+        args.provider_configs = Arc::new(Mutex::new(
+            std::iter::once((
+                "stub".to_string(),
+                ProviderConfig {
+                    provider: "stub".into(),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    api_key: Some("k".into()),
+                    models: vec!["m".into()],
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+        ));
+        let body = json!({"model": "m", "messages": [{"role": "user", "content": "remember the build command"}]});
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let out = run_orchestration_streamed(&tx, &body, &args).await;
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&root);
+        out.expect("run completes");
+        let sent = bodies.lock().unwrap().clone();
+        assert_eq!(sent.len(), 3, "{sent:?}");
+        assert!(sent[0].contains("kept"), "the prompt carries the snapshot index: {}", sent[0]);
+        assert!(!sent[0].contains("# Memory Changes"), "{}", sent[0]);
+        let tail = |b: &str| b.chars().rev().take(600).collect::<Vec<_>>().into_iter().rev().collect::<String>();
+        assert!(sent[1].contains("# Memory Changes"), "{}", tail(&sent[1]));
+        assert!(sent[1].contains("+ build_cmd"), "{}", tail(&sent[1]));
+    }
+
+    /// A child that names `memory` anyway is refused at the gate.
+    #[tokio::test]
+    async fn a_child_calling_memory_is_refused() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let call = json!({
+            "id": "m1",
+            "type": "function",
+            "function": { "name": "memory", "arguments": "{\"op\":\"view\"}" }
+        });
+        let out = invoker.invoke(&[call]).await.unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(out[0].content.starts_with("ERROR:"), "{}", out[0].content);
+    }
+
+    /// A subagent's prompt carries no memory section: no index, no memory
+    /// instructions. The main agent's has both, and tells it subagents have
+    /// no memory.
+    #[test]
+    fn a_child_prompt_has_no_memory_section() {
+        let root = unique_project_root();
+        let dir = crate::core::agent::project::store_root(&root).join("memory");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fact.md"), "A remembered fact.").unwrap();
+        let build = |override_prompt: Option<&str>, subagents: bool| {
+            build_run_system_prompt(
+                None,
+                override_prompt,
+                Some(&root),
+                Some("s1"),
+                subagents,
+                false,
+                &PromptPolicy::default(),
+                None,
+            )
+            .unwrap()
+            .unwrap()
+            .as_prompt()
+        };
+        let child = build(Some("You are a reviewer."), false);
+        for absent in ["# Available Memories", "A remembered fact", "`memory` tool", "## Memory"] {
+            assert!(!child.contains(absent), "{absent} leaked into a child prompt:\n{child}");
+        }
+        assert!(child.contains("# Skills"), "skills stay: {child}");
+        assert!(child.contains("Memory belongs to the agent that\ndispatched you"), "{child}");
+        let main = build(None, true);
+        assert!(main.contains("# Available Memories") && main.contains("A remembered fact"));
+        assert!(main.contains("Subagents have no memory"), "{main}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A dispatching run is offered the steering tool beside dispatch, and
     /// never the doorbell: it is the main agent, there is nobody above it.
     #[test]
@@ -11883,10 +12361,12 @@ mod tests {
                 DispatchedChild {
                     name: "explorer-a".to_string(),
                     run_id: "sub-explorer-a-1".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
                 DispatchedChild {
                     name: "explorer-b".to_string(),
                     run_id: "sub-explorer-b-2".to_string(),
+                    workspace: "working read-only in /p".to_string(),
                 },
             ],
             blackboard_dir: Some("blackboard".to_string()),
@@ -11909,6 +12389,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "researcher".to_string(),
                 run_id: "sub-researcher-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["researcher".to_string(), "writer".to_string()],
@@ -12200,6 +12681,7 @@ mod tests {
             first_phase: vec![DispatchedChild {
                 name: "w".to_string(),
                 run_id: "sub-w-1".to_string(),
+                workspace: "working read-only in /p".to_string(),
             }],
             blackboard_dir: None,
             names: vec!["w".to_string()],
@@ -12620,4 +13102,224 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// How the stub provider answers the parent's second request.
+    #[cfg(feature = "cli")]
+    #[derive(Clone, Copy)]
+    enum SecondTurn {
+        /// A 400, which fails the run.
+        Fails,
+        /// Never, so the test can cancel the run while it waits.
+        Hangs,
+    }
+
+    /// A git project whose run dispatches one `writer` child into a fresh
+    /// worktree, against a stub provider on which the child's request never
+    /// returns: the writer is still in its worktree, holding its lease, when
+    /// the parent's run ends. Returns the project, the run's args, and a
+    /// receiver signalled once the parent's second request has arrived (the
+    /// dispatch is done by then). `None` without git.
+    #[cfg(feature = "cli")]
+    fn run_with_a_stuck_writer(
+        second: SecondTurn,
+    ) -> Option<(
+        std::path::PathBuf,
+        OrchestrationArgs,
+        std::sync::mpsc::Receiver<()>,
+    )> {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let root = unique_project_root();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        std::fs::write(root.join("a.txt"), "a\n").unwrap();
+        if !(git(&["init", "-q"])
+            && git(&["add", "a.txt"])
+            && git(&["commit", "-q", "--no-gpg-sign", "-m", "a"]))
+        {
+            return None;
+        }
+        let defs = crate::core::agent::subagent::project_subagents_dir(&root);
+        std::fs::create_dir_all(&defs).unwrap();
+        std::fs::write(
+            defs.join("writer.toml"),
+            "name = \"writer\"\ndescription = \"edits\"\nsystem_prompt = \"You are writer.\"\n",
+        )
+        .unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (second_tx, second_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let parent_turns = AtomicUsize::new(0);
+            // Held, never answered, so neither side's request returns.
+            let mut parked = Vec::new();
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut length = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        length = n.trim().parse().unwrap_or(0);
+                    }
+                }
+                let mut body = vec![0; length];
+                let _ = reader.read_exact(&mut body);
+                if String::from_utf8_lossy(&body).contains("You are writer.") {
+                    parked.push(stream);
+                    continue;
+                }
+                if parent_turns.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let dispatch = json!({ "subagents": [{ "agent": "writer", "task": "edit a.txt" }] })
+                        .to_string();
+                    let chunk = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[
+                            {"index":0,"id":"c1","type":"function","function":{"name":"dispatch_subagent","arguments":dispatch}}]},
+                            "finish_reason":null}]});
+                    let done = json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]});
+                    let answer = format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n");
+                    let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+                    continue;
+                }
+                let _ = second_tx.send(());
+                match second {
+                    SecondTurn::Fails => {
+                        let body = "{\"error\":{\"message\":\"bad request\"}}";
+                        let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    }
+                    SecondTurn::Hangs => parked.push(stream),
+                }
+            }
+        });
+
+        let mut args = crate::core::agent::subagent::tests::max_par_args(&root);
+        args.sandbox = Some(false);
+        args.project_memory = false;
+        args.provider_configs = Arc::new(Mutex::new(HashMap::from([(
+            "stub".to_string(),
+            ProviderConfig {
+                provider: "stub".into(),
+                base_url: Some(format!("http://{addr}/v1")),
+                api_key: Some("k".into()),
+                models: vec!["m".into()],
+                ..Default::default()
+            },
+        )])));
+        Some((root, args, second_rx))
+    }
+
+    /// The subagent checkouts still on disk for `root`'s project and the
+    /// `jan/agent/*` branches still in its repository.
+    #[cfg(feature = "cli")]
+    fn leftover_worktrees(root: &std::path::Path) -> (Vec<String>, String) {
+        let branches = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["branch", "--list", "jan/agent/*"])
+            .output()
+            .unwrap();
+        let dir = crate::core::agent::child_workspace::project_worktrees_dir(root).unwrap();
+        let checkouts = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name() != "cargo-target")
+            .map(|e| e.path().display().to_string())
+            .collect();
+        (checkouts, String::from_utf8_lossy(&branches.stdout).trim().to_string())
+    }
+
+    /// A run that fails while a writer it dispatched is still working ends that
+    /// writer before sweeping: the worktree holds nothing, so it and its branch
+    /// go, and nothing claims it was kept for holding work.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_failed_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, _second)) = run_with_a_stuck_writer(SecondTurn::Fails) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            run_orchestration_streamed(&tx, &body, &args),
+        )
+        .await
+        .expect("the run ends");
+        assert!(result.is_err(), "{result:?}");
+        drop(tx);
+
+        let mut dispatched = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::ToolResult { content, .. } if content.contains("worktree") => {
+                    dispatched = true;
+                }
+                StreamEvent::Notice { text } => {
+                    assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+                }
+                _ => {}
+            }
+        }
+        assert!(dispatched, "the writer was dispatched into a worktree");
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cancelled run never reaches its own end, so the sweep has to happen on
+    /// the way down too: the writer is stopped and its empty worktree removed.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_cancelled_run_sweeps_the_worktree_of_a_writer_it_was_still_running() {
+        let Some((root, args, second)) = run_with_a_stuck_writer(SecondTurn::Hangs) else {
+            return;
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let run = tokio::spawn(async move {
+            let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "go" }] });
+            run_orchestration_streamed(&tx, &body, &args).await
+        });
+        let arrived = tokio::task::spawn_blocking(move || {
+            second.recv_timeout(std::time::Duration::from_secs(30))
+        })
+        .await
+        .unwrap();
+        assert!(arrived.is_ok(), "the parent reached its second turn");
+        let (worktrees, _) = leftover_worktrees(&root);
+        assert_eq!(worktrees.len(), 1, "the writer is in its worktree: {worktrees:?}");
+
+        run.abort();
+        assert!(run.await.unwrap_err().is_cancelled());
+        // The drop hands the sweep to the blocking pool, so it lands shortly
+        // after the abort returns rather than inside it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !leftover_worktrees(&root).0.is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        while let Ok(event) = rx.try_recv() {
+            if let StreamEvent::Notice { text } = event {
+                assert!(!text.contains("kept"), "an empty worktree was reported kept: {text}");
+            }
+        }
+        let (worktrees, branches) = leftover_worktrees(&root);
+        assert!(worktrees.is_empty(), "{worktrees:?}");
+        assert!(branches.is_empty(), "{branches}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

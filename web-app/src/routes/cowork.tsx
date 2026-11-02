@@ -1637,7 +1637,8 @@ function CoworkPage() {
             )}
           </div>
 
-          <div className="py-4 shrink-0">
+          {/* pb-only: the scroll area runs right up to the composer. */}
+          <div className="pb-4 shrink-0">
             <div className={cn('mx-auto w-full px-6', !dockedRail && 'md:w-4/5 xl:w-4/6')}>
               {/* The card rises in when a question arrives and folds away once
                   answered, so the chat box glides instead of jumping. A card

@@ -44,9 +44,8 @@ export const AGENT_TOOL_NAMES = new Set([
   'write',
   'edit',
   'shell',
-  'memory_list',
-  'memory_read',
-  'memory_write',
+  // One tool for every memory op (view/search/write/edit/delete/move).
+  'memory',
   'skill_list',
   'skill_read',
   'skill_write',
@@ -155,7 +154,7 @@ let digestNow = ''
 
 /**
  * Drop the cached snapshot so the next run/send re-reads the store. Called from
- * every in-app write path (the `memory_write` tool, the settings editors, the
+ * every in-app write path (a `memory` tool change, the settings editors, the
  * chat Remember action); an edit made outside the app is picked up on restart.
  */
 export function invalidateMemory(): void {
@@ -172,7 +171,7 @@ async function loadMemorySnapshot(): Promise<MemorySnapshot> {
 
   // The digest is self-contained: whole notes only, newest first, under a
   // strict budget. A note that does not fit is simply absent -- chat has no
-  // memory_read to dereference a truncated one with.
+  // memory tool to dereference a truncated one with.
   let remaining = MEMORY_DIGEST_BUDGET
   const parts: string[] = []
   for (const entry of newestFirst) {
@@ -304,7 +303,7 @@ export async function executeAgentTool(
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
-    if (toolName === 'memory_write') invalidateMemory()
+    if (toolName === 'memory' && isMemoryChange(args)) invalidateMemory()
     return {
       content: result.content,
       diff: result.diff ?? undefined,
@@ -313,6 +312,11 @@ export async function executeAgentTool(
   } catch (e) {
     return { error: messageOf(e) }
   }
+}
+
+/** Whether a `memory` call changes the store (anything but view/search). */
+function isMemoryChange(args: Record<string, unknown>): boolean {
+  return args.op !== 'view' && args.op !== 'search'
 }
 
 export type { MonitorUpdate }

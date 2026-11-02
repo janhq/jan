@@ -86,6 +86,8 @@ export function EditMessageDialog({
       role="button"
       tabIndex={0}
       data-testid="edit-message-trigger"
+      aria-label={t('common:dialogs.editMessage.title')}
+      title={t('common:dialogs.editMessage.title')}
       disabled={!selectedModel}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -94,7 +96,7 @@ export function EditMessageDialog({
         }
       }}
     >
-      <IconPencil size={16} />
+      <IconPencil size={16} aria-hidden="true" />
     </Button>
   )
 

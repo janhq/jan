@@ -114,19 +114,24 @@ function LocalAPIServerContent() {
   const [isModelLoading, setIsModelLoading] = useState(false)
 
   const toggleAPIServer = async () => {
-    // Validate API key before starting server
     if (serverStatus === 'stopped') {
+      // The backend refuses to serve an open API on a non-loopback host, since
+      // any device on the network could use it. Say so here, before a model
+      // starts loading for a server that will not start. The key field lives
+      // in the configuration popover, so a toast carries the message.
+      if (serverHost !== '127.0.0.1' && !apiKey?.toString().trim()) {
+        setShowApiKeyError(true)
+        toast.error(t('common:apiKeyRequired'), {
+          description: `Set an API key in Configuration before listening on ${serverHost}, or switch the host to 127.0.0.1.`,
+        })
+        return
+      }
+      setShowApiKeyError(false)
+
       console.log('Starting server with port:', serverPort)
       toast.info('Starting server...', {
         description: `Attempting to start server on port ${serverPort}`,
       })
-
-      // if (!apiKey || apiKey.toString().trim().length === 0) {
-      //   setShowApiKeyError(true)
-      //   return
-      // }
-
-      setShowApiKeyError(false)
 
       setServerStatus('pending')
 
