@@ -2010,6 +2010,9 @@ async fn find(
             require_literal_leading_dot: false,
         };
         let mut matches: Vec<String> = Vec::new();
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
         for entry in WalkBuilder::new(&base)
             .hidden(false)
             .require_git(false)
@@ -2022,17 +2025,24 @@ async fn find(
             }
             let rel = rel_to(&base, entry.path());
             if pat.matches_with(&rel, opts) {
-                matches.push(rel);
                 if matches.len() >= limit {
+                    limited = true;
                     break;
                 }
+                matches.push(rel);
             }
         }
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            matches.join("\n")
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = matches.join("\n");
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} path limit reached; raise limit or narrow the pattern]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -2091,6 +2101,9 @@ async fn grep(
         let is_file = base.is_file();
         let mut matches: Vec<String> = Vec::new();
         let mut count = 0usize;
+        // Set on the first match past the limit, so the notice only appears
+        // when something was actually left out.
+        let mut limited = false;
 
         let mut search_file = |file: &Path, rel_base: &Path| -> bool {
             if let Some(gp) = &glob_pat {
@@ -2114,6 +2127,10 @@ async fn grep(
             let lines: Vec<&str> = content.lines().collect();
             for (i, line) in lines.iter().enumerate() {
                 if re.is_match(line) {
+                    if count >= limit {
+                        limited = true;
+                        return false;
+                    }
                     if context > 0 {
                         let start = i.saturating_sub(context);
                         let end = (i + context + 1).min(lines.len());
@@ -2129,9 +2146,6 @@ async fn grep(
                         matches.push(format!("{rel}:{}:{}", i + 1, truncate_line(line)));
                     }
                     count += 1;
-                    if count >= limit {
-                        return false;
-                    }
                 }
             }
             true
@@ -2174,16 +2188,22 @@ async fn grep(
             }
         }
 
-        if matches.is_empty() {
-            "No matches.".to_string()
-        } else {
-            cap_output(
-                &matches.join("\n"),
-                usize::MAX,
-                MAX_BYTES,
-                "\n[truncated: 64KB limit]",
-            )
+        if matches.is_empty() && !limited {
+            return "No matches.".to_string();
         }
+        let mut out = cap_output(
+            &matches.join("\n"),
+            usize::MAX,
+            MAX_BYTES,
+            "\n[truncated: 64KB limit]",
+        );
+        if limited {
+            out.push_str(&format!(
+                "\n[truncated: {limit} match limit reached; raise limit or narrow the search]"
+            ));
+        }
+        // `limit: 0` leaves only the notice, which then has no line above it.
+        out.strip_prefix('\n').map(str::to_string).unwrap_or(out)
     })
     .await;
     res.unwrap_or_else(|e| format!("ERROR: {e}"))
@@ -2251,6 +2271,56 @@ mod tests {
         // removes, and a reused pid reuses the root: start it empty.
         let _ = std::fs::remove_dir_all(crate::workspace::project_store(&dir));
         dir
+    }
+
+    /// `find` says when it stopped at its limit, and only then.
+    #[tokio::test]
+    async fn find_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            std::fs::write(root.join(name), b"x").unwrap();
+        }
+        let find = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("find").unwrap(),
+                    &json!({"pattern": "*.rs", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = find(2).await;
+        assert_eq!(cut.lines().count(), 3, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 path limit reached; raise limit or narrow the pattern]"), "{cut}");
+        let exact = find(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `grep` says when it stopped at its match limit, and only then.
+    #[tokio::test]
+    async fn grep_says_when_it_hits_its_limit() {
+        let root = unique_root();
+        std::fs::write(root.join("a.txt"), b"hit\nhit\nhit\n").unwrap();
+        let grep = |limit: u64| {
+            let root = root.clone();
+            async move {
+                execute_builtin(
+                    lookup("grep").unwrap(),
+                    &json!({"pattern": "hit", "limit": limit}),
+                    &root,
+                )
+                .await
+            }
+        };
+        let cut = grep(2).await;
+        assert_eq!(cut.matches("a.txt:").count(), 2, "{cut}");
+        assert!(cut.ends_with("[truncated: 2 match limit reached; raise limit or narrow the search]"), "{cut}");
+        let exact = grep(3).await;
+        assert!(!exact.contains("[truncated"), "{exact}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

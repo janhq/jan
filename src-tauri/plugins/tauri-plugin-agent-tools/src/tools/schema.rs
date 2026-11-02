@@ -281,7 +281,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                     "properties": {
                         "pattern": { "type": "string", "description": "Glob pattern to match against each path, e.g. **/*.rs." },
                         "path": { "type": "string", "description": "Directory to search under, relative to the project root. Defaults to the root." },
-                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000)." }
+                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }
@@ -301,7 +301,7 @@ pub fn search_tool_schemas() -> Vec<Value> {
                         "ignore_case": { "type": "boolean", "description": "Match case-insensitively (default false)." },
                         "literal": { "type": "boolean", "description": "Treat pattern as a literal string rather than a regex (default false)." },
                         "context": { "type": "integer", "description": "Lines of context to include around each match (default 0)." },
-                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
+                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100). A notice says when more matched." }
                     },
                     "required": ["pattern"]
                 }
