@@ -5,20 +5,17 @@ expression: doc
 -- expanded
 
 • Dispatched explore, general
-  └ explore: Find the parser and report its entry point.
+  └ explore · Error - stopped by the parent agent
+    explore: Find the parser and report its entry point.
     general: Write the docs.
-• Finished explore · 0 tools
-  └ Error - stopped by the parent agent
 -- collapsed
 
 • Dispatched explore, general
-• Finished explore · 0 tools
-  └ Error - stopped by the parent agent
+  └ explore · Error - stopped by the parent agent
 -- narrow (28)
 
 • Dispatched explore,
   general
-• Finished explore · 0
-  tools
-  └ Error - stopped by
-    the parent agent
+  └ explore · Error -
+    stopped by the parent
+    agent

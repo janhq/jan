@@ -105,6 +105,12 @@ pub enum DisplayEntry {
         /// finish; an entry written before this field existed replays as one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// How long the child ran, in seconds, when it started on screen.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        elapsed_secs: Option<u64>,
+        /// Where it worked (see `child_workspace::ChildWorkspace::label`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
     },
     /// A system note the transcript showed (an acknowledgement, a warning, a
     /// failure), so a resumed transcript reads the way the live one did.
@@ -617,6 +623,8 @@ mod tests {
                 calls: vec!["Read a.txt".into()],
                 finished: true,
                 error: None,
+                elapsed_secs: Some(12),
+                workspace: Some("/tmp/wt-a (jan/agent/scout)".into()),
             },
             DisplayEntry::Note {
                 text: "compacted 40 -> 6 messages".into(),

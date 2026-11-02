@@ -2510,9 +2510,51 @@ struct AgentRow {
     briefs: Vec<Vec<Span<'static>>>,
     /// How a finished child ended, as the row's summary.
     status: Option<AgentStatus>,
+    /// A dispatch's children, one per name in order: where each stands, as
+    /// the row's summary. Empty for a finished child's own row.
+    runs: Vec<ChildRun>,
     /// The dispatch belongs to the step in progress, so its briefs show until
     /// the step finishes (see `EventRow::live`).
     live: bool,
+}
+
+/// One dispatched child as its dispatch row reports it, rewritten in place as
+/// the child is queued, starts and ends, so a child never needs a row of its
+/// own.
+#[derive(Clone, Default)]
+struct ChildRun {
+    /// Set once the child's first event names its run.
+    run_id: Option<String>,
+    /// `None` until the child is queued or starts.
+    status: Option<AgentStatus>,
+    /// How long it ran, once it ended.
+    elapsed: Option<u64>,
+    workspace: Option<String>,
+}
+
+impl ChildRun {
+    /// Whether the child has ended, so a later run of the same name is not
+    /// matched to it.
+    fn ended(&self) -> bool {
+        matches!(
+            self.status,
+            Some(AgentStatus::Completed(_) | AgentStatus::Error(_) | AgentStatus::Interrupted)
+        )
+    }
+
+    /// `name . status . elapsed . workspace`, as the dispatch row lists it.
+    fn spans(&self, name: &str) -> Option<Vec<Span<'static>>> {
+        let status = self.status.as_ref()?;
+        let dim = Style::new().fg(theme::muted());
+        let sep = || Span::styled(" \u{b7} ", dim);
+        let mut spans = vec![agent_label(name), sep()];
+        spans.extend(status.spans(STATUS_PREVIEW_WIDTH));
+        for fact in self.elapsed.map(format_elapsed).iter().chain(&self.workspace) {
+            spans.push(sep());
+            spans.push(Span::styled(fact.clone(), dim));
+        }
+        Some(spans)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2548,7 +2590,9 @@ impl AgentRow {
         let status = self
             .status
             .iter()
-            .map(|s| Child::Text(s.spans(STATUS_PREVIEW_WIDTH)));
+            .map(|s| s.spans(STATUS_PREVIEW_WIDTH))
+            .chain(self.names.iter().zip(&self.runs).filter_map(|(name, run)| run.spans(name)))
+            .map(Child::Text);
         EventRow {
             event: TranscriptEvent::new(self.state.bullet(), head).children(status).capped(),
             detail: self.briefs.iter().cloned().map(Child::Text).collect(),
@@ -2689,6 +2733,7 @@ fn dispatch_row(args: &serde_json::Value, reported: Option<&[String]>) -> AgentR
     AgentRow {
         state: ToolState::Running,
         verb: AgentVerb::Dispatch,
+        runs: vec![ChildRun::default(); subagents.len()],
         names: subagents.into_iter().map(|(name, _)| name).collect(),
         stats: None,
         briefs,
@@ -4089,8 +4134,11 @@ impl Transcript {
                     .as_ref()
                     .zip(reported.as_deref())
                     .map(|(args, names)| dispatch_row(args, Some(names)));
+                // A child can start before the result lands: what the row
+                // already knows of it survives the relabel.
                 let call = RowKind::Agent(Box::new(AgentRow {
                     state: ToolState::of(is_error),
+                    runs: agent.runs.clone(),
                     ..relabeled.unwrap_or_else(|| (**agent).clone())
                 }));
                 if !is_error {
@@ -4210,10 +4258,14 @@ impl Transcript {
                     .map(|&pos| self.reasoning_blocks[pos].detail.clone())
             })
             .or_else(|| {
-                index
-                    .subagents
-                    .get(&i)
-                    .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
+                // A dispatch row opens to its briefs, then the run of each child
+                // that finished, in the order they ended.
+                let runs = index.subagents.get(&i)?;
+                let mut out = self.rows.get(i)?.kind.event_detail(width).unwrap_or_default();
+                for &pos in runs {
+                    out.extend(self.subagent_blocks[pos].detail_lines(width));
+                }
+                Some(out)
             })
             .or_else(|| self.rows.get(i)?.kind.event_detail(width))
     }
@@ -4243,8 +4295,17 @@ impl Transcript {
         if let Some(&pos) = index.reasoning.get(&i) {
             return Some(Cow::Borrowed(self.reasoning_blocks[pos].flat_detail()));
         }
-        if let Some(&pos) = index.subagents.get(&i) {
-            return Some(Cow::Borrowed(self.subagent_blocks[pos].flat_detail().as_slice()));
+        if let Some(runs) = index.subagents.get(&i) {
+            let briefs = self.rows.get(i)?.kind.event_detail(find::FLAT_WIDTH);
+            // A finished child's own row has no briefs: its kept text is lent.
+            if let (None, [pos]) = (&briefs, runs.as_slice()) {
+                return Some(Cow::Borrowed(self.subagent_blocks[*pos].flat_detail().as_slice()));
+            }
+            let mut out = briefs.map(|d| find::flat_text(&d)).unwrap_or_default();
+            for &pos in runs {
+                out.extend(self.subagent_blocks[pos].flat_detail().iter().cloned());
+            }
+            return Some(Cow::Owned(out));
         }
         let detail = self.rows.get(i)?.kind.event_detail(find::FLAT_WIDTH)?;
         Some(Cow::Owned(find::flat_text(&detail)))
@@ -4253,8 +4314,9 @@ impl Transcript {
     /// Where each row's region lives in `groups`, `reasoning_blocks` and
     /// `subagent_blocks`, so a caller asking about many rows (the search scan,
     /// a frame with many expanded rows) does one lookup per row instead of
-    /// three linear searches. The first entry for an index wins, as the
-    /// searches' `find` did.
+    /// three linear searches. The first group or reasoning entry for an index
+    /// wins, as the searches' `find` did; a dispatch row keeps every child
+    /// that ended on it.
     fn region_index(&self) -> RegionIndex {
         fn first_by_idx(idxs: impl Iterator<Item = usize>) -> HashMap<usize, usize> {
             let mut map = HashMap::new();
@@ -4266,7 +4328,13 @@ impl Transcript {
         RegionIndex {
             groups: first_by_idx(self.groups.iter().map(|g| g.idx)),
             reasoning: first_by_idx(self.reasoning_blocks.iter().map(|r| r.idx)),
-            subagents: first_by_idx(self.subagent_blocks.iter().map(|b| b.idx)),
+            subagents: self.subagent_blocks.iter().enumerate().fold(
+                HashMap::new(),
+                |mut map: HashMap<usize, Vec<usize>>, (pos, b)| {
+                    map.entry(b.idx).or_default().push(pos);
+                    map
+                },
+            ),
         }
     }
 
@@ -4364,6 +4432,42 @@ impl Transcript {
         });
         self.gap(Kind::Meta);
         self.push_event(agent_message_row(me, from, to, text));
+    }
+
+    /// Record where child `name` stands on the dispatch row that lists it:
+    /// the one already holding its run, else the newest one naming it that
+    /// has not seen it end. `update`'s unset facts keep what the row knew.
+    /// Returns that row's index, or `None` when no dispatch on screen lists
+    /// the child.
+    fn update_child_run(&mut self, name: &str, update: ChildRun) -> Option<usize> {
+        let lists = |row: &AgentRow, pick: &dyn Fn(&str, &ChildRun) -> bool| {
+            row.names.iter().zip(&row.runs).position(|(n, run)| pick(n, run))
+        };
+        let by_run = |_: &str, run: &ChildRun| run.run_id.is_some() && run.run_id == update.run_id;
+        let by_name = |n: &str, run: &ChildRun| n == name && run.run_id.is_none() && !run.ended();
+        let found = [&by_run as &dyn Fn(&str, &ChildRun) -> bool, &by_name]
+            .into_iter()
+            .find_map(|pick| {
+                self.rows.iter().enumerate().rev().find_map(|(idx, row)| match &row.kind {
+                    RowKind::Agent(a) if a.verb == AgentVerb::Dispatch => {
+                        lists(a, pick).map(|at| (idx, at))
+                    }
+                    _ => None,
+                })
+            });
+        let (idx, at) = found?;
+        let RowKind::Agent(row) = &self.rows[idx].kind else {
+            return None;
+        };
+        let mut row = (**row).clone();
+        let run = &mut row.runs[at];
+        run.run_id = update.run_id.or(run.run_id.take());
+        run.status = update.status.or(run.status.take());
+        run.elapsed = update.elapsed.or(run.elapsed);
+        run.workspace = update.workspace.or(run.workspace.take());
+        // Re-made rather than edited: the row's cached layout is stale.
+        self.rows[idx] = RowKind::Agent(Box::new(row)).into();
+        Some(idx)
     }
 
     /// Commit an event row, holding it open until its step finishes when it
@@ -6542,6 +6646,7 @@ impl App {
             return;
         }
         let name = panel.name.clone();
+        let elapsed = panel.started.map(|s| s.elapsed().as_secs());
         self.transcript.log(DisplayEntry::Subagent {
             name: name.clone(),
             calls: panel.calls.clone(),
@@ -6550,24 +6655,41 @@ impl App {
                 SubagentOutcome::Failed(e) => Some(e.clone()),
                 _ => None,
             },
+            elapsed_secs: elapsed,
+            workspace: panel.workspace.clone(),
         });
-        let state = match &outcome {
-            SubagentOutcome::Finished => ToolState::Success,
-            SubagentOutcome::Failed(_) => ToolState::Failure,
-            SubagentOutcome::Interrupted => ToolState::Interrupted,
+        let status = panel.status(Some(&outcome));
+        // A child its dispatch row lists ends on that row; only one whose
+        // dispatch is not on screen (an old journal) gets a row of its own.
+        let end = ChildRun {
+            run_id: (!panel.run_id.is_empty()).then(|| panel.run_id.clone()),
+            status: Some(status.clone()),
+            elapsed,
+            workspace: panel.workspace.clone(),
         };
-        self.transcript.gap(Kind::Tool);
-        self.transcript.push_row(RowKind::Agent(Box::new(AgentRow {
-            state,
-            verb: AgentVerb::Finish,
-            names: vec![name],
-            stats: Some(pluralize("tool", panel.calls.len())),
-            briefs: Vec::new(),
-            status: Some(panel.status(Some(&outcome))),
-            live: false,
-        })));
+        let idx = match self.transcript.update_child_run(&name, end) {
+            Some(idx) => idx,
+            None => {
+                let state = match &outcome {
+                    SubagentOutcome::Finished => ToolState::Success,
+                    SubagentOutcome::Failed(_) => ToolState::Failure,
+                    SubagentOutcome::Interrupted => ToolState::Interrupted,
+                };
+                self.transcript.gap(Kind::Tool);
+                self.transcript.push_row(RowKind::Agent(Box::new(AgentRow {
+                    state,
+                    verb: AgentVerb::Finish,
+                    names: vec![name],
+                    stats: Some(pluralize("tool", panel.calls.len())),
+                    briefs: Vec::new(),
+                    status: Some(status),
+                    runs: Vec::new(),
+                    live: false,
+                })));
+                self.transcript.rows.len() - 1
+            }
+        };
         if !panel.transcript.rows.is_empty() {
-            let idx = self.transcript.rows.len() - 1;
             self.transcript.subagent_blocks.push(SubagentBlock {
                 idx,
                 panel,
@@ -8804,6 +8926,14 @@ impl App {
                 // starts on the parent's tag setting; its first request moves it
                 // to its own provider's if that differs.
                 let inherited = self.transcript.parse_think_tags;
+                if !internal {
+                    self.transcript.update_child_run(&name, ChildRun {
+                        run_id: Some(run_id.clone()),
+                        status: Some(AgentStatus::Running),
+                        elapsed: None,
+                        workspace: workspace.clone(),
+                    });
+                }
                 // A queued/pending dispatch already opened a panel; promote it to
                 // running instead of pushing a duplicate. A queued one matches by
                 // run_id; a pending later-phase one matches by name (no run_id
@@ -8856,6 +8986,12 @@ impl App {
                 // instead of hiding dispatches.
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
+                self.transcript.update_child_run(&name, ChildRun {
+                    run_id: Some(run_id.clone()),
+                    status: Some(AgentStatus::Queued(waiting)),
+                    elapsed: None,
+                    workspace: None,
+                });
                 if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -13152,7 +13288,7 @@ impl FileStamp {
 struct RegionIndex {
     groups: HashMap<usize, usize>,
     reasoning: HashMap<usize, usize>,
-    subagents: HashMap<usize, usize>,
+    subagents: HashMap<usize, Vec<usize>>,
 }
 
 /// Everything besides the buffer and the reasoning segments that the live
@@ -23337,6 +23473,8 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 calls,
                 finished,
                 error,
+                elapsed_secs,
+                workspace,
             } => {
                 app.transcript.finalize_tool_group();
                 let outcome = match (finished, error) {
@@ -23344,7 +23482,13 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                     (true, None) => SubagentOutcome::Finished,
                     (false, None) => SubagentOutcome::Interrupted,
                 };
-                app.push_subagent_summary(SubagentPanel::replayed(name, calls), outcome);
+                let mut panel = SubagentPanel::replayed(name, calls);
+                // Started that long before now, so the row reports the
+                // duration the live one did.
+                panel.started = elapsed_secs
+                    .and_then(|secs| Instant::now().checked_sub(Duration::from_secs(secs)));
+                panel.workspace = workspace.clone();
+                app.push_subagent_summary(panel, outcome);
             }
             DisplayEntry::Note { text, level } => {
                 app.transcript.finalize_tool_group();
@@ -27129,6 +27273,81 @@ mod tests {
             tool_finished("dispatch_subagent", &dispatch),
             "Dispatched 2 subagents kv-review, docs-writer"
         );
+    }
+
+    /// A dispatch row carries each child's state under its title, updated in
+    /// place as the child is queued, starts and ends, instead of a second row
+    /// per child; a resume shows the final state, duration and workspace.
+    #[test]
+    fn a_dispatch_row_tracks_its_children_in_place() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "agent": "explore", "task": "Find the parser." },
+                { "agent": "general", "task": "Write the docs." },
+            ] }),
+        });
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            task: Some("Find the parser.".into()),
+            workspace: Some("/tmp/wt-a (jan/agent/explore)".into()),
+            internal: false,
+        });
+        app.apply(StreamEvent::SubagentQueued {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            task: Some("Write the docs.".into()),
+            waiting: 1,
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: "dispatched".into(),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(
+            text.contains(concat!(
+                "\u{2022} Dispatched explore, general\n",
+                "  \u{2514} explore \u{b7} Running \u{b7} /tmp/wt-a (jan/agent/explore)\n",
+                "    general \u{b7} Queued (1)\n",
+            )),
+            "{text}"
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            task: None,
+            workspace: None,
+            internal: false,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-explore-1".into(),
+            name: "explore".into(),
+            error: None,
+        });
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-general-2".into(),
+            name: "general".into(),
+            error: Some("stopped by the parent agent".into()),
+        });
+        app.transcript.settle(false);
+        let text = transcript_text(&app);
+        let done = concat!(
+            "\u{2022} Dispatched explore, general\n",
+            "  \u{2514} explore \u{b7} Completed \u{b7} 0s \u{b7} /tmp/wt-a (jan/agent/explore)\n",
+            "    general \u{b7} Error - stopped by the parent agent \u{b7} 0s",
+        );
+        assert!(text.contains(done), "{text}");
+        assert!(!text.contains("Finished"), "no second row per child: {text}");
+        let mut resumed = test_app();
+        replay_display_log(&mut resumed, app.transcript.display_log.clone());
+        let replayed = transcript_text(&resumed);
+        assert!(replayed.contains(done), "{replayed}");
+        assert!(!replayed.contains("Finished"), "{replayed}");
     }
 
     /// A dispatch the run never resolved reads as interrupted, not running.
@@ -36895,6 +37114,8 @@ mod tests {
             calls: Vec::new(),
             finished: true,
             error: Some("upstream: 429 rate limited".into()),
+            elapsed_secs: None,
+            workspace: None,
         };
         let encoded = serde_json::to_string(&entry).unwrap();
         assert_eq!(
@@ -36919,6 +37140,8 @@ mod tests {
                 calls: Vec::new(),
                 finished: true,
                 error: None,
+                elapsed_secs: None,
+                workspace: None,
             }
         );
     }
