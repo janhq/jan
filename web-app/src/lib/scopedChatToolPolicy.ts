@@ -1,7 +1,4 @@
-import {
-  resolveConversationCapabilities,
-  type ConversationCapabilitiesV1,
-} from './conversationCapabilities'
+import { resolveConversationCapabilities } from './conversationCapabilities'
 
 /** Pure Chat-surface advertisement policy for the scoped native tool namespace.
  *
@@ -23,14 +20,19 @@ export const SCOPED_CHAT_SCRATCH_TOOLS = Object.freeze([
   'grep',
   'write',
   'edit',
+  // shell is advertised unconditionally; the shellNetwork grant is NOT
+  // consulted here or in authorizeThreadTool. Network confinement is enforced
+  // at the native sandbox boundary, not by advertisement or schema authority.
   'shell',
   'skill_list',
   'skill_read',
 ] as const)
 
-/** memory is advertised with its read (view/search) schema whenever active;
- * mutation ops are gated at dispatch by the memoryWrite grant, never by
- * swapping schemas mid-turn. */
+/** This policy emits only the NAME 'memory'; it builds no schema and filters
+ * none. Shaping the advertised schema to read-only ops (view/search) is the
+ * integrator's job when it attaches schemas. Mutation ops are gated at
+ * dispatch by the memoryWrite grant regardless, never by swapping schemas
+ * mid-turn. */
 export const SCOPED_CHAT_MEMORY_TOOL = 'memory'
 
 /** Durable-mutation-only tools: advertised only when the turn snapshot already
@@ -66,7 +68,10 @@ export type ScopedChatToolPolicy = {
   /** Frozen, per-turn-stable advertisement list (never a dispatch authority). */
   advertisedNativeTools: readonly string[]
   advertisesNativeTool: (name: string) => boolean
-  /** Snapshot view only; dispatch re-reads the effective grant per call. */
+  /** Snapshot view only; dispatch re-reads the effective grant per call.
+   * Equivalent to advertisesNativeTool('skill_write') today; kept as explicit
+   * API until the integration consumes it, so callers name the intent rather
+   * than a tool string. */
   memoryMutationAdvertised: boolean
 }
 
@@ -96,13 +101,9 @@ export function resolveScopedChatToolPolicy(
   }
 }
 
-/** Dispatch-time root resolution only. A folder grant extends the scratch
- * root scope when a call is invoked; it is never advertised as an
- * arbitrary-root schema parameter and never changes the advertised tool set.
- * Native containment (paths, symlinks, permissions) remains authoritative. */
-export function scopedChatDispatchRoots(grant: ConversationCapabilitiesV1): {
-  scratch: true
-  folder: { path: string; access: 'read' | 'write' } | null
-} {
-  return { scratch: true, folder: grant.folderScope }
-}
+/* NOTE on roots: there is NO caller-supplied roots channel. The native API
+ * takes only threadId/name/args plus the per-call effective-grant getter;
+ * dispatch roots (scratch + any folder grant) are derived INSIDE the native
+ * boundary from that per-call grant intersection. A former
+ * scopedChatDispatchRoots helper was removed because it implied an
+ * out-of-band roots parameter that does not and must not exist. */

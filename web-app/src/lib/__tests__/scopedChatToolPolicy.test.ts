@@ -5,7 +5,6 @@ import {
   SCOPED_CHAT_MEMORY_WRITE_TOOLS,
   SCOPED_CHAT_SCRATCH_TOOLS,
   resolveScopedChatToolPolicy,
-  scopedChatDispatchRoots,
 } from '../scopedChatToolPolicy'
 import { authorizeThreadTool } from '../scopedToolDispatch'
 import { defaultConversationCapabilities } from '../conversationCapabilities'
@@ -20,7 +19,7 @@ const folderGranted = {
 } as const
 
 describe('scoped Chat tool advertisement policy', () => {
-  it('advertises scratch-safe natives plus memory read schema when the model is tool-capable and the sandbox is available', () => {
+  it('advertises scratch-safe natives plus the memory tool name (read-only schema shaping is the integrator\'s job) when the model is tool-capable and the sandbox is available', () => {
     const policy = resolveScopedChatToolPolicy(
       { modelSupportsTools: true, sandboxAvailable: true },
       noGrants
@@ -129,7 +128,7 @@ describe('scoped Chat tool advertisement policy', () => {
     expect(() => authorizeThreadTool('memory', { op: 'write' }, noGrants)).toThrow('durable memory')
   })
 
-  it('folder grant extends roots at dispatch, not the advertised tool set', () => {
+  it('a folder grant never changes the advertised tool set (roots are derived natively per call, no caller roots channel)', () => {
     const withFolder = resolveScopedChatToolPolicy(
       { modelSupportsTools: true, sandboxAvailable: true },
       folderGranted
@@ -139,10 +138,5 @@ describe('scoped Chat tool advertisement policy', () => {
       noGrants
     )
     expect(withFolder.advertisedNativeTools).toEqual(without.advertisedNativeTools)
-    expect(scopedChatDispatchRoots(folderGranted)).toEqual({
-      scratch: true,
-      folder: { path: '/explicit/folder', access: 'write' },
-    })
-    expect(scopedChatDispatchRoots(noGrants)).toEqual({ scratch: true, folder: null })
   })
 })
