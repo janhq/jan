@@ -22,14 +22,31 @@
  *   could classify a just-committed cowork thread as an ordinary chat.
  *   Nothing fetched is ever written back into the store.
  *
+ * - An EMPTY fetched list is NOT an authoritative answer. The native
+ *   `listThreads` bridge coerces a not-ready/non-array backend response to
+ *   `[]`, so `[]` can mean "backend not ready" while persisted cowork
+ *   threads exist on disk — resolving `undefined` on it would mount a
+ *   writable chat over a hidden cowork thread. An empty list is therefore
+ *   treated like a failed attempt: retry within the window, then fail
+ *   closed into the typed error (recoverable Retry screen). A genuinely
+ *   empty backend is indistinguishable from "not ready" without a
+ *   success-only signal, so a deep link into a fresh install pays the
+ *   bounded retry window before erroring — accepted. Only a NON-empty list
+ *   is authoritative for the existing unknown-id (`undefined`) behavior.
+ *
  * Deliberately NOT gated on `useThreads.isLoadingThreads`: DataProvider also
  * flips that flag to false when ITS fetch retries exhaust, so "not loading"
  * is not an authoritative "hydrated" signal — skipping the backend lookup on
  * it would mount a writable chat over a persisted cowork thread precisely in
  * the failure state. The store-resident record is the only authoritative
- * skip; the full-list fetch runs on a store miss only (unknown or deleted ids
- * after hydration), which is rare enough to stay acceptable until a
- * success-only hydration flag exists.
+ * skip.
+ *
+ * DEFERRED (explicit disposition, not an oversight): the full-list fetch
+ * still runs once per store-missed id even after a successful hydration
+ * (unknown or deleted ids). The single `fetchThreads()` API carries no
+ * success/"hydration complete" flag, so there is nothing authoritative to
+ * gate on without re-opening the race above. Misses are rare (deleted or
+ * mistyped ids); revisit only when a success-only hydration signal exists.
  */
 
 export class ThreadClassificationUnavailableError extends Error {
@@ -71,9 +88,12 @@ export interface ResolveThreadForRouteOptions<T extends { id: string }> {
 /**
  * Resolves the thread record a route decision needs, retrying backend
  * startup failures over a bounded window. Resolves `undefined` for an id
- * unknown to both the store and a HEALTHY backend (existing unknown-id
- * behavior); throws {@link ThreadClassificationUnavailableError} when the
- * backend never answered, so the caller can refuse to mount a writable chat.
+ * unknown to both the store and a HEALTHY backend — which requires a
+ * NON-empty list, since the bridge coerces not-ready responses to `[]`
+ * (existing unknown-id behavior); throws
+ * {@link ThreadClassificationUnavailableError} when the backend never
+ * answered (every attempt rejected OR returned an empty list), so the
+ * caller can refuse to mount a writable chat.
  */
 export async function resolveThreadForRoute<T extends { id: string }>(
   options: ResolveThreadForRouteOptions<T>
@@ -96,11 +116,25 @@ export async function resolveThreadForRoute<T extends { id: string }>(
       const fetched = await fetchThreads()
       // Mid-await store-wins: a record committed during the fetch is newer
       // than the backend snapshot the fetch was issued against.
-      return readThread() ?? fetched.find((t) => t.id === threadId)
+      const midAwait = readThread()
+      if (midAwait) return midAwait
+      if (fetched.length > 0) {
+        // Only a non-empty list is authoritative: the id either is in it
+        // or is a genuine miss (existing unknown-id behavior).
+        return fetched.find((t) => t.id === threadId)
+      }
+      // Empty list: the bridge coerces a not-ready backend to [], so this
+      // is indistinguishable from "not ready" and may hide persisted
+      // cowork threads. Treat as a failed attempt — never as a healthy
+      // unknown — and fail closed if the window exhausts.
+      lastError = new Error(
+        'Thread list fetch returned an empty list; cannot distinguish ' +
+          '"backend not ready" from "no threads exist".'
+      )
     } catch (error) {
       lastError = error
-      if (attempt < attempts - 1) await sleep(delayMs(attempt))
     }
+    if (attempt < attempts - 1) await sleep(delayMs(attempt))
   }
   // The store can also hydrate during the FINAL failed attempt.
   const resident = readThread()

@@ -3,7 +3,9 @@
  * beforeLoad (bot follow-up on #9549): a fetchThreads that throws while the
  * Conversational extension is still registering must not strand the deep
  * link, and an exhausted window must surface as the typed recoverable error
- * (never an implicit "ordinary chat" classification).
+ * (never an implicit "ordinary chat" classification). An EMPTY fetched list
+ * is NOT authoritative either: the native listThreads bridge coerces a
+ * not-ready backend to [], so [] retries and then fails closed.
  */
 import { describe, it, expect, vi } from 'vitest'
 import {
@@ -48,11 +50,41 @@ describe('resolveThreadForRoute', () => {
     expect(fetchThreads).toHaveBeenCalledTimes(3)
   })
 
-  it('resolves undefined for an id a HEALTHY backend does not know', async () => {
+  it('resolves undefined for an id a HEALTHY backend does not know (NON-empty list)', async () => {
     const fetchThreads = vi.fn<() => Promise<T[]>>().mockResolvedValue([{ id: 'other' }])
     const result = await resolveThreadForRoute<T>(base({ fetchThreads }))
     expect(result).toBeUndefined()
     expect(fetchThreads).toHaveBeenCalledTimes(1)
+  })
+
+  it('empty list then success: [] is not authoritative, the retry classifies the cowork thread', async () => {
+    // The bridge coerces a not-ready/non-array backend response to [], so an
+    // empty list must be treated like a failed attempt, never as a healthy
+    // "id unknown" — resolving undefined here would mount a writable chat
+    // over a persisted cowork thread hidden behind the coercion.
+    const cowork = { id: 't1', metadata: { mode: 'cowork' } }
+    const fetchThreads = vi
+      .fn<() => Promise<T[]>>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([cowork])
+    const result = await resolveThreadForRoute<T>(base({ fetchThreads }))
+    expect(result).toBe(cowork)
+    expect(fetchThreads).toHaveBeenCalledTimes(3)
+  })
+
+  it('an all-empty window fails closed with the typed error, never a healthy unknown', async () => {
+    const fetchThreads = vi.fn<() => Promise<T[]>>().mockResolvedValue([])
+    const err = await resolveThreadForRoute<T>(base({ fetchThreads })).then(
+      () => null,
+      (e) => e
+    )
+    expect(err).toBeInstanceOf(ThreadClassificationUnavailableError)
+    expect((err as ThreadClassificationUnavailableError).threadId).toBe('t1')
+    expect(
+      String((err as ThreadClassificationUnavailableError).causeError)
+    ).toMatch(/empty list/)
+    expect(fetchThreads).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
   })
 
   it('exhausted window throws the typed recoverable error, never a silent chat classification', async () => {

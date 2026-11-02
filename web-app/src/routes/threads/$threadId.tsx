@@ -435,9 +435,11 @@ export const Route = createFileRoute('/threads/$threadId')({
     // fetched list is NOT written into the store (a stale write could
     // overwrite a newer hydration), and the store is re-read around every
     // await so a hydration landing mid-fetch wins over the stale snapshot.
-    // When the whole window fails, classification is UNKNOWN and the typed
-    // error below propagates — the route-local errorComponent renders a
-    // Retry screen; a writable chat never mounts over an undecidable thread.
+    // When the whole window fails — every attempt rejected OR returned an
+    // empty list, which the native bridge also uses for a not-ready backend
+    // — classification is UNKNOWN and the typed error below propagates: the
+    // route-local errorComponent renders a Retry screen; a writable chat
+    // never mounts over an undecidable thread.
     //
     // Not gated on useThreads.isLoadingThreads: DataProvider also flips that
     // flag false when its own retries exhaust, so it is not an authoritative

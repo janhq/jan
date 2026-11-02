@@ -39,11 +39,15 @@ vi.mock('@/lib/webSearchTool', () => ({
 }))
 
 // beforeLoad falls back to a direct backend lookup when the threads store has
-// no record (R3 hydration race). Default to "backend ready, no threads" so the
-// pre-existing guard tests (which exercise store-seeded paths or unknown ids)
-// keep passing; individual tests override per-case.
+// no record (R3 hydration race). Default to a HEALTHY backend: a NON-empty
+// list not containing the looked-up id. An empty list is no longer an
+// authoritative answer (the native bridge coerces a not-ready backend to []),
+// so [] now retries and fails closed; individual tests override per-case.
+const healthyUnrelatedList = [
+  { id: '__unrelated__', title: 'other', metadata: {} },
+]
 const fetchThreadsMock = vi.fn<() => Promise<unknown[]>>(() =>
-  Promise.resolve([])
+  Promise.resolve(healthyUnrelatedList)
 )
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ threads: () => ({ fetchThreads: fetchThreadsMock }) }),
@@ -106,7 +110,9 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     seedSessions([])
     useThreads.setState({ threads: {} })
     fetchThreadsMock.mockClear()
-    fetchThreadsMock.mockImplementation(() => Promise.resolve([]))
+    fetchThreadsMock.mockImplementation(() =>
+      Promise.resolve(healthyUnrelatedList)
+    )
   })
 
   it('R2: an id-collision placeholder does NOT steal the route from the real chat', async () => {
@@ -285,11 +291,56 @@ describe('/threads/$threadId beforeLoad guard (R2/R3 consumption)', () => {
     )
   })
 
-  it('an id unknown to the backend too keeps the existing unknown-thread behavior', async () => {
-    // fetchThreads resolves [] (default): not found anywhere → no redirect,
-    // same as the pre-existing unknown-id path.
+  it('an id unknown to a HEALTHY (non-empty) backend keeps the existing unknown-thread behavior', async () => {
+    // fetchThreads resolves the non-empty default list without the id: not
+    // found anywhere → no redirect, same as the pre-existing unknown-id path.
     expect(await runBeforeLoad('nowhere-id')).toBeNull()
-    expect(fetchThreadsMock).toHaveBeenCalled()
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('empty list then success: [] is treated as not-ready, the retry still redirects the cowork thread', async () => {
+    // The native listThreads bridge coerces a not-ready backend to [], so an
+    // empty first answer must not classify the id as a healthy unknown and
+    // mount a writable chat over the hidden cowork thread.
+    fetchThreadsMock
+      .mockImplementationOnce(() => Promise.resolve([]))
+      .mockImplementationOnce(() =>
+        Promise.resolve([
+          { id: 'cw-empty-first', title: 'cw', metadata: { mode: 'cowork' } },
+        ])
+      )
+    vi.useFakeTimers()
+    try {
+      const pending = runBeforeLoad('cw-empty-first')
+      await vi.runAllTimersAsync()
+      expect(await pending).toMatchObject({
+        to: '/cowork/$sessionId',
+        params: { sessionId: 'cw-empty-first' },
+        replace: true,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('an all-empty window fails closed with the typed error — no writable chat, no silent unknown', async () => {
+    fetchThreadsMock.mockImplementation(() => Promise.resolve([]))
+    vi.useFakeTimers()
+    try {
+      const pending = (Route as unknown as RouteOpts)
+        .beforeLoad({ params: { threadId: 'cw-hidden' } }) as Promise<void>
+      const settled = pending.then(
+        () => null,
+        (e) => e
+      )
+      await vi.runAllTimersAsync()
+      const err = await settled
+      expect(err).toBeInstanceOf(ThreadClassificationUnavailableError)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(fetchThreadsMock).toHaveBeenCalledTimes(THREAD_LOOKUP_ATTEMPTS)
   })
 
   it('the temporary chat id never triggers a backend fetch', async () => {
