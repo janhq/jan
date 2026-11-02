@@ -2,23 +2,23 @@
   {
     "scenario": "chat-bare",
     "tools": "read,write,edit,memory,skill_list,skill_read",
-    "systemUtf8Bytes": 428,
+    "systemUtf8Bytes": 450,
     "toolsJsonUtf8Bytes": 4294,
-    "requestJsonUtf8Bytes": 4819
+    "requestJsonUtf8Bytes": 4841
   },
   {
     "scenario": "chat-default-assistant",
     "tools": "read,write,edit,memory,skill_list,skill_read",
-    "systemUtf8Bytes": 1515,
+    "systemUtf8Bytes": 1537,
     "toolsJsonUtf8Bytes": 4294,
-    "requestJsonUtf8Bytes": 5927
+    "requestJsonUtf8Bytes": 5949
   },
   {
     "scenario": "chat-default-assistant-shell",
     "tools": "read,write,edit,shell,memory,skill_list,skill_read",
-    "systemUtf8Bytes": 1882,
+    "systemUtf8Bytes": 1904,
     "toolsJsonUtf8Bytes": 5342,
-    "requestJsonUtf8Bytes": 7342
+    "requestJsonUtf8Bytes": 7364
   },
   {
     "scenario": "cowork-execute",

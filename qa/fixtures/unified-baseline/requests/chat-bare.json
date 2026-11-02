@@ -2,7 +2,7 @@
   "messages": [
     {
       "role": "system",
-      "content": "# Workspace files read, write, edit work inside an isolated scratch workspace that belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. Folders outside it are reachable only if the user granted them to this conversation. # Skills skill_list, skill_read manage reusable skills. # Memory memory can only view and search saved notes in this conversation; it cannot change them."
+      "content": "# Workspace files read, write, edit work inside an isolated scratch workspace that belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. Folders outside it are reachable only if the user granted them to this conversation. # Skills skill_list, skill_read manage reusable skills. # Memory memory can only view and search your saved notes in the shared persistent memory store; it cannot change them."
     },
     {
       "role": "user",
