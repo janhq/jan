@@ -782,10 +782,17 @@ mod tests {
         let root = unique_root();
         let grants = SessionGrants::default();
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        for name in ["memory_read", "memory_write", "skill_write", "memory_list"] {
+        // Every memory op, writes and deletes included: memory is the agent's.
+        for (name, op) in [
+            ("memory", "view"),
+            ("memory", "write"),
+            ("memory", "edit"),
+            ("memory", "delete"),
+            ("skill_write", ""),
+        ] {
             let d = resolve_decision(
                 lookup(name).unwrap(),
-                &json!({"name": "x", "content": "y"}),
+                &json!({"op": op, "name": "x", "content": "y"}),
                 &GateContext {
                     project_root: &root,
                     scratch: None,
@@ -796,13 +803,13 @@ mod tests {
                 &perms,
                 &grants,
             );
-            assert_eq!(d, Decision::Allow, "{name} should auto-allow");
+            assert_eq!(d, Decision::Allow, "{name} {op} should auto-allow");
         }
         // Explicit deny in agent.toml still overrides the auto-allow.
         let denied =
-            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory_write"]), &[]);
+            ToolPermissions::new(PermissionDefault::ReadOnly, &[], &s(&["memory"]), &[]);
         let d = resolve_decision(
-            lookup("memory_write").unwrap(),
+            lookup("memory").unwrap(),
             &json!({"name": "x", "content": "y"}),
             &GateContext {
                 project_root: &root,

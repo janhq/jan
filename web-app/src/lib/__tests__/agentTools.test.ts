@@ -91,12 +91,12 @@ describe('agentTools', () => {
     toolSchemas.mockResolvedValue([
       schemaFor('read'),
       schemaFor('write'),
-      schemaFor('memory_write'),
+      schemaFor('memory'),
       schemaFor('web_search'),
     ])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
-    expect(names).toEqual(['read', 'write', 'memory_write'])
+    expect(names).toEqual(['read', 'write', 'memory'])
   })
 
   /// The diff must reach the caller so the UI can render it, but stay out of
@@ -363,11 +363,11 @@ describe('agentTools', () => {
   it('coerces a non-object input to empty args', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
-    await executeAgentTool('memory_list', undefined, 'thread-1')
+    await executeAgentTool('skill_list', undefined, 'thread-1')
     expect(executeTool).toHaveBeenCalledWith(
       '/data',
       'thread-1',
-      'memory_list',
+      'skill_list',
       {},
       undefined,
       undefined,
@@ -442,16 +442,26 @@ describe('agentTools', () => {
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
   })
 
-  // Cowork's memory_write goes through executeAgentTool, so a note the model
+  // Cowork's memory writes go through executeAgentTool, so a note the model
   // records mid-session must reach the next run/send without a restart.
-  it('invalidates the snapshot when the memory_write tool succeeds', async () => {
+  it('invalidates the snapshot when a memory write succeeds', async () => {
     executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
     const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
     memoryCatalog.mockResolvedValue([])
     await getMemoryCatalog()
-    await executeAgentTool('memory_write', { name: 'a', content: 'b' }, 't1')
+    await executeAgentTool('memory', { op: 'write', name: 'a', content: 'b' }, 't1')
     await getMemoryCatalog()
     expect(memoryCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the snapshot across a memory view', async () => {
+    executeTool.mockResolvedValue({ content: 'ok', diff: null, isError: false })
+    const { executeAgentTool, getMemoryCatalog } = await import('../agentTools')
+    memoryCatalog.mockResolvedValue([])
+    await getMemoryCatalog()
+    await executeAgentTool('memory', { op: 'view', name: 'a' }, 't1')
+    await getMemoryCatalog()
+    expect(memoryCatalog).toHaveBeenCalledTimes(1)
   })
 
   it('degrades to empty recall when the store is unreachable', async () => {

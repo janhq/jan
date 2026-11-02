@@ -64,7 +64,7 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('Exit plan mode')
   })
 
-  // Progressive disclosure: one line per note, `memory_read` for the rest. An
+  // Progressive disclosure: one line per note, the memory tool for the rest. An
   // empty store adds nothing, so the prompt prefix is unchanged for users who
   // never recorded a memory.
   it('lists memory notes with summaries only when the store has any', () => {
@@ -79,7 +79,7 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toContain('# Available Memories')
     expect(p).toContain('- `decisions` - We use Yarn not npm.')
     expect(p).toContain('- `empty-note` - no summary')
-    expect(p).toContain('memory_read')
+    expect(p).toContain('`memory` tool')
     expect(buildCoworkSystemPrompt(opts())).not.toContain(
       '# Available Memories'
     )
