@@ -46,7 +46,42 @@ Paths are relative to `web-app/src`.
   - user and legacy records unchanged;
   - prompt-cache stability: the model messages from the reloaded history equal those from the live history, and the same check fails on the old path.
 
+**Not globally lossless.** A turn with an unsupported part, provider metadata over 8 KB, or a carrier over 256 KB reloads from `content` alone, as before this PR. It still loses `step-start` and reasoning signatures. Such a turn is not partially stored: `metadata.uiPartsSkipped` is kept on the record and on the reloaded message, and a warning is logged on write. Any later transition must check `uiPartsSkipped` on the history it carries forward. That includes migrating Cowork into this store, and a runtime switch or prefix-sensitive replay. It must then refuse, or keep the authoritative parts elsewhere; it must never treat the history as lossless.
+
 Not covered: Cowork sidecar storage, approvals persistence (grants remain in `useToolApproval`), and migration of Cowork into `messages.jsonl`.
+
+## Exact seam for the next runtime slice (fresh workspace)
+
+`runTurn` already takes everything run-specific through `RunDeps` (`lib/coworkRunner.ts:368`):
+- `sendStep(messages, signal)` returns a `UIMessageChunk` stream;
+- `dispatch(call, signal)` returns a `ToolOutcome` and must never reject;
+- `sink`, `onStep`, `nextMessageId`;
+- an optional `inbox` for pings.
+
+The slice:
+1. **`lib/chatRunDeps.ts`: `createChatRunDeps(threadId, transport, approvals)`.**
+   - `sendStep` wraps the existing `CustomChatTransport.sendMessages`. Chat's system prompt, `refreshTools`, MCP/RAG and model gating stay unchanged.
+   - `dispatch` is the route's current per-call executor, moved out of `onFinish`:
+     - routing, in order: RAG → MCP (bound to the advertised server per #9533) → web → shell;
+     - `isAutoAllowedTool`, then `requestApproval` exactly once per non-auto call;
+     - `untilAborted` and the existing Stop/delete deny semantics;
+     - errors returned as `ToolOutcome.isError`.
+   - Chat advertises no Cowork orchestration tools yet, so the tool set is unchanged.
+2. **Behind a flag (default off), the route drives a Chat turn with `runTurn`.**
+   - Live display comes from the `sink`. Each completed step is persisted through `assistantRecordFields` from `onStep`.
+   - Flag off keeps today's `useChat` + `onFinish` path. Removing the flag later deletes that path and no shared code.
+3. **Parity tests, with the flag on vs off, using a mock model:**
+   - same request per step (`doStream` prompt);
+   - same tool outcomes and approval calls;
+   - same persisted records.
+   And Stop, continuation (`stopped`), branching `parentId`, title generation and an unsupported model's direct answer (one model call, no tools) all behave as today.
+4. **Not in this slice:**
+   - `todo`/`ask` reach Chat through the same `dispatch` (their client handlers are shared with `coworkDispatch`). That is a follow-up behind a flag.
+   - `task`/`monitor` use `runTurn`'s existing `inbox`, so no second ping mechanism is needed.
+
+Risks:
+- The route's `onFinish` currently also does continuation planning, titles and error stamping; the slice must move each one or keep it with a test.
+- `useChat` owns live UI state; feed it from the `sink` (`setMessages`) rather than building a second renderer.
 
 ## Risks to address in later slices
 1. Chat `refreshTools` runs on every `sendMessages` and on MCP/RAG changes, so a mid-turn tool change breaks the prefix. Freeze per turn (capability-policy workspace / S2).
@@ -63,7 +98,7 @@ Not covered: Cowork sidecar storage, approvals persistence (grants remain in `us
 3. **Enable orchestration tools in Chat behind a flag (default off)**, in this order: `todo` + `ask` (client-only, no new permissions); then `task` (children narrowed from Chat's advertised record and Chat approvals); then `monitor` (needs a ping injection into the Chat stream at a step boundary, like Cowork's `attachPings`).
    - Also the explicit just-in-time folder scope, with read-only first; writes need separate consent.
    - Network shell and durable memory each need an explicit consent UI.
-4. **Loop consolidation decision:** keep the Chat executor plus the shared dispatcher, or move Chat onto `coworkRunner.runTurn` with Chat's MCP/RAG/web/shell approvals as a dispatcher and delete the route loop. This is decided with the #484 owner, informed by 2-3. Either way the result is one loop, one transcript authority (`messages.jsonl` + `uiParts`) and a removal path for the Cowork sidecar.
+4. **Loop consolidation (coordinator decision, 2026-11-02): consolidate onto `coworkRunner.runTurn`.** Chat's tools become a `RunDeps.dispatch` adapter. The route's `onFinish` tool loop is deleted rather than kept beside a second ping/resume mechanism. The result is one loop, one transcript authority (`messages.jsonl` + `uiParts`) and a removal path for the Cowork sidecar. #484 (Cortex) can later take over `runTurn` itself.
    Fable's rationale (2026-11-02):
    - (i) shared dispatch next, (ii) consolidation as the end state. `dispatchCoworkTool(call, ctx)` already injects `onTodo`/`onAsk`/`onTask` and returns `ToolOutcome`, and the route's `onFinish` is already a sequential per-call loop that awaits approvals. Both fit `RunDeps.dispatch: (call, signal) => ToolOutcome`.
    - Risk of (i): `task`/`monitor` pings. `runTurn` has an inbox and parks, while Chat resubmits through `sendAutomaticallyWhen`, so a synthetic-turn ping would be a second resume mechanism. Keep task/monitor for (ii) unless a ping path is proven equivalent.

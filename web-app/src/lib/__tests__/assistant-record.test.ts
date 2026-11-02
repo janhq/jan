@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from '@ai-sdk/react'
 import type { ThreadMessage } from '@janhq/core'
 import { convertToModelMessages } from 'ai'
@@ -430,14 +430,30 @@ describe('inherited carrier fields', () => {
     })
   })
 
-  it('never returns the carrier fields in the reloaded UIMessage metadata', () => {
-    for (const parts of [
-      [{ type: 'text', text: 'x ' }],
-      [{ type: 'text', text: 'x ' }, { type: 'data-x' }],
-    ]) {
-      const record = persist(build(assistant(parts)))
+  it('never returns uiParts in the reloaded UIMessage metadata', () => {
+    const record = persist(build(assistant([{ type: 'text', text: 'x ' }])))
+    const back = convertThreadMessageToUIMessage(record)
+    expect(back.metadata).toEqual({ createdAt: new Date(1000) })
+  })
+
+  it('surfaces a skipped carrier: warns on write and keeps the reason on reload', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const record = persist(build(assistant([{ type: 'text', text: 'x ' }, { type: 'data-x' }])))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('a1'))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('unsupported-part'))
+      // All or nothing: no partial carrier is kept beside the reason.
+      expect(record.metadata).not.toHaveProperty('uiParts')
       const back = convertThreadMessageToUIMessage(record)
-      expect(back.metadata).toEqual({ createdAt: new Date(1000) })
+      expect(back.metadata).toEqual({
+        uiPartsSkipped: 'unsupported-part',
+        createdAt: new Date(1000),
+      })
+      // ...and a rebuild from that metadata recomputes it, never inherits it.
+      const rebuilt = assistantRecordFields(back, back.metadata as any, {})
+      expect(rebuilt.metadata).not.toHaveProperty('uiPartsSkipped')
+    } finally {
+      warn.mockRestore()
     }
   })
 })

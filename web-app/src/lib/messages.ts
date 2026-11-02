@@ -259,7 +259,7 @@ export function convertThreadMessageToUIMessage(
     string,
     unknown
   >
-  delete metadata.uiPartsSkipped
+  // `uiPartsSkipped` stays visible: that turn reloads (and is re-sent) lossy.
   const parts: any[] =
     rehydrateUIParts(uiParts, threadMessage.content || []) ??
     contentToUIParts(threadMessage)
@@ -813,7 +813,12 @@ function uiPartsFor(
     if (!rehydrateUIParts(uiParts, content)) throw new SkipUIParts('mismatch')
     return { uiParts }
   } catch (error) {
-    if (error instanceof SkipUIParts) return { uiPartsSkipped: error.reason }
+    if (error instanceof SkipUIParts) {
+      console.warn(
+        `Assistant turn ${message.id} will reload from content only (lossy): ${error.reason}`
+      )
+      return { uiPartsSkipped: error.reason }
+    }
     throw error
   }
 }
