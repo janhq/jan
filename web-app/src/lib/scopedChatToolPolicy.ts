@@ -101,6 +101,29 @@ export function resolveScopedChatToolPolicy(
   }
 }
 
+const MEMORY_READ_OPS = ['view', 'search'] as const
+
+/** Read-only view of the Rust-owned `memory` parameter schema: `op` is narrowed
+ * to view/search and the move-only `to` argument is dropped. Returns null (so
+ * the caller withholds the tool) when the schema is not the expected shape,
+ * rather than guessing. Advertisement only; dispatch still gates mutation by
+ * the memoryWrite grant. Never mutates the cached input. */
+export function memoryReadOnlyParameters(
+  parameters: unknown
+): Record<string, unknown> | null {
+  const p = parameters as { properties?: Record<string, unknown>; required?: unknown } | null
+  const op = p?.properties?.op as { enum?: unknown } | undefined
+  if (!p || typeof p !== 'object' || !op || !Array.isArray(op.enum)) return null
+  const ops = MEMORY_READ_OPS.filter((o) => (op.enum as unknown[]).includes(o))
+  if (ops.length === 0) return null
+  const properties = { ...(p.properties as Record<string, unknown>) }
+  delete properties.to
+  return {
+    ...(p as Record<string, unknown>),
+    properties: { ...properties, op: { ...op, enum: ops } },
+  }
+}
+
 /* NOTE on roots: there is NO caller-supplied roots channel. The native API
  * takes only threadId/name/args plus the per-call effective-grant getter;
  * dispatch roots (scratch + any folder grant) are derived INSIDE the native

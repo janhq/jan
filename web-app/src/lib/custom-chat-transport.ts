@@ -46,6 +46,10 @@ import {
   sandboxEnforces,
 } from '@/lib/agentTools'
 import { resolveToolCapabilities } from './toolCapabilityPolicy'
+import {
+  memoryReadOnlyParameters,
+  resolveScopedChatToolPolicy,
+} from './scopedChatToolPolicy'
 import { routeRefusedToolCalls } from '@/lib/disabledToolCalls'
 import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
@@ -1287,18 +1291,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // The main chat offers exactly one built-in agent tool: the sandboxed
-      // shell, with no network. The full toolset lives in Cowork. Schemas come
-      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds shell when no sandbox backend can confine it. A user
-      // who switched it off (#9222) gets none of it.
+      // Scoped native namespace: advertised per turn from the model gate, the
+      // sandbox, and this thread's CURRENT effective grant (re-read on every
+      // refresh, so a revoke shows on the next turn; the run's frozen record
+      // below keeps it stable within one). Schemas come from Rust and are never
+      // re-typed here; names absent from getAgentToolSchemas are simply not
+      // advertised. Advertisement is not authority: dispatch re-checks per call.
+      // Screenshot/web/monitor/task are never in the scoped list. A user who
+      // switched the shell off (#9222) still gets no shell.
       try {
-        for (const schema of policy.loadNativeTools ? await getAgentToolSchemas() : []) {
-          if (!policy.allowsNativeTool(schema.function.name)) continue
-          mcpIdentities.delete(schema.function.name)
-          toolsRecord[schema.function.name] = {
+        const schemas = await getAgentToolSchemas()
+        const scoped = resolveScopedChatToolPolicy(
+          { modelSupportsTools, sandboxAvailable: sandboxEnforces() },
+          this.turnGrantSnapshot()
+        )
+        const shellEnabled = useChatShell.getState().shellEnabled
+        for (const schema of schemas) {
+          const name = schema.function.name
+          if (!scoped.advertisesNativeTool(name)) continue
+          if (CHAT_AGENT_TOOL_NAMES.has(name) && !shellEnabled) continue
+          let parameters: unknown = schema.function.parameters
+          if (name === 'memory') {
+            parameters = memoryReadOnlyParameters(parameters)
+            if (!parameters) continue
+          }
+          mcpIdentities.delete(name)
+          toolsRecord[name] = {
             description: schema.function.description,
-            inputSchema: jsonSchema(schema.function.parameters),
+            inputSchema: jsonSchema(parameters as Record<string, unknown>),
           } as Tool
         }
       } catch (error) {
@@ -1312,6 +1332,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.mcpIdentities = mcpIdentities
     this.tools = toolsRecord
     if (owningSnapshot) owningSnapshot.tools = toolsRecord
+  }
+
+  /** This thread's effective grant for the turn being built. Any failure or a
+   * missing store method falls back to the denied default (fail closed). */
+  private turnGrantSnapshot(): unknown {
+    try {
+      const get = useThreads.getState().getConversationCapabilities
+      if (this.threadId && typeof get === 'function') return get(this.threadId)
+    } catch (error) {
+      console.warn('Failed to read conversation capabilities:', error)
+    }
+    return null
   }
 
   private async resolveRouterModel(settings: {

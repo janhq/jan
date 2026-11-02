@@ -1,0 +1,186 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+
+// #9222: a user who turns the chat shell off must get neither the tool nor the
+// prompt paragraph that describes it.
+const h = vi.hoisted(() => ({
+  shellEnabled: true,
+  sandbox: true,
+  schemas: vi.fn(),
+  grant: { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false } as unknown,
+  grantThrows: false,
+  hasGrantApi: true,
+  grants: [] as string[],
+}))
+
+vi.mock('@/hooks/useChatShell', () => ({
+  useChatShell: { getState: () => ({ shellEnabled: h.shellEnabled }) },
+}))
+vi.mock('@/lib/agentTools', () => ({
+  CHAT_AGENT_TOOL_NAMES: new Set(['shell']),
+  getAgentToolSchemas: h.schemas,
+  sandboxEnforces: () => h.sandbox,
+  memoryDigestNow: () => '',
+  refreshMemoryDigest: async () => '',
+}))
+vi.mock('@/hooks/useServiceHub', () => ({
+  useServiceStore: {
+    getState: () => ({
+      serviceHub: {
+        mcp: () => ({ getTools: async () => [] }),
+        rag: () => ({ getTools: async () => [] }),
+      },
+    }),
+  },
+}))
+vi.mock('@/hooks/useToolAvailable', () => ({
+  useToolAvailable: { getState: () => ({ getDisabledTools: () => [] }) },
+}))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: {
+    getState: () => ({
+      selectedModel: { capabilities: ['tools'] },
+      selectedProvider: '',
+      getProviderByName: () => null,
+    }),
+  },
+}))
+vi.mock('@/hooks/useAssistant', () => ({
+  useAssistant: { getState: () => ({ currentAssistant: null }) },
+}))
+vi.mock('@/hooks/useThreads', () => ({
+  useThreads: {
+    getState: () => ({
+      threads: {},
+      ...(h.hasGrantApi
+        ? {
+            getConversationCapabilities: (id: string) => {
+              if (h.grantThrows) throw new Error('boom')
+              h.grants.push(id)
+              return h.grant
+            },
+          }
+        : {}),
+    }),
+  },
+}))
+vi.mock('@/hooks/useAttachments', () => ({
+  useAttachments: { getState: () => ({ enabled: false }) },
+}))
+vi.mock('@/hooks/useMCPServers', () => ({
+  useMCPServers: {
+    getState: () => ({ settings: { enableSmartToolRouting: false } }),
+  },
+}))
+vi.mock('@/hooks/useWebSearchConfig', () => ({
+  useWebSearchConfig: { getState: () => ({ webSearchEnabled: false }) },
+}))
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: { getInstance: () => ({ get: () => null }) },
+}))
+vi.mock('@/lib/mcp-orchestrator', () => ({
+  mcpOrchestrator: { getRelevantTools: vi.fn() },
+}))
+vi.mock('@/lib/mcp-router-model-filter', () => ({
+  isRouterModelSelectable: () => false,
+}))
+vi.mock('../model-factory', () => ({
+  ModelFactory: { createModel: vi.fn() },
+}))
+
+import { CustomChatTransport } from '../custom-chat-transport'
+
+const fn = (name: string, parameters: Record<string, unknown> = { type: 'object' }) => ({
+  type: 'function',
+  function: { name, description: name, parameters },
+})
+const memory = fn('memory', {
+  type: 'object',
+  required: ['op'],
+  properties: {
+    op: { type: 'string', enum: ['view', 'search', 'write', 'edit', 'delete', 'move'] },
+    path: { type: 'string' },
+    to: { type: 'string' },
+  },
+})
+// The names Rust's getAgentToolSchemas really returns (AGENT_TOOL_NAMES).
+const REAL = [
+  'read', 'ls', 'find', 'grep', 'write', 'edit', 'shell',
+  'memory', 'skill_list', 'skill_read', 'skill_write', 'screenshot',
+]
+const schemas = () => REAL.map((n) => (n === 'memory' ? memory : fn(n)))
+const SCRATCH = ['read', 'ls', 'find', 'grep', 'write', 'edit', 'shell', 'skill_list', 'skill_read', 'memory']
+
+describe('scoped native schema advertisement', () => {
+  let transport: CustomChatTransport
+  const names = () => Object.keys(transport.getTools()).sort()
+
+  beforeEach(() => {
+    h.shellEnabled = true
+    h.sandbox = true
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    h.grantThrows = false
+    h.hasGrantApi = true
+    h.grants = []
+    h.schemas.mockReset()
+    h.schemas.mockResolvedValue(schemas())
+    transport = new CustomChatTransport('sys', 'thread-1')
+  })
+
+  it('advertises the scratch natives and read-only memory, not skill_write/screenshot', async () => {
+    await transport.refreshTools()
+    expect(names()).toEqual([...SCRATCH].sort())
+    expect(h.grants).toContain('thread-1')
+    const mem = transport.getTools()['memory'].inputSchema as { jsonSchema: any }
+    expect(mem.jsonSchema.properties.op.enum).toEqual(['view', 'search'])
+    expect(mem.jsonSchema.properties.to).toBeUndefined()
+    // the shared Rust schema object is not mutated
+    expect(memory.function.parameters.properties.op.enum).toHaveLength(6)
+  })
+
+  it('advertises skill_write only under memoryWrite and drops it on the next turn after revoke', async () => {
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+    await transport.refreshTools()
+    expect(names()).toContain('skill_write')
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
+    await transport.refreshTools()
+    expect(names()).not.toContain('skill_write')
+  })
+
+  it('fails closed on a malformed grant, a throwing getter, or a missing API', async () => {
+    h.grant = { version: 1, memoryWrite: true }
+    await transport.refreshTools()
+    expect(names()).not.toContain('skill_write')
+    h.grant = { version: 1, folderScope: null, shellNetwork: false, memoryWrite: true }
+    h.grantThrows = true
+    await transport.refreshTools()
+    expect(names()).not.toContain('skill_write')
+    h.grantThrows = false
+    h.hasGrantApi = false
+    await transport.refreshTools()
+    expect(names()).not.toContain('skill_write')
+    expect(names()).toContain('read')
+  })
+
+  it('advertises no natives without sandbox or tool support, and omits the shell when switched off', async () => {
+    h.sandbox = false
+    await transport.refreshTools()
+    expect(names()).toEqual([])
+    h.sandbox = true
+    h.shellEnabled = false
+    await transport.refreshTools()
+    expect(names()).not.toContain('shell')
+    expect(names()).toContain('read')
+  })
+
+  it('withholds a memory schema that is not the expected shape', async () => {
+    h.schemas.mockResolvedValue([fn('memory'), fn('read')])
+    await transport.refreshTools()
+    expect(names()).toEqual(['read'])
+  })
+
+  it('never advertises web/monitor/task natives even if the schema source returns them', async () => {
+    h.schemas.mockResolvedValue([...schemas(), fn('web_search'), fn('monitor'), fn('task')])
+    await transport.refreshTools()
+    for (const n of ['web_search', 'monitor', 'task', 'screenshot']) expect(names()).not.toContain(n)
+  })
+})

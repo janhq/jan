@@ -105,10 +105,12 @@ describe('chat shell switch (#9222)', () => {
     expect(transport.buildAgentToolsSystemInstruction()).toBe('')
   })
 
-  it('does not even ask the sandbox for schemas when the switch is off', async () => {
+  it('still never registers the shell when the switch is off, even if the schema source returns it', async () => {
+    // Other scoped natives now load regardless of the shell switch, so the
+    // schema source is consulted; the shell itself stays withheld.
     h.shellEnabled = false
     await transport.refreshTools()
-    expect(h.schemas).not.toHaveBeenCalled()
+    expect(Object.keys(transport.getTools())).toEqual([])
   })
 
   it('takes effect on the very next send without a new transport', async () => {
