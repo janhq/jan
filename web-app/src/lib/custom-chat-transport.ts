@@ -2036,16 +2036,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       )
     }
     if (useChatShell.getState().shellEnabled && sandboxEnforces() && offered('shell')) {
-      // Stating the limits up front is cheaper than letting the model discover
-      // them by having a command refused.
       lines.push(
         '# Shell',
-        'shell runs commands in an isolated scratch workspace under an OS',
-        'sandbox: it starts there, can only write there, and cannot read files',
-        "in the user's home directory. The workspace belongs to this",
-        'conversation alone and is deleted with it, so do not keep anything',
-        'there that should last. It has no network access, so commands that',
-        'download or upload will fail.'
+        "shell starts in this conversation's isolated scratch workspace under an OS sandbox.",
+        'Scratch files are deleted with the conversation. Access outside scratch and',
+        'network access require explicit conversation permissions. Each invocation is',
+        'limited by both the permissions present when the call was classified and',
+        'the current permissions; revocation can narrow a pending call.',
+        'Do not assume access to other folders or network destinations: request',
+        'the necessary permission when a command needs it.'
       )
     }
     const skills = ['skill_list', 'skill_read', 'skill_write'].filter(offered)
