@@ -773,6 +773,25 @@ pub fn is_workspace_tool(name: &str) -> bool {
 /// op on it ever prompts.
 pub const MEMORY_TOOL: &str = "memory";
 
+/// The tools that reach the agent's own memory and skills, which live in the
+/// hidden Jan home. A refusal for that home points at whichever of these the
+/// caller actually offers.
+pub const JAN_HOME_TOOLS: [&str; 4] = [MEMORY_TOOL, "skill_list", "skill_read", "skill_write"];
+
+/// The refusal for a call that reaches the Jan home, naming only the `offered`
+/// subset of [`JAN_HOME_TOOLS`]: a subagent has no `memory`, and pointing it
+/// there only buys a second refusal. `refused` is the phrase telemetry keys on.
+pub fn hidden_home_refusal(name: &str, refused: &str, offered: &[&str]) -> String {
+    let head = format!(
+        "ERROR: tool '{name}' {refused} (~/.jan) is hidden from every tool; do not try to \
+         reach it another way."
+    );
+    if offered.is_empty() {
+        return head;
+    }
+    format!("{head} For memory and skills use: {}.", offered.join(", "))
+}
+
 /// The shell tool's name. Not `bash`: on Windows it runs PowerShell or cmd
 /// (janhq/jan#9128).
 pub const SHELL_TOOL: &str = "shell";

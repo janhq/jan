@@ -30,6 +30,10 @@ pub struct ToolPermissions {
     allow: Vec<Pattern>,
     deny: Vec<Pattern>,
     allow_write: Vec<Pattern>,
+    /// Exact names taken away by [`Self::with_denied`] rather than by config,
+    /// so a refusal can say the run lacks the tool instead of blaming a policy
+    /// file that never mentions it.
+    withheld: Vec<String>,
 }
 
 /// Each pattern as written, plus `memory` for one that named the old memory
@@ -58,6 +62,7 @@ impl ToolPermissions {
             allow: compile(allow),
             deny: compile(deny),
             allow_write: compile(allow_write),
+            withheld: Vec::new(),
         }
     }
 
@@ -69,6 +74,7 @@ impl ToolPermissions {
             allow: Vec::new(),
             deny: Vec::new(),
             allow_write: Vec::new(),
+            withheld: Vec::new(),
         }
     }
 
@@ -79,7 +85,13 @@ impl ToolPermissions {
         if let Ok(pattern) = Pattern::new(&Pattern::escape(name)) {
             self.deny.push(pattern);
         }
+        self.withheld.push(name.to_string());
         self
+    }
+
+    /// Whether `name` was taken away with [`Self::with_denied`] (not by config).
+    pub fn withholds(&self, name: &str) -> bool {
+        self.withheld.iter().any(|w| w == name)
     }
 
     pub fn is_denied(&self, name: &str) -> bool {
@@ -126,6 +138,9 @@ mod tests {
         assert!(perms.is_denied("memory"));
         assert!(!perms.is_denied("memory_extra"), "an exact name, not a prefix");
         assert!(!perms.is_denied("read"));
+        assert!(perms.withholds("memory"));
+        let configured = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["memory"]), &[]);
+        assert!(!configured.withholds("memory"), "a config deny is policy, not withheld");
     }
 
     /// A rule on an old memory tool name still applies, to the one `memory`

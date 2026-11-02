@@ -259,10 +259,15 @@ impl JanToolServer {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
             }
             Decision::HardDeny(DenyReason::Hidden) => {
+                let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
+                    .into_iter()
+                    .filter(|t| self.opts.served.is_served(t))
+                    .collect();
                 return (
-                    format!(
-                        "ERROR: tool '{name}' was refused: the Jan home (~/.jan) is hidden. \
-                         Use the memory_* and skill_* tools instead."
+                    tauri_plugin_agent_tools::tools::hidden_home_refusal(
+                        name,
+                        "was refused: the Jan home",
+                        &offered,
                     ),
                     Vec::new(),
                 )

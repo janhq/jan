@@ -2137,30 +2137,15 @@ pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
 pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
 pub(crate) const HOOK_DENIED: &str = "denied: ";
 
-/// Message for a tool blocked by the project's own deny list, naming the
-/// exact config file so the block is actionable, not mysterious.
-fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
-    format!(
-        "ERROR: tool '{name}' {DENIED_BY_POLICY} (see [tools] deny in {})",
-        crate::core::agent::project::agent_toml_path(project_root).display()
-    )
-}
-
-/// Refusal for a path or command reaching the Jan home. Structural, not a
-/// policy the user edits, so it points at the dedicated tools instead.
-fn hidden_path_msg(name: &str) -> String {
-    format!(
-        "ERROR: tool '{name}' {HIDDEN_PATH_REFUSED} (~/.jan) holds the agent's own \
-         configuration and state and is hidden from every tool -- do not try to reach it \
-         another way. Skills and memory are available through the skill_*/memory_* tools."
-    )
-}
-
-fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
-    match reason {
-        DenyReason::Policy => denied_by_policy_msg(name, project_root),
-        DenyReason::Hidden => hidden_path_msg(name),
+/// Message for a tool blocked by a deny list. Names the setting rather than
+/// the file: the file sits in the hidden Jan home, which no tool can open.
+/// A tool the harness took from this run (a subagent's memory) is reported as
+/// missing instead, since no deny list the user can read mentions it.
+fn denied_by_policy_msg(name: &str, withheld: bool) -> String {
+    if withheld {
+        return format!("ERROR: tool '{name}' is not available to this run");
     }
+    format!("ERROR: tool '{name}' {DENIED_BY_POLICY} ([tools] deny in agent.toml)")
 }
 
 /// Rejection message for a mutation-capable tool call attempted in
@@ -2217,6 +2202,35 @@ fn not_in_allowlist_msg(name: &str, allowed: &std::collections::HashSet<String>)
 
 fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
+}
+
+impl CompositeToolInvoker {
+    /// Whether this run can call `name`: not denied, and inside its allowlist.
+    fn offers(&self, name: &str) -> bool {
+        !self.permissions.is_denied(name)
+            && self.allowed_names.as_ref().is_none_or(|allowed| allowed.contains(name))
+    }
+
+    fn policy_deny_msg(&self, name: &str) -> String {
+        denied_by_policy_msg(name, self.permissions.withholds(name))
+    }
+
+    fn hard_deny_msg(&self, name: &str, reason: DenyReason) -> String {
+        match reason {
+            DenyReason::Policy => self.policy_deny_msg(name),
+            DenyReason::Hidden => {
+                let offered: Vec<&str> = tauri_plugin_agent_tools::tools::JAN_HOME_TOOLS
+                    .into_iter()
+                    .filter(|t| self.offers(t))
+                    .collect();
+                tauri_plugin_agent_tools::tools::hidden_home_refusal(
+                    name,
+                    HIDDEN_PATH_REFUSED,
+                    &offered,
+                )
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -2519,7 +2533,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2590,7 +2604,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2674,7 +2688,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if self.permissions.is_denied(name) {
                     out.push(ToolOutcome::plain(
                         id,
-                        denied_by_policy_msg(name, &self.project_root),
+                        self.policy_deny_msg(name),
                     ));
                     continue;
                 }
@@ -2841,7 +2855,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
                 }
                 Decision::HardDeny(reason) => {
-                    (hard_deny_msg(name, reason, &self.project_root), None, None)
+                    (self.hard_deny_msg(name, reason), None, None)
                 }
                 Decision::Prompt(kind) => {
                     let request_id = next_permission_id();
@@ -12224,7 +12238,39 @@ mod tests {
         });
         let out = invoker.invoke(&[call]).await.unwrap();
         let _ = std::fs::remove_dir_all(&root);
-        assert!(out[0].content.starts_with("ERROR:"), "{}", out[0].content);
+        // Withheld by the harness, not by a deny list the child could go read.
+        assert_eq!(out[0].content, "ERROR: tool 'memory' is not available to this run");
+    }
+
+    /// A refusal for the Jan home names only the memory/skill tools this run
+    /// can call: the main agent gets `memory`, a subagent does not, and a run
+    /// narrowed to `read` is pointed at nothing.
+    #[tokio::test]
+    async fn the_jan_home_refusal_names_only_tools_the_run_has() {
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        let jan = root.join("jan-home");
+        std::fs::create_dir_all(&jan).unwrap();
+        invoker.hidden_root = Some(jan.clone());
+        let call = json!({
+            "id": "h1",
+            "type": "function",
+            "function": { "name": "read", "arguments": json!({"path": "jan-home/x"}).to_string() }
+        });
+        let main = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(main.contains(HIDDEN_PATH_REFUSED), "{main}");
+        assert!(main.ends_with("use: memory, skill_list, skill_read, skill_write."), "{main}");
+        invoker.permissions = ToolPermissions::allow_all()
+            .with_denied(tauri_plugin_agent_tools::tools::MEMORY_TOOL);
+        let child = invoker.invoke(std::slice::from_ref(&call)).await.unwrap()[0].content.clone();
+        assert!(child.ends_with("use: skill_list, skill_read, skill_write."), "{child}");
+        invoker.allowed_names = Some(["read".to_string()].into_iter().collect());
+        let narrow = invoker.invoke(&[call]).await.unwrap()[0].content.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!narrow.contains("memory") && !narrow.contains("skill"), "{narrow}");
+        assert!(narrow.ends_with("do not try to reach it another way."), "{narrow}");
     }
 
     /// A subagent's prompt carries no memory section: no index, no memory
