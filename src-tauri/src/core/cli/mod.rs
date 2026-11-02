@@ -2551,6 +2551,16 @@ async fn run_agent_loop(
     // records before the final result, which it prints only once every sender
     // (the reader's included) has dropped.
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
+    // Weak, so a slow sweep (a kept worktree's fetch) never holds the printer
+    // open: one still running when the run ends is redone at the next start.
+    if let Some(root) = args.project_root.clone() {
+        let sweep_tx = tx.downgrade();
+        crate::core::agent::child_workspace::spawn_startup_sweep(root, move |text| {
+            if let Some(tx) = sweep_tx.upgrade() {
+                let _ = tx.send(StreamEvent::Notice { text });
+            }
+        });
+    }
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(
             Arc::clone(input),
