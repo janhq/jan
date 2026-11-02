@@ -120,7 +120,7 @@ describe('assistantRecordFields: stored content and old metadata fields', () => 
 describe('assistantRecordFields: no uiParts when the reload is lossless', () => {
   it('plain text answer', () => {
     const { metadata } = assistantRecordFields(
-      assistant([{ type: 'text', text: 'Hello there.', state: 'done' }]),
+      assistant([{ type: 'text', text: 'Hello there.' }]),
       undefined,
       {}
     )
@@ -130,8 +130,8 @@ describe('assistantRecordFields: no uiParts when the reload is lossless', () => 
   it('reasoning + text answer', () => {
     const { metadata } = assistantRecordFields(
       assistant([
-        { type: 'reasoning', text: 'let me think', state: 'done' },
-        { type: 'text', text: 'Answer.', state: 'done' },
+        { type: 'reasoning', text: 'let me think' },
+        { type: 'text', text: 'Answer.' },
       ]),
       undefined,
       {}
@@ -156,8 +156,12 @@ describe('assistantRecordFields: no uiParts when the reload is lossless', () => 
 describe('lossless reload of each known loss', () => {
   const cases: Record<string, [any[], any[]]> = {
     'trimmed text': [
-      [{ type: 'text', text: '  hi there \n', state: 'done' }],
       [{ type: 'text', text: '  hi there \n' }],
+      [{ type: 'text', text: '  hi there \n' }],
+    ],
+    'text/reasoning state': [
+      [{ type: 'reasoning', text: 'r', state: 'done' }, { type: 'text', text: 'hi', state: 'done' }],
+      [{ type: 'reasoning', text: 'r', state: 'done' }, { type: 'text', text: 'hi', state: 'done' }],
     ],
     'step-start': [
       [{ type: 'step-start' }, { type: 'text', text: 'hi' }],
@@ -169,7 +173,7 @@ describe('lossless reload of each known loss', () => {
         { type: 'text', text: 'ans', providerMetadata: { x: { y: 1 } } },
       ],
       [
-        { type: 'reasoning', text: 'think', providerMetadata: { anthropic: { signature: 'sig' } } },
+        { type: 'reasoning', text: 'think', state: 'done', providerMetadata: { anthropic: { signature: 'sig' } } },
         { type: 'text', text: 'ans', providerMetadata: { x: { y: 1 } } },
       ],
     ],
@@ -208,10 +212,31 @@ describe('lossless reload of each known loss', () => {
         { type: 'text', text: 't' },
       ],
       [
-        { type: 'source-url', sourceId: 's1', url: 'https://x', title: 'X' },
+        { type: 'source-url', sourceId: 's1', url: 'https://x', title: 'X', providerMetadata: { a: 1 } },
         { type: 'source-document', sourceId: 's2', mediaType: 'text/plain', title: 'Doc' },
         { type: 'text', text: 't' },
       ],
+    ],
+    // Every metadata-bearing field of every part kind (ai@6.0.182 UIMessagePart).
+    'file / source providerMetadata': [
+      [
+        { type: 'file', mediaType: 'application/pdf', filename: 'a.pdf', url: 'https://h/a.pdf', providerMetadata: { p: { f: 1 } } },
+        { type: 'source-url', sourceId: 's1', url: 'https://x', providerMetadata: { p: { u: 1 } } },
+        { type: 'source-document', sourceId: 's2', mediaType: 'text/plain', title: 'Doc', filename: 'd.txt', providerMetadata: { p: { d: 1 } } },
+      ],
+      [
+        { type: 'file', mediaType: 'application/pdf', filename: 'a.pdf', url: 'https://h/a.pdf', providerMetadata: { p: { f: 1 } } },
+        { type: 'source-url', sourceId: 's1', url: 'https://x', providerMetadata: { p: { u: 1 } } },
+        { type: 'source-document', sourceId: 's2', mediaType: 'text/plain', title: 'Doc', filename: 'd.txt', providerMetadata: { p: { d: 1 } } },
+      ],
+    ],
+    'tool title, toolMetadata, result metadata, preliminary': [
+      [{ type: 'tool-x', toolCallId: 'c7', title: 'X', toolMetadata: { k: 1 }, providerExecuted: false, state: 'output-available', input: {}, output: 'o', callProviderMetadata: { p: { c: 1 } }, resultProviderMetadata: { p: { r: 1 } }, preliminary: true, approval: { id: 'ap', approved: true, reason: 'ok' } }],
+      [{ type: 'tool-x', toolCallId: 'c7', title: 'X', toolMetadata: { k: 1 }, providerExecuted: false, state: 'output-available', input: {}, output: 'o', callProviderMetadata: { p: { c: 1 } }, resultProviderMetadata: { p: { r: 1 } }, preliminary: true, approval: { id: 'ap', approved: true, reason: 'ok' } }],
+    ],
+    'tool output-error rawInput and result metadata': [
+      [{ type: 'dynamic-tool', toolName: 'mcp_y', toolCallId: 'c8', title: 'Y', state: 'output-error', input: undefined, rawInput: '{bad', errorText: 'parse', resultProviderMetadata: { p: { r: 2 } } }],
+      [{ type: 'dynamic-tool', toolName: 'mcp_y', toolCallId: 'c8', title: 'Y', state: 'output-error', rawInput: '{bad', errorText: 'parse', resultProviderMetadata: { p: { r: 2 } } }],
     ],
     'literal <think> text': [
       [{ type: 'text', text: 'literal <think>x</think> y' }],
@@ -437,6 +462,62 @@ describe('no silent truncation', () => {
         }
       })
     }
+  })
+
+  describe('every metadata field is bounded and plain JSON, never dropped', () => {
+    const big = { p: { blob: 'x'.repeat(9 * 1024) } }
+    const kinds: Record<string, (field: string, value: unknown) => any> = {
+      text: (f, v) => ({ type: 'text', text: 't', [f]: v }),
+      reasoning: (f, v) => ({ type: 'reasoning', text: 'r', [f]: v }),
+      file: (f, v) => ({ type: 'file', mediaType: 'text/plain', url: 'https://h/a', [f]: v }),
+      'source-url': (f, v) => ({ type: 'source-url', sourceId: 's', url: 'https://x', [f]: v }),
+      'source-document': (f, v) => ({ type: 'source-document', sourceId: 's', mediaType: 'text/plain', title: 'D', [f]: v }),
+      'tool-x': (f, v) => ({ type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'o', [f]: v }),
+      'dynamic-tool': (f, v) => ({ type: 'dynamic-tool', toolName: 'd', toolCallId: 'c1', state: 'output-available', input: {}, output: 'o', [f]: v }),
+    }
+    const fieldsOf = (kind: string) =>
+      kind.includes('tool')
+        ? ['callProviderMetadata', 'resultProviderMetadata', 'toolMetadata']
+        : ['providerMetadata']
+    for (const [kind, make] of Object.entries(kinds)) {
+      for (const field of fieldsOf(kind)) {
+        it(`${kind}.${field}: oversized -> provider-metadata, malformed -> unsupported-part`, () => {
+          const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+          try {
+            for (const [value, reason] of [
+              [big, 'provider-metadata'],
+              ['not-an-object', 'unsupported-part'],
+              [[1, 2], 'unsupported-part'],
+            ] as const) {
+              const message = assistant([{ type: 'step-start' }, make(field, value)])
+              const record = build(message)
+              expect(record.metadata).not.toHaveProperty('uiParts')
+              expect(record.metadata?.uiPartsSkipped).toBe(reason)
+              expect(record.content).toEqual(oldFields(message, undefined).content)
+            }
+          } finally {
+            warn.mockRestore()
+          }
+        })
+      }
+    }
+
+    it('an unknown field on a known part kind is skipped, not dropped', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        for (const part of [
+          { type: 'text', text: 't', futureField: 1 },
+          { type: 'file', mediaType: 'image/png', url: 'data:image/png;base64,AA', futureField: 1 },
+          { type: 'tool-x', toolCallId: 'c1', state: 'output-available', input: {}, output: 'o', futureField: 1 },
+        ]) {
+          const record = build(assistant([{ type: 'step-start' }, part]))
+          expect(record.metadata).not.toHaveProperty('uiParts')
+          expect(record.metadata?.uiPartsSkipped).toBe('unsupported-part')
+        }
+      } finally {
+        warn.mockRestore()
+      }
+    })
   })
 
   it('a carrier the reader would reject is skipped as mismatch', () => {
@@ -666,15 +747,8 @@ describe('a realistic streamed turn', () => {
     expect(record.metadata?.uiParts).toBeDefined()
     expect(count(json, 'Q'.repeat(400))).toBe(1)
     expect(count(json, toolOutput)).toBe(1)
-    expect(reload(streamed)).toEqual([
-      { type: 'step-start' },
-      { type: 'reasoning', text: reasoning, providerMetadata: { anthropic: { signature: 'SIG-123' } } },
-      { type: 'text', text: longText },
-      { type: 'tool-ls', toolCallId: 'c1', state: 'output-available', input: { path: '/p' }, output: toolOutput },
-      { type: 'step-start' },
-      { type: 'file', mediaType: 'image/png', url: png },
-      { type: 'text', text: 'Done.\n' },
-    ])
+    // Everything the SDK streamed, `state` included.
+    expect(reload(streamed)).toEqual(streamed.parts)
     const old = JSON.stringify(toRecord('a1', oldFields(streamed, undefined)))
     // The carrier copies text and reasoning; media and tool output stay once.
     expect(json.length).toBeLessThan(old.length * 2)

@@ -631,8 +631,36 @@ function canonicalJson(value: unknown): string {
   )
 }
 
+// Every field of each AI SDK UIMessagePart type (ai@6.0.182). A part carrying
+// any other field is not stored (`unsupported-part`): an unknown field is never
+// dropped silently, so a new SDK field fails loudly here instead.
+const TOOL_FIELDS = [
+  'type', 'toolCallId', 'title', 'toolMetadata', 'providerExecuted', 'state',
+  'input', 'output', 'errorText', 'rawInput', 'callProviderMetadata',
+  'resultProviderMetadata', 'preliminary', 'approval',
+]
+const PART_FIELDS: Record<string, readonly string[]> = {
+  'text': ['type', 'text', 'state', 'providerMetadata'],
+  'reasoning': ['type', 'text', 'state', 'providerMetadata'],
+  'step-start': ['type'],
+  'file': ['type', 'mediaType', 'filename', 'url', 'providerMetadata'],
+  'source-url': ['type', 'sourceId', 'url', 'title', 'providerMetadata'],
+  'source-document': ['type', 'sourceId', 'mediaType', 'title', 'filename', 'providerMetadata'],
+  'dynamic-tool': ['toolName', ...TOOL_FIELDS],
+}
+// Opaque provider/tool metadata objects: bounded, and plain JSON objects only.
+const METADATA_FIELDS = new Set([
+  'providerMetadata', 'callProviderMetadata', 'resultProviderMetadata', 'toolMetadata',
+])
+// Fields a call that has not settled does not keep (see sanitizeUIPart).
+const SETTLED_ONLY_FIELDS = [
+  'output', 'errorText', 'rawInput', 'resultProviderMetadata', 'preliminary', 'approval',
+]
+
 function providerField(value: unknown): unknown {
-  if (value == null) return value
+  if (value === undefined) return value
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new SkipUIParts('unsupported-part')
   let size: number
   try {
     size = JSON.stringify(value)?.length ?? 0
@@ -646,55 +674,36 @@ function providerField(value: unknown): unknown {
 
 function sanitizeUIPart(part: any): Record<string, unknown> {
   const type = part?.type
-  if (type === 'text' || type === 'reasoning') {
-    return { type, text: part.text, providerMetadata: providerField(part.providerMetadata) }
+  const fields =
+    typeof type === 'string' && type.startsWith('tool-') ? TOOL_FIELDS : PART_FIELDS[type]
+  if (!fields) throw new SkipUIParts('unsupported-part')
+  for (const key of Object.keys(part))
+    if (part[key] !== undefined && !fields.includes(key))
+      throw new SkipUIParts('unsupported-part')
+  const out: Record<string, unknown> = {}
+  for (const field of fields)
+    out[field] = METADATA_FIELDS.has(field) ? providerField(part[field]) : part[field]
+  if (fields !== TOOL_FIELDS && type !== 'dynamic-tool') return out
+
+  // A call still in flight is stored as `input-available`, as reloading from
+  // `content` has always done: onFinish runs it and rewrites the turn. It keeps
+  // none of a settled call's fields.
+  if (!SETTLED_TOOL_STATES.has(part.state)) {
+    out.state = 'input-available'
+    for (const field of SETTLED_ONLY_FIELDS) delete out[field]
+    return out
   }
-  if (type === 'step-start') return { type }
-  if (type === 'file') {
-    return { type, mediaType: part.mediaType, filename: part.filename, url: part.url }
-  }
-  if (type === 'source-url') {
-    return { type, sourceId: part.sourceId, url: part.url, title: part.title }
-  }
-  if (type === 'source-document') {
-    return {
-      type,
-      sourceId: part.sourceId,
-      mediaType: part.mediaType,
-      title: part.title,
-      filename: part.filename,
-    }
-  }
-  if (type === 'dynamic-tool' || (typeof type === 'string' && type.startsWith('tool-'))) {
-    // A call still in flight is stored as `input-available`, as reloading from
-    // `content` has always done: onFinish runs it and rewrites the turn.
-    const settled = SETTLED_TOOL_STATES.has(part.state)
-    const state = settled ? part.state : 'input-available'
-    const approval = part.approval
-    const hasApproval = !!approval && typeof approval === 'object'
+  const approval = part.approval
+  if (approval !== undefined) {
+    if (!approval || typeof approval !== 'object')
+      throw new SkipUIParts('unsupported-part')
+    out.approval = { id: approval.id, approved: approval.approved, reason: approval.reason }
+  } else if (part.state === 'output-denied') {
     // convertToModelMessages dereferences the approval of a denied call, so a
     // denied call without one could never be re-sent.
-    if (state === 'output-denied' && !hasApproval)
-      throw new SkipUIParts('unsupported-part')
-    return {
-      type,
-      ...(type === 'dynamic-tool' ? { toolName: part.toolName } : {}),
-      toolCallId: part.toolCallId,
-      state,
-      input: part.input,
-      output: state === 'output-available' ? part.output : undefined,
-      errorText: state === 'output-error' ? part.errorText : undefined,
-      providerExecuted: part.providerExecuted,
-      callProviderMetadata: providerField(part.callProviderMetadata),
-      // convertToModelMessages reads the approval of a settled call (and
-      // requires it on `output-denied`).
-      approval:
-        settled && hasApproval
-          ? { id: approval.id, approved: approval.approved, reason: approval.reason }
-          : undefined,
-    }
+    throw new SkipUIParts('unsupported-part')
   }
-  throw new SkipUIParts('unsupported-part')
+  return out
 }
 
 // The parts as plain JSON, each reduced to its type's allowlisted fields.
