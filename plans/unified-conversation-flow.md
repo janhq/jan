@@ -77,22 +77,6 @@ Each slice should be independently reviewable. Do not combine storage migration,
 
 ## Current capability inventory
 
-Source audit (2026-11-02; static code inspection, not live execution):
+See [Unified conversation — current capability contract](unified-conversation-capabilities.md) for the source-grounded inventory, exact advertised tools and conditions, dispatch/permission boundaries, attachments/RAG/MCP/extension distinctions, and remaining decisions. It supersedes the earlier inline table, including its obsolete separate Cowork memory-tool names: current Cowork advertises one `memory` tool with six operations.
 
-| Capability | Chat | Cowork |
-|---|---|---|
-| Shell | Native `shell`; sandboxed, network-closed | Native `shell`; network on by default, configurable |
-| Web | `web_search`, `web_fetch` | `web_search`, `web_fetch` |
-| Dedicated filesystem tools | Not in audited native tool list; shell is a separate route | `read`, `ls`, `find`, `grep`, `write`, `edit` |
-| Document retrieval | Conditional `list_attachments`, `retrieve`, `get_chunks` | No RAG advertisement in current builder; separate attachment processing |
-| MCP | Dynamic tools | No MCP advertisement in current builder |
-| Screenshot | Not in audited native tool list | `screenshot` |
-| Memory tools | Not in audited native tool list | `memory_list`, `memory_read`, `memory_write` |
-| Skill tools | Not in audited native tool list | `skill_list`, `skill_read`, `skill_write` |
-| Task orchestration | Not in audited native tool list | `todo`, `ask`, `task`, `monitor` |
-
-Cowork attached folders are writable in place; stale read-only comments must not be treated as permission enforcement. Shell network differences are an explicit policy decision before unification, not an implementation detail to inherit accidentally.
-
-Primary implementation anchors: `web-app/src/lib/agentTools.ts`, `custom-chat-transport.ts`, `coworkTools.ts`, `coworkTransport.ts`, `coworkDispatch.ts`, `coworkAttachments.ts`; `web-app/src/routes/threads/$threadId.tsx`; `extensions/rag-extension/src/tools.ts`.
-
-Both flows share composer/model transport foundations, but tool discovery, dispatch, permissions, prompts, and transcript/runtime state remain separate. Presence in a UI or schema does not prove successful runtime execution on every model/platform. Installed MCP inventory, machine sandbox availability, credentials, and effective user settings were not inspected. Hidden/legacy Chat agent-mode behavior was not fully traced and should not be equated with Cowork.
+This is a descriptive contract, not an agreed unified permission policy or a new Desktop execution loop. Implementation must align with [jan-internal#484 Cortex](https://github.com/janhq/jan-internal/issues/484), preserve stable tool lists/prompt prefixes, and not silently inherit Cowork's writable-folder or shell-network defaults for Chat. The companion document distinguishes current dispatch enforcement from advertisement and proposed defaults from agreed behavior.
