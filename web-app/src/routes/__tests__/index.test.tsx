@@ -274,8 +274,13 @@ describe('Index route', () => {
       const notice = screen.getByTestId('home-scope-unsupported')
       expect(notice).toHaveTextContent('common:conversationScope.unsupported')
       expect(notice).not.toHaveTextContent('common:conversationScope.pendingKept')
-      expect(notice).toHaveAttribute('role', 'status')
-      expect(notice).toHaveAttribute('aria-live', 'polite')
+      // Live attributes live on the persistent wrapper only, never doubled.
+      const region = screen.getByTestId('home-scope-status')
+      expect(region).toHaveAttribute('role', 'status')
+      expect(region).toHaveAttribute('aria-live', 'polite')
+      expect(region).toContainElement(notice)
+      expect(notice).not.toHaveAttribute('role')
+      expect(notice).not.toHaveAttribute('aria-live')
       // The composer stays fully usable: no send-time refusal, no prepare
       // path, no hidden session start for a one-call non-tool model.
       const input = screen.getByTestId('chat-input')
@@ -283,6 +288,30 @@ describe('Index route', () => {
       expect(input).not.toHaveAttribute('data-has-prepare')
       fireEvent.click(screen.getByTestId('submit'))
       expect(useCoworkSessions.getState().sessions).toHaveLength(0)
+    })
+
+    it('keeps the live region mounted and updates only its inner text', async () => {
+      const Component = Route.component as React.ComponentType
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      const view = renderComponent()
+      const region = screen.getByTestId('home-scope-status')
+      expect(region).toBeEmptyDOMElement()
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      // Unsupported model: text appears INSIDE the same mounted region node.
+      h.selectedModel = { id: 'model-b', capabilities: [] } as any
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-status')).toBe(region)
+      expect(region).toHaveTextContent('common:conversationScope.unsupported')
+      expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+      // Supported again: same node, text removed, region still mounted.
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      view.rerender(<Component />)
+      expect(screen.getByTestId('home-scope-status')).toBe(region)
+      expect(region).toBeEmptyDOMElement()
+      expect(region.querySelectorAll('[aria-live],[role="status"]')).toHaveLength(0)
     })
 
     it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
@@ -384,16 +413,74 @@ describe('Index route', () => {
       expect(screen.getByTestId('home-scope-consent-trigger')).toHaveTextContent(
         'Conversation permissions (pending)'
       )
-      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
-      expect(await screen.findByRole('status')).toHaveTextContent(
-        'Read only: /synthetic/workspace'
+      expect(h.toastInfo).toHaveBeenCalledExactlyOnceWith(
+        'common:conversationScope.folderSelected'
       )
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      expect(await screen.findByText('Read only: /synthetic/workspace')).toBeInTheDocument()
       fireEvent.click(screen.getByTestId('invoke-prepare'))
       await waitFor(() =>
         expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
           version: 1,
           folderScope: { path: '/synthetic/workspace', access: 'read' },
           shellNetwork: false,
+          memoryWrite: false,
+        })
+      )
+    })
+
+    it('folder pick toast describes only the selected path: no stale replacement claim, same path or changed draft', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      renderComponent()
+      h.pickFolder.mockResolvedValue('/synthetic/one')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() => expect(h.toastInfo).toHaveBeenCalledTimes(1))
+      // Re-pick the SAME path: identical descriptive note, never "replaced".
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() => expect(h.toastInfo).toHaveBeenCalledTimes(2))
+      // Pick a different path while an older one is pending.
+      h.pickFolder.mockResolvedValue('/synthetic/two')
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      await waitFor(() => expect(h.toastInfo).toHaveBeenCalledTimes(3))
+      expect(h.toastInfo.mock.calls.map((c: any[]) => c[0])).toEqual([
+        'common:conversationScope.folderSelected',
+        'common:conversationScope.folderSelected',
+        'common:conversationScope.folderSelected',
+      ])
+      expect(h.toastInfo.mock.calls[2]).toEqual(['common:conversationScope.folderSelected'])
+      expect(JSON.stringify(h.toastInfo.mock.calls)).not.toContain('folderReplaced')
+      // The read-only grant for the last pick is what gets applied.
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      await waitFor(() =>
+        expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
+          version: 1,
+          folderScope: { path: '/synthetic/two', access: 'read' },
+          shellNetwork: false,
+          memoryWrite: false,
+        })
+      )
+    })
+
+    it('a draft edit made while the picker is open is kept, with no stale-closure decision', async () => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] } as any
+      let release: (path: string) => void = () => {}
+      h.pickFolder.mockImplementation(
+        () => new Promise<string>((resolve) => { release = resolve })
+      )
+      renderComponent()
+      fireEvent.click(screen.getByRole('button', { name: 'Menu folder' }))
+      fireEvent.click(screen.getByTestId('home-scope-consent-trigger'))
+      fireEvent.click(
+        await screen.findByLabelText('Allow shell commands to access the network')
+      )
+      release('/synthetic/late')
+      await waitFor(() => expect(h.toastInfo).toHaveBeenCalledTimes(1))
+      fireEvent.click(screen.getByTestId('invoke-prepare'))
+      await waitFor(() =>
+        expect(h.setCaps).toHaveBeenCalledExactlyOnceWith('created-thread', {
+          version: 1,
+          folderScope: { path: '/synthetic/late', access: 'read' },
+          shellNetwork: true,
           memoryWrite: false,
         })
       )

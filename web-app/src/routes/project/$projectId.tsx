@@ -240,14 +240,18 @@ function ProjectPageContent() {
                 </Collapsible>
               </div>
             )}
-            {scopeUnsupportedReason && (
-              <p
-                className="pt-2 text-xs leading-5 text-muted-foreground"
-                role="status" aria-live="polite" data-testid="project-scope-unsupported"
-              >
-                {scopeUnsupportedReason}
-              </p>
-            )}
+            {/* Persistent live region (see home route): stays mounted, inner
+                text changes, no duplicate live attributes. */}
+            <div role="status" aria-live="polite" data-testid="project-scope-status">
+              {scopeUnsupportedReason && (
+                <p
+                  className="pt-2 text-xs leading-5 text-muted-foreground"
+                  data-testid="project-scope-unsupported"
+                >
+                  {scopeUnsupportedReason}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Conversation Section */}

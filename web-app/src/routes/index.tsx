@@ -127,12 +127,15 @@ function Index() {
       toast.error(t('common:conversationScope.invalidFolder'))
       return
     }
-    if (scopeDraft.folderScope) toast.info(t('common:conversationScope.folderReplaced'))
+    // Functional write: the draft is read at commit time, never from a closure
+    // captured before the picker opened. The note describes only the selected
+    // path (always read-only) and makes no claim about what it replaced.
     setScopeDraft((draft) => ({
       ...draft,
       folderScope: { path: picked, access: 'read' },
     }))
-  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder, scopeDraft.folderScope, t])
+    toast.info(t('common:conversationScope.folderSelected', { path: picked }))
+  }, [isTemporaryChat, modelSupportsTools, pickScopeFolder, t])
   const prepareThreadCreation = useCallback(() => {
     const snapshot = scopeDraft
     return async (threadId: string) => {
@@ -234,14 +237,19 @@ function Index() {
               </Collapsible>
             </div>
           )}
-          {scopeUnsupportedReason && (
-            <p
-              className="pt-2 text-xs leading-5 text-muted-foreground"
-              role="status" aria-live="polite" data-testid="home-scope-unsupported"
-            >
-              {scopeUnsupportedReason}
-            </p>
-          )}
+          {/* Persistent live region: stays mounted so screen readers announce
+              text that appears or changes inside it. The inner <p> carries no
+              live attributes of its own. */}
+          <div role="status" aria-live="polite" data-testid="home-scope-status">
+            {scopeUnsupportedReason && (
+              <p
+                className="pt-2 text-xs leading-5 text-muted-foreground"
+                data-testid="home-scope-unsupported"
+              >
+                {scopeUnsupportedReason}
+              </p>
+            )}
+          </div>
           {project && (
             <div className="flex items-center gap-2 pt-2 text-sm text-muted-foreground" data-testid="home-chat-project">
               <Folder className="size-4 shrink-0" aria-hidden="true" />

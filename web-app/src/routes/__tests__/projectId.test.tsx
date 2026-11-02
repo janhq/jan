@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import React from 'react'
@@ -146,6 +146,10 @@ const renderComponent = () => {
 }
 
 describe('Project route single Chat flow', () => {
+  // A failed assertion must not leak ?temporary-chat=true into later tests.
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     h.coworkEnabled = false
@@ -190,13 +194,86 @@ describe('Project route single Chat flow', () => {
     const notice = screen.getByTestId('project-scope-unsupported')
     expect(notice).toHaveTextContent('common:conversationScope.unsupported')
     expect(notice).not.toHaveTextContent('common:conversationScope.pendingKept')
-    expect(notice).toHaveAttribute('role', 'status')
-    expect(notice).toHaveAttribute('aria-live', 'polite')
+    // Live attributes live on the persistent wrapper only, never doubled.
+    const region = screen.getByTestId('project-scope-status')
+    expect(region).toHaveAttribute('role', 'status')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toContainElement(notice)
+    expect(notice).not.toHaveAttribute('role')
+    expect(notice).not.toHaveAttribute('aria-live')
     const input = screen.getByTestId('chat-input')
     expect(input).not.toHaveAttribute('data-has-prepare')
     fireEvent.click(screen.getByTestId('submit'))
     expect(h.startCoworkConversation).not.toHaveBeenCalled()
   })
+
+  it('keeps the live region mounted and updates only its inner text', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    const region = screen.getByTestId('project-scope-status')
+    expect(region).toBeEmptyDOMElement()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    h.selectedModel = { id: 'model-b', capabilities: [] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-status')).toBe(region)
+    expect(region).toHaveTextContent('common:conversationScope.unsupported')
+    expect(region).toHaveTextContent('common:conversationScope.pendingKept')
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-status')).toBe(region)
+    expect(region).toBeEmptyDOMElement()
+    expect(region.querySelectorAll('[aria-live],[role="status"]')).toHaveLength(0)
+  })
+
+  it('temporary mode hides draft consent and the prepare path, then resurfaces the pending draft', async () => {
+    const Component = Route.component as React.ComponentType
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    const view = renderComponent()
+    fireEvent.click(screen.getByTestId('project-scope-consent-trigger'))
+    fireEvent.click(
+      await screen.findByLabelText('Allow shell commands to access the network')
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+    window.history.replaceState({}, '', '/?temporary-chat=true')
+    view.rerender(<Component />)
+    expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    // A tool-capable model in temporary mode is not "unsupported".
+    expect(screen.queryByTestId('project-scope-unsupported')).not.toBeInTheDocument()
+    window.history.replaceState({}, '', '/')
+    view.rerender(<Component />)
+    expect(screen.getByTestId('project-scope-consent-trigger')).toHaveTextContent(
+      'Conversation permissions (pending)'
+    )
+    expect(screen.getByTestId('chat-input')).toHaveAttribute('data-has-prepare', 'true')
+  })
+
+  it.each([
+    '/?x-temporary-chat=true',
+    '/?temporary-chat=truex',
+    '/?temporary-chat=false',
+    '/?other=temporary-chat%3Dtrue',
+  ])('does not treat %s as temporary mode', (url) => {
+    h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+    window.history.replaceState({}, '', url)
+    renderComponent()
+    expect(screen.getByTestId('project-scope-consent-trigger')).toBeInTheDocument()
+  })
+
+  it.each(['/?temporary-chat=true', '/?a=1&temporary-chat=true'])(
+    'treats %s as temporary mode exactly',
+    (url) => {
+      h.selectedModel = { id: 'model-a', capabilities: ['tools'] }
+      window.history.replaceState({}, '', url)
+      renderComponent()
+      expect(screen.queryByTestId('project-scope-consent-trigger')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).not.toHaveAttribute('data-has-prepare')
+    }
+  )
 
   it('passes prepareThreadCreation only for an elevated draft, applying it through the strict setter', async () => {
     h.selectedModel = { id: 'model-a', capabilities: ['tools'] }

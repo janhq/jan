@@ -767,7 +767,7 @@
     "temporary": "A temporary chat keeps no folder access.",
     "folderUnsupported": "The selected model does not support tools, so folder access cannot be granted. Ordinary chat still works.",
     "invalidFolder": "This folder path is not supported. Choose another folder.",
-    "folderReplaced": "The pending folder permission was replaced with read-only access.",
+    "folderSelected": "Read-only folder access to {{path}} is pending for your next chat.",
     "removeProject": "Remove project selection"
   },
   "homeMode": {
