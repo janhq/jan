@@ -381,6 +381,18 @@ pub fn run() {
                 tauri_plugin_agent_tools::workspace::set_data_folder_resolver(Arc::new(
                     move || get_jan_data_folder_path(handle.clone()),
                 ));
+                let handle = app.handle().clone();
+                tauri_plugin_agent_tools::thread_capabilities::set_resolver(Arc::new(move |id| {
+                    let data_folder = get_jan_data_folder_path(handle.clone());
+                    Box::pin(async move {
+                        let value = core::threads::capabilities::read_conversation_capabilities(
+                            &data_folder,
+                            &id,
+                        )
+                        .await?;
+                        Ok((data_folder, value))
+                    })
+                }));
             }
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()

@@ -1,6 +1,7 @@
 import {
   toolSchemas,
   executeTool,
+  executeThreadTool,
   sandboxStatus,
   threadWorkspaceDelete,
   threadWorkspaceSweep,
@@ -26,6 +27,7 @@ import {
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { dispatchThreadTool } from './scopedToolDispatch'
 
 /**
  * The built-in agent tools the desktop can dispatch.
@@ -243,14 +245,11 @@ const messageOf = (e: unknown): string =>
 /**
  * Execute one built-in agent tool.
  *
- * The filesystem tools are confined to this thread's own sandbox, so scratch
- * files from one conversation are invisible to the next; memory and skill tools
- * reach the permanent store instead and persist. No project path is passed --
- * the desktop has no project picker yet, so the plugin uses the permanent store
- * in the Jan data folder.
- *
- * `shell` additionally runs under an OS sandbox whose network access is closed
- * unless the caller opens it. Chat never does; Cowork passes its own setting.
+ * Thread scope always uses the dedicated native scoped command. Caller folder,
+ * network, write and skill-overlay flags are ignored in that scope: only current
+ * explicit per-thread consent can request them. Native rechecks persisted consent
+ * and canonical containment. Session scope retains Cowork's existing contract.
+ * The caller still owns currentChat tool approval; consent does not auto-approve.
  */
 export async function executeAgentTool(
   toolName: string,
@@ -290,18 +289,32 @@ export async function executeAgentTool(
       input && typeof input === 'object'
         ? (input as Record<string, unknown>)
         : {}
-    const result = await executeTool(
-      dataFolder,
-      threadId,
-      toolName,
-      args,
-      skillProject ?? undefined,
-      undefined,
-      allowNetwork,
-      readOnlyProject ?? undefined,
-      projectWritable,
-      scope
-    )
+    // Resolve after asynchronous setup, immediately before native dispatch. The
+    // dynamic import avoids useThreads -> cleanup helpers -> useThreads cycles.
+    const runTool = async () => {
+      if (scope === 'thread') {
+        const { useThreads } = await import('@/hooks/useThreads')
+        return dispatchThreadTool(
+          toolName,
+          args,
+          () => useThreads.getState().getConversationCapabilities(threadId),
+          (grant) => executeThreadTool(threadId, toolName, args, grant)
+        )
+      }
+      return executeTool(
+        dataFolder,
+        threadId,
+        toolName,
+        args,
+        skillProject ?? undefined,
+        undefined,
+        allowNetwork,
+        readOnlyProject ?? undefined,
+        projectWritable,
+        scope
+      )
+    }
+    const result = await runTool()
     if (result.isError) return { error: result.content }
     // The store changed, so the recall injections must not keep serving the
     // snapshot taken before this note existed.
@@ -536,10 +549,6 @@ export async function cleanupThreadWorkspace(
 }
 
 /**
- * Delete sandboxes left behind by threads that no longer exist, returning how
- * many were removed. Best-effort, same reasoning as above.
- */
-/**
  * Collect Cowork (session-scope) sandboxes whose conversation is gone. The
  * caller must only run this once the Cowork migration has finished: while it is
  * partial, the live-id list is incomplete and the sweep would delete the
@@ -558,6 +567,10 @@ export async function sweepSessionWorkspaces(
   }
 }
 
+/**
+ * Delete sandboxes left behind by threads that no longer exist, returning how
+ * many were removed. Best-effort, same reasoning as above.
+ */
 export async function sweepThreadWorkspaces(
   liveThreadIds: string[]
 ): Promise<number> {

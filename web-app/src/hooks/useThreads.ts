@@ -72,8 +72,9 @@ function creationSnapshot(thread: Thread): string {
 // older grants. Rejected writes must not block subsequent attempts.
 const capabilityWrites = new Map<string, Promise<void>>()
 const capabilityRequests = new Map<string, symbol>()
-// Process-local authority after an explicit change: background fetches may
-// complete with stale disk snapshots even after a successful revoke.
+// Process-local authority only after explicit setter success. Persisted grants
+// require reconfirmation each process: a failed revoke can leave older consent
+// on disk. Background fetches must never confirm or restore that authority.
 const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
 
 // Helper function to clean up vector DB collection for a thread
@@ -674,7 +675,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   getConversationCapabilities: (threadId) => {
     const thread = get().threads[threadId]
     if (!thread || threadId === TEMPORARY_CHAT_ID || isCoworkThread(thread)) return defaultConversationCapabilities()
-    return resolveConversationCapabilities(effectiveCapabilities.get(threadId) ?? thread.metadata?.conversationCapabilities)
+    return resolveConversationCapabilities(effectiveCapabilities.get(threadId))
   },
   setConversationCapabilities: async (threadId, value) => {
     const assertChatThread = () => {

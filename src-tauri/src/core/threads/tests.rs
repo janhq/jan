@@ -1063,6 +1063,10 @@ async fn conversation_capabilities_stale_writer_cannot_restore_revocation() {
     seed["metadata"] = json!({"conversationCapabilities":capability_grant(true),"project":"old"});
     let mut stale = create_thread(app.handle().clone(), seed).await.unwrap();
     let id = stale["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    stale["metadata"]["conversationCapabilities"] = capability_grant(true);
     set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
         .await
         .unwrap();
@@ -1231,4 +1235,254 @@ async fn rollback_created_thread_checks_external_edit_under_writer_lock() {
     editing.await.unwrap().unwrap();
     assert!(rollback.await.unwrap().is_err());
     assert!(get_thread_metadata_path(&data_dir, &id).unwrap().exists());
+}
+
+#[tokio::test]
+async fn conversation_capabilities_dispatch_reader_rejects_non_chat_and_reads_revocation() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let original = create_thread(app.handle().clone(), create_test_thread("dispatch-reader"))
+        .await
+        .unwrap();
+    let id = original["id"].as_str().unwrap().to_string();
+    let read = super::capabilities::read_conversation_capabilities;
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(false));
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(true));
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
+        .await
+        .unwrap();
+    assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(false));
+    for invalid in ["missing-dispatch-thread", "../escape"] {
+        assert!(read(&data_dir, invalid).await.is_err());
+    }
+    // Temporary Chat cannot persist consent, even a forged on-disk record is
+    // never authority. It keeps only the ungranted scratch baseline.
+    assert_eq!(
+        read(&data_dir, "temporary-chat").await.unwrap(),
+        capability_grant(false)
+    );
+    let temp_path = get_thread_metadata_path(&data_dir, "temporary-chat").unwrap();
+    fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+    fs::write(
+        &temp_path,
+        serde_json::to_vec(&json!({"id":"temporary-chat","metadata":{
+            "conversationCapabilities":capability_grant(true)
+        }})).unwrap(),
+    ).unwrap();
+    assert_eq!(
+        read(&data_dir, "temporary-chat").await.unwrap(),
+        capability_grant(false)
+    );
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    for metadata in [
+        json!({"mode":"cowork"}),
+        json!([]),
+        json!({"conversationCapabilities":{"version":2}}),
+    ] {
+        let mut stored = original.clone();
+        stored["metadata"] = metadata;
+        fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        assert!(read(&data_dir, &id).await.is_err());
+    }
+}
+
+#[tokio::test]
+async fn conversation_capabilities_create_strips_forged_grants_preserving_chat_and_cowork() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    for cowork in [false, true] {
+        for supplied_id in [false, true] {
+            let mut input = create_test_thread("untrusted creation");
+            input["metadata"] = json!({
+                "project":{"id":"p1","path":"/work/project"},
+                "unrelated":{"nested":[1,2,3]},
+                "conversationCapabilities":capability_grant(true)
+            });
+            if cowork {
+                input["metadata"]["mode"] = json!("cowork");
+                input["metadata"]["coworkSessionId"] = json!("session-1");
+            }
+            if supplied_id {
+                input["id"] = json!(format!("forged-create-{cowork}"));
+            }
+            let created = create_thread(app.handle().clone(), input.clone())
+                .await
+                .unwrap();
+            let id = created["id"].as_str().unwrap();
+            let mut expected = input;
+            expected["id"] = json!(id);
+            expected["metadata"]
+                .as_object_mut()
+                .unwrap()
+                .remove("conversationCapabilities");
+            assert_eq!(created, expected);
+            let stored: serde_json::Value = serde_json::from_slice(
+                &fs::read(get_thread_metadata_path(&data_dir, id).unwrap()).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(stored, expected);
+            if !cowork {
+                assert_eq!(
+                    super::capabilities::read_conversation_capabilities(&data_dir, id)
+                        .await
+                        .unwrap(),
+                    capability_grant(false)
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn conversation_capabilities_create_existing_id_preserves_real_grant_under_lock() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut input = create_test_thread("original");
+    input["id"] = json!("existing-real-grant");
+    input["metadata"] = json!({"project":{"id":"original-project"}});
+    create_thread(app.handle().clone(), input).await.unwrap();
+    let id = "existing-real-grant".to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    let path = get_thread_metadata_path(&data_dir, &id).unwrap();
+    let before = fs::read(&path).unwrap();
+    let expected: serde_json::Value = serde_json::from_slice(&before).unwrap();
+    let mut forged = create_test_thread("forged overwrite");
+    forged["id"] = json!(id);
+    forged["metadata"] = json!({"conversationCapabilities":capability_grant(false),"project":"forged","mode":"cowork"});
+    let lock = get_lock_for_thread(&id).await;
+    let guard = lock.lock().await;
+    let handle = app.handle().clone();
+    let mut creating = tokio::spawn(async move { create_thread(handle, forged).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut creating)
+            .await
+            .is_err(),
+        "existing-record check must also take the shared lock"
+    );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    drop(guard);
+    assert_eq!(creating.await.unwrap().unwrap(), expected);
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn conversation_capabilities_create_setter_and_delete_share_chosen_id_lock() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let id = "create-set-delete-lock".to_string();
+    let mut input = create_test_thread("locked creation");
+    input["id"] = json!(id);
+    input["metadata"] = json!({"conversationCapabilities":capability_grant(true)});
+    let lock = get_lock_for_thread(&id).await;
+    let guard = lock.lock().await;
+    let handle = app.handle().clone();
+    let mut creating = tokio::spawn(async move { create_thread(handle, input).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut creating)
+            .await
+            .is_err()
+    );
+    assert!(!get_thread_metadata_path(&data_dir, &id).unwrap().exists());
+    let handle = app.handle().clone();
+    let target = id.clone();
+    let mut granting = tokio::spawn(async move {
+        set_thread_conversation_capabilities(handle, target, capability_grant(true)).await
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut granting)
+            .await
+            .is_err()
+    );
+    let handle = app.handle().clone();
+    let target = id.clone();
+    let mut deleting = tokio::spawn(async move { delete_thread(handle, target).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut deleting)
+            .await
+            .is_err()
+    );
+    drop(guard);
+    let created = creating.await.unwrap().unwrap();
+    assert!(created["metadata"]
+        .get("conversationCapabilities")
+        .is_none());
+    granting.await.unwrap().unwrap();
+    deleting.await.unwrap().unwrap();
+    assert!(!get_thread_dir(&data_dir, &id).unwrap().exists());
+}
+
+#[tokio::test]
+async fn conversation_capabilities_concurrent_same_id_creates_keep_first_record() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let id = "concurrent-create-id";
+    let mut first = create_test_thread("first creator");
+    first["id"] = json!(id);
+    first["metadata"] =
+        json!({"project":"first","conversationCapabilities":capability_grant(true)});
+    let mut second = create_test_thread("second creator");
+    second["id"] = json!(id);
+    second["metadata"] = json!({"project":"second","mode":"cowork","conversationCapabilities":capability_grant(true)});
+    let lock = get_lock_for_thread(id).await;
+    let guard = lock.lock().await;
+    let handle = app.handle().clone();
+    let mut creating_first = tokio::spawn(async move { create_thread(handle, first).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut creating_first)
+            .await
+            .is_err()
+    );
+    let handle = app.handle().clone();
+    let mut creating_second = tokio::spawn(async move { create_thread(handle, second).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut creating_second)
+            .await
+            .is_err()
+    );
+    drop(guard);
+    let first = creating_first.await.unwrap().unwrap();
+    let second = creating_second.await.unwrap().unwrap();
+    assert_eq!(first["title"], "first creator");
+    assert_eq!(first["metadata"], json!({"project":"first"}));
+    assert_eq!(second, first);
+    let stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(&data_dir, id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(stored, first);
+}
+
+#[tokio::test]
+async fn conversation_capabilities_native_setter_grants_after_forged_creation_is_stripped() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let mut input = create_test_thread("explicit consent after creation");
+    input["metadata"] =
+        json!({"project":{"id":"p1"},"conversationCapabilities":capability_grant(true)});
+    let created = create_thread(app.handle().clone(), input).await.unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    assert!(created["metadata"]
+        .get("conversationCapabilities")
+        .is_none());
+    assert_eq!(
+        super::capabilities::read_conversation_capabilities(&data_dir, &id)
+            .await
+            .unwrap(),
+        capability_grant(false)
+    );
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert_eq!(
+        super::capabilities::read_conversation_capabilities(&data_dir, &id)
+            .await
+            .unwrap(),
+        capability_grant(true)
+    );
+    let mut expected = created;
+    expected["metadata"]["conversationCapabilities"] = capability_grant(true);
+    let stored: serde_json::Value = serde_json::from_slice(
+        &fs::read(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(stored, expected);
 }

@@ -546,3 +546,23 @@ export async function stopSessionMonitors(threadId: string): Promise<void> {
 export async function cancelThreadBash(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
 }
+
+/** Persistent Chat only. The host intersects these effective (possibly locally
+ * revoked) limits with stored consent. No caller-selected root or scope.
+ * Wire mirror of existing version-1 conversation consent; no new grants. */
+export interface ThreadCapabilities {
+  version: 1
+  folderScope: { path: string; access: 'read' | 'write' } | null
+  shellNetwork: boolean
+  memoryWrite: boolean
+}
+export async function executeThreadTool(
+  threadId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  effectiveGrant: ThreadCapabilities
+): Promise<ToolResult> {
+  return await invoke('plugin:agent-tools|execute_thread_tool', {
+    threadId, toolName, args, effectiveGrant,
+  })
+}

@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "subagent_result_fill",
     "blackboard_write",
     "attachment_import",
+    "execute_thread_tool",
     "execute_tool",
     "execute_tool_streaming",
     "start_monitor",

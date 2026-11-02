@@ -59,6 +59,26 @@ describe('useThreads conversation capabilities', () => {
     })
   })
 
+  it('does not confirm persisted elevations on bootstrap or reload', async () => {
+    const id = 'unconfirmed-bootstrap'
+    useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
+    expect(useThreads.getState().getConversationCapabilities(id))
+      .toEqual(resolveConversationCapabilities(undefined))
+    await save(granted, id)
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(granted)
+    useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
+    expect(useThreads.getState().getConversationCapabilities(id)).toEqual(granted)
+  })
+
+  it('failed reconfirmation cannot activate persisted grants', async () => {
+    const id = 'failed-reconfirmation'
+    useThreads.getState().setThreads([thread(id, { conversationCapabilities: granted })])
+    persist.mockRejectedValueOnce(new Error('disk failure'))
+    await expect(save(granted, id)).rejects.toThrow('disk failure')
+    expect(useThreads.getState().getConversationCapabilities(id))
+      .toEqual(resolveConversationCapabilities(undefined))
+  })
+
   it('persists normalized capabilities while preserving unrelated metadata and thread fields', async () => {
     const original = thread('chat', {
       project: { id: 'project', name: 'Project', updated_at: 1 },
@@ -115,7 +135,6 @@ describe('useThreads conversation capabilities', () => {
   })
 
   it('propagates persistence failure and leaves scoped authority denied', async () => {
-    const original = useThreads.getState().threads.chat
     persist.mockRejectedValueOnce(new Error('disk failure'))
     await expect(save(undefined)).rejects.toThrow('disk failure')
     expect(useThreads.getState().threads.chat.metadata?.conversationCapabilities).toEqual(resolveConversationCapabilities(undefined))

@@ -15,6 +15,7 @@ pub mod permissions;
 pub mod preview;
 pub mod screenshot_pages;
 pub mod skills;
+pub mod thread_capabilities;
 pub mod tools;
 pub mod workspace;
 
@@ -73,6 +74,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::subagent_result_fill,
             commands::blackboard_write,
             commands::attachment_import,
+            commands::execute_thread_tool,
             commands::execute_tool,
             commands::execute_tool_streaming,
             commands::start_monitor,

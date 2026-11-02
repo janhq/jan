@@ -24,6 +24,7 @@ permissions = [
     "allow-subagent-result-fill",
     "allow-blackboard-write",
     "allow-attachment-import",
+    "allow-execute-thread-tool",
     "allow-execute-tool",
     "allow-execute-tool-streaming",
     "allow-start-monitor",
