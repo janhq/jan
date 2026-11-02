@@ -231,22 +231,22 @@ export function applyTodoOp(
   const args = (rawArgs ?? {}) as TodoArgs
   const op = args.op as TodoOp | undefined
 
-  if (args.phase !== undefined && typeof args.phase !== 'string') {
+  if (args.phase != null && typeof args.phase !== 'string') {
     return { list, error: 'phase must be a string' }
   }
   if (
     Array.isArray(args.list) &&
     args.list.some((entry) =>
       !entry || typeof entry !== 'object' ||
-      (entry.phase !== undefined && typeof entry.phase !== 'string') ||
-      (entry.items !== undefined &&
+      (entry.phase != null && typeof entry.phase !== 'string') ||
+      (entry.items != null &&
         (!Array.isArray(entry.items) || entry.items.some((item) => typeof item !== 'string')))
     )
   ) {
     return { list, error: 'list requires phases with string names and string items' }
   }
   if (
-    args.items !== undefined &&
+    args.items != null &&
     (!Array.isArray(args.items) || args.items.some((item) => typeof item !== 'string'))
   ) {
     return { list, error: 'items must be strings' }

@@ -148,6 +148,55 @@ describe('conversation-owned tool handlers', () => {
     controller.abort()
     await pending
   })
+  it('refuses a later settled todo id with different input instead of replaying its output', async () => {
+    const { ctx, handlers } = fixture()
+    const first = await handlers.onTodo({ op: 'init', items: ['one'] }, 't')
+    const later = await handlers.onTodo({ op: 'init', items: ['two'] }, 't')
+    expect(later).toMatchObject({
+      isError: true,
+      output: expect.stringContaining('settled tool call id reused'),
+    })
+    expect(later).not.toEqual(first)
+    expect(ctx.onTodo).toHaveBeenCalledTimes(1)
+  })
+  it('refuses a later settled ask id instead of returning the old answer or bypassing a new question', async () => {
+    const { ctx, handlers } = fixture()
+    const first = handlers.onAsk('a', input)
+    await flush()
+    ctx.pendingAsks.get('a')!(answers)
+    await first
+    const later = await handlers.onAsk('a', {
+      questions: [{ ...input.questions[0], question: 'New question?' }],
+    })
+    expect(later).toMatchObject({
+      isError: true,
+      output: expect.stringContaining('settled tool call id reused'),
+    })
+    expect(later.output).not.toContain('selected')
+    expect(ctx.showAsk).toHaveBeenCalledTimes(1)
+  })
+  it('preserves optional null todo parity including null phase fields', async () => {
+    const { ctx, handlers } = fixture()
+    const init = await handlers.onTodo(
+      {
+        op: 'init',
+        list: [
+          { phase: null, items: ['x'] },
+          { phase: 'empty', items: null },
+        ],
+        items: null,
+      },
+      'init'
+    )
+    expect(init.isError).toBeUndefined()
+    ctx.getTodo = () => JSON.parse(init.output)
+    const done = await handlers.onTodo(
+      { op: 'done', task: 'x', phase: null },
+      'done'
+    )
+    expect(done.isError).toBeUndefined()
+    expect(JSON.parse(done.output).phases[0].tasks[0].status).toBe('completed')
+  })
   it('isolates identical ask ids across conversations', async () => {
     const a = fixture(),
       b = fixture()

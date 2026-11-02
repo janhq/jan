@@ -34,7 +34,7 @@ export function createConversationToolHandlers(
   // Only run-local settlement receipts, not a second transcript or todo store.
   const receipts = new Map<
     string,
-    { kind: 'todo' | 'ask'; result: Promise<ToolOutcome> }
+    { kind: 'todo' | 'ask'; result: Promise<ToolOutcome>; settled: boolean }
   >()
   const once = (
     id: string,
@@ -44,14 +44,29 @@ export function createConversationToolHandlers(
     const previous = receipts.get(id)
     if (previous)
       return previous.kind === kind
-        ? previous.result
+        ? previous.settled
+          ? Promise.resolve({
+              output: 'ERROR: settled tool call id reused; use a fresh id',
+              isError: true,
+            })
+          : previous.result
         : Promise.resolve({
             output: 'ERROR: tool call id reused for a different tool',
             isError: true,
           })
     // Register before callbacks can re-enter this handler.
     const result = Promise.resolve().then(work)
-    receipts.set(id, { kind, result })
+    const receipt = { kind, result, settled: false }
+    receipts.set(id, receipt)
+    // Reused settled IDs fail closed rather than replaying an old answer.
+    void result.then(
+      () => {
+        receipt.settled = true
+      },
+      () => {
+        receipt.settled = true
+      }
+    )
     return result
   }
   return {
