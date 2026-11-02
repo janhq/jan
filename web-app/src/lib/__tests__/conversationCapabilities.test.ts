@@ -25,6 +25,16 @@ describe('conversation capability consent (not native containment)', () => {
   it.each(['', '/', 'relative', '~/data', '/a/../b', '/a/./b', '/a//b', '/a/', '/a\u0000b', ' /data', '//server/share', 'file:///data', 'C:\\', 'C:relative', '\\\\server\\share', 'C:\\a\\..\\b'])('rejects unsupported lexical folder syntax %s', (path) => {
     expect(resolve({ ...grant, folderScope: { path, access: 'read' } })).toEqual(defaults())
   })
+  it.each([...Array.from({ length: 32 }, (_, code) => code), 127])('rejects ASCII control code %i in both path styles without retaining grants', (code) => {
+    for (const path of [`/synthetic/a${String.fromCharCode(code)}b`, `C:\\synthetic\\a${String.fromCharCode(code)}b`]) {
+      expect(resolve({ ...grant, folderScope: { path, access: 'write' } })).toEqual(defaults())
+    }
+  })
+  it.each([32, 126, 128, 0x10000, 0x1f600])('preserves non-control code point %i inside paths', (code) => {
+    for (const path of [`/synthetic/a${String.fromCodePoint(code)}b`, `C:\\synthetic\\a${String.fromCodePoint(code)}b`]) {
+      expect(resolve({ ...grant, folderScope: { path, access: 'write' } }).folderScope?.path).toBe(path)
+    }
+  })
   it.each(['/synthetic/folder name', 'C:\\synthetic\\folder name'])('accepts supported path syntax without claiming filesystem verification %s', (path) => {
     expect(resolve({ ...grant, folderScope: { path, access: 'read' } }).folderScope?.path).toBe(path)
   })

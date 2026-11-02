@@ -28,11 +28,11 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
  * containment check. UNC/device paths and filesystem roots are not supported. */
 export function isConversationFolderPath(path: unknown): path is string {
   if (typeof path !== 'string' || path.length > 4096 || path.trim() !== path ||
-    /[\x00-\x1f\x7f]/.test(path)) return false
+    Array.from(path).some((char) => char.charCodeAt(0) <= 31 || char.charCodeAt(0) === 127)) return false
   const windows = /^[A-Za-z]:\\/.test(path)
   if (!windows && (!path.startsWith('/') || path.startsWith('//') || path.includes('\\'))) return false
   const parts = (windows ? path.slice(3).split('\\') : path.slice(1).split('/'))
-  return parts.length > 0 && parts.every((part) => part !== '' && part !== '.' && part !== '..' && !part.includes(':') && (!windows || !/[\/<>"|?*]/.test(part)))
+  return parts.length > 0 && parts.every((part) => part !== '' && part !== '.' && part !== '..' && !part.includes(':') && (!windows || !/[/<>"|?*]/.test(part)))
 }
 
 /** Unknown versions, extra fields, malformed paths and permissions fail closed

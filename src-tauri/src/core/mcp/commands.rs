@@ -779,7 +779,7 @@ pub async fn call_tool(
 
                 ensure_complete_tool_discovery(&failed_servers)?;
                 let selected_server =
-                    select_tool_server(&tool_name, server_name.as_deref(), &matching_servers)?;
+                    select_tool_server(tool_name, server_name.as_deref(), &matching_servers)?;
 
                 if let Some(srv_name) = selected_server {
                     // Revalidate the snapshot after remote discovery. Unqualified
