@@ -15,6 +15,7 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { shouldRedirectThreadToCowork } from '@/lib/threadRouteGuard'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -379,7 +380,13 @@ export const Route = createFileRoute('/threads/$threadId')({
   // create a chat session and fetch an empty message list).
   beforeLoad: ({ params }) => {
     const { threadId } = params as { threadId: string }
-    if (useCoworkSessions.getState().sessions.some((s) => s.id === threadId)) {
+    if (
+      shouldRedirectThreadToCowork(
+        threadId,
+        useCoworkSessions.getState().sessions,
+        useThreads.getState().threads[threadId]
+      )
+    ) {
       throw redirect({
         to: '/cowork/$sessionId',
         params: { sessionId: threadId },
