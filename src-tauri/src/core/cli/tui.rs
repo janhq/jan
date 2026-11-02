@@ -9342,13 +9342,21 @@ impl App {
     /// publishes a `MessagesUpdated` at a natural stop -- a run killed mid-way
     /// by a cancel loses them from the model's view (they still render from the
     /// display journal). Calls still in flight at the cancel are paired with a
-    /// placeholder result so the exchange stays protocol-valid.
+    /// placeholder result so the exchange stays protocol-valid. A turn starts
+    /// at a typed prompt or a skill/command invocation, as in
+    /// `journal::truncate_at_user`, so the search never reaches back into an
+    /// earlier turn whose calls a compaction already removed.
     fn append_cancelled_turn_tools(&mut self) {
         let start = self
             .transcript
             .display_log
             .iter()
-            .rposition(|e| matches!(e, DisplayEntry::User { .. }))
+            .rposition(|e| {
+                matches!(
+                    e,
+                    DisplayEntry::User { .. } | DisplayEntry::Invocation { .. }
+                )
+            })
             .map(|i| i + 1)
             .unwrap_or(0);
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
@@ -36947,6 +36955,52 @@ mod tests {
             wire.contains("\"tool_call_id\":\"c1\"") && wire.contains("match on line 3"),
             "tool result missing from wire history on cancel: {wire}"
         );
+    }
+
+    /// A turn started by a skill or command is journaled as an `Invocation`, not
+    /// a `User` entry. Cancelling it must fold only its own calls: the previous
+    /// typed turn's calls, removed from history by a compaction, stay gone.
+    #[test]
+    fn cancelling_an_invocation_turn_does_not_bring_back_compacted_calls() {
+        let mut app = test_app();
+        app.submit_user("do a thing".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "old".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep -n foo src/" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "old".into(),
+            content: "match on line 3\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        // A compaction replaces the history: the old exchange is summarized.
+        app.history = vec![crate::core::agent::compaction::summary_message("earlier work")];
+        app.transcript.display_log.push(DisplayEntry::Invocation {
+            label: "/someskill".into(),
+            detail: String::new(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "new".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "new".into(),
+            content: "a.txt\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.append_cancelled_turn_tools();
+        let wire = app
+            .history
+            .iter()
+            .map(serde_json::Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!wire.contains("\"old\""), "compacted call came back: {wire}");
+        assert!(wire.contains("\"tool_call_id\":\"new\""), "own call lost: {wire}");
     }
 
     #[test]
