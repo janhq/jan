@@ -228,16 +228,14 @@ describe('Index route', () => {
       h.providers = [{ provider: 'llamacpp', models: [{ id: 'x' }] }]
     })
 
-    it('keeps ID-less attachments in one home draft when switching existing workflows', async () => {
+    it('keeps attachments in one home draft when switching existing workflows', async () => {
       h.coworkEnabled = true
       const image = { type: 'image', name: 'fixture.png' } as any
       const document = { type: 'document', name: 'fixture.txt' } as any
-      useChatAttachments.getState().setAttachments(NEW_THREAD_ATTACHMENT_KEY, [image])
-      useChatAttachments.getState().setAttachments('home-cowork', [document])
+      useChatAttachments.getState().setAttachments(NEW_THREAD_ATTACHMENT_KEY, [image, document])
       renderComponent()
       fireEvent.click(screen.getByTestId('home-mode-cowork'))
       expect(useChatAttachments.getState().getAttachments(NEW_THREAD_ATTACHMENT_KEY)).toEqual([image, document])
-      expect(useChatAttachments.getState().getAttachments('home-cowork')).toEqual([])
       expect(screen.getAllByTestId('chat-input')).toHaveLength(1)
     })
 

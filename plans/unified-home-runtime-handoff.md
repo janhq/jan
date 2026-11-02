@@ -1,12 +1,12 @@
 # #505 preparatory home scope → runtime handoff
 
-Base: c831c103d / integration PR #9529. **Not a unified-flow milestone or execution parity claim.**
+Base: 9207feb31 / integration PR #9529. **Not a unified-flow milestone or execution parity claim.**
 
 ## Actual production slice
 - One existing ChatInput instance, model picker, attachment draft, project/assistant handling and Send implementation. No extra execution loop.
 - Reusable `UnifiedHomeScope` is used in the established home task workflow. It distinguishes prompt attachments from filesystem scope and explicitly discloses read/write access and unchanged network/memory settings. Removing a folder retains project intent.
 - Shared route-local `useHomeScope` preserves project/folder intent during workflow selection without carrying accepted scope into the next home draft.
-- Home attachments use one canonical bucket across existing workflow selection. A prior in-memory home-Cowork bucket is merged non-destructively, including ID-less attachments.
+- Home attachments use one canonical bucket across existing workflow selection. No migration is required: the attachment store is in-memory; no old key is read or written.
 - Existing Chat/Cowork choice and legacy session renderer/permission context remain. Chat remains default and unchanged for unsupported models. No new grants or automatic model/provider switching.
 - **No shipped preview setting or selectable-but-unsendable scope.** An earlier opt-in/false-return guard was rejected during local design review and removed before commit. Existing task submission remains functional. This deliberately defers selector removal until the next runtime slice rather than relabeling modes.
 
