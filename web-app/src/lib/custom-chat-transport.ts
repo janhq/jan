@@ -2044,7 +2044,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     if (offered('memory')) {
       lines.push(
         '# Memory',
-        'memory can only view and search saved notes in this conversation; it cannot change them.'
+        'memory can only view and search your saved notes in the shared persistent memory store; it cannot change them.'
       )
     }
     return lines.join(' ')

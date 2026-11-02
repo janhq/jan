@@ -1922,18 +1922,18 @@ describe('ThreadDetail route', () => {
       approve(true)
       await pending
       expect(h.toolApprovalState.requestApproval).toHaveBeenCalledTimes(1)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1')
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('shell', { command: 'echo safe' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: true }))
       h.threadsState.getConversationCapabilities.mockImplementation(() => ({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }))
     })
 
-    it('dispatches a scoped native read through the thread executor, not MCP', async () => {
-      h.appStateState.mcpToolNames = new Set()
+    it('dispatches an advertised native read even with a same-name MCP inventory entry', async () => {
+      h.appStateState.mcpToolNames = new Set(['read'])
       h.chatSessionsState.sessions['thread-1'].transport.getMcpServerForTool = () => undefined
       renderComponent()
       const toolCall = call('native-read', 'read', { path: 'scratch.txt' })
       await arrive(toolCall)
       await dispatch(toolCall)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1')
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
     })
 
@@ -2403,7 +2403,7 @@ describe('ThreadDetail route', () => {
       ] : textStep))
       await act(async () => { await chat.sendMessage({ text: 'read the scratch file' }) })
       expect(steps).toHaveBeenCalledTimes(2)
-      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1')
+      expect(shell.execute).toHaveBeenCalledExactlyOnceWith('read', { path: 'scratch.txt' }, 'thread-1', undefined, undefined, undefined, undefined, undefined, expect.objectContaining({ shellNetwork: false, memoryWrite: false }))
       expect(h.toolApprovalState.requestApproval).not.toHaveBeenCalled()
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ toolCallId: 'native-read-sdk', state: 'output-available' }))
       expect(chat.messages.at(-1)?.parts).toContainEqual(expect.objectContaining({ type: 'text', text: 'continued' }))

@@ -125,6 +125,7 @@ import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { executeAgentTool } from '@/lib/agentTools'
 import { isElevatedThreadCall, isScopedThreadTool } from '@/lib/scopedToolDispatch'
+import { defaultConversationCapabilities } from '@/lib/conversationCapabilities'
 import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -321,7 +322,7 @@ function chatShellRoute(toolName: string, serverName?: string): 'builtin' | 'dis
   // Only shell has a user switch. Every other scoped native name is served by
   // the dispatch boundary, which refuses it with a reason when the current
   // grant does not allow it (advertisement is not authority).
-  if (toolName !== 'shell') return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'builtin'
+  if (toolName !== 'shell') return 'builtin'
   if (useChatShell.getState().shellEnabled) return 'builtin'
   return useAppState.getState().mcpToolNames.has(toolName) ? 'other' : 'disabled'
 }
@@ -350,13 +351,30 @@ function webRoute(toolName: string): 'builtin' | 'disabled' | 'other' {
 // Native scoped calls auto-allow only while they stay inside the conversation
 // scratch root under the CURRENT grant; elevated ones (network/folder shell,
 // folder writes, memory or skill mutation) take the normal per-call approval.
-function isAutoAllowedTool(toolName: string, threadId: string, input: unknown): boolean {
+// Grant read once at classification; the same snapshot bounds execution.
+// A throwing getter fails closed to the default (no folder/network/memory).
+function classifyScopedGrant(threadId: string): unknown {
+  try {
+    return useThreads.getState().getConversationCapabilities(threadId)
+  } catch {
+    return defaultConversationCapabilities()
+  }
+}
+
+function isAutoAllowedTool(
+  toolName: string,
+  threadId: string,
+  input: unknown,
+  classifiedGrant?: unknown
+): boolean {
   if (chatShellRoute(toolName) === 'builtin') {
     const args =
       input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
     let grant: unknown
     try {
-      grant = useThreads.getState().getConversationCapabilities(threadId)
+      grant = classifiedGrant !== undefined
+        ? classifiedGrant
+        : useThreads.getState().getConversationCapabilities(threadId)
     } catch {
       return false
     }
@@ -1011,6 +1029,11 @@ function ThreadDetail() {
       try {
         const toolName = toolCall.toolName
         const { serverName, checkMcp } = bindMcpCall(toolCall)
+        // Captured at classification, before any approval wait.
+        const classifiedGrant =
+          !serverName && chatShellRoute(toolName) === 'builtin'
+            ? classifyScopedGrant(threadId)
+            : undefined
 
         if (webRoute(toolName) === 'disabled') {
           record({
@@ -1032,7 +1055,7 @@ function ThreadDetail() {
           return recorded
         }
 
-        if (serverName || (!isScopedThreadTool(toolName) && !isAutoAllowedTool(toolName, threadId, toolCall.input))) {
+        if (serverName || (!isScopedThreadTool(toolName) && !isAutoAllowedTool(toolName, threadId, toolCall.input, classifiedGrant))) {
           await untilAborted(checkMcp(stopSignal), stopSignal)
           if (signal.aborted || isChatClosing()) return { output: CHAT_CLOSED_TOOL_ERROR, isError: true }
         }
@@ -1041,7 +1064,7 @@ function ThreadDetail() {
         }
 
         let approved: ApprovalResult =
-          !serverName && isAutoAllowedTool(toolName, threadId, toolCall.input)
+          !serverName && isAutoAllowedTool(toolName, threadId, toolCall.input, classifiedGrant)
         if (!approved) {
           const approvals = approvalsOf(threadId)
           let pending = approvals.get(toolCall.toolCallId)
@@ -1111,7 +1134,13 @@ function ThreadDetail() {
               const agentResult = await executeAgentTool(
                 toolName,
                 toolCall.input,
-                threadId
+                threadId,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                classifiedGrant
               )
               // The diff is display-only, so it goes to the runtime store
               // rather than into `result`: anything in `result` reaches the

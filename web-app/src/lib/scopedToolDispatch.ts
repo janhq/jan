@@ -1,7 +1,33 @@
 import {
+  defaultConversationCapabilities,
   resolveConversationCapabilities,
   type ConversationCapabilitiesV1,
 } from './conversationCapabilities'
+
+/** Intersect the CURRENT grant with an upper bound captured when the call was
+ * classified. Both sides re-resolve (malformed fails closed to default). Folder:
+ * only the same path survives, at the lower access. Network and memory AND.
+ * The result can never exceed either input, so a grant widened after
+ * classification cannot expand the call, while a later revoke still narrows. */
+export function intersectConversationCapabilities(
+  current: unknown,
+  ceiling: unknown
+): ConversationCapabilitiesV1 {
+  const now = resolveConversationCapabilities(current)
+  const cap = resolveConversationCapabilities(ceiling)
+  const a = now.folderScope
+  const b = cap.folderScope
+  const folderScope =
+    a && b && a.path === b.path
+      ? { path: a.path, access: a.access === 'write' && b.access === 'write' ? ('write' as const) : ('read' as const) }
+      : null
+  return {
+    ...defaultConversationCapabilities(),
+    folderScope,
+    shellNetwork: now.shellNetwork && cap.shellNetwork,
+    memoryWrite: now.memoryWrite && cap.memoryWrite,
+  }
+}
 
 /** Native Chat tools only. MCP approval and the currentChat tool approval gate
  * belong to the runner, and MUST precede this boundary. Advertisement is not

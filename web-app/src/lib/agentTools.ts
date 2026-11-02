@@ -32,7 +32,10 @@ import {
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { dispatchThreadTool } from './scopedToolDispatch'
+import {
+  dispatchThreadTool,
+  intersectConversationCapabilities,
+} from './scopedToolDispatch'
 
 /**
  * The built-in agent tools the desktop can dispatch.
@@ -285,7 +288,14 @@ export async function executeAgentTool(
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills
    * global-only. Memory and skill writes stay on the permanent store regardless.
    */
-  skillProject?: string | null
+  skillProject?: string | null,
+  /**
+   * Thread scope only. Upper bound captured when the caller classified (and
+   * approved) this call. The grant read at dispatch is intersected with it, so
+   * a grant widened after classification cannot expand the call; a revoke
+   * still narrows. Undefined keeps the current-grant-only behaviour.
+   */
+  effectiveGrantCeiling?: unknown
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -302,7 +312,14 @@ export async function executeAgentTool(
         return dispatchThreadTool(
           toolName,
           args,
-          () => useThreads.getState().getConversationCapabilities(threadId),
+          () => {
+            const current = useThreads
+              .getState()
+              .getConversationCapabilities(threadId)
+            return effectiveGrantCeiling === undefined
+              ? current
+              : intersectConversationCapabilities(current, effectiveGrantCeiling)
+          },
           (grant) => executeThreadTool(threadId, toolName, args, grant)
         )
       }
