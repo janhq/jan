@@ -1250,9 +1250,27 @@ async fn conversation_capabilities_dispatch_reader_rejects_non_chat_and_reads_re
         .await
         .unwrap();
     assert_eq!(read(&data_dir, &id).await.unwrap(), capability_grant(false));
-    for invalid in ["missing-dispatch-thread", "temporary-chat", "../escape"] {
+    for invalid in ["missing-dispatch-thread", "../escape"] {
         assert!(read(&data_dir, invalid).await.is_err());
     }
+    // Temporary Chat cannot persist consent, even a forged on-disk record is
+    // never authority. It keeps only the ungranted scratch baseline.
+    assert_eq!(
+        read(&data_dir, "temporary-chat").await.unwrap(),
+        capability_grant(false)
+    );
+    let temp_path = get_thread_metadata_path(&data_dir, "temporary-chat").unwrap();
+    fs::create_dir_all(temp_path.parent().unwrap()).unwrap();
+    fs::write(
+        &temp_path,
+        serde_json::to_vec(&json!({"id":"temporary-chat","metadata":{
+            "conversationCapabilities":capability_grant(true)
+        }})).unwrap(),
+    ).unwrap();
+    assert_eq!(
+        read(&data_dir, "temporary-chat").await.unwrap(),
+        capability_grant(false)
+    );
     let path = get_thread_metadata_path(&data_dir, &id).unwrap();
     for metadata in [
         json!({"mode":"cowork"}),

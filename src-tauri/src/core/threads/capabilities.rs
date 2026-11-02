@@ -97,13 +97,19 @@ pub async fn read_conversation_capabilities(
     if super::helpers::should_use_sqlite() {
         return Err("Conversation capabilities are unavailable on mobile".into());
     }
+    // Temporary Chat has no persisted consent record. Preserve its existing
+    // scratch tools, but never consult disk or accept elevated caller grants.
+    if thread_id == "temporary-chat" {
+        return Ok(
+            serde_json::json!({"version":1,"folderScope":null,"shellNetwork":false,"memoryWrite":false}),
+        );
+    }
     let lock = super::helpers::get_lock_for_thread(thread_id).await;
     let _guard = lock.lock().await;
     let path = super::utils::get_thread_metadata_path(data_folder, thread_id)?;
     let thread: Value = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
-    if thread_id == "temporary-chat"
-        || thread["id"].as_str() != Some(thread_id)
+    if thread["id"].as_str() != Some(thread_id)
         || thread["metadata"]["mode"].as_str() == Some("cowork")
         || !(thread["metadata"].is_null() || thread["metadata"].is_object())
     {

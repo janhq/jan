@@ -1452,6 +1452,69 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
+    async fn temporary_chat_keeps_scratch_without_accepting_forged_authority() {
+        let data = unique_data_folder();
+        let folder = repo_outside_tmp("temporary-chat-forged-folder");
+        let outside = folder.join("private.txt");
+        std::fs::write(&outside, "private folder content").unwrap();
+        let denied = consent(None, false, false, false);
+        let forged = consent(Some(&folder), true, true, true);
+        // Deliberately bypass chat_call's persistent ID: this is the exact
+        // temporary Chat dispatch, with denied native consent and forged UI consent.
+        let call = |name: &str, args| {
+            execute_thread_tool_inner(
+                None,
+                data.clone(),
+                "temporary-chat".into(),
+                name.into(),
+                args,
+                denied.clone(),
+                serde_json::from_value(forged.clone()).unwrap(),
+            )
+        };
+        let shell = call("shell", json!({"command":"printf temporary-chat-shell"}))
+            .await
+            .expect("shell returns a result, including explicit sandbox refusal");
+        if jail::backend().enforces() {
+            assert!(!shell.is_error, "{}", shell.content);
+            assert!(shell.content.contains("temporary-chat-shell"), "{}", shell.content);
+        } else {
+            assert!(shell.is_error);
+            assert!(shell.content.contains("no OS sandbox"), "{}", shell.content);
+        }
+
+        let scratch = workspace::scratch_dir("temporary-chat")
+            .join(format!("temporary-verifier-{}.txt", data.file_name().unwrap().to_string_lossy()));
+        let write = call("write", json!({"path":scratch,"content":"temporary scratch"}))
+            .await.unwrap();
+        assert!(!write.is_error, "{}", write.content);
+        let read = call("read", json!({"path":scratch})).await.unwrap();
+        assert!(!read.is_error, "{}", read.content);
+        assert!(read.content.contains("temporary scratch"), "{}", read.content);
+
+        for (name, args) in [
+            ("memory", json!({"op":"write","name":"forged","content":"no"})),
+            ("skill_write", json!({"name":"forged","content":"no"})),
+        ] {
+            let err = call(name, args).await.unwrap_err();
+            assert!(err.message.contains("not authorized"), "{}", err.message);
+        }
+        let err = call("read", json!({"path":outside})).await.unwrap_err();
+        assert!(err.message.contains("ReadEscape"), "{}", err.message);
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "private folder content");
+        assert!(!workspace::permanent_store(&data).join("memory/forged.md").exists());
+        assert!(!workspace::permanent_store(&data).join("skills/forged").exists());
+        // The fixed temporary ID can be shared: remove only our scratch file.
+        let _ = std::fs::remove_file(scratch);
+        let _ = std::fs::remove_dir_all(folder);
+        let _ = std::fs::remove_dir_all(data);
+    }
+
+    #[tokio::test]
     async fn postfix_verifier_chat_rejects_outbound_aliases_before_setup() {
         let data = unique_data_folder();
         let on = consent(None, false, true, true);

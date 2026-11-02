@@ -90,6 +90,19 @@ describe('executeAgentTool production scoped entry (independent native mocks)', 
     expect(mocks.executeTool).not.toHaveBeenCalled()
   })
 
+  it('keeps temporary-chat default shell on dedicated IPC without forged legacy elevation or mutations', async () => {
+    mocks.persisted = defaultConversationCapabilities()
+    await expect(executeAgentTool('shell', { command: 'printf temporary-scratch' }, 'temporary-chat', '/forged/project', 'thread', true, true, '/forged/skills')).resolves.toMatchObject({ content: 'scoped output' })
+    expect(mocks.getConversationCapabilities).toHaveBeenCalledExactlyOnceWith('temporary-chat')
+    expect(mocks.executeThreadTool).toHaveBeenCalledExactlyOnceWith('temporary-chat', 'shell', { command: 'printf temporary-scratch' }, defaultConversationCapabilities())
+    mocks.executeThreadTool.mockClear()
+    for (const name of ['memory', 'skill_write']) {
+      await expect(executeAgentTool(name, { op: 'write', memoryWrite: true, effectiveGrant: granted }, 'temporary-chat', '/forged/project', 'thread', true, true, '/forged/skills')).resolves.toEqual({ error: expect.stringContaining('durable memory') })
+    }
+    expect(mocks.executeThreadTool).not.toHaveBeenCalled()
+    expect(mocks.executeTool).not.toHaveBeenCalled()
+  })
+
   it('takes the exact explicit grant, not the caller-selected folder or network flags', async () => {
     mocks.overlay = { ...granted, folderScope: { path: '/explicit/read-only', access: 'read' }, shellNetwork: false }
     await executeAgentTool('read', { path: 'example.txt' }, threadId, '/forged', 'thread', true, true, '/forged/skills')
