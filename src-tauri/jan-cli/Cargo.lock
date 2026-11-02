@@ -22,6 +22,7 @@ dependencies = [
  "env_logger",
  "flate2",
  "form_urlencoded",
+ "fs4",
  "futures",
  "futures-util",
  "genai",

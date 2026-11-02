@@ -51,6 +51,7 @@ pub mod reminder;
 pub mod request_headers;
 pub mod secrets;
 pub mod session;
+pub mod session_log;
 pub mod skill_hub;
 pub mod skills;
 pub mod run_record;

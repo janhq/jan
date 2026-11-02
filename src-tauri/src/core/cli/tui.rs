@@ -47,7 +47,7 @@ use markdown::{
 
 use super::agent_status::AgentStatusReporter;
 use super::brand;
-use super::journal::{self, DisplayEntry, ReasoningSeg};
+use crate::core::agent::session_log::{self, DisplayEntry, NoteLevel, ReasoningSeg, SessionWriter};
 use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
@@ -847,6 +847,26 @@ enum Level {
 }
 
 impl Level {
+    /// The level a recorded note keeps.
+    fn note_level(self) -> NoteLevel {
+        match self {
+            Level::Info => NoteLevel::Info,
+            Level::Warn => NoteLevel::Warn,
+            Level::Error => NoteLevel::Error,
+            Level::Good => NoteLevel::Good,
+        }
+    }
+
+    /// The level a recorded note replays at.
+    fn of_note(level: NoteLevel) -> Self {
+        match level {
+            NoteLevel::Info => Level::Info,
+            NoteLevel::Warn => Level::Warn,
+            NoteLevel::Error => Level::Error,
+            NoteLevel::Good => Level::Good,
+        }
+    }
+
     /// Gutter glyph: the shape repeats the colour's message, so an error or a
     /// warning still stands out on a terminal that drops the colour.
     fn glyph(self) -> &'static str {
@@ -4665,12 +4685,13 @@ struct App {
     /// The conversation as rendered rows, plus the streaming state that
     /// builds them. See [`Transcript`].
     transcript: Transcript,
-    /// Background journal writer, created on the first dump and joined on exit.
-    journal_writer: Option<journal::Writer>,
+    /// The open session file of `thread_id`, opened by the first save and held
+    /// (with its lock) until the session moves to another thread or exits.
+    session_writer: Option<SessionWriter>,
     /// Whether a prior assistant turn's reasoning is resent to the model.
     /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
     /// long chains of thought out of the request (and satisfies upstreams that
-    /// reject the key); the display journal keeps reasoning for a resume either
+    /// reject the key); the session record keeps reasoning for a resume either
     /// way.
     send_reasoning: bool,
     /// Normalized reasoning effort level sent with each model request.
@@ -5587,7 +5608,7 @@ impl App {
             history: Vec::new(),
             thread_id: None,
             transcript: Transcript::journaled(show_reasoning),
-            journal_writer: None,
+            session_writer: None,
             send_reasoning: true,
             reasoning_effort: "medium".into(),
             last_non_low_effort: "medium".into(),
@@ -5801,6 +5822,7 @@ impl App {
         self.end_session_work();
         self.history.clear();
         self.thread_id = None;
+        self.session_writer = None;
         // A fresh session drops any active goal along with the conversation.
         self.goal = None;
         self.goal_eval_pending = false;
@@ -6054,7 +6076,12 @@ impl App {
         });
     }
 
+    /// A note at `level`, recorded so a resumed transcript shows it too.
     fn system(&mut self, level: Level, text: &str) {
+        self.transcript.log(DisplayEntry::Note {
+            text: text.to_string(),
+            level: level.note_level(),
+        });
         self.system_marked(level.glyph(), level, text);
     }
 
@@ -7762,47 +7789,29 @@ impl App {
         }
     }
 
-    /// Save the conversation to a thread on disk so it survives and appears in
-    /// `/resume`. Fire-and-forget: failures surface in the status detail only.
+    /// Save the conversation to its thread so it survives and appears in
+    /// `/resume`: the wire history and the transcript go to the one session
+    /// file together, appending only what changed, so the two cannot drift.
+    /// Failures surface in the status detail only.
     fn persist(&mut self) {
         if self.history.is_empty() {
             return;
         }
-        match super::cli_save_thread(
+        let metadata = self.thread_metadata();
+        match super::save_session(
             &self.agent_dir,
-            self.thread_id.as_deref(),
-            &self.model,
-            &self.history,
-            self.thread_metadata(),
+            &mut self.session_writer,
+            super::SessionSave {
+                thread_id: self.thread_id.as_deref(),
+                model: &self.model,
+                history: &self.history,
+                display: Some(&self.transcript.display_log),
+                metadata,
+            },
         ) {
-            Ok(id) => {
-                self.thread_id = Some(id);
-                self.dump_display_log();
-            }
+            Ok(id) => self.thread_id = Some(id),
             Err(e) => self.detail = format!("save failed: {e}"),
         }
-    }
-
-    /// Hand the rendered transcript to the writer thread, so a turn boundary (or
-    /// a cancel) leaves a resumable journal without a frame paying for the write.
-    fn dump_display_log(&mut self) {
-        let Some(id) = self.thread_id.clone() else {
-            return;
-        };
-        let Ok(path) = journal::journal_path(&self.agent_dir, &id) else {
-            return;
-        };
-        self.journal_writer
-            .get_or_insert_with(journal::Writer::new)
-            .dump(path, self.transcript.display_log.clone());
-    }
-
-    /// Wait for queued journal dumps to reach disk (session exit, tests).
-    fn join_journal(&mut self) {
-        if let Some(writer) = self.journal_writer.as_mut() {
-            writer.join();
-        }
-        self.journal_writer = None;
     }
 
     /// Switch the active model and remember it in the project's agent.toml so it
@@ -8490,7 +8499,7 @@ impl App {
             }
             // A background ping's headline (a monitor condition matching),
             // emitted as the loop delivers the `<SYSTEM>` text to the model.
-            // Transient like every other note: not journaled.
+            // Recorded when it lands as a note (see `notice`).
             StreamEvent::Notice { text } => {
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
@@ -12348,8 +12357,8 @@ fn has_answer_text(buf: &str, parse_tags: bool) -> bool {
 
 /// `text` with its reasoning removed, for the copy that goes into `history`.
 /// Reasoning never belongs in `content`; it rides along on the message's
-/// `reasoning_content` instead (see `on_done`), and the display journal is what
-/// keeps it for a resume. `parse_tags` is the setting of the run that said it.
+/// `reasoning_content` instead (see `on_done`), and the session record keeps
+/// both for a resume. `parse_tags` is the setting of the run that said it.
 pub(crate) fn answer_without_reasoning(text: &str, parse_tags: bool) -> String {
     split_reasoning(text, parse_tags)
         .into_iter()
@@ -13493,10 +13502,6 @@ pub async fn run(
         mouse,
     )
     .await;
-
-    // The last turn's journal may still be queued on the writer thread; a
-    // process that exits now would lose it, and with it that turn's resume.
-    app.join_journal();
 
     release_terminal();
     restore_terminal_modes();
@@ -20385,8 +20390,8 @@ fn thread_display_name(base: &std::path::Path, id: &str, title: Option<&str>) ->
     if let Some(t) = title.map(str::trim).filter(|s| !s.is_empty()) {
         return t.to_string();
     }
-    if let Ok(messages) = super::cli_list_messages_in(base, id) {
-        if let Some(last_user) = messages.iter().rev().find(|m| {
+    if let Ok(loaded) = super::load_thread_record(base, id) {
+        if let Some(last_user) = loaded.record.messages.iter().rev().find(|m| {
             m.get("role").and_then(|v| v.as_str()) == Some("user")
                 && !crate::core::agent::reminder::is_reminder_text(&message_text(m))
         }) {
@@ -22495,10 +22500,8 @@ const WORKTREE_CHANGE_ROWS: usize = 20;
 /// switch to it, leaving the source whole on disk. The cut turn lands in the
 /// input, as a rewind's does, so the branch opens ready to re-ask it.
 async fn fork_at(app: &mut App, target: usize) {
-    // The fork is cut from what is on disk, so this turn's history and journal
-    // have to be there first; the journal writer is asynchronous.
+    // The fork is cut from what is on disk, so this turn has to be there first.
     app.persist();
-    app.join_journal();
     let Some(source) = app.thread_id.clone() else {
         return app.note("nothing to fork: this session has not been saved yet");
     };
@@ -22727,11 +22730,11 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     // measured, so that count now overstates the window by the removed prefix.
     app.invalidate_token_provenance();
     app.tokens = estimate_token_count(&app.history);
-    // The journal is keyed by its own user entries, not by history indices: it
-    // holds rows (tool calls, reasoning) that history never had.
+    // The display list is keyed by its own user entries, not by history
+    // indices: it holds rows (tool calls, reasoning) that history never had.
     app.transcript
         .display_log
-        .truncate(journal::truncate_at_user(
+        .truncate(session_log::truncate_at_user(
             &app.transcript.display_log,
             target,
         ));
@@ -22837,6 +22840,11 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 };
                 app.push_subagent_summary(SubagentPanel::replayed(name, calls), outcome);
             }
+            DisplayEntry::Note { text, level } => {
+                app.transcript.finalize_tool_group();
+                let level = Level::of_note(*level);
+                app.system_marked(level.glyph(), level, text);
+            }
         }
     }
     // A replay is rendering, not work: the calls it re-renders must not stage
@@ -22919,22 +22927,26 @@ async fn apply_resume(app: &mut App, request: &ResumeRequest) {
 }
 
 /// Replace the live session with a saved thread's state: history, transcript,
-/// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
-/// are not persisted as messages). `verb` names how the thread was opened, so a
-/// fork does not report itself as a resume.
+/// snapshots, goal, and model. The history is the wire conversation exactly as
+/// saved, so the next request shares its prefix. `verb` names how the thread
+/// was opened, so a fork does not report itself as a resume.
 async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     let full_id = thread
         .get("id")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
 
-    let (messages, skipped) = match super::cli_read_messages_lenient(&app.agent_dir, full_id) {
-        Ok(m) => m,
+    let loaded = match super::load_thread_record(&app.agent_dir, full_id) {
+        Ok(loaded) => loaded,
         Err(e) => return app.note(&format!("failed to load messages: {e}")),
     };
+    let skipped = loaded.skipped;
 
     app.end_session_work();
     app.history.clear();
+    // The previous thread's lock goes with it; this one's is taken by the
+    // first save, so merely opening a thread neither writes nor locks it.
+    app.session_writer = None;
     app.thread_id = Some(full_id.to_string());
     app.transcript.rows.clear();
     app.transcript.tool_group = None;
@@ -22993,14 +23005,12 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         app.model = model.to_string();
     }
 
-    // The journal holds what was rendered (reasoning, tool rows, diffs); the
-    // messages hold what the model is sent. Prefer the journal for the
+    // The display entries hold what was rendered (reasoning, tool rows, diffs);
+    // the messages hold what the model is sent. Prefer the entries for the
     // transcript, and fall back to replaying the messages for a thread saved
-    // before journaling (or whose journal was lost).
-    let logged = journal::journal_path(&app.agent_dir, full_id)
-        .map(|path| journal::read_journal(&path))
-        .unwrap_or_default();
-    app.history = super::rebuild_wire_history(&messages);
+    // before display entries were kept.
+    let logged = loaded.record.display;
+    app.history = loaded.record.messages;
     // Only a conversation with something in it predates the snapshot.
     app.resume_notice_pending = !app.history.is_empty();
     // A resumed thread was never measured by *this* session's provider calls, and
@@ -23039,9 +23049,14 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("(untitled)");
-    app.note(&format!("{verb} \"{title}\" ({count} messages)"));
+    // About this opening, not the conversation: recorded, they would pile up
+    // one more on every resume.
+    let level = Level::Info;
+    let opened = format!("{verb} \"{title}\" ({count} messages)");
+    app.system_marked(level.glyph(), level, &opened);
     if skipped > 0 {
-        app.note(&format!("{skipped} unreadable message(s) were skipped"));
+        let skipped = format!("{skipped} unreadable line(s) were skipped");
+        app.system_marked(level.glyph(), level, &skipped);
     }
 }
 
@@ -26157,7 +26172,7 @@ mod tests {
     fn no_mcp() -> crate::core::state::SharedMcpServers {
         std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
     }
-    use super::journal::{self, DisplayEntry};
+    use crate::core::agent::session_log::{DisplayEntry, SessionWriter};
     use super::{
         cancel_command, next_event, RunEvent, SessionLimits, SteeringRequest, SubagentOutcome,
     };
@@ -27607,7 +27622,6 @@ mod tests {
         let (request, mut receiver) = steering_request(app.history.clone());
         app.steer_run(request);
         assert_eq!(receiver.try_recv().unwrap().len(), 1);
-        app.join_journal();
         let mut restored = test_app();
         restored.agent_dir = app.agent_dir.clone();
         apply_resume(&mut restored, &ResumeRequest::resume(ResumeTarget::Latest)).await;
@@ -27654,7 +27668,6 @@ mod tests {
         );
         assert!(!app.want_start);
         assert!(transcript_text(&app).contains("[skill:deploy] please carefully"));
-        app.join_journal();
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -30988,12 +31001,15 @@ mod tests {
         rebuild_recall(&mut app);
         assert_eq!(app.input_history.len(), 2);
 
-        // The transcript row, the journal entry and the conversation agree, so
-        // rewinding to #1 empties all three.
+        // The transcript row, the recorded entry and the conversation agree, so
+        // rewinding to #1 empties all three, leaving only the rewind's note.
         assert_eq!(user_entries(&app.transcript.display_log), 2);
         rewind_to(&mut app, 0, false);
         assert!(app.history.is_empty());
-        assert!(app.transcript.display_log.is_empty());
+        assert!(matches!(
+            app.transcript.display_log.as_slice(),
+            [DisplayEntry::Note { .. }]
+        ));
         assert_eq!(app.input, typed, "the target message comes back verbatim");
     }
 
@@ -31480,16 +31496,14 @@ mod tests {
             assert!(app.history.is_empty(), "{cmd}");
             assert!(app.thread_id.is_none(), "{cmd}");
             // The interrupted turn is kept in the thread it belongs to.
-            let (saved, _) = super::super::cli_read_messages_lenient(
+            let saved = super::super::load_thread_record(
                 &app.agent_dir,
                 old_thread.as_deref().unwrap(),
             )
-            .unwrap();
-            assert_eq!(
-                saved.last().unwrap()["content"][0]["text"]["value"],
-                "old answer",
-                "{cmd}"
-            );
+            .unwrap()
+            .record
+            .messages;
+            assert_eq!(saved.last().unwrap()["content"], "old answer", "{cmd}");
         }
     }
 
@@ -39263,7 +39277,117 @@ mod tests {
             text: "Answer.".into(),
         });
         app.on_done("stop".into(), None);
-        app.join_journal();
+    }
+
+    /// The live TUI path end to end: a session carrying reasoning, an image, a
+    /// compaction summary, a result over 64 KB, a cancelled turn and an orphaned
+    /// call is saved, resumed, saved and resumed. Both resumes hold the history
+    /// byte for byte (so the next request shares the original's cached prefix)
+    /// and the same transcript entries, and a resume with no new turn leaves the
+    /// file untouched.
+    #[tokio::test]
+    async fn save_resume_save_resume_keeps_history_and_transcript_identical() {
+        let mut app = test_app();
+        app.pending_images.push(PendingImage {
+            name: "cat.png".into(),
+            data_url: "data:image/png;base64,iVBORw0KGgo=".into(),
+        });
+        app.submit_user("what is this?".to_string());
+        app.want_start = false;
+        app.apply(StreamEvent::Reasoning {
+            text: "Look at the picture.".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c_big".into(),
+            name: "read".into(),
+            args: json!({ "path": "big.txt" }),
+        });
+        let big = "line of output\n".repeat(6 * 1024);
+        assert!(big.len() > 64 * 1024);
+        app.apply(StreamEvent::ToolResult {
+            id: "c_big".into(),
+            content: big.clone(),
+            is_error: false,
+            diff: None,
+        });
+        let user = app.history[0].clone();
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![
+                crate::core::agent::compaction::summary_message("earlier: set up the repo"),
+                user,
+                json!({
+                    "role": "assistant", "content": "",
+                    "reasoning_content": "Look at the picture.",
+                    "tool_calls": [{ "id": "c_big", "type": "function",
+                        "function": { "name": "read", "arguments": "{ \"path\":\"big.txt\" }" } }],
+                }),
+                json!({ "role": "tool", "tool_call_id": "c_big", "content": big }),
+            ],
+        });
+        app.apply(StreamEvent::Token {
+            text: "A cat.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        // A cancelled turn: one call finished, one still in flight.
+        app.submit_user("now edit it".to_string());
+        app.want_start = false;
+        app.apply(StreamEvent::ToolCall {
+            id: "c_done".into(),
+            name: "write".into(),
+            args: json!({ "path": "a.txt" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c_done".into(),
+            content: "wrote 1 line".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c_live".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 9" }),
+        });
+        app.cancel_run();
+
+        // An orphaned call: the process died before its result was recorded.
+        app.history.push(json!({
+            "role": "assistant", "content": null,
+            "tool_calls": [{ "id": "c_orphan", "type": "function",
+                "function": { "name": "edit", "arguments": "{}" } }],
+        }));
+        app.persist();
+        let id = app.thread_id.clone().expect("saved");
+        let path = super::super::session_path(&app.agent_dir, &id).unwrap();
+        let history = serde_json::to_string(&app.history).unwrap();
+        assert!(history.contains("c_live"), "the cancelled call is kept");
+        let whole = "line of output\\n".repeat(6 * 1024);
+        assert!(history.contains(&whole), "the 64 KB+ result is kept whole");
+        let display = app.transcript.display_log.clone();
+        assert!(display.iter().any(|e| matches!(e, DisplayEntry::Note { .. })));
+        assert!(
+            SessionWriter::open(&path).is_err(),
+            "the live session holds the thread"
+        );
+        let agent_dir = app.agent_dir.clone();
+        // The session ends; `app` itself owns the temp store, so it stays.
+        app.session_writer = None;
+
+        let mut first = test_app();
+        first.agent_dir = agent_dir.clone();
+        apply_resume(&mut first, &ResumeRequest::resume(ResumeTarget::Id(id.clone()))).await;
+        assert_eq!(serde_json::to_string(&first.history).unwrap(), history);
+        assert_eq!(first.transcript.display_log, display);
+        let on_disk = std::fs::read(&path).unwrap();
+        first.persist();
+        assert_eq!(std::fs::read(&path).unwrap(), on_disk, "resaving a resume writes nothing");
+        first.session_writer = None;
+
+        let mut second = test_app();
+        second.agent_dir = agent_dir;
+        apply_resume(&mut second, &ResumeRequest::resume(ResumeTarget::Id(id))).await;
+        assert_eq!(serde_json::to_string(&second.history).unwrap(), history);
+        assert_eq!(second.transcript.display_log, display);
     }
 
     /// A resumed thread's turns were sent by another run, so the session cache
@@ -39378,7 +39502,6 @@ mod tests {
             });
         }
         app.on_done("stop".into(), None);
-        app.join_journal();
         let live: String = app
             .transcript
             .rows
@@ -39455,12 +39578,31 @@ mod tests {
         assert_eq!(result["content"], "wrote 1 line");
     }
 
+    /// A thread from before display entries were kept has only its legacy
+    /// `messages.jsonl`: the transcript is rebuilt from the messages.
     #[tokio::test]
     async fn resume_falls_back_to_messages_without_a_journal() {
-        let mut app = test_app();
-        record_full_turn(&mut app);
-        let id = app.thread_id.clone().expect("saved");
-        std::fs::remove_file(journal::journal_path(&app.agent_dir, &id).unwrap()).unwrap();
+        let app = test_app();
+        let dir = crate::core::threads::utils::get_thread_dir(&app.agent_dir, "1e9acy00").unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("thread.json"),
+            json!({ "id": "1e9acy00", "title": "old", "updated": 1.0 }).to_string(),
+        )
+        .unwrap();
+        let record = |role: &str, text: &str| {
+            json!({
+                "object": "thread.message", "role": role,
+                "content": [{ "type": "text", "text": { "value": text, "annotations": [] } }],
+            })
+            .to_string()
+                + "\n"
+        };
+        std::fs::write(
+            dir.join("messages.jsonl"),
+            record("user", "do it") + &record("assistant", "Answer."),
+        )
+        .unwrap();
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
@@ -39707,8 +39849,8 @@ mod tests {
 
         fork_at(&mut forked, 1).await;
 
-        // Notes are transient by design and never journaled, so they are the one
-        // thing the two paths are allowed to disagree on.
+        // Each path ends on its own note ("forked ..." / "rewound ..."), the one
+        // thing the two are allowed to disagree on.
         let rows = |app: &App| {
             app.transcript
                 .rows
@@ -39717,12 +39859,17 @@ mod tests {
                 .filter(|t| !t.trim_start().starts_with('\u{2022}'))
                 .collect::<Vec<_>>()
         };
+        let entries = |app: &App| {
+            app.transcript
+                .display_log
+                .iter()
+                .filter(|e| !matches!(e, DisplayEntry::Note { .. }))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         assert_eq!(rows(&forked), rows(&rewound));
         assert_eq!(forked.history, rewound.history);
-        assert_eq!(
-            forked.transcript.display_log,
-            rewound.transcript.display_log
-        );
+        assert_eq!(entries(&forked), entries(&rewound));
     }
 
     /// The parent pointer has to survive the branch's own first save, which

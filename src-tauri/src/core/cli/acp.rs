@@ -45,9 +45,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::providers::ProviderOverrides;
 use super::{
-    adopt_turn_history, agent_dir_for, cli_read_messages_lenient, cli_save_thread,
-    find_resume_thread, fold_interrupted_tools, is_user_turn, prepare_agent_session,
-    rebuild_wire_history, thread_message_text, AgentSession, ResumeTarget, SessionFlags,
+    adopt_turn_history, agent_dir_for, cli_save_thread, find_resume_thread,
+    fold_interrupted_tools, is_user_turn, load_thread_record, prepare_agent_session,
+    thread_message_text, AgentSession, ResumeTarget, SessionFlags,
 };
 use crate::core::agent::events::StreamEvent;
 use crate::core::agent::r#loop::{run_orchestration_steered, settle_permission};
@@ -343,11 +343,11 @@ fn read_thread(agent_dir: &Path, id: &str) -> Result<Vec<Value>, Error> {
     if found.is_none() {
         return Err(Error::resource_not_found(None).data(json!({"sessionId": id})));
     }
-    let (messages, skipped) = cli_read_messages_lenient(agent_dir, id).map_err(internal)?;
-    if skipped > 0 {
-        log::warn!("ACP: skipped {skipped} unreadable message(s) loading {id}");
+    let loaded = load_thread_record(agent_dir, id).map_err(internal)?;
+    if loaded.skipped > 0 {
+        log::warn!("ACP: skipped {} unreadable line(s) loading {id}", loaded.skipped);
     }
-    Ok(rebuild_wire_history(&messages))
+    Ok(loaded.record.messages)
 }
 
 fn busy() -> Error {
