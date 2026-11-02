@@ -2546,6 +2546,7 @@ const ChatInput = memo(function ChatInput({
                           hasJanBrowserMCPConfig &&
                           modelSupportsBrowser && (
                             <DropdownMenuCheckboxItem
+                              indicatorAlign="right"
                               checked={janBrowserMCPActive}
                               onSelect={(event) => event.preventDefault()}
                               disabled={isStreaming || isJanBrowserMCPLoading}
@@ -2558,7 +2559,7 @@ const ChatInput = memo(function ChatInput({
                             </DropdownMenuCheckboxItem>
                           )}
                         {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
-                          <DropdownMenuCheckboxItem checked={webSearchEnabled} onSelect={(event) => event.preventDefault()} disabled={isStreaming} onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}>
+                          <DropdownMenuCheckboxItem indicatorAlign="right" checked={webSearchEnabled} onSelect={(event) => event.preventDefault()} disabled={isStreaming} onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}>
                             <IconWorldSearch size={18} />
                             {t('common:web_search')}
                           </DropdownMenuCheckboxItem>
@@ -2568,6 +2569,7 @@ const ChatInput = memo(function ChatInput({
                           sandboxEnforcesShell &&
                           selectedModel?.capabilities?.includes('tools') && (
                             <DropdownMenuCheckboxItem
+                              indicatorAlign="right"
                               checked={shellEnabled}
                               onSelect={(event) => event.preventDefault()}
                               disabled={isStreaming}
@@ -2599,6 +2601,7 @@ const ChatInput = memo(function ChatInput({
                                       </DropdownMenuSubTrigger>
                                       <DropdownMenuSubContent className="max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto">
                                         <DropdownMenuCheckboxItem
+                                          indicatorAlign="right"
                                           disabled={isStreaming}
                                           checked={
                                             serverTools.every((tool) => !disabledTools.includes(createToolKey(server, tool.name)))
