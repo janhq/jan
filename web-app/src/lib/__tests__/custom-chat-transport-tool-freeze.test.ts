@@ -125,7 +125,7 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
 
   it('freezes tools for the entire Chat run then refreshes on the next turn', async () => {
     const release = transport.beginChatRun()
-    await transport.refreshTools()
+    await transport.refreshTools(undefined, undefined, true)
     const original = transport.getTools()
     h.servers = ['srv', 'new-server']
     h.disabledTools = ['srv::tool_a']
@@ -148,12 +148,30 @@ describe('CustomChatTransport smart-tool-routing freeze', () => {
     await vi.waitFor(() => expect(finishOld).toBeTypeOf('function'))
     const release = transport.beginChatRun()
     h.getRelevantTools.mockResolvedValueOnce([{ name: 'new_tool', description: '', inputSchema: {}, server: 'srv' }])
-    await transport.refreshTools()
+    await transport.refreshTools(undefined, undefined, true)
     finishOld([{ name: 'stale_tool', description: '', inputSchema: {}, server: 'srv' }])
     await stale
     expect(Object.keys(transport.getTools())).toContain('new_tool')
     expect(Object.keys(transport.getTools())).not.toContain('stale_tool')
     release()
+  })
+
+  it('does not let an external tool-less global-model refresh win while the run model is loading', async () => {
+    const release = transport.beginChatRun()
+    const wrongModel = { selectedProvider: 'global-other', selectedModel: { id: 'global-no-tools', capabilities: [] } }
+    // The external effect finishes before the request-owned discovery starts.
+    await transport.refreshTools(undefined, wrongModel as never)
+    expect(h.getRelevantTools).not.toHaveBeenCalled()
+    expect(mcpService.getTools).not.toHaveBeenCalled()
+    expect(Object.keys(transport.getTools())).toEqual([])
+    await transport.refreshTools(undefined, { selectedProvider: 'local', selectedModel: { id: 'local-tools', capabilities: ['tools'] } } as never, true)
+    expect(Object.keys(transport.getTools())).toContain('tool_a')
+    expect(transport.getMcpServerForTool('tool_a')).toBe('srv')
+    await transport.refreshTools(undefined, wrongModel as never)
+    expect(Object.keys(transport.getTools())).toContain('tool_a')
+    release()
+    await transport.refreshTools(undefined, wrongModel as never)
+    expect(Object.keys(transport.getTools())).toEqual([])
   })
 
   it('routes once and freezes the set across subsequent turns', async () => {

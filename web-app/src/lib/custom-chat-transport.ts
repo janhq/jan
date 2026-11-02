@@ -1100,8 +1100,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    */
   async refreshTools(
     abortSignal?: AbortSignal,
-    modelSelection: ModelSelection = this.getModelSelection()
+    modelSelection: ModelSelection = this.getModelSelection(),
+    /** Only sendMessages may initialize an active run's advertised record. */
+    runOwned = false
   ) {
+    if (this.chatRunSnapshot && !runOwned) return
     if (this.chatRunSnapshot?.tools) return
     const owningSnapshot = this.chatRunSnapshot
     // Resolve the memory digest before the prompt is built: the builder is
@@ -1553,7 +1556,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       throw engineFailure('model-errors:createModelFailed', error)
     }
 
-    await this.refreshTools(options.abortSignal, turnModelSelection)
+    await this.refreshTools(options.abortSignal, turnModelSelection, true)
     const turnMcpIdentities = new Map(this.mcpIdentities)
     const turnTools = this.tools
 
