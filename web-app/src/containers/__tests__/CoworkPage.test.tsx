@@ -18,7 +18,7 @@ vi.mock('@/hooks/useSkills', () => ({ useSkills: () => ({ skills: [], invoke: vi
 vi.mock('@/hooks/useAutoScroll', () => ({ useAutoScroll: () => ({}) }))
 vi.mock('@/lib/coworkSubagentRegistry', () => ({ listSubagents: async () => [] }))
 vi.mock('@/lib/coworkHandoff', () => ({ peekCoworkHandoff: mocks.handoff, claimCoworkHandoff: () => true, clearCoworkHandoff: vi.fn(), releaseCoworkHandoff: vi.fn() }))
-vi.mock('@/lib/agentTools', () => ({ getSandboxStatus: mocks.sandbox, cancelAgentThreadBash: vi.fn(), cancelAgentThreadBashStrict: mocks.cancelShells, activeAgentMonitorIds: async () => null }))
+vi.mock('@/lib/agentTools', () => ({ isRecordedShellCall: () => false, getSandboxStatus: mocks.sandbox, cancelAgentThreadBash: vi.fn(), cancelAgentThreadBashStrict: mocks.cancelShells, activeAgentMonitorIds: async () => null }))
 vi.mock('@/lib/coworkAttachments', async (original) => ({ ...await original<typeof import('@/lib/coworkAttachments')>(), importAttachedFiles: async (files: unknown[]) => files }))
 vi.mock('@/lib/coworkEnv', () => ({ getCoworkEnvironment: async () => ({}) }))
 vi.mock('@/lib/coworkTransport', () => ({ CoworkChatTransport: class { refreshTools = mocks.refresh } }))
@@ -219,6 +219,59 @@ describe('CoworkPage request acceptance', () => {
     expect(mocks.cancelShells).toHaveBeenCalledWith('test')
     await act(async () => dispatched())
     expect(useCoworkRun.getState().runId.test).toBeUndefined()
+  })
+  it.each([undefined, '', ' ', null, 7, {}])('does not mutate transcript rows for invalid optional todo id %j', async (callId) => {
+    const list = { phases: [] }
+    mocks.dispatch.mockImplementationOnce(async (_call, ctx) => {
+      await ctx.onTodo({ op: 'view' }, callId)
+      return { output: 'ok' }
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      deps.sink.onText('Original answer')
+      await deps.dispatch({ toolCallId: 'dispatch', toolName: 'todo', input: {} })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    render(<CoworkPage />)
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    const turns = useCoworkSessions.getState().sessions[0].turns
+    expect(turns).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Keep my draft' }),
+      { role: 'assistant', content: 'Original answer' },
+    ])
+    for (const row of turns) {
+      expect(row).not.toHaveProperty('result')
+      expect(row).not.toHaveProperty('status')
+    }
+    expect(useCoworkSessions.getState().sessions[0].todos).toEqual(list)
+  })
+  it('projects a valid todo id into only the matching todo tool row', async () => {
+    const list = { phases: [] }
+    mocks.dispatch.mockImplementationOnce(async (_call, ctx) => {
+      await ctx.onTodo({ op: 'view' }, 'target')
+      return { output: 'ok' }
+    })
+    mocks.run.mockImplementationOnce(async ({ deps }) => {
+      deps.sink.onText('Original answer')
+      deps.sink.onToolStart('other', 'todo')
+      deps.sink.onToolStart('target', 'shell')
+      deps.sink.onToolStart('target', 'todo')
+      await deps.dispatch({ toolCallId: 'dispatch', toolName: 'todo', input: {} })
+      return { stoppedBy: 'done', messages: [], usage: null }
+    })
+    render(<CoworkPage />)
+    fireEvent.click(screen.getByText('Submit'))
+    await waitFor(() => expect(mocks.dispatch).toHaveBeenCalledOnce())
+    await waitFor(() => expect(useCoworkRun.getState().runId.test).toBeUndefined())
+    const turns = useCoworkSessions.getState().sessions[0].turns
+    expect(turns.filter((row) => row.result === JSON.stringify(list))).toEqual([
+      expect.objectContaining({ role: 'tool', name: 'todo', callId: 'target', status: 'done' }),
+    ])
+    expect(turns[0]).not.toHaveProperty('result')
+    expect(turns[1]).toEqual({ role: 'assistant', content: 'Original answer' })
+    expect(turns.find((row) => row.callId === 'other')?.result).toBe('(interrupted)')
+    expect(turns.find((row) => row.name === 'shell')?.result).toBe('(interrupted)')
   })
   it('commits interrupted tool input with its partial arguments intact on abort', async () => {
     mocks.run.mockImplementationOnce(({ deps, signal }) => {

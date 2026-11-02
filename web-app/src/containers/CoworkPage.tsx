@@ -100,6 +100,7 @@ import { getCoworkEnvironment } from '@/lib/coworkEnv'
 import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { createConversationToolHandlers } from '@/lib/conversationToolHandlers'
 import { conversationTodos } from '@/lib/conversationTaskPresentation'
+import { TODO_TOOL_NAME } from '@/lib/coworkTools'
 import {
   EXECUTE_PLAN_LABEL,
   EXIT_PLAN_LABEL,
@@ -682,7 +683,9 @@ export function CoworkPage() {
             ...coworkTurnsToUIMessages(runTurns),
           ]) ?? useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.todos,
           onTodo: (list, callId) => {
-            const row = runTurns.find((turn) => turn.callId === callId)
+            const row = typeof callId === 'string' && callId.trim().length > 0
+              ? runTurns.find((turn) => turn.role === 'tool' && turn.name === TODO_TOOL_NAME && turn.callId === callId)
+              : undefined
             if (row) {
               row.result = JSON.stringify(list)
               row.status = 'done'
