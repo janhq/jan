@@ -350,6 +350,18 @@ describe('web tools', () => {
     expect(out.output).toContain('Settings')
   })
 
+  // The real off-state record withholds web tools; the reason still wins over
+  // the generic membership refusal.
+  it('names the setting when the off-state record withholds web tools', async () => {
+    const out = await dispatchCoworkTool(
+      call('web_fetch'),
+      ctx({ advertisedTools: { read: {} as Tool } })
+    )
+    expect(executeWebTool).not.toHaveBeenCalled()
+    expect(out.isError).toBe(true)
+    expect(out.output).toContain('web access is disabled in Settings')
+  })
+
   it('reports a plugin failure as a tool error', async () => {
     executeWebTool.mockResolvedValue({ error: 'no API key' })
     const out = await dispatchCoworkTool(

@@ -200,6 +200,17 @@ export async function dispatchCoworkTool(
     if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
 
+  // Ahead of the membership check, which would also refuse it (the web tools
+  // are withheld when off), so the model learns why rather than just that.
+  if (WEB_TOOL_NAMES.has(toolName) && !ctx.webSearch) {
+    return {
+      output:
+        `The \`${toolName}\` tool is off: web access is disabled in ` +
+        'Settings. Work from what you can read locally.',
+      isError: true,
+    }
+  }
+
   const refusal = unadvertisedToolRefusal(toolName, ctx.advertisedTools)
   if (refusal) return refusal
 
@@ -216,14 +227,6 @@ export async function dispatchCoworkTool(
     }
 
     if (WEB_TOOL_NAMES.has(toolName)) {
-      if (!ctx.webSearch) {
-        return {
-          output:
-            `The \`${toolName}\` tool is off: web access is disabled in ` +
-            'Settings. Work from what you can read locally.',
-          isError: true,
-        }
-      }
       const web = await executeWebTool(toolName, call.input ?? {})
       if (web.error) return { output: web.error, isError: true }
       return {
