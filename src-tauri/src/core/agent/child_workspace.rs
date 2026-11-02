@@ -636,18 +636,36 @@ fn lock(file: std::fs::File) -> std::io::Result<std::fs::File> {
 
 /// Claim checkout id `id` in `dir` before cloning into it: its lock file is
 /// created, never opened if it exists (`AlreadyExists`), so two processes
-/// picking the same id cannot both own it.
+/// picking the same id cannot both own it. `None` where the filesystem has
+/// no locks: the file still reserves the id, and a sweep that cannot lock
+/// it leaves the checkout alone, so writers keep working there.
 #[cfg(feature = "cli")]
-fn reserve(dir: &Path, id: &str) -> std::io::Result<std::fs::File> {
+fn reserve(dir: &Path, id: &str) -> std::io::Result<Option<std::fs::File>> {
+    reserve_with(dir, id, lock)
+}
+
+/// [`reserve`] with the lock call given, so a filesystem without locks can be
+/// tested.
+#[cfg(feature = "cli")]
+fn reserve_with(
+    dir: &Path,
+    id: &str,
+    lock: impl FnOnce(std::fs::File) -> std::io::Result<std::fs::File>,
+) -> std::io::Result<Option<std::fs::File>> {
     std::fs::create_dir_all(dir.join(META_DIR))?;
     let path = meta_file(dir, id, "lock");
     let file = crate::core::agent::session_log::open_no_follow(
         std::fs::OpenOptions::new().write(true).create_new(true),
         &path,
     )?;
-    lock(file).inspect_err(|_| {
-        let _ = std::fs::remove_file(&path);
-    })
+    match lock(file) {
+        Ok(file) => Ok(Some(file)),
+        Err(e) if e.kind() != std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(e) => {
+            let _ = std::fs::remove_file(&path);
+            Err(e)
+        }
+    }
 }
 
 /// Move a checkout that holds nothing out of the way at once, into the
@@ -835,7 +853,7 @@ fn create(
                     fallback: None,
                     fresh: true,
                 };
-                return Ok((ws, Some(hold)));
+                return Ok((ws, hold));
             }
             Err(e) => {
                 let _ = std::fs::remove_file(meta_file(&dir, &id, "lock"));
@@ -2428,6 +2446,29 @@ mod git_tests {
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
         drop(first);
         let _ = std::fs::remove_file(dir.join(META_DIR).join(format!("{id}.lock")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Where the filesystem has no locks (some NFS, SMB, FUSE or WSL homes)
+    /// the id is still reserved, unlocked: writers must keep working there,
+    /// and a sweep that cannot lock a file leaves it alone. Only a lock that
+    /// is taken means another owner, and another id.
+    #[test]
+    fn an_id_is_reserved_unlocked_where_locks_are_unsupported() {
+        let Some(root) = repo("nolock") else { return };
+        let dir = project_worktrees_dir(&root).unwrap();
+        let lock_file = |id: &str| dir.join(META_DIR).join(format!("{id}.lock"));
+        let id = format!("nolock-{:04x}", N.fetch_add(1, Ordering::SeqCst));
+        let unsupported = |_| Err(std::io::Error::from(std::io::ErrorKind::Unsupported));
+        let hold = reserve_with(&dir, &id, unsupported).unwrap();
+        assert!(hold.is_none());
+        assert!(lock_file(&id).is_file(), "the id stays reserved");
+        let taken = format!("nolock-{:04x}", N.fetch_add(1, Ordering::SeqCst));
+        let busy = |_| Err(std::io::Error::from(std::io::ErrorKind::WouldBlock));
+        let err = reserve_with(&dir, &taken, busy).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
+        assert!(!lock_file(&taken).exists());
+        let _ = std::fs::remove_file(lock_file(&id));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
