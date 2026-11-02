@@ -805,6 +805,19 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           else lastRequestedCapabilities.set(threadId, previousRequested)
         }
       }
+      // The host never acknowledged a narrow, so background monitors may
+      // still be polling under the old grant. Best effort: ask for a plain
+      // stop (it rides the same IPC and may fail identically, and even a
+      // successful stop leaves the host confirmation live). Either way this
+      // write rejects structurally so the surface can tell the user the
+      // truth; nothing is persisted and the denied overlay above stays.
+      // Grants are never restored.
+      const hostNarrowFailed = async (cause: unknown) => {
+        await stopAllThreadAgentMonitors(threadId)
+        rollbackRequested()
+        if (priorGrant) hostUncertainGrants.add(threadId)
+        return new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
+      }
       // Narrow the host process before anything is persisted, and ahead of
       // the queue wait below, which may still be draining an earlier write.
       // The synchronous revoke above only clears this window's overlay; the
@@ -815,23 +828,29 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       try {
         await revokeThreadCapabilitiesInHost(threadId)
       } catch (cause) {
-        // The host never acknowledged the narrow, so background monitors may
-        // still be polling under the old grant. Best effort: ask for a plain
-        // stop (it rides the same IPC and may fail identically, and even a
-        // successful stop leaves the host confirmation live). Either way this
-        // write rejects structurally so the surface can tell the user the
-        // truth; nothing is persisted and the denied overlay above stays.
-        // Grants are never restored.
-        await stopAllThreadAgentMonitors(threadId)
-        rollbackRequested()
-        if (priorGrant) hostUncertainGrants.add(threadId)
-        throw new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
+        throw await hostNarrowFailed(cause)
       }
-      // The host acknowledged the narrow: it is provably denied from here
-      // until something re-confirms, so any earlier unacknowledged revoke is
-      // resolved even if the persist below never runs or fails.
+      if (previous) {
+        await previous.catch(() => {})
+        // The narrow above is best-effort ONLY while a predecessor write was
+        // in flight: that predecessor's native strict-setter call may already
+        // have been authorized, and its own narrow-write-CONFIRM legitimately
+        // postdates our ack, resurrecting the value it carried. Now that it
+        // has settled, no request of ours can still confirm (successors queue
+        // behind this one), so THIS narrow is the authoritative one: after
+        // its ack, the host stays denied whatever our persist below does --
+        // the native mirror is never restored by a failed or absent write.
+        try {
+          await revokeThreadCapabilitiesInHost(threadId)
+        } catch (cause) {
+          throw await hostNarrowFailed(cause)
+        }
+      }
+      // The host acknowledged a narrow that postdates every possible confirm
+      // of ours: it is provably denied from here until our own persist
+      // confirms, so any earlier unacknowledged revoke is resolved even if
+      // the persist below never runs or fails.
       hostUncertainGrants.delete(threadId)
-      if (previous) await previous.catch(() => {})
       try {
         assertChatThread()
         // A newer request may have superseded this one while the narrow or

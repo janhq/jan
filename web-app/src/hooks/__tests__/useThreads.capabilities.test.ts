@@ -215,6 +215,37 @@ describe('useThreads conversation capabilities', () => {
     await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
   })
 
+  // The authority-ordering proof the coordinator mandated, frontend half: the
+  // authoritative narrow must fire only after an in-flight predecessor has
+  // settled (so no request of ours can confirm after it) and before our own
+  // persist. The native half -- a narrow is never restored by a failed or
+  // absent write -- is mutation-proven in the plugin suite. Together: A
+  // in-flight setter + B ack + A confirm + B persist failure => host DENIED.
+  it('a revoke re-narrows the host after an in-flight predecessor settles, before persisting', async () => {
+    const id = 'renarrow'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveA = save(granted, id)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    calls.length = 0
+    // B revokes while A's persist is in flight; B's own persist will fail.
+    persist.mockRejectedValueOnce(new Error('disk unavailable'))
+    const saveB = expect(save(null, id)).rejects.toThrow('disk unavailable')
+    // Immediate best-effort narrow only -- B must NOT persist or re-narrow
+    // while A can still confirm.
+    await vi.waitFor(() => expect(calls).toEqual([`narrow:${id}`]))
+    // A settles (host-side it confirmed its grant); B must now narrow AGAIN
+    // before its own (failing) persist.
+    pendingPersist.resolve()
+    await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
+    await saveB
+    expect(calls).toEqual([`narrow:${id}`, `narrow:${id}`])
+    expect(persist).toHaveBeenCalledTimes(2)
+  })
+
   it('narrows the host before it persists', async () => {
     await save(granted)
     expect(calls).toEqual(['narrow:chat', 'persist:chat'])
