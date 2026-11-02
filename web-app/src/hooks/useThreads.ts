@@ -18,9 +18,10 @@ import {
 import { useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { abortRun } from '@/lib/coworkRunner'
+import { revokeThreadCapabilitiesInHost, stopAllThreadAgentMonitors } from '@/lib/agentTools'
 import { dropMonitorLane } from '@/lib/coworkMonitor'
 import { isCoworkThread, workspaceScopeFor } from '@/lib/threadMode'
-import { defaultConversationCapabilities, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
+import { defaultConversationCapabilities, HostRevokeUnconfirmedError, resolveConversationCapabilities, type ConversationCapabilitiesV1 } from '@/lib/conversationCapabilities'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -77,6 +78,23 @@ const capabilityRequests = new Map<string, symbol>()
 // require reconfirmation each process: a failed revoke can leave older consent
 // on disk. Background fetches must never confirm or restore that authority.
 const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
+
+/** Threads whose last revoke the host never acknowledged while a grant may
+ * still be live there. Sticky on purpose: the setter's own synchronous deny
+ * erases the store state a RETRY would otherwise read, so without this a
+ * second failure would look like "nothing was granted" and surfaces would
+ * drop the background warning. Cleared the moment a narrow IS acknowledged
+ * -- the host is provably denied from then on, whatever the persist does. */
+const hostUncertainGrants = new Set<string>()
+
+/** The capabilities each thread was most recently ASKED to save, recorded
+ * synchronously at request start. A successor's `priorGrant` must count an
+ * in-flight predecessor's requested elevation: that persist may land -- and
+ * host-confirm -- after the successor has already read the optimistic deny
+ * the predecessor wrote. Rolled back only when a request provably never
+ * reached the strict setter; once a persist was attempted, a lost response
+ * may still have confirmed host-side, so the value stays. */
+const lastRequestedCapabilities = new Map<string, ConversationCapabilitiesV1>()
 
 // Helper function to clean up vector DB collection for a thread
 const cleanupVectorDB = async (threadId: string) => {
@@ -756,6 +774,17 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     }
     const original = assertChatThread()
     const capabilities = resolveConversationCapabilities(value)
+    // Whether anything is granted BEFORE this change, captured ahead of the
+    // synchronous deny below, which erases both sources it reads.
+    const elevatedIn = (c: ConversationCapabilitiesV1) =>
+      c.shellNetwork || c.memoryWrite || c.folderScope !== null
+    const previousRequested = lastRequestedCapabilities.get(threadId)
+    const priorGrant =
+      hostUncertainGrants.has(threadId) ||
+      elevatedIn(resolveConversationCapabilities(effectiveCapabilities.get(threadId))) ||
+      elevatedIn(resolveConversationCapabilities(original.metadata?.conversationCapabilities)) ||
+      (previousRequested !== undefined && elevatedIn(previousRequested))
+    lastRequestedCapabilities.set(threadId, capabilities)
     const request = Symbol(threadId)
     capabilityRequests.set(threadId, request)
     effectiveCapabilities.set(threadId, defaultConversationCapabilities())
@@ -767,8 +796,85 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     } } }))
     const previous = capabilityWrites.get(threadId)
     const write = (async () => {
-      if (previous) await previous.catch(() => {})
-      assertChatThread()
+      // This request provably never reached the strict setter, so its value
+      // can never be host-confirmed: stop counting it as a possible grant for
+      // successors, resurfacing the predecessor's value, which still might be.
+      const rollbackRequested = () => {
+        if (lastRequestedCapabilities.get(threadId) === capabilities) {
+          if (previousRequested === undefined) lastRequestedCapabilities.delete(threadId)
+          else lastRequestedCapabilities.set(threadId, previousRequested)
+        }
+      }
+      // The host never acknowledged a narrow, so background monitors may
+      // still be polling under the old grant. Best effort: ask for a plain
+      // stop (it rides the same IPC and may fail identically, and even a
+      // successful stop leaves the host confirmation live). Either way this
+      // write rejects structurally so the surface can tell the user the
+      // truth; nothing is persisted and the denied overlay above stays.
+      // Grants are never restored.
+      const hostNarrowFailed = async (cause: unknown) => {
+        await stopAllThreadAgentMonitors(threadId)
+        rollbackRequested()
+        if (priorGrant) hostUncertainGrants.add(threadId)
+        // Settledness must be TRANSITIVE for the re-narrow proof below: a
+        // request that fails here still drains its predecessor before it
+        // settles, so a successor that sees THIS request settled knows every
+        // older native call of ours has returned -- including across chains
+        // of early narrow failures, where the successor may find no map entry
+        // at all and take the single-narrow path on that guarantee.
+        if (previous) await previous.catch(() => {})
+        return new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
+      }
+      // Narrow the host process before anything is persisted, and ahead of
+      // the queue wait below, which may still be draining an earlier write.
+      // The synchronous revoke above only clears this window's overlay; the
+      // native monitor loop cannot read this store and authorizes each poll
+      // against host-confirmed consent, so until this resolves a background
+      // poll would still run under the grant being replaced. Narrowing only
+      // ever denies, and a failure must not be reported as a revocation.
+      try {
+        await revokeThreadCapabilitiesInHost(threadId)
+      } catch (cause) {
+        throw await hostNarrowFailed(cause)
+      }
+      if (previous) {
+        await previous.catch(() => {})
+        // The narrow above is best-effort ONLY while a predecessor write was
+        // in flight: that predecessor's native strict-setter call may already
+        // have been authorized, and its own narrow-write-CONFIRM legitimately
+        // postdates our ack, resurrecting the value it carried. Now that it
+        // has settled, no request of ours can still confirm (successors queue
+        // behind this one), so THIS narrow is the authoritative one: after
+        // its ack, the host stays denied whatever our persist below does --
+        // the native mirror is never restored by a failed or absent write.
+        try {
+          await revokeThreadCapabilitiesInHost(threadId)
+        } catch (cause) {
+          throw await hostNarrowFailed(cause)
+        }
+      }
+      // The host acknowledged a narrow that postdates every possible confirm
+      // of ours: it is provably denied from here until our own persist
+      // confirms, so any earlier unacknowledged revoke is resolved even if
+      // the persist below never runs or fails.
+      hostUncertainGrants.delete(threadId)
+      try {
+        assertChatThread()
+        // A newer request may have superseded this one while the narrow or
+        // the earlier write settled. Checked BEFORE the strict setter runs:
+        // persisting a superseded GRANT would have the native setter
+        // re-confirm it -- narrow, write and confirm of THIS value -- leaving
+        // host and disk authorizing a grant the user has already replaced,
+        // live until the newer request's own setter lands and indefinitely if
+        // that request fails first. The post-persist check below cannot
+        // prevent that.
+        if (capabilityRequests.get(threadId) !== request) {
+          throw new Error('Conversation changed while saving permissions')
+        }
+      } catch (error) {
+        rollbackRequested()
+        throw error
+      }
       await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)
       assertChatThread()
       if (capabilityRequests.get(threadId) !== request) throw new Error('Conversation changed while saving permissions')

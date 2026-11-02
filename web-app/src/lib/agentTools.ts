@@ -16,6 +16,11 @@ import {
   startMonitor,
   stopMonitor,
   listMonitors,
+  startThreadMonitor,
+  stopThreadMonitor,
+  listThreadMonitors,
+  stopAllThreadMonitors,
+  revokeThreadCapabilities,
   sessionMonitorIds,
   stopSessionMonitors,
   cancelThreadBash,
@@ -364,6 +369,82 @@ export async function startAgentMonitor(
     return { output }
   } catch (e) {
     return { output: `ERROR: ${messageOf(e)}`, isError: true }
+  }
+}
+
+/**
+ * Drop a thread's confirmed elevations in the host process, and stop anything
+ * still running under them.
+ *
+ * Narrow-only, so it can deny but never grant. Awaited by the consent setter
+ * before it persists: the frontend's own save queue may still hold an earlier
+ * write, and until the host is narrowed a background monitor poll would keep
+ * being authorized by the grant being revoked. Throws if the host could not be
+ * narrowed, so the caller must not treat the revocation as applied.
+ */
+export async function revokeThreadCapabilitiesInHost(
+  threadId: string
+): Promise<void> {
+  await revokeThreadCapabilities(threadId)
+}
+
+/**
+ * Start a monitor owned by a Chat thread.
+ *
+ * Unlike {@link startAgentMonitor} this passes no data folder, scope, network
+ * or writability flag: the host resolves each one from the thread's own
+ * consent and re-resolves it before every poll, so a grant captured when the
+ * monitor started authorizes nothing later. Chat threads never go through the
+ * Cowork session surface.
+ */
+export async function startThreadAgentMonitor(
+  threadId: string,
+  args: unknown,
+  onUpdate: (update: MonitorUpdate) => void
+): Promise<{ output: string; isError?: boolean }> {
+  try {
+    const input =
+      args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+    return { output: await startThreadMonitor(threadId, input, onUpdate) }
+  } catch (e) {
+    return { output: `ERROR: ${messageOf(e)}`, isError: true }
+  }
+}
+
+/** Stop one of a thread's monitors. The result string is model-facing. */
+export async function stopThreadAgentMonitor(
+  threadId: string,
+  monitorId: string
+): Promise<string> {
+  try {
+    return await stopThreadMonitor(threadId, monitorId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/** One line per active monitor on a thread, for `monitor {op:"list"}`. */
+export async function listThreadAgentMonitors(
+  threadId: string
+): Promise<string> {
+  try {
+    return await listThreadMonitors(threadId)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/**
+ * Stop every monitor a thread still has. Best-effort: used at teardown, where
+ * a failure must not block the caller.
+ */
+export async function stopAllThreadAgentMonitors(
+  threadId: string
+): Promise<void> {
+  try {
+    await stopAllThreadMonitors(threadId)
+  } catch {
+    // Teardown only; the host also reaps on revoke and delete.
   }
 }
 

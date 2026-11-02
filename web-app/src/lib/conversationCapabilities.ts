@@ -14,6 +14,31 @@ export function defaultConversationCapabilities(): ConversationCapabilitiesV1 {
   return { version: 1, folderScope: null, shellNetwork: false, memoryWrite: false }
 }
 
+/** The host never acknowledged the pre-write narrow of a permission change:
+ * NEITHER narrow path ran, so host-confirmed background work (monitor polls)
+ * may still hold the previous grant. Nothing was persisted and the effective
+ * overlay stays denied, but a surface catching this must say the truth --
+ * background access is not confirmed stopped -- rather than claim elevated
+ * access is off. Quitting the app guarantees the stop: the host confirmation
+ * does not survive a restart. */
+export class HostRevokeUnconfirmedError extends Error {
+  readonly hostCause: unknown
+  /** True when something was granted before this change -- live, persisted,
+   * or left uncertain by an EARLIER unacknowledged revoke of this thread --
+   * so background work may still hold that access. The setter computes it
+   * before its own synchronous deny erases the store state, and keeps it
+   * sticky across retries; surfaces must warn exactly when it is true. */
+  readonly backgroundMayPersist: boolean
+  constructor(threadId: string, backgroundMayPersist: boolean, cause?: unknown) {
+    super(
+      `The host did not confirm the permission change for ${threadId}; background agent access may still be active`
+    )
+    this.name = 'HostRevokeUnconfirmedError'
+    this.backgroundMayPersist = backgroundMayPersist
+    this.hostCause = cause
+  }
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) &&
     (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)

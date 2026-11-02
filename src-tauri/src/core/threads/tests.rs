@@ -1056,6 +1056,365 @@ async fn conversation_capabilities_patch_preserves_fields_and_rejects_missing() 
     );
 }
 
+/// The strict setter is what confirms host-process authority, and it narrows
+/// first. A write that fails must leave the mirror denied, never restored, so
+/// nothing keeps running under the authority the write was replacing.
+#[tokio::test]
+async fn capability_setter_narrows_first_and_confirms_only_on_a_successful_write() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("mirror"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+
+    // Bootstrap: nothing is confirmed until a strict setter succeeds, even
+    // though the thread exists on disk.
+    assert!(!current(&id).0.shell_network, "bootstrap must deny");
+
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(
+        current(&id).0.shell_network,
+        "a successful strict write confirms host authority"
+    );
+
+    // Now make the write fail, by removing the thread the patch reads back.
+    fs::remove_file(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap();
+    assert!(
+        set_thread_conversation_capabilities(
+            app.handle().clone(),
+            id.clone(),
+            capability_grant(true)
+        )
+        .await
+        .is_err(),
+        "the write must fail once the thread metadata is gone"
+    );
+    assert!(
+        !current(&id).0.shell_network,
+        "a failed write narrowed first and must never restore the confirmation"
+    );
+}
+
+/// An explicit revocation narrows the host mirror, and a later recreated id
+/// cannot inherit the old confirmation.
+#[tokio::test]
+async fn revoking_capabilities_narrows_the_host_mirror() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("revoke"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network);
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(false))
+        .await
+        .unwrap();
+    let (grant, _) = current(&id);
+    assert!(!grant.shell_network && !grant.memory_write, "revoked");
+
+    tauri_plugin_agent_tools::forget_thread_consent(&id).await;
+    assert_eq!(
+        current(&id).1,
+        0,
+        "the delete boundary forgets, so a recreated id starts unconfirmed"
+    );
+}
+
+/// Deleting a thread must narrow on the ATTEMPT, so a delete that fails
+/// part-way cannot leave the thread confirmed with its monitors still polling.
+#[tokio::test]
+async fn a_failed_delete_still_denies_the_thread() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("del-fail"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "granted before the delete");
+
+    // Make the removal fail: replace the thread directory with a file, which
+    // `remove_dir_all` refuses.
+    let dir = get_thread_dir(&data_dir, &id).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+    fs::write(&dir, b"not a directory").unwrap();
+    assert!(
+        delete_thread(app.handle().clone(), id.clone()).await.is_err(),
+        "the delete must fail once the directory is not a directory"
+    );
+    assert!(
+        !current(&id).0.shell_network,
+        "a failed delete narrowed on the attempt and must not stay confirmed"
+    );
+}
+
+/// A successful delete forgets the thread, so the same id created again
+/// cannot inherit the earlier confirmation.
+#[tokio::test]
+async fn a_recreated_thread_id_cannot_inherit_consent() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("del-reuse"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network);
+
+    delete_thread(app.handle().clone(), id.clone()).await.unwrap();
+    assert_eq!(current(&id).1, 0, "a deleted thread is forgotten entirely");
+
+    // Recreate with the SAME id. Creation strips capabilities, and the mirror
+    // has no entry, so both halves of the intersection deny.
+    let mut seed = create_test_thread("del-reuse-again");
+    seed["id"] = json!(id.clone());
+    create_thread(app.handle().clone(), seed).await.unwrap();
+    let (grant, generation) = current(&id);
+    assert!(
+        !grant.shell_network && !grant.memory_write && grant.folder_scope.is_none(),
+        "a recreated id must start denied"
+    );
+    assert_eq!(generation, 0, "and unconfirmed");
+}
+
+/// Rolling back a created thread is a delete: the attempt revokes, success
+/// forgets, and the shells the thread started are cancelled, so a grant saved
+/// between creation and refusal cannot outlive the conversation.
+#[tokio::test]
+async fn a_rolled_back_thread_loses_consent_and_its_shells() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("rollback-consent"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "granted before the rollback");
+    #[cfg(unix)]
+    let mut child = tauri_plugin_agent_tools::tools::proc::spawn(
+        tauri_plugin_agent_tools::tools::proc::shell(),
+        "sleep 30",
+        &data_dir,
+        None,
+        tauri_plugin_agent_tools::tools::proc::ShellEnv::default(),
+        Some(&id),
+    )
+    .await
+    .unwrap();
+
+    rollback_created_thread(app.handle().clone(), id.clone(), created.clone())
+        .await
+        .unwrap();
+
+    assert!(!get_thread_dir(&data_dir, &id).unwrap().exists());
+    let (grant, generation) = current(&id);
+    assert!(!grant.shell_network && !grant.memory_write, "rollback revokes");
+    assert_eq!(generation, 0, "and forgets, exactly like delete");
+    #[cfg(unix)]
+    {
+        let status = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait())
+            .await
+            .expect("the rollback must kill the thread's running shells")
+            .unwrap();
+        assert!(!status.success(), "killed, not run to completion");
+    }
+
+    // Recreate with the SAME id: nothing is inherited.
+    let mut seed = create_test_thread("rollback-consent-again");
+    seed["id"] = json!(id.clone());
+    create_thread(app.handle().clone(), seed).await.unwrap();
+    let (grant, generation) = current(&id);
+    assert!(!grant.shell_network && grant.folder_scope.is_none());
+    assert_eq!(generation, 0);
+}
+
+/// A rollback REFUSED by the receipt check keeps the conversation, so it must
+/// keep its consent and monitors too: refusal is not a delete.
+#[tokio::test]
+async fn a_refused_rollback_keeps_consent() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, _data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("rollback-refused"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    let mut receipt = created.clone();
+    receipt["title"] = json!("tampered");
+    assert!(
+        rollback_created_thread(app.handle().clone(), id.clone(), receipt)
+            .await
+            .is_err(),
+        "a mismatched receipt must refuse"
+    );
+    assert!(
+        current(&id).0.shell_network,
+        "a refused rollback keeps the thread's consent"
+    );
+}
+
+/// A rollback whose removal FAILS must leave the thread denied: the teardown
+/// narrows on the attempt, like `delete_thread`, and never restores. The
+/// failure is forced through a per-thread test seam rather than directory
+/// permissions, which a suite running as root would silently ignore.
+#[tokio::test]
+async fn a_failed_rollback_still_denies_the_thread() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("rollback-fail"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    *ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap() = Some(id.clone());
+    let refused = rollback_created_thread(app.handle().clone(), id.clone(), created.clone()).await;
+    *ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap() = None;
+    assert!(refused.is_err(), "the seam must have failed the removal");
+    assert!(
+        get_thread_dir(&data_dir, &id).unwrap().exists(),
+        "the seam fails before anything is removed"
+    );
+    let (grant, generation) = current(&id);
+    assert!(!grant.shell_network, "a failed rollback narrowed on the attempt");
+    assert_ne!(generation, 0, "narrowed, not forgotten: the thread still exists");
+}
+
+/// Deleting a thread kills the shells running under its raw process bucket,
+/// not only its monitor poll children.
+#[cfg(unix)]
+#[tokio::test]
+async fn deleting_a_thread_kills_its_running_shells() {
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("del-shells"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    let mut child = tauri_plugin_agent_tools::tools::proc::spawn(
+        tauri_plugin_agent_tools::tools::proc::shell(),
+        "sleep 30",
+        &data_dir,
+        None,
+        tauri_plugin_agent_tools::tools::proc::ShellEnv::default(),
+        Some(&id),
+    )
+    .await
+    .unwrap();
+    delete_thread(app.handle().clone(), id.clone())
+        .await
+        .unwrap();
+    let status = tokio::time::timeout(std::time::Duration::from_secs(10), child.wait())
+        .await
+        .expect("the delete must kill the thread's running shells")
+        .unwrap();
+    assert!(!status.success(), "killed, not run to completion");
+}
+
+/// Bot finding on d9508e1b3: the setter must never report success when its
+/// confirmation was dropped. `stop_all_thread_monitors` takes no per-thread
+/// lock, so its barrier bump can land between the setter's narrow and its
+/// confirm; the grant is then on disk but host-denied, and an Ok would have
+/// the UI show it active while every poll and one-shot is refused.
+#[tokio::test]
+async fn a_dropped_confirmation_fails_the_setter_instead_of_faking_success() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("dropped-confirm"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    *SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap() = Some(id.clone());
+    let result =
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+            .await;
+    *SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap() = None;
+    let message = result.expect_err("a dropped confirmation must surface, not read as saved");
+    assert!(message.contains("prevented its activation"), "{message}");
+    assert!(
+        !current(&id).0.shell_network,
+        "the host stays denied -- fail closed"
+    );
+    // The written grant is on disk (reachable via the reconfirm flow), never
+    // silently active.
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"]["shellNetwork"],
+        json!(true)
+    );
+    // Positive control: without the interleaving, the identical call confirms
+    // and succeeds, so the error above is the seam's doing and nothing else.
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "retry activates the grant");
+}
+
+/// Bot question on ddd2d07df: a grant that passes the lexical check but can
+/// never pass `ThreadCapabilities::validate()` (a Windows drive path is
+/// lexically fine everywhere but `Path::is_absolute` only on Windows) must be
+/// rejected UP FRONT -- not narrowed, not persisted, and never misreported as
+/// a concurrency race whose retry can never succeed.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unconfirmable_grant_is_rejected_before_anything_changes() {
+    use tauri_plugin_agent_tools::thread_capabilities::current;
+    let (app, data_dir) = mock_app_with_temp_data_dir();
+    let created = create_thread(app.handle().clone(), create_test_thread("unconfirmable"))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap().to_string();
+    set_thread_conversation_capabilities(app.handle().clone(), id.clone(), capability_grant(true))
+        .await
+        .unwrap();
+    assert!(current(&id).0.shell_network, "a real grant is live");
+
+    let unconfirmable = json!({
+        "version": 1,
+        "folderScope": { "path": "C:\\Users\\someone\\project", "access": "read" },
+        "shellNetwork": false,
+        "memoryWrite": false
+    });
+    let message =
+        set_thread_conversation_capabilities(app.handle().clone(), id.clone(), unconfirmable)
+            .await
+            .expect_err("an unconfirmable grant must be rejected");
+    assert!(
+        !message.contains("concurrent change"),
+        "must not be misreported as a race: {message}"
+    );
+    assert!(
+        current(&id).0.shell_network,
+        "rejected input must not narrow the live confirmation"
+    );
+    let stored: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(get_thread_metadata_path(&data_dir, &id).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored["metadata"]["conversationCapabilities"]["shellNetwork"],
+        json!(true),
+        "rejected input must not be persisted"
+    );
+}
+
 #[tokio::test]
 async fn conversation_capabilities_stale_writer_cannot_restore_revocation() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
@@ -1485,4 +1844,106 @@ async fn conversation_capabilities_native_setter_grants_after_forged_creation_is
     )
     .unwrap();
     assert_eq!(stored, expected);
+}
+
+// ---- ACL invoke harness ----------------------------------------------------
+//
+// Drives the thread-monitor commands through Tauri's real IPC entry point
+// against the PRODUCTION resolved ACL: `tauri::generate_context!()` embeds the
+// shipped capabilities (window "main" holds `agent-tools:default`), so a pass
+// here is the ACL's own resolution of `plugin:agent-tools|<command>` plus
+// argument deserialization and dispatch -- what the plugin's string-level
+// guard tests cannot see. It is deliberately NOT native UI acceptance.
+
+fn acl_invoke(
+    webview: &tauri::WebviewWindow<MockRuntime>,
+    command: &str,
+    body: serde_json::Value,
+) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+    tauri::test::get_ipc_response(
+        webview,
+        tauri::webview::InvokeRequest {
+            cmd: command.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: if cfg!(any(windows, target_os = "android")) {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .parse()
+            .unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        },
+    )
+}
+
+#[test]
+fn thread_monitor_commands_pass_the_real_acl_and_dispatch() {
+    let app = tauri::test::mock_builder()
+        .plugin(tauri_plugin_agent_tools::init())
+        .build(tauri::generate_context!())
+        .unwrap();
+    let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let id = "acl-harness";
+
+    // Every new command must resolve through the production ACL for the real
+    // "main" window and dispatch into the plugin, camelCase arguments and all.
+    let list = acl_invoke(&main, "plugin:agent-tools|list_thread_monitors", json!({"threadId": id}))
+        .unwrap_or_else(|e| panic!("list_thread_monitors was refused: {e}"));
+    assert_eq!(list.deserialize::<String>().unwrap(), "No active monitors.");
+
+    let stop = acl_invoke(
+        &main,
+        "plugin:agent-tools|stop_thread_monitor",
+        json!({"threadId": id, "monitorId": "mon-404"}),
+    )
+    .unwrap_or_else(|e| panic!("stop_thread_monitor was refused: {e}"));
+    assert!(stop
+        .deserialize::<String>()
+        .unwrap()
+        .contains("unknown or already-stopped"));
+
+    acl_invoke(&main, "plugin:agent-tools|stop_all_thread_monitors", json!({"threadId": id}))
+        .unwrap_or_else(|e| panic!("stop_all_thread_monitors was refused: {e}"));
+    acl_invoke(&main, "plugin:agent-tools|revoke_thread_capabilities", json!({"threadId": id}))
+        .unwrap_or_else(|e| panic!("revoke_thread_capabilities was refused: {e}"));
+
+    // `start_thread_monitor` carries an IPC channel and resolves host consent;
+    // whatever it answers in this headless harness must be the COMMAND's own
+    // answer (here: an authorization refusal), never an ACL rejection.
+    let started = acl_invoke(
+        &main,
+        "plugin:agent-tools|start_thread_monitor",
+        json!({"threadId": id, "args": {"op": "start", "script": "true"}, "onUpdate": "__CHANNEL__:1"}),
+    );
+    let refusal = started.expect_err(
+        "start_thread_monitor must refuse in this headless harness: no consent \
+         was ever granted for this thread",
+    );
+    let text = refusal.to_string();
+    assert!(
+        !text.contains("not allowed"),
+        "start_thread_monitor never reached the plugin: {text}"
+    );
+    assert!(
+        text.contains("Thread consent resolver")
+            || text.contains("no longer granted")
+            || text.contains("no OS sandbox"),
+        "the refusal must be the native consent path's own answer, got: {text}"
+    );
+
+    // Negative control: the same invoke from a window OUTSIDE the capability
+    // is refused, so the passes above are the ACL's doing, not a permissive
+    // mock. Without this the harness would prove nothing.
+    let outsider = tauri::WebviewWindowBuilder::new(&app, "outsider", Default::default())
+        .build()
+        .unwrap();
+    let denied = acl_invoke(&outsider, "plugin:agent-tools|list_thread_monitors", json!({"threadId": id}))
+        .expect_err("a window outside the capability must be refused");
+    assert!(denied.to_string().contains("not allowed"), "{denied}");
 }

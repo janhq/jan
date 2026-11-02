@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useThreads } from '../useThreads'
 import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 
-const { persist, updateThread, deleteNative, toastError } = vi.hoisted(() => ({
-  persist: vi.fn(),
-  updateThread: vi.fn(),
-  deleteNative: vi.fn(),
-  toastError: vi.fn(),
-}))
+const { persist, updateThread, deleteNative, toastError, revokeHost, stopAllMonitors, calls } =
+  vi.hoisted(() => {
+    const calls: string[] = []
+    return {
+      calls,
+      persist: vi.fn(),
+      updateThread: vi.fn(),
+      deleteNative: vi.fn(),
+      toastError: vi.fn(),
+      revokeHost: vi.fn(),
+      stopAllMonitors: vi.fn(),
+    }
+  })
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: deleteNative }) }),
@@ -17,6 +24,8 @@ vi.mock('@/lib/agentTools', () => ({
   cleanupThreadWorkspace: vi.fn(),
   cancelAgentThreadBash: vi.fn(),
   stopAgentSessionMonitors: vi.fn(),
+  revokeThreadCapabilitiesInHost: revokeHost,
+  stopAllThreadAgentMonitors: stopAllMonitors,
 }))
 vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: { getState: () => ({ removeThread: vi.fn() }) } }))
 vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ removeSession: vi.fn() }) } }))
@@ -59,13 +68,309 @@ const save = (value: unknown, id = 'chat') =>
 describe('useThreads conversation capabilities', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    persist.mockResolvedValue(undefined)
     deleteNative.mockResolvedValue(undefined)
+    calls.length = 0
+    revokeHost.mockImplementation(async (id: string) => {
+      calls.push(`narrow:${id}`)
+    })
+    persist.mockImplementation(async (id: string) => {
+      calls.push(`persist:${id}`)
+    })
+    stopAllMonitors.mockImplementation(async (id: string) => {
+      calls.push(`stopAll:${id}`)
+    })
     useThreads.setState({
       threads: { chat: thread() },
       currentThreadId: 'chat',
       searchIndex: null,
     })
+  })
+
+  // The native monitor loop cannot read this store; it reads host-confirmed
+  // consent. So a revocation has to reach the host before anything is written,
+  // and before the save queue, or a background poll keeps running under the
+  // grant being replaced.
+  // The host never acknowledged the narrow: NEITHER narrow path ran, so
+  // background polls may still hold the old grant. The write must reject with
+  // the structured error (so the surface can say so truthfully), attempt a
+  // plain stop, persist nothing, and keep the denied overlay -- never restore.
+  it('a failed host ACK rejects structurally, attempts a stop, and persists nothing', async () => {
+    revokeHost.mockRejectedValueOnce(new Error('ipc bridge down'))
+    await expect(save(granted)).rejects.toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+      // Granting from default: nothing existed for background work to keep.
+      backgroundMayPersist: false,
+    })
+    expect(calls).toEqual(['stopAll:chat'])
+    expect(useThreads.getState().getConversationCapabilities('chat').shellNetwork).toBe(false)
+    expect(
+      useThreads.getState().threads.chat.metadata?.conversationCapabilities
+    ).toEqual({ version: 1, folderScope: null, shellNetwork: false, memoryWrite: false })
+  })
+
+  // The first failed revoke erases the overlay and the optimistic metadata --
+  // the exact state a retry would read -- so the prior-grant fact must be
+  // sticky until the host acknowledges a save end to end.
+  it('host uncertainty is sticky across retries and cleared by an acknowledged save', async () => {
+    const id = 'sticky'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    await save(granted, id)
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    // Retry from the already-erased state: still uncertain.
+    revokeHost.mockRejectedValueOnce(new Error('still down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    // An acknowledged save resolves it...
+    await save(null, id)
+    // ...so a later failure with nothing granted is plain again.
+    revokeHost.mockRejectedValueOnce(new Error('down again'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+  })
+
+  // The bot-found reorder: grant A awaits its own host narrow while revoke B
+  // starts and narrows first. A must never reach the strict setter -- the
+  // setter would re-confirm A's grant (narrow + write + confirm of A's value),
+  // leaving host and disk authorizing it even though B already denied, and
+  // indefinitely so if B then fails before its own persist.
+  it('a superseded grant can never reach the strict setter', async () => {
+    const narrowA = deferred()
+    const narrowB = deferred()
+    revokeHost
+      .mockImplementationOnce(async () => {
+        await narrowA.promise
+      })
+      .mockImplementationOnce(async () => {
+        await narrowB.promise
+      })
+    const saveA = save(granted)
+    const saveB = save(null)
+    // B's narrow reaches the host first; then A's resolves.
+    narrowB.resolve()
+    narrowA.resolve()
+    // B's persist fails AFTER A was superseded -- the dangerous interleaving.
+    persist.mockRejectedValueOnce(new Error('disk unavailable'))
+    await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
+    await expect(saveB).rejects.toThrow('disk unavailable')
+    // The strict setter saw exactly one request: B's denial. A's grant never
+    // reached it, so neither the host mirror nor the disk ever confirmed A.
+    expect(persist).toHaveBeenCalledExactlyOnceWith(
+      'chat',
+      expect.objectContaining({ shellNetwork: false, memoryWrite: false, folderScope: null })
+    )
+  })
+
+  // An acknowledged narrow proves the host denied, whatever the persist does:
+  // uncertainty must clear then, not only after a fully successful save.
+  it('an acknowledged narrow clears uncertainty even when the persist then fails', async () => {
+    const id = 'ack-clears'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    await save(granted, id)
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(null, id)).rejects.toMatchObject({ backgroundMayPersist: true })
+    // Retry: the narrow is acknowledged, then the persist fails.
+    persist.mockRejectedValueOnce(new Error('disk unavailable'))
+    await expect(save(null, id)).rejects.toThrow('disk unavailable')
+    // The host is proven denied, so a later ACK failure with nothing granted
+    // is plain -- warning here would be the over-warn the bot flagged.
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+  })
+
+  // Reviewer residual: a revoke superseding an IN-FLIGHT grant reads only the
+  // grant's optimistic deny, yet that grant's persist may land -- and
+  // host-confirm -- after it. If the revoke then fails, the user-approved
+  // grant can be live while a plain copy claims everything is off.
+  it('a revoke superseding an in-flight grant stays uncertain when it fails', async () => {
+    const id = 'inflight'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveA = save(granted, id)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    // B revokes while A's persist is in flight; B's narrow fails. B now also
+    // drains A before settling, so A must be released before awaiting B.
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    const saveB = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
+    pendingPersist.resolve()
+    await saveB
+    // A lands host-side but is superseded, so its overlay never applies.
+    await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
+  })
+
+  // The in-flight tracking must not over-warn: a request that provably never
+  // reached the strict setter cannot have been confirmed, so a repeated grant
+  // attempt from default stays plain.
+  it('a repeated grant attempt after an ACK failure stays plain', async () => {
+    const id = 'replain'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+    revokeHost.mockRejectedValueOnce(new Error('bridge down'))
+    await expect(save(granted, id)).rejects.toMatchObject({ backgroundMayPersist: false })
+  })
+
+  // The authority-ordering proof the coordinator mandated, frontend half: the
+  // authoritative narrow must fire only after an in-flight predecessor has
+  // settled (so no request of ours can confirm after it) and before our own
+  // persist. The native half -- a narrow is never restored by a failed or
+  // absent write -- is mutation-proven in the plugin suite. Together: A
+  // in-flight setter + B ack + A confirm + B persist failure => host DENIED.
+  it('a revoke re-narrows the host after an in-flight predecessor settles, before persisting', async () => {
+    const id = 'renarrow'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveA = save(granted, id)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    calls.length = 0
+    // B revokes while A's persist is in flight; B's own persist will fail.
+    persist.mockRejectedValueOnce(new Error('disk unavailable'))
+    const saveB = expect(save(null, id)).rejects.toThrow('disk unavailable')
+    // Immediate best-effort narrow only -- B must NOT persist or re-narrow
+    // while A can still confirm.
+    await vi.waitFor(() => expect(calls).toEqual([`narrow:${id}`]))
+    // A settles (host-side it confirmed its grant); B must now narrow AGAIN
+    // before its own (failing) persist.
+    pendingPersist.resolve()
+    await expect(saveA).rejects.toThrow('Conversation changed while saving permissions')
+    await saveB
+    expect(calls).toEqual([`narrow:${id}`, `narrow:${id}`])
+    expect(persist).toHaveBeenCalledTimes(2)
+  })
+
+  // Reviewer chain-break: a revoke that fails at its FIRST narrow must not
+  // settle while its predecessor's native call is still in flight -- a
+  // successor reads "predecessor settled" (or finds no entry at all) as "no
+  // older native call of ours can still confirm", and re-narrows on that
+  // premise. Without the drain, Z's late confirm postdates B's authoritative
+  // ack and the user-revoked grant is host-live again.
+  it('an early-failing revoke still drains its in-flight predecessor before settling', async () => {
+    const id = 'chain'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveZ = expect(save(granted, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    let aSettled = false
+    const saveA = save(null, id).catch((error) => {
+      aSettled = true
+      return error
+    })
+    // Give A every chance to (wrongly) settle while Z is still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(aSettled).toBe(false)
+    pendingPersist.resolve()
+    const errA = await saveA
+    expect(errA).toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+      backgroundMayPersist: true,
+    })
+    await saveZ
+  })
+
+  // Verifier coverage gap: the sticky delete must sit AFTER the authoritative
+  // (post-predecessor) narrow. A revoke's best-effort first ack must not clear
+  // uncertainty while an elevated predecessor is still in flight -- a third
+  // request racing into that window reads the sticky set for its own warning.
+  it('uncertainty survives the best-effort ack until the authoritative narrow', async () => {
+    const id = 'window'
+    useThreads.setState((state) => ({
+      threads: { ...state.threads, [id]: { ...state.threads.chat, id } },
+    }))
+    // Z: a grant whose persist hangs in flight.
+    const pendingPersist = deferred()
+    persist.mockReturnValueOnce(pendingPersist.promise)
+    const saveZ = expect(save(granted, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
+    // A: revoke whose narrow fails -> sticky set (after its stopAll await)
+    // while Z is in flight. Wait for the stopAll marker plus a macrotask so
+    // the sticky add has provably executed before B's ack can clear anything.
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    const saveA = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
+    await vi.waitFor(() => expect(calls).toContain(`stopAll:${id}`))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // B: revoke whose best-effort first narrow acks ONLY NOW -- strictly
+    // after A's sticky add -- then waits on A/Z. An early (pre-predecessor)
+    // delete here would clear a REAL sticky entry.
+    const bNarrow = deferred()
+    revokeHost.mockImplementationOnce(() => bNarrow.promise)
+    const saveB = expect(save(null, id)).rejects.toThrow(
+      'Conversation changed while saving permissions'
+    )
+    bNarrow.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // C: races into the window; its narrow fails. It must still warn -- the
+    // sticky set may only clear on an ack that postdates every confirm, and
+    // B has not reached its authoritative narrow (it is draining A and Z).
+    revokeHost.mockRejectedValueOnce(new Error('bridge blip'))
+    const saveC = expect(save(null, id)).rejects.toMatchObject({
+      backgroundMayPersist: true,
+    })
+    pendingPersist.resolve()
+    await Promise.all([saveZ, saveA, saveB, saveC])
+  })
+
+  it('narrows the host before it persists', async () => {
+    await save(granted)
+    expect(calls).toEqual(['narrow:chat', 'persist:chat'])
+  })
+
+  it('narrows the host without waiting for an earlier queued save', async () => {
+    const pending = deferred()
+    persist.mockImplementationOnce(async () => {
+      calls.push('persist:first')
+      await pending.promise
+    })
+    const first = save(granted)
+    await Promise.resolve()
+    // Revoke while the first write is still in flight.
+    const second = save(undefined)
+    await vi.waitFor(() => expect(calls).toContain('narrow:chat'))
+    expect(
+      calls.filter((c) => c.startsWith('narrow')).length
+    ).toBeGreaterThanOrEqual(2)
+    // The host was narrowed although the first persist has not resolved.
+    expect(calls).not.toContain('persist:chat')
+    pending.resolve()
+    // The revoke superseded the in-flight grant, so the grant must refuse to
+    // report success; only the revoke is allowed to complete.
+    await expect(first).rejects.toThrow('Conversation changed')
+    await second
+  })
+
+  it('does not persist or report a revocation the host refused', async () => {
+    revokeHost.mockRejectedValueOnce(new Error('host unreachable'))
+    // The raw transport error is wrapped: the surface needs to distinguish
+    // "the host never acknowledged" from an ordinary failed save.
+    await expect(save(granted)).rejects.toMatchObject({
+      name: 'HostRevokeUnconfirmedError',
+      hostCause: expect.objectContaining({ message: 'host unreachable' }),
+    })
+    expect(persist).not.toHaveBeenCalled()
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(
+      resolveConversationCapabilities(undefined)
+    )
   })
 
   it('does not confirm persisted elevations on bootstrap or reload', async () => {
@@ -150,15 +455,20 @@ describe('useThreads conversation capabilities', () => {
     await expect(save(undefined)).resolves.toBeUndefined()
   })
 
-  it('serializes same-thread saves and preserves metadata added by a preceding save', async () => {
+  it('drops a superseded save before it persists; only the newest request lands', async () => {
     const pending = deferred()
     persist.mockReturnValueOnce(pending.promise)
     const first = expect(save(granted)).rejects.toThrow('Conversation changed')
     const second = save(null)
-    expect(persist).toHaveBeenCalledTimes(1)
+    // The superseded grant must never reach the strict setter: persisting it
+    // would have the native side re-confirm a value the user already
+    // replaced. Only the newest request's value may land.
     pending.resolve()
     await Promise.all([first, second])
-    expect(persist).toHaveBeenCalledTimes(2)
+    expect(persist).toHaveBeenCalledExactlyOnceWith(
+      'chat',
+      resolveConversationCapabilities(null)
+    )
     expect(useThreads.getState().threads.chat.metadata?.conversationCapabilities)
       .toEqual(resolveConversationCapabilities(null))
   })
@@ -190,10 +500,13 @@ describe('useThreads conversation capabilities', () => {
       .toEqual(granted)
   })
 
-  it('does not let a failed queued save block its successor', async () => {
+  it('does not let a failed save block its successor', async () => {
     const pending = deferred()
     persist.mockReturnValueOnce(pending.promise)
     const first = expect(save(undefined)).rejects.toThrow('disk failure')
+    // Let the first request reach its persist before the successor starts,
+    // so the failure exercised is the write's own, not a supersession.
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
     const second = save(null)
     pending.reject(new Error('disk failure'))
     await first
@@ -229,6 +542,9 @@ describe('useThreads conversation capabilities', () => {
     const pending = deferred()
     persist.mockReturnValueOnce(pending.promise)
     const first = expect(save(undefined)).rejects.toThrow('Cowork')
+    // Let the first write get past its host narrowing and into persistence, so
+    // the second is genuinely queued behind an in-flight write.
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledTimes(1))
     const second = expect(save(null)).rejects.toThrow('Cowork')
     useThreads.setState({ threads: { chat: thread('chat', { mode: 'cowork' }) } })
     pending.resolve()

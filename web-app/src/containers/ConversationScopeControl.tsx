@@ -5,6 +5,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { ConversationCapabilitiesConsent } from './ConversationCapabilitiesConsent'
 import {
   defaultConversationCapabilities,
+  HostRevokeUnconfirmedError,
   resolveConversationCapabilities,
   type ConversationCapabilitiesV1,
 } from '@/lib/conversationCapabilities'
@@ -98,10 +99,24 @@ export function ConversationScopeControl({ threadId, pickFolder, disabled = fals
     setError('')
     try {
       await useThreads.getState().setConversationCapabilities(threadId, next)
-    } catch {
+    } catch (error) {
       if (applySeq.current === seq) {
+        // Three different truths. A failed SAVE narrowed the host first, so
+        // elevated access really is off. A failed host ACK with a prior
+        // grant means neither narrow path ran: background agent tasks may
+        // still hold that access, and claiming "off" would be false. A
+        // failed host ACK with NO prior grant left nothing running to warn
+        // about -- the plain save-failure copy is the whole truth. The
+        // prior-grant fact rides on the error because the setter computes it
+        // before its own deny erases the store, and keeps it sticky across
+        // retries -- this component re-reading the store here would get the
+        // already-erased state and degrade the warning on the second failure.
         setError(
-          'Permission change could not be saved. Elevated access stays off until a save succeeds.'
+          error instanceof HostRevokeUnconfirmedError && error.backgroundMayPersist
+            ? 'The app did not confirm this permission change. Background agent tasks may ' +
+              'still have the previous access; stopping them was attempted but is not ' +
+              'confirmed. Retry, or quit Jan to guarantee they stop.'
+            : 'Permission change could not be saved. Elevated access stays off until a save succeeds.'
         )
       }
     } finally {

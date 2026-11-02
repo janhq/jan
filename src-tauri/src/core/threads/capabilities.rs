@@ -42,7 +42,9 @@ pub fn validate_conversation_capabilities(value: &Value) -> Result<(), String> {
     let valid = exact_keys(
         value,
         &["version", "folderScope", "shellNetwork", "memoryWrite"],
-    ) && value["version"].as_f64() == Some(1.0)
+    // Integer-only: `ThreadCapabilities::version` is a `u8`, so accepting a
+    // float `1.0` here would write a record that later fails to deserialize.
+    ) && value["version"].as_u64() == Some(1)
         && value["shellNetwork"].is_boolean()
         && value["memoryWrite"].is_boolean()
         && (value["folderScope"].is_null() || {

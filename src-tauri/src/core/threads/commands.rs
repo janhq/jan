@@ -241,8 +241,62 @@ pub async fn set_thread_conversation_capabilities<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
-    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)
+    // Narrow the host's in-process confirmation BEFORE the write, and for
+    // every caller rather than only the frontend: a write that then fails --
+    // or is lost -- must never leave an earlier confirmation live. The input
+    // validation above runs first: a request rejected there writes nothing
+    // and narrows nothing, and a user's revocation does not depend on this
+    // setter accepting it -- the frontend narrows the host pre-queue via
+    // `revoke_thread_capabilities` before this command is ever awaited.
+    // This also stops the thread's monitors and reaps their poll children, so
+    // nothing keeps running under the authority being replaced.
+    // Deserialize and host-validate BEFORE narrowing or writing: a grant that
+    // cannot pass `ThreadCapabilities::validate()` could never be confirmed,
+    // so writing it first would persist a dead value, revoke the live one,
+    // and misreport the dropped confirm as a concurrency race whose retry can
+    // never succeed. The lexical check above is necessary but not sufficient:
+    // a Windows drive path is lexically valid everywhere, while
+    // `Path::is_absolute` accepts it only on Windows.
+    let grant: tauri_plugin_agent_tools::thread_capabilities::ThreadCapabilities =
+        serde_json::from_value(value.clone())
+            .map_err(|e| format!("Invalid version 1 conversation capabilities: {e}"))?;
+    grant.validate()?;
+    let token = tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    super::capabilities::patch_conversation_capabilities(&data_folder, &thread_id, value)?;
+    // Test seam for the reviewed interleaving: `stop_all_thread_monitors`
+    // takes no per-thread lock, so its barrier bump can land between this
+    // setter's narrow and its confirm in production. The seam reproduces
+    // exactly that, deterministically.
+    #[cfg(test)]
+    if SETTER_BUMP_BEFORE_CONFIRM.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
+        tauri_plugin_agent_tools::thread_capabilities::bump_generation(&thread_id);
+    }
+    // Only a write that actually succeeded confirms, and only when no newer
+    // narrow intervened. A skipped confirm leaves the thread denied, which the
+    // per-poll intersection enforces regardless of what is on disk -- so a
+    // dropped confirmation MUST surface as an error, never as success: the
+    // grant is on disk but the host denies it, and an Ok here would have the
+    // UI show it active. The error leaves the frontend overlay denied
+    // (consistent with the host) and the on-disk value reachable through the
+    // reconfirm flow; a retry simply runs the setter again. The grant was
+    // validated before the write, so this false really is concurrency.
+    if !tauri_plugin_agent_tools::confirm_thread_consent(&thread_id, grant, token) {
+        return Err(
+            "The permission change was written but a concurrent change prevented its \
+             activation; elevated access stays off. Try again."
+                .into(),
+        );
+    }
+    Ok(())
 }
+
+/// Test seam: forces a `stop_all_thread_monitors`-style barrier bump between
+/// the strict setter's narrow and its confirm (per-thread id, so parallel
+/// tests never collide). stop-all takes no per-thread lock, which is exactly
+/// why this interleaving is reachable in production.
+#[cfg(test)]
+pub(super) static SETTER_BUMP_BEFORE_CONFIRM: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 
 /// Roll back only an unchanged, empty desktop creation. The expected raw
 /// creation response is a compare-and-delete receipt, not arbitrary authority
@@ -292,8 +346,31 @@ pub async fn rollback_created_thread<R: Runtime>(
         }
         return Err("Created chat contains data; refusing rollback".into());
     }
-    fs::remove_dir_all(directory).map_err(|e| e.to_string())
+    // Past every refusal, this IS a delete, so it tears down exactly as
+    // `delete_thread` does: revoke on the ATTEMPT (a removal that fails must
+    // not leave the thread confirmed with monitors polling), cancel the
+    // shells the thread itself started, and forget only once the directory is
+    // really gone so the id cannot be recreated into the old confirmation.
+    // A rollback refused above keeps the conversation -- and its consent.
+    tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
+    // Test seam below: proving "a failed removal leaves the thread denied"
+    // needs the removal to fail on demand, and a permissions-based failure is
+    // not deterministic -- a suite running as root ignores directory modes.
+    #[cfg(test)]
+    if ROLLBACK_REMOVAL_FAILS_FOR.lock().unwrap().as_deref() == Some(thread_id.as_str()) {
+        return Err("forced removal failure (test seam)".into());
+    }
+    fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
+    tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
+    Ok(())
 }
+
+/// Scoped to one thread id so the other rollback tests, running in parallel
+/// in the same process, never see a forced failure.
+#[cfg(test)]
+pub(super) static ROLLBACK_REMOVAL_FAILS_FOR: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 
 /// Deletes a thread and all its associated files by removing its directory.
 #[tauri::command]
@@ -310,10 +387,26 @@ pub async fn delete_thread<R: Runtime>(
     let data_folder = get_jan_data_folder_path(app_handle);
     let lock = get_lock_for_thread(&thread_id).await;
     let _guard = lock.lock().await;
+    // `get_thread_dir` validates the id, so this runs before anything is
+    // keyed on it.
     let thread_dir = get_thread_dir(&data_folder, &thread_id)?;
+    // Narrow on the delete ATTEMPT, before the removal, for the same reason
+    // the consent setter narrows before it writes: a delete that then fails
+    // must not leave this thread confirmed with its monitors still polling.
+    // Scoped to this thread id alone; no other thread is touched.
+    tauri_plugin_agent_tools::revoke_thread_consent(&thread_id).await;
+    // The conversation itself is going away, so the shells it started go with
+    // it: the raw bucket is disjoint from the monitor bucket the revoke reaps.
+    tauri_plugin_agent_tools::cancel_thread_shells(&thread_id);
     if thread_dir.exists() {
         fs::remove_dir_all(thread_dir).map_err(|error| error.to_string())?;
     }
+    // Only once the thread is really gone, forget it entirely, so an id
+    // supplied again at creation starts with no entry at all rather than a
+    // narrowed one. Deleting removes the stored half of the consent, so a
+    // confirmation left behind could pair with an out-of-band restore of the
+    // directory (backup, folder sync) and need no fresh user consent.
+    tauri_plugin_agent_tools::forget_thread_consent(&thread_id).await;
     Ok(())
 }
 
