@@ -83,8 +83,8 @@ const effectiveCapabilities = new Map<string, ConversationCapabilitiesV1>()
  * still be live there. Sticky on purpose: the setter's own synchronous deny
  * erases the store state a RETRY would otherwise read, so without this a
  * second failure would look like "nothing was granted" and surfaces would
- * drop the background warning. Cleared only by a save the host acknowledged
- * end to end. */
+ * drop the background warning. Cleared the moment a narrow IS acknowledged
+ * -- the host is provably denied from then on, whatever the persist does. */
 const hostUncertainGrants = new Set<string>()
 
 // Helper function to clean up vector DB collection for a thread
@@ -805,8 +805,22 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         if (priorGrant) hostUncertainGrants.add(threadId)
         throw new HostRevokeUnconfirmedError(threadId, priorGrant, cause)
       }
+      // The host acknowledged the narrow: it is provably denied from here
+      // until something re-confirms, so any earlier unacknowledged revoke is
+      // resolved even if the persist below never runs or fails.
+      hostUncertainGrants.delete(threadId)
       if (previous) await previous.catch(() => {})
       assertChatThread()
+      // A newer request may have superseded this one while the narrow or the
+      // earlier write settled. Checked BEFORE the strict setter runs:
+      // persisting a superseded GRANT would have the native setter re-confirm
+      // it -- narrow, write and confirm of THIS value -- leaving host and disk
+      // authorizing a grant the user has already replaced, live until the
+      // newer request's own setter lands and indefinitely if that request
+      // fails first. The post-persist check below cannot prevent that.
+      if (capabilityRequests.get(threadId) !== request) {
+        throw new Error('Conversation changed while saving permissions')
+      }
       await getServiceHub().threads().setConversationCapabilities(threadId, capabilities)
       assertChatThread()
       if (capabilityRequests.get(threadId) !== request) throw new Error('Conversation changed while saving permissions')
@@ -815,9 +829,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         ...state.threads[threadId],
         metadata: { ...state.threads[threadId].metadata, conversationCapabilities: capabilities },
       } } }))
-      // The host acknowledged this save end to end (narrow + persist), so any
-      // earlier unacknowledged revoke is resolved.
-      hostUncertainGrants.delete(threadId)
     })()
     capabilityWrites.set(threadId, write)
     try {

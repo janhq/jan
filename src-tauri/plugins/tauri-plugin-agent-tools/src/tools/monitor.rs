@@ -1171,49 +1171,59 @@ mod tests {
     }
 
     /// A thread monitor's poll children are owned, so a revocation reaps
-    /// exactly its pids -- by registered id, never by process name.
+    /// exactly its pids -- by registered id, never by process name. Probes
+    /// REAL process liveness by pid: registry membership alone is a
+    /// tautology, because `kill_thread` drains the bucket before it kills
+    /// anything, so `snapshot()` goes empty even if nothing was signalled.
     #[cfg(unix)]
     #[tokio::test]
     async fn thread_monitor_children_are_owned_and_reaped_by_id() {
         let dir = unique_root();
         let id = "tm-owned-children";
         let owner = format!("thread-monitor:{id}");
-        // Unique marker: the registry is process-wide and other tests run
-        // concurrently, so a bare `sleep 30` could match someone else's child.
-        let script = "sleep 30 # tm-owned-children-marker";
+        let pidfile = dir.join("owned-child.pid");
+        // The sleeper is the shell's own child (same process group), so after
+        // the kill it is reparented and reaped by the OS: liveness can be
+        // probed without the zombie ambiguity a direct child would have
+        // (same pattern as the session-abort test).
+        let script = format!("sleep 30 & echo $! > {}; wait", pidfile.display());
         let (ctx, authority) = thread_authority_for(
             id,
             &dir,
             Arc::new(move || Ok(crate::thread_capabilities::generation(id))),
         );
         let set = Arc::new(MonitorSet::new());
-        set.start_owned(spec("watch", script, 30), ctx, Some(authority))
+        set.start_owned(spec("watch", &script, 30), ctx, Some(authority))
             .unwrap();
-        let running = |marker: &str| {
-            crate::tools::proc::snapshot()
-                .into_iter()
-                .any(|s| s.command.contains(marker))
-        };
-        let mut seen = false;
-        for _ in 0..200 {
-            if running(script) {
-                seen = true;
+        let mut pid = None;
+        for _ in 0..400 {
+            if let Some(parsed) = std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                pid = Some(parsed);
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        assert!(seen, "the poll child never registered under its owner");
+        let pid = nix::unistd::Pid::from_raw(pid.expect("the poll child never started"));
+        // Positive control: genuinely alive before the kill, so the probe
+        // below cannot pass vacuously.
+        assert!(
+            nix::sys::signal::kill(pid, None).is_ok(),
+            "the sleeper must be alive before the revocation"
+        );
         crate::tools::proc::kill_thread(&owner);
-        let mut reaped = false;
-        for _ in 0..200 {
-            if !running(script) {
-                reaped = true;
+        let mut dead = false;
+        for _ in 0..500 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                dead = true;
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         set.stop_all();
-        assert!(reaped, "kill_thread did not reap the owned poll child");
+        assert!(dead, "kill_thread did not kill the owned poll child's tree");
     }
 
     // POSIX command text: Windows runs PowerShell.
