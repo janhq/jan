@@ -211,6 +211,28 @@ describe('ConversationScopeControl', () => {
     expect(screen.getByRole('alert')).not.toHaveTextContent('Elevated access stays off')
   })
 
+  it('the background warning survives closing and reopening the panel after a failed revoke', async () => {
+    const id = freshId()
+    useThreads.setState({ threads: { [id]: thread(id) } })
+    await useThreads.getState().setConversationCapabilities(id, elevated)
+    revokeHost.mockRejectedValue(new Error('bridge down'))
+    const first = mount(id)
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('previous access')
+    )
+    // Reopen: a fresh mount has no component state left, and the store was
+    // erased by the failed attempt -- the stickiness must come from the
+    // setter, not from anything this component remembered.
+    first.unmount()
+    mount(id)
+    fireEvent.click(screen.getByLabelText(SHELL_LABEL))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('previous access')
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Elevated access stays off')
+  })
+
   it('offers reconfirmation for a stale elevated snapshot and activates it only via the setter', async () => {
     const id = freshId()
     useThreads.setState({ threads: { [id]: thread(id) } })
