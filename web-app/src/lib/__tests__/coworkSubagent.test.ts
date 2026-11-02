@@ -532,6 +532,7 @@ const baseOpts = (over = {}) => ({
     readOnlyFolder: null,
     bashAvailable: false,
   },
+  mode: vi.fn(() => ({ planMode: false, webSearch: true })),
   dispatch: vi.fn(async () => ({ output: 'ok' })),
   signal: new AbortController().signal,
   events: {
@@ -663,6 +664,105 @@ describe('runSubagent', () => {
       expect.objectContaining({ toolName: 'read' }),
       expect.anything()
     )
+  })
+
+  it.each(['memory', 'task', 'ask', 'todo', 'monitor', 'unknown', 'toString']) (
+    'refuses child %s before the dispatch callback', async (name) => {
+      mockSteps([toolStep('denied', name, { op: 'write' }), textStep('done')])
+      const opts = baseOpts({ parentTools: tools('read', 'memory', 'task', 'ask', 'todo', 'monitor') })
+      await runSubagent(opts)
+      expect(opts.dispatch).not.toHaveBeenCalled()
+      expect(opts.events.onInner).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'tool_result', id: 'denied', is_error: true,
+        content: expect.stringContaining('not available to this run'),
+      }))
+    }
+  )
+
+  it.each([
+    { saved: ['read'], requested: null },
+    { saved: null, requested: ['read'] },
+    { saved: ['read', 'write'], requested: ['read'] },
+  ])('enforces resolved saved/requested allowlists: %j', async ({ saved, requested }) => {
+    const parentTools = tools('read', 'write', 'skill_list', 'skill_read')
+    const resolved = resolveSubagent(
+      { name: 'researcher', description: 'inspect', allowed_tools: requested ?? undefined },
+      [definition({ allowed_tools: saved })],
+      Object.keys(parentTools)
+    )
+    if ('error' in resolved) throw new Error(resolved.error)
+    mockSteps([
+      toolStep('denied', 'write', {}),
+      toolStep('read', 'read', {}),
+      toolStep('list', 'skill_list', {}),
+      toolStep('skill', 'skill_read', {}),
+      textStep('done'),
+    ])
+    const opts = baseOpts({ resolved, parentTools })
+    await runSubagent(opts)
+    expect((opts.dispatch.mock.calls as unknown as [{ toolName: string }][]).map(([call]) => call.toolName))
+      .toEqual(['read', 'skill_list', 'skill_read'])
+    expect(opts.events.onInner).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'tool_result', id: 'denied', is_error: true,
+    }))
+    // The dispatch guard never changes the schema record or system prefix.
+    const steps = streamText.mock.calls.map(([step]) => step)
+    for (const step of steps) {
+      expect(Object.keys(step.tools)).toEqual(['read', 'skill_list', 'skill_read'])
+      expect(step.tools).toBe(steps[0].tools)
+      expect(step.system).toBe(steps[0].system)
+    }
+  })
+
+  describe('refusal reasons for a withheld child tool', () => {
+    const resultFor = (opts: ReturnType<typeof baseOpts>, id: string) =>
+      (opts.events.onInner.mock.calls as unknown as [{ type: string; id: string; content: string }][])
+        .map(([e]) => e)
+        .find((e) => e.type === 'tool_result' && e.id === id)
+
+    it('names the web setting, still before the dispatch callback', async () => {
+      mockSteps([toolStep('web', 'web_fetch', { url: 'https://x.dev' }), textStep('done')])
+      const opts = baseOpts({
+        parentTools: tools('read'),
+        mode: vi.fn(() => ({ planMode: false, webSearch: false })),
+      })
+      await runSubagent(opts)
+      expect(opts.dispatch).not.toHaveBeenCalled()
+      expect(resultFor(opts, 'web')?.content).toContain('web access is disabled in Settings')
+    })
+
+    it('names plan mode, still before the dispatch callback', async () => {
+      mockSteps([toolStep('w', 'write', {}), textStep('done')])
+      const opts = baseOpts({
+        parentTools: tools('read'),
+        mode: vi.fn(() => ({ planMode: true, webSearch: true })),
+      })
+      await runSubagent(opts)
+      expect(opts.dispatch).not.toHaveBeenCalled()
+      expect(resultFor(opts, 'w')?.content).toContain('disabled in plan mode')
+    })
+
+    it('keeps the generic refusal when no mode explains it', async () => {
+      mockSteps([toolStep('m', 'memory', { op: 'write' }), toolStep('w', 'web_fetch', {}), textStep('done')])
+      const opts = baseOpts({
+        // Web is on, so its absence is the allowlist, not the setting.
+        parentTools: tools('read', 'memory', 'web_fetch'),
+        resolved: { name: 'researcher', systemPrompt: 'x', allowedTools: ['read'], model: null },
+        mode: vi.fn(() => ({ planMode: true, webSearch: true })),
+      })
+      await runSubagent(opts)
+      expect(opts.dispatch).not.toHaveBeenCalled()
+      expect(resultFor(opts, 'm')?.content).toContain('not available to this run')
+      expect(resultFor(opts, 'w')?.content).toContain('not available to this run')
+    })
+
+    it('hands an advertised tool to the callback without consulting the mode', async () => {
+      mockSteps([toolStep('r', 'read', {}), textStep('done')])
+      const opts = baseOpts({ parentTools: tools('read') })
+      await runSubagent(opts)
+      expect(opts.dispatch).toHaveBeenCalledOnce()
+      expect(opts.mode).not.toHaveBeenCalled()
+    })
   })
 
   it('reports a step cap as an error, keeping the partial output', async () => {

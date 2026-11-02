@@ -12,6 +12,9 @@ import {
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  capabilityModeRefusal,
+  type CapabilityMode,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
@@ -657,6 +660,12 @@ export type RunSubagentOptions = {
     bashAvailable: boolean
     environment?: CoworkEnvironment | null
   }
+  /**
+   * The run's plan-mode and web state, read per call. Only picks the refusal
+   * text for a call the child's record does not advertise; such a call never
+   * reaches `dispatch`.
+   */
+  mode: () => CapabilityMode
   /** Runs one of the child's tool calls. Same sandbox as the parent. */
   dispatch: (call: PendingToolCall, signal: AbortSignal) => Promise<ToolOutcome>
   signal: AbortSignal
@@ -787,7 +796,17 @@ export async function runSubagent(
             messages: msgs,
             signal,
           }),
-        dispatch: opts.dispatch,
+        // Enforce the same narrowed record sent to every child step, including
+        // resolved implicit skill reads, before invoking any host callback.
+        // A mode reason only replaces the generic text: either way the call
+        // is refused here, before any host callback.
+        dispatch: (call, signal) => {
+          const refusal = unadvertisedToolRefusal(call.toolName, tools)
+          if (!refusal) return opts.dispatch(call, signal)
+          return Promise.resolve(
+            capabilityModeRefusal(call.toolName, opts.mode()) ?? refusal
+          )
+        },
         sink,
         onStep: ({ result, outcomes }) => {
           if (result.text.trim()) finalText = result.text

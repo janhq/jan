@@ -1,3 +1,4 @@
+import type { Tool } from 'ai'
 import {
   executeAgentTool,
   listAgentMonitors,
@@ -7,10 +8,11 @@ import {
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
+  capabilityModeRefusal,
   PLAN_DENIED_MEMORY_OPS,
-  PLAN_DENIED_TOOLS,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
+  unadvertisedToolRefusal,
 } from '@/lib/coworkTools'
 import {
   MONITOR_TOOL_NAME,
@@ -27,6 +29,8 @@ import {
 } from '@/lib/coworkPrompt'
 
 export type DispatchContext = {
+  /** The effective frozen record actually advertised to this caller. */
+  advertisedTools: Record<string, Tool>
   sessionId: string
   readOnlyFolder: string | null
   planMode: boolean
@@ -44,24 +48,6 @@ export type DispatchContext = {
   /** The session's monitor lane; `null` for a subagent's dispatch, which
    * refuses the tool (a child has no turn of its own for a match to start). */
   monitors: MonitorLane | null
-}
-
-/**
- * Refusal text for a tool plan mode withholds.
- *
- * Withholding alone is not authoritative — a model can emit a call to a tool
- * that was never advertised, and the SDK still surfaces it — so the dispatcher
- * refuses by name too. The wording tells the model what to do instead, or it
- * simply retries.
- */
-function planRefusal(toolName: string): ToolOutcome {
-  return {
-    output:
-      `The \`${toolName}\` tool is disabled in plan mode, which is read-only. ` +
-      'Finish investigating, stage the plan with the `todo` tool, then call ' +
-      '`ask` for plan review.',
-    isError: true,
-  }
 }
 
 /** Refusal text for a `memory` op that changes the store in plan mode. */
@@ -188,13 +174,17 @@ export async function dispatchCoworkTool(
 ): Promise<ToolOutcome> {
   const { toolName } = call
 
-  if (ctx.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
-    return planRefusal(toolName)
-  }
+  const modeRefusal = capabilityModeRefusal(toolName, ctx)
+  if (modeRefusal) return modeRefusal
   if (ctx.planMode && toolName === 'memory') {
     const op = memoryOp(call.input)
     if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
+
+  // After the reasons above, which the real records also withhold (plan mode,
+  // web off), so the model learns why rather than just that.
+  const refusal = unadvertisedToolRefusal(toolName, ctx.advertisedTools)
+  if (refusal) return refusal
 
   try {
     if (toolName === TODO_TOOL_NAME) return await ctx.onTodo(call.input)
@@ -209,14 +199,6 @@ export async function dispatchCoworkTool(
     }
 
     if (WEB_TOOL_NAMES.has(toolName)) {
-      if (!ctx.webSearch) {
-        return {
-          output:
-            `The \`${toolName}\` tool is off: web access is disabled in ` +
-            'Settings. Work from what you can read locally.',
-          isError: true,
-        }
-      }
       const web = await executeWebTool(toolName, call.input ?? {})
       if (web.error) return { output: web.error, isError: true }
       return {

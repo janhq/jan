@@ -748,6 +748,7 @@ export function CoworkPage() {
               // here, so each is its own queue of one.
               withToolTiming(call.toolCallId, () =>
                 dispatchCoworkTool(call, {
+                  advertisedTools: transport.advertisedTools,
                   sessionId: sid,
                   readOnlyFolder: current?.folder ?? null,
                   planMode: runConfig.planMode,
@@ -909,11 +910,19 @@ export function CoworkPage() {
                           },
                           signal: controller.signal,
                           sessionTokens: 0,
+                          // The live run state: plan approval clears
+                          // `runConfig.planMode` mid-run, while `current` is the
+                          // session snapshot taken when the run started.
+                          mode: () => ({
+                            planMode: runConfig.planMode,
+                            webSearch,
+                          }),
                           // A child never gets `todo`/`ask`/`task`, so these refuse
                           // rather than execute: a model can still emit a call to a
                           // tool that was never advertised.
                           dispatch: (call) =>
                             dispatchCoworkTool(call, {
+                              advertisedTools: transport.advertisedTools,
                               sessionId: sid,
                               readOnlyFolder: current?.folder ?? null,
                               planMode: current?.planMode ?? false,
