@@ -5,22 +5,22 @@ import { resolveConversationCapabilities } from '@/lib/conversationCapabilities'
 const { persist, updateThread } = vi.hoisted(() => ({ persist: vi.fn(), updateThread: vi.fn() }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
-  getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread }) }),
+  getServiceHub: () => ({ threads: () => ({ setConversationCapabilities: persist, updateThread, deleteThread: vi.fn() }) }),
 }))
 vi.mock('@/lib/agentTools', () => ({
   cleanupThreadWorkspace: vi.fn(),
   cancelAgentThreadBash: vi.fn(),
   stopAgentSessionMonitors: vi.fn(),
 }))
-vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: {} }))
-vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: {} }))
-vi.mock('@/hooks/useAppState', () => ({ useAppState: {} }))
+vi.mock('@/hooks/useAgentMode', () => ({ useAgentMode: { getState: () => ({ removeThread: vi.fn() }) } }))
+vi.mock('@/stores/chat-session-store', () => ({ useChatSessions: { getState: () => ({ removeSession: vi.fn() }) } }))
+vi.mock('@/hooks/useAppState', () => ({ useAppState: { getState: () => ({ clearThreadState: vi.fn() }) } }))
 vi.mock('@/hooks/useCoworkSessions', () => ({ useCoworkSessions: {} }))
 vi.mock('@/hooks/useCoworkRun', () => ({ useCoworkRun: {} }))
 vi.mock('@/lib/coworkRunner', () => ({ abortRun: vi.fn() }))
 vi.mock('@/lib/coworkMonitor', () => ({ dropMonitorLane: vi.fn() }))
-vi.mock('@/lib/extension', () => ({ ExtensionManager: {} }))
-vi.mock('@janhq/core', () => ({ ExtensionTypeEnum: {}, VectorDBExtension: class {} }))
+vi.mock('@/lib/extension', () => ({ ExtensionManager: { getInstance: () => ({ get: () => undefined }) } }))
+vi.mock('@janhq/core', () => ({ ExtensionTypeEnum: {}, VectorDBExtension: class {}, EngineManager: { instance: () => ({ get: () => undefined }) } }))
 
 function thread(id = 'chat', metadata: Thread['metadata'] = {}): Thread {
   return { id, title: 'Conversation', assistants: [], updated: 123, metadata }
@@ -282,6 +282,26 @@ describe('useThreads conversation capabilities', () => {
     pending.resolve()
     await saving
     expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
+  })
+
+  it.each(['single', 'bulk', 'clear'])('prunes deleted grants on %s deletion without leaking authority to reused IDs', async (kind) => {
+    await save(granted)
+    if (kind === 'single') useThreads.getState().deleteThread('chat')
+    else if (kind === 'bulk') useThreads.getState().deleteAllThreads()
+    else useThreads.getState().clearAllThreads()
+    useThreads.getState().setThreads([thread('chat')])
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(resolveConversationCapabilities(undefined))
+  })
+
+  it('bulk deletion keeps authoritative grants for retained favorites', async () => {
+    useThreads.setState({ threads: { chat: { ...thread(), isFavorite: true }, other: thread('other') } })
+    await save(granted)
+    await save(granted, 'other')
+    useThreads.getState().deleteAllThreads()
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
+    useThreads.getState().setThreads([{ ...thread(), isFavorite: true }, thread('other')])
+    expect(useThreads.getState().getConversationCapabilities('chat')).toEqual(granted)
+    expect(useThreads.getState().getConversationCapabilities('other')).toEqual(resolveConversationCapabilities(undefined))
   })
 
 })

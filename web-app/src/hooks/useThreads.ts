@@ -285,6 +285,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   deleteThread: (threadId) => {
     createdThreadSnapshots.delete(threadId)
     capabilityRequests.delete(threadId)
+    effectiveCapabilities.delete(threadId)
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
@@ -332,6 +333,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // deleteThread: removing the chat session is what ends a turn the thread
       // still has running in the background.
       threadsToDeleteIds.forEach((threadId) => {
+        createdThreadSnapshots.delete(threadId)
+        effectiveCapabilities.delete(threadId)
         capabilityRequests.delete(threadId)
         useAgentMode.getState().removeThread(threadId)
         useChatSessions.getState().removeSession(threadId)
@@ -365,6 +368,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   clearAllThreads: () => {
     createdThreadSnapshots.clear()
     capabilityRequests.clear()
+    effectiveCapabilities.clear()
     set((state) => {
       const allThreadIds = Object.keys(state.threads)
 
@@ -409,6 +413,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     // Reconcile each durable success immediately, even if a later delete fails.
     const reconcile = (id: string, cowork: boolean) => {
       capabilityRequests.delete(id)
+      effectiveCapabilities.delete(id)
       const thread = get().threads[id]
       useAgentMode.getState().removeThread(id)
       useChatSessions.getState().removeSession(id)
