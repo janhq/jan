@@ -11,6 +11,7 @@ import type { ToolOutcome } from '@/lib/coworkRunner'
 import { getAgentToolSchemas } from '@/lib/agentTools'
 import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
+  WEB_TOOL_NAMES,
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
   WEB_SEARCH_DESCRIPTION,
@@ -43,6 +44,43 @@ export const PLAN_DENIED_TOOLS = new Set([
 /** `memory` ops that change the store. Plan mode keeps the tool for its
  * reads (`view`, `search`) and refuses these, as the Rust tool does. */
 export const PLAN_DENIED_MEMORY_OPS = new Set(['write', 'edit', 'delete', 'move'])
+
+/** The run state a refusal reason depends on, read when the call arrives. */
+export type CapabilityMode = { planMode: boolean; webSearch: boolean }
+
+/**
+ * Why a tool is off for this run, when a mode or setting is the reason. Pure:
+ * it only picks the refusal text. Callers refuse on `null` too when the name
+ * is not advertised (`unadvertisedToolRefusal`), so a reason never lets a call
+ * through. The parent dispatcher and the child guard share it so both tell the
+ * model *why* a tool is unavailable, not just that it is.
+ *
+ * Withholding alone is not authoritative -- a model can emit a call to a tool
+ * that was never advertised -- so these are enforced by name as well.
+ */
+export function capabilityModeRefusal(
+  toolName: string,
+  mode: CapabilityMode
+): ToolOutcome | null {
+  if (mode.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
+    return {
+      output:
+        `The \`${toolName}\` tool is disabled in plan mode, which is read-only. ` +
+        'Finish investigating, stage the plan with the `todo` tool, then call ' +
+        '`ask` for plan review.',
+      isError: true,
+    }
+  }
+  if (WEB_TOOL_NAMES.has(toolName) && !mode.webSearch) {
+    return {
+      output:
+        `The \`${toolName}\` tool is off: web access is disabled in ` +
+        'Settings. Work from what you can read locally.',
+      isError: true,
+    }
+  }
+  return null
+}
 
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
  * model to call `todo` by name, so renaming it here breaks that prompt. */

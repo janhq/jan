@@ -8,8 +8,8 @@ import {
 import { useCoworkConfig } from '@/hooks/useCoworkConfig'
 import {
   ASK_TOOL_NAME,
+  capabilityModeRefusal,
   PLAN_DENIED_MEMORY_OPS,
-  PLAN_DENIED_TOOLS,
   TASK_TOOL_NAME,
   TODO_TOOL_NAME,
   unadvertisedToolRefusal,
@@ -48,24 +48,6 @@ export type DispatchContext = {
   /** The session's monitor lane; `null` for a subagent's dispatch, which
    * refuses the tool (a child has no turn of its own for a match to start). */
   monitors: MonitorLane | null
-}
-
-/**
- * Refusal text for a tool plan mode withholds.
- *
- * Withholding alone is not authoritative — a model can emit a call to a tool
- * that was never advertised, and the SDK still surfaces it — so the dispatcher
- * refuses by name too. The wording tells the model what to do instead, or it
- * simply retries.
- */
-function planRefusal(toolName: string): ToolOutcome {
-  return {
-    output:
-      `The \`${toolName}\` tool is disabled in plan mode, which is read-only. ` +
-      'Finish investigating, stage the plan with the `todo` tool, then call ' +
-      '`ask` for plan review.',
-    isError: true,
-  }
 }
 
 /** Refusal text for a `memory` op that changes the store in plan mode. */
@@ -192,25 +174,15 @@ export async function dispatchCoworkTool(
 ): Promise<ToolOutcome> {
   const { toolName } = call
 
-  if (ctx.planMode && PLAN_DENIED_TOOLS.has(toolName)) {
-    return planRefusal(toolName)
-  }
+  const modeRefusal = capabilityModeRefusal(toolName, ctx)
+  if (modeRefusal) return modeRefusal
   if (ctx.planMode && toolName === 'memory') {
     const op = memoryOp(call.input)
     if (PLAN_DENIED_MEMORY_OPS.has(op)) return planMemoryRefusal(op)
   }
 
-  // Ahead of the membership check, which would also refuse it (the web tools
-  // are withheld when off), so the model learns why rather than just that.
-  if (WEB_TOOL_NAMES.has(toolName) && !ctx.webSearch) {
-    return {
-      output:
-        `The \`${toolName}\` tool is off: web access is disabled in ` +
-        'Settings. Work from what you can read locally.',
-      isError: true,
-    }
-  }
-
+  // After the reasons above, which the real records also withhold (plan mode,
+  // web off), so the model learns why rather than just that.
   const refusal = unadvertisedToolRefusal(toolName, ctx.advertisedTools)
   if (refusal) return refusal
 
