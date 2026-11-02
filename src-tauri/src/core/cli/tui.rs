@@ -9213,6 +9213,9 @@ impl App {
             );
             self.transcript.gap(Kind::Meta);
             self.transcript.push(stats);
+            // The receipt closes the turn: whatever lands next (a subagent's
+            // notice, a background result) is a new block, not part of it.
+            self.transcript.last_kind = Kind::None;
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -46471,6 +46474,27 @@ mod tests {
         assert_eq!(format_elapsed(3599), "59m 59s");
         assert_eq!(format_elapsed(3600), "1h 00m");
         assert_eq!(format_elapsed(3720), "1h 02m");
+    }
+
+    /// An event that lands after a turn closed (a subagent's notice, a
+    /// background result) starts its own block instead of hanging off the
+    /// turn's receipt line as if it were part of it.
+    #[test]
+    fn an_event_after_the_turn_receipt_is_set_off_by_a_blank_line() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.run_started = Some(Instant::now());
+        // A turn that answered, so no "no answer" warning follows the receipt.
+        app.transcript.assistant_buf.push_str("done");
+        app.on_done("stop".into(), None);
+        app.notice("something happened", Some("general-4"));
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
+        let receipt = rows
+            .iter()
+            .rposition(|r| r.contains("Worked for "))
+            .expect("no receipt");
+        assert!(rows[receipt + 1].trim().is_empty(), "{rows:#?}");
+        assert!(rows[receipt + 2].contains("general-4: something happened"), "{rows:#?}");
     }
 
     #[test]
