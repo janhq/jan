@@ -143,12 +143,13 @@ describe('scoped native schema advertisement', () => {
     await transport.refreshTools()
     const tool = transport.getTools()['memory'] as { description: string; inputSchema: { jsonSchema: any } }
     const text = JSON.stringify([tool.description, tool.inputSchema.jsonSchema])
-    for (const banned of ['write', 'edit', 'delete', 'move', 'no op asks', 'overwrite']) {
-      expect(text.toLowerCase()).not.toContain(banned === 'write' ? 'write over' : banned)
+    for (const banned of ['write:', 'edit', 'delete', 'move', 'no op asks', 'overwrite']) {
+      expect(text.toLowerCase()).not.toContain(banned)
     }
     expect(tool.description).toMatch(/read-only/i)
     expect(tool.inputSchema.jsonSchema.properties.op.description).not.toMatch(/write:|edit:|delete:|move:/)
     expect(tool.inputSchema.jsonSchema.properties.content).toBeUndefined()
+    expect(tool.inputSchema.jsonSchema.properties.title).toBeUndefined()
   })
 
   it('warns, with the collision wording, when a native tool replaces a same-named MCP tool', async () => {

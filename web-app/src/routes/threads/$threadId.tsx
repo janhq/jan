@@ -124,7 +124,7 @@ import { toolOriginKey, useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { webToolRoute, executeWebTool } from '@/lib/webSearchTool'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { executeAgentTool } from '@/lib/agentTools'
-import { isElevatedThreadCall, isScopedThreadTool } from '@/lib/scopedToolDispatch'
+import { authorizeThreadTool, isElevatedThreadCall, isScopedThreadTool } from '@/lib/scopedToolDispatch'
 import { defaultConversationCapabilities } from '@/lib/conversationCapabilities'
 import { ConversationHeaderTitle } from '@/containers/ConversationHeaderTitle'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -1024,6 +1024,10 @@ function ThreadDetail() {
         return
       }
       const nativeGrant = isNative ? nativeGrantOf(threadId, toolCall.toolCallId) : undefined
+      if (isNative) {
+        try { authorizeThreadTool(toolCall.toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, nativeGrant) }
+        catch { return } // Dispatch returns the capability refusal without an approval.
+      }
       if (
         (serverName ||
           (isNative &&
@@ -1073,6 +1077,10 @@ function ThreadDetail() {
           !serverName && chatShellRoute(toolName) === 'builtin'
             ? nativeGrantOf(threadId, toolCall.toolCallId)
             : undefined
+
+        if (!serverName && isScopedThreadTool(toolName)) {
+          authorizeThreadTool(toolName, toolCall.input && typeof toolCall.input === 'object' ? toolCall.input as Record<string, unknown> : {}, classifiedGrant)
+        }
 
         if (webRoute(toolName) === 'disabled') {
           record({

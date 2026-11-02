@@ -148,10 +148,6 @@
             "query": {
               "type": "string",
               "description": "search: words that must all appear in the note."
-            },
-            "title": {
-              "type": "string",
-              "description": "write: one-line title, stored as the note's first line and shown in the index."
             }
           },
           "required": [

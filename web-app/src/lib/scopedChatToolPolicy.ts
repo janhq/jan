@@ -118,6 +118,7 @@ export function memoryReadOnlyParameters(
   if (ops.length === 0) return null
   const properties = { ...(p.properties as Record<string, unknown>) }
   delete properties.to
+  delete properties.title
   // The Rust per-property text documents mutation; replace it with read-only text.
   if (properties.name && typeof properties.name === 'object') {
     properties.name = { ...(properties.name as object), description: MEMORY_READ_NAME_DESCRIPTION }
