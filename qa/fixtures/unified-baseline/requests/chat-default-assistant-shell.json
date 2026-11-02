@@ -1,0 +1,37 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.\n\nWhen handling user queries:\n\n1. Think step by step about the query:\n   - Break complex questions into smaller, searchable parts\n   - Identify key search terms and parameters\n   - Consider what information is needed to provide a complete answer\n\n2. Mandatory logical analysis:\n   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a \"professional tool caller,\" demonstrating rigorous logic.\n   - Analyze the information gap: explicitly state what data is missing.\n   - Derive the strategy: explain why a specific tool is the logical next step.\n   - Justify parameters: explain why you chose those specific search keywords or that specific URL.\n\nYou have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.\n\nCurrent date: January 1, 2026\n\n# Shell shell runs commands in an isolated scratch workspace under an OS sandbox: it starts there, can only write there, and cannot read files in the user's home directory. The workspace belongs to this conversation alone and is deleted with it, so do not keep anything there that should last. It has no network access, so commands that download or upload will fail."
+    },
+    {
+      "role": "user",
+      "content": "Reply with OK."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "shell",
+        "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Shell command to run."
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Seconds to wait before backgrounding the command if it hasn't finished (default 30)."
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      }
+    }
+  ]
+}
